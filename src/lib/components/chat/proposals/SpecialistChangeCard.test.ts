@@ -159,4 +159,5 @@ describe('SpecialistChangeCard', () => {
       selectedBulkItemIds: [],
     });
   });
+
 });

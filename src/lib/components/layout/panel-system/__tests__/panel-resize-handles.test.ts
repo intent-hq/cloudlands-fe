@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { readable } from 'svelte/store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,16 +7,6 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
-
-const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
-
-vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
-vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
-  selectIsDragging: () => readable(false),
-}));
-vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
-  setActiveHandleDrop: (value: unknown) => ({ type: 'tab-state/set-active-handle-drop', value }),
-}));
 
 import PanelCornerHandle from '../PanelCornerHandle.svelte';
 import PanelSplitHandle from '../PanelSplitHandle.svelte';
@@ -62,7 +51,6 @@ describe('editorial panel resize handles', () => {
       '../PanelSplitHandle.svelte',
       '../PanelCornerHandle.svelte',
       '../../sidebar-nav/SidebarPanel.svelte',
-      '../../../workspace/VSCodeResizablePanels.svelte',
       '../../../terminal/QuakeTerminalOverlay.svelte',
       '../../../terminal/RootQuakeTerminalOverlay.svelte',
       '../../../terminal/TerminalSidebar.svelte',
@@ -137,11 +125,6 @@ describe('editorial panel resize handles', () => {
     await fireEvent.drop(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
 
     expect(onTabDropToHandle).toHaveBeenCalledWith('tab', 'source', [], 'after', 'horizontal');
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        value: expect.objectContaining({ zoneType: 'column-right' }),
-      }),
-    );
   });
 
   it('leaves active-pane insertion to the full-height layout gutters', async () => {
@@ -156,7 +139,6 @@ describe('editorial panel resize handles', () => {
     await fireEvent.drop(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
 
     expect(onTabDropToHandle).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('does not offer tab drops on a stale vertical split handle', async () => {

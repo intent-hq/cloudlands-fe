@@ -2,15 +2,12 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { invoke } from '$lib/electron-bridge';
+  import { featureCodesClient } from '$features/feature-codes/renderer/feature-codes.client';
   import {
     selectActiveFeatures,
     selectHasActiveFeatures,
   } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
-  import {
-    fetchFeatures,
-    deactivateFeature,
-  } from '$store/renderer/slices/feature-codes/feature-codes-slice';
+  import { setActiveFeatures } from '$store/renderer/slices/feature-codes/feature-codes-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -67,9 +64,7 @@
     feedback = null;
 
     try {
-      const result = await invoke<{ status: string }>('feature-codes:activate', {
-        code: inputValue.trim(),
-      });
+      const result = await featureCodesClient.activateCode(inputValue.trim());
       if (result?.status === 'already_active') {
         feedback = {
           message: m.modals_featureCode_alreadyActive_feedback(),
@@ -80,7 +75,7 @@
         needsRestart = true;
       }
       // Refresh the renderer-side store so UI gates update immediately
-      appStore.dispatch(fetchFeatures());
+      await refreshActiveFeatures();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (
@@ -117,18 +112,29 @@
       clearFeedbackTimeout();
       feedback = null;
       inputValue = '';
+      void refreshActiveFeatures();
       requestAnimationFrame(() => {
         inputRef?.focus();
       });
     }
   });
 
+  /** Re-fetch active features; keep existing store state when the fetch fails. */
+  async function refreshActiveFeatures() {
+    const features = await featureCodesClient.getActiveFeatures();
+    if (features !== null) {
+      appStore.dispatch(setActiveFeatures(features));
+    }
+  }
+
   async function restartApp() {
-    await invoke('feature-codes:restart-app');
+    await featureCodesClient.restartApp();
   }
 
   async function removeFeature(featureId: string) {
-    await appStore.dispatch(deactivateFeature(featureId));
+    const result = await featureCodesClient.deactivateFeature(featureId);
+    await refreshActiveFeatures();
+    if (!result?.success) return;
     needsRestart = true;
     feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-yellow-400' };
     scheduleFeedbackClear();

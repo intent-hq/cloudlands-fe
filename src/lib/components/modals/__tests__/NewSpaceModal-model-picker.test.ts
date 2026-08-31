@@ -328,12 +328,21 @@ describe('NewSpaceModal model-picker composition', () => {
     });
 
     await fireEvent.click(pickerTrigger(team));
-    const reasoningToggle = await within(dialog).findByTestId('model-reasoning-toggle');
-    await fireEvent.click(reasoningToggle);
-    await fireEvent.change(within(dialog).getByRole('slider'), { target: { value: '3' } });
+    const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
+    await fireEvent.click(reasoningTrigger);
+    const listboxes = within(dialog).getAllByRole('listbox');
+    const reasoningListbox = listboxes[listboxes.length - 1];
+    await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
+      pointerType: 'mouse',
+    });
     await waitFor(() => {
       expect(persistedStates().at(-1)).toMatchObject({ selectedReasoningEffort: 'high' });
-      expect(pickerTrigger(team).querySelector('[data-testid="effort-gauge"]')).toBeTruthy();
+      const updatedTeamTrigger = pickerTrigger(team);
+      expect(within(updatedTeamTrigger).getByLabelText('GPT 5.6 · High')).toBeTruthy();
+      expect(updatedTeamTrigger.textContent).not.toContain('High');
+      const effortGauge = within(updatedTeamTrigger).getByTestId('model-reasoning-effort-gauge');
+      expect(effortGauge.dataset.gaugeValue).toBe('2');
+      expect(effortGauge.dataset.gaugeSize).toBe('compact');
     });
     await fireEvent.click(pickerTrigger(team));
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
@@ -406,6 +415,46 @@ describe('NewSpaceModal model-picker composition', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(document.activeElement).toBe(trigger);
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
+    expect(mocks.onClose).not.toHaveBeenCalled();
+  });
+
+  it('dismisses nested reasoning before the modal-aware model picker on Escape', async () => {
+    render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+    const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+    const team = modeCard(/Agent orchestration/i);
+    const modelTrigger = pickerTrigger(team);
+
+    await fireEvent.click(modelTrigger);
+    const modelListbox = await within(dialog).findByRole('listbox');
+    await fireEvent.click(
+      await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
+    );
+    await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
+
+    await fireEvent.click(modelTrigger);
+    const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
+    reasoningTrigger.focus();
+    await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
+    await waitFor(() => expect(within(dialog).getAllByRole('listbox')).toHaveLength(2));
+    const persistedCount = persistedStates().length;
+
+    await fireEvent.keyDown(reasoningTrigger, { key: 'ArrowDown' });
+    expect(within(dialog).getAllByRole('listbox')).toHaveLength(2);
+    await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(within(dialog).getAllByRole('listbox')).toHaveLength(1);
+      expect(reasoningTrigger.getAttribute('aria-expanded')).toBe('false');
+    });
+    expect(document.activeElement).toBe(reasoningTrigger);
+    expect(persistedStates()).toHaveLength(persistedCount);
+    expect(mocks.onClose).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(document.activeElement).toBe(modelTrigger);
+    expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
+    expect(persistedStates()).toHaveLength(persistedCount);
     expect(mocks.onClose).not.toHaveBeenCalled();
   });
 

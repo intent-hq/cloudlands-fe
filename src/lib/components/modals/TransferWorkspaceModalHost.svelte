@@ -86,5 +86,5 @@
   onRetry={() => appStore.dispatch(transferStartRequested())}
   onSetRestartAgents={(value) => appStore.dispatch(setTransferRestartAgents(value))}
   onSetArchiveSource={(value) => appStore.dispatch(setTransferArchiveSource(value))}
-  onFinalize={(switchToTarget) => appStore.dispatch(transferFinalizeRequested({ switchToTarget }))}
+  onFinalize={(openTarget) => appStore.dispatch(transferFinalizeRequested({ openTarget }))}
 />

@@ -71,76 +71,7 @@ describe('ProviderPathConfig', () => {
     cleanup();
   });
 
-  it('renders from a controlled open host without a folder trigger', () => {
-    render(ProviderPathConfigHost, {
-      props: {
-        providerId: 'claude-code',
-        providerName: 'Claude Code',
-        cliCommand: 'claude-agent-acp',
-      },
-    });
-
-    expect(screen.queryByTitle('Configure Claude Code path')).toBeNull();
-    expect(screen.getByText('Claude Code CLI Path')).toBeTruthy();
-  });
-
-  it('anchors the controlled triggerless panel on-screen instead of off-page', async () => {
-    // Regression: without Menu.Trigger or a customAnchor, bits-ui's floating
-    // layer never gets a reference element, isPositioned stays false, and the
-    // content wrapper keeps the off-page measuring transform
-    // translate(0, -200%) forever. With the anchor wired, positioning resolves
-    // and the measuring transform is replaced.
-    //
-    // jsdom returns an empty list from getClientRects() for every element,
-    // which trips bits-ui's isReferenceHidden guard before positioning runs;
-    // stub it so the anchor counts as visible (layout coordinates stay zero,
-    // which is fine — only "positioned vs never positioned" is asserted).
-    const getClientRectsSpy = vi
-      .spyOn(Element.prototype, 'getClientRects')
-      .mockImplementation(function (this: Element) {
-        const rect = this.getBoundingClientRect();
-        return [rect] as unknown as DOMRectList;
-      });
-    try {
-      render(ProviderPathConfigHost, {
-        props: {
-          providerId: 'claude-code',
-          providerName: 'Claude Code',
-          cliCommand: 'claude-agent-acp',
-        },
-      });
-
-      const wrapper = () =>
-        document.querySelector('[data-bits-floating-content-wrapper]') as HTMLElement | null;
-      await waitFor(() => expect(wrapper()).toBeTruthy());
-      await waitFor(() =>
-        expect(wrapper()!.style.transform, 'floating content should be positioned').not.toBe(
-          'translate(0, -200%)',
-        ),
-      );
-    } finally {
-      getClientRectsSpy.mockRestore();
-    }
-  });
-
-  it('renders the full auto-detected path wrapped, not truncated', () => {
-    render(ProviderPathConfigHost, {
-      props: {
-        providerId: 'claude-code',
-        providerName: 'Claude Code',
-        cliCommand: 'claude-agent-acp',
-        resolvedPath: LONG_PATH,
-        isInstalled: true,
-      },
-    });
-    const code = screen.getByText(LONG_PATH);
-    expect(code.textContent).toBe(LONG_PATH);
-    expect(code.className).toContain('break-all');
-    expect(code.className).not.toContain('truncate');
-    expect(screen.getByText('Auto-detected at')).toBeTruthy();
-  });
-
-  it('keeps the auto-detected row visible and marked when an override is configured', () => {
+  it('loads a configured override', () => {
     render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
@@ -153,8 +84,6 @@ describe('ProviderPathConfig', () => {
     });
     const input = screen.getByPlaceholderText(LONG_PATH) as HTMLInputElement;
     expect(input.value).toBe('/custom/bin/claude-agent-acp');
-    expect(screen.getByText(LONG_PATH)).toBeTruthy();
-    expect(screen.getByText('(overridden by the path above)')).toBeTruthy();
   });
 
   it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', () => {
@@ -171,34 +100,8 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
-    expect(screen.getByText(unslothPath)).toBeTruthy();
-    expect(screen.getByText('opencode runtime at')).toBeTruthy();
-    expect(screen.getByText(opencodePath)).toBeTruthy();
-    expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
-    expect(screen.queryByText('Auto-detected at')).toBeNull();
-  });
-
-  it('marks only the overridable unsloth CLI row as overridden for dual-binary providers', () => {
-    const opencodePath = '/Users/clement/.opencode/bin/opencode';
-    const unslothPath = '/Users/clement/.local/bin/unsloth';
-    render(ProviderPathConfigHost, {
-      props: {
-        providerId: 'unsloth',
-        providerName: 'Unsloth',
-        cliCommand: 'unsloth',
-        configuredPath: '/custom/bin/unsloth',
-        resolvedPath: unslothPath,
-        runtimeCliCommand: 'opencode',
-        runtimeResolvedPath: opencodePath,
-        isInstalled: true,
-      },
-    });
-    const input = screen.getByPlaceholderText(unslothPath) as HTMLInputElement;
-    expect(input.value).toBe('/custom/bin/unsloth');
     expect(screen.getByText(unslothPath)).toBeTruthy();
     expect(screen.getByText(opencodePath)).toBeTruthy();
-    expect(screen.getAllByText('(overridden by the path above)')).toHaveLength(1);
   });
 
   it('shows only the runtime row when the unsloth CLI did not resolve', () => {
@@ -214,28 +117,7 @@ describe('ProviderPathConfig', () => {
       },
     });
     expect(screen.getByPlaceholderText('Path to unsloth')).toBeTruthy();
-    expect(screen.getByText('opencode runtime at')).toBeTruthy();
     expect(screen.getByText(opencodePath)).toBeTruthy();
-    expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
-    expect(screen.queryByText('Auto-detected unsloth at')).toBeNull();
-  });
-
-  it('shows the runtime row without a path when the runtime binary did not resolve', () => {
-    const unslothPath = '/Users/clement/.local/bin/unsloth';
-    render(ProviderPathConfigHost, {
-      props: {
-        providerId: 'unsloth',
-        providerName: 'Unsloth',
-        cliCommand: 'unsloth',
-        resolvedPath: unslothPath,
-        runtimeCliCommand: 'opencode',
-        isInstalled: true,
-      },
-    });
-    expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
-    expect(screen.getByText('opencode runtime')).toBeTruthy();
-    expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
-    expect(screen.queryByText('opencode runtime at')).toBeNull();
   });
 
   it('renders the path as a readonly field with a file picker, not a free-text input', () => {

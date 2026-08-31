@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { tick } from 'svelte';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
@@ -59,6 +60,12 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-slice', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
+}));
+
+// The hover card's own store wiring is irrelevant here; the hover-intent
+// tests only assert when WorkspaceCard mounts it.
+vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
+  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
 import WorkspaceCard from '../WorkspaceCard.svelte';
@@ -365,5 +372,74 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(container.querySelector('[data-workspace-card-agents]')).toBeNull();
     expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
     expect(container.textContent).not.toContain('+4');
+  });
+});
+
+describe('WorkspaceCard hover-intent delay', () => {
+  const hoverCard = () => document.querySelector('[role="tooltip"]');
+
+  it('mounts the hover card only after the pointer rests on the row', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      expect(hoverCard()).toBeNull();
+
+      vi.advanceTimersByTime(249);
+      await tick();
+      expect(hoverCard()).toBeNull();
+
+      vi.advanceTimersByTime(1);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never mounts the hover card when the pointer scrubs across the row', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(100);
+      await fireEvent.mouseLeave(row);
+      vi.advanceTimersByTime(1000);
+      await tick();
+      expect(hoverCard()).toBeNull();
+
+      // Re-entering restarts the delay from zero.
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(249);
+      await tick();
+      expect(hoverCard()).toBeNull();
+      vi.advanceTimersByTime(1);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending hover open when hover is suppressed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(WorkspaceCard, {
+        props: { workspace: makeWorkspace(), suppressHover: false },
+      });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      await rerender({ workspace: makeWorkspace(), suppressHover: true });
+      vi.advanceTimersByTime(1000);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

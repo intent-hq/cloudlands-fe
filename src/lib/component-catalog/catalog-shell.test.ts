@@ -88,8 +88,8 @@ describe('catalog route shell', () => {
     expect(baselineSource).toBeDefined();
     const baselinePaths = [...baselineSource!.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 
-    expect(baselinePaths).toHaveLength(154);
-    expect(new Set(baselinePaths).size).toBe(154);
+    expect(baselinePaths).toHaveLength(153);
+    expect(new Set(baselinePaths).size).toBe(153);
     for (const [oldPath, newPath] of movedAsyncDataBaselinePaths) {
       expect(baselinePaths).not.toContain(oldPath);
       expect(baselinePaths).toContain(newPath);

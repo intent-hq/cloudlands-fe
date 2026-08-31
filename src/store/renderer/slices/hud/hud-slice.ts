@@ -63,7 +63,10 @@ export interface HudFeedEntry {
   displayStatus?: string;
 }
 
-/** The four consumption counters (PROTOCOL §5.36 `UsageTotals`). */
+/**
+ * The consumption counters (PROTOCOL §5.36 `UsageTotals`) — five disjoint
+ * buckets since intentd 0.8.20; `thoughtTokens` is omitted when zero (§5.23).
+ */
 export interface HudUsageTotals {
   inputTokens: number;
   outputTokens: number;
@@ -86,7 +89,7 @@ export function sumHudUsageTotals(totals: HudUsageTotals): number {
 export interface HudRateSample {
   /** Local-time hour label (0–23) from `byHourOfDay`. */
   hour: number;
-  /** Sum of the four token counters in the bucket. */
+  /** Five-counter token sum in the bucket. */
   tokens: number;
 }
 
@@ -104,7 +107,7 @@ export interface HudUsageState {
 export interface HudRateHistorySample {
   /** UTC minute floor — wire ISO string, verbatim (`"2026-07-30T14:07:00Z"`). */
   bucketUtc: string;
-  /** Sum of the four token counters in the minute bucket. */
+  /** Five-counter token sum in the minute bucket. */
   tokens?: number;
   inputTokens?: number;
   outputTokens?: number;

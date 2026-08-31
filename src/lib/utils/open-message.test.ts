@@ -41,6 +41,21 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   ),
 }));
 
+vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
+  setChiefActiveAgentId: (agentId: string) => ({
+    type: 'sidebarNav/setChiefActiveAgentId',
+    payload: [agentId],
+  }),
+  openPanel: (panel: string) => ({ type: 'sidebarNav/openPanel', payload: [panel] }),
+}));
+
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
+  setActiveAgentId: (workspaceId: string, agentId: string) => ({
+    type: 'workspaceAgents/setActiveAgentId',
+    payload: [workspaceId, agentId],
+  }),
+}));
+
 import { goto } from '$app/navigation';
 import { openMessage, seekConversationToMessage } from './open-message';
 
@@ -114,6 +129,9 @@ describe('openMessage', () => {
 
   it('navigates to the workspace route when opened cross-workspace', async () => {
     setPathname('/workspace/ws-OTHER');
+    (goto as ReturnType<typeof vi.fn>).mockImplementationOnce(async (route: string) => {
+      setPathname(route);
+    });
 
     const done = openMessage({ workspaceId: 'ws-1', agentId: 'agent-1', messageId: 'msg-1' });
     await vi.runAllTimersAsync();
@@ -124,6 +142,62 @@ describe('openMessage', () => {
       type: 'appLayout/openAgentTabRequested',
       payload: ['ws-1', { agentId: 'agent-1' }],
     });
+  });
+
+  it('fails closed without opening an agent tab when workspace navigation fails', async () => {
+    setPathname('/workspace/ws-OTHER');
+    (goto as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('workspace not found'));
+
+    await openMessage({ workspaceId: 'ws-stale', agentId: 'agent-1', messageId: 'msg-1' });
+
+    expect(goto).toHaveBeenCalledWith('/workspace/ws-stale');
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
+    );
+    expect(mockGetConversation).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when HUD navigation returns without leaving the HUD', async () => {
+    setPathname('/hud');
+    const eventListener = vi.fn();
+    window.addEventListener('chat:open-message', eventListener);
+
+    await openMessage({ workspaceId: 'ws-1', agentId: 'agent-1', messageId: 'msg-1' });
+    await vi.runAllTimersAsync();
+
+    expect(goto).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockGetConversation).not.toHaveBeenCalled();
+    expect(eventListener).not.toHaveBeenCalled();
+
+    window.removeEventListener('chat:open-message', eventListener);
+  });
+
+  it('opens the Assistant panel and selects the exact Chief thread without route navigation', async () => {
+    const done = openMessage({
+      workspaceId: '__chief__',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+    });
+    await vi.runAllTimersAsync();
+    await done;
+
+    expect(goto).not.toHaveBeenCalled();
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setChiefActiveAgentId',
+      payload: ['agent-1'],
+    });
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'workspaceAgents/setActiveAgentId',
+      payload: ['__chief__', 'agent-1'],
+    });
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/openPanel',
+      payload: ['chief'],
+    });
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
+    );
   });
 
   it('seeks the page via aroundMessageId when the message is absent after hydration settles', async () => {

@@ -19,12 +19,12 @@
   import { FocusTrap } from '$lib/utils/accessibility';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { store as appStore } from '$store/renderer/store';
-  import { selectActiveConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShowRemoteSetupPrompt } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { setupPromptDismissed } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
 
   const showPrompt = selectShowRemoteSetupPrompt();
-  const activeConnection = selectActiveConnection();
+  const activeConnection = selectCurrentConnection();
 
   let dialogRef: HTMLDivElement | null = $state(null);
 

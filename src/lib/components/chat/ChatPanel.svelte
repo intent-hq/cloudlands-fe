@@ -51,9 +51,9 @@
     saveAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+    agentProposalResolveRequested,
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
-    agentSessionForkSessionRequested,
     agentSessionRegenerateFromMessageRequested,
     agentSessionRetryFromStalledRequested,
     agentSessionRetryLastMessageRequested,
@@ -71,6 +71,7 @@
     selectAgentMessages,
     selectAgentHistoryMessages,
     selectHistorySegmentMeta,
+    selectAgentTailCapPruned,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -110,6 +111,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    pendingProposalRecoveryPruned,
+    pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
     pendingQuestionRecoveryCleared,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -128,6 +131,7 @@
     selectFetchingOlderHistory,
     selectHistoryExhausted,
     selectHistorySeekUnsupported,
+    selectPendingProposalRecovery,
     selectPendingQuestionRecovery,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
@@ -175,6 +179,39 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
+  import ProposalTray, { trayBodyMaxHeight } from './proposals/ProposalTray.svelte';
+  import {
+    derivePendingProposalRecoveryState,
+    deriveTrayPendingProposals,
+    proposalTrayVisible,
+  } from './proposals/proposal-tray-gate';
+  import {
+    clearTrayDraft,
+    loadTrayCollapsed,
+    saveTrayCollapsed,
+  } from './proposals/proposal-tray-storage';
+  import {
+    classifyPendingProposalRefs,
+    type PendingProposalEntry,
+  } from './proposals/pending-proposals';
+  import { getProposalId } from './proposals/proposal-id';
+  import {
+    applySpecialistProposal,
+    undoSpecialistProposal,
+  } from './proposals/specialist-proposal-actions';
+  import {
+    applySettingsProposal,
+    undoSettingsProposal,
+  } from './proposals/settings-proposal-actions';
+  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
+  import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+  import type { ProposalActionDetail } from '$shared/types/proposal';
+  import {
+    initialWizardCollapsed,
+    saveWizardCollapsed,
+    wizardDraftKey,
+  } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -201,14 +238,14 @@
   import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
   import { faLock, faPaperclip, faSpinner, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { seekConversationToMessage } from '$lib/utils/open-message';
-  import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
@@ -258,6 +295,7 @@
     INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
     nextLazyMode,
+    USER_ROW_ESTIMATED_HEIGHT,
   } from './chat-turn-virtualization';
   import {
     EMPTY_TEMPORARY_TURN_MATERIALIZATION,
@@ -325,6 +363,8 @@
   } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
+  import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   const logger = createLogger('ChatPanel');
 
@@ -409,12 +449,19 @@
   // Scrollback history segment (older rows hydrated on demand) + paging state.
   const agentHistoryMessages$ = selectAgentHistoryMessages(agentIdStore);
   const historySegmentMeta$ = selectHistorySegmentMeta(agentIdStore);
+  // FE-owned latch: the client cap dropped live tail rows, so older rows
+  // exist even when the (stale) chat-init snapshot meta says otherwise.
+  const agentTailCapPruned$ = selectAgentTailCapPruned(agentIdStore);
   const fetchingOlderHistory$ = selectFetchingOlderHistory(agentIdStore);
   const fetchingGapFill$ = selectFetchingGapFill(agentIdStore);
   const fetchingHistorySeek$ = selectFetchingHistorySeek(agentIdStore);
   const historySeekUnsupported$ = selectHistorySeekUnsupported(agentIdStore);
   const historyExhausted$ = selectHistoryExhausted(agentIdStore);
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
+  const pendingProposalRecovery$ = selectPendingProposalRecovery(agentIdStore);
+  // Whole-map lifecycle readable: the tray derivation scans resolution
+  // statuses across all pending proposals at once.
+  const proposalLifecycleMap$ = selectProposalLifecycleMap();
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
@@ -638,16 +685,53 @@
   // hover hit-tests or land in the tab order (monorepo#2508).
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
+  const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
+  const activeAnimationFrames = new Set<number>();
+
+  function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
+    if (!isActive) return;
+    const timer = setTimeout(() => {
+      highlightRemovalTimers.delete(timer);
+      if (isActive && !isComponentDestroyed) element.classList.remove(className);
+    }, delayMs);
+    highlightRemovalTimers.add(timer);
+  }
+
+  function scheduleActiveAnimationFrame(callback: () => void) {
+    if (!isActive) return;
+    const frame = requestAnimationFrame(() => {
+      activeAnimationFrames.delete(frame);
+      if (isActive && !isComponentDestroyed) callback();
+    });
+    activeAnimationFrames.add(frame);
+  }
+
+  $effect(() => {
+    if (isActive) return;
+    for (const timer of highlightRemovalTimers) clearTimeout(timer);
+    highlightRemovalTimers.clear();
+    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
+    activeAnimationFrames.clear();
+  });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
   function flashLockConfirmation(): void {
+    if (!isActive) return;
     if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
     showLockConfirmation = true;
     lockConfirmationTimer = setTimeout(() => {
+      if (!isActive) return;
       showLockConfirmation = false;
       lockConfirmationTimer = null;
     }, LOCK_CONFIRMATION_DURATION_MS);
   }
+
+  $effect(() => {
+    if (isActive || lockConfirmationTimer === null) return;
+    clearTimeout(lockConfirmationTimer);
+    lockConfirmationTimer = null;
+    showLockConfirmation = false;
+  });
 
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
   let lazyTurnCacheScope = 'unbound';
@@ -742,7 +826,14 @@
   function handleFocusSetupTerminal() {
     const setupTerminal = selectWorkspaceSetupTerminal.select(appStore.state, workspace.id);
     if (setupTerminal) {
-      appStore.dispatch(openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }));
+      appStore.dispatch(
+        openTab(workspace.id, {
+          type: 'terminal',
+          title: m.layout_tabTypes_terminal_title(),
+          terminalId: setupTerminal.id,
+          closable: true,
+        }),
+      );
     }
   }
 
@@ -889,14 +980,40 @@
     );
   });
 
-  let questionWizardCollapsed = $state(false);
-  let questionWizardMessageId = $state<string | null>(null);
-  $effect(() => {
+  // Collapsed (Hide) state is host-owned and persisted per question set
+  // alongside the answer draft. A newly pending set starts from its persisted
+  // value when one exists; otherwise it auto-collapses when the composer
+  // holds in-flight user input (text or attachments) so the input textbox is
+  // never replaced mid-typing — Hide semantics only, nothing is dismissed.
+  // Resolved in a $derived (not a post-render $effect) so the very first
+  // render of a newly pending set already sees the collapsed value — an
+  // effect would run after the DOM update, transiently unmounting the
+  // composer (losing editor focus/selection/IME composition) before
+  // collapsing. The initial resolution is latched per messageId in a
+  // non-reactive cache so it is decided once per set; user toggles override
+  // it reactively.
+  let wizardCollapsedInitial: { messageId: string; collapsed: boolean } | null = null;
+  let questionWizardCollapsedOverride = $state<{ messageId: string; collapsed: boolean } | null>(
+    null,
+  );
+  const questionWizardCollapsed = $derived.by(() => {
     const id = pendingQuestions?.messageId ?? null;
-    if (id !== questionWizardMessageId) {
-      questionWizardMessageId = id;
-      questionWizardCollapsed = false;
+    if (id === null) return false;
+    if (questionWizardCollapsedOverride?.messageId === id) {
+      return questionWizardCollapsedOverride.collapsed;
     }
+    if (wizardCollapsedInitial?.messageId !== id) {
+      wizardCollapsedInitial = {
+        messageId: id,
+        collapsed: untrack(() =>
+          initialWizardCollapsed(
+            wizardDraftKey(agentId, id),
+            inputValue.trim() !== '' || contextItems.length > 0,
+          ),
+        ),
+      };
+    }
+    return wizardCollapsedInitial.collapsed;
   });
 
   // Queue entries the user should see: user-authored ones only. Daemon-origin
@@ -932,11 +1049,17 @@
   // `agent.dismissQuestions` — the daemon persists the marker (survives
   // reload) and releases the question hold. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  function handleQuestionWizardDismiss() {
+  // Returns the action promise so the wizard clears its stored draft only
+  // after the dismissal is confirmed (a failure keeps the draft).
+  async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    appStore.dispatch(
-      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    const action = agentSessionDismissQuestionsRequested(
+      agentId,
+      workspace.id,
+      pendingQuestions.messageId,
     );
+    appStore.dispatch(action);
+    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -961,6 +1084,169 @@
     );
     void performLocalSendCleanup({ followBottom: true });
   }
+
+  // ── Pending-proposal tray (composer slot) ────────────────────────────────
+  // Derived from the daemon's `pendingProposals` session metadata (PROTOCOL
+  // §5.5) intersected with transcript resource blocks + the targeted-recovery
+  // cache. Unlike the Q&A wizard there is NO turn-active gating: proposals
+  // hold no deliveries, so the tray stays visible/actionable while the agent
+  // runs later turns. The void reads keep the $derived reactive to every
+  // store input the shared helper re-reads from state.
+  const trayPendingProposals = $derived.by(() => {
+    void $agentSession$?.metadata?.pendingProposals;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    return deriveTrayPendingProposals(appStore.state, agentId, $agentMessages$);
+  });
+  const showProposalTray = $derived(
+    proposalTrayVisible({
+      hasPendingProposals: trayPendingProposals.length > 0,
+      hasPendingQuestions: !!pendingQuestions,
+      questionWizardCollapsed,
+    }),
+  );
+
+  // Targeted recovery for refs whose carrying message is not hydrated
+  // (mirrors the marked-question recovery): request each missing messageId
+  // once the transcript settles; prune cache entries for refs that left the
+  // metadata so resolved proposals do not pin stale recoveries.
+  const pendingProposalRecoveryRequests = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $agentSession$?.metadata?.pendingProposals;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    return derivePendingProposalRecoveryState(appStore.state, agentId);
+  });
+  $effect(() => {
+    if ($agentSession$?.id !== agentId) return;
+    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    const tracked = $pendingProposalRecovery$;
+    const keep = [...new Set(refs.map((ref) => ref.messageId))];
+    if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
+      appStore.dispatch(pendingProposalRecoveryPruned(agentId, keep));
+    }
+    if (refs.length === 0 || $transcriptHydration$ !== 'settled') return;
+    for (const request of pendingProposalRecoveryRequests) {
+      if (request.shouldRequest) {
+        appStore.dispatch(pendingProposalRecoveryRequested(agentId, request.messageId));
+      }
+    }
+  });
+
+  // Measured panel height driving the tray body's scroll cap, so a tall
+  // proposal card in a short/narrow panel (the Chief sidebar) scrolls
+  // internally instead of pushing the composer out of reach.
+  let panelClientHeight = $state(0);
+
+  // Hide state is host-owned and persisted per agent, like the wizard's
+  // collapse flag; the initial value restores from storage (untracked so the
+  // load never re-runs on unrelated state flips).
+  let proposalTrayCollapsedOverride = $state<{ agentId: string; collapsed: boolean } | null>(null);
+  const proposalTrayCollapsed = $derived.by(() => {
+    if (proposalTrayCollapsedOverride?.agentId === agentId) {
+      return proposalTrayCollapsedOverride.collapsed;
+    }
+    return untrack(() => loadTrayCollapsed(agentId)) ?? false;
+  });
+
+  // Apply routing: workspace-create/bulk-op go through the
+  // workspace-operations saga, specialist edits through the specialist
+  // actions, everything else through the settings actions. Lifecycle success
+  // is bridged to the daemon resolution below.
+  function handleProposalTrayApply(detail: ProposalActionDetail) {
+    const { proposal } = detail;
+    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal,
+          editedFields: detail.editedFields,
+          selectedBulkItemIds: detail.selectedBulkItemIds,
+        }),
+      );
+      return;
+    }
+    if (applySpecialistProposal(detail)) return;
+    applySettingsProposal(detail);
+  }
+
+  function handleProposalTrayUndo(proposalId: string) {
+    if (undoSpecialistProposal(proposalId)) return;
+    undoSettingsProposal(proposalId);
+  }
+
+  // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
+  // The wire ack reconciles lifecycle (the saga dispatches
+  // proposalResolutionReconciled), which retires the entry from the gate; a
+  // failure (middleware toasts) rethrows so the tray keeps the entry pending.
+  async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
+    if (!workspace) return;
+    proposalResolveSent.add(entry.proposalId);
+    const action = agentProposalResolveRequested(agentId, workspace.id, {
+      proposalId: entry.proposalId,
+      outcome: 'dismissed',
+    });
+    appStore.dispatch(action);
+    try {
+      await action.promise;
+      clearTrayDraft(agentId, entry.proposalId);
+    } catch (error) {
+      proposalResolveSent.delete(entry.proposalId);
+      throw error;
+    }
+  }
+
+  // Apply→resolve bridge. Applies key lifecycle under
+  // `getProposalId(proposal)` — which can differ from the daemon's metadata
+  // ref key — and the gate retires an entry the instant its lifecycle turns
+  // 'applied', so the bridge works off a captured ref→local identity
+  // map rather than the filtered entries. Any still-pending metadata ref
+  // whose lifecycle shows 'applied' under either identity gets ONE
+  // resolve(applied) (daemon resolution is idempotent; first outcome wins).
+  const trayProposalIdentities = new Map<string, string>();
+  const proposalResolveSent = new Set<string>();
+  $effect(() => {
+    for (const entry of trayPendingProposals) {
+      trayProposalIdentities.set(entry.proposalId, getProposalId(entry.proposal));
+    }
+  });
+  $effect(() => {
+    const wsId = workspace?.id;
+    if (!wsId || $agentSession$?.id !== agentId) return;
+    const lifecycle = $proposalLifecycleMap$ ?? {};
+    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    for (const ref of refs) {
+      if (proposalResolveSent.has(ref.proposalId)) continue;
+      const localId = trayProposalIdentities.get(ref.proposalId);
+      const scopedEntry = lifecycle[agentScopedProposalKey(agentId, ref.proposalId)];
+      const localEntry = localId !== undefined ? lifecycle[localId] : undefined;
+      const appliedEntry =
+        scopedEntry?.status === 'applied'
+          ? scopedEntry
+          : localEntry?.status === 'applied'
+            ? localEntry
+            : undefined;
+      if (!appliedEntry) continue;
+      proposalResolveSent.add(ref.proposalId);
+      clearTrayDraft(agentId, ref.proposalId);
+      // Workspace-create applies carry the created workspace id in the
+      // lifecycle result; forward it as the resolution detail so the
+      // daemon's applied notice gives the model the created-workspace
+      // context (PROTOCOL §5.5).
+      const createdWorkspaceId = appliedEntry.result?.workspaceId;
+      // i18n-ignore (wire detail appended to the model notice, not UI copy)
+      const detail = createdWorkspaceId ? `Created workspace ${createdWorkspaceId}.` : undefined;
+      const action = agentProposalResolveRequested(agentId, wsId, {
+        proposalId: ref.proposalId,
+        outcome: 'applied',
+        ...(detail ? { detail } : {}),
+      });
+      appStore.dispatch(action);
+      // A wire failure (middleware toasts) drops the sent mark so a later
+      // pass retries the resolution — mirrors the dismiss path.
+      action.promise.catch(() => proposalResolveSent.delete(ref.proposalId));
+    }
+  });
 
   // Search state
   let showSearch = $state(false);
@@ -1102,6 +1388,7 @@
     keepMessageId: string | undefined,
     keep: ReadonlySet<string>,
   ) {
+    if (!isActive) return;
     if (!container) return;
     const remaining: Array<{ messageId: string; disclosureId: string }> = [];
     for (const opened of [...searchOpenedDisclosures].reverse()) {
@@ -1117,6 +1404,7 @@
       );
       if (disclosure) requestSearchDisclosure(disclosure, false);
       await tick();
+      if (!isActive) return;
     }
     searchOpenedDisclosures = remaining;
   }
@@ -1125,9 +1413,10 @@
     match: ChatSearchMatch | undefined,
     container: HTMLDivElement | undefined,
   ) {
+    if (!isActive) return;
     const required = new Set(match?.disclosurePath ?? []);
     await restoreSearchDisclosures(container, match?.messageId, required);
-    if (!match || !container) return;
+    if (!isActive || !match || !container) return;
     const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
     if (!message) return;
     for (const id of match.disclosurePath) {
@@ -1145,13 +1434,16 @@
           searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
         }
         await tick();
+        if (!isActive) return;
         await new Promise(requestAnimationFrame);
+        if (!isActive) return;
       }
     }
   }
 
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
+    if (!isActive) return;
     const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
@@ -1159,12 +1451,13 @@
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
     await tick();
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     await revealSearchMatch(isShowing ? matches[index] : undefined, container);
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     await tick();
+    if (!isActive) return;
     await new Promise(requestAnimationFrame);
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
@@ -1345,6 +1638,7 @@
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
   function handleSearchInput() {
+    if (!isActive) return;
     currentSearchIndex = 0;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
@@ -1356,6 +1650,7 @@
       return;
     }
     searchDebounceTimer = setTimeout(() => {
+      if (!isActive) return;
       searchDebounceTimer = null;
       debouncedSearchQuery = searchQuery;
       triggerHighlight();
@@ -1363,6 +1658,7 @@
   }
 
   function openSearchFromSelection() {
+    if (!isActive) return;
     const selectedText = getSelectedTextWithinSurface(panelElement);
 
     if (selectedText) {
@@ -1377,11 +1673,19 @@
 
     showSearch = true;
     tick().then(() => {
+      if (!isActive) return;
       searchInputRef?.focus();
       searchInputRef?.select();
       if (selectedText) triggerHighlight();
     });
   }
+
+  $effect(() => {
+    if (isActive) return;
+    searchHighlightRequest += 1;
+    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  });
 
   // Context items for the input
   let contextItems = $state<ContextItem[]>([]);
@@ -1458,6 +1762,7 @@
   // it as the synchronous same-process remount cache.
   const draftManager = createChatDraftManager({
     drafts: appClient.drafts,
+    active: () => isActive,
     workspaceId: () => workspace?.id,
     agentId: () => agentId,
     inputValue: () => inputValue,
@@ -1675,6 +1980,7 @@
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
   // Editors dispatch 'editor:selection-change' custom events which we sync to Redux
   $effect(() => {
+    if (!isActive) return;
     const handleSelectionChange = (
       event: CustomEvent<{ text: string; file?: string; language?: string; source: string }>,
     ) => {
@@ -1823,7 +2129,7 @@
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
       tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
     }),
   );
@@ -1834,7 +2140,7 @@
 
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
-    if (!container || !workspace?.id || !agentId) return;
+    if (!isActive || !container || !workspace?.id || !agentId) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
     if ($fetchingHistorySeek$ || seekLandingPending) return;
@@ -1846,7 +2152,7 @@
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
       tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
       // Any viewport position inside the virtual spacer (reached by dragging
       // the scrollbar thumb up) drives the same older-history walk.
@@ -1987,7 +2293,7 @@
    * row). Returns true when the segment was dropped.
    */
   function maybeCollapseHistorySegmentAtTail(): boolean {
-    if (!workspace?.id || !agentId) return false;
+    if (!isActive || !workspace?.id || !agentId) return false;
     if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
     if ($fetchingHistorySeek$ || seekLandingPending) return false;
     if (!viewportFullyBelowOpenHole()) return false;
@@ -2008,9 +2314,11 @@
   // the settled scrollTop, so intermediate drag positions never fire.
   function armSeekDebounce() {
     cancelSeekDebounce();
+    if (!isActive) return;
     seekDebounceTimer = setTimeout(() => {
       seekDebounceTimer = null;
-      if (isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId)
+        return;
       if ($fetchingHistorySeek$ || seekLandingPending) return;
       // Racing serial fetch: let it settle, the settle chain re-classifies.
       if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
@@ -2041,11 +2349,15 @@
   let wasFetchingHistorySeek = false;
   $effect(() => {
     const fetching = $fetchingHistorySeek$;
+    if (!isActive) {
+      wasFetchingHistorySeek = fetching;
+      return;
+    }
     const settled = wasFetchingHistorySeek && !fetching;
     wasFetchingHistorySeek = fetching;
     if (!settled) return;
     tick().then(() => {
-      if (isComponentDestroyed || !scrollContainer) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer) return;
       // Discard raced this settle: the dispatch that cleared
       // fetchingHistorySeek was a resumed:false reset, not a landing. The
       // discard effect below owns the viewport (followToBottom on this
@@ -2070,7 +2382,7 @@
       virtualSpacerHeight = above;
       virtualSpacerBelowHeight = below;
       tick().then(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         scrollContainer.scrollTop = Math.max(
           0,
           Math.round(
@@ -2134,7 +2446,7 @@
       shouldFollowBottom = true;
       tick().then(() => {
         discardReanchorPending = false;
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         followToBottom(scrollContainer);
       });
     });
@@ -2182,14 +2494,19 @@
 
   function scheduleSpacerReconcile() {
     if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
+    if (!isActive) {
+      spacerReconcileTimer = null;
+      return;
+    }
     spacerReconcileTimer = setTimeout(() => {
       spacerReconcileTimer = null;
+      if (!isActive) return;
       runSpacerReconcile(false);
     }, SPACER_QUIET_MS);
   }
 
   function runSpacerReconcile(force: boolean) {
-    if (isComponentDestroyed) return;
+    if (!isActive || isComponentDestroyed) return;
     const container = scrollContainer;
     if (!container) return;
     // A seek in flight / landing owns the spacers — its settle handler sizes
@@ -2265,7 +2582,7 @@
     if (belowResult.applied) virtualSpacerBelowHeight = belowResult.spacerHeight;
     if (compensation === 0) return;
     tick().then(() => {
-      if (isComponentDestroyed || !scrollContainer) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer) return;
       scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
     });
   }
@@ -2275,6 +2592,7 @@
   // no hysteresis). The spacer state itself is never a dep — the effect
   // only re-arms off external inputs.
   $effect(() => {
+    if (!isActive) return;
     void ($agentHistoryMessages$.length + $agentMessages$.length);
     void $transcriptSnapshotMeta$?.totalMessages;
     const exhausted = $historyExhausted$;
@@ -2321,6 +2639,7 @@
     restatedHistoryLength = historyLength;
     restatedHistoryFirstId = firstId;
     restatedHistoryLastId = lastId;
+    if (!isActive) return;
     const container = untrack(() => scrollContainer);
     if (isFirstRun || !container) return;
     untrack(() => {
@@ -2357,14 +2676,20 @@
       virtualSpacerBelowHeight = restated.below;
       if (compensation === 0) return;
       tick().then(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
   });
 
-  // Clear the reconcile + seek debounce timers on destroy.
+  // Clear deferred viewport work on deactivate as well as destroy.
   $effect(() => {
+    if (isActive) return;
+    if (spacerReconcileTimer !== null) {
+      clearTimeout(spacerReconcileTimer);
+      spacerReconcileTimer = null;
+    }
+    cancelSeekDebounce();
     return () => {
       if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
       cancelSeekDebounce();
@@ -2379,7 +2704,7 @@
   // load every intermediate page on the way to a far target.
   $effect(() => {
     const container = scrollContainer;
-    if (!container) return;
+    if (!isActive || !container) return;
     const onScroll = () => {
       lastScrollActivityAt = performance.now();
       scheduleSpacerReconcile();
@@ -2416,6 +2741,7 @@
   let olderHistoryIndicatorHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   function syncOlderHistoryIndicator(fetching: boolean) {
+    if (!isActive) return;
     const action = olderHistoryIndicatorAction({
       fetching,
       chainEvaluationPending: olderHistoryChainEvaluationPending,
@@ -2431,7 +2757,7 @@
     } else if (action === 'arm-hide') {
       olderHistoryIndicatorHideTimer = setTimeout(() => {
         olderHistoryIndicatorHideTimer = null;
-        if (isComponentDestroyed) return;
+        if (!isActive || isComponentDestroyed) return;
         olderHistoryIndicatorVisible = false;
       }, OLDER_HISTORY_INDICATOR_QUIET_MS);
     }
@@ -2455,8 +2781,9 @@
     wasFetchingOlderHistory = false;
   }
 
-  // Clear the indicator hide timer on destroy.
+  // Clear the indicator hide timer on deactivate and destroy.
   $effect(() => {
+    if (!isActive) untrack(resetOlderHistoryIndicator);
     return () => {
       if (olderHistoryIndicatorHideTimer !== null) clearTimeout(olderHistoryIndicatorHideTimer);
     };
@@ -2475,6 +2802,11 @@
   let wasFetchingOlderHistory = false;
   $effect(() => {
     const fetching = $fetchingOlderHistory$;
+    if (!isActive) {
+      wasFetchingOlderHistory = fetching;
+      olderHistoryChainEvaluationPending = false;
+      return;
+    }
     const settled = wasFetchingOlderHistory && !fetching;
     wasFetchingOlderHistory = fetching;
     // The pending flag is raised BEFORE the indicator sync so the settle
@@ -2486,7 +2818,7 @@
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           olderHistoryChainEvaluationPending = false;
-          if (isComponentDestroyed) return;
+          if (!isActive || isComponentDestroyed) return;
           if (scrollContainer) maybeRequestOlderHistory();
           // The saga raises the fetching flag synchronously on dispatch, so
           // this read distinguishes "chain continued" (stay visible) from
@@ -2498,7 +2830,7 @@
   });
 
   function requestHistoryGapFill() {
-    if (!workspace?.id || !agentId) return;
+    if (!isActive || !workspace?.id || !agentId) return;
     if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
@@ -2519,13 +2851,17 @@
   let wasFetchingGapFill = false;
   $effect(() => {
     const fetching = $fetchingGapFill$;
+    if (!isActive) {
+      wasFetchingGapFill = fetching;
+      return;
+    }
     const settled = wasFetchingGapFill && !fetching;
     wasFetchingGapFill = fetching;
     if (!settled) return;
     tick().then(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
+          if (!isActive || isComponentDestroyed || !scrollContainer) return;
           if (maybeCollapseHistorySegmentAtTail()) return;
           if (viewportOverlapsBelowSpacer()) requestHistoryGapFill();
         });
@@ -2539,7 +2875,7 @@
   $effect(() => {
     const sentinel = historyGapSentinel;
     const root = scrollContainer;
-    if (!sentinel || !root) return;
+    if (!isActive || !sentinel || !root) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) requestHistoryGapFill();
@@ -2558,6 +2894,10 @@
   let anchoredHistoryLength = -1;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
+    if (!isActive) {
+      anchoredHistoryLength = historyLength;
+      return;
+    }
     if (historyLength === anchoredHistoryLength) return;
     const isFirstRun = anchoredHistoryLength === -1;
     anchoredHistoryLength = historyLength;
@@ -2570,7 +2910,7 @@
     const anchor = captureScrollAnchor(container);
     tick().then(() => {
       requestAnimationFrame(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         restoreScrollAnchor(scrollContainer, anchor);
       });
     });
@@ -2626,18 +2966,34 @@
   const CACHED_SCROLL_RESTORE_MAX_ATTEMPTS = 60;
   let cachedScrollRestoreAttempts = 0;
   let cachedScrollRestoreRetryFrame: number | null = null;
+  $effect(() => {
+    if (isActive) {
+      if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore)
+        scheduleCachedScrollRestoreRetry();
+      return;
+    }
+    if (cachedScrollRestoreRetryFrame !== null) {
+      cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+      cachedScrollRestoreRetryFrame = null;
+    }
+    return () => {
+      if (cachedScrollRestoreRetryFrame !== null)
+        cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+    };
+  });
   function scheduleCachedScrollRestoreRetry() {
-    if (cachedScrollRestoreRetryFrame !== null) return;
+    if (!isActive || cachedScrollRestoreRetryFrame !== null) return;
     cachedScrollRestoreRetryFrame = requestAnimationFrame(() => {
       cachedScrollRestoreRetryFrame = null;
-      if (isComponentDestroyed) return;
+      if (!isActive || isComponentDestroyed) return;
       applyCachedScrollRestore();
     });
   }
   // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
-    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return false;
+    if (!isActive || cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore)
+      return false;
     // Not consumed until the container is bound, so a premature call cannot
     // silently drop the cached position.
     if (!scrollContainer) return false;
@@ -2685,7 +3041,7 @@
   // scroll intents.
   $effect(() => {
     const container = scrollContainer;
-    if (!container) return;
+    if (!isActive || !container) return;
     const cancel = () => cancelPendingCachedScrollRestore();
     const onPointerDown = (event: PointerEvent) => {
       if (event.target === container && event.offsetX >= container.clientWidth) {
@@ -2915,10 +3271,13 @@
   let autoCommitStatuses = $state<CommitStatus[]>([]);
 
   function refreshAutoCommitStatuses() {
-    if (!agentId) return;
-    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', { agentId })
+    const requestedAgentId = agentId;
+    if (!isActive || !requestedAgentId) return;
+    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', {
+      agentId: requestedAgentId,
+    })
       .then((response) => {
-        if (response?.success && response.data) {
+        if (isActive && requestedAgentId === agentId && response?.success && response.data) {
           autoCommitStatuses = response.data;
         }
       })
@@ -2930,11 +3289,13 @@
   // Fetch on mount / when agentId changes
   $effect(() => {
     void agentId;
+    if (!isActive) return;
     refreshAutoCommitStatuses();
   });
 
   // Listen for real-time auto-commit events (3 listeners total, not per-turn)
   $effect(() => {
+    if (!isActive) return;
     const cleanupStarted = listenSync<{ agentId: string }>('git:auto-commit-started', (event) => {
       const data = event.payload || event;
       if (data.agentId === agentId) refreshAutoCommitStatuses();
@@ -2991,15 +3352,6 @@
 
   // Initialize chat on mount
   onMount(() => {
-    // Interest lease (intent-hq/monorepo#3295): acquired SYNCHRONOUSLY at the
-    // top of mount, BEFORE chatTrackedWorkspaceSet/initializeChatRequested are
-    // dispatched, so the lease exists before a sibling panel's
-    // markAgentAsViewed sweep can run in either redux flush ordering.
-    // Released in onDestroy.
-    if (agentId && !agentId.startsWith('terminal-')) {
-      acquireChatInterestLease(agentId, instanceId);
-    }
-
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3075,6 +3427,7 @@
     // Empty chats start at the top and unlock until the first send. Non-empty
     // chats are positioned by the follow action itself.
     const initialScrollFrame = requestAnimationFrame(() => {
+      if (!isActive) return;
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
           if (cachedScrollRestoreTop !== null) {
@@ -3097,6 +3450,13 @@
     return () => cancelAnimationFrame(initialScrollFrame);
   });
 
+  $effect(() => {
+    const interestedAgentId = agentId;
+    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
+    acquireChatInterestLease(interestedAgentId, instanceId);
+    return () => releaseChatInterestLease(interestedAgentId, instanceId);
+  });
+
   // ── Auto-focus on mount (used by Chief of Staff) ──
   function isEditableElement(element: Element | null): boolean {
     if (!element) return false;
@@ -3116,6 +3476,7 @@
 
     const autoFocusTimer = setTimeout(async () => {
       await tick();
+      if (!isActive) return;
       if (shouldSkipPromptAutoFocus()) return;
       focusPrompt();
     }, 100);
@@ -3204,7 +3565,7 @@
     block: 'start' | 'center' | 'end' = 'center',
     duration: number = 150,
   ) {
-    if (!scrollContainer) return;
+    if (!isActive || !scrollContainer) return;
 
     const containerRect = scrollContainer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
@@ -3231,14 +3592,15 @@
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
-    animateScrollTo(() => scrollContainer, targetScrollTop, duration);
+    animateScrollTo(() => (isActive ? scrollContainer : null), targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with 150ms animation.
    */
   function smoothScrollToPosition(top: number, duration: number = 150) {
-    animateScrollTo(() => scrollContainer, top, duration);
+    if (!isActive) return;
+    animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
 
   // Navigate to a specific message by index
@@ -3314,7 +3676,7 @@
 
   // Set up message navigation listener
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     window.addEventListener('navigate-message', handleNavigateMessage);
 
@@ -3325,7 +3687,7 @@
 
   // Listen for scroll-to-turn events (from agent attribution badges)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToTurn = (event: Event) => {
       const { agentId: targetAgentId, turnNumber } = (event as CustomEvent).detail || {};
@@ -3344,9 +3706,7 @@
         smoothScrollTo(messageElement, 'center');
         // Add highlight effect
         messageElement.classList.add('highlight-flash');
-        setTimeout(() => {
-          messageElement.classList.remove('highlight-flash');
-        }, 1500);
+        scheduleHighlightRemoval(messageElement, 'highlight-flash', 1500);
       } else {
         logger.warn('[ChatPanel] Could not find message for turn', { turnNumber });
       }
@@ -3361,7 +3721,7 @@
 
   // Activity items open the agent and request the most precise matching chat location.
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToActivity = (event: Event) => {
       const {
@@ -3386,7 +3746,7 @@
       if (targetElement instanceof HTMLElement) {
         smoothScrollTo(targetElement, 'center');
         targetElement.classList.add('highlight-flash');
-        setTimeout(() => targetElement.classList.remove('highlight-flash'), 1500);
+        scheduleHighlightRemoval(targetElement, 'highlight-flash', 1500);
       }
     };
 
@@ -3396,7 +3756,7 @@
 
   // Listen for scroll-to-subscription events (from AgentSubscriptions component)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToSubscription = (event: Event) => {
       const { agentId: targetAgentId } = (event as CustomEvent).detail || {};
@@ -3434,9 +3794,7 @@
             smoothScrollTo(messageElement, 'center');
             // Add highlight effect
             messageElement.classList.add('highlight-flash');
-            setTimeout(() => {
-              messageElement.classList.remove('highlight-flash');
-            }, 1500);
+            scheduleHighlightRemoval(messageElement, 'highlight-flash', 1500);
             logger.info('[ChatPanel] Scrolled to subscription message', { messageId: message.id });
             return;
           }
@@ -3483,17 +3841,18 @@
   }
 
   // The controller order is the composed history + live-tail chronology, not
-  // turn position. Users remain eagerly rendered; assistant rows register with
-  // the shared observer and follow the asymmetric displayport frontier.
+  // turn position. User and assistant rows both register with the shared
+  // observer and follow the asymmetric displayport frontier; user rows never
+  // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
     const messages = hydrationMessages;
+    messageHydrationPolicy.setActive(isActive);
+    if (!isActive) return;
     messageHydrationPolicy.updateMessages(messages);
     for (const message of messages) {
       messageHydrationPolicy.setForced(message.id, isMessageForceVisible(message.id));
     }
-    lazyTurnHeightCache.retain(
-      messages.filter((message) => message.role === 'assistant').map((message) => message.id),
-    );
+    lazyTurnHeightCache.retain(messages.map((message) => message.id));
     syncHydratedMessageIds();
   });
 
@@ -3505,23 +3864,39 @@
 
   function scheduleDeepOpenRelease(turnKey = deepOpenTurnKey) {
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    if (!isActive) {
+      deepOpenReleaseTimer = null;
+      return;
+    }
     deepOpenReleaseTimer = setTimeout(() => {
+      if (!isActive) return;
       if (deepOpenTurnKey === turnKey) deepOpenTurnKey = null;
       deepOpenReleaseTimer = null;
     }, 200);
   }
+
+  $effect(() => {
+    if (isActive) return;
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = null;
+    deepOpenTurnKey = null;
+    untrack(() => clearDeepOpenHighlight?.());
+  });
 
   // Force-render a message's turn through the LazyTurn virtualization (reuses
   // the deep-open force-visible key) and resolve its DOM element once rendered.
   // Drops follow so the placeholder expanding doesn't yank the viewport back
   // down. Retries across a few frames; resolves null if it never appears.
   async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
+    if (!isActive) return null;
     deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
     shouldFollowBottom = false;
     await tick();
+    if (!isActive) return null;
     const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
     for (let attempt = 0; attempt < 5; attempt++) {
       await new Promise(requestAnimationFrame);
+      if (!isActive) return null;
       const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
       if (targetElement) return targetElement;
     }
@@ -3542,7 +3917,7 @@
   // renders.
   async function scrollToNewMessagesDivider(anchorMessageId: string) {
     const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
-    if (isComponentDestroyed || !scrollContainer) return;
+    if (!isActive || isComponentDestroyed || !scrollContainer) return;
     const dividerElement = scrollContainer.querySelector(
       '[data-new-messages-divider]',
     ) as HTMLElement | null;
@@ -3611,10 +3986,15 @@
     clearDeepOpenHighlight = clear;
   }
 
+  $effect(() => {
+    if (isActive) return;
+    untrack(() => clearDeepOpenHighlight?.());
+  });
+
   async function handleOpenMessage(event: Event) {
     const detail = (event as CustomEvent).detail as
       { agentId: string; messageId: string; query?: string; requestId: string } | undefined;
-    if (!detail || detail.agentId !== agentId) return;
+    if (!isActive || !detail || detail.agentId !== agentId) return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
     if (handledOpenMessageRequestIds.has(detail.requestId)) return;
@@ -3624,7 +4004,9 @@
     deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
     shouldFollowBottom = false;
     await tick();
-    requestAnimationFrame(() => {
+    if (!isActive) return;
+    scheduleActiveAnimationFrame(() => {
+      if (!isActive) return;
       const targetElement = scrollContainer?.querySelector(
         `[data-message-id="${CSS.escape(detail.messageId)}"]`,
       ) as HTMLElement | null;
@@ -3640,13 +4022,13 @@
       smoothScrollTo(targetElement, 'center');
       scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
-      setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+      scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
     });
   }
 
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const listener = (event: Event) => void handleOpenMessage(event);
     window.addEventListener('chat:open-message', listener);
@@ -3660,7 +4042,7 @@
 
   // Listen for panel:focus-content events (from panel keyboard navigation)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handlePanelFocusContent = (event: Event) => {
       const detail = (event as CustomEvent<ChatFocusRequest>).detail;
@@ -3711,7 +4093,8 @@
   }
 
   // Track container height for compact mode using ResizeObserver
-  onMount(() => {
+  $effect(() => {
+    if (!isActive) return;
     let destroyed = false;
     let readinessFrame: number | null = null;
     let observer: ResizeObserver | null = null;
@@ -3732,6 +4115,8 @@
             }
           } else if (entry.target === composerElement) {
             composerHeight = entry.contentRect.height;
+          } else if (entry.target === panelElement) {
+            panelClientHeight = entry.contentRect.height;
           }
         }
         if (scrollContainer) {
@@ -3743,6 +4128,9 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
+      // The panel root's height is layout-fixed (h-full), so observing it
+      // creates no feedback loop with the tray's capped body height.
+      if (panelElement) observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -3786,10 +4174,26 @@
   let draftPromptApplied = $state(false);
   // Flash the input to draw attention when draft prompt is applied
   let showInputFlash = $state(false);
+  let draftPromptApplyTimer: ReturnType<typeof setTimeout> | null = null;
+  let draftPromptFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function cancelDraftPromptTimers() {
+    if (draftPromptApplyTimer !== null) clearTimeout(draftPromptApplyTimer);
+    if (draftPromptFlashTimer !== null) clearTimeout(draftPromptFlashTimer);
+    draftPromptApplyTimer = null;
+    draftPromptFlashTimer = null;
+    showInputFlash = false;
+  }
+
+  $effect(() => {
+    void isActive;
+    if (!isActive) cancelDraftPromptTimers();
+    return cancelDraftPromptTimers;
+  });
 
   // Handle draft prompt - pre-fill the input without sending
   $effect(() => {
-    if (!draftPrompt || draftPromptApplied) return;
+    if (!isActive || !draftPrompt || draftPromptApplied || draftPromptApplyTimer !== null) return;
     if (!$agentSession$) return; // Wait for session to be ready
 
     // Pre-fill the input
@@ -3799,16 +4203,20 @@
     });
 
     // Use a small delay to ensure the input component is ready
-    setTimeout(async () => {
+    draftPromptApplyTimer = setTimeout(async () => {
+      draftPromptApplyTimer = null;
+      if (!isActive) return;
       inputValue = draftPrompt;
       await inputComponent?.setContent?.(draftPrompt);
+      if (!isActive) return;
       inputComponent?.focus?.();
       draftPromptApplied = true;
 
       // Trigger subtle flash animation
       showInputFlash = true;
-      setTimeout(() => {
-        showInputFlash = false;
+      draftPromptFlashTimer = setTimeout(() => {
+        draftPromptFlashTimer = null;
+        if (isActive) showInputFlash = false;
       }, 600);
     }, 100);
   });
@@ -3853,12 +4261,6 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
-    // Release this instance's interest lease (intent-hq/monorepo#3295) before
-    // any destroy-path dispatch, so the trailing scoped clear is not spared by
-    // the dying panel's own lease.
-    if (agentId && !agentId.startsWith('terminal-')) {
-      releaseChatInterestLease(agentId, instanceId);
-    }
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
@@ -3868,6 +4270,10 @@
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
     }
+    for (const timer of highlightRemovalTimers) clearTimeout(timer);
+    highlightRemovalTimers.clear();
+    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
+    activeAnimationFrames.clear();
 
     // Cache the transcript scroll state so a remount restores the user's
     // reading position instead of re-entering at the bottom. Guarded
@@ -4460,16 +4866,6 @@
     );
   }
 
-  // Handle forking the conversation from a specific message
-  function handleForkFromMessage(messageId: string) {
-    if (!workspace) return;
-    appStore.dispatch(
-      agentSessionForkSessionRequested(agentId, workspace.id, {
-        forkFromMessageId: messageId,
-      }),
-    );
-  }
-
   // Handle selecting a suggested prompt - sends immediately
   function handleSelectSuggestedPrompt(prompt: string) {
     handleSend(prompt);
@@ -4477,13 +4873,16 @@
 
   // Handle editing a suggested prompt - loads into input without sending
   async function handleEditSuggestedPrompt(prompt: string) {
+    if (!isActive) return;
     inputValue = prompt;
     await inputComponent?.setContent?.(prompt);
+    if (!isActive) return;
     inputComponent?.focus?.();
   }
 
   // Export functions for parent components
   export function focusPrompt(): boolean {
+    if (!isActive) return false;
     const result = inputComponent?.focus?.() ?? false;
     if (result && typeof result === 'boolean') {
       onFocus?.();
@@ -4493,10 +4892,12 @@
   }
 
   export function scrollToTop() {
+    if (!isActive) return;
     smoothScrollToPosition(0);
   }
 
   export function scrollToBottom() {
+    if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -4506,11 +4907,11 @@
     }
     shouldFollowBottom = false;
     animateScrollTo(
-      () => (scrollContainer === container ? container : null),
+      () => (isActive && scrollContainer === container ? container : null),
       Math.max(0, container.scrollHeight - container.clientHeight),
       150,
       () => {
-        if (scrollContainer !== container) return;
+        if (!isActive || scrollContainer !== container) return;
         shouldFollowBottom = true;
         followToBottom(container);
       },
@@ -4518,6 +4919,7 @@
   }
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
+    if (!isActive) return false;
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
@@ -4529,11 +4931,11 @@
       if (!(await seekConversationToMessage(agentId, messageId))) return false;
     }
     const targetElement = await forceRenderAndFindMessage(messageId);
-    if (!targetElement) return false;
+    if (!isActive || !targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
     smoothScrollTo(targetElement, 'start');
     targetElement.classList.add('message-highlight-flash');
-    setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+    scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
     scheduleDeepOpenRelease();
     return true;
   }
@@ -4545,11 +4947,13 @@
    * Other failures keep the cached index (or tail-only) silently.
    */
   export function refreshUserMessageIndex(): void {
-    if (userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId) return;
+    if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
+      return;
     userMessageIndexFetchInFlight = true;
     void appClient.agents
       .listUserMessages(agentId)
       .then((result) => {
+        if (!isActive) return;
         if (result.ok) {
           userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
         } else if (result.unsupported) {
@@ -4568,6 +4972,14 @@
   }
 
   export function getNavigationState() {
+    if (!isActive) {
+      return {
+        userMessageCount: $agentMessages$.filter((message) => message.role === 'user').length,
+        currentMessageIndex: -1,
+        isAtTop: false,
+        isAtBottom: false,
+      };
+    }
     const userMessages = $agentMessages$.filter((m) => m.role === 'user');
     return {
       userMessageCount: userMessages.length,
@@ -4606,7 +5018,7 @@
 
   // Listen for resend message event (Alt+Enter keyboard shortcut)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleResendEvent = () => {
       handleResendLastMessage();
@@ -4622,6 +5034,26 @@
 
 <svelte:window
   onkeydown={(e) => {
+    if (!isActive) return;
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (
+      isPanelFocused &&
+      !isFocusInEditableElement(e.target as Element | null) &&
+      matchesShortcut(e, getEffectiveShortcut('chat.focus-input'), isMac)
+    ) {
+      e.preventDefault();
+      focusPrompt();
+      return;
+    }
+    if (
+      isPanelFocused &&
+      $agentSessionIsStreaming$ &&
+      matchesShortcut(e, getEffectiveShortcut('chat.stop'), isMac)
+    ) {
+      e.preventDefault();
+      handleStop();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
@@ -4766,10 +5198,11 @@
     <div
       bind:this={scrollContainer}
       use:trackPinnedPrompt={{
-        enabled: containerHeight >= 400,
+        enabled: isActive && containerHeight >= 400,
         onChange: setPinnedPrompt,
       }}
       use:followBottom={{
+        enabled: isActive,
         // While search is open we drive our own programmatic scrolls (to the
         // current match), so we drop `follow` to keep the mutation/resize
         // observers from yanking the viewport to the bottom when a LazyTurn
@@ -4965,6 +5398,7 @@
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
+                        isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
                       />
                     </div>
@@ -5074,6 +5508,7 @@
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
+                        isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
                       />
                     </div>
@@ -5320,6 +5755,18 @@
                        structured attention-to-answer flow has its own rhythm. -->
                   {@const batchedDeliveryTurnSeam =
                     !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
+                  <!-- Seam BEFORE this turn: the same batch test against the
+                       previous rendered turn (crossing group boundaries like
+                       nextTurn). When true, the preceding h-2 gap owns the
+                       seam and this turn's rows drop their own top margins. -->
+                  {@const prevTurn =
+                    turns[turnIndex - 1] ??
+                    conversationTurnIndex.groups[groupIndex - 1]?.turns.at(-1)}
+                  {@const batchedSeamBefore = Boolean(
+                    prevTurn &&
+                    !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
+                    isBatchedDeliverySeam(prevTurn, turn),
+                  )}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -5370,6 +5817,7 @@
                           {messageText}
                           asDivider={true}
                           compact={isCompactMode}
+                          suppressTopGap={batchedSeamBefore}
                           showAgentCards={!isDelegatedBackgroundTaskAgent}
                           {workspace}
                         />
@@ -5381,6 +5829,12 @@
                     {#if turn.userMessage && !isEventNotification}
                       {@const message = turn.userMessage}
                       {@const globalIndex = getMessageIndex(message.id)}
+                      <!-- Outer div stays always mounted: it carries the nav/
+                           pinned-prompt/send-transition anchors (data attributes
+                           and geometry) that scroll restoration and the pinned
+                           prompt overlay query even while the row's content is a
+                           virtualized placeholder. Only the inner ChatMessage
+                           goes through LazyTurn. -->
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
@@ -5389,31 +5843,45 @@
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-5={isAutomatedMessage(message)}
-                        class:mb-7={!isAutomatedMessage(message)}
+                        class:mb-0={batchedDeliveryTurnSeam}
+                        class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}
+                        class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
                         )}
                         use:attachPinnedPromptMessage={message}
                       >
-                        <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-                          <ChatMessage
-                            {agentId}
-                            messageId={message.id}
-                            ownsMessageIdentity={false}
-                            {workspace}
-                            onEditSubmit={isRetiredSession
-                              ? undefined
-                              : (newText, model, blocks) =>
-                                  handleEditMessage(message.id, newText, model, blocks)}
-                            onEditStateChange={(isEditing) =>
-                              handleTurnEditStateChange(turnKey, isEditing)}
-                            editModel={turn.assistantMessages[0]?.metadata?.model ??
-                              hydratedInputModel}
-                            onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                            backendSessionId={auggieSessionId}
-                          />
-                        </div>
+                        <LazyTurn
+                          turnKey={message.id}
+                          scrollRoot={scrollContainer}
+                          heightCache={lazyTurnHeightCache}
+                          hydrationController={messageHydrationPolicy}
+                          hydrated={hydratedMessageIds.has(message.id)}
+                          forceVisible={isMessageForceVisible(message.id)}
+                          estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
+                        >
+                          {#snippet children()}
+                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+                              <ChatMessage
+                                {agentId}
+                                messageId={message.id}
+                                ownsMessageIdentity={false}
+                                {workspace}
+                                onEditSubmit={isRetiredSession
+                                  ? undefined
+                                  : (newText, model, blocks) =>
+                                      handleEditMessage(message.id, newText, model, blocks)}
+                                onEditStateChange={(isEditing) =>
+                                  handleTurnEditStateChange(turnKey, isEditing)}
+                                editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                  hydratedInputModel}
+                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                backendSessionId={auggieSessionId}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore}
+                              />
+                            </div>
+                          {/snippet}
+                        </LazyTurn>
                       </div>
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
@@ -5502,6 +5970,7 @@
                               ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
+                              isLastConversationMessage={isLastMessage}
                               onEditSubmit={isRetiredSession
                                 ? undefined
                                 : (newText, model, blocks) =>
@@ -5509,7 +5978,6 @@
                               onRegenerate={isRetiredSession
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}
-                              onFork={() => handleForkFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
                               suppressCoordinationStoppedIndicator={turn.userMessage
                                 ? isAutomatedMessage(turn.userMessage)
@@ -5786,10 +6254,42 @@
                 <div class="w-full" data-testid="question-wizard-slot">
                   <QuestionWizard
                     questions={pendingQuestions.questions}
+                    draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
-                    onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                    onToggleCollapsed={(collapsed) => {
+                      // Can be invoked around the teardown frame after the
+                      // pending-questions source is already nulled.
+                      if (!pendingQuestions) return;
+                      questionWizardCollapsedOverride = {
+                        messageId: pendingQuestions.messageId,
+                        collapsed,
+                      };
+                      saveWizardCollapsed(
+                        wizardDraftKey(agentId, pendingQuestions.messageId),
+                        collapsed,
+                      );
+                    }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
+                  />
+                </div>
+              {/key}
+            {/if}
+            {#if showProposalTray}
+              {#key agentId}
+                <div class="w-full" data-testid="proposal-tray-slot">
+                  <ProposalTray
+                    {agentId}
+                    entries={trayPendingProposals}
+                    maxBodyHeight={trayBodyMaxHeight(panelClientHeight)}
+                    collapsed={proposalTrayCollapsed}
+                    onToggleCollapsed={(collapsed) => {
+                      proposalTrayCollapsedOverride = { agentId, collapsed };
+                      saveTrayCollapsed(agentId, collapsed);
+                    }}
+                    onApply={handleProposalTrayApply}
+                    onDismiss={handleProposalTrayDismiss}
+                    onUndo={handleProposalTrayUndo}
                   />
                 </div>
               {/key}
@@ -5821,8 +6321,9 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
+                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
+                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -5916,24 +6417,28 @@
   }
 
   .conversation-composer {
-    --composer-lane-inset: 1rem;
+    --composer-lane-inset-x: 1rem;
+    --composer-lane-inset-bottom: 1rem;
   }
 
   .conversation-composer.chief-composer {
-    --composer-lane-inset: 0.25rem;
+    --composer-lane-inset-x: 0;
+    --composer-lane-inset-bottom: 0.25rem;
   }
 
   .composer-prompt-lane {
-    padding: 0.5rem var(--composer-lane-inset) var(--composer-lane-inset);
+    padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
   }
 
   @media (min-width: 640px) {
     .conversation-composer {
-      --composer-lane-inset: 1.5rem;
+      --composer-lane-inset-x: 1.5rem;
+      --composer-lane-inset-bottom: 1.5rem;
     }
 
     .conversation-composer.chief-composer {
-      --composer-lane-inset: 0.5rem;
+      --composer-lane-inset-x: 0;
+      --composer-lane-inset-bottom: 0.5rem;
     }
   }
 

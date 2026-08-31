@@ -16,6 +16,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import SettingsSidebarNav from '$lib/components/settings/SettingsSidebarNav.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
+  import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -108,6 +109,7 @@
     | 'agent-behavior'
     | 'providers'
     | 'connections'
+    | 'devices'
     | 'setup'
     | 'advanced'
     | 'input'
@@ -119,6 +121,7 @@
     'agent-behavior',
     'providers',
     'connections',
+    'devices',
     'setup',
     'advanced',
     'input',
@@ -140,6 +143,9 @@
     'backgroundAgents.defaultModel': 'agent-behavior',
     providers: 'providers',
     integrations: 'connections',
+    devices: 'devices',
+    machines: 'devices',
+    'backend-sync': 'devices',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -189,6 +195,7 @@
       return 'display';
     if (tabParam === 'behavior' || tabParam === 'notifications') return 'app-behavior';
     if (tabParam === 'agents') return 'agent-behavior';
+    if (tabParam === 'machines') return 'devices';
     if (tabParam === 'system' || tabParam === 'tools' || tabParam === 'git-workspace')
       return 'setup';
   }
@@ -578,6 +585,20 @@
             </div>
           </div>
 
+          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_mcpServers()}
+            </h2>
+            <McpServersSettings />
+          </div>
+        {/if}
+
+        <!-- Devices -->
+        {#if activeTab === 'devices'}
+          <div id="devices" class="mb-12 scroll-mt-20">
+            <DevicesSettings />
+          </div>
+
           <!-- Backend sync (iCloud Keychain) -->
           <div id="backend-sync" class="mb-6 scroll-mt-20">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -588,13 +609,6 @@
                 <BackendSyncSettings />
               </section>
             </div>
-          </div>
-
-          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_mcpServers()}
-            </h2>
-            <McpServersSettings />
           </div>
         {/if}
 

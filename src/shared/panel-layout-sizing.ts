@@ -2,7 +2,6 @@ export const DEFAULT_PANEL_WIDTH = 500;
 export const DEFAULT_CHAT_PANEL_WIDTH = DEFAULT_PANEL_WIDTH + 200;
 export const DEFAULT_MEDIUM_PANEL_WIDTH = 720;
 export const DEFAULT_BROWSER_PANEL_WIDTH = 900;
-export const MAX_AUTOMATIC_PANEL_WIDTH = 2000;
 export const MIN_PANEL_CANVAS_WIDTH = 280;
 export const MIN_PANEL_SIZE_PERCENT = 10;
 export const PANEL_SPLIT_GUTTER_WIDTH = 8;
@@ -178,7 +177,36 @@ export function resizePanelWidthsAtDivider(
   return { panelWidths: nextWidths, acceptedDelta };
 }
 
-/** Equal automatic root columns fit the viewport until every panel reaches its cap. */
+/** Fit weighted root columns to the viewport after canonical gutters. */
+export function allocateViewportPanelWidths(
+  preferredWidths: readonly number[],
+  availableCanvasWidth: number,
+  gapWidth = PANEL_SPLIT_GUTTER_WIDTH,
+): PanelWidthAllocation {
+  const weights = preferredWidths.map((width) =>
+    isUsableWidth(width) ? width : DEFAULT_PANEL_WIDTH,
+  );
+  if (weights.length === 0) {
+    return { panelWidths: [], canvasWidth: 0, availablePanelWidth: 0, overflows: false };
+  }
+  if (!isUsableWidth(availableCanvasWidth)) return allocatePanelWidths(weights, 0, gapWidth);
+
+  const safeGapWidth = Number.isFinite(gapWidth) ? Math.max(0, gapWidth) : 0;
+  const totalGapWidth = safeGapWidth * Math.max(0, weights.length - 1);
+  const availablePanelWidth = Math.max(0, availableCanvasWidth - totalGapWidth);
+  const minimumWidth = Math.min(
+    availablePanelWidth / weights.length,
+    (availablePanelWidth * MIN_PANEL_SIZE_PERCENT) / 100,
+  );
+  return {
+    panelWidths: allocateWidthsWithMinimum(weights, availablePanelWidth, minimumWidth),
+    canvasWidth: availableCanvasWidth,
+    availablePanelWidth,
+    overflows: false,
+  };
+}
+
+/** Equal automatic root columns consume the complete measured viewport. */
 export function allocateAutomaticPanelWidths(
   panelCount: number,
   availableCanvasWidth: number,
@@ -192,17 +220,11 @@ export function allocateAutomaticPanelWidths(
       gapWidth,
     );
   }
-  const safeGapWidth = Number.isFinite(gapWidth) ? Math.max(0, gapWidth) : 0;
-  const totalGapWidth = safeGapWidth * Math.max(0, count - 1);
-  const availablePanelWidth = Math.max(0, availableCanvasWidth - totalGapWidth);
-  const panelWidth = Math.min(MAX_AUTOMATIC_PANEL_WIDTH, availablePanelWidth / count);
-  const panelWidths = Array.from({ length: count }, () => panelWidth);
-  return {
-    panelWidths,
-    canvasWidth: panelWidth * count + totalGapWidth,
-    availablePanelWidth,
-    overflows: false,
-  };
+  return allocateViewportPanelWidths(
+    Array.from({ length: count }, () => DEFAULT_PANEL_WIDTH),
+    availableCanvasWidth,
+    gapWidth,
+  );
 }
 
 /**
@@ -273,6 +295,7 @@ export function getResolvedPanelCanvasWidth(
   viewportWidth: number,
   persistedWidth: number | null | undefined,
 ): number {
+  if (sizing === 'viewport' && isUsableWidth(viewportWidth)) return viewportWidth;
   if (isUsableWidth(persistedWidth)) return persistedWidth;
   return getAutomaticPanelCanvasWidth(panelColumns, sizing, viewportWidth);
 }

@@ -49,6 +49,7 @@ describe('app UI targets registry', () => {
       'agent-chat-font': 'display',
       'code-font': 'display',
       general: 'advanced',
+      devices: 'devices',
     } as const;
 
     const targets = getAppUiTargets();
@@ -117,6 +118,11 @@ describe('app UI targets registry', () => {
       id: 'quickActions.defaultModel',
     });
     expect(isResolvableNavTarget('/settings#backgroundAgents.defaultModel')).toBe(true);
+  });
+
+  it('resolves the legacy machines hash to the canonical Devices target', () => {
+    expect(resolveHashToTarget('machines')).toMatchObject({ id: 'devices', tab: 'devices' });
+    expect(isResolvableNavTarget('/settings?tab=machines#machines')).toBe(true);
   });
 
   it('returns undefined for an unknown hash', () => {

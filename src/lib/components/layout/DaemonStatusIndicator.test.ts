@@ -20,6 +20,7 @@ let mockStoreState: Partial<StoreState> = {
   },
 };
 let mockDispatch = vi.fn();
+const mockNavigateToSettings = vi.fn();
 
 // Default connections slice, merged under whatever a test sets on
 // `mockStoreState` so the component's connections selectors always resolve
@@ -36,6 +37,10 @@ const DEFAULT_CONNECTIONS = {
 // Mock svelte-fa
 vi.mock('svelte-fa', () => ({
   default: () => null,
+}));
+
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: mockNavigateToSettings,
 }));
 
 // Mock tooltip with a passthrough component so the real dropdown can render.
@@ -150,6 +155,25 @@ describe('DaemonStatusIndicator', () => {
 
       // Verify mock dispatch is available
       expect(mockDispatch).toBeDefined();
+    });
+
+    it.each([
+      ['healthy', 'Status - Healthy'],
+      ['degraded', 'Status - Degraded'],
+      ['down', 'Status - Not running'],
+    ] as const)('labels the details trigger for %s health', async (health, label) => {
+      mockStoreState = {
+        daemonHealth: { health, stats: null, lastUpdated: null, polling: false },
+      };
+      render(DaemonStatusIndicatorPreloaded);
+
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: `intentd: ${health === 'down' ? 'not running' : health}`,
+        }),
+      );
+
+      expect(screen.getByRole('menuitem', { name: label })).toBeTruthy();
     });
   });
 
@@ -303,6 +327,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.getByText('CPU')).toBeTruthy();
       expect(screen.getByText('3.5%')).toBeTruthy();
@@ -332,6 +357,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       // Other stats rows render, but CPU/Memory rows are absent.
       expect(screen.getByText('WSS clients')).toBeTruthy();
@@ -408,6 +434,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.getByText('Workspace disk')).toBeTruthy();
       expect(screen.getByText('1.07 TB free of 2 TB')).toBeTruthy();
@@ -421,6 +448,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.getByText('Workspace disk')).toBeTruthy();
       expect(screen.getByText('994 GB free')).toBeTruthy();
@@ -434,6 +462,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.getByText('WSS clients')).toBeTruthy();
       expect(screen.queryByText('Workspace disk')).toBeNull();
@@ -451,6 +480,7 @@ describe('DaemonStatusIndicator', () => {
       expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
 
       await fireEvent.click(trigger);
+      await fireEvent.click(screen.getByText(/^Status - /));
       expect(screen.getByText('50 GB free of 1 TB')).toBeTruthy();
       const icon = screen.getByLabelText('Less than 10% of the workspaces volume is free');
       // role="img" so the aria-label on the plain span is reliably exposed.
@@ -505,8 +535,9 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
-      const menu = screen.getByRole('menu');
+      const menu = document.querySelector('[data-slot="menu-content"]')!;
       const style = menu.getAttribute('style') ?? '';
       expect(style).toContain('max-height: var(--bits-dropdown-menu-content-available-height)');
       expect(style).not.toContain('24rem');
@@ -539,6 +570,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       const wrapper = screen.getByText('Agent slots').closest('.min-w-56')!;
       expect(wrapper).toBeTruthy();
@@ -608,6 +640,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(
         screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
       );
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(
         screen.getByText('Connected intentd v0.9.0 is behind the bundled sidecar (v1.0.0)'),
@@ -625,6 +658,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(
         screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
       );
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(
         screen.getByText('Connected intentd v2.0.0 is ahead of the bundled sidecar (v1.0.0)'),
@@ -642,6 +676,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(
         screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
       );
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(
         screen.getByText('Connected intentd v0.9.1 is behind the bundled sidecar (v1.0.0)'),
@@ -659,6 +694,7 @@ describe('DaemonStatusIndicator', () => {
       expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
 
       await fireEvent.click(trigger);
+      await fireEvent.click(screen.getByText(/^Status - /));
       expect(screen.getByText('1.0.0')).toBeTruthy();
       expect(screen.queryByLabelText(/bundled sidecar/)).toBeNull();
       expect(screen.queryByText(/bundled sidecar/)).toBeNull();
@@ -734,6 +770,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(
         screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
       );
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       const icon = screen.getByLabelText(
         'Connected intentd v0.9.0 is behind the bundled sidecar (v1.0.0)',
@@ -766,6 +803,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(
         screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
       );
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       const icon = screen.getByLabelText(
         'Connected intentd v2.0.0 is ahead of the bundled sidecar (v1.0.0)',
@@ -902,6 +940,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       const unslothPolls = mockDispatch.mock.calls.filter(
         ([action]) => action?.type === 'daemonHealth/pollUnslothStatus',
@@ -918,6 +957,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.getByText('Unsloth Server')).toBeTruthy();
       // Model row shows the shortened repo name.
@@ -944,6 +984,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.queryByText('Unsloth Server')).toBeNull();
       expect(screen.queryByText('Stop server')).toBeNull();
@@ -956,6 +997,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.queryByText('Unsloth Server')).toBeNull();
     });
@@ -969,6 +1011,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
       await fireEvent.click(screen.getByText('Stop server'));
 
       // Confirmation dialog with the attached-agent warning (2 agents attached).
@@ -1005,6 +1048,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
       await fireEvent.click(screen.getByText('Stop server'));
       await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -1026,6 +1070,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
       await fireEvent.click(screen.getByText('Stop server'));
 
       expect(screen.getByText(/restarts automatically/)).toBeTruthy();
@@ -1045,6 +1090,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       const stopButton = screen.getByText('Stopping…').closest('button');
       expect(stopButton?.disabled).toBe(true);
@@ -1128,6 +1174,7 @@ describe('DaemonStatusIndicator', () => {
     const remoteRecord = {
       id: 'r1',
       label: 'desk:4180',
+      accent: 'teal',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB',
@@ -1159,6 +1206,19 @@ describe('DaemonStatusIndicator', () => {
       expect(activeIcon.closest('[role="menuitem"]')?.textContent).toContain('desk:4180');
     });
 
+    it('keeps the saved machine accent in the connection row but omits it from the trigger', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: withConnections('r1', 'local'),
+      };
+
+      const { container } = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      expect(document.querySelectorAll('[data-connection-accent="teal"]')).toHaveLength(1);
+      expect(container.querySelector('[data-connection-accent="teal"]')).toBeNull();
+    });
+
     it('checks Local in a local window while the remote is also connected', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
@@ -1172,95 +1232,46 @@ describe('DaemonStatusIndicator', () => {
       );
     });
 
-    it('shows the connect action and the connections list with local first', async () => {
+    it('shows the Devices list with local first and the Devices CTA last', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      expect(screen.getByText('Connect to another intentd…')).toBeTruthy();
+      expect(screen.getByText('Manage devices')).toBeTruthy();
+      expect(screen.getByText('Devices')).toBeTruthy();
       expect(screen.getByText('This machine (local)')).toBeTruthy();
       expect(screen.getByText('desk:4180')).toBeTruthy();
 
-      // Local entry's submenu trigger appears before the remote's in DOM order.
-      const rows = screen.getAllByRole('menuitem', { expanded: false });
+      // Local entry appears before the remote in DOM order.
+      const rows = screen.getAllByRole('menuitem');
       const localIdx = rows.findIndex((b) => b.textContent?.includes('This machine (local)'));
       const remoteIdx = rows.findIndex((b) => b.textContent?.includes('desk:4180'));
       expect(localIdx).toBeGreaterThanOrEqual(0);
       expect(remoteIdx).toBeGreaterThan(localIdx);
+      const menu = screen.getByText('Manage devices').closest('[role="menu"]')!;
+      expect(
+        within(menu as HTMLElement)
+          .getAllByRole('button')
+          .at(-1)?.textContent,
+      ).toContain('Manage devices');
     });
 
-    it('renders each connection as a submenu trigger (side flyout, not inline)', async () => {
+    it('renders device rows as direct actions without secondary menus', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      // The row is a submenu trigger: collapsed with menu-popup semantics, and no
-      // Open/Switch/Forget rendered until it is opened (no inline expansion).
       const remoteRow = screen.getByText('desk:4180').closest('[role="menuitem"]');
-      expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
-      expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
-      expect(screen.queryByText('Switch')).toBeNull();
-
-      // Opening the row flips aria-expanded and reveals the flyout actions.
-      await fireEvent.click(remoteRow!);
-      expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
-      expect(screen.getByText('Open')).toBeTruthy();
-      expect(screen.getByText('Switch')).toBeTruthy();
-      expect(screen.getByText('Forget')).toBeTruthy();
-
-      // The flyout is a portaled submenu, so the parent menu's overflow
-      // scroll container cannot clip it.
-      const flyout = screen.getByText('Switch').closest('[data-slot="menu-sub-content"]');
-      expect(flyout).toBeTruthy();
-      const parentContent = remoteRow!.closest('[data-slot="menu-content"]');
-      expect(parentContent?.contains(flyout)).toBe(false);
-    });
-
-    it('expands local to Open + Switch (Forget hidden); remote to all three actions', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      // Local: Open + Switch present, Forget absent (un-forgettable).
-      await fireEvent.click(screen.getByText('This machine (local)'));
-      expect(screen.getAllByText('Open')).toHaveLength(1);
-      expect(screen.getAllByText('Switch')).toHaveLength(1);
+      expect(remoteRow?.getAttribute('aria-haspopup')).toBeNull();
+      expect(screen.queryByText('Open')).toBeNull();
+      expect(screen.queryByText('Update')).toBeNull();
       expect(screen.queryByText('Forget')).toBeNull();
 
-      // Remote: Open, Switch, and Forget present in its flyout.
-      await fireEvent.click(screen.getByText('desk:4180'));
-      const forget = screen.getByText('Forget');
-      const flyout = forget.closest('[data-slot="menu-sub-content"]')!;
-      expect(within(flyout as HTMLElement).getByText('Open')).toBeTruthy();
-      expect(within(flyout as HTMLElement).getByText('Switch')).toBeTruthy();
-    });
-
-    it('dispatches openConnectionRequested for this window remote and closes the dropdown', async () => {
-      mockStoreState = {
-        daemonHealth: { ...healthy },
-        connections: withConnections('r1', 'local'),
-      };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
-
-      const menuRow = screen
-        .getAllByText('desk:4180')
-        .map((el) => el.closest('[role="menuitem"]'))
-        .find((row) => row?.getAttribute('aria-haspopup') === 'menu');
-      await fireEvent.click(menuRow!);
-
-      const openItem = screen.getByText('Open').closest('[role="menuitem"]');
-      expect(openItem?.getAttribute('aria-disabled')).not.toBe('true');
-      await fireEvent.click(openItem!);
-
+      await fireEvent.click(remoteRow!);
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: ['r1'],
@@ -1268,176 +1279,45 @@ describe('DaemonStatusIndicator', () => {
           asyncActionType: 'connections/open',
         }),
       );
-      expect(screen.queryByText('Connections')).toBeNull();
+      expect(screen.queryByText('Devices')).toBeNull();
     });
 
-    it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {
+    it('routes the final CTA to Devices settings when a remote is saved', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      await fireEvent.click(screen.getByText('desk:4180'));
-      await fireEvent.click(screen.getByText('Switch'));
-
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: ['r1'],
-          type: 'connections/switchRequested',
-          asyncActionType: 'connections/switch',
-        }),
-      );
+      await fireEvent.click(screen.getByText('Manage devices'));
+      expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     });
 
-    it('disables Switch for this window entry even when persisted activeId differs', async () => {
-      mockStoreState = {
-        daemonHealth: { ...healthy },
-        connections: withConnections('r1', 'local'),
-      };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      // With r1 active the trigger's accessible name includes the remote name.
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
-
-      // With r1 active, the trigger button also shows "desk:4180" next to the
-      // dot — target the connections-list row (the submenu trigger).
-      const menuRow = screen
-        .getAllByText('desk:4180')
-        .map((el) => el.closest('[role="menuitem"]'))
-        .find((row) => row?.getAttribute('aria-haspopup') === 'menu');
-      await fireEvent.click(menuRow!);
-      const switchItem = screen.getByText('Switch').closest('[role="menuitem"]');
-      expect(switchItem?.getAttribute('aria-disabled')).toBe('true');
-
-      // Selecting the disabled item dispatches nothing.
-      await fireEvent.click(switchItem!);
-      expect(mockDispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'connections/switchRequested' }),
-      );
-    });
-
-    it('opens a confirm dialog on Forget and dispatches forgetConnectionRequested on confirm', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      await fireEvent.click(screen.getByText('desk:4180'));
-      await fireEvent.click(screen.getByText('Forget'));
-
-      // Confirmation dialog names the connection; the dropdown is closed and
-      // nothing has been forgotten yet.
-      expect(screen.getByRole('dialog')).toBeTruthy();
-      expect(screen.getByText('Forget Backend')).toBeTruthy();
-      expect(screen.getByText(/desk:4180/)).toBeTruthy();
-      expect(screen.queryByText('Connections')).toBeNull();
-      expect(mockDispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'connections/forgetRequested' }),
-      );
-
-      // Opening the dialog refreshes the keychain-sync state for the gating.
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'connections/loadKeychainSyncStateRequested',
-          asyncActionType: 'connections/loadKeychainSyncState',
-        }),
-      );
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: ['r1'],
-          type: 'connections/forgetRequested',
-          asyncActionType: 'connections/forget',
-        }),
-      );
-    });
-
-    it('cancel in the forget confirm dialog dispatches no forget request', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      await fireEvent.click(screen.getByText('desk:4180'));
-      await fireEvent.click(screen.getByText('Forget'));
-      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-      expect(screen.queryByRole('dialog')).toBeNull();
-      expect(mockDispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'connections/forgetRequested' }),
-      );
-    });
-
-    it('shows the synced-devices notice when keychain sync is supported and enabled', async () => {
+    it('offers to connect another device when no remote is saved', async () => {
       mockStoreState = {
         daemonHealth: { ...healthy },
         connections: {
           ...withConnections('local'),
-          keychainSync: { supported: true, enabled: true, status: { state: 'active' } },
+          connections: createCollection('id', [localRecord]),
         },
       };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
+      render(DaemonStatusIndicatorPreloaded);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      await fireEvent.click(screen.getByText('desk:4180'));
-      await fireEvent.click(screen.getByText('Forget'));
-
-      expect(screen.getByText(/all your synced devices/)).toBeTruthy();
-    });
-
-    it('shows a plain confirmation when keychain sync is not enabled', async () => {
-      mockStoreState = {
-        daemonHealth: { ...healthy },
-        connections: {
-          ...withConnections('local'),
-          keychainSync: { supported: true, enabled: false, status: null },
-        },
-      };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      await fireEvent.click(screen.getByText('desk:4180'));
-      await fireEvent.click(screen.getByText('Forget'));
-
-      expect(screen.getByText(/desk:4180/)).toBeTruthy();
-      expect(screen.queryByText(/all your synced devices/)).toBeNull();
-    });
-
-    it('opens the add-connection modal from the connect action', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-      await fireEvent.click(screen.getByText('Connect to another intentd…'));
-
-      // Modal header + first-step fields render.
-      expect(screen.getByRole('heading', { name: 'Connect to another intentd' })).toBeTruthy();
-      expect(screen.getByLabelText('Host')).toBeTruthy();
-      expect(screen.getByLabelText('Access token')).toBeTruthy();
+      await fireEvent.click(screen.getByText('Connect another device'));
+      expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     });
   });
 
-  describe('connection label (hostname)', () => {
-    it('formatConnectionLabel renders hostname (host:port) when a hostname is captured', async () => {
+  describe('connection label', () => {
+    it('formatConnectionLabel prefers the configured name over hostname and address', async () => {
       const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
       expect(
         formatConnectionLabel({
           hostname: 'studio.local',
           host: '10.0.0.2',
           port: 4180,
-          label: '10.0.0.2:4180',
+          label: 'Studio Mac',
         }),
-      ).toBe('studio.local (10.0.0.2:4180)');
+      ).toBe('Studio Mac');
     });
 
     it('formatConnectionLabel falls back to host:port when hostname is missing/empty', async () => {
@@ -1448,10 +1328,36 @@ describe('DaemonStatusIndicator', () => {
       expect(formatConnectionLabel({ ...base, hostname: '   ' })).toBe('10.0.0.2:4180');
     });
 
-    it('renders a remote as "hostname (host:port)" in the menu once labeled', async () => {
+    it('formatConnectionLabel preserves the hostname fallback for legacy address labels', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      expect(
+        formatConnectionLabel({
+          host: '10.0.0.2',
+          port: 4180,
+          label: '10.0.0.2:4180',
+          hostname: 'studio.local',
+        }),
+      ).toBe('studio.local');
+    });
+
+    it('formatConnectionLabel shows the migrated Name for pretty-defaulted records', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      // Post-migration the stored label equals the captured pretty hostname;
+      // the Name wins outright.
+      expect(
+        formatConnectionLabel({
+          host: '10.0.0.2',
+          port: 4180,
+          label: 'Clement’s Mac Studio',
+          hostname: 'Clement’s Mac Studio',
+        }),
+      ).toBe('Clement’s Mac Studio');
+    });
+
+    it('renders a configured remote name in the menu', async () => {
       const remoteWithHostname = {
         id: 'r1',
-        label: '10.0.0.2:4180',
+        label: 'Studio Mac',
         host: '10.0.0.2',
         port: 4180,
         fingerprint: 'AA:BB',
@@ -1486,7 +1392,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      expect(screen.getByText('studio.local (10.0.0.2:4180)')).toBeTruthy();
+      expect(screen.getByText('Studio Mac')).toBeTruthy();
     });
   });
 
@@ -1508,7 +1414,7 @@ describe('DaemonStatusIndicator', () => {
     };
     const remoteWithHostname = {
       id: 'r1',
-      label: '10.0.0.2:4180',
+      label: 'Studio Mac',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB',
@@ -1539,15 +1445,15 @@ describe('DaemonStatusIndicator', () => {
       };
     }
 
-    it('shows the hostname inside the trigger button when a remote with hostname is active', async () => {
+    it('shows the configured name inside the trigger button when a named remote is active', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withCurrent('r1') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       // Accessible name includes the visible remote name (WCAG 2.5.3).
-      const trigger = screen.getByRole('button', { name: 'intentd: healthy — studio.local' });
-      const label = screen.getByText('studio.local');
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy — Studio Mac' });
+      const label = screen.getByText('Studio Mac');
       expect(trigger.contains(label)).toBe(true);
       // Subtle, truncated styling so a long name cannot crowd the title bar.
       expect(label.classList.contains('truncate')).toBe(true);
@@ -1594,8 +1500,8 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
-      await fireEvent.click(screen.getByText('studio.local'));
-      expect(screen.getByText('Connect to another intentd…')).toBeTruthy();
+      await fireEvent.click(screen.getByText('Studio Mac'));
+      expect(screen.getByText('Manage devices')).toBeTruthy();
     });
   });
 
@@ -1630,6 +1536,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       const value = screen.getByText(`external (${longTarget})`);
       // Full value available via tooltip; ellipsis truncation keeps it inside the popover.
@@ -1649,6 +1556,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
 
       expect(screen.getByText('sidecar (UDS)')).toBeTruthy();
     });
@@ -1696,10 +1604,10 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Certificate changed')).toBeTruthy();
       expect(screen.getByText('AA:BB:CC')).toBeTruthy();
       expect(screen.getByText('DD:EE:FF')).toBeTruthy();
-      expect(screen.getByText('Switch back to This machine (local)')).toBeTruthy();
+      expect(screen.getByText('Open This machine (local)')).toBeTruthy();
     });
 
-    it('switch-back clears the mismatch and dispatches a local switch request', async () => {
+    it('open-local clears the mismatch and dispatches a local open request', async () => {
       mockStoreState = {
         daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
         connections: withMismatch(),
@@ -1708,7 +1616,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
-      await fireEvent.click(screen.getByText('Switch back to This machine (local)'));
+      await fireEvent.click(screen.getByText('Open This machine (local)'));
 
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'connections/certMismatchCleared' }),
@@ -1716,8 +1624,8 @@ describe('DaemonStatusIndicator', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: ['local'],
-          type: 'connections/switchRequested',
-          asyncActionType: 'connections/switch',
+          type: 'connections/openRequested',
+          asyncActionType: 'connections/open',
         }),
       );
     });

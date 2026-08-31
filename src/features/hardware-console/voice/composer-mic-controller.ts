@@ -22,6 +22,10 @@
 
 import { m } from '$shared/paraglide/messages.js';
 import {
+  clearComposerDictationTarget,
+  setComposerDictationTarget,
+} from './composer-dictation-target';
+import {
   cancelPttRecording,
   getActivePttSessionToken,
   startPttRecording,
@@ -36,9 +40,10 @@ export type ComposerMicToggleResult = 'started' | 'stopped' | 'blocked';
 /** Token of the session the composer mic button started (else `null`). */
 let ownedSession: object | null = null;
 
-/** Forget any ownership without touching the session (test isolation). */
+/** Forget ownership and any captured target without touching the session (test isolation). */
 export function resetComposerMic(): void {
   ownedSession = null;
+  clearComposerDictationTarget();
 }
 
 /**
@@ -57,14 +62,21 @@ export function isComposerMicRecording(): boolean {
 
 /**
  * Mic button click: latch toggle.
- * - Idle → start a recording session and take ownership (`started`).
+ * - Idle → start a recording session, take ownership, and capture the
+ *   originating composer's `agentId` (when given) as the one-shot dictation
+ *   insertion target so the transcript routes back to THAT composer even if
+ *   the active agent changes mid-dictation (`started`).
  * - Own session live → stop it; the captured audio flows into the
- *   transcription middleware via `pttRecordingFinished` (`stopped`).
+ *   transcription middleware via `pttRecordingFinished`, which consumes the
+ *   captured target (`stopped`).
  * - Another trigger's session live (hardware PTT) → no-op with a hint
  *   (`blocked`) — one recording at a time.
  * - Recording unsupported on this system → no-op with a hint (`blocked`).
  */
-export function toggleComposerMicRecording(context: PttContext): ComposerMicToggleResult {
+export function toggleComposerMicRecording(
+  context: PttContext,
+  agentId?: string,
+): ComposerMicToggleResult {
   const active = getActivePttSessionToken();
   if (active !== null) {
     if (active === ownedSession) {
@@ -79,19 +91,24 @@ export function toggleComposerMicRecording(context: PttContext): ComposerMicTogg
     context.showHint(m.hardwareConsole_ptt_unavailable_message());
     return 'blocked';
   }
+  // startPttRecording clears any dangling capture, so the registration must
+  // follow it — and only for a session that actually started.
   startPttRecording(context);
   ownedSession = getActivePttSessionToken();
+  if (ownedSession !== null && agentId !== undefined) setComposerDictationTarget(agentId);
   return ownedSession !== null ? 'started' : 'blocked';
 }
 
 /**
  * Esc while the composer mic's own session is live: discard the audio
- * without transcription. Returns whether a session was cancelled (callers
- * consume the key event only then). A hardware-owned session is left alone.
+ * without transcription and drop any captured target. Returns whether a
+ * session was cancelled (callers consume the key event only then). A
+ * hardware-owned session is left alone.
  */
 export function cancelComposerMicRecording(context: PttContext): boolean {
   if (!isComposerMicRecording()) return false;
   ownedSession = null;
+  clearComposerDictationTarget();
   cancelPttRecording(context);
   return true;
 }

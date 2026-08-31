@@ -2,7 +2,7 @@
  * Connections Slice
  *
  * Actions + reducer for the multi-backend connect feature. Tracks the
- * connections list, the active backend, the in-flight add/open/switch operation
+ * connections list, the active backend, the in-flight add/open operation
  * status, and the last pinned-cert mismatch.
  *
  * The list + active selection are authoritative from main: they are set from
@@ -27,6 +27,13 @@ import type {
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
   OpenConnectionResult,
+  RotateConnectionSecretParams,
+  RotateConnectionSecretResult,
+  TestConnectionParams,
+  TestConnectionResult,
+  UpdateConnectionParams,
+  UpdateConnectionResult,
+  UpdateBackendResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -41,6 +48,8 @@ export const initialState: ConnectionsState = {
   activeId: LOCAL_CONNECTION_ID,
   windowBackendId: LOCAL_CONNECTION_ID,
   hasReceivedList: false,
+  pinnedVersion: null,
+  connectedIds: [],
   status: 'idle',
   error: null,
   certMismatch: null,
@@ -64,19 +73,19 @@ export const connectionsListReceived = createAction<[result: ConnectionsListResu
 );
 
 /**
- * An add/open/switch operation started (its saga invoked the IPC channel). Moves
+ * An add/open operation started (its saga invoked the IPC channel). Moves
  * status to 'connecting' and clears any prior error.
  */
 export const connectOperationStarted = createAction('connections/operationStarted');
 
 /**
- * The in-flight add/open/switch operation succeeded. Status returns to 'idle'; the
+ * The in-flight add/open operation succeeded. Status returns to 'idle'; the
  * list/active refresh arrives separately via the `connections:changed` push.
  */
 export const connectOperationSettled = createAction('connections/operationSettled');
 
 /**
- * The in-flight add/open/switch operation failed. Status moves to 'error' and the
+ * The in-flight add/open operation failed. Status moves to 'error' and the
  * message is stored for the UI.
  */
 export const connectOperationFailed = createAction<[error: string]>('connections/operationFailed');
@@ -95,8 +104,8 @@ export const certMismatchCleared = createAction('connections/certMismatchCleared
 /**
  * A `connections:auth-rejected` push arrived — the remote backend rejected the
  * WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the WS API is
- * disabled). Latched so the UI can surface a "re-pair or switch" state instead
- * of the generic cannot-connect overlay.
+ * disabled). Latched so the UI can surface a "re-pair or open local" state
+ * instead of the generic cannot-connect overlay.
  */
 export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedEvent]>(
   'connections/authRejectedReceived',
@@ -109,7 +118,7 @@ export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedE
  * the modal-dismissed flag so the advisory shows for this fresh mismatch —
  * except for boot-origin events (`origin: 'boot'`), which latch the flag so
  * only the persistent menu warning shows (the user did not just initiate a
- * switch, so no modal).
+ * connect, so no modal).
  */
 export const protocolMismatchReceived = createAction<[event: ConnectionProtocolMismatchEvent]>(
   'connections/protocolMismatchReceived',
@@ -144,6 +153,24 @@ export const addConnectionRequested = createAsyncAction<
   AddConnectionResult
 >('connections/add', 'connections/addRequested');
 
+/** Saga-owned remote metadata update request. */
+export const updateConnectionRequested = createAsyncAction<
+  [params: UpdateConnectionParams],
+  UpdateConnectionResult
+>('connections/update', 'connections/updateRequested');
+
+/** Saga-owned probe of unsaved address values with the saved secret. */
+export const testConnectionRequested = createAsyncAction<
+  [params: TestConnectionParams],
+  TestConnectionResult
+>('connections/test', 'connections/testRequested');
+
+/** Saga-owned write-only secret rotation request. */
+export const rotateConnectionSecretRequested = createAsyncAction<
+  [params: RotateConnectionSecretParams],
+  RotateConnectionSecretResult
+>('connections/rotateSecret', 'connections/rotateSecretRequested');
+
 /** Saga-owned non-destructive open/focus request for one backend. */
 export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(
   'connections/open',
@@ -156,10 +183,14 @@ export const forgetConnectionRequested = createAsyncAction<[id: string], void>(
   'connections/forgetRequested',
 );
 
-/** Saga-owned active-backend switch request. */
-export const switchConnectionRequested = createAsyncAction<[id: string], void>(
-  'connections/switch',
-  'connections/switchRequested',
+/**
+ * Saga-owned remote-backend update request (the connections-menu Update
+ * action). Resolves with the structured `connections:update-backend` result;
+ * the saga owns the success/failure toasts, so no op-status state is tracked.
+ */
+export const updateBackendRequested = createAsyncAction<[id: string], UpdateBackendResult>(
+  'connections/updateBackend',
+  'connections/updateBackendRequested',
 );
 
 /**
@@ -198,18 +229,42 @@ export const setKeychainSyncEnabledRequested = createAsyncAction<
 
 export const connectionsReducer = createReducer<ConnectionsState>(initialState);
 connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
-  return {
+  const next: ConnectionsState = {
     ...state,
     connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
     activeId: result.activeId,
     windowBackendId: result.windowBackendId,
     hasReceivedList: true,
+    // Absent on payloads from an older main process — keep the prior value
+    // rather than clearing a pin the renderer already learned.
+    pinnedVersion: result.pinnedVersion !== undefined ? result.pinnedVersion : state.pinnedVersion,
+    // Same older-main tolerance for live connectivity.
+    connectedIds: result.connectedIds !== undefined ? result.connectedIds : state.connectedIds,
   };
+  // Sync the per-window sticky latches when the payload carries them: `null`
+  // clears (e.g. main disconnected/rebuilt the window's backend client, so the
+  // old rejection no longer applies), an event replays the latch. Absent fields
+  // (older payload shape) leave the latched state untouched.
+  if (result.authRejected !== undefined) {
+    next.authRejected = result.authRejected;
+  }
+  if (result.protocolMismatch !== undefined) {
+    next.protocolMismatch = result.protocolMismatch;
+    if (result.protocolMismatch === null) {
+      next.protocolMismatchModalDismissed = false;
+    } else if (result.protocolMismatch.id !== state.protocolMismatch?.id) {
+      // A fresh mismatch replayed via the list gets the same modal semantics
+      // as the one-shot push; re-replays of the already-stored mismatch keep
+      // the user's dismissal.
+      next.protocolMismatchModalDismissed = result.protocolMismatch.origin === 'boot';
+    }
+  }
+  return next;
 });
 connectionsReducer.with(connectOperationStarted, (state) => {
-  // A fresh add/switch clears the auth-rejected latch: a re-add refreshes the
-  // stored token for the same target, and a switch changes the target — either
-  // way the latched rejection no longer describes the operation under way.
+  // A fresh add/open clears the auth-rejected latch: a re-add refreshes the
+  // stored token for the same target, and a fresh open rebuilds the client —
+  // either way the latched rejection no longer describes the operation under way.
   return { ...state, status: 'connecting', error: null, authRejected: null };
 });
 connectionsReducer.with(connectOperationSettled, (state) => {
@@ -229,7 +284,7 @@ connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
 });
 connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
   // Boot-origin mismatches (persisted remote restored at launch) suppress the
-  // advisory modal but keep the persistent menu warning; switch-origin (or
+  // advisory modal but keep the persistent menu warning; user-initiated (or
   // origin-less, older payloads) mismatches show the modal.
   return {
     ...state,

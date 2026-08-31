@@ -15,7 +15,7 @@ import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-cata
 
 export function setupUnslothIPC() {
   // Get available models for unsloth — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(UNSLOTH_CHANNELS.GET_MODELS, async (_event, params?: { forceRefresh?: boolean }) =>
-    getProviderModelsEnvelope('unsloth', params),
+  ipcMain.handle(UNSLOTH_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
+    getProviderModelsEnvelope('unsloth', params, event),
   );
 }

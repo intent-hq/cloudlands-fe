@@ -10,14 +10,21 @@
     icon?: string | null;
     state?: AvatarState;
   }
+
+  // Keep in sync with --agent-avatar-stack-overflow-gap (0.25rem) below.
+  const OVERFLOW_GAP_PX = 4;
+  const FALLBACK_OVERFLOW_TEXT_WIDTH = 20;
+  let overflowMeasureContext: CanvasRenderingContext2D | null | undefined;
+  let overflowFont: string | undefined;
+  const overflowTextWidths = new Map<string, number>();
 </script>
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { onMount, tick } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
   import AgentAvatarWithState from './AgentAvatarWithState.svelte';
   import { agentAvatarGeometry } from './avatar-size';
+  import { computeAdaptiveVisibleCount, createDeferredWidthApplier } from './avatar-stack-fit';
 
   interface Props {
     items: AgentAvatarStackItem[];
@@ -45,7 +52,27 @@
     class: className = '',
   }: Props = $props();
   let rootElement: HTMLElement | undefined = $state();
-  let measuredVisibleCount: number | undefined = $state();
+  // Fed by the ResizeObserver but applied one animation frame later: the
+  // observer's initial delivery lands inside the mount/reveal frame, so
+  // consuming the width there (fit computation, overflow text measurement,
+  // re-render) would extend that frame's long task. Until the deferred width
+  // lands, the stack renders up to `maxVisible` items, clipped by the
+  // container's `overflow: hidden`.
+  let availableWidth: number | undefined = $state();
+  const geometry = $derived(agentAvatarGeometry[variant]);
+  const measuredVisibleCount = $derived(
+    adaptive && availableWidth !== undefined
+      ? computeAdaptiveVisibleCount({
+          itemCount: items.length,
+          maxVisible,
+          availableWidth,
+          surface: geometry.surface,
+          overlap: geometry.overlap,
+          overflowGap: OVERFLOW_GAP_PX,
+          measureOverflowText: overflowTextWidth,
+        })
+      : undefined,
+  );
   const visibleCount = $derived(
     Math.min(
       items.length,
@@ -54,68 +81,41 @@
   );
   const visibleItems = $derived(items.slice(0, visibleCount));
   const overflowCount = $derived(Math.max(0, items.length - visibleItems.length));
-  const geometry = $derived(agentAvatarGeometry[variant]);
   const itemStep = $derived(geometry.surface - geometry.overlap);
   const trackWidth = $derived(
     visibleItems.length === 0 ? 0 : geometry.surface + (visibleItems.length - 1) * itemStep,
   );
   const OVERFLOW_INLINE_PADDING = 12;
 
-  function overflowTextWidth(remaining: number, style: CSSStyleDeclaration): number {
-    const context = document.createElement('canvas').getContext('2d');
-    if (!context) return 20;
-    context.font = `500 12px ${style.fontFamily}`;
-    return context.measureText(`+${formatInteger(remaining)}`).width;
-  }
-
-  function updateVisibleCount() {
-    if (!adaptive || !rootElement) return;
-    const availableWidth = rootElement.clientWidth;
-    if (availableWidth <= 0) {
-      measuredVisibleCount = rootElement.getClientRects().length > 0 ? 0 : undefined;
-      return;
+  function overflowTextWidth(remaining: number): number {
+    const text = `+${formatInteger(remaining)}`;
+    const cached = overflowTextWidths.get(text);
+    if (cached !== undefined) return cached;
+    if (overflowMeasureContext === undefined) {
+      overflowMeasureContext = document.createElement('canvas').getContext('2d');
     }
-    const style = getComputedStyle(rootElement);
-    const surface = Number.parseFloat(style.getPropertyValue('--agent-avatar-surface-size')) || 24;
-    const overlap = Number.parseFloat(style.getPropertyValue('--agent-avatar-stack-overlap')) || 6;
-    const step = surface - overlap;
-    const cap = Math.min(items.length, Math.max(0, maxVisible));
-    const avatarsWidth = (count: number) => (count === 0 ? 0 : surface + (count - 1) * step);
-
-    if (items.length <= cap && avatarsWidth(items.length) <= availableWidth) {
-      measuredVisibleCount = items.length;
-      return;
-    }
-    for (let count = cap; count >= 0; count -= 1) {
-      const remaining = items.length - count;
-      const overflowWidth = Math.max(
-        surface,
-        overflowTextWidth(remaining, style) + OVERFLOW_INLINE_PADDING,
-      );
-      const requiredWidth =
-        avatarsWidth(count) + (remaining > 0 ? overflowWidth - (count > 0 ? overlap : 0) : 0);
-      if (requiredWidth <= availableWidth) {
-        measuredVisibleCount = count;
-        return;
-      }
-    }
-    measuredVisibleCount = 0;
+    if (!overflowMeasureContext || !rootElement) return FALLBACK_OVERFLOW_TEXT_WIDTH;
+    overflowFont ??= `500 12px ${getComputedStyle(rootElement).fontFamily}`;
+    overflowMeasureContext.font = overflowFont;
+    const width = overflowMeasureContext.measureText(text).width;
+    overflowTextWidths.set(text, width);
+    return width;
   }
 
   $effect(() => {
-    items.length;
-    maxVisible;
-    adaptive;
-    variant;
-    void tick().then(updateVisibleCount);
-  });
-
-  onMount(() => {
     if (!adaptive || !rootElement || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(updateVisibleCount);
+    const deferredWidth = createDeferredWidthApplier((width) => {
+      availableWidth = width;
+    });
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      deferredWidth.set(entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width);
+    });
     observer.observe(rootElement);
-    updateVisibleCount();
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      deferredWidth.cancel();
+    };
   });
 </script>
 

@@ -619,14 +619,17 @@ function reorderSiblingPanels(
     );
     if (sourceIndex >= 0 && initialTargetIndex >= 0) {
       const children = [...node.children];
+      const sizes = normalizeSizes(node.sizes, node.children.length);
       const [source] = children.splice(sourceIndex, 1);
+      const [sourceSize] = sizes.splice(sourceIndex, 1);
       const targetIndex = children.findIndex(
         (child) => child.type === 'panel' && child.panelId === targetPanelId,
       );
       const insertBefore = position === 'before' || position === 'above';
       const insertIndex = insertBefore ? targetIndex : targetIndex + 1;
       children.splice(insertIndex, 0, source);
-      return { ...node, children };
+      sizes.splice(insertIndex, 0, sourceSize);
+      return { ...node, children, sizes };
     }
   }
   for (let index = 0; index < node.children.length; index += 1) {
@@ -705,6 +708,183 @@ export function movePanelToRootEdgeInLayout(
     direction,
     children: insertBefore ? [source, removed.node] : [removed.node, source],
     sizes: [50, 50],
+  };
+}
+
+export type PaneMoveTarget =
+  | { kind: 'edge'; position: 'before' | 'after' }
+  | {
+      kind: 'panel';
+      targetPanelId: string;
+      position: 'before' | 'after' | 'center';
+      insertIndex?: number;
+    };
+
+export interface PaneMoveProjection {
+  root: PanelLayoutNode;
+  panels: Record<string, PanelState>;
+  canvasWidth: number | null | undefined;
+  destinationPanelId: string;
+  changed: boolean;
+}
+
+type PaneMoveLayout = Pick<WorkspacePanelLayout, 'root' | 'panels' | 'canvasWidth'>;
+
+function getPaneMoveTargetPanelId(
+  panelIds: readonly string[],
+  target: PaneMoveTarget,
+): string | undefined {
+  if (target.kind === 'panel') return target.targetPanelId;
+  return target.position === 'before' ? panelIds[0] : panelIds.at(-1);
+}
+
+function removePaneFromStack(panel: PanelState, tabId: string): PanelState {
+  const tabIndex = panel.tabs.findIndex((tab) => tab.id === tabId);
+  const tabs = panel.tabs.filter((_, index) => index !== tabIndex);
+  const activeTabId =
+    panel.activeTabId === tabId
+      ? (tabs[Math.min(tabIndex, tabs.length - 1)]?.id ?? null)
+      : panel.activeTabId;
+  return {
+    ...panel,
+    tabs,
+    activeTabId,
+    attentionTabIds: panel.attentionTabIds?.filter((id) => id !== tabId),
+    pristine: tabs.length === 0 ? true : panel.pristine,
+  };
+}
+
+function getCanvasWidthAfterPaneColumnRemoval(
+  root: PanelLayoutNode,
+  remainingWidthRatio: number,
+  canvasWidth: number | null | undefined,
+): number | null | undefined {
+  if (typeof canvasWidth !== 'number') return canvasWidth;
+  const previousColumnCount = countHorizontalPanelColumns(root);
+  const remainingColumnCount = Math.max(1, previousColumnCount - 1);
+  const previousGutterWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, previousColumnCount - 1);
+  const remainingGutterWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, remainingColumnCount - 1);
+  return (
+    Math.max(0, canvasWidth - previousGutterWidth) * remainingWidthRatio + remainingGutterWidth
+  );
+}
+
+/** Project the exact fixed-column pane move used by both drag preview and drop reducers. */
+export function projectPaneMoveInLayout(
+  layout: PaneMoveLayout,
+  tabId: string,
+  fromPanelId: string,
+  target: PaneMoveTarget,
+  destinationPanelId: string,
+): PaneMoveProjection | null {
+  const panelIds = getDirectFixedColumnIds(layout.root);
+  const fromPanel = layout.panels[fromPanelId];
+  const tabIndex = fromPanel?.tabs.findIndex((tab) => tab.id === tabId) ?? -1;
+  const targetPanelId = panelIds ? getPaneMoveTargetPanelId(panelIds, target) : undefined;
+  if (
+    !panelIds ||
+    !fromPanel ||
+    tabIndex < 0 ||
+    !targetPanelId ||
+    !panelIds.includes(fromPanelId) ||
+    !panelIds.includes(targetPanelId)
+  ) {
+    return null;
+  }
+
+  const stable = (destinationId = fromPanelId): PaneMoveProjection => ({
+    root: layout.root,
+    panels: layout.panels,
+    canvasWidth: layout.canvasWidth,
+    destinationPanelId: destinationId,
+    changed: false,
+  });
+  const tab = fromPanel.tabs[tabIndex];
+
+  if (target.kind === 'panel' && target.position === 'center') {
+    if (targetPanelId === fromPanelId) return stable();
+    const targetPanel = layout.panels[targetPanelId];
+    if (!targetPanel || targetPanel.tabs.some((candidate) => candidate.id === tabId)) return null;
+    const insertIndex = target.insertIndex ?? targetPanel.tabs.length;
+    const panels = {
+      ...layout.panels,
+      [fromPanelId]: removePaneFromStack(fromPanel, tabId),
+      [targetPanelId]: {
+        ...targetPanel,
+        tabs: [
+          ...targetPanel.tabs.slice(0, insertIndex),
+          tab,
+          ...targetPanel.tabs.slice(insertIndex),
+        ],
+        activeTabId: tabId,
+        attentionTabIds: targetPanel.attentionTabIds?.filter((id) => id !== tabId),
+      },
+    };
+    if (fromPanel.tabs.length > 1) {
+      return {
+        root: layout.root,
+        panels,
+        canvasWidth: layout.canvasWidth,
+        destinationPanelId: targetPanelId,
+        changed: true,
+      };
+    }
+
+    const removal = removePanelPreservingHorizontalWidths(layout.root, fromPanelId);
+    if (!removal.node || !removal.removed) return null;
+    delete panels[fromPanelId];
+    return {
+      root: removal.node,
+      panels,
+      canvasWidth: getCanvasWidthAfterPaneColumnRemoval(
+        layout.root,
+        removal.remainingWidthRatio,
+        layout.canvasWidth,
+      ),
+      destinationPanelId: targetPanelId,
+      changed: true,
+    };
+  }
+
+  if (target.position === 'center') return stable();
+  const position = target.position;
+  if (fromPanel.tabs.length === 1) {
+    const root =
+      target.kind === 'edge'
+        ? movePanelToRootEdgeInLayout(layout.root, fromPanelId, position)
+        : movePanelInLayout(layout.root, fromPanelId, targetPanelId, position);
+    return root
+      ? {
+          root,
+          panels: layout.panels,
+          canvasWidth: layout.canvasWidth,
+          destinationPanelId: fromPanelId,
+          changed: true,
+        }
+      : stable();
+  }
+
+  if (panelIds.length >= 4 || layout.panels[destinationPanelId]) return stable();
+  const root = insertFixedColumnInLayout(
+    layout.root,
+    destinationPanelId,
+    targetPanelId,
+    position,
+    layout.canvasWidth,
+  );
+  if (!root) return stable();
+  const baseCanvasWidth =
+    layout.canvasWidth ?? getAutomaticPanelCanvasWidth(panelIds.length, 'content');
+  return {
+    root,
+    panels: {
+      ...layout.panels,
+      [fromPanelId]: removePaneFromStack(fromPanel, tabId),
+      [destinationPanelId]: { id: destinationPanelId, tabs: [tab], activeTabId: tabId },
+    },
+    canvasWidth: baseCanvasWidth + DEFAULT_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
+    destinationPanelId,
+    changed: true,
   };
 }
 

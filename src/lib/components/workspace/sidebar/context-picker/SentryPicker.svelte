@@ -5,17 +5,17 @@
    * Shows list of Sentry issues with search/filter.
    * Handles authentication flow if not authenticated.
    */
-  import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
+  import {
+  sentryAuthClient,
+  type SentryIssueResult,
+} from '$features/sentry-auth/renderer/sentry-auth.client';
   import {
   selectSentryIsAuthenticated,
-  selectSentryIssues,
-  selectSentryIsLoadingIssues,
   selectSentryIsConnecting,
 } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
   initializeSentryAuth,
   connectSentry,
-  fetchSentryIssues,
 } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -41,10 +41,11 @@
   let { workspaceId, onSelect, onClose }: Props = $props();
 
   const isAuthenticated$ = selectSentryIsAuthenticated();
-  const issues$ = selectSentryIssues();
-  const isLoadingIssues$ = selectSentryIsLoadingIssues();
   const storeIsConnecting$ = selectSentryIsConnecting();
 
+  let issues = $state<SentryIssueResult[]>([]);
+  let isLoadingIssues = $state(false);
+  let hasLoadedIssues = $state(false);
   let searchQuery = $state('');
   let pendingConnect = $state(false);
 
@@ -54,9 +55,9 @@
   let sentryToken = $state('');
 
   const filteredIssues = $derived.by(() => {
-    if (!searchQuery.trim()) return $issues$;
+    if (!searchQuery.trim()) return issues;
     const query = searchQuery.toLowerCase();
-    return $issues$.filter(
+    return issues.filter(
       (issue: SentryIssueResult) =>
         issue.title.toLowerCase().includes(query) ||
         issue.shortId.toLowerCase().includes(query) ||
@@ -64,13 +65,24 @@
     );
   });
 
+  async function loadIssues() {
+    if (isLoadingIssues) return;
+    isLoadingIssues = true;
+    try {
+      issues = await sentryAuthClient.fetchIssues();
+      hasLoadedIssues = true;
+    } finally {
+      isLoadingIssues = false;
+    }
+  }
+
   // When connect completes successfully, fetch issues
   $effect(() => {
     if (pendingConnect && !$storeIsConnecting$) {
       pendingConnect = false;
       if ($isAuthenticated$) {
         showConfigForm = false;
-        appStore.dispatch(fetchSentryIssues());
+        loadIssues();
       }
     }
   });
@@ -103,14 +115,14 @@
     appStore.dispatch(initializeSentryAuth());
     // Fetch issues if already authenticated (state may persist from previous mount)
     if ($isAuthenticated$) {
-      appStore.dispatch(fetchSentryIssues());
+      loadIssues();
     }
   });
 
   // When auth state becomes true (e.g. after init), fetch issues
   $effect(() => {
-    if ($isAuthenticated$ && $issues$.length === 0 && !$isLoadingIssues$) {
-      appStore.dispatch(fetchSentryIssues());
+    if ($isAuthenticated$ && !hasLoadedIssues && !isLoadingIssues) {
+      loadIssues();
     }
   });
 </script>
@@ -151,7 +163,7 @@
       </Button>
     {/if}
   </div>
-{:else if $isLoadingIssues$}
+{:else if isLoadingIssues}
   <div class="p-8 flex justify-center">
     <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
   </div>

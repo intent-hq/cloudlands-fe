@@ -15,8 +15,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetConnectionModeForTesting,
   getDaemonVersionInfo,
+  getLocalUpdateSupported,
   setConnectionMode,
   setDaemonVersionInfo,
+  setLocalUpdateSupported,
 } from '../connection-mode';
 import { Logger } from '$shared/logger';
 
@@ -24,6 +26,9 @@ const {
   ctorOptions,
   mockGetOrCreateClientId,
   mockPersistClientId,
+  mockSetDaemonVersion,
+  mockSetUpdateSupported,
+  systemStatus,
   mockRunLog,
   startupFailedListeners,
   mockStartupFailure,
@@ -31,6 +36,10 @@ const {
   ctorOptions: [] as Array<Record<string, unknown>>,
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
   mockPersistClientId: vi.fn(async () => {}),
+  mockSetDaemonVersion: vi.fn(async () => false),
+  mockSetUpdateSupported: vi.fn(async () => false),
+  // `system.status` result the fake client answers with; tests override.
+  systemStatus: { value: {} as unknown },
   mockRunLog: {
     available: true,
     startedAt: '2026-07-26T00:00:00.000Z',
@@ -54,7 +63,9 @@ vi.mock('../json-rpc-client', () => ({
     }
     start(): void {}
     dispose(): void {}
-    request = vi.fn(async () => ({}));
+    request = vi.fn(async (method: string) =>
+      method === 'system.status' ? systemStatus.value : {},
+    );
     registerMethod(): () => void {
       return () => {};
     }
@@ -108,6 +119,8 @@ vi.mock('../connections-store', async (importOriginal) => ({
     },
   ]),
   getDecryptedToken: vi.fn(async () => 'tok-remote'),
+  setDaemonVersion: mockSetDaemonVersion,
+  setUpdateSupported: mockSetUpdateSupported,
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
@@ -213,10 +226,8 @@ describe('backend.ipc sidecar run-log bridge', () => {
 });
 
 describe('backend.ipc daemon version refresh on hello (#3448)', () => {
-  afterEach(async () => {
+  afterEach(() => {
     __resetConnectionModeForTesting();
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
-    __setActiveConnectionMetaForTesting(null);
   });
 
   async function getOnHelloResult(): Promise<(result: unknown) => void> {
@@ -318,15 +329,16 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
   });
 
   it('does not let a remote backend hello overwrite the local daemon version info', async () => {
-    const onHelloResult = await getOnHelloResult();
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     setConnectionMode('external');
     setDaemonVersionInfo({
       daemonVersion: '0.1.0',
       pinnedVersion: '0.1.0',
       versionMismatch: false,
     });
-    __setActiveConnectionMetaForTesting({ id: 'conn-1', host: 'remote', port: 443 });
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
 
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
@@ -345,6 +357,7 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
       expect.objectContaining({ transport: expect.anything() }),
     );
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    disconnectBackendClient('conn-remote');
   });
 
   it('leaves stored info unchanged and skips the broadcast for a malformed server.version', async () => {
@@ -395,9 +408,8 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
   }
 
   it('pins the BuildInfo category at INFO so the line survives the packaged WARN default', async () => {
-    const { getLogLevel, LogLevel, LOGGING_CONFIG } = await import(
-      '../../../../shared/logging-config'
-    );
+    const { getLogLevel, LogLevel, LOGGING_CONFIG } =
+      await import('../../../../shared/logging-config');
     expect(getLogLevel('BuildInfo')).toBeLessThanOrEqual(LogLevel.INFO);
     expect(getLogLevel('BuildInfo')).toBeLessThanOrEqual(LOGGING_CONFIG.defaultLevel);
   });
@@ -460,5 +472,385 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
 
     const { disconnectBackendClient } = await import('../backend.ipc');
     disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote daemon version capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetDaemonVersion.mockClear();
+    mockSetDaemonVersion.mockResolvedValue(false);
+  });
+
+  it('persists a pool member remote daemon version keyed by its connection id', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0', buildCommit: 'fed9876' } });
+    await vi.waitFor(() => {
+      expect(mockSetDaemonVersion).toHaveBeenCalledWith('conn-remote', '0.9.0');
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed only when the captured version actually changed', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // Unchanged version (the store dedupes): no broadcast.
+    mockSetDaemonVersion.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetDaemonVersion).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:changed')).toHaveLength(0);
+
+    // A changed version pushes the refreshed list to every window.
+    mockSetDaemonVersion.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '1.0.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+  });
+
+  it('ignores hellos without a well-formed server.version', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult(undefined);
+    onHelloResult({});
+    onHelloResult({ server: {} });
+    onHelloResult({ server: { version: 42 } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+
+    disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote updateSupported capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetUpdateSupported.mockClear();
+    mockSetUpdateSupported.mockResolvedValue(false);
+    systemStatus.value = {};
+  });
+
+  it('persists a pool member remote updateSupported flag keyed by its connection id', async () => {
+    systemStatus.value = { updateSupported: true };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', true);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('persists an explicit updateSupported: false (unsupported is conclusive)', async () => {
+    systemStatus.value = { updateSupported: false };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', false);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed only when the captured flag actually changed', async () => {
+    systemStatus.value = { updateSupported: true };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // Unchanged flag (the store dedupes): no broadcast.
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetUpdateSupported).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:changed')).toHaveLength(0);
+
+    // A changed flag pushes the refreshed list to every window.
+    mockSetUpdateSupported.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    systemStatus.value = { updateSupported: true };
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
+  });
+
+  it('clears the stored flag to null when system.status omits updateSupported (older daemon)', async () => {
+    systemStatus.value = { status: 'ok' }; // no updateSupported field
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    // A successful flagless response is a conclusive "unknown" — a
+    // previously-persisted true must not survive a daemon replaced by one
+    // too old to report the field.
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    // A malformed (non-boolean) field clears the same way.
+    mockSetUpdateSupported.mockClear();
+    systemStatus.value = { updateSupported: 'yes' };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc local external updateSupported capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    systemStatus.value = {};
+    mockSetUpdateSupported.mockClear();
+    __resetConnectionModeForTesting();
+  });
+
+  /** Rebuild the pooled LOCAL client so its hello observer is deterministic. */
+  async function freshLocalOnHelloResult(): Promise<(result: unknown) => void> {
+    const { disconnectBackendClient, getBackendClient } = await import('../backend.ipc');
+    disconnectBackendClient('local');
+    getBackendClient();
+    return ctorOptions[ctorOptions.length - 1].onHelloResult as (result: unknown) => void;
+  }
+
+  function installChangedSpy() {
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+    return () => send.mock.calls.filter(([c]) => c === 'connections:changed');
+  }
+
+  it('captures true for the external local daemon and broadcasts connections:changed', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    systemStatus.value = { updateSupported: true };
+    const changedCalls = installChangedSpy();
+
+    onHelloResult({});
+    await vi.waitFor(() => {
+      expect(getLocalUpdateSupported()).toBe(true);
+      expect(changedCalls().length).toBeGreaterThan(0);
+    });
+    // The local flag lives in connection-mode state, never the store.
+    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
+  });
+
+  it('captures an explicit false (unsupported is conclusive)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    systemStatus.value = { updateSupported: false };
+
+    onHelloResult({});
+    await vi.waitFor(() => {
+      expect(getLocalUpdateSupported()).toBe(false);
+    });
+  });
+
+  it('re-hello resets the flag to unknown before re-capturing (reconnect may be a replaced daemon)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    systemStatus.value = { updateSupported: true };
+    const changedCalls = installChangedSpy();
+
+    onHelloResult({});
+    await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(true));
+    const afterFirst = changedCalls().length;
+
+    // A reconnect may face a replaced daemon: the previously-captured flag is
+    // reset (broadcast) before the fresh capture answers (broadcast again).
+    onHelloResult({});
+    expect(getLocalUpdateSupported()).toBeNull();
+    await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(true));
+    expect(changedCalls().length).toBe(afterFirst + 2);
+  });
+
+  it('keeps null for a flagless/malformed system.status (unknown daemon capability)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    systemStatus.value = { status: 'ok' }; // no updateSupported field
+
+    onHelloResult({});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    systemStatus.value = { updateSupported: 'yes' };
+    onHelloResult({});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+  });
+
+  it('clears a previously-captured flag in sidecar mode instead of capturing', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('sidecar');
+    setLocalUpdateSupported(true);
+    systemStatus.value = { updateSupported: true };
+    const changedCalls = installChangedSpy();
+
+    onHelloResult({});
+    await vi.waitFor(() => {
+      expect(getLocalUpdateSupported()).toBeNull();
+      expect(changedCalls().length).toBeGreaterThan(0);
+    });
+  });
+
+  it('resets a previously-captured flag synchronously on reconnect (no stale value in the capture window)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    setLocalUpdateSupported(true);
+    // Keep the capture pending: the daemon behind the socket may have been
+    // replaced, so the old `true` must not be advertised while it answers.
+    let resolveStatus!: (value: unknown) => void;
+    systemStatus.value = new Promise((resolve) => (resolveStatus = resolve));
+
+    onHelloResult({});
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    resolveStatus({ updateSupported: false });
+    await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(false));
+  });
+
+  it('concludes unknown when the capture request fails (reset is not undone)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    setLocalUpdateSupported(true);
+    let rejectStatus!: (reason: unknown) => void;
+    const failing = new Promise((_resolve, reject) => (rejectStatus = reject));
+    // The capture catches the rejection; this handler only keeps the shared
+    // fixture promise itself off vitest's unhandled-rejection tracker.
+    failing.catch(() => {});
+    systemStatus.value = failing;
+
+    onHelloResult({});
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    rejectStatus(new Error('boom'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+  });
+
+  it('re-pushes backend:status when the captured flag changes (behind-pin suppression sees the flag)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    systemStatus.value = { updateSupported: true };
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    onHelloResult({});
+    await vi.waitFor(() => {
+      const statusCalls = send.mock.calls.filter(([c]) => c === 'backend:status');
+      expect(statusCalls.length).toBeGreaterThan(0);
+      // The re-pushed payload carries the flag-bearing transport info.
+      expect(statusCalls.at(-1)?.[1]).toMatchObject({
+        transport: expect.objectContaining({ mode: 'external-uds', updateSupported: true }),
+      });
+    });
+  });
+
+  it('discards a stale result when the local client was disposed mid-flight', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    let resolveStatus!: (value: unknown) => void;
+    systemStatus.value = new Promise((resolve) => (resolveStatus = resolve));
+
+    onHelloResult({});
+    const { disconnectBackendClient } = await import('../backend.ipc');
+    disconnectBackendClient('local');
+    resolveStatus({ updateSupported: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+  });
+
+  it('recaptures via refreshLocalUpdateSupported when the hello raced the startup mode resolution', async () => {
+    // Field scenario (adopted sitter-supervised daemon): the pooled local
+    // client is constructed during setupConfigIPC and its hello resolves
+    // BEFORE startIntentdSidecar resolves the connection mode, so the
+    // hello-time capture sees `unknown` and skips — and no later hello re-runs
+    // it while the socket stays connected. The daemon's version still renders
+    // (the adoption probe sets it), so the Devices row showed the behind-pin
+    // dot without the Update menu.
+    const onHelloResult = await freshLocalOnHelloResult();
+    systemStatus.value = { updateSupported: true };
+
+    onHelloResult({}); // hello fires while the mode is still 'unknown'
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    // startIntentdSidecar then adopts the daemon and re-runs the capture.
+    setConnectionMode('external');
+    const { refreshLocalUpdateSupported } = await import('../backend.ipc');
+    await refreshLocalUpdateSupported();
+    expect(getLocalUpdateSupported()).toBe(true);
   });
 });

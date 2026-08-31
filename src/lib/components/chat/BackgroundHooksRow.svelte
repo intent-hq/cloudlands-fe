@@ -27,7 +27,7 @@
   import { Button } from '$lib/components/ui/button';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatCompactDuration, formatInteger } from '$lib/i18n/format';
+  import { formatCompactDuration, formatDateTime, formatInteger } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
   import {
@@ -167,6 +167,26 @@
   function expiresIn(hook: BackgroundHook): string {
     return formatCompactDuration(new Date(hook.expiresAt!).getTime() - now);
   }
+
+  /**
+   * Cadence label + value for the details grid: cron hooks show the raw UTC
+   * cron expression under "Schedule", runAt hooks a localized "once at
+   * <time>", and delayMs hooks keep the compact interval (defensively "—"
+   * when `delayMs` is absent/0 on an unknown schedule kind).
+   */
+  function scheduleLabel(hook: BackgroundHook): string {
+    return hook.cron || hook.runAt
+      ? m.chat_backgroundHooks_details_schedule_label()
+      : m.chat_backgroundHooks_details_interval_label();
+  }
+
+  function scheduleValue(hook: BackgroundHook): string {
+    if (hook.cron) return hook.cron;
+    if (hook.runAt) {
+      return m.chat_backgroundHooks_details_onceAt_value({ time: formatDateTime(hook.runAt) });
+    }
+    return hook.delayMs ? formatCompactDuration(hook.delayMs) : '—';
+  }
 </script>
 
 {#if agentHooks.length > 0}
@@ -305,10 +325,10 @@
               </div>
               <div class="background-hook-metric min-w-0 border-l border-border px-3 py-2">
                 <dt class="truncate text-muted-foreground">
-                  {m.chat_backgroundHooks_details_interval_label()}
+                  {scheduleLabel(hook)}
                 </dt>
                 <dd class="min-w-0 truncate font-medium text-foreground">
-                  {formatCompactDuration(hook.delayMs)}
+                  {scheduleValue(hook)}
                 </dd>
               </div>
               <div class="background-hook-metric min-w-0 border-l border-border px-3 py-2">

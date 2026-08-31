@@ -15,6 +15,8 @@ import {
   systemStatusFailure,
   spawnSidecarRequested,
   spawnSidecarFailed,
+  openLocalAndSpawnRequested,
+  openLocalAndSpawnSucceeded,
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
   fetchSidecarRunLogFailed,
@@ -378,6 +380,21 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, spawnSidecarFailed('intentd binary not found'));
       expect(next.sidecarSpawnPending).toBe(false);
       expect(next.sidecarSpawnError).toBe('intentd binary not found');
+    });
+  });
+
+  describe('openLocalAndSpawnRequested / openLocalAndSpawnSucceeded', () => {
+    it('marks the spawn pending and clears a previous error on request', () => {
+      const state = { ...initialState, sidecarSpawnError: 'intentd binary not found' };
+      const next = daemonHealthReducer(state, openLocalAndSpawnRequested());
+      expect(next.sidecarSpawnPending).toBe(true);
+      expect(next.sidecarSpawnError).toBeNull();
+    });
+
+    it('clears pending on success — this window keeps its dead backend, so no connected status ever resets it', () => {
+      const state = { ...initialState, sidecarSpawnPending: true };
+      const next = daemonHealthReducer(state, openLocalAndSpawnSucceeded());
+      expect(next.sidecarSpawnPending).toBe(false);
     });
   });
 

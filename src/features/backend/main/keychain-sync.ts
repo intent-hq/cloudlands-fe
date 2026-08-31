@@ -33,6 +33,11 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Logger } from '../../../shared/logger';
+import {
+  DEFAULT_CONNECTION_ACCENT,
+  isConnectionAccent,
+  type ConnectionAccent,
+} from '../../../shared/types/connections';
 
 const logger = new Logger('KeychainSync');
 
@@ -59,6 +64,8 @@ export const MAX_HELPER_OUTPUT_BYTES = 8 * 1024 * 1024;
  */
 export interface KeychainSyncRecord {
   label: string;
+  /** Optional only for compatibility with payloads written before metadata accents. */
+  accent?: ConnectionAccent;
   /** Primary remote host/IP (identity, with `port`). */
   host: string;
   /** Candidate hosts (primary first) — mirrors the store's `hosts` semantics. */
@@ -103,6 +110,7 @@ export function serializeRecord(record: KeychainSyncRecord): string {
   const payload: Record<string, unknown> = {
     v: KEYCHAIN_PAYLOAD_VERSION,
     label: record.label,
+    accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
     host: record.host,
     hosts: record.hosts,
     port: record.port,
@@ -137,6 +145,7 @@ export function parsePayload(payload: string): ParsedPayload {
   if (obj.v > KEYCHAIN_PAYLOAD_VERSION) return { kind: 'newer-version' };
   if (
     typeof obj.label !== 'string' ||
+    (obj.accent !== undefined && !isConnectionAccent(obj.accent)) ||
     typeof obj.host !== 'string' ||
     obj.host.trim() === '' ||
     typeof obj.port !== 'number' ||
@@ -147,6 +156,7 @@ export function parsePayload(payload: string): ParsedPayload {
   }
   const record: KeychainSyncRecord = {
     label: obj.label,
+    accent: isConnectionAccent(obj.accent) ? obj.accent : DEFAULT_CONNECTION_ACCENT,
     host: obj.host,
     hosts:
       Array.isArray(obj.hosts) && obj.hosts.every((h) => typeof h === 'string')

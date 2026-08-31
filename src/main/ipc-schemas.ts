@@ -6,8 +6,10 @@
  */
 
 import { z } from 'zod';
+import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
+import { CONNECTION_ACCENTS } from '../shared/types/connections';
 // IPC allow-list of workspace event-type strings.
 //
 // Mirrors the runtime values declared in `features/events/types.ts`
@@ -744,10 +746,18 @@ export const DialogOpenSchema = z.object({
 export const ShellOpenExternalSchema = z.object({
   url: z.string().refine(
     (val) => {
-      // Allow http, https, mailto, and other common protocols
-      return /^(https?|mailto|tel|file):/.test(val);
+      // Allow http, https, mailto, tel, file — plus the exact hardcoded OS
+      // deep links in BROWSER_PROTOCOLS.EXTERNAL_EXACT (e.g. the macOS Input
+      // Monitoring System Settings pane). Full-string match only: the
+      // x-apple.systempreferences: scheme is never allowlisted wholesale.
+      return (
+        /^(https?|mailto|tel|file):/.test(val) || BROWSER_PROTOCOLS.EXTERNAL_EXACT.includes(val)
+      );
     },
-    { message: 'Invalid URL format - must start with http, https, mailto, tel, or file' },
+    {
+      message:
+        'Invalid URL format - must start with http, https, mailto, tel, or file, or be an allowlisted OS settings deep link',
+    },
   ),
 });
 
@@ -1075,6 +1085,7 @@ export const ConnectionsCaptureFingerprintSchema = z.object({
 
 export const ConnectionsAddSchema = z.object({
   label: z.string().min(1, 'Label is required'),
+  accent: z.enum(CONNECTION_ACCENTS).nullable().optional(),
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
   fingerprint: z.string().min(1, 'Fingerprint is required'),
@@ -1085,6 +1096,32 @@ export const ConnectionsAddSchema = z.object({
   syncExcluded: z.boolean().optional(),
 });
 
+export const ConnectionsUpdateSchema = z
+  .object({
+    id: z.string().min(1, 'Connection ID is required'),
+    label: z.string().trim().min(1, 'Label is required'),
+    accent: z.enum(CONNECTION_ACCENTS).nullable(),
+    host: z.string().trim().min(1, 'Host is required').optional(),
+    port: z.number().int().min(1).max(65_535).optional(),
+    confirmedFingerprint: z.string().trim().min(1).optional(),
+  })
+  .refine((value) => (value.host === undefined) === (value.port === undefined), {
+    message: 'Host and port must be supplied together',
+  });
+
+export const ConnectionsTestSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+  host: z.string().trim().min(1, 'Host is required'),
+  port: z.number().int().min(1).max(65_535),
+  token: z.string().min(1, 'Token is required').optional(),
+});
+
+export const ConnectionsRotateSecretSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+  token: z.string().min(1, 'Token is required'),
+  confirmedFingerprint: z.string().trim().min(1).optional(),
+});
+
 export const ConnectionsForgetSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
@@ -1093,7 +1130,7 @@ export const ConnectionsOpenSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
 
-export const ConnectionsSwitchSchema = z.object({
+export const ConnectionsUpdateBackendSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
 

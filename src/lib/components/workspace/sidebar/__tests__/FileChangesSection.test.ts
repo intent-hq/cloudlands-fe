@@ -68,18 +68,6 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
-  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/stageByPathRequested',
-    payload: [wsId, paths],
-  })),
-  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/unstageByPathRequested',
-    payload: [wsId, paths],
-  })),
-  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/revertByPathRequested',
-    payload: [wsId, paths],
-  })),
   refreshRequested: vi.fn((wsId: string) => ({
     type: 'changes/refreshRequested',
     payload: wsId,

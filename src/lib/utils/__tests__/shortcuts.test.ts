@@ -33,18 +33,12 @@ describe('shortcut registry', () => {
   });
 
   it('lists distinct panel-content and workspace-tab close shortcuts', () => {
-    expect(SHORTCUTS.CLOSE_TAB).toEqual({
-      key: 'mod+w',
-      label: 'Close Active Pane',
-    });
-    expect(SHORTCUTS.CLOSE_WORKSPACE_TAB).toEqual({
-      key: 'mod+shift+w',
-      label: 'Close Space Tab',
-    });
+    expect(SHORTCUTS.CLOSE_TAB.key).toBe('mod+w');
+    expect(SHORTCUTS.CLOSE_WORKSPACE_TAB.key).toBe('mod+shift+w');
     expect(SHORTCUT_CATEGORIES.navigation.shortcuts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: 'mod+w', label: 'Close Active Pane' }),
-        expect.objectContaining({ key: 'mod+shift+w', label: 'Close Space Tab' }),
+        expect.objectContaining({ key: 'mod+w' }),
+        expect.objectContaining({ key: 'mod+shift+w' }),
       ]),
     );
   });

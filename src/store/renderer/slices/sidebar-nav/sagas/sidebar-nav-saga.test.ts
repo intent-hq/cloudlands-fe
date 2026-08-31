@@ -14,10 +14,32 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
-import { CARD_PINNED_KEY, CHIEF_ACTIVE_AGENT_ID_KEY, COMBINED_PANEL_SPLIT_KEY, hydrateSidebarNav, LEGACY_HOME_PANEL_SPLIT_KEY, MULTISELECT_SIDEBAR_TAB_ORDER_KEY, PANEL_ITEM_KEY, PANEL_WIDTH_KEY, PINNED_WORKSPACES_KEY, setAllSpacesViewMode, setPanelWidth, SHOW_ARCHIVED_KEY, VIEW_MODE_KEY } from '../sidebar-nav-slice';
+import {
+  CARD_PINNED_KEY,
+  CHIEF_ACTIVE_AGENT_ID_KEY,
+  COMBINED_PANEL_SPLIT_KEY,
+  hydrateSidebarNav,
+  hydrateWorkspaceSidebarUi,
+  LEGACY_HOME_PANEL_SPLIT_KEY,
+  MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX,
+  MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
+  PANEL_ITEM_KEY,
+  PANEL_WIDTH_KEY,
+  PINNED_WORKSPACES_KEY,
+  setAllSpacesViewMode,
+  setMultiSelectSidebarSelectedTabs,
+  setPanelWidth,
+  setWorkspaceNoteOrder,
+  SHOW_ARCHIVED_KEY,
+  toggleWorkspaceCollapsedNote,
+  VIEW_MODE_KEY,
+  WORKSPACE_COLLAPSED_NOTES_PREFIX,
+  WORKSPACE_NOTE_ORDER_PREFIX,
+} from '../sidebar-nav-slice';
 import { initialState } from '../sidebar-nav-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { sidebarNavSaga } from './sidebar-nav-saga';
 
 const current = {
@@ -33,12 +55,15 @@ const current = {
     chiefActiveAgentId: 'agent-1',
     multiSelectTabOrder: ['context', 'overview'],
   },
-  connections: { activeId: LOCAL_CONNECTION_ID },
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
 };
 
 const REMOTE_ID = 'remote-1';
 const REMOTE_PINNED_KEY = `backend:${REMOTE_ID}:${PINNED_WORKSPACES_KEY}`;
-const remoteCurrent = { ...current, connections: { activeId: REMOTE_ID } };
+const remoteCurrent = {
+  ...current,
+  connections: { activeId: REMOTE_ID, windowBackendId: REMOTE_ID },
+};
 
 const settle = async () => {
   await Promise.resolve();
@@ -160,7 +185,6 @@ describe('sidebarNavSaga', () => {
   });
 
   describe('multi-backend namespacing', () => {
-
     it('re-hydrates per-backend keys on switch, resetting the ones the backend lacks', async () => {
       storage.getItem.mockReturnValue(null);
       storage.getJSON.mockImplementation((key: string) =>
@@ -174,7 +198,13 @@ describe('sidebarNavSaga', () => {
       dispatch.mockClear();
 
       state = remoteCurrent;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -183,6 +213,111 @@ describe('sidebarNavSaga', () => {
           chiefActiveAgentId: null,
           multiSelectTabOrder: [],
         }),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  describe('per-workspace sidebar UI persistence', () => {
+    const SELECTED_TABS_KEY = `${MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX}ws-1`;
+    const NOTE_ORDER_KEY = `${WORKSPACE_NOTE_ORDER_PREFIX}ws-1`;
+    const COLLAPSED_NOTES_KEY = `${WORKSPACE_COLLAPSED_NOTES_PREFIX}ws-1`;
+
+    it('hydrates stored selected tabs, note order, and collapsed notes on workspaceMounted', async () => {
+      storage.getItem.mockReturnValue(null);
+      storage.getJSON.mockImplementation((key: string) => {
+        if (key === SELECTED_TABS_KEY) return ['context', 7, 'overview'];
+        if (key === NOTE_ORDER_KEY) return ['note-2', 'note-1'];
+        if (key === COLLAPSED_NOTES_KEY) return ['note-1'];
+        return undefined;
+      });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => current }, sidebarNavSaga);
+      await settle();
+      dispatch.mockClear();
+
+      channel.put(workspaceMounted('ws-1'));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        hydrateWorkspaceSidebarUi('ws-1', {
+          selectedTabIds: ['context', 'overview'],
+          noteOrder: ['note-2', 'note-1'],
+          collapsedNoteIds: ['note-1'],
+        }),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not dispatch when the workspace has nothing stored', async () => {
+      storage.getItem.mockReturnValue(null);
+      storage.getJSON.mockReturnValue(undefined);
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => current }, sidebarNavSaga);
+      await settle();
+      dispatch.mockClear();
+
+      channel.put(workspaceMounted('ws-1'));
+      await settle();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('persists selected tabs, note order, and collapsed notes under workspace-scoped keys', async () => {
+      storage.getItem.mockReturnValue(null);
+      storage.getJSON.mockReturnValue(undefined);
+      const state = {
+        ...current,
+        sidebarNav: {
+          ...current.sidebarNav,
+          multiSelectSelectedTabIdsByWorkspaceId: { 'ws-1': ['context', 'overview'] },
+          noteOrderByWorkspaceId: { 'ws-1': ['note-2', 'note-1'] },
+          collapsedNoteIdsByWorkspaceId: { 'ws-1': ['note-1'] },
+        },
+      };
+      const channel = stdChannel();
+      const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, sidebarNavSaga);
+      await settle();
+
+      channel.put(setMultiSelectSidebarSelectedTabs('ws-1', ['context', 'overview']));
+      channel.put(setWorkspaceNoteOrder('ws-1', ['note-2', 'note-1']));
+      channel.put(toggleWorkspaceCollapsedNote('ws-1', 'note-1'));
+      await settle();
+
+      expect(storage.setJSON.mock.calls).toEqual([
+        [SELECTED_TABS_KEY, ['context', 'overview']],
+        [NOTE_ORDER_KEY, ['note-2', 'note-1']],
+        [COLLAPSED_NOTES_KEY, ['note-1']],
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('namespaces per-workspace keys for a remote backend', async () => {
+      storage.getItem.mockReturnValue(null);
+      storage.getJSON.mockReturnValue(undefined);
+      const state = {
+        ...remoteCurrent,
+        sidebarNav: {
+          ...remoteCurrent.sidebarNav,
+          multiSelectSelectedTabIdsByWorkspaceId: { 'ws-1': ['context'] },
+        },
+      };
+      const channel = stdChannel();
+      const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, sidebarNavSaga);
+      await settle();
+
+      channel.put(setMultiSelectSidebarSelectedTabs('ws-1', ['context']));
+      await settle();
+
+      expect(storage.setJSON.mock.calls).toEqual([
+        [`backend:${REMOTE_ID}:${SELECTED_TABS_KEY}`, ['context']],
       ]);
       task.cancel();
       await task.toPromise();

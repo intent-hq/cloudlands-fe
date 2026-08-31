@@ -9,6 +9,5 @@
  */
 
 export { useTabManagement } from './use-tab-management.svelte';
-export { useWorkspaceLoader } from './use-workspace-loader.svelte';
 export { useCloseHandlers } from './use-close-handlers.svelte';
 export { usePanelShortcuts } from './use-panel-shortcuts.svelte';

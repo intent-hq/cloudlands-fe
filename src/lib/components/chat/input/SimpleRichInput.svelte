@@ -2,7 +2,9 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
   import { onMount, tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -65,6 +67,11 @@
   import * as Menu from '$lib/components/ui/menu';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
+  import {
+    selectSkills,
+    selectSkillsError,
+    selectSkillsLoading,
+  } from '$store/renderer/slices/skills/skills-selectors';
 
   import {
     togglePanel as togglePanelAction,
@@ -150,6 +157,8 @@
     editorClassName?: string;
     /** Override the horizontal inset applied to context rows and the action bar. */
     contentInsetClassName?: string;
+    /** Override the action bar's important trailing-edge padding (defaults to `pr-1.5!`). */
+    actionBarEndClassName?: string;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -213,6 +222,7 @@
     edgeDocked = false,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
+    actionBarEndClassName = 'pr-1.5!',
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -257,6 +267,17 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
+
+  // Selector readables are created at component init; mirror the reactive prop
+  // so a composer moved between workspaces follows that workspace's skill roster.
+  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspace?.id ?? '');
+  });
+  const skills$ = selectSkills(workspaceIdStore);
+  const skillsLoading$ = selectSkillsLoading(workspaceIdStore);
+  const skillsError$ = selectSkillsError(workspaceIdStore);
 
   // Derived state: whether there's content to send (text, context items, or inline images).
   // Blocked while any attachment placement is in flight or failed — a failed
@@ -309,7 +330,14 @@
       showVoiceSetupToast();
       return;
     }
-    toggleComposerMicRecording(micContext);
+    toggleComposerMicRecording(micContext, agentId);
+  }
+
+  // Toolbar-button pattern: swallow mousedown's default action (focus) so
+  // clicking the mic never blurs the editor — the caret stays in the input
+  // across start/stop/cancel clicks. The click itself still fires.
+  function handleMicMouseDown(event: MouseEvent) {
+    event.preventDefault();
   }
 
   function handleMicEscape(event: KeyboardEvent) {
@@ -808,7 +836,29 @@
         enhancementUndoValue = originalPrompt;
         enhancedPromptValue = result.enhanced;
         updateValue(result.enhanced);
-        toast.success(m.chat_richInput_promptEnhanced_toast());
+        // Capture THIS enhancement's undo state in the closure: a lingering
+        // toast's Undo must not revert a newer enhancement (or a cancelled
+        // one) based on whatever the component state holds at click time.
+        const undoValueForToast = originalPrompt;
+        const enhancedValueForToast = result.enhanced;
+        toast.success(
+          m.chat_richInput_promptEnhanced_toast(),
+          withToastCountdown({
+            duration: 10000,
+            action: {
+              label: m.chat_richInput_undoEnhance_label(),
+              onClick: () => {
+                if (
+                  enhancementUndoValue !== undoValueForToast ||
+                  enhancedPromptValue !== enhancedValueForToast
+                ) {
+                  return;
+                }
+                handleUndoEnhance();
+              },
+            },
+          }),
+        );
       }
     } catch (error) {
       // Ignore errors from requests invalidated by cancellation or a newer request.
@@ -1491,6 +1541,9 @@
       editableWhileDisabled={editableWhileDisabled && !isEnhancing}
       {inputLocked}
       workspace={workspace ?? undefined}
+      skills={$skills$}
+      skillsLoading={$skillsLoading$}
+      skillsError={$skillsError$}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (
@@ -1560,7 +1613,7 @@
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
+    class="action-bar flex items-center justify-between pb-1.5 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
       ? 'flex-wrap gap-y-1'
       : ''} {contentInsetClasses}"
     data-chat-input-action-bar
@@ -1645,6 +1698,7 @@
             variant="ghost-light"
             size="icon-sm"
             onclick={handleMicCancelTranscription}
+            onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micCancelTranscribing_label()}
             data-testid="composer-mic-button"
           >
@@ -1657,6 +1711,7 @@
             variant="ghost-light"
             size="icon-sm"
             onclick={handleMicClick}
+            onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micStop_label()}
             aria-pressed="true"
             class="text-error-foreground animate-pulse"
@@ -1672,6 +1727,7 @@
             size="icon-sm"
             {disabled}
             onclick={handleMicClick}
+            onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micStart_label()}
             aria-pressed="false"
             data-testid="composer-mic-button"

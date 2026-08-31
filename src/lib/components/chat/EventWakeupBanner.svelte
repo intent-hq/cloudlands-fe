@@ -62,6 +62,11 @@
     embedded?: boolean;
     /** Use the compact transcript rhythm for the card's external top gap. */
     compact?: boolean;
+    /**
+     * Drop the divider card's external top margin when the preceding
+     * batched-delivery gap already owns the seam.
+     */
+    suppressTopGap?: boolean;
     /** The raw event message text to parse and display */
     messageText?: string;
     /** Whether to show the summary row (default: true) */
@@ -77,6 +82,7 @@
     asDivider = false,
     embedded = false,
     compact: _compact = false,
+    suppressTopGap = false,
     messageText = '',
     showSummary = true,
     showAgentCards = true,
@@ -419,10 +425,10 @@
   <div
     class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded
       ? ''
-      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
+      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${suppressTopGap ? 'mt-0' : EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
     data-testid="event-wakeup-card"
     data-embedded={embedded}
-    data-external-spacing-owner={!embedded ? 'event-wakeup-card' : undefined}
+    data-external-spacing-owner={!embedded && !suppressTopGap ? 'event-wakeup-card' : undefined}
     transition:safeSubscriptionSlide
   >
     <!-- Summary header and completed-agent details share one bounded surface. -->

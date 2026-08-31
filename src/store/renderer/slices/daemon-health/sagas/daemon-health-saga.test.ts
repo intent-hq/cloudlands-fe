@@ -20,13 +20,14 @@ import {
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
   heartbeatFailed,
+  openLocalAndSpawnRequested,
+  openLocalAndSpawnSucceeded,
   pollUnslothStatus,
   spawnSidecarFailed,
   spawnSidecarRequested,
   stopUnslothFailed,
   stopUnslothRequested,
   systemStatusFailure,
-  switchLocalAndSpawnRequested,
 } from '../daemon-health-slice';
 import type { SystemStatusWirePayload } from '../daemon-health-types';
 import { daemonHealthSaga, pollSystemStatusSaga } from './daemon-health-saga';
@@ -203,6 +204,76 @@ describe('daemonHealthSaga', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(mocks.toastWarning).toHaveBeenCalledTimes(2);
     expect(mocks.toastWarning.mock.calls[1]![0]).toContain('v3.0.0');
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('suppresses the generic mismatch toast when the behind-pin Update toast owns it', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: {
+            mode: 'external-uds',
+            versionMismatch: true,
+            daemonVersion: '1.0.0',
+            pinnedVersion: '2.0.0',
+            updateSupported: true,
+          },
+        };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    // Behind the pin with explicit update support: the actionable Update
+    // toast (connections-saga) owns this mismatch — no passive warning.
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+
+    // Suppression does not consume the latch: if the flag later reads false
+    // (e.g. after a daemon swap) the passive warning still fires once.
+    statusHandler!({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        versionMismatch: true,
+        daemonVersion: '1.0.0',
+        pinnedVersion: '2.0.0',
+        updateSupported: false,
+      },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the passive mismatch toast for a newer-than-pin daemon even with update support', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: {
+            mode: 'external-uds',
+            versionMismatch: true,
+            daemonVersion: '3.0.0',
+            pinnedVersion: '2.0.0',
+            updateSupported: true,
+          },
+        };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    // Newer than the pin is not the behind-pin toast's case: warn passively.
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    expect(mocks.toastWarning.mock.calls[0]![0]).toContain('v3.0.0');
 
     task.cancel();
     await task.toPromise();
@@ -598,19 +669,44 @@ describe('daemonHealthSaga', () => {
     ).toHaveLength(0);
   });
 
-  it('routes external recovery through the atomic switch-and-spawn channel', async () => {
+  it('routes remote-window recovery through the open-local-and-spawn channel', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
-      if (channel === BACKEND.SWITCH_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
+      if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
       return undefined;
     });
-    const { input, task } = startHealthSaga();
+    const { input, dispatched, task } = startHealthSaga();
     await settle();
 
-    input.put(switchLocalAndSpawnRequested());
+    input.put(openLocalAndSpawnRequested());
     await settle();
 
-    expect(invoke).toHaveBeenCalledWith(BACKEND.SWITCH_LOCAL_AND_SPAWN);
+    expect(invoke).toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
+    // The initiating window keeps its own (dead) backend, so no 'connected'
+    // status event ever clears the pending flag — the success action must.
+    expect(dispatched).toContainEqual(openLocalAndSpawnSucceeded());
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not dispatch the open-local success action when the open fails', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
+      if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) return { ok: false, reason: 'deadline' };
+      return undefined;
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+
+    input.put(openLocalAndSpawnRequested());
+    await settle();
+
+    expect(dispatched).toContainEqual(spawnSidecarFailed('deadline'));
+    expect(
+      dispatched.some(
+        (action) => (action as { type?: string }).type === openLocalAndSpawnSucceeded.type,
+      ),
+    ).toBe(false);
     task.cancel();
     await task.toPromise();
   });

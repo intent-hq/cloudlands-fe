@@ -90,6 +90,95 @@ describe('computeResults', () => {
     expect(wsItem).toBeDefined();
   });
 
+  it('emits labeled per-class groups in order while searching, omitting empty ones', () => {
+    const agents = [makeAgent('a1', 'Match Agent')];
+    const notes: WorkspaceObject[] = [{ id: 'n1', type: 'note', label: 'Match Note', icon }];
+    const files = [{ id: 'f1', type: 'file', label: 'match.ts', icon }];
+    const workspaceItems = [{ id: 'ws-2', label: 'Match Space', icon, _workspace: true as const }];
+    const results = computeResults(
+      makeInput({ agents, notes, files, workspaceItems, query: 'match' }),
+    );
+    const groupLabels = results.filter((r: any) => r._groupLabel).map((r: any) => r._groupLabel);
+    expect(groupLabels).toEqual(['Agents', 'Context', 'Files', 'Other workspaces']);
+    // Each item lands after its own group label.
+    const agentIdx = results.findIndex((r: any) => r.type === 'agent');
+    const noteIdx = results.findIndex((r: any) => r.type === 'note');
+    const agentsLabelIdx = results.findIndex((r: any) => r._groupLabel === 'Agents');
+    const notesLabelIdx = results.findIndex((r: any) => r._groupLabel === 'Context');
+    expect(agentIdx).toBe(agentsLabelIdx + 1);
+    expect(noteIdx).toBe(notesLabelIdx + 1);
+  });
+
+  it('labels matching commands as their own group while searching', () => {
+    const results = computeResults(makeInput({ query: 'settings' }));
+    const commandsLabelIdx = results.findIndex((r: any) => r._groupLabel === 'Commands');
+    expect(commandsLabelIdx).toBeGreaterThanOrEqual(0);
+    expect(results[commandsLabelIdx + 1].id).toBe('settings');
+  });
+
+  it('caps each group at 5 items while searching without a filter', () => {
+    const agents = Array.from({ length: 8 }, (_, i) => makeAgent(`a${i}`, `Agent ${i}`));
+    const results = computeResults(makeInput({ agents, query: 'agent' }));
+    expect(results.filter((r: any) => r.type === 'agent').length).toBe(5);
+  });
+
+  it('shows only the filtered class, uncapped, when activeFilter is set with a query', () => {
+    const agents = Array.from({ length: 8 }, (_, i) => makeAgent(`a${i}`, `Agent ${i}`));
+    const notes: WorkspaceObject[] = [{ id: 'n1', type: 'note', label: 'Agent Note', icon }];
+    const results = computeResults(
+      makeInput({ agents, notes, query: 'agent', activeFilter: 'agent' }),
+    );
+    expect(results.filter((r: any) => r.type === 'agent').length).toBe(8);
+    expect(results.filter((r: any) => r.type === 'note').length).toBe(0);
+    const groupLabels = results.filter((r: any) => r._groupLabel).map((r: any) => r._groupLabel);
+    expect(groupLabels).toEqual(['Agents']);
+  });
+
+  it('matches workspace titles order-independently', () => {
+    const workspaceItems = [
+      { id: 'ws-2', label: 'Build Server Space', icon, _workspace: true as const },
+      { id: 'ws-3', label: 'Unrelated', icon, _workspace: true as const },
+    ];
+    const results = computeResults(makeInput({ workspaceItems, query: 'server build' }));
+    const wsItems = results.filter((r: any) => r._workspace);
+    expect(wsItems.length).toBe(1);
+    expect(wsItems[0].id).toBe('ws-2');
+  });
+
+  it('breaks workspace score ties by last-activity timestamp', () => {
+    const workspaceItems = [
+      { id: 'ws-old', label: 'Alpha', icon, _workspace: true as const, _activityTime: 100 },
+      { id: 'ws-new', label: 'Alpha', icon, _workspace: true as const, _activityTime: 200 },
+    ];
+    const results = computeResults(makeInput({ workspaceItems, query: 'alpha' }));
+    const wsItems = results.filter((r: any) => r._workspace);
+    expect(wsItems.map((r: any) => r.id)).toEqual(['ws-new', 'ws-old']);
+  });
+
+  it('preserves incoming file order while searching', () => {
+    const files = [
+      { id: 'f1', type: 'file', label: 'zzz-report.ts', icon },
+      { id: 'f2', type: 'file', label: 'report.ts', icon },
+      { id: 'f3', type: 'file', label: 'a-report.ts', icon },
+    ];
+    const results = computeResults(makeInput({ files, query: 'report' }));
+    const fileItems = results.filter((r: any) => r.type === 'file');
+    expect(fileItems.map((r: any) => r.id)).toEqual(['f1', 'f2', 'f3']);
+  });
+
+  it('drops stale file entries that no longer match the query, keeping order', () => {
+    // Files load asynchronously, so the incoming list can belong to a previous
+    // query; non-matching entries must be dropped without reordering the rest.
+    const files = [
+      { id: 'f1', type: 'file', label: 'zzz.ts', icon, description: 'src/zzz.ts' },
+      { id: 'f2', type: 'file', label: 'report.ts', icon, description: 'src/report.ts' },
+      { id: 'f3', type: 'file', label: 'a-report.ts', icon, description: 'src/a-report.ts' },
+    ];
+    const results = computeResults(makeInput({ files, query: 'report' }));
+    const fileItems = results.filter((r: any) => r.type === 'file');
+    expect(fileItems.map((r: any) => r.id)).toEqual(['f2', 'f3']);
+  });
+
   it('shows recent items group when present and no filter', () => {
     const recentItems = [makeAgent('a1', 'Recent Agent')];
     const results = computeResults(makeInput({ recentItems }));

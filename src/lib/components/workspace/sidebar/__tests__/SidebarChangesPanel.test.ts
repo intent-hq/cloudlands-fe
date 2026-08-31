@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
@@ -108,18 +109,6 @@ vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) =
   clearOlderCommits: vi.fn((wsId: string) => ({
     type: 'changes/clearOlderCommits',
     payload: wsId,
-  })),
-  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/stageByPathRequested',
-    payload: [wsId, paths],
-  })),
-  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/unstageByPathRequested',
-    payload: [wsId, paths],
-  })),
-  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/revertByPathRequested',
-    payload: [wsId, paths],
   })),
   refreshRequested: vi.fn((wsId: string) => ({
     type: 'changes/refreshRequested',
@@ -246,7 +235,6 @@ const mockAcceptChangesState = {
   isAutofillAndCreatingPR: false,
   pendingCommitAction: null as any,
   pendingPRContext: null as any,
-  backgroundOperation: null as any,
 };
 
 function createReadable<T>(value: T) {
@@ -340,12 +328,11 @@ vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
     },
   }),
 }));
-vi.mock('$store/renderer/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
+// The panel hydrates the daemon-computed agent-lock snapshot on workspace
+// switch (PROTOCOL §5.19); fake the client so no wire read is attempted.
+vi.mock('$features/file-tracking/file-tracking.client', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  recomputeAgentLocks: vi.fn((wsId: string) => ({
-    type: 'agentLock/recomputeAgentLocks',
-    payload: [wsId],
-  })),
+  hydrateAgentLocks: vi.fn(() => Promise.resolve()),
 }));
 
 const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));
@@ -2205,7 +2192,7 @@ describe('SidebarChangesPanel', () => {
       });
       // Primary selection keeps today's behavior: normal panel body, no read-only view
       expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeFalsy();
-      expect(container.textContent).toContain('Space root');
+      expect(container.textContent).toContain(m.workspace_sidebarChanges_rootPrimary_label());
     });
 
     it('selecting a secondary root swaps in the read-only view driven by gitRootId reads', async () => {

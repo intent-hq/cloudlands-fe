@@ -27,6 +27,15 @@
     onApply?: (detail: ProposalActionDetail) => void;
     onDiscard?: (detail: ProposalActionDetail) => void;
     onUndo?: (proposalId: string) => void;
+    /** Tray-hosted Dismiss: skip the local "Discarded" tombstone state. */
+    suppressLocalDiscard?: boolean;
+    /**
+     * Tray-hosted restore: enum edits captured by a previous mount,
+     * string-serialized ('' encodes null). Applied once at init.
+     */
+    initialEditedFields?: Record<string, string> | null;
+    /** Reports every enum-edit change (string-serialized) for persistence. */
+    onEditedFieldsChange?: (fields: Record<string, string>) => void;
   }
 
   type SettingsChangePayload = { path: string; value: unknown; apply?: AppSettingApplyPlan };
@@ -39,11 +48,20 @@
     editable: boolean;
   };
 
-  let { proposal, disabled = false, onApply, onDiscard, onUndo }: Props = $props();
+  let {
+    proposal,
+    disabled = false,
+    onApply,
+    onDiscard,
+    onUndo,
+    suppressLocalDiscard = false,
+    initialEditedFields = null,
+    onEditedFieldsChange,
+  }: Props = $props();
   let rootElement = $state<HTMLElement | undefined>();
   let statusElement = $state<HTMLElement | undefined>();
   let isDismissed = $state(false);
-  let editedFields = $state<Record<string, unknown>>({});
+  let editedFields = $state<Record<string, unknown>>(restoreEditedFields());
   let now = $state(Date.now());
 
   const proposalId = $derived(getProposalId(proposal));
@@ -55,6 +73,7 @@
   const isUndoing = $derived($lifecycleStatus === 'undoing');
   const isFailed = $derived($lifecycleStatus === 'failed');
   const isApplied = $derived($lifecycleStatus === 'applied' || Boolean($appliedState));
+  const showDismissed = $derived(isDismissed);
   const actionDisabled = $derived(disabled || isApplying || isUndoing);
   const timeAgo = $derived($appliedState ? formatTimeAgo(now - $appliedState.appliedAt) : '');
   const statusMessage = $derived(getStatusMessage());
@@ -72,6 +91,18 @@
     if (!statusMessage) return;
     void tick().then(() => statusElement?.focus());
   });
+
+  // Enum edits are string-serialized for draft persistence ('' encodes the
+  // nullable clear), matching handleEnumEdit's own value space.
+  function restoreEditedFields(): Record<string, unknown> {
+    if (!initialEditedFields) return {};
+    const restored: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(initialEditedFields)) {
+      const definition = findAppSettingDefinition(key);
+      restored[key] = definition?.nullable === true && value === '' ? null : value;
+    }
+    return restored;
+  }
 
   function getProposalChanges(currentProposal: SettingsChangeProposal): SettingsChangePayload[] {
     return currentProposal.payload.changes;
@@ -152,6 +183,14 @@
       ...editedFields,
       [row.key]: definition?.nullable === true && value === '' ? null : value,
     };
+    onEditedFieldsChange?.(
+      Object.fromEntries(
+        Object.entries(editedFields).map(([key, edited]) => [
+          key,
+          edited === null || edited === undefined ? '' : String(edited),
+        ]),
+      ),
+    );
   }
 
   function enumValueLabel(definition: AppSettingDefinition, value: string): string {
@@ -195,7 +234,7 @@
 
   function handleDiscard() {
     const detail = buildDetail();
-    isDismissed = true;
+    if (!suppressLocalDiscard) isDismissed = true;
     onDiscard?.(detail);
     emitAction('proposaldiscard', detail);
   }
@@ -206,7 +245,7 @@
   }
 </script>
 
-{#if isDismissed}
+{#if showDismissed}
   <div
     class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
   >

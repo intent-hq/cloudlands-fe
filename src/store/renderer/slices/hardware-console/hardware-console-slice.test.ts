@@ -289,7 +289,7 @@ describe("hardwareConsoleReducer", () => {
       "see-spec",
       "switch-window-layouts",
       "push-to-talk",
-      "cycle-in-progress-agents",
+      "cycle-open-windows",
       "cycle-unread-agents",
     ]);
     expect(initialState.actionMappingByModel["codex-micro"]).toEqual([
@@ -316,7 +316,7 @@ describe("hardwareConsoleReducer", () => {
       "see-spec",
       "switch-window-layouts",
       "push-to-talk",
-      "cycle-in-progress-agents",
+      "cycle-open-windows",
       "cycle-unread-agents",
     ]);
     expect(state.actionMappingByModel["codex-micro"]).toEqual(

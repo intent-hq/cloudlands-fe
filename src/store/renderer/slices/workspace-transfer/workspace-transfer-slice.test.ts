@@ -242,7 +242,7 @@ describe('workspaceTransferReducer — steps 3–4', () => {
     );
     const running = workspaceTransferReducer(
       result,
-      transferFinalizeRequested({ switchToTarget: false }),
+      transferFinalizeRequested({ openTarget: false }),
     );
     expect(running.finalizeStatus).toBe('running');
 
@@ -257,7 +257,7 @@ describe('workspaceTransferReducer — steps 3–4', () => {
   it('finalize is rejected while transferring or after failure', () => {
     const transferring = transferringState();
     expect(
-      workspaceTransferReducer(transferring, transferFinalizeRequested({ switchToTarget: false }))
+      workspaceTransferReducer(transferring, transferFinalizeRequested({ openTarget: false }))
         .finalizeStatus,
     ).toBe('idle');
     const failed = workspaceTransferReducer(
@@ -265,7 +265,7 @@ describe('workspaceTransferReducer — steps 3–4', () => {
       transferRunFailed({ error: 'x', failurePhase: 'post-export' }),
     );
     expect(
-      workspaceTransferReducer(failed, transferFinalizeRequested({ switchToTarget: false }))
+      workspaceTransferReducer(failed, transferFinalizeRequested({ openTarget: false }))
         .finalizeStatus,
     ).toBe('idle');
   });

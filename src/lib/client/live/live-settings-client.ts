@@ -213,6 +213,51 @@ export class LiveSettingsClient implements SettingsClient {
     return statuses.filter((status): status is McpServerRuntimeStatus => status !== null);
   }
 
+  async getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null> {
+    // Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable): every
+    // entry adds `workspaceDisabled: boolean`. Lenient on the wire (an unknown
+    // workspaceId yields all-false, never an error); a transport failure folds
+    // to `null` so callers keep their current state instead of clearing it.
+    try {
+      const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
+        "mcp.servers.list",
+        { workspaceId },
+      );
+      if (!Array.isArray(result?.servers)) return null;
+      return result.servers.flatMap((server) =>
+        server.workspaceDisabled === true && typeof server.name === "string" && server.name
+          ? [server.name]
+          : [],
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  async toggleWorkspaceMcpServer(
+    workspaceId: string,
+    serverId: string,
+    enabled: boolean,
+  ): Promise<MutationResult & { workspaceDisabled?: boolean }> {
+    // Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable):
+    // returns `{ status, workspaceDisabled }`; unknown serverId/workspaceId is
+    // a -32602 `not-found` error, folded to `{ success: false }` here.
+    try {
+      const result = await backendRequest<{ workspaceDisabled?: boolean }>(
+        "mcp.servers.toggle",
+        { serverId, enabled, workspaceId },
+      );
+      return typeof result?.workspaceDisabled === "boolean"
+        ? { success: true, workspaceDisabled: result.workspaceDisabled }
+        : { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
     try {
       const existing = await listWireMcpServers();
@@ -338,6 +383,8 @@ interface WireMcpServerConfig {
   headers?: Record<string, string>;
   enabled?: boolean;
   scope?: string;
+  /** Present only on workspace-scoped `mcp.servers.list` reads (§5.22 per-workspace disable). */
+  workspaceDisabled?: boolean;
 }
 
 /** Wire `McpServerStatus` (PROTOCOL §5.22) — the daemon's runtime status shape. */

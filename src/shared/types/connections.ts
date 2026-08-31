@@ -10,9 +10,8 @@
  * Token boundary: the bearer token is main-only (encrypted at rest via
  * Electron `safeStorage`, see `connections-store.ts`). It NEVER appears on any
  * stored, listed, or broadcast connection shape. The only place a token
- * crosses the IPC boundary is renderer→main at add/capture time
- * (`CaptureFingerprintParams`, `AddConnectionParams`), where the user has just
- * typed it — it is consumed by main and never returned.
+ * crosses the IPC boundary is renderer→main at add/capture/rotation time,
+ * where the user has just typed it — it is consumed by main and never returned.
  *
  * `ConnectionRecord` here is structurally identical to the token-free record
  * returned by `connections-store.ts` (`list()`), so main can pass the store's
@@ -48,6 +47,39 @@ export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';
  */
 export const LOCAL_CONNECTION_ID = 'local';
 
+/** Stable semantic identifiers accepted from persisted and synced connection records. */
+export const CONNECTION_ACCENTS = [
+  'blue',
+  'indigo',
+  'violet',
+  'rose',
+  'orange',
+  'emerald',
+  'teal',
+] as const;
+
+export type ConnectionAccentName = (typeof CONNECTION_ACCENTS)[number];
+
+/** Accents offered for new selections; legacy indigo, rose, and orange values remain valid above. */
+export const SELECTABLE_CONNECTION_ACCENTS: readonly ConnectionAccentName[] =
+  CONNECTION_ACCENTS.filter((accent) => !['indigo', 'rose', 'orange'].includes(accent));
+
+/** A named palette accent, or an explicit request for no accent. */
+export type ConnectionAccent = ConnectionAccentName | null;
+
+/** Deterministic fallback for records written before accent metadata existed. */
+export const DEFAULT_CONNECTION_ACCENT: ConnectionAccentName = 'blue';
+
+/** Transient state derived only from an already-created backend client. */
+export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
+
+export function isConnectionAccent(value: unknown): value is ConnectionAccent {
+  return (
+    value === null ||
+    (typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value))
+  );
+}
+
 // ============================================================================
 // Core types
 // ============================================================================
@@ -64,6 +96,8 @@ export const LOCAL_CONNECTION_ID = 'local';
 export interface ConnectionRecord {
   id: string;
   label: string;
+  /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
+  accent?: ConnectionAccent;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
   /**
@@ -87,6 +121,25 @@ export interface ConnectionRecord {
    */
   hostname?: string | null;
   /**
+   * The remote daemon's reported version (`server.version` from its
+   * `client.hello` handshake, PROTOCOL §5.17), captured on connect and
+   * refreshed on every reconnect so the UI can compare it against the app's
+   * pinned intentd version. `null`/absent until captured (or for daemons that
+   * predate the field). On the synthesized local entry it is populated only
+   * in `external` connection mode from the `DaemonVersionInfo` path (absent
+   * for the spawned sidecar).
+   */
+  daemonVersion?: string | null;
+  /**
+   * Whether the daemon reports self-update support (`updateSupported` from
+   * `system.status`), captured after connect and refreshed on every
+   * reconnect. `null`/absent = unknown (capture pending, or a daemon too old
+   * to report the field) — the UI treats anything but `true` as "do not offer
+   * the Update action". On the synthesized local entry it is populated only
+   * for an adopted external daemon over UDS (absent for the spawned sidecar).
+   */
+  updateSupported?: boolean | null;
+  /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record
    * local-only (never pushed to the keychain, never touched by pulls).
@@ -96,6 +149,10 @@ export interface ConnectionRecord {
   syncExcluded?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
+  /** Present on list/broadcast payloads; never persisted. */
+  status?: ConnectionOpenStatus;
+  /** From an already-open connected client's `client.hello`; transient and never persisted. */
+  intentdVersion?: string;
 }
 
 /**
@@ -104,16 +161,16 @@ export interface ConnectionRecord {
  */
 export interface ConnectionsListResult {
   connections: ConnectionRecord[];
-  /** Persisted whole-app selection used for boot restore and explicit switches. */
+  /** Persisted whole-app selection used for boot restore. */
   activeId: string;
   /** Backend bound to the renderer window receiving this payload. */
   windowBackendId: string;
   /**
    * Sticky protocol mismatch for the currently active backend, replayed here so
    * a renderer that missed the one-shot `connections:protocol-mismatch`
-   * broadcast (e.g. a window created by a backend switch, after the remote
-   * handshake already fired) still surfaces the advisory. `null`/absent when the
-   * active backend matches local (or is local itself).
+   * broadcast (e.g. a window created after the remote handshake already fired)
+   * still surfaces the advisory. `null`/absent when the active backend matches
+   * local (or is local itself).
    */
   protocolMismatch?: ConnectionProtocolMismatchEvent | null;
   /**
@@ -124,6 +181,29 @@ export interface ConnectionsListResult {
    * auth is good (or it is local).
    */
   authRejected?: ConnectionAuthRejectedEvent | null;
+  /**
+   * Sticky cert mismatch for this window's backend, replayed here so a
+   * renderer created or reloaded after the one-shot `connections:cert-mismatch`
+   * broadcast (e.g. the boot-wide restore connects pooled clients before their
+   * windows exist) still surfaces the blocking trust warning. `null`/absent
+   * when the backend's pinned cert matches (or it is local).
+   */
+  certMismatch?: ConnectionCertMismatchEvent | null;
+  /**
+   * The app's pinned intentd version (the `intentd.version` file bundled with
+   * the FE), or `null` when the pin is missing/malformed. Carried here so the
+   * renderer can compare each remote's captured `daemonVersion` against the
+   * version the app expects without a separate channel.
+   */
+  pinnedVersion?: string | null;
+  /**
+   * ids of the connections with a live, currently-connected pooled client
+   * (includes the local sidecar when its client is up). Refreshed on every
+   * pool status transition via a `connections:changed` broadcast so the
+   * renderer can gate connected-only actions (the remote Update button).
+   * Optional so payloads from an older main process remain valid.
+   */
+  connectedIds?: string[];
 }
 
 /**
@@ -158,6 +238,8 @@ export interface CaptureFingerprintResult {
  */
 export interface AddConnectionParams {
   label: string;
+  /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}; `null` explicitly clears it. */
+  accent?: ConnectionAccent;
   host: string;
   port: number;
   fingerprint: string;
@@ -182,12 +264,74 @@ export interface AddConnectionParams {
 export interface AddConnectionResult {
   connection: ConnectionRecord;
   /**
-   * `true` when the add re-paired the active backend and main rebuilt that
-   * client in place. Either way, callers may follow with `connections:open`;
-   * opening never performs a whole-app switch.
+   * `true` when the add re-paired the persisted active backend (kept for wire
+   * compatibility). Main rebuilds the pooled client in place for ANY re-paired
+   * backend that is live (serving windows) or active, so the refreshed
+   * credentials always reach open windows. Either way, callers may follow with
+   * `connections:open`; opening never performs a whole-app switch.
    */
   switched: boolean;
 }
+
+/** `connections:update` params. Never carries or mutates the bearer token. */
+export interface UpdateConnectionParams {
+  id: string;
+  label: string;
+  accent: ConnectionAccent;
+  /** Optional for compatibility with presentation-only callers. */
+  host?: string;
+  /** Must be supplied together with `host`. */
+  port?: number;
+  /** Explicit user confirmation of a newly presented certificate. */
+  confirmedFingerprint?: string;
+}
+
+/** Machine-readable validation outcomes; renderer copy is localized by status/reason. */
+type ConnectionValidationResult =
+  | { status: 'success'; fingerprint: string }
+  | { status: 'secret-unavailable' }
+  | {
+      status: 'fingerprint-confirmation-required';
+      expectedFingerprint: string;
+      actualFingerprint: string;
+    }
+  | { status: 'authentication-rejected'; statusCode: number }
+  | {
+      status: 'failed';
+      reason: 'no-certificate' | 'connect-failed' | 'timeout';
+      statusCode?: number;
+    };
+
+export type ConnectionValidationBlockedResult = Exclude<
+  ConnectionValidationResult,
+  { status: 'success' }
+>;
+
+/** `connections:update` result: either an updated token-free record or validation guidance. */
+export type UpdateConnectionResult =
+  { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
+
+/** Test current unsaved address values with the saved main-process-only secret. */
+export interface TestConnectionParams {
+  id: string;
+  host: string;
+  port: number;
+  /** Write-only override for this probe; never persisted or returned. */
+  token?: string;
+}
+
+export type TestConnectionResult = ConnectionValidationResult;
+
+/** Replace a saved secret without ever returning the old or new value. */
+export interface RotateConnectionSecretParams {
+  id: string;
+  token: string;
+  /** Explicit user confirmation of a newly presented certificate. */
+  confirmedFingerprint?: string;
+}
+
+export type RotateConnectionSecretResult =
+  { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
 
 /** `connections:open` params. */
 export interface OpenConnectionParams {
@@ -195,9 +339,8 @@ export interface OpenConnectionParams {
 }
 
 /** `connections:open` result: echoes the opened or focused backend id. */
-export interface OpenConnectionResult {
-  id: string;
-}
+export type OpenConnectionResult =
+  { status: 'opened'; id: string } | { status: 'secret-unavailable' };
 
 /** `connections:forget` params. */
 export interface ForgetConnectionParams {
@@ -209,22 +352,36 @@ export interface ForgetConnectionResult {
   id: string;
 }
 
-/** `connections:switch` params. */
-export interface SwitchConnectionParams {
+/** `connections:update-backend` params. */
+export interface UpdateBackendParams {
   id: string;
 }
 
-/** `connections:switch` result: the newly active connection id. */
-export interface SwitchConnectionResult {
-  activeId: string;
-}
+/**
+ * `connections:update-backend` result. Structured rather than thrown so the
+ * renderer can toast a specific message per failure mode:
+ *   - `ok: true`        → `system.requestUpdate` was accepted; the remote's
+ *                          sitter will install the newer version and restart
+ *                          the daemon (the FE reconnects automatically).
+ *   - `'not-connected'` → no live pooled client for that id (saved but
+ *                          disconnected remote, or the id is unknown).
+ *   - `'unsupported'`   → the daemon rejected the method (JSON-RPC -32601:
+ *                          too old to know `system.requestUpdate`) or the id
+ *                          was the local entry (never updated this way).
+ *   - `'failed'`        → the daemon returned a structured error (e.g. not
+ *                          sitter-supervised, non-unix host); `message`
+ *                          carries the daemon's error text.
+ */
+export type UpdateBackendResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-connected' | 'unsupported' | 'failed'; message?: string };
 
 // ============================================================================
 // Push-event payloads (main → renderer)
 // ============================================================================
 
 /**
- * `connections:changed` — broadcast after any mutation (add/forget/switch) so
+ * `connections:changed` — broadcast after any mutation (add/forget/open) so
  * every window refreshes its list + active selection. Same shape as the
  * `connections:list` result.
  */
@@ -266,7 +423,7 @@ export interface ConnectionAuthRejectedEvent {
  * `protocolVersion` (from its `client.hello` handshake) differs in **major
  * version** from the local intentd's. Warn-but-allow: the connection still
  * proceeds; the renderer surfaces a non-blocking advisory modal on first
- * connect/switch and a persistent warning in the daemon-status menu. Unlike
+ * connect and a persistent warning in the daemon-status menu. Unlike
  * {@link ConnectionCertMismatchEvent}, this NEVER blocks the connection.
  */
 export interface ConnectionProtocolMismatchEvent {
@@ -281,33 +438,13 @@ export interface ConnectionProtocolMismatchEvent {
   /**
    * Which flow detected the mismatch. `'boot'` when it was latched while boot
    * reconciliation restored a persisted remote — the renderer suppresses the
-   * advisory modal (the user did not just initiate a switch) and keeps the
-   * persistent menu warning. `'switch'` (or absent, for older payloads) for an
-   * explicit backend switch — modal-worthy. Carried on the sticky
-   * `connections:list` replay too. Additive.
+   * advisory modal (the user did not just initiate a connect) and keeps the
+   * persistent menu warning. `'switch'` (or absent, for older payloads) for a
+   * user-initiated connect — modal-worthy ('switch' is the legacy wire value,
+   * kept for compatibility). Carried on the sticky `connections:list` replay
+   * too. Additive.
    */
   origin?: 'boot' | 'switch';
-}
-
-/**
- * Boot-time backend-restore fallback notice (T19). When the app relaunches with
- * a persisted remote `activeId` that turns out to be unreachable at boot, the FE
- * falls back to the always-available local sidecar and surfaces this
- * non-blocking notice ("Couldn't reach <label>; using this machine") so the user
- * understands why they are on local rather than the remote they last used.
- *
- * Latched in main and PULLED once by the renderer via the
- * `connections:get-boot-fallback` invoke channel (consume-once), rather than
- * pushed on a live channel: the fallback happens during boot reconciliation,
- * before any renderer window exists to receive a broadcast, so a one-shot push
- * would be lost. The renderer surfaces it as a non-blocking toast — it is never
- * stored as connections-slice state.
- */
-export interface ConnectionBootFallbackEvent {
-  /** id of the remote connection that could not be reached at boot. */
-  id: string;
-  /** Human label of that remote (hostname/`host:port`), for the notice copy. */
-  label: string;
 }
 
 // ============================================================================

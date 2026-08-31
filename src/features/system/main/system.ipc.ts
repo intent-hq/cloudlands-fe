@@ -77,6 +77,7 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
+import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 
@@ -621,9 +622,8 @@ export function setupSystemIPC() {
       AppSetLanguagePreferenceSchema,
       async (_event, validated) => {
         try {
-          const { setMainLanguagePreference, getMainActiveLocale } = await import(
-            '../../../main/main-locale'
-          );
+          const { setMainLanguagePreference, getMainActiveLocale } =
+            await import('../../../main/main-locale');
           const changed = setMainLanguagePreference(validated.preference);
           logger.info('Language preference synced from renderer', {
             preference: validated.preference,
@@ -879,9 +879,10 @@ export function setupSystemIPC() {
    * All new windows should use this to avoid config drift.
    * Keep in sync with createWindow / createWindowForSession in main/index.ts.
    *
-   * The HUD pop-out (`/hud`) is a singleton: when a live HUD window already
-   * exists it is restored/focused and returned instead of creating a second
-   * one (see main/hud-window.ts).
+   * The HUD pop-out (`/hud`) is a per-backend singleton bound to the opener's
+   * backend: when a live HUD window for that backend already exists it is
+   * restored/focused and returned instead of creating a second one (see
+   * main/hud-window.ts). HUDs for different backends coexist.
    */
   async function createAppWindow(
     route: string | undefined,
@@ -897,10 +898,13 @@ export function setupSystemIPC() {
     const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
     const isChiefRoute = route === `/workspace/${CHIEF_WORKSPACE_ID}`;
     if (isHudRoute) {
-      const existing = findExistingHudWindow();
+      const existing = findExistingHudWindow(openerBackendId);
       if (existing) {
         focusHudWindow(existing);
-        logger.info('Reusing existing HUD window (singleton)', { windowId: existing.id });
+        logger.info('Reusing existing HUD window (per-backend singleton)', {
+          windowId: existing.id,
+          backendId: openerBackendId,
+        });
         return existing;
       }
     }
@@ -929,14 +933,14 @@ export function setupSystemIPC() {
       ...getWindowAppearanceOptions(isDarkMode),
       ...(iconPath && { icon: iconPath }),
     });
-    stampWindowWithBackend(
-      newWindow,
-      isHudRoute || isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId,
-    );
+    // The HUD inherits the opener's backend (its data reflects that backend);
+    // only the local-only chief route stays pinned to the local backend.
+    stampWindowWithBackend(newWindow, isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId);
     forwardRendererConsoleToMainLog(newWindow);
 
-    // Register BEFORE loadURL so a concurrent HUD-open request reuses this
-    // window even while its URL is still about:blank (mid-navigation race).
+    // Register AFTER stamping (the registry keys off the backend stamp) and
+    // BEFORE loadURL so a concurrent HUD-open request reuses this window even
+    // while its URL is still about:blank (mid-navigation race).
     if (isHudRoute) {
       registerHudWindow(newWindow);
     }
@@ -1041,6 +1045,40 @@ export function setupSystemIPC() {
         return { success: true, fullScreen: window ? window.isFullScreen() : false };
       },
       WINDOW_CHANNELS.GET_FULL_SCREEN,
+    ),
+  );
+
+  // Focus the next open app window in list order, wrapping around. Destroyed,
+  // hidden, and HUD pop-out windows (URL-detected or tracked pre-navigation)
+  // are excluded from the cycle. Minimized windows are included — macOS
+  // reports them as not visible while Windows/Linux keep them visible, so the
+  // isMinimized() check makes the cycle platform-consistent — and restored
+  // before focusing. Returns whether a window was focused plus the cycleable
+  // window count so the renderer can show a hint when there is nothing to
+  // cycle to.
+  ipcMain.handle(
+    WINDOW_CHANNELS.CYCLE_FOCUS,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const windows = BrowserWindow.getAllWindows().filter(
+          (w) =>
+            !w.isDestroyed() &&
+            (w.isVisible() || w.isMinimized()) &&
+            !isHudWindow(w) &&
+            !isTrackedHudWindow(w),
+        );
+        if (windows.length < 2) {
+          return { cycled: false, windowCount: windows.length };
+        }
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const senderIndex = senderWindow ? windows.indexOf(senderWindow) : -1;
+        const next = windows[(senderIndex + 1) % windows.length];
+        if (next.isMinimized()) next.restore();
+        next.focus();
+        return { cycled: true, windowCount: windows.length };
+      },
+      WINDOW_CHANNELS.CYCLE_FOCUS,
     ),
   );
 

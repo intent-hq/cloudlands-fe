@@ -85,6 +85,39 @@ test('caps and follows a tall current row as a streaming cylinder', async ({ mou
   expect(guideBox!.x + guideBox!.width / 2 - contentBox!.x).toBeCloseTo(18, 0);
 });
 
+test('settles a keyed current-child swap on the new child', async ({ mount }) => {
+  const component = await mount(LiveResponseGroupHost, {
+    props: { chunk: 'first chunk', chunkKey: 'child-a' },
+  });
+  const child = component.getByTestId('live-current-child');
+  await expect(child).toHaveText('first chunk');
+
+  await component.update({
+    props: { chunk: 'second chunk', chunkKey: 'child-b', isStreaming: true },
+  });
+  // Svelte's keyed-block anchoring inserts the incoming child after the
+  // outgoing one mid-swap, so .last() targets the new child; the
+  // toHaveCount(1) below keeps the test sound if that DOM order ever changes.
+  await expect(child.last()).toHaveText('second chunk');
+  await expect(child).toHaveCount(1);
+  await expect(child).toHaveText('second chunk');
+});
+
+test('swaps the current child instantly under reduced motion', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(LiveResponseGroupHost, {
+    props: { chunk: 'first chunk', chunkKey: 'child-a' },
+  });
+  const child = component.getByTestId('live-current-child');
+  await expect(child).toHaveText('first chunk');
+
+  await component.update({
+    props: { chunk: 'second chunk', chunkKey: 'child-b', isStreaming: true },
+  });
+  await expect(child).toHaveCount(1);
+  await expect(child).toHaveText('second chunk');
+});
+
 test('reconciles a tag-first streaming group through explicit close and completion', async ({
   mount,
 }) => {

@@ -10,6 +10,7 @@
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import { flushSync, onDestroy } from 'svelte';
+  import type { TransitionConfig } from 'svelte/transition';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -31,8 +32,11 @@
     name: string;
     isStreaming?: boolean;
     isTerminal?: boolean;
+    /** True when the owning message is the conversation's final assistant message. */
+    isLastConversationMessage?: boolean;
     children: Snippet;
     currentChild?: Snippet;
+    currentChildKey?: string;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
@@ -44,8 +48,10 @@
     name,
     isStreaming = false,
     isTerminal = false,
+    isLastConversationMessage = false,
     children,
     currentChild,
+    currentChildKey,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
@@ -54,12 +60,15 @@
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
-  let isExpanded = $state(isStreaming && !currentChild);
+  let isExpanded = $state(
+    (isStreaming && !currentChild) || (!isStreaming && isTerminal && isLastConversationMessage),
+  );
   let isClosing = $state(false);
   let isInitialized = false;
   let desiredExpanded = false;
   let prevStreaming = false;
   let prevTerminal = false;
+  let prevLastConversationMessage = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
@@ -103,16 +112,21 @@
   $effect(() => {
     const currentlyStreaming = isStreaming;
     const currentlyTerminal = isTerminal;
+    const currentlyLastMessage = isLastConversationMessage;
     const hasCurrentChild = Boolean(currentChild);
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
+      prevLastConversationMessage = currentlyLastMessage;
       if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
-        setExpanded(false);
+        // A terminal group of the conversation's final assistant message keeps
+        // its completed expansion across remounts (message finalization,
+        // reload); everything else in history mounts collapsed.
+        setExpanded(currentlyTerminal && currentlyLastMessage);
       }
       return;
     }
@@ -135,6 +149,10 @@
       scheduleCollapse();
     } else if (!prevTerminal && currentlyTerminal) {
       clearCollapseTimer();
+    } else if (prevLastConversationMessage && !currentlyLastMessage && currentlyTerminal) {
+      // The owning message stopped being the conversation's last (a new turn
+      // started): the completed expansion loses its claim.
+      scheduleCollapse();
     } else if (
       !searchOwnsExpansion &&
       disclosureOverride !== 'expanded-completed' &&
@@ -144,6 +162,7 @@
     }
     prevStreaming = currentlyStreaming;
     prevTerminal = currentlyTerminal;
+    prevLastConversationMessage = currentlyLastMessage;
   });
 
   onDestroy(() => {
@@ -200,6 +219,25 @@
   const groupContentClass = $derived(
     `${OPERATIONAL_GROUP_CONTENT_CLASS} ${getOperationalGroupContentSpacingClass(blocks)}`,
   );
+
+  // Disclosure motion for the streaming preview. When the preview leaves
+  // because the group expanded, the details body mounts in the same tick with
+  // its own disclosure intro — skip the preview outro so two containers never
+  // animate height against the followed bottom at once. The terminal
+  // stream-end auto-expand needs its own gate: the outro config is captured
+  // during the template flush, before the streaming-edge effect flips
+  // isExpanded, so mirror that effect's decision from the already-updated
+  // props instead.
+  function previewTransition(
+    node: Element,
+    params: { duration?: number; y?: number } = {},
+    options: { direction?: 'in' | 'out' | 'both' } = {},
+  ): TransitionConfig {
+    if (isExpanded || (!isStreaming && isTerminal && disclosureOverride !== 'collapsed')) {
+      return { duration: 0 };
+    }
+    return safeDisclosureTransition(node, params, options);
+  }
 </script>
 
 {#snippet leading()}
@@ -228,7 +266,18 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render currentChild?.()}
+      <!-- Keying on the current child's block identity makes a discrete swap
+           replace nodes: the outgoing child's outro and the incoming child's
+           intro run the same tick-driven disclosure motion, so their combined
+           height interpolates old→new under the followed-bottom lease.
+           Streaming growth within one child keeps the key stable and never
+           animates; the local transition stays inert when the preview itself
+           mounts or unmounts. -->
+      {#key currentChildKey}
+        <div data-response-group-preview-child transition:safeDisclosureTransition>
+          {@render currentChild?.()}
+        </div>
+      {/key}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -260,8 +309,9 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
-  previewClass={groupContentClass}
+  previewClass={OPERATIONAL_GROUP_CONTENT_CLASS}
   detailsClass={groupContentClass}
+  {previewTransition}
   detailsTransition={safeDisclosureTransition}
   detailsMotion="height-opacity-y"
   detailsInert={isClosing}

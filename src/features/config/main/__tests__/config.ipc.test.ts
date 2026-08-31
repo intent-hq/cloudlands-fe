@@ -18,10 +18,17 @@ vi.mock('electron', () => ({
 vi.mock('../../../backend/main/backend.ipc', () => {
   const localClient = { request: mocks.localRequest };
   const remoteClient = { request: mocks.remoteRequest };
+  const clientFor = (id: string) =>
+    id === 'remote-1' ? remoteClient : id === 'local' ? localClient : undefined;
   return {
     getBackendClient: () => localClient,
-    getBackendClientForConnection: (id: string) =>
-      id === 'remote-1' ? remoteClient : id === 'local' ? localClient : undefined,
+    getBackendClientForConnection: clientFor,
+    getBackendClientForId: (id: string) => {
+      const client = clientFor(id);
+      if (!client) throw new Error(`Backend client is not connected: ${id}`);
+      return client;
+    },
+    getLocalBackendClient: () => localClient,
     getBackendIdForIpcSender: (sender: { backendId?: string }) => sender.backendId ?? 'local',
     getPrimaryBackendId: () => 'local',
   };
@@ -92,6 +99,20 @@ describe('config IPC backend routing', () => {
       changes: [{ path: 'permissions.rules', value: [{ pattern: 'git push', action: 'ask' }] }],
     });
     expect(mocks.localRequest).not.toHaveBeenCalled();
+  });
+
+  it('fails closed (success: false) when the sender backend has no live pooled client', async () => {
+    const event = { sender: { backendId: 'remote-gone' } };
+
+    const result = await handler(CONFIG_CHANNELS.SET)(event, {
+      key: 'permissions.rules',
+      value: [{ pattern: 'git push', action: 'ask' }],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Backend client is not connected: remote-gone');
+    expect(mocks.localRequest).not.toHaveBeenCalled();
+    expect(mocks.remoteRequest).not.toHaveBeenCalled();
   });
 
   it('keeps FE-only config in shared memory without calling either daemon', async () => {

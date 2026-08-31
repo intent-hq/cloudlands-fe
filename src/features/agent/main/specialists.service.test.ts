@@ -89,6 +89,13 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
       expect(result?.codingAgent).toBe('claude-code');
     });
 
+    it('lets Vulnerability Scanner inherit the threaded provider and daemon-resolved model', async () => {
+      const { getEffectiveSpecialist } = await import('./specialists.service');
+      const result = getEffectiveSpecialist('vulnerability-scanner', 'claude-code');
+
+      expect(result).toMatchObject({ codingAgent: 'claude-code', model: '' });
+    });
+
     it('never falls back to the hardcoded default provider (Auggie) when nothing is threaded', async () => {
       const { getEffectiveSpecialist } = await import('./specialists.service');
       const result = getEffectiveSpecialist('implementor');

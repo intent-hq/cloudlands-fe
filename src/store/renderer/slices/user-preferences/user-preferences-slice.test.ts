@@ -3,8 +3,11 @@ import {
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  hydrateShortcutOverrides,
   initialState,
   resetNotificationSettings,
+  resetAllShortcutOverrides,
+  resetShortcutOverride,
   saveActivityLogPreset,
   setCodeFontFamily,
   setGroupByRepo,
@@ -16,6 +19,7 @@ import {
   setShowArchived,
   setSpellcheckEnabled,
   setShowReasoningBlocks,
+  setShortcutOverride,
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setSystemFonts,
@@ -59,6 +63,46 @@ describe('userPreferencesReducer', () => {
   it('should return initial state', () => {
     const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  describe('shortcut overrides', () => {
+    it('saves normalized values and resets one or all overrides', () => {
+      const saved = userPreferencesReducer(
+        initialState,
+        setShortcutOverride('global.settings', ' Command + Shift + , '),
+      );
+      expect(saved.shortcutOverrides).toEqual({ 'global.settings': 'mod+shift+,' });
+
+      const second = userPreferencesReducer(saved, setShortcutOverride('global.search', 'alt+f'));
+      expect(
+        userPreferencesReducer(second, resetShortcutOverride('global.settings')).shortcutOverrides,
+      ).toEqual({ 'global.search': 'alt+f' });
+      expect(userPreferencesReducer(second, resetAllShortcutOverrides()).shortcutOverrides).toEqual(
+        {},
+      );
+    });
+
+    it('does not let malformed input replace a working binding', () => {
+      const state = {
+        ...initialState,
+        shortcutOverrides: { 'global.search': 'alt+f' } as const,
+      };
+      expect(userPreferencesReducer(state, setShortcutOverride('global.search', 'mod+'))).toBe(
+        state,
+      );
+    });
+
+    it('sanitizes loaded data and omits values equal to defaults', () => {
+      const state = userPreferencesReducer(
+        initialState,
+        hydrateShortcutOverrides({
+          'global.search': 'Option+F',
+          'global.settings': 'mod+,',
+          invalid: 'mod+x',
+        }),
+      );
+      expect(state.shortcutOverrides).toEqual({ 'global.search': 'alt+f' });
+    });
   });
 
   describe('update channel actions', () => {

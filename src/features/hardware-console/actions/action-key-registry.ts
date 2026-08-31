@@ -3,7 +3,8 @@
  * workspace top-level agents, the global cross-workspace cycle family
  * (in-progress, attention, idle, unread, failed agents), stop agent, see
  * spec, toggle workspace sidebar tabs, new agent, new workspace, switch
- * panel layouts, push to talk (hold-capable), and none/unassigned.
+ * panel layouts, cycle open windows, push to talk (hold-capable), and
+ * none/unassigned.
  *
  * Each entry carries a label (i18n getter), an icon, an availability
  * predicate, and an execute function. Both evaluate against an
@@ -28,6 +29,7 @@ import {
   faRobot,
   faStop,
   faTableColumns,
+  faWindowMaximize,
   faWindowRestore,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
@@ -39,6 +41,7 @@ import type { StoredAgentSession } from '$store/renderer/slices/agent-session/ag
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { actionHudShown } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   setMultiSelectSidebarSelectedTabs,
   setShowCreateModal,
@@ -53,6 +56,7 @@ import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
 } from '$features/voice/effective-voice-engine';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
 import { isVoiceRecordingSupported } from '../voice/voice-recorder';
 import {
@@ -79,6 +83,7 @@ import {
   type SessionAttentionPriority,
 } from './agent-cycle';
 import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
+import { cycleOpenWindows } from './window-cycle';
 
 const logger = createLogger('HardwareConsoleActionKeyRegistry');
 
@@ -99,6 +104,22 @@ export interface ActionKeyState {
   };
   agentSessions: { byAgentId: Record<string, StoredAgentSession> };
   hardwareConsole: { cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope> };
+  /** Structural view of the panel layout for the see-spec toggle. */
+  panelLayout: {
+    byWorkspaceId: Record<
+      string,
+      {
+        panels: Record<
+          string,
+          {
+            id: string;
+            tabs: readonly { id: string; type: string; noteId?: string }[];
+            activeTabId: string | null;
+          }
+        >;
+      }
+    >;
+  };
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
@@ -523,9 +544,32 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return activeWorkspaceId(context) !== null;
     },
     execute(context) {
-      const { dispatch } = context;
+      const { state, dispatch } = context;
       const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
+      const panels = Object.values(state.panelLayout.byWorkspaceId[wsId]?.panels ?? {});
+      for (const panel of panels) {
+        const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
+        if (activeTab?.type === 'note' && activeTab.noteId === SPEC_NOTE_ID) {
+          // The spec is currently visible → toggle it off.
+          dispatch(closeTab(wsId, activeTab.id, panel.id));
+          return;
+        }
+      }
+      // Not open (or a background tab): open/reveal it. With a single open
+      // panel, split it so the spec lands beside the current content. A
+      // backgrounded spec tab also takes this branch: openTabInAdjacentOrSplit
+      // finds the equivalent tab across all panels and activates it in place
+      // instead of splitting, so this reveals rather than duplicates.
+      if (panels.length === 1) {
+        dispatch(
+          openWorkspaceNote(wsId, SPEC_NOTE_ID, {
+            openInAdjacentPanel: true,
+            sourcePanelId: panels[0].id,
+          }),
+        );
+        return;
+      }
       dispatch(openWorkspaceNote(wsId, SPEC_NOTE_ID));
     },
   },
@@ -619,6 +663,36 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
         })
         .catch((error: unknown) => {
           logger.error('Failed to apply layout preset', { presetId, wsId, error });
+        });
+    },
+  },
+  {
+    id: 'cycle-open-windows',
+    get label() {
+      return m.hardwareConsole_actionKey_cycleOpenWindows_label();
+    },
+    icon: faWindowMaximize,
+    isAvailable() {
+      // Window cycling needs the Electron main process (BrowserWindow focus);
+      // web builds have no other app windows to cycle to.
+      return isElectronPlatform();
+    },
+    execute(context) {
+      // The IPC invoke lives in window-cycle.ts (not inline) so this
+      // registry — imported by Svelte components for labels/icons — stays
+      // free of bridge references per intent/no-component-async-data-fetch.
+      void cycleOpenWindows()
+        .then((result) => {
+          if (result?.cycled) {
+            context.dispatch(actionHudShown(m.hardwareConsole_actionKey_cycleOpenWindows_label()));
+          } else {
+            // One (or zero) cycleable window: nothing to switch to — say so
+            // instead of a silent no-op.
+            context.showHint(m.hardwareConsole_actionKey_noOtherOpenWindows_message());
+          }
+        })
+        .catch((error: unknown) => {
+          logger.error('Failed to cycle open windows', { error });
         });
     },
   },

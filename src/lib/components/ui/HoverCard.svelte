@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import type { Snippet } from 'svelte';
   import Portal from './Portal.svelte';
+  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
   interface Props {
     anchor: string;
     position?: 'right' | 'bottom' | 'bottom-right' | 'bottom-left' | 'top';
@@ -42,15 +43,35 @@
     return Math.max(min, Math.min(max, value));
   }
 
+  // Resolving an anchor string scans every [style*="anchor-name"] element and
+  // calls getComputedStyle on each, so the result is cached and only
+  // re-resolved when the anchor changes or the element leaves the DOM.
+  let cachedTrigger: HTMLElement | null = null;
+  let cachedTriggerAnchor: string | null = null;
+
+  function isCachedTriggerValid() {
+    if (!cachedTrigger?.isConnected || cachedTriggerAnchor !== anchor) return false;
+    // The node can stay in the DOM while its anchor-name is rewritten to a
+    // different anchor (DOM node reuse across per-entity anchors). Recheck the
+    // inline style first, then one computed-style read — still far cheaper
+    // than re-scanning every anchored element.
+    return (
+      cachedTrigger.style.getPropertyValue('anchor-name').includes(anchor) ||
+      getComputedStyle(cachedTrigger).getPropertyValue('anchor-name').includes(anchor)
+    );
+  }
+
   function findAnchorElement() {
     if (anchorElement) return anchorElement;
-    return Array.from(document.querySelectorAll<HTMLElement>('[style*="anchor-name"]')).find(
-      (el) => {
+    if (isCachedTriggerValid()) return cachedTrigger;
+    cachedTrigger =
+      Array.from(document.querySelectorAll<HTMLElement>('[style*="anchor-name"]')).find((el) => {
         const inlineAnchor = el.style.getPropertyValue('anchor-name');
         const computedAnchor = getComputedStyle(el).getPropertyValue('anchor-name');
         return inlineAnchor.includes(anchor) || computedAnchor.includes(anchor);
-      },
-    );
+      }) ?? null;
+    cachedTriggerAnchor = cachedTrigger ? anchor : null;
+    return cachedTrigger;
   }
 
   function updateMeasuredPosition() {
@@ -118,9 +139,39 @@
     measuredStyle = `left: ${left}px; top: ${top}px;`;
   }
 
+  // The initial measurement runs synchronously after tick so the card never
+  // paints unpositioned; the guard collapses the mount effect and onMount
+  // into a single measurement.
+  let initialMeasurePending = false;
+
   async function schedulePositionUpdate() {
+    if (initialMeasurePending) return;
+    initialMeasurePending = true;
     await tick();
+    initialMeasurePending = false;
     updateMeasuredPosition();
+  }
+
+  // Observer-driven updates (scroll/resize/ResizeObserver) coalesce into at
+  // most one measurement per frame, batched with other layout reads.
+  let pendingMeasure: CancelLayoutTask | null = null;
+
+  function requestMeasuredPositionUpdate() {
+    if (pendingMeasure) return;
+    pendingMeasure = scheduleLayoutRead(() => {
+      pendingMeasure = null;
+      updateMeasuredPosition();
+    });
+  }
+
+  function handleScroll(event: Event) {
+    // The capture-phase listener sees every scroll in the app; only a scroll
+    // of an ancestor of the trigger can move the card. A stale cache entry
+    // (disconnected or re-anchored node) would fail the contains() check for
+    // every scroll source, so fall through and re-measure conservatively.
+    const trigger = anchorElement ?? (isCachedTriggerValid() ? cachedTrigger : null);
+    if (trigger && event.target instanceof Node && !event.target.contains(trigger)) return;
+    requestMeasuredPositionUpdate();
   }
 
   $effect(() => {
@@ -134,18 +185,20 @@
     let resizeObserver: ResizeObserver | null = null;
     void schedulePositionUpdate().then(() => {
       if (!absolute && typeof ResizeObserver !== 'undefined') {
-        resizeObserver = new ResizeObserver(updateMeasuredPosition);
+        resizeObserver = new ResizeObserver(requestMeasuredPositionUpdate);
         if (cardEl) resizeObserver.observe(cardEl);
         const trigger = findAnchorElement();
         if (trigger) resizeObserver.observe(trigger);
       }
     });
-    window.addEventListener('resize', updateMeasuredPosition);
-    window.addEventListener('scroll', updateMeasuredPosition, true);
+    window.addEventListener('resize', requestMeasuredPositionUpdate);
+    window.addEventListener('scroll', handleScroll, true);
     return () => {
       resizeObserver?.disconnect();
-      window.removeEventListener('resize', updateMeasuredPosition);
-      window.removeEventListener('scroll', updateMeasuredPosition, true);
+      window.removeEventListener('resize', requestMeasuredPositionUpdate);
+      window.removeEventListener('scroll', handleScroll, true);
+      pendingMeasure?.();
+      pendingMeasure = null;
     };
   });
 </script>

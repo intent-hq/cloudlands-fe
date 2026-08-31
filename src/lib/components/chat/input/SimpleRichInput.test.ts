@@ -45,6 +45,16 @@ vi.mock('svelte-sonner', () => ({
   },
 }));
 
+const toggleComposerMicRecordingMock = vi.hoisted(() => vi.fn(() => 'started'));
+const isComposerMicRecordingMock = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock('$features/hardware-console/voice/composer-mic-controller', () => ({
+  toggleComposerMicRecording: toggleComposerMicRecordingMock,
+  isComposerMicRecording: isComposerMicRecordingMock,
+  cancelComposerMicRecording: vi.fn(() => false),
+  resetComposerMic: vi.fn(),
+}));
+
 vi.mock('../../ui/button/button.svelte', async () => {
   const Button = (await import('../../ui/__tests__/mocks/button.svelte')).default;
   return { default: Button };
@@ -179,6 +189,16 @@ const mockReduxState = vi.hoisted(
     workspaceAgents: { byWorkspaceId: Record<string, any> };
     providerSettings: { activeProviderId: string };
     hardwareConsole: { pttRecording: boolean; voiceTranscribing: boolean };
+    skills: {
+      byWorkspaceId: Record<
+        string,
+        {
+          skills: Array<{ name: string; description: string; location: string }>;
+          loading: boolean;
+          error: string | null;
+        }
+      >;
+    };
     voiceSettings: {
       isLoading: boolean;
       engine: string;
@@ -194,6 +214,7 @@ const mockReduxState = vi.hoisted(
     providerSettings: { activeProviderId: '' },
     // The composer mic button subscribes to these hardware-console flags
     hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+    skills: { byWorkspaceId: {} },
     // The oversized-attachment placement flow reads daemon locality to pick
     // the sourcePath fast path vs. the wire data variant
     daemonHealth: { hostLocality: null, transport: null },
@@ -294,6 +315,51 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 warmImport(() => import('../__tests__/mocks/TipTapEditor.svelte'));
 warmImport(() => import('../__tests__/mocks/ModelPicker.svelte'));
 warmImport(() => import('../__tests__/mocks/SlotOnly.svelte'));
+
+describe('SimpleRichInput workspace skills', () => {
+  afterEach(() => {
+    cleanup();
+    mockReduxState.skills.byWorkspaceId = {};
+  });
+
+  it('follows workspace changes and live Redux skill updates', async () => {
+    mockReduxState.skills.byWorkspaceId = {
+      'ws-1': {
+        skills: [{ name: 'review', description: 'Review', location: '/skills/review' }],
+        loading: false,
+        error: null,
+      },
+      'ws-2': {
+        skills: [{ name: 'research', description: 'Research', location: '/skills/research' }],
+        loading: true,
+        error: null,
+      },
+    };
+    const workspace = (id: string) => ({ id, path: `/tmp/${id}` }) as any;
+    const view = render(SimpleRichInput, {
+      props: { value: '', contextItems: [], workspace: workspace('ws-1') },
+    });
+    const editor = screen.getByTestId('tiptap-editor');
+    expect(editor.getAttribute('data-skills')).toBe('review');
+
+    await view.rerender({ value: '', contextItems: [], workspace: workspace('ws-2') });
+    const { store } = await import('$store/renderer/store');
+    (store as typeof store & { emitState: () => void }).emitState();
+    await waitFor(() => expect(editor.getAttribute('data-skills')).toBe('research'));
+    expect(editor.getAttribute('data-skills-loading')).toBe('true');
+
+    mockReduxState.skills.byWorkspaceId['ws-2'] = {
+      skills: [{ name: 'audit', description: 'Audit', location: '/skills/audit' }],
+      loading: false,
+      error: 'refresh failed',
+    };
+    (store as typeof store & { emitState: () => void }).emitState();
+
+    await waitFor(() => expect(editor.getAttribute('data-skills')).toBe('audit'));
+    expect(editor.getAttribute('data-skills-loading')).toBe('false');
+    expect(editor.getAttribute('data-skills-error')).toBe('refresh failed');
+  });
+});
 
 describe('SimpleRichInput draft change notification', () => {
   afterEach(() => {
@@ -1561,6 +1627,50 @@ describe('SimpleRichInput prompt enhancement menu (§5.31)', () => {
       'make this prompt better',
     );
   });
+
+  it("ignores a stale toast's Undo after a newer enhancement replaced it", async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    enhancePromptMock
+      .mockResolvedValueOnce({ enhanced: 'first enhanced prompt' })
+      .mockResolvedValueOnce({ enhanced: 'second enhanced prompt' });
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
+    await waitFor(() => {
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'first enhanced prompt',
+      );
+    });
+
+    const { toast } = await import('svelte-sonner');
+    const successMock = toast.success as ReturnType<typeof vi.fn>;
+    expect(successMock).toHaveBeenCalledTimes(1);
+    const firstToastUndo = successMock.mock.calls[0]![1].action.onClick as () => void;
+
+    startEnhancement();
+    await waitFor(() => {
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'second enhanced prompt',
+      );
+    });
+    expect(successMock).toHaveBeenCalledTimes(2);
+
+    // The first toast may still linger on screen: its Undo must no-op, not
+    // revert the newer enhancement to the first toast's original prompt.
+    firstToastUndo();
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+      'second enhanced prompt',
+    );
+
+    // The current toast's Undo still restores that enhancement's original.
+    const secondToastUndo = successMock.mock.calls[1]![1].action.onClick as () => void;
+    secondToastUndo();
+    await waitFor(() => {
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'first enhanced prompt',
+      );
+    });
+  });
 });
 
 describe('SimpleRichInput input lock while enhancing', () => {
@@ -1835,6 +1945,93 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(hasActiveTranscriptionSession()).toBe(false);
     resetTranscriptionCancellation();
+  });
+});
+
+describe('SimpleRichInput mic-button focus retention', () => {
+  const baseProps = () => ({
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  function buttonByIcon(icon: string): HTMLButtonElement | null {
+    const el = document.body.querySelector(`[data-icon="${icon}"]`);
+    return (el?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  // jsdom does not implement the browser's focus-on-mousedown default
+  // action — emulate it: focus the button unless the handler prevented the
+  // default, then deliver the click.
+  async function clickLikeABrowser(button: HTMLButtonElement) {
+    const notPrevented = await fireEvent.mouseDown(button);
+    if (notPrevented) button.focus();
+    await fireEvent.click(button);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    mockReduxState.hardwareConsole.pttRecording = false;
+    mockReduxState.hardwareConsole.voiceTranscribing = false;
+    isComposerMicRecordingMock.mockReturnValue(false);
+    toggleComposerMicRecordingMock.mockReturnValue('started');
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('keeps editor focus when clicking the mic to start dictation', async () => {
+    render(SimpleRichInput, { props: baseProps() });
+    const editor = screen.getByTestId('tiptap-editor');
+    editor.focus();
+
+    await clickLikeABrowser(buttonByIcon('microphone')!);
+
+    expect(document.activeElement).toBe(editor);
+    expect(toggleComposerMicRecordingMock).toHaveBeenCalledTimes(1);
+    expect(toggleComposerMicRecordingMock).toHaveBeenCalledWith(expect.any(Object), 'agent-1');
+  });
+
+  it('keeps editor focus when clicking the mic to stop a recording', async () => {
+    mockReduxState.hardwareConsole.pttRecording = true;
+    isComposerMicRecordingMock.mockReturnValue(true);
+    toggleComposerMicRecordingMock.mockReturnValue('stopped');
+    render(SimpleRichInput, { props: baseProps() });
+    const editor = screen.getByTestId('tiptap-editor');
+    editor.focus();
+
+    await clickLikeABrowser(buttonByIcon('microphone')!);
+
+    expect(document.activeElement).toBe(editor);
+    expect(toggleComposerMicRecordingMock).toHaveBeenCalledTimes(1);
+    expect(toggleComposerMicRecordingMock).toHaveBeenCalledWith(expect.any(Object), 'agent-1');
+  });
+
+  it('keeps editor focus when clicking cancel while transcribing', async () => {
+    mockReduxState.hardwareConsole.voiceTranscribing = true;
+    render(SimpleRichInput, { props: baseProps() });
+    const editor = screen.getByTestId('tiptap-editor');
+    editor.focus();
+
+    await clickLikeABrowser(buttonByIcon('spinner')!);
+
+    expect(document.activeElement).toBe(editor);
   });
 });
 

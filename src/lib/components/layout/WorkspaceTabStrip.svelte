@@ -8,6 +8,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
+  import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import { formatWorkspaceTabStatusSummary } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
@@ -240,50 +241,73 @@
 
   function reportActiveTabBounds(node: HTMLElement, isActive: boolean) {
     let active = isActive;
-    let frameId: number | null = null;
     let clampQueued = false;
+    let readPending = false;
+    let writePending = false;
+    let cancelRead: (() => void) | null = null;
+    let cancelWrite: (() => void) | null = null;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    const clampActiveTabIntoView = () => {
-      if (!strip || draggedWorkspaceId) return;
-      const tabRect = node.getBoundingClientRect();
-      const stripRect = strip.getBoundingClientRect();
-      if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
-        strip.scrollLeft += tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
-      } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
-        strip.scrollLeft += tabRect.right - stripRect.right + ACTIVE_TAB_EDGE_GAP;
-      }
-    };
-
-    const reportBounds = () => {
-      const titlebar = node.closest('.window-title-bar');
-      if (!titlebar) return;
-      const tabRect = node.getBoundingClientRect();
-      const titlebarRect = titlebar.getBoundingClientRect();
-      onActiveTabBoundsChange?.({
-        left: tabRect.left - titlebarRect.left,
-        width: tabRect.width,
-      });
-    };
-
-    const clampAndReport = () => {
-      if (!active) return;
-      clampActiveTabIntoView();
-      reportBounds();
-    };
-
+    // Batched read phase: measure everything against one clean layout,
+    // compute the clamp delta, then hand the scrollLeft mutation and the
+    // bounds report to the write phase — no interleaved read/write reflows.
     const runFrame = () => {
-      frameId = null;
+      readPending = false;
       const shouldClamp = clampQueued;
       clampQueued = false;
       if (!active) return;
-      if (shouldClamp) clampActiveTabIntoView();
-      reportBounds();
+
+      const tabRect = node.getBoundingClientRect();
+      const titlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect() ?? null;
+      let scrollDelta = 0;
+      let scrollTarget: number | null = null;
+      if (shouldClamp && strip && !draggedWorkspaceId) {
+        const stripRect = strip.getBoundingClientRect();
+        if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
+          scrollDelta = tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
+        } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
+          scrollDelta = tabRect.right - stripRect.right + ACTIVE_TAB_EDGE_GAP;
+        }
+        if (scrollDelta !== 0) scrollTarget = strip.scrollLeft + scrollDelta;
+      }
+      if (scrollTarget === null && !titlebarRect) return;
+
+      if (writePending) cancelWrite?.();
+      writePending = true;
+      cancelWrite = scheduleLayoutWrite(() => {
+        writePending = false;
+        if (!active) return;
+        if (scrollTarget !== null && strip) strip.scrollLeft = scrollTarget;
+        if (!titlebarRect) return;
+        if (scrollTarget === null) {
+          // Common path: report straight from the read-phase measurement.
+          onActiveTabBoundsChange?.({
+            left: tabRect.left - titlebarRect.left,
+            width: tabRect.width,
+          });
+          return;
+        }
+        // A clamp moved the strip, so the read-phase rects are stale and
+        // scrollLeft may have been boundary-clamped — re-measure. This is
+        // the one remaining forced read, and it only runs when the active
+        // tab was actually scrolled into view (at most once per switch).
+        const movedTabRect = node.getBoundingClientRect();
+        const movedTitlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect();
+        if (!movedTitlebarRect) return;
+        onActiveTabBoundsChange?.({
+          left: movedTabRect.left - movedTitlebarRect.left,
+          width: movedTabRect.width,
+        });
+      });
     };
 
+    // The pending flags (not the cancel handles) gate re-scheduling: with a
+    // synchronously-invoking rAF stub the task runs before the handle
+    // assignment, so a handle-based gate would deadlock.
     const schedule = () => {
-      if (frameId !== null) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(runFrame);
+      if (readPending) return;
+      readPending = true;
+      cancelRead = scheduleLayoutRead(runFrame);
     };
 
     const scheduleClampAndReport = () => {
@@ -299,7 +323,7 @@
     resizeObserver.observe(node);
     window.addEventListener('resize', scheduleClampAndReport);
     strip?.addEventListener('scroll', scheduleBoundsReport);
-    activeTabBoundsPollers.add(clampAndReport);
+    activeTabBoundsPollers.add(scheduleClampAndReport);
     scheduleClampAndReport();
 
     return {
@@ -310,8 +334,9 @@
         else if (wasActive) onActiveTabBoundsChange?.(null);
       },
       destroy() {
-        if (frameId !== null) cancelAnimationFrame(frameId);
-        activeTabBoundsPollers.delete(clampAndReport);
+        cancelRead?.();
+        cancelWrite?.();
+        activeTabBoundsPollers.delete(scheduleClampAndReport);
         resizeObserver.disconnect();
         window.removeEventListener('resize', scheduleClampAndReport);
         strip?.removeEventListener('scroll', scheduleBoundsReport);

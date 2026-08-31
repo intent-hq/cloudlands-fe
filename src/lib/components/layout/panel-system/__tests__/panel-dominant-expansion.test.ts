@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_CHAT_PANEL_WIDTH,
   MIN_PANEL_CANVAS_WIDTH,
+  allocateViewportPanelWidths,
 } from '$shared/panel-layout-sizing';
 
 vi.mock('../Panel.svelte', async () => ({
@@ -47,6 +48,24 @@ function panelWidths(): number[] {
   const root = document.querySelector<HTMLElement>('.panel-split-container.horizontal')!;
   return Array.from(root.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
     flexWidth,
+  );
+}
+
+function expectedViewportWidths(workspaceId: string): number[] {
+  const root = appStore.state.panelLayout.byWorkspaceId[workspaceId].root;
+  if (root.type !== 'split' || root.direction !== 'horizontal') return [viewportWidth];
+  return allocateViewportPanelWidths(root.sizes, viewportWidth).panelWidths;
+}
+
+function expectPanelWidths(expected: number[]) {
+  panelWidths().forEach((width, index) => expect(width).toBeCloseTo(expected[index], 6));
+}
+
+function expectedDominantViewportWidths(panelCount: number, target: number): number[] {
+  const contentWidth = viewportWidth - GUTTER * (panelCount - 1);
+  const dominantWidth = contentWidth - MIN_PANEL_CANVAS_WIDTH * (panelCount - 1);
+  return Array.from({ length: panelCount }, (_, index) =>
+    index === target ? dominantWidth : MIN_PANEL_CANVAS_WIDTH,
   );
 }
 
@@ -98,6 +117,9 @@ async function mount(workspaceId: string, contained = false) {
   await waitFor(() =>
     expect(document.querySelectorAll('[data-mounted-panel]').length).toBeGreaterThan(1),
   );
+  // The initial viewport measurement runs in the batched layout read phase
+  // (one rAF after mount), so flush a frame before tests assert widths.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   return result;
 }
 
@@ -137,9 +159,22 @@ describe('mounted dominant panel expansion', () => {
       const view = await mount(workspaceId);
       const target = document.querySelector<HTMLButtonElement>('[data-panel-interaction]')!;
       appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[1]));
-      await waitFor(() => expect(panelWidths()[1]).toBeGreaterThan(panelWidths()[0]));
+      await waitFor(() =>
+        expect(appStore.state.panelLayout.byWorkspaceId[workspaceId].expandedPanelId).toBe(
+          panelIds[1],
+        ),
+      );
+      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(3);
       appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[1]));
-      await waitFor(() => expect(panelWidths()[0]).toBeCloseTo(392, 6));
+      await waitFor(() =>
+        expect(appStore.state.panelLayout.byWorkspaceId[workspaceId].expandedPanelId).toBeNull(),
+      );
+      if (width >= MIN_PANEL_CANVAS_WIDTH * 3 + GUTTER * 2) {
+        expectPanelWidths(expectedViewportWidths(workspaceId));
+        expect(
+          panelWidths().reduce((sum, panelWidth) => sum + panelWidth, 0) + GUTTER * 2,
+        ).toBeCloseTo(width, 6);
+      }
       return {
         ...view,
         target,
@@ -160,23 +195,22 @@ describe('mounted dominant panel expansion', () => {
   ])(
     'keeps 2–5 siblings mounted and interactive for target $target',
     async ({ widths, target }) => {
+      viewportWidth = 3000;
       const canvasWidth =
         widths.reduce((sum, width) => sum + width, 0) + GUTTER * (widths.length - 1);
-      const restoredWidths = widths;
       const { workspaceId, panelIds } = initialize(widths.length, canvasWidth, widths);
-      await mount(workspaceId);
+      const view = await mount(workspaceId);
       const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
       inset.scrollLeft = 120;
 
       appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[target]));
-      await waitFor(() => {
-        panelWidths()
-          .filter((_, index) => index !== target)
-          .forEach((width) => expect(width).toBeCloseTo(280, 6));
-      });
+      await waitFor(() => expectPanelWidths(expectedDominantViewportWidths(widths.length, target)));
       expect(panelWidths()[target]).toBeGreaterThan(
         Math.max(...panelWidths().filter((_, index) => index !== target)),
       );
+      expect(
+        panelWidths().reduce((sum, width) => sum + width, 0) + GUTTER * (widths.length - 1),
+      ).toBeCloseTo(viewportWidth, 6);
       expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(widths.length);
       await fireEvent.click(
         document.querySelectorAll<HTMLButtonElement>('[data-panel-interaction]')[0],
@@ -185,17 +219,21 @@ describe('mounted dominant panel expansion', () => {
       expect(inset.scrollLeft).toBe(120);
 
       appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[target]));
-      await waitFor(() => {
-        panelWidths().forEach((width, index) =>
-          expect(width).toBeCloseTo(restoredWidths[index], 6),
-        );
-      });
+      await waitFor(() => expectPanelWidths(expectedViewportWidths(workspaceId)));
       expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(canvasWidth);
       expect(inset.scrollLeft).toBe(120);
+
+      await view.rerender({
+        workspaceId,
+        layoutId: workspaceId,
+        contained: true,
+        canvasSizing: 'content',
+      });
+      await waitFor(() => expectPanelWidths(widths));
     },
   );
 
-  it('grows a narrow five-panel canvas into overflow and restores its explicit width', async () => {
+  it('keeps minimum panel widths in a narrow viewport and restores explicit content width', async () => {
     viewportWidth = 720;
     const { workspaceId, panelIds } = initialize(
       5,
@@ -209,14 +247,10 @@ describe('mounted dominant panel expansion', () => {
     await waitFor(() =>
       expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(expandedCanvasWidth),
     );
-    await waitFor(() => {
-      panelWidths().forEach((width, index) =>
-        expect(width).toBeCloseTo(
-          index === 2 ? DEFAULT_CHAT_PANEL_WIDTH : MIN_PANEL_CANVAS_WIDTH,
-          6,
-        ),
-      );
-    });
+    await waitFor(() => expectPanelWidths(Array.from({ length: 5 }, () => MIN_PANEL_CANVAS_WIDTH)));
+    expect(panelWidths().reduce((sum, width) => sum + width, 0) + GUTTER * 4).toBeGreaterThan(
+      viewportWidth,
+    );
     expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(5);
     await result.rerender({
       workspaceId,

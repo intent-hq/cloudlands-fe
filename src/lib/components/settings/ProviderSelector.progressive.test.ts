@@ -130,35 +130,10 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    // Visible catalog rows are on screen without any probe having settled;
-    // gated rows (mock) stay hidden via the catalog's own verdict, while
-    // ungated cortex renders like any other visible row.
-    for (const name of [
-      'Augment Auggie',
-      'Anthropic Claude Code',
-      'OpenAI Codex',
-      'Grok Build',
-      'Snowflake Cortex',
-    ]) {
-      expect(result.getByText(name)).toBeTruthy();
-    }
+    expect(
+      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    ).toBeTruthy();
     expect(result.queryByText('Mock (E2E)')).toBeNull();
-
-    expect(
-      result.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent?.trim()),
-    ).toEqual(['Enabled', 'Not Detected']);
-    const enabledCard = result.getByRole('region', { name: 'Enabled' });
-    const enabledText = enabledCard.textContent ?? '';
-    expect(enabledText.indexOf('Augment Auggie')).toBeLessThan(enabledText.indexOf('OpenAI Codex'));
-    expect(result.getByRole('region', { name: 'Not Detected' }).textContent).not.toContain(
-      'Augment Auggie',
-    );
-    expect(result.queryByRole('heading', { name: 'Available' })).toBeNull();
-    expect(
-      result.container.querySelector(
-        '[role="region"][aria-labelledby="provider-group-discovered"]',
-      ),
-    ).toBeNull();
 
     expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
     await fireEvent.click(
@@ -178,28 +153,11 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    const groupHeadings = result.getAllByRole('heading', { level: 2 });
-    expect(groupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
-      'Enabled',
-      'Available',
-      'Not Detected',
-    ]);
-    const providerCards = result.getAllByRole('region');
-    expect(providerCards).toHaveLength(3);
-    expect(providerCards.every((card) => card?.classList.contains('bg-card'))).toBe(true);
-    expect(groupHeadings.every((heading) => heading.closest('[role="region"]') === null)).toBe(
-      true,
-    );
-    const availableText = providerCards[1]?.textContent ?? '';
-    expect(availableText.indexOf('OpenAI Codex')).toBeLessThan(availableText.indexOf('OpenCode'));
-
     // Codex settled → inline enable action; login status/actions stay in menus.
     await waitFor(() => {
       expect(result.getByRole('button', { name: 'Enable' })).toBeTruthy();
     });
     const enableButton = result.getByRole('button', { name: 'Enable' });
-    expect(enableButton.className).toContain('text-secondary-foreground');
-    expect(enableButton.className).not.toContain('bg-primary');
     expect(result.queryByText('Logged in')).toBeNull();
 
     await fireEvent.click(enableButton);
@@ -220,18 +178,6 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.getByRole('menuitem', { name: 'Log in' })).toBeTruthy();
     // Providers whose probe has not landed keep a per-row pending indicator.
     expect(result.getAllByLabelText('Loading…').length).toBeGreaterThan(0);
-  });
-
-  it('mutes a provider name once its probe settles as unavailable', async () => {
-    mocks.state.current = await buildState({
-      'claude-code': { available: false },
-    });
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-
-    const providerName = result.getByText('Anthropic Claude Code');
-    expect(providerName.className).toContain('text-muted-foreground');
-    expect(providerName.className).toContain('opacity-60');
   });
 
   it('shows provider warning details and the Node.js action only in the overflow menu', async () => {
@@ -288,6 +234,90 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.getByText('npm/npx too old — npm 7+ required')).toBeTruthy();
   });
 
+  it('shows the catalog login command with copy when a provider needs login', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    // auggie carries loginCommandHint ('auggie login') in the catalog fixture.
+    mocks.state.current = await buildState({
+      auggie: { available: true, authenticated: false },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for Augment Auggie' }),
+    );
+    const hint = result.getByTestId('provider-login-hint');
+    expect(hint.textContent).toContain('auggie login');
+    await fireEvent.click(hint.querySelector('button')!);
+    expect(writeText).toHaveBeenCalledWith('auggie login');
+  });
+
+  it('falls back to the docs-link Log in action when the catalog has no hint', async () => {
+    // opencode has loginDocsUrl but no loginCommandHint in the fixture.
+    mocks.state.current = await buildState({
+      opencode: { available: true, authenticated: false },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));
+    expect(result.queryByText('Run in a terminal to log in:')).toBeNull();
+    await fireEvent.click(result.getByRole('menuitem', { name: 'Log in' }));
+    expect(mocks.shellOpen).toHaveBeenCalledWith('https://opencode.ai/docs#configure');
+  });
+
+  it('dispatches a forced single-provider recheck from the Recheck action', async () => {
+    mocks.state.current = await buildState({
+      auggie: { available: true, authenticated: false },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for Augment Auggie' }),
+    );
+    await fireEvent.click(result.getByRole('menuitem', { name: 'Recheck' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agentAvailability/checkSingleProviderRequested',
+        payload: ['auggie'],
+      }),
+    );
+  });
+
+  it('shows the claude-code desktop-app sign-in note when it needs login', async () => {
+    mocks.state.current = await buildState({
+      'claude-code': { available: true, authenticated: false },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    );
+    expect(
+      result.getByText(
+        "Signing in to the Claude desktop app doesn't carry over to the CLI — run the CLI login.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('does not show the desktop-app note for other providers needing login', async () => {
+    mocks.state.current = await buildState({
+      opencode: { available: true, authenticated: false },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));
+    expect(
+      result.queryByText(
+        "Signing in to the Claude desktop app doesn't carry over to the CLI — run the CLI login.",
+      ),
+    ).toBeNull();
+  });
+
   it('moves the Pi adapter warning and install action into the overflow menu', async () => {
     mocks.checkPiMcpAdapterInstalled.mockResolvedValue(false);
     mocks.state.current = await buildState({ pi: { available: true } });
@@ -304,5 +334,76 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.getByText(warning)).toBeTruthy();
     await fireEvent.click(result.getByRole('menuitem', { name: 'Install' }));
     expect(mocks.installPiMcpAdapter).toHaveBeenCalledOnce();
+  });
+});
+
+describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
+    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('dispatches reloadModelsForProvider when retrying the availability check', async () => {
+    // Mount fails the aggregated check (surfacing Try Again); the retry succeeds.
+    let availabilityCalls = 0;
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+        availabilityCalls += 1;
+        if (availabilityCalls === 1) return { success: false, error: 'availability check failed' };
+        return { success: true, data: { hasAnyProvider: true, providers: {} } };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
+      }
+      return { success: true, data: {} };
+    });
+    mocks.state.current = await buildState({});
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    const tryAgain = await result.findByRole('button', { name: 'Try Again' });
+    // The mount-time check does not refresh models.
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+    );
+
+    await fireEvent.click(tryAgain);
+
+    await waitFor(() => {
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+      );
+    });
+  });
+
+  it('dispatches reloadModelsForProvider when switching the default provider', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
+      }
+      return { success: true, data: {} };
+    });
+    mocks.state.current = await buildState({
+      codex: { available: true, authenticated: true },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
+    );
+    await fireEvent.click(result.getByRole('menuitem', { name: 'Set as default' }));
+
+    await waitFor(() => {
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+      );
+    });
   });
 });

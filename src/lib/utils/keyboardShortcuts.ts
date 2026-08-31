@@ -1,6 +1,7 @@
 /**
  * Keyboard shortcuts management for chat interfaces
  */
+import { matchesShortcut } from './shortcut-bindings';
 
 /**
  * Check if the currently focused element is within an xterm terminal.
@@ -142,6 +143,8 @@ export interface KeyboardShortcut {
   alt?: boolean;
   description: string;
   action: () => void;
+  /** Resolve a user-configurable binding at event time. */
+  binding?: () => string;
   /**
    * If true, this shortcut will be skipped when focus is in an editable element
    * (input, textarea, contenteditable, etc.). This is useful for shortcuts that
@@ -162,6 +165,7 @@ export interface KeyboardShortcut {
 
 export class KeyboardShortcutManager {
   private shortcuts: Map<string, KeyboardShortcut> = new Map();
+  private dynamicShortcuts: KeyboardShortcut[] = [];
   private enabled = false;
   private boundHandler: ((e: KeyboardEvent) => void) | null = null;
 
@@ -174,6 +178,10 @@ export class KeyboardShortcutManager {
    * Warns in development mode if the shortcut conflicts with a reserved native OS shortcut.
    */
   register(shortcut: KeyboardShortcut): void {
+    if (shortcut.binding) {
+      this.dynamicShortcuts.push(shortcut);
+      return;
+    }
     // Dev-mode guard: warn if registering a reserved native shortcut
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
       for (const reserved of RESERVED_NATIVE_SHORTCUTS) {
@@ -250,6 +258,8 @@ export class KeyboardShortcutManager {
   private handleKeyDown(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
 
+    if (target.closest?.('[data-shortcut-input], [data-shortcut-entry]')) return;
+
     // Don't intercept shortcuts when focus is in a terminal (xterm)
     // Terminals need to receive shortcuts like Cmd+K (clear screen) directly
     if (isFocusInTerminal(target)) {
@@ -280,7 +290,13 @@ export class KeyboardShortcutManager {
     parts.push(keyValue);
 
     const key = parts.join('+');
-    const shortcut = this.shortcuts.get(key);
+    const isMac =
+      typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+    const shortcut =
+      [...this.dynamicShortcuts]
+        .reverse()
+        .find(({ binding }) => binding && matchesKeyboardEvent(e, binding(), isMac)) ??
+      this.shortcuts.get(key);
 
     if (shortcut) {
       if (shortcut.ignoreRepeat && e.repeat) return;
@@ -295,11 +311,9 @@ export class KeyboardShortcutManager {
       // Check if we should handle this shortcut in an input
       // On macOS, Ctrl+key are Emacs shortcuts (Ctrl+A/E/K/P/N/etc.) and should NOT
       // be intercepted when in an editable element. Only Meta (Cmd) shortcuts are global on Mac.
-      const isMac =
-        typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
       const isGlobalShortcut = isMac
-        ? shortcut.meta || shortcut.alt // On Mac, only Cmd/Alt shortcuts are global
-        : shortcut.ctrl || shortcut.meta || shortcut.alt; // On Win/Linux, Ctrl is also global
+        ? e.metaKey || e.altKey // On Mac, only Cmd/Alt shortcuts are global
+        : e.ctrlKey || e.metaKey || e.altKey; // On Win/Linux, Ctrl is also global
 
       if (!isInput || isGlobalShortcut || shortcut.global) {
         e.preventDefault();
@@ -334,6 +348,7 @@ export class KeyboardShortcutManager {
    */
   clear(): void {
     this.shortcuts.clear();
+    this.dynamicShortcuts = [];
   }
 
   /**
@@ -343,4 +358,24 @@ export class KeyboardShortcutManager {
     this.detach();
     this.clear();
   }
+}
+
+function matchesKeyboardEvent(event: KeyboardEvent, binding: string, isMac: boolean): boolean {
+  const key =
+    event.altKey && event.code.startsWith('Key')
+      ? event.code.slice(3)
+      : event.altKey && event.code.startsWith('Digit')
+        ? event.code.slice(5)
+        : event.key;
+  return matchesShortcut(
+    {
+      key,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+    },
+    binding,
+    isMac,
+  );
 }

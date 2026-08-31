@@ -13,11 +13,13 @@ import {
   findExistingHudWindow,
   focusHudWindow,
   isHudWindow,
+  isTrackedHudWindow,
   registerHudWindow,
 } from '../hud-window';
 import type { BrowserWindow } from 'electron';
 
 interface MockWindow {
+  backendId?: string;
   isDestroyed: () => boolean;
   isMinimized: () => boolean;
   restore: ReturnType<typeof vi.fn>;
@@ -29,10 +31,13 @@ interface MockWindow {
   _destroy: () => void;
 }
 
-function makeWindow(opts: { url?: string; destroyed?: boolean; minimized?: boolean } = {}) {
+function makeWindow(
+  opts: { url?: string; destroyed?: boolean; minimized?: boolean; backendId?: string } = {},
+) {
   let destroyed = opts.destroyed ?? false;
   let minimized = opts.minimized ?? false;
   const win: MockWindow = {
+    backendId: opts.backendId,
     isDestroyed: () => destroyed,
     isMinimized: () => minimized,
     restore: vi.fn(() => {
@@ -80,34 +85,90 @@ describe('isHudWindow', () => {
   });
 });
 
-describe('registerHudWindow / findExistingHudWindow', () => {
+describe('registerHudWindow / findExistingHudWindow (per-backend)', () => {
   it('returns the tracked window even while its URL is still about:blank (mid-navigation)', () => {
-    const hud = makeWindow({ url: 'about:blank' });
+    const hud = makeWindow({ url: 'about:blank', backendId: 'remote-a' });
     registerHudWindow(asBw(hud));
-    expect(findExistingHudWindow()).toBe(hud);
+    expect(findExistingHudWindow('remote-a')).toBe(hud);
     expect(electronMocks.getAllWindows).not.toHaveBeenCalled();
   });
 
-  it('clears the tracked reference when the window closes', () => {
-    const hud = makeWindow({ url: 'http://127.0.0.1:5190/hud' });
-    registerHudWindow(asBw(hud));
-    hud._destroy();
-    expect(findExistingHudWindow()).toBeNull();
+  it('keys the registry off the backend stamp: one HUD per backend coexists', () => {
+    const localHud = makeWindow({ url: 'about:blank', backendId: 'local' });
+    const remoteHud = makeWindow({ url: 'about:blank', backendId: 'remote-a' });
+    registerHudWindow(asBw(localHud));
+    registerHudWindow(asBw(remoteHud));
+    expect(findExistingHudWindow('local')).toBe(localHud);
+    expect(findExistingHudWindow('remote-a')).toBe(remoteHud);
   });
 
-  it('falls back to a URL scan when the tracked reference is destroyed', () => {
-    const dead = makeWindow({ url: 'http://127.0.0.1:5190/hud', destroyed: true });
+  it('an unstamped registered window buckets to the local backend', () => {
+    const hud = makeWindow({ url: 'about:blank' });
+    registerHudWindow(asBw(hud));
+    expect(findExistingHudWindow('local')).toBe(hud);
+  });
+
+  it('returns null for a backend with no HUD even when another backend has one', () => {
+    const localHud = makeWindow({ url: 'app://workspaces/hud', backendId: 'local' });
+    registerHudWindow(asBw(localHud));
+    expect(findExistingHudWindow('remote-a')).toBeNull();
+  });
+
+  it('clears only the closed backend bucket when a window closes', () => {
+    const localHud = makeWindow({ url: 'http://127.0.0.1:5190/hud', backendId: 'local' });
+    const remoteHud = makeWindow({ url: 'app://workspaces/hud', backendId: 'remote-a' });
+    registerHudWindow(asBw(localHud));
+    registerHudWindow(asBw(remoteHud));
+    localHud._destroy();
+    expect(findExistingHudWindow('local')).toBeNull();
+    expect(findExistingHudWindow('remote-a')).toBe(remoteHud);
+  });
+
+  it('falls back to a backend-filtered URL scan when the tracked reference is destroyed', () => {
+    const dead = makeWindow({
+      url: 'http://127.0.0.1:5190/hud',
+      destroyed: true,
+      backendId: 'remote-a',
+    });
     registerHudWindow(asBw(dead));
-    const untracked = makeWindow({ url: 'app://workspaces/hud' });
-    const regular = makeWindow({ url: 'app://workspaces/workspace/x' });
-    electronMocks.getAllWindows.mockReturnValue([regular, untracked]);
-    expect(findExistingHudWindow()).toBe(untracked);
+    const untracked = makeWindow({ url: 'app://workspaces/hud', backendId: 'remote-a' });
+    const otherBackendHud = makeWindow({ url: 'app://workspaces/hud', backendId: 'local' });
+    const regular = makeWindow({ url: 'app://workspaces/workspace/x', backendId: 'remote-a' });
+    electronMocks.getAllWindows.mockReturnValue([regular, otherBackendHud, untracked]);
+    expect(findExistingHudWindow('remote-a')).toBe(untracked);
+  });
+
+  it('the URL scan never returns a HUD stamped with a different backend', () => {
+    const otherBackendHud = makeWindow({ url: 'app://workspaces/hud', backendId: 'remote-b' });
+    electronMocks.getAllWindows.mockReturnValue([otherBackendHud]);
+    expect(findExistingHudWindow('remote-a')).toBeNull();
   });
 
   it('returns null when only non-HUD windows are live', () => {
-    const regular = makeWindow({ url: 'http://127.0.0.1:5190/workspace/x' });
+    const regular = makeWindow({ url: 'http://127.0.0.1:5190/workspace/x', backendId: 'local' });
     electronMocks.getAllWindows.mockReturnValue([regular]);
-    expect(findExistingHudWindow()).toBeNull();
+    expect(findExistingHudWindow('local')).toBeNull();
+  });
+});
+
+describe('isTrackedHudWindow', () => {
+  it('matches registered HUDs from any backend, even on about:blank', () => {
+    const localHud = makeWindow({ url: 'about:blank', backendId: 'local' });
+    const remoteHud = makeWindow({ url: 'about:blank', backendId: 'remote-a' });
+    registerHudWindow(asBw(localHud));
+    registerHudWindow(asBw(remoteHud));
+    expect(isTrackedHudWindow(asBw(localHud))).toBe(true);
+    expect(isTrackedHudWindow(asBw(remoteHud))).toBe(true);
+  });
+
+  it('rejects unregistered and closed windows', () => {
+    const unregistered = makeWindow({ url: 'app://workspaces/hud' });
+    expect(isTrackedHudWindow(asBw(unregistered))).toBe(false);
+
+    const hud = makeWindow({ url: 'app://workspaces/hud', backendId: 'local' });
+    registerHudWindow(asBw(hud));
+    hud._destroy();
+    expect(isTrackedHudWindow(asBw(hud))).toBe(false);
   });
 });
 

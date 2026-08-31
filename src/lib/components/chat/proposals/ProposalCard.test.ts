@@ -12,8 +12,22 @@ const lifecycleSelectorState = vi.hoisted(() => ({
   result: null as { workspaceId?: string } | null,
 }));
 
+const historySelectorState = vi.hoisted(() => ({
+  settingsApplied: null as null | { appliedAt: number; reverseChanges: unknown[] },
+  specialistApplied: null as null | { appliedAt: number; reverse: unknown },
+}));
+
 const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
+}));
+
+const electronBridgeMocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock('$lib/electron-bridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
+  invoke: electronBridgeMocks.invoke,
 }));
 
 const prBranchLookupState = vi.hoisted(() => {
@@ -59,8 +73,8 @@ vi.mock(
   '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors',
   () => ({
     selectProposalAppliedState: vi.fn(() => ({
-      subscribe: (run: (value: null) => void) => {
-        run(null);
+      subscribe: (run: (value: typeof historySelectorState.settingsApplied) => void) => {
+        run(historySelectorState.settingsApplied);
         return () => {};
       },
     })),
@@ -70,8 +84,8 @@ vi.mock(
   '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors',
   () => ({
     selectSpecialistProposalAppliedState: vi.fn(() => ({
-      subscribe: (run: (value: null) => void) => {
-        run(null);
+      subscribe: (run: (value: typeof historySelectorState.specialistApplied) => void) => {
+        run(historySelectorState.specialistApplied);
         return () => {};
       },
     })),
@@ -120,17 +134,22 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 
-import { requestPrBranchLookup } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
+import {
+  getPrBranchLookupKey,
+  prBranchLookupStarted,
+} from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
 import ProposalCard from './ProposalCard.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
 const originalElectronAPI = window.electronAPI;
 
-function setElectronInvoke(invoke: ReturnType<typeof vi.fn>) {
+// Presence of window.electronAPI gates canUseElectronPrLookup(); the actual
+// IPC call goes through the mocked $lib/electron-bridge invoke.
+function setElectronEnv() {
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     writable: true,
-    value: { invoke },
+    value: { invoke: vi.fn() },
   });
 }
 
@@ -167,7 +186,10 @@ beforeEach(() => {
   lifecycleSelectorState.error = null;
   lifecycleSelectorState.errorCode = null;
   lifecycleSelectorState.result = null;
+  historySelectorState.settingsApplied = null;
+  historySelectorState.specialistApplied = null;
   navigationMocks.goto.mockReset();
+  electronBridgeMocks.invoke.mockReset();
   prBranchLookupState.reset();
 });
 
@@ -551,6 +573,38 @@ describe('ProposalCard', () => {
     expect(container.textContent).not.toContain('specialist edit');
   });
 
+  // Undo reachability (intent-hq/intent#3965): an applied proposal routed
+  // through ProposalCard must surface the Undo affordance from its history
+  // entry and forward onUndo with the proposal id.
+  it('offers Undo on an applied specialist proposal and forwards onUndo', async () => {
+    historySelectorState.specialistApplied = { appliedAt: Date.now(), reverse: {} };
+    const proposal = { ...makeSpecialistProposal(), applyToolCallId: 'tool-specialist-edit' };
+    const onUndo = vi.fn();
+    render(ProposalCard, { props: { proposal, onUndo } });
+
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(onUndo).toHaveBeenCalledWith('tool-specialist-edit');
+  });
+
+  it('offers Undo on an applied settings proposal and forwards onUndo', async () => {
+    historySelectorState.settingsApplied = { appliedAt: Date.now(), reverseChanges: [] };
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings-change',
+      payload: { changes: [{ path: 'theme.activePresetId', value: 'dracula' }] },
+      preview: { title: 'Theme preset: Dracula' },
+    };
+    const onUndo = vi.fn();
+    render(ProposalCard, { props: { proposal, onUndo } });
+
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(onUndo).toHaveBeenCalledWith('tool-settings-change');
+  });
+
   it('renders workspace initialPrompt as an always-visible textarea and applies typed edits', async () => {
     const { container } = render(ProposalCard, {
       props: {
@@ -649,12 +703,12 @@ describe('ProposalCard', () => {
     expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('pr-reviewer');
   });
 
-  it('dispatches a cached PR source branch lookup and displays the cached result', async () => {
-    const invoke = vi.fn().mockResolvedValue({
+  it('performs the PR source branch lookup via IPC and displays the result', async () => {
+    setElectronEnv();
+    electronBridgeMocks.invoke.mockResolvedValue({
       success: true,
       data: { sourceBranch: 'install-local-package' },
     });
-    setElectronInvoke(invoke);
 
     render(ProposalCard, {
       props: {
@@ -668,16 +722,19 @@ describe('ProposalCard', () => {
       },
     });
 
-    const expectedAction = requestPrBranchLookup({
-      owner: 'example-org',
-      repo: 'example-repo',
-      prNumber: 648,
-    });
-    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
-    expect(prBranchLookupState.dispatch).toHaveBeenCalledTimes(1);
-    expect(invoke).not.toHaveBeenCalled();
+    const request = { owner: 'example-org', repo: 'example-repo', prNumber: 648 };
+    const payload = { ...request, key: getPrBranchLookupKey(request) };
+    const startedAction = prBranchLookupStarted(payload);
+    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(startedAction));
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('git-tracking:get-pull-request', {
+        owner: 'example-org',
+        repo: 'example-repo',
+        number: 648,
+      }),
+    );
 
-    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+    prBranchLookupState.lookupEntries[payload.key] = {
       status: 'succeeded',
       branch: 'install-local-package',
     };
@@ -687,7 +744,9 @@ describe('ProposalCard', () => {
   });
 
   it('prevents creating a PR workspace until branch detection finishes', async () => {
-    setElectronInvoke(vi.fn());
+    setElectronEnv();
+    const lookup = deferred<{ success: boolean; data: { sourceBranch: string } }>();
+    electronBridgeMocks.invoke.mockReturnValue(lookup.promise);
     const { container } = render(ProposalCard, {
       props: {
         proposal: makeWorkspaceProposal(
@@ -704,12 +763,11 @@ describe('ProposalCard', () => {
       .querySelector('[data-proposal-kind]')
       ?.addEventListener('proposalapply', applyListener as EventListener);
 
-    const expectedAction = requestPrBranchLookup({
-      owner: 'example-org',
-      repo: 'example-repo',
-      prNumber: 648,
-    });
-    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
+    const request = { owner: 'example-org', repo: 'example-repo', prNumber: 648 };
+    const payload = { ...request, key: getPrBranchLookupKey(request) };
+    await waitFor(() =>
+      expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(prBranchLookupStarted(payload)),
+    );
 
     const button = await screen.findByRole('button', { name: /Detecting branch/ });
     expect(button.hasAttribute('disabled')).toBe(true);
@@ -718,7 +776,8 @@ describe('ProposalCard', () => {
     await fireEvent.click(button);
     expect(applyListener).not.toHaveBeenCalled();
 
-    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+    lookup.resolve({ success: true, data: { sourceBranch: 'install-local-package' } });
+    prBranchLookupState.lookupEntries[payload.key] = {
       status: 'succeeded',
       branch: 'install-local-package',
     };
@@ -730,9 +789,9 @@ describe('ProposalCard', () => {
   });
 
   it('does not overwrite a user-edited branch when the PR branch lookup resolves late', async () => {
+    setElectronEnv();
     const lookup = deferred<{ success: boolean; data: { sourceBranch: string } }>();
-    const invoke = vi.fn().mockReturnValue(lookup.promise);
-    setElectronInvoke(invoke);
+    electronBridgeMocks.invoke.mockReturnValue(lookup.promise);
 
     render(ProposalCard, {
       props: {
@@ -746,16 +805,15 @@ describe('ProposalCard', () => {
       },
     });
 
-    const expectedAction = requestPrBranchLookup({
-      owner: 'example-org',
-      repo: 'example-repo',
-      prNumber: 648,
-    });
-    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
+    const request = { owner: 'example-org', repo: 'example-repo', prNumber: 648 };
+    const payload = { ...request, key: getPrBranchLookupKey(request) };
+    await waitFor(() =>
+      expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(prBranchLookupStarted(payload)),
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Mock branch change' }));
 
     lookup.resolve({ success: true, data: { sourceBranch: 'install-local-package' } });
-    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+    prBranchLookupState.lookupEntries[payload.key] = {
       status: 'succeeded',
       branch: 'install-local-package',
     };
@@ -767,8 +825,7 @@ describe('ProposalCard', () => {
   });
 
   it('does not fetch a PR branch when no PR URL is available', async () => {
-    const invoke = vi.fn();
-    setElectronInvoke(invoke);
+    setElectronEnv();
 
     render(ProposalCard, {
       props: {
@@ -778,13 +835,12 @@ describe('ProposalCard', () => {
 
     await flushAsyncWork();
 
-    expect(invoke).not.toHaveBeenCalled();
+    expect(electronBridgeMocks.invoke).not.toHaveBeenCalled();
     expect(prBranchLookupState.dispatch).not.toHaveBeenCalled();
   });
 
   it('does not fetch a PR branch when an explicit branch is already provided', async () => {
-    const invoke = vi.fn();
-    setElectronInvoke(invoke);
+    setElectronEnv();
 
     render(ProposalCard, {
       props: {
@@ -800,7 +856,7 @@ describe('ProposalCard', () => {
 
     await flushAsyncWork();
 
-    expect(invoke).not.toHaveBeenCalled();
+    expect(electronBridgeMocks.invoke).not.toHaveBeenCalled();
     expect(prBranchLookupState.dispatch).not.toHaveBeenCalled();
     expect(getBranchPicker().textContent).toContain('feature/foo');
   });
@@ -828,8 +884,9 @@ describe('ProposalCard', () => {
     );
   });
 
-  it('renders a subtle branch fallback hint when cached PR branch lookup fails', async () => {
-    setElectronInvoke(vi.fn());
+  it('renders a subtle branch fallback hint when the PR branch lookup fails', async () => {
+    setElectronEnv();
+    electronBridgeMocks.invoke.mockResolvedValue({ success: false, error: 'rate limited' });
 
     render(ProposalCard, {
       props: {
@@ -843,14 +900,13 @@ describe('ProposalCard', () => {
       },
     });
 
-    const expectedAction = requestPrBranchLookup({
-      owner: 'example-org',
-      repo: 'example-repo',
-      prNumber: 648,
-    });
-    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
+    const request = { owner: 'example-org', repo: 'example-repo', prNumber: 648 };
+    const payload = { ...request, key: getPrBranchLookupKey(request) };
+    await waitFor(() =>
+      expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(prBranchLookupStarted(payload)),
+    );
 
-    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+    prBranchLookupState.lookupEntries[payload.key] = {
       status: 'failed',
       error: 'rate limited',
     };
@@ -1343,11 +1399,11 @@ describe('ProposalCard', () => {
   });
 
   it('associates the mismatch warning with the branch row and clears it when a PR branch lookup resolves', async () => {
-    const invoke = vi.fn().mockResolvedValue({
+    setElectronEnv();
+    electronBridgeMocks.invoke.mockResolvedValue({
       success: true,
       data: { sourceBranch: 'pr-head-branch' },
     });
-    setElectronInvoke(invoke);
 
     render(ProposalCard, {
       props: {
@@ -1371,13 +1427,12 @@ describe('ProposalCard', () => {
 
     // Preselecting 'main' arms the PR-branch lookup; once it resolves, the
     // PR head branch replaces the default and the stale warning is cleared.
-    const expectedAction = requestPrBranchLookup({
-      owner: 'example-org',
-      repo: 'example-repo',
-      prNumber: 648,
-    });
-    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
-    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+    const request = { owner: 'example-org', repo: 'example-repo', prNumber: 648 };
+    const payload = { ...request, key: getPrBranchLookupKey(request) };
+    await waitFor(() =>
+      expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(prBranchLookupStarted(payload)),
+    );
+    prBranchLookupState.lookupEntries[payload.key] = {
       status: 'succeeded',
       branch: 'pr-head-branch',
     };

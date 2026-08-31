@@ -5,9 +5,10 @@
 
   let {
     chunk = 'current chunk',
+    chunkKey = undefined,
     isStreaming = true,
     lineCount = 1,
-  }: { chunk?: string; isStreaming?: boolean; lineCount?: number } = $props();
+  }: { chunk?: string; chunkKey?: string; isStreaming?: boolean; lineCount?: number } = $props();
 
   const blocks = $derived([
     { type: 'text', text: 'earlier chunk' },
@@ -15,7 +16,7 @@
   ] as ContentBlock[]);
 </script>
 
-<ResponseGroup name="Working" {isStreaming} {blocks}>
+<ResponseGroup name="Working" {isStreaming} {blocks} currentChildKey={chunkKey}>
   {#snippet currentChild()}
     <div class={OPERATIONAL_GROUP_CHILD_CONTENT_CLASS} data-testid="live-current-child">
       {#each Array.from({ length: lineCount }) as _, index}

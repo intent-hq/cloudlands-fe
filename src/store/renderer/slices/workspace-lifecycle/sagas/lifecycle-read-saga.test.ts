@@ -1,4 +1,4 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -67,7 +67,12 @@ import {
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
 } from '../../workspace-tasks/workspace-tasks-slice';
-import { loadWorkspacesRequested } from '../../workspace/workspace-slice';
+import {
+  loadWorkspacesRequested,
+  replaceWorkspaceList,
+  workspaceReducer,
+} from '../../workspace/workspace-slice';
+import { consoleOwnerChanged } from '../../hardware-console/hardware-console-slice';
 import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
 import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
@@ -183,6 +188,20 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('publishes a workspace-scoped skills failure when loading rejects', async () => {
+    mocks.skills.list.mockRejectedValue(new Error('skill load failed'));
+    const run = start();
+
+    run.channel.put(loadSkillsRequested(WS));
+    await settle();
+
+    expect(run.actions).toContainEqual({
+      type: 'skills/loadSkillsFailed',
+      payload: [WS, 'skill load failed'],
+    });
+    await stop(run.task);
+  });
+
   it('coalesces workspace-list loads arriving mid-fetch into one trailing refetch', async () => {
     const resolvers: ((value: unknown[]) => void)[] = [];
     mocks.workspaces.list.mockImplementation(
@@ -213,6 +232,105 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
     await stop(run.task);
+  });
+
+  describe('attention reconciliation on focus / console-owner acquisition', () => {
+    const wireWorkspace = (attention: 'none' | 'unread') =>
+      ({ id: WS, branch: 'main', attention }) as unknown as import('$shared/types').Workspace;
+
+    // These triggers dispatch loadWorkspacesRequested from inside the saga, so
+    // the harness must loop dispatched actions back into the channel (the
+    // default start() only records them) and apply the real workspaceReducer
+    // to observe store convergence.
+    function startWithLoopback() {
+      const channel = stdChannel();
+      const actions: { type: string }[] = [];
+      let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
+      const dispatch = (action: { type: string }) => {
+        actions.push(action);
+        workspaceState = workspaceReducer(workspaceState, action);
+        channel.put(action);
+        return action;
+      };
+      const current = state();
+      const task = runSaga(
+        {
+          channel,
+          dispatch,
+          getState: () => ({ ...current, workspace: workspaceState }),
+        },
+        lifecycleReadSaga,
+      );
+      return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
+    }
+
+    it('refetches the workspace list when the window regains focus and converges stale attention', async () => {
+      const run = startWithLoopback();
+      // Seed a stale snapshot: attention raised before the window lost focus,
+      // then cleared daemon-side while this window missed the deltas.
+      run.dispatch(replaceWorkspaceList([wireWorkspace('unread')]));
+      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
+
+      mocks.workspaces.list.mockResolvedValue([wireWorkspace('none')]);
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      await settle();
+
+      expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('none');
+      await stop(run.task);
+    });
+
+    it('coalesces a focus burst into one in-flight fetch plus one trailing refetch', async () => {
+      const resolvers: ((value: unknown[]) => void)[] = [];
+      mocks.workspaces.list.mockImplementation(
+        () =>
+          new Promise<unknown[]>((done) => {
+            resolvers.push(done);
+          }),
+      );
+      const run = startWithLoopback();
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(mocks.workspaces.list.mock.calls).toHaveLength(1);
+
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(mocks.workspaces.list.mock.calls).toHaveLength(1);
+
+      resolvers[0]!([]);
+      await settle();
+      expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+
+      resolvers[1]!([]);
+      await settle();
+      expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+      await stop(run.task);
+    });
+
+    it('refetches on console-owner acquisition and converges stale attention', async () => {
+      const run = startWithLoopback();
+      run.dispatch(replaceWorkspaceList([wireWorkspace('none')]));
+
+      mocks.workspaces.list.mockResolvedValue([wireWorkspace('unread')]);
+      run.channel.put(consoleOwnerChanged(true));
+      await settle();
+      await settle();
+
+      expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
+      await stop(run.task);
+    });
+
+    it('does not refetch when console ownership is lost', async () => {
+      const run = startWithLoopback();
+      run.channel.put(consoleOwnerChanged(false));
+      await settle();
+      await settle();
+      expect(mocks.workspaces.list.mock.calls).toEqual([]);
+      await stop(run.task);
+    });
   });
 
   it('guards ensure-tasks and coalesces explicit loads per workspace', async () => {

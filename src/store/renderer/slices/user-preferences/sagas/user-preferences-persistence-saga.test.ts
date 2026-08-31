@@ -29,6 +29,7 @@ import {
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  hydrateShortcutOverrides,
   saveActivityLogPreset,
   setAgentFontStyle,
   setCodeFontFamily,
@@ -39,6 +40,7 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setShowReasoningBlocks,
+  setShortcutOverride,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
@@ -151,7 +153,10 @@ describe('userPreferencesPersistenceSaga', () => {
     const dispatch = vi.fn();
     await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-    expect(mocks.getJSON.mock.calls).toEqual(Object.keys(stored).map((key) => [key]));
+    expect(mocks.getJSON.mock.calls).toEqual([
+      ...Object.keys(stored).map((key) => [key]),
+      ['keyboard-shortcut-overrides'],
+    ]);
     expect(dispatch.mock.calls).toEqual([
       [setSpellcheckEnabled(true)],
       [setShowArchived(true)],
@@ -181,6 +186,37 @@ describe('userPreferencesPersistenceSaga', () => {
     await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
     expect(dispatch.mock.calls).toEqual([]);
+  });
+
+  it('hydrates and persists shortcut overrides through the preference storage', async () => {
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'keyboard-shortcut-overrides'
+        ? { 'global.settings': 'mod+shift+,', invalid: 'mod+x' }
+        : undefined,
+    );
+    const dispatch = vi.fn();
+    await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+    expect(dispatch.mock.calls).toContainEqual([
+      hydrateShortcutOverrides({ 'global.settings': 'mod+shift+,', invalid: 'mod+x' }),
+    ]);
+
+    const channel = stdChannel();
+    const state = {
+      userPreferences: { shortcutOverrides: { 'global.settings': 'mod+shift+,' } },
+    };
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => state },
+      userPreferencesPersistenceSaga,
+    );
+    await settle();
+    mocks.setJSON.mockClear();
+    channel.put(setShortcutOverride('global.settings', 'mod+shift+,'));
+    await settle();
+    expect(mocks.setJSON.mock.calls).toEqual([
+      ['keyboard-shortcut-overrides', { 'global.settings': 'mod+shift+,' }],
+    ]);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('persists every audited trigger using exact legacy keys and post-state values', async () => {
@@ -361,7 +397,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
   describe('backend-scoped completedProviderSetup key', () => {
     const stateFor = (activeId: string, hasCompletedProviderSetup = true) => ({
-      connections: { activeId },
+      connections: { activeId, windowBackendId: activeId },
       userPreferences: { hasCompletedProviderSetup },
     });
 
@@ -448,7 +484,11 @@ describe('userPreferencesPersistenceSaga', () => {
 
       activeId = 'remote-1';
       channel.put(
-        connectionsListReceived({ connections: [], activeId: 'remote-1' } as never),
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        } as never),
       );
       await settle();
       // Fresh remote: no scoped value stored, so the flag resets to false.
@@ -458,7 +498,11 @@ describe('userPreferencesPersistenceSaga', () => {
       stored['backend:remote-2:workspace-list:completedProviderSetup'] = true;
       activeId = 'remote-2';
       channel.put(
-        connectionsListReceived({ connections: [], activeId: 'remote-2' } as never),
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-2',
+          windowBackendId: 'remote-2',
+        } as never),
       );
       await settle();
       expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
@@ -466,7 +510,11 @@ describe('userPreferencesPersistenceSaga', () => {
       // Same backend id again: no re-hydration dispatch.
       dispatch.mockClear();
       channel.put(
-        connectionsListReceived({ connections: [], activeId: 'remote-2' } as never),
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-2',
+          windowBackendId: 'remote-2',
+        } as never),
       );
       await settle();
       expect(dispatch.mock.calls).toEqual([]);

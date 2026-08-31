@@ -5,7 +5,7 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. Twelve booleans, each coerced to its own
+   * WorkspaceApiSettings pattern. Thirteen booleans, each coerced to its own
    * daemon default when absent (see agent-feature-definitions.ts): all
    * default on except `peerAgents`, the one opt-in toggle.
    *

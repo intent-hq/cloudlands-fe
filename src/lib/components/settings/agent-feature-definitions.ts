@@ -26,6 +26,7 @@ export const FEATURE_PATHS = [
   'agentFeatures.prMonitor',
   'agentFeatures.taskGraph',
   'agentFeatures.peerAgents',
+  'agentFeatures.mcpTools',
 ] as const;
 
 export type FeaturePath = (typeof FEATURE_PATHS)[number];
@@ -107,6 +108,12 @@ export const FEATURES: {
     label: () => m.settings_agentFeatures_peerAgents_label(),
     description: () => m.settings_agentFeatures_peerAgents_description(),
     defaultValue: false,
+  },
+  {
+    path: 'agentFeatures.mcpTools',
+    label: () => m.settings_agentFeatures_mcpTools_label(),
+    description: () => m.settings_agentFeatures_mcpTools_description(),
+    defaultValue: true,
   },
 ];
 

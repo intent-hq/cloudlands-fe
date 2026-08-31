@@ -194,7 +194,7 @@ export function submitFromShortcut(id: string) {
 
 Do not import removed standalone dispatch helpers. The configured `Store` instance is the public per-store dispatch entry point.
 
-The three selector call modes (`selectFoo()`, `.select(state)`,`yield* selectFoo.effect()`) are covered in detail in`svelte/selector-lifecycle/SKILL.md`.
+The three selector call modes (`selectFoo()`, `.select(state)`, `yield* selectFoo.effect()`) are covered in detail in `svelte/selector-lifecycle/SKILL.md`.
 
 ## 5. Common Mistakes
 
@@ -211,7 +211,7 @@ const dispose = store.init();
 onDestroy(dispose);
 ```
 
-*Source: *`../SKILL.md §7`*.*
+*Source: `../SKILL.md §7`.*
 
 ### Creating a wrapper hook around `dispatch`
 
@@ -228,11 +228,11 @@ export function useAddItem() {
 store.dispatch(addItem(i));
 ```
 
-*Source: *`../SKILL.md §7, §17`*.*
+*Source: `../SKILL.md §7, §17`.*
 
 ### Reading state with `selector()` in a template
 
-**Mechanism:** templates bind Svelte readables via `$readable$` syntax.Calling `selectFoo()` in the template body creates a fresh readable everyrender and loses memoization (and throws outside init).
+**Mechanism:** templates bind Svelte readables via `$readable$` syntax. Calling `selectFoo()` in the template body creates a fresh readable every render and loses memoization (and throws outside init).
 
 ```svelte
 <!-- ❌ WRONG -->
@@ -245,7 +245,7 @@ store.dispatch(addItem(i));
 <p>{$count$}</p>
 ```
 
-*Source: *`../SKILL.md §7`*.*
+*Source: `../SKILL.md §7`.*
 
 ### Importing standalone package dispatch helpers
 
@@ -259,7 +259,7 @@ store.dispatch(addItem(i));
 </script>
 ```
 
-*Source: *`../SKILL.md §2, §7`*.*
+*Source: `../SKILL.md §2, §7`.*
 
 ### Double-initializing the store
 
@@ -270,16 +270,16 @@ store.dispatch(addItem(i));
 <!-- +layout.svelte -->
 <script>const dispose = store.init();</script>
 <!-- admin/+layout.svelte -->
-<script>const dispose = adminStore.init();</script>  <!-- noop, adminStore never runs -->
+<script>const dispose = store.init();</script>  <!-- noop, duplicate init -->
 
 <!-- ✅ CORRECT — register reducers/sagas on the single shared store -->
-<script>const dispose = singleStore.init();</script>
+<script>const dispose = store.init();</script>
 ```
 
-*Public API: *`@augmentcode/themis/svelte-store`* (*`Store.init`* early-return on existing context).*
+*Public API: `@augmentcode/themis/svelte-store` (`Store.init` early-return on existing context).*
 
 ## 6. See also
 
-- `svelte/selector-lifecycle` — the three selector call modes(`selectFoo()` / `.select(state)` / `.effect()`).
+- `svelte/selector-lifecycle` — the three selector call modes (`selectFoo()` / `.select(state)` / `.effect()`).
 - `core/file-structure` — slice layout and registration order.
 - `../../setup/SKILL.md` — first-time greenfield setup.

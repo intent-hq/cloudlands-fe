@@ -2,6 +2,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
   import { m } from '$shared/paraglide/messages.js';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -40,7 +41,8 @@
     if (event.key === 'ArrowDown') {
       nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
     } else if (event.key === 'ArrowUp') {
-      nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
+      nextIndex =
+        currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
     } else if (event.key === 'Home') {
       nextIndex = 0;
     } else if (event.key === 'End') {
@@ -52,17 +54,33 @@
     }
   }
 
+  // Positioning effect: re-runs when the menu is re-shown at new coordinates
+  // without re-attaching the dismissal listeners below. The measurement is
+  // batched through the shared layout-read phase so it does not force a
+  // standalone reflow.
+  let pendingAdjust: CancelLayoutTask | null = null;
+
   $effect(() => {
     if (!linkActionMenuState.visible) return;
     adjustedX = linkActionMenuState.x;
     adjustedY = linkActionMenuState.y;
-    const anchorElement = linkActionMenuState.anchorElement;
     // Measure after render to keep the menu on-screen, then move focus into
     // the menu so keyboard users can operate it.
-    requestAnimationFrame(() => {
+    pendingAdjust?.();
+    pendingAdjust = scheduleLayoutRead(() => {
+      pendingAdjust = null;
       adjustPosition();
       menuItems()[0]?.focus();
     });
+    return () => {
+      pendingAdjust?.();
+      pendingAdjust = null;
+    };
+  });
+
+  $effect(() => {
+    if (!linkActionMenuState.visible) return;
+    const anchorElement = linkActionMenuState.anchorElement;
 
     // Use mousedown so the menu closes before any other click handler fires
     const handleMouseDown = (event: MouseEvent) => {
@@ -105,7 +123,9 @@
 
   const startWorkspaceLabel = $derived(
     linkActionMenuState.gitHubRef?.kind === 'pr'
-      ? m.navigation_linkActionMenu_startWorkspacePr_label({ number: linkActionMenuState.gitHubRef.number })
+      ? m.navigation_linkActionMenu_startWorkspacePr_label({
+          number: linkActionMenuState.gitHubRef.number,
+        })
       : m.navigation_linkActionMenu_startWorkspaceIssue_label({
           number: linkActionMenuState.gitHubRef?.number ?? 0,
         }),

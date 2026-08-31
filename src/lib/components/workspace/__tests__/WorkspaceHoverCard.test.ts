@@ -125,16 +125,39 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
 });
 
 vi.mock('$store/renderer/slices/workspace-summaries/workspace-summaries-selectors', () => ({
-  selectWorkspaceDiffSummary: vi.fn(
-    mocks.createWorkspaceValueReadable(
-      (workspaceId: string) => mocks.diffSummaryByWorkspace[workspaceId] ?? null,
+  selectWorkspaceDiffSummary: Object.assign(
+    vi.fn(
+      mocks.createWorkspaceValueReadable(
+        (workspaceId: string) => mocks.diffSummaryByWorkspace[workspaceId] ?? null,
+      ),
     ),
+    {
+      select: vi.fn(
+        (_state: unknown, workspaceId: string) => mocks.diffSummaryByWorkspace[workspaceId] ?? null,
+      ),
+    },
   ),
-  selectWorkspaceGitSummary: vi.fn(
-    mocks.createWorkspaceValueReadable(
-      (workspaceId: string) => mocks.gitSummaryByWorkspace[workspaceId] ?? null,
+  selectWorkspaceGitSummary: Object.assign(
+    vi.fn(
+      mocks.createWorkspaceValueReadable(
+        (workspaceId: string) => mocks.gitSummaryByWorkspace[workspaceId] ?? null,
+      ),
     ),
+    {
+      select: vi.fn(
+        (_state: unknown, workspaceId: string) => mocks.gitSummaryByWorkspace[workspaceId] ?? null,
+      ),
+    },
   ),
+}));
+
+const workspaceClientMocks = vi.hoisted(() => ({
+  getDiffSummary: vi.fn(),
+  getGitSummary: vi.fn(),
+}));
+
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: workspaceClientMocks,
 }));
 
 const baseWorkspace = {
@@ -206,6 +229,13 @@ describe('WorkspaceHoverCard', () => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
     mocks.monitors.length = 0;
+    workspaceClientMocks.getDiffSummary.mockReset();
+    workspaceClientMocks.getGitSummary.mockReset();
+    workspaceClientMocks.getDiffSummary.mockResolvedValue({
+      ok: false,
+      error: 'IPC not available',
+    });
+    workspaceClientMocks.getGitSummary.mockResolvedValue({ ok: false, error: 'IPC not available' });
     for (const record of [
       mocks.agentSessionsByWorkspace,
       mocks.tasksByWorkspace,
@@ -497,9 +527,7 @@ describe('WorkspaceHoverCard', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.getAttribute('data-agent-avatar-stack-agent-id')).toBe('agent-root');
     expect(
-      items[0]
-        ?.querySelector('[data-agent-avatar-with-state]')
-        ?.getAttribute('data-avatar-state'),
+      items[0]?.querySelector('[data-agent-avatar-with-state]')?.getAttribute('data-avatar-state'),
     ).toBe('unread');
   });
 
@@ -794,7 +822,7 @@ describe('WorkspaceHoverCard', () => {
       'text-success',
     );
     expect(rows[2].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
-      'text-primary',
+      'text-purple-500',
     );
     expect(screen.getByText('other-org/tooling')).toBeTruthy();
     expect(screen.getByText('Cross-repo monitor')).toBeTruthy();
@@ -968,5 +996,71 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.queryByText('Tasks')).toBeNull();
     expect(screen.queryByText('PR')).toBeNull();
     expect(screen.queryByText('Git')).toBeNull();
+  });
+  describe('on-demand summary fetch', () => {
+    const LOAD_SUCCEEDED = 'workspaceSummaries/loadWorkspaceSummariesSucceeded';
+
+    const diffSummary = {
+      schemaVersion: 1,
+      updatedAt: '2026-05-05T00:00:00.000Z',
+      totalFiles: 2,
+      totalAdditions: 8,
+      totalDeletions: 3,
+      files: [],
+    };
+    const gitSummary = { ahead: 1, behind: 0, hasUnpushed: true };
+
+    function getSummaryDispatchPayloads() {
+      return mocks.dispatch.mock.calls.flatMap(([action]) => {
+        const dispatchedAction = action as { type?: string; payload?: unknown } | undefined;
+        return dispatchedAction?.type === LOAD_SUCCEEDED ? [dispatchedAction.payload] : [];
+      });
+    }
+
+    it('requests both summaries over IPC and stores the protocol-shaped results', async () => {
+      workspaceClientMocks.getDiffSummary.mockResolvedValue({ ok: true, data: diffSummary });
+      workspaceClientMocks.getGitSummary.mockResolvedValue({ ok: true, data: gitSummary });
+
+      await renderHoverCard();
+
+      await waitFor(() =>
+        expect(getSummaryDispatchPayloads()).toEqual([['ws-1', diffSummary, gitSummary]]),
+      );
+      expect(workspaceClientMocks.getDiffSummary).toHaveBeenCalledWith('ws-1');
+      expect(workspaceClientMocks.getGitSummary).toHaveBeenCalledWith('ws-1');
+    });
+
+    it('keeps the existing stored value for a side whose refresh failed', async () => {
+      mocks.diffSummaryByWorkspace['ws-1'] = diffSummary;
+      workspaceClientMocks.getDiffSummary.mockResolvedValue({ ok: false, error: 'boom' });
+      workspaceClientMocks.getGitSummary.mockResolvedValue({ ok: true, data: gitSummary });
+
+      await renderHoverCard();
+
+      await waitFor(() =>
+        expect(getSummaryDispatchPayloads()).toEqual([['ws-1', diffSummary, gitSummary]]),
+      );
+    });
+
+    it('dispatches nothing when both summary refreshes fail', async () => {
+      mocks.diffSummaryByWorkspace['ws-1'] = diffSummary;
+      mocks.gitSummaryByWorkspace['ws-1'] = gitSummary;
+      workspaceClientMocks.getDiffSummary.mockResolvedValue({ ok: false, error: 'boom' });
+      workspaceClientMocks.getGitSummary.mockResolvedValue({ ok: false, error: 'boom' });
+
+      await renderHoverCard();
+      await waitFor(() => expect(workspaceClientMocks.getGitSummary).toHaveBeenCalled());
+      await tick();
+
+      expect(getSummaryDispatchPayloads()).toEqual([]);
+    });
+
+    it('does not fetch summaries when loadWorkspaceData is false', async () => {
+      await renderHoverCard(undefined, undefined, { loadWorkspaceData: false });
+      await tick();
+
+      expect(workspaceClientMocks.getDiffSummary).not.toHaveBeenCalled();
+      expect(workspaceClientMocks.getGitSummary).not.toHaveBeenCalled();
+    });
   });
 });

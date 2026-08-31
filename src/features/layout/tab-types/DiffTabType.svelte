@@ -297,6 +297,7 @@
 {#if tab.diffPath}
   {#key tab.diffPath}
     <TrackedChangeDiffViewer
+      active={isActive}
       {change}
       {workspaceId}
       viewMode={$diffSideBySide ? 'split' : 'unified'}

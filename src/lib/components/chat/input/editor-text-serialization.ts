@@ -22,6 +22,26 @@ function preserveCollapsibleSpaces(text: string): string {
     .replace(/ {2,}/g, (spaces) => ` ${'\u00A0'.repeat(spaces.length - 1)}`);
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function injectSkillCommandSpans(html: string, skillNames: readonly string[]): string {
+  const names = [...new Set(skillNames.filter(Boolean))]
+    .map((name) => name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+    .sort((left, right) => right.length - left.length);
+  if (names.length === 0) return html;
+
+  const pattern = new RegExp(
+    `(^|[\\s\\u00A0])/(${names.map(escapeRegExp).join('|')})(?=$|[\\s\\u00A0])`,
+    'gu',
+  );
+  return html.replace(pattern, (_match, boundary: string, name: string) => {
+    const attribute = name.replace(/"/g, '&quot;');
+    return `${boundary}<span data-type="skill-command" data-skill-name="${attribute}" class="skill-command-chip type-code" role="code" aria-label="/${attribute}" contenteditable="false">/${name}</span>`;
+  });
+}
+
 /**
  * Convert plain text to simple paragraph HTML for the TipTap editor.
  * Unlike processMarkdownToHTML (which runs marked.parse and converts markdown
@@ -33,7 +53,7 @@ function preserveCollapsibleSpaces(text: string): string {
  * (bulletList, bold, etc.) are intentionally disabled in the input editor,
  * markdown-generated HTML tags would be silently removed.
  */
-export function plainTextToEditorHTML(text: string): string {
+export function plainTextToEditorHTML(text: string, skillNames: readonly string[] = []): string {
   if (!text) return '';
 
   // If the value is already HTML (e.g., from comment editing where the caller
@@ -52,7 +72,7 @@ export function plainTextToEditorHTML(text: string): string {
     // Escape HTML entities so user text is safe
     const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    return preserveCollapsibleSpaces(escaped);
+    return injectSkillCommandSpans(preserveCollapsibleSpaces(escaped), skillNames);
   });
 
   // Build HTML: one paragraph, one <br> per "\n". No paragraph splitting, so

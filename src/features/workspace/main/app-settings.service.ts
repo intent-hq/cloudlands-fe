@@ -1,6 +1,12 @@
 /**
  * App Settings Service (Main Process)
  *
+ * Backend policy: local-only. Every RPC goes through the shared
+ * `getLocalBackendClient()` (fail-closed when the local backend has no live
+ * client — never falls back to the primary), and all listeners are pinned to
+ * `LOCAL_CONNECTION_ID`: these values feed local filesystem/git paths in the
+ * Electron main process.
+ *
  * Sync accessors for the three workspace-scoped app settings consumed on
  * synchronous main-process paths (branch-prefix injection, worktree layout,
  * git-env SSH key). The source of truth is the daemon settings catalog
@@ -41,19 +47,13 @@
 
 import { Logger } from '../../../shared/logger';
 import {
-  getBackendClient,
-  getBackendClientForConnection,
-  getPrimaryBackendId,
+  getLocalBackendClient,
   onBackendNotification,
   onBackendReconnected,
   onBackendStatus,
 } from '../../backend/main/backend.ipc';
 import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
-import type {
-  ConnectionStatus,
-  JsonRpcClient,
-  JsonRpcNotification,
-} from '../../backend/main/json-rpc-client';
+import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger({ category: 'AppSettingsService' });
 
@@ -97,13 +97,6 @@ const SUBSCRIBE_RETRY_DELAY_MS = 5_000;
 const MAX_SUBSCRIBE_RETRIES = 3;
 let subscribeRetryTimer: ReturnType<typeof setTimeout> | undefined;
 let subscribeRetryCount = 0;
-
-function getLocalBackendClient(): JsonRpcClient {
-  const pooled = getBackendClientForConnection(LOCAL_CONNECTION_ID);
-  if (pooled) return pooled;
-  if (getPrimaryBackendId() === LOCAL_CONNECTION_ID) return getBackendClient();
-  throw new Error('Local backend client is not connected');
-}
 
 function getCachedValue(path: string): string | null {
   switch (path) {

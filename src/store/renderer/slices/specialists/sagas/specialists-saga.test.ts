@@ -41,7 +41,16 @@ vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 vi.mock('$lib/components/ui/toast', () => ({ toast: { error: mocks.toastError } }));
 
 import { settingsChanged } from '../../settings-events/settings-events-slice';
-import { deleteFileSpecialist, saveFileSpecialist, setBundledSpecialists, setBundledSpecialistsLoaded, setCustomSpecialistsLoaded, setFileSpecialists, setFileSpecialistsLoaded, setOverridesLoaded } from '../specialists-slice';
+import {
+  deleteFileSpecialist,
+  saveFileSpecialist,
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+  setCustomSpecialistsLoaded,
+  setFileSpecialists,
+  setFileSpecialistsLoaded,
+  setOverridesLoaded,
+} from '../specialists-slice';
 import { specialistsSaga } from './specialists-saga';
 
 const settle = async () => {
@@ -108,6 +117,18 @@ const expectedListActions = (ids: string[]) => [
   setFileSpecialists(ids.map(mappedFileDef)),
   setFileSpecialistsLoaded(true),
 ];
+
+// The saga settles the per-dispatch async-action promise with the daemon write
+// outcome by dispatching the paired _SUCCESS/_FAILURE stage action.
+type WriteAction = ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>;
+const successAction = (action: WriteAction) => ({
+  type: `${action.type}_SUCCESS`,
+  payload: { request: action.payload, response: undefined },
+});
+const failureAction = (action: WriteAction) => ({
+  type: `${action.type}_FAILURE`,
+  payload: { request: action.payload, error: expect.any(Error) },
+});
 
 describe('specialistsSaga', () => {
   beforeEach(() => {
@@ -278,9 +299,12 @@ describe('specialistsSaga', () => {
     await settle();
     expect(mocks.create).toHaveBeenCalledTimes(2);
     expect(mocks.list.mock.calls).toEqual([[], []]);
-    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual(
-      expectedListActions(['builtin']),
-    );
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
+      successAction(action),
+      successAction(action),
+      ...expectedListActions(['builtin']),
+    ]);
+    await expect(action.promise).resolves.toBeUndefined();
     task.cancel();
     await task.toPromise();
   });
@@ -297,20 +321,19 @@ describe('specialistsSaga', () => {
       },
       specialistsSaga,
     );
-    channel.put(
-      saveFileSpecialist({
-        id: 'edited',
-        name: 'Edited',
-        description: 'Updated',
-        codingAgent: 'auggie',
-        model: 'opus',
-        modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
-        roleReminder: 'Check.',
-        behaviorPrompt: 'Inspect.',
-        scope: 'project',
-        workspacePath: '/workspace',
-      }),
-    );
+    const action = saveFileSpecialist({
+      id: 'edited',
+      name: 'Edited',
+      description: 'Updated',
+      codingAgent: 'auggie',
+      model: 'opus',
+      modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
+      roleReminder: 'Check.',
+      behaviorPrompt: 'Inspect.',
+      scope: 'project',
+      workspacePath: '/workspace',
+    });
+    channel.put(action);
     await settle();
 
     expect(mocks.edit.mock.calls).toEqual([
@@ -336,7 +359,11 @@ describe('specialistsSaga', () => {
       ],
     ]);
     expect(mocks.list.mock.calls).toEqual([[]]);
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual(expectedListActions(['edited']));
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
+      successAction(action),
+      ...expectedListActions(['edited']),
+    ]);
+    await expect(action.promise).resolves.toBeUndefined();
     task.cancel();
     await task.toPromise();
   });
@@ -346,16 +373,62 @@ describe('specialistsSaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
-    channel.put(
-      deleteFileSpecialist({ id: 'removed', scope: 'project', workspacePath: '/workspace' }),
-    );
+    const action = deleteFileSpecialist({
+      id: 'removed',
+      scope: 'project',
+      workspacePath: '/workspace',
+    });
+    channel.put(action);
     await settle();
 
     expect(mocks.remove.mock.calls).toEqual([['removed', 'project', '/workspace']]);
     expect(mocks.list.mock.calls).toEqual([[]]);
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual(
-      expectedListActions(['remaining']),
-    );
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
+      successAction(action),
+      ...expectedListActions(['remaining']),
+    ]);
+    await expect(action.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects the save action promise when the daemon write fails (monorepo review PR#1947)', async () => {
+    mocks.create.mockRejectedValue(new Error('daemon write failed'));
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+    const action = saveFileSpecialist({
+      id: 'new-one',
+      name: 'New One',
+      description: 'Desc',
+      behaviorPrompt: 'Prompt',
+      scope: 'project',
+      workspacePath: '/workspace',
+    });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).rejects.toThrow('daemon write failed');
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([failureAction(action)]);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects the delete action promise when the daemon write fails (monorepo review PR#1947)', async () => {
+    mocks.remove.mockRejectedValue(new Error('delete rpc failed'));
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+    const action = deleteFileSpecialist({ id: 'gone', scope: 'user' });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).rejects.toThrow('delete rpc failed');
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([failureAction(action)]);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
     task.cancel();
     await task.toPromise();
   });

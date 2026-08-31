@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -417,7 +418,9 @@ describe('WorkspaceTabStrip', () => {
   it('renders accessible tabs with delayed shared workspace hover cards', async () => {
     render(WorkspaceTabStrip);
 
-    const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
+    const tablist = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     expect(tablist.className).toContain('pl-7');
     expect(tablist.className).toContain('pr-3');
     expect(tablist.className).toContain('-ml-1');
@@ -466,7 +469,9 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1' },
     });
 
-    const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
+    const tablist = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
     expect(tablist.className).toContain('pl-7');
     expect(tablist.className).toContain('-ml-1');
@@ -611,7 +616,9 @@ describe('WorkspaceTabStrip', () => {
     );
 
     render(WorkspaceTabStrip);
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     expect(strip.className).toContain('-mr-2.5');
     expect(strip.className).not.toMatch(/(?:^|\s)mr-1(?:\s|$)/);
 
@@ -629,7 +636,9 @@ describe('WorkspaceTabStrip', () => {
 
   it('scrolls a newly active final tab fully inside the strip', async () => {
     const { rerender } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     const finalTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-3"]')!;
     Object.defineProperty(strip, 'scrollLeft', { value: 0, writable: true });
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
@@ -646,7 +655,9 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
     });
     container.classList.add('window-title-bar');
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     Object.defineProperty(strip, 'scrollLeft', { value: 120, writable: true });
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
@@ -735,7 +746,9 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     const tab = tabButton(source);
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
 
     expect(tab.className).toContain('cursor-pointer');
     expect(source.className).toContain('cursor-pointer');
@@ -825,9 +838,10 @@ describe('WorkspaceTabStrip', () => {
 
     expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
-    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).not.toContain(
-      'cursor-grabbing',
-    );
+    expect(
+      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
+        .className,
+    ).not.toContain('cursor-grabbing');
     expect(
       mocks.dispatch.mock.calls
         .map(([action]) => action)
@@ -861,7 +875,9 @@ describe('WorkspaceTabStrip', () => {
     const runFrames = (count: number) => {
       for (let index = 0; index < count; index += 1) frames.shift()?.(0);
     };
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
     Object.defineProperties(strip, {
       scrollLeft: { value: 100, writable: true },
@@ -920,9 +936,10 @@ describe('WorkspaceTabStrip', () => {
     );
     expect(source.style.left).toBe('');
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
-    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).not.toContain(
-      'cursor-grabbing',
-    );
+    expect(
+      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
+        .className,
+    ).not.toContain('cursor-grabbing');
   });
 
   it('moves the final tab to the first endpoint with one persisted action', async () => {
@@ -968,9 +985,10 @@ describe('WorkspaceTabStrip', () => {
     expect(source.className).toContain('border-b-0');
     expect(source.className).toContain('shadow-none');
     expect(source.className).not.toContain('shadow-lg');
-    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).not.toContain(
-      'cursor-grabbing',
-    );
+    expect(
+      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
+        .className,
+    ).not.toContain('cursor-grabbing');
     expect(
       mocks.dispatch.mock.calls.some(([action]) => action.type === 'tabState/moveWorkspace'),
     ).toBe(false);

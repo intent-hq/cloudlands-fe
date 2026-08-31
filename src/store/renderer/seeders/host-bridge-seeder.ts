@@ -23,15 +23,15 @@
  * `agent-ipc-bridge-seeder` idiom) so the very first home-screen mount sees
  * a real git-availability + directory-status answer.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
-import { meetsMinimumVersion } from "$shared/utils/version-compare";
-import { backendRequest } from "$lib/client/live/backend-transport";
-import { mockUserPreferences } from "$lib/client/mock/fixtures";
-import { openExternalUrl } from "$lib/utils/open-external";
-import { EDITOR_REGISTRY } from "$shared/editors/editor-registry";
-import type { InstalledEditor } from "$store/renderer/slices/external-editors/external-editors-slice";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
+import { meetsMinimumVersion } from '$shared/utils/version-compare';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { mockUserPreferences } from '$lib/client/mock/fixtures';
+import { openExternalUrl } from '$lib/utils/open-external';
+import { EDITOR_REGISTRY } from '$shared/editors/editor-registry';
+import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 
 /** Daemon `host.checkGit` response shape (intent-transport host_ops.rs §host). */
 interface HostCheckGitResult {
@@ -54,7 +54,7 @@ interface HostDirectoryStatusResult {
 
 /** Coerce a possibly-unknown argument into a plain object record. */
 function asRecord(arg: unknown): Record<string, unknown> {
-  return arg && typeof arg === "object" ? (arg as Record<string, unknown>) : {};
+  return arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {};
 }
 
 /**
@@ -70,15 +70,15 @@ function asRecord(arg: unknown): Record<string, unknown> {
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
   try {
-    const result = await backendRequest<HostCheckGitResult>("host.checkGit");
+    const result = await backendRequest<HostCheckGitResult>('host.checkGit');
     const available = result?.available === true;
-    const version = typeof result?.version === "string" ? result.version : undefined;
+    const version = typeof result?.version === 'string' ? result.version : undefined;
     return {
       success: true,
       data: available ? { available: true, version } : { available: false },
     };
   } catch {
-    return { success: true, data: { available: "unknown" } };
+    return { success: true, data: { available: 'unknown' } };
   }
 });
 
@@ -95,15 +95,14 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
 registerMockIpcHandler(IPC_CHANNELS.FILE.GET_DIRECTORY_STATUS, async (arg) => {
   const params = asRecord(arg);
   const rawPath = params.path;
-  const path = typeof rawPath === "string" ? rawPath : "";
+  const path = typeof rawPath === 'string' ? rawPath : '';
   if (!path) {
-    return { success: false, error: "path is required" };
+    return { success: false, error: 'path is required' };
   }
   try {
-    const result = await backendRequest<HostDirectoryStatusResult>(
-      "host.directoryStatus",
-      { path },
-    );
+    const result = await backendRequest<HostDirectoryStatusResult>('host.directoryStatus', {
+      path,
+    });
     return { success: true, data: result };
   } catch (error) {
     return {
@@ -130,8 +129,8 @@ interface HostFindBinaryResult {
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_RTK, async () => {
   try {
-    const result = await backendRequest<HostFindBinaryResult>("host.findBinary", {
-      name: "rtk",
+    const result = await backendRequest<HostFindBinaryResult>('host.findBinary', {
+      name: 'rtk',
     });
     return { success: true, data: { available: result?.available === true } };
   } catch {
@@ -152,11 +151,11 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_RTK, async () => {
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
   try {
-    const result = await backendRequest<HostCheckGitResult>("host.checkNode");
+    const result = await backendRequest<HostCheckGitResult>('host.checkNode');
     if (result?.available !== true) {
       return { success: true, data: { available: false, versionOk: false } };
     }
-    const version = result.version?.trim().replace(/^v/, "");
+    const version = result.version?.trim().replace(/^v/, '');
     return {
       success: true,
       data: {
@@ -182,9 +181,9 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GH, async () => {
   try {
-    const result = await backendRequest<HostCheckGitResult>("host.checkGh");
+    const result = await backendRequest<HostCheckGitResult>('host.checkGh');
     const available = result?.available === true;
-    const version = typeof result?.version === "string" ? result.version : undefined;
+    const version = typeof result?.version === 'string' ? result.version : undefined;
     return {
       success: true,
       data: available ? { available: true, version } : { available: false },
@@ -206,8 +205,8 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GH, async () => {
  * matching what the settings seeder dispatches into `systemFonts`.
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.LIST_FONTS, async () => {
-  const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-  if (bridge && typeof bridge.invoke === "function") {
+  const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (bridge && typeof bridge.invoke === 'function') {
     return bridge.invoke(IPC_CHANNELS.SYSTEM.LIST_FONTS, {});
   }
   return { success: true, data: [...mockUserPreferences.systemFonts] };
@@ -236,9 +235,7 @@ interface HostListInstalledEditorsResult {
 
 /** Fetch the daemon-host editor catalog (detection runs on the daemon host). */
 async function listInstalledEditors(): Promise<HostInstalledEditorEntry[]> {
-  const result = await backendRequest<HostListInstalledEditorsResult>(
-    "host.listInstalledEditors",
-  );
+  const result = await backendRequest<HostListInstalledEditorsResult>('host.listInstalledEditors');
   return Array.isArray(result?.editors) ? result.editors : [];
 }
 
@@ -247,8 +244,8 @@ async function listInstalledEditors(): Promise<HostInstalledEditorEntry[]> {
  * on daemon error so the invoking component's catch block surfaces the failure.
  */
 async function openInEditor(editorId: string, path: string): Promise<{ success: true }> {
-  if (!path) throw new Error("Missing required parameter: path");
-  await backendRequest("host.openInEditor", { editorId, path });
+  if (!path) throw new Error('Missing required parameter: path');
+  await backendRequest('host.openInEditor', { editorId, path });
   return { success: true };
 }
 
@@ -260,32 +257,32 @@ async function openInEditor(editorId: string, path: string): Promise<{ success: 
  * the file; Xcode wants the project folder).
  */
 function resolveEditorPath(arg: unknown, preferFile: boolean): string {
-  if (typeof arg === "string") return arg;
-  if (arg && typeof arg === "object") {
+  if (typeof arg === 'string') return arg;
+  if (arg && typeof arg === 'object') {
     const record = arg as { filePath?: unknown; folder?: unknown; file?: unknown };
-    if (typeof record.filePath === "string") return record.filePath;
-    const folder = typeof record.folder === "string" ? record.folder : "";
-    const file = typeof record.file === "string" ? record.file : "";
+    if (typeof record.filePath === 'string') return record.filePath;
+    const folder = typeof record.folder === 'string' ? record.folder : '';
+    const file = typeof record.file === 'string' ? record.file : '';
     if (preferFile && file) return file;
     return folder || file;
   }
-  return "";
+  return '';
 }
 
 /** `vscode:open` → `host.openInEditor { editorId: "vscode" }`. */
-registerMockIpcHandler("vscode:open", async (arg) =>
-  openInEditor("vscode", resolveEditorPath(arg, true)),
+registerMockIpcHandler('vscode:open', async (arg) =>
+  openInEditor('vscode', resolveEditorPath(arg, true)),
 );
 
 /**
  * `vscode:open-git-diff` → open the repository folder in VS Code so its native
  * git tooling shows the diff (mirrors the legacy main-process behavior).
  */
-registerMockIpcHandler("vscode:open-git-diff", async (arg) => {
+registerMockIpcHandler('vscode:open-git-diff', async (arg) => {
   const params = asRecord(arg);
-  const workspacePath = typeof params.workspacePath === "string" ? params.workspacePath : "";
-  const filePath = typeof params.filePath === "string" ? params.filePath : "";
-  return openInEditor("vscode", workspacePath || filePath);
+  const workspacePath = typeof params.workspacePath === 'string' ? params.workspacePath : '';
+  const filePath = typeof params.filePath === 'string' ? params.filePath : '';
+  return openInEditor('vscode', workspacePath || filePath);
 });
 
 /**
@@ -294,39 +291,39 @@ registerMockIpcHandler("vscode:open-git-diff", async (arg) => {
  * shared EDITOR_REGISTRY).
  */
 const JETBRAINS_EDITOR_IDS = [
-  "intellij",
-  "intellij-ce",
-  "webstorm",
-  "pycharm",
-  "pycharm-ce",
-  "rubymine",
-  "goland",
-  "phpstorm",
+  'intellij',
+  'intellij-ce',
+  'webstorm',
+  'pycharm',
+  'pycharm-ce',
+  'rubymine',
+  'goland',
+  'phpstorm',
 ] as const;
 
 /** `jetbrains:open` → first installed JetBrains IDE via `host.listInstalledEditors`. */
-registerMockIpcHandler("jetbrains:open", async (arg) => {
+registerMockIpcHandler('jetbrains:open', async (arg) => {
   const editors = await listInstalledEditors();
   const installed = JETBRAINS_EDITOR_IDS.find((id) =>
     editors.some((entry) => entry.id === id && entry.installed === true),
   );
   if (!installed) {
     throw new Error(
-      "No JetBrains IDE found. Please install IntelliJ IDEA, WebStorm, PyCharm, or another JetBrains IDE.",
+      'No JetBrains IDE found. Please install IntelliJ IDEA, WebStorm, PyCharm, or another JetBrains IDE.',
     );
   }
   return openInEditor(installed, resolveEditorPath(arg, true));
 });
 
 /** `xcode:open` → `host.openInEditor { editorId: "xcode" }` on the project folder. */
-registerMockIpcHandler("xcode:open", async (arg) =>
-  openInEditor("xcode", resolveEditorPath(arg, false)),
+registerMockIpcHandler('xcode:open', async (arg) =>
+  openInEditor('xcode', resolveEditorPath(arg, false)),
 );
 
 /** `vscode:openFile` (CodeEditor's "Open in VS Code") → `host.openInEditor { editorId: "vscode" }`. */
-registerMockIpcHandler("vscode:openFile", async (arg) => {
+registerMockIpcHandler('vscode:openFile', async (arg) => {
   const file = asRecord(arg).file;
-  return openInEditor("vscode", typeof file === "string" ? file : "");
+  return openInEditor('vscode', typeof file === 'string' ? file : '');
 });
 
 /**
@@ -334,25 +331,27 @@ registerMockIpcHandler("vscode:openFile", async (arg) => {
  * defines `host.openExternal` as a daemon→client reverse RPC ("FE-served"):
  * the CLIENT owns opening URLs, so the legacy channel bridges to the shared
  * `openExternalUrl` opener rather than to a daemon call. The opener validates
- * the scheme (http/https only — a bad URL still rejects loudly), prefers the
- * real Electron preload bridge when one exists, and falls back to
+ * the URL (http/https schemes plus the exact allowlisted OS settings deep
+ * links in BROWSER_PROTOCOLS.EXTERNAL_EXACT — a bad URL still rejects
+ * loudly), prefers the real Electron preload bridge when one exists, and
+ * falls back to
  * `window.open` + an anchor click. A refused `window.open` no longer throws:
  * Electron hosts deny it from their window-open handler after opening the
  * URL externally themselves, so treating a null handle as fatal broke every
  * docs link in the packaged build.
  */
-registerMockIpcHandler("shell:openExternal", async (arg) => {
-  const url = typeof arg === "string" ? arg : String(asRecord(arg).url ?? "");
+registerMockIpcHandler('shell:openExternal', async (arg) => {
+  const url = typeof arg === 'string' ? arg : String(asRecord(arg).url ?? '');
   await openExternalUrl(url);
   return { success: true };
 });
 
 /** `external-editors:open` → `host.openInEditor` with the caller's editor id. */
-registerMockIpcHandler("external-editors:open", async (arg) => {
+registerMockIpcHandler('external-editors:open', async (arg) => {
   const params = asRecord(arg);
-  const editorId = typeof params.editorId === "string" ? params.editorId : "";
-  if (!editorId) throw new Error("Missing required parameter: editorId");
-  return openInEditor(editorId, typeof params.path === "string" ? params.path : "");
+  const editorId = typeof params.editorId === 'string' ? params.editorId : '';
+  if (!editorId) throw new Error('Missing required parameter: editorId');
+  return openInEditor(editorId, typeof params.path === 'string' ? params.path : '');
 });
 
 /**
@@ -368,17 +367,17 @@ registerMockIpcHandler("external-editors:open", async (arg) => {
  * callers' toast branch surfaces the gap — the pre-existing behavior when this
  * channel was still an allowlisted absence.
  */
-registerMockIpcHandler("external-editors:open-with-other", async (arg) => {
+registerMockIpcHandler('external-editors:open-with-other', async (arg) => {
   const params = asRecord(arg);
-  const path = typeof params.path === "string" ? params.path : "";
-  if (!path) throw new Error("Missing required parameter: path");
-  const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-  if (bridge && typeof bridge.invoke === "function") {
-    return bridge.invoke("external-editors:open-with-other", { path });
+  const path = typeof params.path === 'string' ? params.path : '';
+  if (!path) throw new Error('Missing required parameter: path');
+  const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (bridge && typeof bridge.invoke === 'function') {
+    return bridge.invoke('external-editors:open-with-other', { path });
   }
   return {
     success: false,
-    error: "Opening with another application is not available in this build",
+    error: 'Opening with another application is not available in this build',
   };
 });
 
@@ -412,13 +411,13 @@ const EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS = 5_000;
 const EXECUTE_COMMAND_CWD_VALIDATION_FAILURE = {
   success: false,
   error: {
-    code: "VALIDATION_ERROR",
-    message: "Invalid request parameters",
+    code: 'VALIDATION_ERROR',
+    message: 'Invalid request parameters',
     details: [
       {
-        code: "custom",
-        message: "cwd requires workspaceId (PROTOCOL §5.14 containment guard)",
-        path: ["workspaceId"],
+        code: 'custom',
+        message: 'cwd requires workspaceId (PROTOCOL §5.14 containment guard)',
+        path: ['workspaceId'],
       },
     ],
   },
@@ -428,8 +427,8 @@ const EXECUTE_COMMAND_CWD_VALIDATION_FAILURE = {
  * a generic message, never the underlying error or the command string. */
 const EXECUTE_COMMAND_FAILURE = {
   success: false,
-  error: "Command execution failed",
-  data: { stdout: "", stderr: "", code: 1 },
+  error: 'Command execution failed',
+  data: { stdout: '', stderr: '', code: 1 },
 } as const;
 
 /**
@@ -451,9 +450,9 @@ const EXECUTE_COMMAND_FAILURE = {
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
   const params = asRecord(arg);
-  const command = typeof params.command === "string" ? params.command : "";
-  const cwd = typeof params.cwd === "string" ? params.cwd : "";
-  const workspaceId = typeof params.workspaceId === "string" ? params.workspaceId : "";
+  const command = typeof params.command === 'string' ? params.command : '';
+  const cwd = typeof params.cwd === 'string' ? params.cwd : '';
+  const workspaceId = typeof params.workspaceId === 'string' ? params.workspaceId : '';
   if (!command) {
     return EXECUTE_COMMAND_FAILURE;
   }
@@ -461,14 +460,14 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
     return EXECUTE_COMMAND_CWD_VALIDATION_FAILURE;
   }
   try {
-    const status = await backendRequest<SystemStatusResult>("system.status");
+    const status = await backendRequest<SystemStatusResult>('system.status');
     const os = status?.host?.os;
     if (!os) {
       // Older intentd without the §5.7 `host` block — don't guess a shell
       // (shell-reveal-bridge-seeder idiom); folds to the catch envelope.
-      throw new Error("The daemon does not report host info (older intentd?)");
+      throw new Error('The daemon does not report host info (older intentd?)');
     }
-    const [shellCmd, shellFlag] = os === "windows" ? ["cmd.exe", "/c"] : ["/bin/sh", "-c"];
+    const [shellCmd, shellFlag] = os === 'windows' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
     const execParams: {
       command: string;
       args: string[];
@@ -484,11 +483,9 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
       // omits blank values) — inert on the wire without cwd, per §5.14.
       execParams.workspaceId = workspaceId;
     }
-    const result = await backendRequest<HostExecResult>(
-      "host.exec",
-      execParams,
-      { timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS + EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS },
-    );
+    const result = await backendRequest<HostExecResult>('host.exec', execParams, {
+      timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS + EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS,
+    });
     if (result.exitCode === 0) {
       return {
         success: true,
@@ -497,7 +494,7 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
     }
     return {
       success: false,
-      error: "Command execution failed", // Don't expose full error message
+      error: 'Command execution failed', // Don't expose full error message
       data: { stdout: result.stdout, stderr: result.stderr, code: result.exitCode },
     };
   } catch {
@@ -538,7 +535,7 @@ registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, async () 
         // bridge-seeder), not the bundle path, and the legacy Electron handler
         // (external-editors.ipc.ts) hard-coded finder as installed — mirror
         // that here; locality gating still hides it on remote daemons.
-        installed: entry.installed === true || def.handlerType === "finder",
+        installed: entry.installed === true || def.handlerType === 'finder',
       });
     }
     return { success: true, data };

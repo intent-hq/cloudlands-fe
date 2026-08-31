@@ -281,6 +281,8 @@ describe('ChatMessage user message text rendering', () => {
 describe('ChatMessage agent-to-agent sender attribution', () => {
   beforeEach(() => {
     dispatchMock.mockClear();
+    handleLinkMock.mockReset();
+    handleLinkMock.mockResolvedValue(true);
     agentSelectorHarness.reset();
   });
 
@@ -505,6 +507,29 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('hides the daemon sender header line from the preview and expanded body', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage(
+          {
+            type: 'agent_message',
+            fromAgentId: 'agent-11111111-2222-3333-4444-555555555555',
+            fromAgentName: 'Builder',
+          },
+          '[MESSAGE FROM AGENT Builder (agent-11111111-2222-3333-4444-555555555555)]\n\nhello from another agent',
+        ),
+      },
+    });
+
+    const preview = screen.getByTestId('agent-message-preview');
+    expect(preview.textContent).toContain('hello from another agent');
+    expect(preview.textContent).not.toContain('[MESSAGE FROM AGENT');
+
+    await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
+  });
+
   it('dispatches openAgentTabRequested with the sender agent id on click', async () => {
     render(ChatMessageRouteContextHarness, {
       props: {
@@ -524,6 +549,85 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(action.type).toBe('appLayout/openAgentTabRequested');
     expect(action.payload[0]).toBe('ws-1');
     expect(action.payload[1]).toMatchObject({ agentId: 'agent-sender-1' });
+  });
+
+  it('renders Chief attribution as an exact source-message link', async () => {
+    const sourceUrl = 'intent://local/__chief__/agent/agent-chief-1/message/msg-source-1';
+    render(ChatMessageRouteContextHarness, {
+      props: {
+        workspaceId: WorkspaceId('ws-1'),
+        message: userMessage({
+          type: 'chief_message',
+          fromAgentId: 'agent-chief-1',
+          fromAgentName: 'Ignored sender label',
+          fromWorkspaceId: '__chief__',
+          sourceMessageId: 'msg-source-1',
+          sourceUrl,
+        }),
+      },
+    });
+
+    expect(screen.getByText('Chief of Staff')).toBeTruthy();
+    const sourceLink = screen.getByTestId('agent-message-attribution');
+    expect(sourceLink.tagName).toBe('A');
+    expect(sourceLink.getAttribute('href')).toBe(sourceUrl);
+
+    await fireEvent.click(sourceLink);
+
+    expect(handleLinkMock).toHaveBeenCalledWith(sourceUrl, {
+      workspaceId: 'ws-1',
+      event: expect.any(MouseEvent),
+    });
+    expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves Chief attribution and source navigation for a queued delivery', async () => {
+    const sourceUrl = 'intent://local/__chief__/agent/agent-chief-1/message/msg-source-1';
+    render(ChatMessageRouteContextHarness, {
+      props: {
+        workspaceId: WorkspaceId('ws-1'),
+        message: userMessage({
+          type: 'chief_message',
+          fromAgentId: 'agent-chief-1',
+          fromWorkspaceId: '__chief__',
+          sourceMessageId: 'msg-source-1',
+          sourceUrl,
+          queueInfo: { queuedAt: '2026-01-01T11:59:57Z', waitedMs: 3000 },
+        }),
+      },
+    });
+
+    const sourceLink = screen.getByTestId('agent-message-attribution');
+    await fireEvent.click(sourceLink);
+    await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
+
+    expect(screen.getByText('Chief of Staff')).toBeTruthy();
+    expect(sourceLink.getAttribute('href')).toBe(sourceUrl);
+    expect(screen.getByTestId('queued-message-notice-text').textContent).toBe(
+      'Waited in queue for 3s',
+    );
+    expect(handleLinkMock).toHaveBeenCalledWith(sourceUrl, {
+      workspaceId: 'ws-1',
+      event: expect.any(MouseEvent),
+    });
+  });
+
+  it('shows Chief attribution without a broken link when source metadata is incomplete', () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'chief_message',
+          fromAgentId: 'agent-chief-1',
+          fromWorkspaceId: '__chief__',
+          sourceMessageId: 'msg-source-1',
+          sourceUrl: 'not-a-canonical-link',
+        }),
+      },
+    });
+
+    expect(screen.getByText('Chief of Staff')).toBeTruthy();
+    expect(screen.getByTestId('agent-message-attribution').tagName).toBe('SPAN');
+    expect(handleLinkMock).not.toHaveBeenCalled();
   });
 
   it('falls back to "Agent" when fromAgentName is absent', () => {
@@ -727,6 +831,24 @@ describe('ChatMessage hook wake attribution', () => {
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.queryByText(/\[Background hook/)).toBeNull();
+  });
+
+  it('yields the wake card top gap to the batched-delivery seam when suppressed', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({ rowMetadata: true }),
+        suppressAutomatedWakeTopSpacing: true,
+      },
+    });
+
+    const surface = screen.getByTestId('user-message-surface');
+    for (const token of SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(false);
+    }
+    expect(surface.classList.contains('mt-0')).toBe(true);
+    // The preceding gap owns the seam, so the card no longer claims it.
+    expect(surface.hasAttribute('data-external-spacing-owner')).toBe(false);
+    expect(surface.hasAttribute('data-automated-wake-card')).toBe(true);
   });
 
   it('detects hook wake from block-level messageMetadata', async () => {

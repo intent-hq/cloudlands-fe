@@ -212,6 +212,7 @@ import {
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
+import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
   chatReset,
@@ -238,6 +239,7 @@ import {
   clearAllErrorMessages,
   setServerErrorMessage,
   setServers,
+  setWorkspaceDisabledMcpServers,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
@@ -3750,6 +3752,113 @@ describe('daemonEventsBridge (context wire contract — workspace:context-change
   });
 });
 
+describe('daemonEventsBridge (agent-locks wire contract — changes:agent-locks → agent-lock slice)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('folds the §6.5 snapshot arrays into lockedAgentIds/lockedFilePaths (gating engages)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-a', 'agent-b'],
+        lockedFilePaths: ['src/a.ts', 'src/b.ts'],
+      }),
+    );
+
+    // The FileChangesSection gates on `agentId in $lockedAgentIds$` — assert
+    // through the same selector the component uses.
+    expect(selectLockedAgentIds.select(appStore.state, WS)).toEqual({
+      'agent-a': true,
+      'agent-b': true,
+    });
+    const lockState = (appStore.state as { agentLock: { byWorkspaceId: Record<string, unknown> } })
+      .agentLock.byWorkspaceId[WS];
+    expect(lockState).toEqual({
+      lockedAgentIds: { 'agent-a': true, 'agent-b': true },
+      lockedFilePaths: { 'src/a.ts': true, 'src/b.ts': true },
+    });
+  });
+
+  it('clears the snapshot on empty arrays (auto-commit off / no active agents)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-a'],
+        lockedFilePaths: ['src/a.ts'],
+      }),
+    );
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: false,
+        lockedAgentIds: [],
+        lockedFilePaths: [],
+      }),
+    );
+
+    expect(selectLockedAgentIds.select(appStore.state, WS)).toEqual({});
+  });
+
+  it('prefers the payload workspaceId over the envelope id', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    // The notification helper stamps the envelope with WS; the payload names
+    // a different workspace, which must win (same convention as the
+    // tokenUsage/context handlers).
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: 'ws-locks-other',
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-x'],
+        lockedFilePaths: [],
+      }),
+    );
+
+    expect(selectLockedAgentIds.select(appStore.state, 'ws-locks-other')).toEqual({
+      'agent-x': true,
+    });
+  });
+
+  it('ignores a malformed payload (missing arrays)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: 'ws-locks-malformed',
+        autoCommitEnabled: true,
+      }),
+    );
+
+    const state = appStore.state as { agentLock: { byWorkspaceId: Record<string, unknown> } };
+    expect(state.agentLock.byWorkspaceId['ws-locks-malformed']).toBeUndefined();
+  });
+
+  it('subscribes to changes:agent-locks on the firehose', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('changes:agent-locks');
+  });
+});
+
+
 describe('daemonEventsBridge (linkage wire contract — task:agent-linked / task:agent-unlinked)', () => {
   beforeAll(() => {
     appStore.init();
@@ -4713,6 +4822,114 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     handler(mcpNotification({ serverId: 'srv-x' }));
 
     expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+});
+
+describe('daemonEventsBridge (wire contract — mcpServerToggled on workspace:updated §5.22/§6.5)', () => {
+  const WS_TOGGLE = 'ws-mcp-toggle-1';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    appStore.dispatch(setServers([]));
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, {}));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function seedMcpServer(id: string, name: string): void {
+    appStore.dispatch(setServers([{ id, name, type: 'stdio', command: 'npx' }]));
+  }
+
+  function toggledNotification(changes: Record<string, unknown>) {
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-ws-mcp-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_TOGGLE,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:updated',
+          actor: { type: 'system', id: 'daemon' },
+          data: { workspaceId: WS_TOGGLE, changes },
+        },
+      },
+    };
+  }
+
+  function readDisabled(): Record<string, true> {
+    return appStore.state.mcpSettings.byWorkspaceId[WS_TOGGLE]?.disabledServers ?? {};
+  }
+
+  it('disable delta → resolves serverId to name and marks it disabled in byWorkspaceId', async () => {
+    seedMcpServer('srv-fs', 'filesystem');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-fs', workspaceDisabled: true } }),
+    );
+
+    expect(readDisabled()).toEqual({ filesystem: true });
+  });
+
+  it('re-enable delta → clears the name from byWorkspaceId', async () => {
+    seedMcpServer('srv-fs', 'filesystem');
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { filesystem: true }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-fs', workspaceDisabled: false } }),
+    );
+
+    expect(readDisabled()).toEqual({});
+  });
+
+  it('drops a delta whose serverId is not in the loaded server list (mount hydrate converges later)', async () => {
+    seedMcpServer('srv-known', 'known');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.byWorkspaceId;
+
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-ghost', workspaceDisabled: true } }),
+    );
+
+    expect(appStore.state.mcpSettings.byWorkspaceId).toEqual(before);
+  });
+
+  it('ignores malformed payloads (missing serverId or non-boolean workspaceDisabled)', async () => {
+    seedMcpServer('srv-x', 'x');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.byWorkspaceId;
+
+    handler(toggledNotification({ mcpServerToggled: { workspaceDisabled: true } }));
+    handler(toggledNotification({ mcpServerToggled: { serverId: 'srv-x' } }));
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-x', workspaceDisabled: 'yes' } }),
+    );
+    handler(toggledNotification({ mcpServerToggled: 'not-an-object' }));
+
+    expect(appStore.state.mcpSettings.byWorkspaceId).toEqual(before);
+  });
+
+  it('a workspace:updated delta without mcpServerToggled leaves byWorkspaceId untouched', async () => {
+    seedMcpServer('srv-x', 'x');
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { x: true }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(toggledNotification({ title: 'Renamed' }));
+
+    expect(readDisabled()).toEqual({ x: true });
   });
 });
 
@@ -8225,6 +8442,259 @@ describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', (
 
     const ws = await readWorkspace();
     expect(ws.waiting).toBe(true);
+  });
+});
+
+// A workspace:attention-changed / waiting-changed / displayStatus-changed
+// delta targeting a workspace this window has not hydrated yet used to be
+// silently dropped (the bulkUpdateWorkspaceEntities reducer is a no-op for
+// unknown ids). The bridge must recover via a targeted single-flight
+// workspace.get that seeds the entity carrying the fresh flag.
+describe('daemonEventsBridge (dropped deltas for unhydrated workspaces → targeted refetch)', () => {
+  beforeAll(() => appStore.init());
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function makeWorkspace(
+    id: string,
+    extra: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const { WorkspaceStatus } = await import('$shared/types');
+    return {
+      id,
+      title: 'Unhydrated ws',
+      branch: 'main',
+      status: WorkspaceStatus.Active,
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...extra,
+    };
+  }
+
+  async function readWorkspace(id: string): Promise<Record<string, unknown> | undefined> {
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return getItem(state.workspace.workspaces as never, id as never) as never;
+  }
+
+  function changedNotification(type: string, workspaceId: string, data: Record<string, unknown>) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-${type}-${workspaceId}`,
+          workspaceId,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type,
+          actor: { type: 'system' },
+          data: { workspaceId, ...data },
+        },
+      },
+    };
+  }
+
+  function mockWorkspaceGet(workspace: Record<string, unknown>): void {
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') return { workspace };
+      return { subscriptionId: 'sub-1' };
+    });
+  }
+
+  it('workspace:attention-changed for an unknown workspace refetches workspace.get and seeds the entity with the flag', async () => {
+    const WS = 'ws-unhydrated-attention';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    mockWorkspaceGet(await makeWorkspace(WS, { attention: 'unread' }));
+
+    expect(await readWorkspace(WS)).toBeUndefined();
+    handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS });
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
+  });
+
+  it('workspace:waiting-changed for an unknown workspace refetches workspace.get and seeds the entity with the flag', async () => {
+    const WS = 'ws-unhydrated-waiting';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    mockWorkspaceGet(await makeWorkspace(WS, { waiting: true }));
+
+    expect(await readWorkspace(WS)).toBeUndefined();
+    handler(changedNotification('workspace:waiting-changed', WS, { waiting: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS });
+    expect((await readWorkspace(WS))?.waiting).toBe(true);
+  });
+
+  it('workspace:displayStatus-changed for an unknown workspace refetches workspace.get and seeds the entity with the flag', async () => {
+    const WS = 'ws-unhydrated-display-status';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    mockWorkspaceGet(await makeWorkspace(WS, { displayStatus: 'pr_merged' }));
+
+    expect(await readWorkspace(WS)).toBeUndefined();
+    handler(
+      changedNotification('workspace:displayStatus-changed', WS, { displayStatus: 'pr_merged' }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS });
+    expect((await readWorkspace(WS))?.displayStatus).toBe('pr_merged');
+  });
+
+  it('does not refetch when the entity is already hydrated (direct merge path)', async () => {
+    const WS = 'ws-hydrated-no-refetch';
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(setWorkspaceEntity((await makeWorkspace(WS, {})) as never));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.get', expect.anything());
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
+  });
+
+  it('does not refetch a workspace with a pending local deletion (no tombstone resurrection)', async () => {
+    const WS = 'ws-unhydrated-pending-deletion';
+    const { markWorkspacePendingDeletion, clearWorkspacePendingDeletion } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(markWorkspacePendingDeletion(WS));
+    try {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      mockWorkspaceGet(await makeWorkspace(WS, { attention: 'unread' }));
+
+      handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.get', expect.anything());
+      expect(await readWorkspace(WS)).toBeUndefined();
+    } finally {
+      appStore.dispatch(clearWorkspacePendingDeletion(WS));
+    }
+  });
+
+  it('ignores workspace.get errors gracefully', async () => {
+    const WS = 'ws-unhydrated-fetch-error';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') throw new Error('Workspace not found');
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS });
+    expect(await readWorkspace(WS)).toBeUndefined();
+  });
+
+  // AGENTS.md "Event-driven refetches — single-flight and coalesced": a burst
+  // of deltas for one missing workspace must not fan out one independent
+  // workspace.get per event — an unordered resolution could let a stale
+  // response landing last overwrite a newer flag value.
+  it('a burst of deltas for one unknown workspace collapses to one immediate fetch plus at most one trailing fetch', async () => {
+    const WS = 'ws-unhydrated-burst';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const fresh = await makeWorkspace(WS, { attention: 'unread', waiting: true });
+
+    // Every workspace.get stays pending until explicitly resolved below, so
+    // extra fetches a regressed implementation would start are counted
+    // deterministically.
+    const pendingFetches: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
+    });
+
+    handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+    handler(changedNotification('workspace:waiting-changed', WS, { waiting: true }));
+    handler(
+      changedNotification('workspace:displayStatus-changed', WS, { displayStatus: 'pr_merged' }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Leading edge: exactly one immediate fetch despite three triggers.
+    expect(pendingFetches).toHaveLength(1);
+
+    pendingFetches[0]!({ workspace: fresh });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Trailing coalesce: the triggers that arrived mid-flight collapsed into
+    // exactly one follow-up fetch.
+    expect(pendingFetches).toHaveLength(2);
+    pendingFetches[1]!({ workspace: fresh });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(pendingFetches).toHaveLength(2);
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
+    expect((await readWorkspace(WS))?.waiting).toBe(true);
+  });
+
+  // Regression (PR #1814 review): the in-flight check must run before the
+  // entity-presence check. If another path hydrates the entity while a
+  // missing-entity fetch is in flight, a delta arriving afterwards merges into
+  // the now-present entity — but the older in-flight fetch can resolve last
+  // and overwrite the merged flag with its stale projection. The delta must
+  // queue a trailing fetch (whose projection postdates it) so the store
+  // converges on the fresh value.
+  it('queues a trailing fetch when a delta arrives after another path hydrated the entity mid-flight', async () => {
+    const WS = 'ws-hydrated-mid-flight';
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const stale = await makeWorkspace(WS, {});
+    const fresh = await makeWorkspace(WS, { attention: 'unread' });
+
+    const pendingFetches: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
+    });
+
+    // Delta for a missing workspace starts the leading fetch (stays pending).
+    handler(changedNotification('workspace:waiting-changed', WS, { waiting: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pendingFetches).toHaveLength(1);
+
+    // Another path (e.g. a workspace.list response) hydrates the entity.
+    appStore.dispatch(setWorkspaceEntity(stale as never));
+
+    // A newer delta merges into the now-present entity and — despite the
+    // presence — must queue a trailing fetch because one is still in flight.
+    handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
+
+    // The stale leading fetch resolves LAST and clobbers the merged flag…
+    pendingFetches[0]!({ workspace: stale });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // …but the trailing fetch (post-delta projection) restores convergence.
+    expect(pendingFetches).toHaveLength(2);
+    pendingFetches[1]!({ workspace: fresh });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
   });
 });
 

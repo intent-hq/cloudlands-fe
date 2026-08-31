@@ -44,7 +44,9 @@
 
   const totals = $derived($usage$.totals);
   const cachedTokens = $derived(totals.cacheReadTokens + totals.cacheCreationTokens);
-  const hasData = $derived(totals.inputTokens + totals.outputTokens + cachedTokens > 0);
+  const hasData = $derived(
+    totals.inputTokens + totals.outputTokens + cachedTokens + (totals.thoughtTokens ?? 0) > 0,
+  );
   const isUpdating = $derived($usage$.isStale);
 
   /** Formatted cost, or null when the daemon reported none for the entry. */
@@ -65,7 +67,9 @@
         thoughtTokens: modelTotals.thoughtTokens ?? 0,
         cost: costLabel(modelTotals.cost),
       }))
-      .filter((row) => row.inputTokens + row.outputTokens + row.cachedTokens !== 0)
+      .filter(
+        (row) => row.inputTokens + row.outputTokens + row.cachedTokens + row.thoughtTokens !== 0,
+      )
       .sort((a, b) => b.outputTokens - a.outputTokens),
   );
 
@@ -85,7 +89,9 @@
         thoughtTokens: entry.thoughtTokens ?? 0,
         cost: costLabel(entry.cost),
       }))
-      .filter((row) => row.inputTokens + row.outputTokens + row.cachedTokens !== 0)
+      .filter(
+        (row) => row.inputTokens + row.outputTokens + row.cachedTokens + row.thoughtTokens !== 0,
+      )
       .sort((a, b) => b.outputTokens - a.outputTokens),
   );
 
@@ -97,8 +103,9 @@
       modelRows.some((row) => row.cost !== null) ||
       agentRows.some((row) => row.cost !== null),
   );
-  // Same for Thinking: `thoughtTokens` is omitted when no provider broke
-  // reasoning tokens out of the output count (PROTOCOL §5.23).
+  // Same for Thinking: `thoughtTokens` (a counter disjoint from
+  // `outputTokens`) is omitted when no provider reported reasoning tokens
+  // (PROTOCOL §5.23).
   const thoughtTokens = $derived(totals.thoughtTokens ?? 0);
   const hasThinking = $derived(
     thoughtTokens > 0 ||

@@ -31,6 +31,7 @@ const {
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => primaryClient,
+  getLocalBackendClient: () => primaryClient,
   onBackendNotification: (handler: (n: unknown) => void, backendId?: string) => {
     notificationHandlers.push(handler);
     notificationBackendIds.push(backendId);

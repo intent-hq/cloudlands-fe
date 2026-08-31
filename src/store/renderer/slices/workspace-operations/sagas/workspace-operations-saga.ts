@@ -15,6 +15,7 @@ import {
 
 import { invoke } from '$lib/electron-bridge';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
+import { withToastCountdown } from '$lib/components/ui/toast';
 import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
@@ -115,10 +116,11 @@ function activeForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
   );
 }
 
-function hasActiveWork({ agentNames, hookNames }: ActiveWorkNames): boolean {
-  return agentNames.length > 0 || hookNames.length > 0;
+function hasActiveWork({ agentNames, hookNames, openPrs }: ActiveWorkNames): boolean {
+  return agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0;
 }
 
+// Bulk flows count only agents/hooks — open PRs never change bulk counts.
 function countActiveWork(items: ActiveWorkNames[]): { agentCount: number; hookCount: number } {
   return items.reduce(
     (counts, item) => ({
@@ -194,10 +196,13 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
 
     toast.warning(
       m.workspace_ops_deleted_toast({ title: workspace.title || m.workspace_ops_space_fallback() }),
-      {
-        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-        action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-      },
+      withToastCountdown(
+        {
+          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+        },
+        { pauseOnHover: false },
+      ),
     );
     const outcome = yield* race({
       undo: take(undo),
@@ -326,10 +331,13 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
       m.workspace_ops_archived_toast({
         title: workspace?.title || m.workspace_ops_space_fallback(),
       }),
-      {
-        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-        action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-      },
+      withToastCountdown(
+        {
+          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+        },
+        { pauseOnHover: false },
+      ),
     );
   } catch (error) {
     logger.error('workspace.archive failed', { workspaceId, error });
@@ -422,10 +430,16 @@ function* bulkArchive(): SagaGenerator<void> {
       archivedIds.length === 1
         ? m.workspace_ops_archivedCount_one({ count: archivedIds.length })
         : m.workspace_ops_archivedCount_many({ count: archivedIds.length });
-    toast.warning(message, {
-      duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-      action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-    });
+    toast.warning(
+      message,
+      withToastCountdown(
+        {
+          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+        },
+        { pauseOnHover: false },
+      ),
+    );
   }
   if (failCount > 0) {
     toast.error(

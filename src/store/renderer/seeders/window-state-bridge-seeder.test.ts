@@ -33,6 +33,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { addMockIpcListener, mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import {
   registerAppVersionBridge,
+  registerWindowCycleFocusBridge,
   registerWindowFullScreenBridge,
   registerWindowFullScreenEventRelay,
   registerWindowStateBridge,
@@ -161,6 +162,38 @@ describe('app version bridge', () => {
     registerAppVersionBridge();
 
     await expect(mockInvoke(IPC_CHANNELS.APP.GET_VERSION)).resolves.toBeUndefined();
+  });
+});
+
+describe('window cycle-focus bridge (cycle-open-windows action)', () => {
+  beforeEach(() => {
+    resetMockIpcRouter();
+  });
+
+  afterEach(() => {
+    (window as any).electronAPI = originalElectronAPI;
+    resetMockIpcRouter();
+  });
+
+  it('forwards window:cycle-focus to window.electronAPI.invoke when bridged', async () => {
+    const invokeSpy = vi.fn(async () => ({ cycled: true, windowCount: 2 }));
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerWindowCycleFocusBridge();
+
+    const result = await mockInvoke<{ cycled: boolean; windowCount: number }>(
+      IPC_CHANNELS.WINDOW.CYCLE_FOCUS,
+    );
+
+    expect(result).toEqual({ cycled: true, windowCount: 2 });
+    expect(invokeSpy).toHaveBeenCalledOnce();
+    expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.CYCLE_FOCUS, undefined);
+  });
+
+  it('resolves undefined when no preload bridge exists (browser dev build)', async () => {
+    (window as any).electronAPI = undefined;
+    registerWindowCycleFocusBridge();
+
+    await expect(mockInvoke(IPC_CHANNELS.WINDOW.CYCLE_FOCUS)).resolves.toBeUndefined();
   });
 });
 

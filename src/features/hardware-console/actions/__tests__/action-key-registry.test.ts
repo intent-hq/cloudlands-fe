@@ -26,6 +26,14 @@ vi.mock('$features/layout/preset-executor', () => ({
   applyContentPreset: vi.fn(async () => true),
 }));
 
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: vi.fn(async () => ({ cycled: true, windowCount: 2 })),
+}));
+
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  isElectronPlatform: vi.fn(() => true),
+}));
+
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -34,6 +42,9 @@ import {
 } from '../../voice/ptt-controller';
 import { showVoiceSetupToast } from '../../voice/voice-setup-toast';
 import { applyContentPreset } from '$features/layout/preset-executor';
+import { invoke } from '$lib/electron-bridge';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   ACTION_KEY_REGISTRY,
   actionSlotIcons,
@@ -77,6 +88,7 @@ interface StateOptions {
   showCreateModal?: boolean;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
   voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
+  panelLayout?: ActionKeyState['panelLayout']['byWorkspaceId'];
 }
 
 type TestActionKeyState = ActionKeyState & { currentWorkspaceId: string | null };
@@ -129,6 +141,7 @@ function makeState(options: StateOptions = {}): TestActionKeyState {
       keyConfigured: { elevenlabs: true, openai: false },
       ...options.voiceSettings,
     },
+    panelLayout: { byWorkspaceId: options.panelLayout ?? {} },
   };
 }
 
@@ -1383,7 +1396,7 @@ describe('execute dispatch', () => {
     expect(focusComposer).toHaveBeenCalledWith('a-1');
   });
 
-  it('see-spec opens the workspace spec note', () => {
+  it('see-spec opens the workspace spec note when no panel layout exists', () => {
     const { context, dispatch } = makeContext(makeState());
     getActionKeyDefinition('see-spec').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
@@ -1392,6 +1405,186 @@ describe('execute dispatch', () => {
         payload: ['ws-1', 'spec'],
       }),
     );
+  });
+
+  it('see-spec splits the single open panel when opening the spec', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              default: {
+                id: 'default',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec', { openInAdjacentPanel: true, sourcePanelId: 'default' }],
+      }),
+    );
+  });
+
+  it('see-spec opens in the default placement when multiple panels exist', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+              'p-2': {
+                id: 'p-2',
+                tabs: [{ id: 'tab-2', type: 'note', noteId: 'other-note' }],
+                activeTabId: 'tab-2',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec'],
+      }),
+    );
+  });
+
+  it('see-spec closes the spec tab when it is the active tab of its panel', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+              'p-2': {
+                id: 'p-2',
+                tabs: [{ id: 'tab-spec', type: 'note', noteId: 'spec' }],
+                activeTabId: 'tab-spec',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/closeTab',
+        payload: expect.objectContaining({ wsId: 'ws-1', tabId: 'tab-spec', panelId: 'p-2' }),
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('see-spec reveals a background spec tab instead of closing it', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+              'p-2': {
+                id: 'p-2',
+                tabs: [
+                  { id: 'tab-spec', type: 'note', noteId: 'spec' },
+                  { id: 'tab-2', type: 'note', noteId: 'other-note' },
+                ],
+                activeTabId: 'tab-2',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec'],
+      }),
+    );
+  });
+
+  it('see-spec closes the active duplicate spec tab even when it is not the first', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [
+                  { id: 'tab-spec-a', type: 'note', noteId: 'spec' },
+                  { id: 'tab-spec-b', type: 'note', noteId: 'spec' },
+                ],
+                activeTabId: 'tab-spec-b',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/closeTab',
+        payload: expect.objectContaining({ wsId: 'ws-1', tabId: 'tab-spec-b', panelId: 'p-1' }),
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('see-spec reveals a background spec tab in a single panel via the adjacent-split path', () => {
+    // The reducer's openTabInAdjacentOrSplit finds the equivalent tab across
+    // all panels before splitting, so this dispatch reveals the existing tab
+    // rather than duplicating it.
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [
+                  { id: 'tab-spec', type: 'note', noteId: 'spec' },
+                  { id: 'tab-1', type: 'conversation' },
+                ],
+                activeTabId: 'tab-1',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec', { openInAdjacentPanel: true, sourcePanelId: 'p-1' }],
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('toggle-sidebar-tabs cycles to the next single-selected tab', () => {
@@ -1526,6 +1719,68 @@ describe('execute dispatch', () => {
     getActionKeyDefinition('none').execute(context);
     expect(dispatch).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('cycle-open-windows', () => {
+  const invokeMock = invoke as ReturnType<typeof vi.fn>;
+  const definition = () => getActionKeyDefinition('cycle-open-windows');
+
+  it('availability follows the Electron platform gate', () => {
+    const { context } = makeContext(makeState({ currentWorkspaceId: null }));
+    expect(definition().isAvailable(context)).toBe(true);
+    (isElectronPlatform as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
+    expect(definition().isAvailable(context)).toBe(false);
+  });
+
+  it('invokes the window-cycle IPC and shows the action HUD on a cycled result', async () => {
+    invokeMock.mockResolvedValueOnce({ cycled: true, windowCount: 2 });
+    const { context, dispatch, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'hardwareConsole/actionHudShown',
+          payload: [m.hardwareConsole_actionKey_cycleOpenWindows_label()],
+        }),
+      );
+    });
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.WINDOW.CYCLE_FOCUS);
+    expect(showHint).not.toHaveBeenCalled();
+  });
+
+  it('hints "no other open windows" when the result reports a single window', async () => {
+    invokeMock.mockResolvedValueOnce({ cycled: false, windowCount: 1 });
+    const { context, dispatch, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_noOtherOpenWindows_message(),
+      );
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('hints when the bridge resolves undefined (browser dev build)', async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+    const { context, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_noOtherOpenWindows_message(),
+      );
+    });
+  });
+
+  it('catches and logs a rejected invoke without throwing', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('boom'));
+    const { context, dispatch, showHint } = makeContext(makeState());
+    expect(() => definition().execute(context)).not.toThrow();
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledTimes(1);
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(showHint).not.toHaveBeenCalled();
   });
 });
 

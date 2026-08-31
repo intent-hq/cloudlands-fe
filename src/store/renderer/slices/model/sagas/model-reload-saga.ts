@@ -50,7 +50,6 @@ export function* reloadModelsWorker() {
   }
 }
 
-/** Unregistered until the S20 middleware cutover. */
 export function* modelReloadSaga() {
   yield* takeLatest(reloadModelsForProvider, reloadModelsWorker);
 }

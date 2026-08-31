@@ -89,6 +89,8 @@
     selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
+  import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
@@ -118,6 +120,8 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
+  import type { ShortcutId } from '$lib/utils/shortcut-bindings';
   // Installs production bridge handlers before the app sagas and route startup use them.
   import '$store/renderer/seeders';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
@@ -154,6 +158,10 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const currentConnection$ = selectCurrentConnection();
+  const applicationShellTint = $derived(
+    connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
+  );
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -461,6 +469,8 @@
       ignoreRepeat?: boolean;
       enabled?: () => boolean;
       action: () => void;
+      shortcutId?: ShortcutId;
+      binding?: () => string;
     }) => {
       paletteShortcuts!.register({
         key: opts.key,
@@ -474,6 +484,9 @@
         ignoreRepeat: opts.ignoreRepeat,
         enabled: opts.enabled,
         action: opts.action,
+        binding:
+          opts.binding ??
+          (opts.shortcutId ? () => getEffectiveShortcut(opts.shortcutId!) : undefined),
       });
     };
     const openCmd = () => appStore.dispatch(openPalette());
@@ -487,6 +500,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      resolveBinding: getEffectiveShortcut,
     });
 
     // Optionally register config-driven shortcut for opening the command palette
@@ -542,17 +556,10 @@
     register({
       key: 'k',
       meta: true,
+      shortcutId: 'global.command-palette-alt',
       description: 'Command Palette (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCommandPalette,
     });
-    if (!isMac) {
-      register({
-        key: 'k',
-        ctrl: true,
-        description: 'Command Palette (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-        action: openCommandPalette,
-      });
-    }
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
     const toggleAllSpaces = () => {
       appStore.dispatch(togglePanel('all-workspaces'));
@@ -560,19 +567,11 @@
     register({
       key: 'o',
       meta: true,
+      shortcutId: 'global.toggle-spaces',
       description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       skipInEditableElements: true,
       action: toggleAllSpaces,
     });
-    if (!isMac) {
-      register({
-        key: 'o',
-        ctrl: true,
-        description: 'Toggle All Spaces (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-        skipInEditableElements: true,
-        action: toggleAllSpaces,
-      });
-    }
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
     const goToDefinition = () => {
@@ -594,27 +593,27 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
+      shortcutId: 'global.command-palette',
       description: 'Command Palette (Alt)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCmd,
     });
     // Cmd+G (Mac) / Ctrl+G (Win/Linux) -> Go to Line
     const openGoToLineAction = () => appStore.dispatch(openGoToLine());
-    // i18n-ignore (shortcut registry metadata, not rendered in UI)
-    register({ key: 'g', meta: true, description: 'Go to Line (Mac)', action: openGoToLineAction });
-    if (!isMac) {
-      register({
-        key: 'g',
-        ctrl: true,
-        description: 'Go to Line (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-        action: openGoToLineAction,
-      });
-    }
+    register({
+      key: 'g',
+      meta: true,
+      shortcutId: 'editor.go-to-line',
+      // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      description: 'Go to Line (Mac)',
+      action: openGoToLineAction,
+    });
     // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
     register({
       key: 'f',
       meta: isMac,
       ctrl: !isMac,
       shift: true,
+      shortcutId: 'global.search',
       description: 'Search in files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openSearch,
     });
@@ -622,6 +621,7 @@
     register({
       key: 'z',
       alt: true,
+      shortcutId: 'editor.toggle-word-wrap',
       description: 'Toggle Word Wrap', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleLineWrapping()),
     });
@@ -661,6 +661,7 @@
       key: ',',
       meta: isMac,
       ctrl: !isMac,
+      shortcutId: 'global.settings',
       description: 'Toggle Settings', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => {
         const isOnSettings = $page.url.pathname.startsWith('/settings');
@@ -714,19 +715,10 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
+      shortcutId: 'global.keyboard-shortcuts',
       description: 'Toggle Keyboard Shortcuts', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleCheatSheet('global')),
     });
-    // Also register with '/' for keyboards where e.key stays as '/' even with shift
-    register({
-      key: '/',
-      meta: isMac,
-      ctrl: !isMac,
-      shift: true,
-      description: 'Toggle Keyboard Shortcuts', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      action: () => appStore.dispatch(toggleCheatSheet('global')),
-    });
-
     // Ctrl+Shift+F12 -> Feature Code Entry (hidden shortcut, all platforms)
     register({
       key: 'F12',
@@ -934,6 +926,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden bg-transparent text-foreground flex flex-col"
+    style:background-image={applicationShellTint}
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >

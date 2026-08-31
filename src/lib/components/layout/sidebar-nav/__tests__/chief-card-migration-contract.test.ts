@@ -15,7 +15,7 @@ describe('Chief card migration contract', () => {
   it('waits for daemon hydration before selecting or creating a current Chief thread', () => {
     expect(source).toContain('const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID)');
     expect(source).toContain('!$chiefAgentsLoaded$ ||');
-    expect(source).toContain('if ($currentChiefThread$)');
+    expect(source).toContain('resolveChiefThreadOnExpansion(');
     expect(source).toContain('void createNewThread();');
     expect(source).not.toContain('$chiefThreads$.length > 0 ||');
   });

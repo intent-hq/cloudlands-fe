@@ -488,7 +488,6 @@ describe('global workspace tab navigation', () => {
         key: 'w',
         shift: true,
         global: true,
-        description: 'Close Space Tab',
       });
       expect(Boolean(shortcut.meta)).toBe(meta);
       expect(Boolean(shortcut.ctrl)).toBe(ctrl);
@@ -800,5 +799,22 @@ describe('global workspace tab navigation', () => {
         global: true,
       }),
     ]);
+  });
+
+  it('retains all nine indexed bindings after the tab range modifier is edited', () => {
+    const shortcuts: KeyboardShortcut[] = [];
+    registerWorkspaceTabShortcuts({
+      isMac: true,
+      register: (shortcut) => shortcuts.push(shortcut),
+      store: makeStore(),
+      getCurrentPath: () => '/workspace/ws-1',
+      navigate: vi.fn(),
+      openNewWorkspace: vi.fn(),
+      resolveBinding: (id) => (id === 'navigation.go-to-tab' ? 'alt+1-9' : ''),
+    });
+
+    expect(shortcuts.slice(-9).map((shortcut) => shortcut.binding?.())).toEqual(
+      Array.from({ length: 9 }, (_, index) => `alt+${index + 1}`),
+    );
   });
 });

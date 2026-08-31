@@ -80,8 +80,9 @@ function flexWidth(element: HTMLElement): number {
 }
 
 function canvasWidth(): number {
-  const canvas = document.querySelector<HTMLElement>('.panel-canvas-resize-handle')?.parentElement;
-  return Number.parseFloat(canvas?.style.width ?? '0');
+  let node = document.querySelector<HTMLElement>('.panel-split-container.horizontal');
+  while (node && !node.style.width) node = node.parentElement;
+  return Number.parseFloat(node?.style.width ?? '0');
 }
 
 function panelWidths(): number[] {
@@ -109,6 +110,15 @@ function widthsAfterOuterDelta(delta: number): number[] {
   const expected = panelWidths();
   expected[expected.length - 1] += delta;
   return expected;
+}
+
+function widthsAfterFixedViewportOuterDelta(delta: number): number[] {
+  const current = panelWidths();
+  const currentTotal = current.reduce((sum, width) => sum + width, 0);
+  const scale = currentTotal / (currentTotal + delta);
+  return current.map((width, index) =>
+    index === current.length - 1 ? (width + delta) * scale : width * scale,
+  );
 }
 
 function splitHandle(index: number): HTMLButtonElement {
@@ -302,7 +312,9 @@ describe('root horizontal resize release evidence', () => {
     expect(inset.scrollLeft).toBe(173);
     await releaseAndSample(splitHandle(1), 200, [180, 160, 140], widthsAfterDelta(1, -60));
     expect(inset.scrollLeft).toBe(173);
-    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], widthsAfterOuterDelta(90));
+    const outerExpected =
+      mode === 'tab' ? widthsAfterFixedViewportOuterDelta(90) : widthsAfterOuterDelta(90);
+    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], outerExpected);
     expect(inset.scrollLeft).toBe(173);
   });
 

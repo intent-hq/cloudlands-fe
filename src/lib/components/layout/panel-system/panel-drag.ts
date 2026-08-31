@@ -5,15 +5,17 @@ export const PANE_DRAG_MIME = 'application/x-panel-tab';
 const PANE_DRAG_IMAGE_ATTRIBUTE = 'data-pane-drag-image';
 
 export type PaneDropZone = 'left' | 'center' | 'right';
-export type PanelDragPlacement = 'before' | 'after' | 'above' | 'below';
 export interface PaneInsertionTarget {
   index: number;
   left: number;
   width: number;
 }
-export type PaneInsertionPlacement =
+export type PaneDropPlacement =
   | { kind: 'edge'; position: 'before' | 'after' }
-  | { kind: 'panel'; targetPanelId: string; zone: 'left' };
+  | { kind: 'panel'; targetPanelId: string; zone: PaneDropZone };
+export type PaneInsertionPlacement =
+  | Extract<PaneDropPlacement, { kind: 'edge' }>
+  | (Extract<PaneDropPlacement, { kind: 'panel' }> & { zone: 'left' });
 export interface DraggedPane {
   tabId: string;
   panelId: string;
@@ -78,6 +80,16 @@ export function getPaneInsertionPlacement(
   if (targetIndex === panelIds.length) return { kind: 'edge', position: 'after' };
   const targetPanelId = panelIds[targetIndex];
   return targetPanelId ? { kind: 'panel', targetPanelId, zone: 'left' } : null;
+}
+
+export function getPaneInsertionPlacementAtX(
+  clientX: number,
+  layoutRect: Pick<DOMRect, 'left'>,
+  targets: readonly PaneInsertionTarget[],
+  panelIds: readonly string[],
+): PaneInsertionPlacement | null {
+  const target = getPaneInsertionTargetAtX(clientX, layoutRect, targets);
+  return target ? getPaneInsertionPlacement(target.index, panelIds) : null;
 }
 
 export function getPaneColumnDropZone(

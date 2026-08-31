@@ -68,11 +68,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('renders a restored headingless block inline without a fallback disclosure', async () => {
+  it('renders a restored headingless block as a collapsed reasoning disclosure', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], false);
 
-    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
-    expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
+    const toggle = screen.getByRole('button', { name: 'Reasoning' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.body.textContent).not.toContain('Checking the schema first');
+
+    await fireEvent.click(toggle);
     expect(screen.getByTestId('markdown-viewer').textContent).toContain(
       'Checking the schema first',
     );
@@ -112,17 +115,27 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ['MessageContent', renderStatic],
     ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
   ])(
-    'renders persisted standalone headingless reasoning inline in %s',
+    'renders persisted standalone headingless reasoning as collapsed disclosures in %s',
     async (_, renderPersistedMessage) => {
       await renderPersistedMessage(persistedStandaloneMessage.contentBlocks ?? []);
 
-      expect(screen.queryAllByRole('button', { name: 'Reasoning' })).toHaveLength(0);
-      expect(document.querySelector('[aria-expanded][aria-label="Reasoning"]')).toBeNull();
-      expect(document.querySelector('[aria-controls][aria-label="Reasoning"]')).toBeNull();
-      expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
-      expect(document.querySelector('[data-message-content-block="thinking"]')).toBeNull();
+      const disclosures = screen.getAllByRole('button', { name: 'Reasoning' });
+      expect(disclosures).toHaveLength(2);
+      expect(disclosures.every((btn) => btn.getAttribute('aria-expanded') === 'false')).toBe(true);
+      expect(document.querySelectorAll('[data-message-content-block="thinking"]')).toHaveLength(2);
       expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
 
+      expect(document.body.textContent).not.toContain(
+        'I am checking the saved theme preference before changing the interface.',
+      );
+      expect(document.body.textContent).not.toContain(
+        'The saved preference and system fallback use separate paths.',
+      );
+      expect(document.body.textContent?.match(/Theme storage is understood\./g)).toHaveLength(1);
+
+      for (const disclosure of disclosures) {
+        await fireEvent.click(disclosure);
+      }
       const orderedText = [
         'I am checking the saved theme preference before changing the interface.',
         'The saved preference and system fallback use separate paths.',
@@ -137,21 +150,21 @@ describe('thinking blocks — StreamingMessageContent', () => {
             ),
           ),
       ).toBe(true);
-      for (const text of orderedText) {
-        expect(
-          document.body.textContent?.match(new RegExp(text.textContent ?? '', 'g')),
-        ).toHaveLength(1);
-      }
 
+      // Standalone thinking is disclosure-only content and stays out of the
+      // chat search index (the pre-#1574 behavior); prose stays searchable.
       expect(
         findChatSearchMatches([persistedStandaloneMessage], 'saved theme preference', new Map()),
+      ).toEqual([]);
+      expect(
+        findChatSearchMatches([persistedStandaloneMessage], 'Theme storage', new Map()),
       ).toEqual([
         {
           messageId: 'assistant-dark-mode-sanitized',
           matchIndexInMessage: 0,
           occurrenceInBlock: 0,
           turnKey: 'assistant-dark-mode-sanitized',
-          blockPath: 'b:0',
+          blockPath: 'b:4',
           disclosurePath: [],
         },
       ]);
@@ -161,21 +174,27 @@ describe('thinking blocks — StreamingMessageContent', () => {
   it.each([
     ['MessageContent', renderMessage],
     ['StreamingMessageContent', renderStreaming],
-  ])('transitions standalone active reasoning to inline content in %s', async (_, renderer) => {
-    const content = [thinking('standalone-lifecycle:0', 'I am checking the active theme path.')];
-    const view = await renderer(content, true);
+  ])(
+    'transitions standalone active reasoning to a collapsed disclosure in %s',
+    async (_, renderer) => {
+      const content = [thinking('standalone-lifecycle:0', 'I am checking the active theme path.')];
+      const view = await renderer(content, true);
 
-    expect(screen.getByRole('button', { name: 'Thinking...' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    );
-    expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: 'Thinking...' }).getAttribute('aria-expanded'),
+      ).toBe('true');
+      expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
 
-    await view.rerender({ content, isStreaming: false });
+      await view.rerender({ content, isStreaming: false });
 
-    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
-    expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
-    expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
-  });
+      const toggle = screen.getByRole('button', { name: 'Reasoning' });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(document.body.textContent).not.toContain('I am checking the active theme path.');
+
+      await fireEvent.click(toggle);
+      expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
+    },
+  );
 
   it('interleaves thinking and text blocks in stream order', async () => {
     await renderStreaming(
@@ -188,10 +207,13 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     const rendered = document.querySelectorAll('.content-block--thinking, .content-block--text');
     expect([...rendered].map((el) => el.getAttribute('data-message-content-block'))).toEqual([
-      'text',
+      'thinking',
       'text',
     ]);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Reasoning' }));
     const renderedText = document.body.textContent ?? '';
+    expect(renderedText.indexOf('First I reason')).toBeGreaterThanOrEqual(0);
     expect(renderedText.indexOf('First I reason')).toBeLessThan(
       renderedText.indexOf('Then I answer'),
     );
@@ -824,8 +846,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    const toggle = screen.getByRole('button', { name: 'Reasoning' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(toggle);
     expect(document.body.textContent).toContain('Hidden reasoning');
     expect(
       [...document.querySelectorAll('.content-block--text')].some((block) =>
@@ -855,8 +879,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
     expect(document.body.textContent).toContain('legacy hidden reasoning');
     expect(document.body.textContent).toContain('Visible answer');
   });
@@ -975,8 +999,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
     expect(document.body.textContent).toContain('legacy visible reasoning');
   });
 });

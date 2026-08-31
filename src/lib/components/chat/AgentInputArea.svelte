@@ -8,6 +8,8 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { m } from '$shared/paraglide/messages.js';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
+  import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   interface Props {
     session?: AgentSession | null;
@@ -114,15 +116,18 @@
 
   function handleKeyDown(event: KeyboardEvent) {
     if (!enableShortcuts) return;
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+    const matches = (id: 'chat.force-send' | 'chat.stop') =>
+      matchesShortcut(event, getEffectiveShortcut(id), isMac);
 
     // Cmd/Ctrl + Enter to send
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    if (matches('chat.force-send')) {
       event.preventDefault();
       handleSend();
     }
 
     // Escape to stop streaming
-    if (event.key === 'Escape' && isStreaming) {
+    if (matches('chat.stop') && isStreaming) {
       event.preventDefault();
       handleStop();
     }

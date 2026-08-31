@@ -17,16 +17,17 @@ export interface TokenUsageCost {
   currency: string;
 }
 
-/** Aggregated token consumption counters (the 4 consumption fields). */
+/** Aggregated token consumption counters (five disjoint buckets, §5.23). */
 export interface TokenUsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   /**
-   * Reasoning ("thought") tokens, reported by providers that break them out of
-   * `outputTokens`. Omitted (never `null`, per PROTOCOL §5.23) when no provider
-   * reported any, so pre-field payloads keep their exact previous shape.
+   * Reasoning ("thought") tokens — a counter disjoint from `outputTokens`
+   * since intentd 0.8.20, so the canonical total is the five-counter sum.
+   * Omitted (never `null`, per PROTOCOL §5.23) when no provider reported any,
+   * so pre-field payloads keep their exact previous shape.
    */
   thoughtTokens?: number;
   cost?: TokenUsageCost;

@@ -6,6 +6,7 @@
  */
 import { Logger } from '../logger';
 import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
 import {
   PROVIDER_AUTH_STATUS_METHOD,
   buildProviderAuthStatusParams,
@@ -22,9 +23,10 @@ const logger = new Logger('ProviderAuthStatus');
  */
 export async function getProviderAuthVerdicts(
   options: ProviderAuthStatusParams = {},
+  client?: JsonRpcClient,
 ): Promise<Record<string, boolean | undefined>> {
   try {
-    const response = await getBackendClient().request<ProviderAuthStatusResponse>(
+    const response = await (client ?? getBackendClient()).request<ProviderAuthStatusResponse>(
       PROVIDER_AUTH_STATUS_METHOD,
       buildProviderAuthStatusParams(options),
     );
@@ -42,7 +44,8 @@ export async function getProviderAuthVerdicts(
 export async function getProviderAuthVerdict(
   providerId: string,
   options: { force?: boolean } = {},
+  client?: JsonRpcClient,
 ): Promise<boolean | undefined> {
-  const verdicts = await getProviderAuthVerdicts({ providerId, force: options.force });
+  const verdicts = await getProviderAuthVerdicts({ providerId, force: options.force }, client);
   return verdicts[providerId];
 }

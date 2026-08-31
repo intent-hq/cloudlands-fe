@@ -4,12 +4,11 @@
    *
    * Session-level reasoning-effort control that sits next to the model picker.
    * Renders only when the session's model advertises `effortLevels` (catalog
-   * metadata, PROTOCOL §5.30/§6.7); the trigger shows the current level and a
-   * click opens a popover with one discrete slider step per advertised level in
-   * catalog order.
+   * metadata, PROTOCOL §5.30/§6.7); the canonical select shows Auto followed by
+   * each advertised level in catalog order.
    *
-   * A leading "Default" step maps to an explicit `null`, which clears the
-   * session field back to the provider default. Committing a step routes
+   * Auto maps to an explicit `null`, which clears the session field back to the
+   * provider default. Committing a selection routes
    * through `applyReasoningEffort`, which owns the session dispatch and the
    * `agent.update` (§5.5) call — the daemon applies the effort on the next
    * prompt send, so queued messages are not snapshotted.
@@ -19,11 +18,8 @@
   import { writable } from 'svelte/store';
   import { cn } from '$lib/utils';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import { Slider } from '$lib/components/ui/slider';
+  import { Select } from '$lib/components/ui/select';
   import EffortGauge from './EffortGauge.svelte';
-  import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import { applyReasoningEffort } from '$features/agent/reasoning-effort';
   import { store as appStore } from '$store/renderer/store';
@@ -38,8 +34,8 @@
     mode?: 'popover' | 'embedded';
     effortLevels?: readonly string[];
     effort?: string | null;
+    modalAware?: boolean;
     onEffortChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
-    onkeydown?: (event: KeyboardEvent) => void;
   }
 
   let {
@@ -50,8 +46,8 @@
     mode = 'popover',
     effortLevels = [],
     effort = null,
+    modalAware = false,
     onEffortChange,
-    onkeydown,
   }: Props = $props();
 
   const agentIdStore = writable(untrack(() => agentId ?? ''));
@@ -72,6 +68,7 @@
 
   /** Provider-level ids get a translated label; unknown levels render verbatim. */
   const LEVEL_LABELS: Record<string, () => string> = {
+    none: () => m.chat_shared_valueOff_label(),
     minimal: () => m.chat_effortPicker_level_minimal(),
     low: () => m.chat_effortPicker_level_low(),
     medium: () => m.chat_effortPicker_level_medium(),
@@ -84,261 +81,145 @@
     return LEVEL_LABELS[level]?.() ?? level;
   }
 
-  type Step = { value: string | null; label: string };
+  type EffortOption = {
+    value: string;
+    label: string;
+    effort: string | null;
+    levelIndex: number | null;
+  };
+
+  const AUTO_OPTION_VALUE = 'auto';
 
   const embedded = $derived(mode === 'embedded');
   const levels = $derived(embedded ? [...effortLevels] : ($effortLevels$ ?? []));
   const hasLevels = $derived((embedded || !!agentId) && levels.length > 0);
+  const controlDisabled = $derived(disabled || (!embedded && !workspaceId));
 
-  const steps = $derived<Step[]>([
-    { value: null, label: m.chat_effortPicker_level_default() },
-    ...levels.map((level) => ({ value: level, label: levelLabel(level) })),
+  const options = $derived.by<EffortOption[]>(() => [
+    {
+      value: AUTO_OPTION_VALUE,
+      label: m.chat_effortPicker_level_auto(),
+      effort: null,
+      levelIndex: null,
+    },
+    ...levels.map((level, index) => ({
+      value: `effort-${index}`,
+      label: levelLabel(level),
+      effort: level,
+      levelIndex: index,
+    })),
   ]);
+  const selectItems = $derived(options.map(({ value, label }) => ({ value, label })));
 
-  // An effort the newly selected model does not advertise falls back to the
-  // default position; the daemon/adapter reconciliation stays authoritative.
+  // An effort the newly selected model does not advertise keeps the underlying
+  // provider-default value without guessing which concrete level the provider uses.
   const persistedValue = $derived(embedded ? effort : ($reasoningEffort$ ?? null));
-  const currentValue = $derived(
-    persistedValue && levels.includes(persistedValue) ? persistedValue : null,
-  );
-  const currentIndex = $derived(
-    Math.max(
-      0,
-      steps.findIndex((step) => step.value === currentValue),
-    ),
-  );
-  const currentLabel = $derived(steps[currentIndex]?.label ?? '');
-
-  let isOpen = $state(false);
-  let triggerRef = $state<HTMLButtonElement | null>(null);
-  let popoverRef = $state<HTMLDivElement | null>(null);
-  let popoverStyle = $state('');
-  let sliderIndex = $state(0);
-  let labelDirection = $state<'up' | 'down'>('up');
-
-  function preview(index: number) {
-    if (index === sliderIndex) return;
-    labelDirection = index > sliderIndex ? 'up' : 'down';
-    sliderIndex = index;
-  }
-
-  $effect(() => {
-    if (!embedded) return;
-    sliderIndex = currentIndex;
-    labelDirection = 'up';
+  const persistedOptionValue = $derived.by(() => {
+    if (persistedValue === null || persistedValue === undefined) return AUTO_OPTION_VALUE;
+    const supportedIndex = levels.indexOf(persistedValue);
+    return supportedIndex >= 0 ? `effort-${supportedIndex}` : `unsupported-${persistedValue}`;
   });
-
-  function updatePosition() {
-    if (!triggerRef) return;
-    const rect = triggerRef.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    popoverStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${rect.left}px; width: 260px;`;
-  }
-
-  function toggleOpen() {
-    if (disabled) return;
-    isOpen = !isOpen;
-    if (isOpen) {
-      sliderIndex = currentIndex;
-      labelDirection = 'up';
-      updatePosition();
-    }
-  }
-
-  function handleClickOutside(event: MouseEvent) {
-    if (!isOpen) return;
-    const target = event.target as Node;
-    if (triggerRef?.contains(target) || popoverRef?.contains(target)) return;
-    isOpen = false;
-  }
+  let selectedOptionValue = $state('');
+  const selectedOption = $derived(options.find((option) => option.value === selectedOptionValue));
+  const selectedLabel = $derived(selectedOption?.label ?? m.chat_effortPicker_level_auto());
+  const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
+  let selectOpen = $state(false);
+  let pickerRoot = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
-    if (!isOpen) return;
-    document.addEventListener('mousedown', handleClickOutside, true);
-    return () => document.removeEventListener('mousedown', handleClickOutside, true);
+    selectedOptionValue = persistedOptionValue;
   });
 
   $effect(() => {
-    if (!isOpen) return;
+    if (!modalAware || !selectOpen) return;
     return pushEscapeLayer(() => {
-      isOpen = false;
+      selectOpen = false;
+      queueMicrotask(() =>
+        pickerRoot?.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')?.focus(),
+      );
     });
   });
 
-  async function commit(index: number) {
-    const step = steps[index];
-    if (!step || disabled || (!embedded && !workspaceId)) return;
+  async function commit(optionValue: string) {
+    const option = options.find((candidate) => candidate.value === optionValue);
+    if (!option || controlDisabled) return;
 
-    // Compare against the persisted field, not `currentValue`: an effort the
-    // model no longer advertises also maps to the "Default" position, and
-    // picking Default must still clear that stale value on the daemon.
+    // Compare against the persisted field: choosing Auto for an effort the
+    // model no longer advertises must still clear that stale value on the daemon.
     const previous = persistedValue ?? null;
-    if (step.value === previous) return;
+    if (option.effort === previous) return;
 
     const applied = embedded
-      ? await onEffortChange?.(step.value)
+      ? await onEffortChange?.(option.effort)
       : agentId && workspaceId
-        ? await applyReasoningEffort(agentId, workspaceId, step.value, previous)
+        ? await applyReasoningEffort(agentId, workspaceId, option.effort, previous)
         : false;
-    if (applied === false) sliderIndex = currentIndex;
+    if (applied === false) selectedOptionValue = persistedOptionValue;
   }
 </script>
 
-{#snippet sliderContent()}
-  {#if embedded}
-    <div class="flex items-center justify-between gap-2">
-      <div class="type-caption truncate text-muted-foreground">
-        {m.chat_effortPicker_nextSend_description()}
-      </div>
-      <EffortGauge
-        value={Math.max(0, sliderIndex - 1)}
-        max={levels.length - 1}
-        centered={steps[sliderIndex]?.value === null}
-      />
-    </div>
-  {:else}
-    <div class="flex items-center justify-between gap-2">
-      <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
-      <span
-        class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
-        data-testid="effort-current-value"
-      >
-        {#key sliderIndex}
-          <span class="effort-value-label block truncate" data-motion-direction={labelDirection}>
-            {steps[sliderIndex]?.label}
-          </span>
-        {/key}
+{#if hasLevels}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions (keyboard boundary around an interactive nested select) -->
+  <div
+    bind:this={pickerRoot}
+    class={cn(embedded ? 'flex items-center justify-between gap-3' : 'w-auto', className)}
+    data-testid="effort-picker-content"
+    role="group"
+    aria-label={m.chat_effortPicker_popover_ariaLabel()}
+    onkeydown={(event) => {
+      if (event.key === 'Escape' && !selectOpen) return;
+      if (event.key === 'Escape') selectOpen = false;
+      event.stopPropagation();
+    }}
+  >
+    {#if embedded}
+      <span class="inline-flex items-center gap-1 type-caption text-muted-foreground">
+        <span>{m.chat_effortPicker_title_label()}</span>
+        {#if selectedLevelIndex >= 0}
+          <EffortGauge
+            value={selectedLevelIndex}
+            max={Math.max(1, levels.length - 1)}
+            class="[&_line]:transition-none!"
+          />
+        {/if}
       </span>
-    </div>
-    <div class="type-caption mt-0.5 text-subtle">
-      {m.chat_effortPicker_nextSend_description()}
-    </div>
-  {/if}
-
-  <div class={cn('relative', embedded ? 'mt-2' : 'mt-2.5')}>
-    <Slider
-      min="0"
-      max={steps.length - 1}
-      step="1"
-      value={sliderIndex}
-      {disabled}
-      {onkeydown}
-      aria-label={m.chat_effortPicker_slider_ariaLabel()}
-      aria-valuetext={steps[sliderIndex]?.label}
-      onValueChange={(value) => {
-        preview(value);
-      }}
-      onchange={(event) => {
-        const index = Number((event.currentTarget as HTMLInputElement).value);
-        preview(index);
-        void commit(index);
-      }}
-    />
-    <div
-      class="pointer-events-none absolute inset-x-px top-1/2 flex -translate-y-1/2 justify-between"
-      aria-hidden="true"
-    >
-      {#each steps as step (step.value ?? 'default')}
-        <span
-          class="flex h-3 w-px items-center justify-center"
-          data-testid="effort-slider-tick"
-          data-effort-level={step.value ?? 'default'}
+    {/if}
+    <div class={cn(embedded ? 'w-32' : 'min-w-36')}>
+      <Select.Root
+        bind:value={selectedOptionValue}
+        bind:open={selectOpen}
+        items={selectItems}
+        disabled={controlDisabled}
+        onchange={(value) => void commit(value)}
+      >
+        <Select.Trigger
+          class="h-7 gap-1 px-2 text-xs"
+          aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: selectedLabel })}
+          data-testid="effort-picker-trigger"
         >
-          <span
-            class="h-2 w-px shrink-0 rounded-full bg-muted-foreground/55"
-            data-testid="effort-slider-tick-marker"
-          ></span>
-        </span>
-      {/each}
+          <span class="min-w-0 flex-1 truncate text-left">
+            {#if !embedded}
+              <span class="inline-flex items-center gap-1">
+                <span>{m.chat_effortPicker_title_label()}</span>
+                {#if selectedLevelIndex >= 0}
+                  <EffortGauge
+                    value={selectedLevelIndex}
+                    max={Math.max(1, levels.length - 1)}
+                    class="[&_line]:transition-none!"
+                  />
+                {/if}
+              </span>{'· '}{selectedLabel}
+            {:else}
+              {selectedLabel}
+            {/if}
+          </span>
+        </Select.Trigger>
+        <Select.Content portal={!embedded} dropUp={!embedded}>
+          {#each options as option (option.value)}
+            <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
     </div>
   </div>
-{/snippet}
-
-{#if hasLevels}
-  {#if embedded}
-    <div class={className} data-testid="effort-picker-content">
-      {@render sliderContent()}
-    </div>
-  {:else}
-    <TooltipShortcut
-      label={m.chat_effortPicker_trigger_tooltip({ level: currentLabel })}
-      side="top"
-    >
-      <Button
-        bind:ref={triggerRef}
-        variant="ghost-light"
-        size="icon-sm"
-        onclick={toggleOpen}
-        disabled={disabled || !workspaceId}
-        aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: currentLabel })}
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-        class={cn('shrink-0', className)}
-        data-testid="effort-picker-trigger"
-      >
-        <EffortGauge
-          value={Math.max(0, (isOpen ? sliderIndex : currentIndex) - 1)}
-          max={levels.length - 1}
-          centered={(isOpen ? steps[sliderIndex]?.value : currentValue) === null}
-        />
-      </Button>
-    </TooltipShortcut>
-
-    {#if isOpen}
-      <Portal zIndex={60}>
-        <div
-          bind:this={popoverRef}
-          class={cn(
-            'rounded-lg border border-border px-3 py-2.5',
-            'bg-popover text-popover-foreground shadow-lg',
-          )}
-          style={popoverStyle}
-          role="dialog"
-          aria-label={m.chat_effortPicker_popover_ariaLabel()}
-        >
-          {@render sliderContent()}
-        </div>
-      </Portal>
-    {/if}
-  {/if}
 {/if}
-
-<style>
-  .effort-value-label {
-    animation: effort-value-enter var(--motion-slow) var(--ease-emphasized-out);
-  }
-
-  .effort-value-label[data-motion-direction='up'] {
-    --effort-value-offset: 120%;
-    --effort-bounce: -12%;
-  }
-
-  .effort-value-label[data-motion-direction='down'] {
-    --effort-value-offset: -120%;
-    --effort-bounce: 12%;
-  }
-
-  @keyframes effort-value-enter {
-    0% {
-      opacity: 0;
-      transform: translateY(var(--effort-value-offset)) scale(0.75);
-    }
-    50% {
-      opacity: 1;
-      transform: translateY(var(--effort-bounce)) scale(1.08);
-    }
-    75% {
-      transform: translateY(calc(var(--effort-bounce) * -0.3)) scale(0.98);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .effort-value-label {
-      animation: none;
-    }
-  }
-</style>

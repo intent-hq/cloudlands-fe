@@ -14,7 +14,6 @@ const MAX_NAVIGATION_HISTORY = 50;
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
-export type WorkspaceNavigationWorkspaceStatus = 'loading' | 'ready' | 'error' | 'creating';
 export type WorkspaceNavigationDrawerType = 'agent' | 'terminal' | 'overview' | null;
 type WorkspaceNavigationHistoryType =
   | 'note'
@@ -150,7 +149,6 @@ export interface WorkspaceNavigationWorkspaceState {
   version: number;
   workspace: {
     id: string;
-    status: WorkspaceNavigationWorkspaceStatus;
   };
   mainPanel: WorkspaceNavigationMainPanelState;
   drawer: WorkspaceNavigationDrawerState;
@@ -166,7 +164,6 @@ const emptyWorkspaceNavigationState: WorkspaceNavigationWorkspaceState = {
   version: STORAGE_VERSION,
   workspace: {
     id: '',
-    status: 'loading',
   },
   mainPanel: {
     type: 'notes',
@@ -202,7 +199,6 @@ export function createWorkspaceNavigationState(
     version: STORAGE_VERSION,
     workspace: {
       id: wsId,
-      status: overrides?.workspace?.status ?? emptyWorkspaceNavigationState.workspace.status,
     },
     mainPanel: {
       ...emptyWorkspaceNavigationState.mainPanel,
@@ -333,10 +329,6 @@ function updateCurrentHistoryEntry(
 export const hydrateWorkspaceNavigation = createAction<
   [wsId: string, workspaceState: WorkspaceNavigationWorkspaceState]
 >('workspaceNavigation/hydrateWorkspaceNavigation');
-
-export const setWorkspaceNavigationWorkspaceStatus = createAction<
-  [wsId: string, status: WorkspaceNavigationWorkspaceStatus]
->('workspaceNavigation/setWorkspaceNavigationWorkspaceStatus');
 
 export const markWorkspaceNavigationInitialized = createAction<[wsId: string]>(
   'workspaceNavigation/markWorkspaceNavigationInitialized',
@@ -504,25 +496,13 @@ workspaceNavigationReducer.with(
       version: STORAGE_VERSION,
       workspace: {
         id: wsId,
-        status: workspaceState.workspace.status,
       },
     }),
 );
-workspaceNavigationReducer.with(
-  setWorkspaceNavigationWorkspaceStatus,
-  (state, { payload: [wsId, status] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      mergeWorkspaceNavigationState(workspaceState, {
-        workspace: {
-          ...workspaceState.workspace,
-          id: wsId,
-          status,
-        },
-      }),
-    ),
-);
 workspaceNavigationReducer.with(markWorkspaceNavigationInitialized, (state, { payload: [wsId] }) =>
   withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    if (workspaceState.ui.hasInitialized) return workspaceState;
+
     let nextState = mergeWorkspaceNavigationState(workspaceState, {
       ui: {
         ...workspaceState.ui,

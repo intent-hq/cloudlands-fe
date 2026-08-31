@@ -60,6 +60,10 @@ for (const state of states) {
       .toBe(`${idle}px`);
     await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
     await expect(editor.locator('p')).toHaveAttribute('data-placeholder', 'Ask anything');
+    /* The placeholder fades out over 0.3s after blur; on fast runners the
+       assertions above settle sooner than that, so sampling opacity without
+       waiting reads a mid-transition value. Poll to the terminal value first. */
+    await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
     expect(await placeholderMotion(editor)).toEqual({
       opacity: 0,
       property: 'opacity',

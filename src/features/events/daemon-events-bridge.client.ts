@@ -195,6 +195,8 @@ import {
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
+import { toLockRecord } from '$features/file-tracking/file-tracking.client';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
@@ -263,6 +265,7 @@ import {
   clearServerErrorMessage,
   setServerErrorMessage,
   setServerStatus,
+  setWorkspaceMcpServerDisabled,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -2143,6 +2146,36 @@ function handlePrEvent(
 }
 
 /**
+ * `changes:agent-locks` (§6.5, protocol v8.8) carries the self-sufficient
+ * daemon-computed agent-lock snapshot `{ workspaceId, autoCommitEnabled,
+ * lockedAgentIds: string[], lockedFilePaths: string[] }` — which agents' files
+ * must not be manually staged/reverted (agent actively working + auto-commit
+ * enabled). The wire arrays fold into the slice's `Record<string, true>`
+ * lookup shape and dispatch straight into the agent-lock slice; the payload's
+ * own `data.workspaceId` wins over the envelope id when present (same
+ * convention as the tokenUsage/context handlers). Hydration on workspace
+ * switch goes through the same-shaped `file-tracking.getAgentLocks` read
+ * (§5.19, `hydrateAgentLocks` in file-tracking.client).
+ */
+function handleAgentLocksEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  if (!Array.isArray(data.lockedAgentIds) || !Array.isArray(data.lockedFilePaths)) return;
+  appStore.dispatch(
+    setAgentLockState(
+      workspaceId,
+      toLockRecord(data.lockedAgentIds),
+      toLockRecord(data.lockedFilePaths),
+    ),
+  );
+}
+
+/**
  * `workspace:activity-changed` (PROTOCOL §6.5 / §10.1) carries the
  * self-sufficient payload `{ workspaceId, activity }` — the daemon emits this
  * only on the `Idle ↔ AgentRunning` edge (count `0 ↔ 1` transitions), so the
@@ -2182,6 +2215,10 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
   appStore.dispatch(
     bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { displayStatus })]),
   );
+  // The partial merge is a silent no-op when the entity is not hydrated yet —
+  // recover the dropped delta via a targeted workspace.get (see
+  // {@link hydrateWorkspaceEntityIfMissing}).
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
 }
 
 /**
@@ -2209,6 +2246,10 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
   appStore.dispatch(
     bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { attention })]),
   );
+  // The partial merge is a silent no-op when the entity is not hydrated yet —
+  // recover the dropped delta via a targeted workspace.get (see
+  // {@link hydrateWorkspaceEntityIfMissing}).
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
   // An unread raise is NOT auto-cleared for the workspace on screen: unread is
   // daemon-derived from per-agent seen markers (§5.1) and only reading each
   // agent's conversation clears it. When the raising agent's conversation is
@@ -2243,6 +2284,79 @@ function handleWaitingChangedEvent(
   const waiting = data.waiting;
   if (!workspaceId || typeof waiting !== 'boolean') return;
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { waiting })]));
+  // The partial merge is a silent no-op when the entity is not hydrated yet —
+  // recover the dropped delta via a targeted workspace.get (see
+  // {@link hydrateWorkspaceEntityIfMissing}).
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
+}
+
+/**
+ * Recover a dropped partial merge when the target workspace entity is not in
+ * this window's store. The `bulkUpdateWorkspaceEntities` reducer is a no-op
+ * for unknown ids, so a self-sufficient transition payload
+ * (`workspace:attention-changed` / `workspace:waiting-changed` /
+ * `workspace:displayStatus-changed`) arriving before the entity hydrates
+ * (workspace created by another client on the same daemon, or the event
+ * racing the initial `workspace.list`) would otherwise be silently lost until
+ * an unrelated refetch. When the entity is missing, fetch `workspace.get` and
+ * seed the full entity via `setWorkspaceEntity` — the fresh projection
+ * carries the flag the dropped delta announced. Single-flighted with trailing
+ * coalesce per workspaceId (AGENTS.md "Event-driven refetches — single-flight
+ * and coalesced"): a burst of deltas for one missing workspace produces at
+ * most one immediate fetch plus at most one trailing follow-up. Workspaces
+ * with a pending local deletion are skipped so a tombstoned row is not
+ * resurrected.
+ */
+const missingEntityFetchInFlightByWorkspace = new Set<string>();
+const missingEntityFetchFollowUpWantedByWorkspace = new Set<string>();
+
+async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promise<void> {
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      { workspace?: Workspace } | undefined;
+    const workspace = response?.workspace;
+    if (workspace) {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspace));
+    }
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  } finally {
+    // Trailing coalesce: one or more triggers arrived while this fetch was in
+    // flight — run exactly one follow-up fetch to pick up the latest state,
+    // regardless of how many triggers piled up. The in-flight marker stays
+    // set across the trailing fetch so triggers arriving during it keep
+    // coalescing instead of starting a parallel fetch; it is only cleared
+    // when no follow-up is pending.
+    if (missingEntityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runHydrateMissingWorkspaceEntityFetch(workspaceId);
+    } else {
+      missingEntityFetchInFlightByWorkspace.delete(workspaceId);
+    }
+  }
+}
+
+async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
+  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const state = appStore.state as {
+    workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
+  };
+  if (state.workspace.pendingDeletions[workspaceId]) return;
+  // The in-flight check runs BEFORE the entity-presence check: if another
+  // path (e.g. a workspace.list response) hydrated the entity while a
+  // missing-entity fetch is still in flight, a delta arriving now merges into
+  // the present entity but the older fetch can resolve last and overwrite the
+  // merged flag with its stale projection — queuing a trailing fetch (whose
+  // projection postdates this delta) guarantees convergence.
+  if (missingEntityFetchInFlightByWorkspace.has(workspaceId)) {
+    missingEntityFetchFollowUpWantedByWorkspace.add(workspaceId);
+    return;
+  }
+  if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
+  missingEntityFetchInFlightByWorkspace.add(workspaceId);
+  await runHydrateMissingWorkspaceEntityFetch(workspaceId);
 }
 
 /**
@@ -2428,6 +2542,14 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   const wireChanges = (data as { changes?: unknown }).changes;
   if (!wireChanges || typeof wireChanges !== 'object') return;
   const raw = wireChanges as Record<string, unknown>;
+  // `mcpServerToggled` (§5.22 per-workspace disable) is a non-column delta —
+  // a self-sufficient notification of a workspace-scoped `mcp.servers.toggle`,
+  // never a `Workspace` field — so it routes to the mcp-settings slice and is
+  // excluded from the entity whitelist below. Resolve serverId → name via the
+  // current server list (same pattern as `mcp.servers:status-changed`); when
+  // the list has not loaded the id yet, drop the update — the sidebar's
+  // hydrate on mount converges the state.
+  handleWorkspaceMcpServerToggled(raw, workspaceId);
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
   if (typeof raw.statusMessage === 'string') changes.statusMessage = raw.statusMessage;
@@ -2537,6 +2659,31 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
       });
     }
   }
+}
+
+/**
+ * `mcpServerToggled` on a `workspace:updated` delta (PROTOCOL §5.22
+ * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
+ * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
+ * agent-driven toggles) mirror the per-workspace state without a follow-up
+ * `mcp.servers.list` read. The slice keys the map by server *name*, so the
+ * daemon id resolves via the current server list; an unresolvable id is
+ * dropped (the sidebar's mount hydrate converges the state later).
+ */
+function handleWorkspaceMcpServerToggled(
+  raw: Record<string, unknown>,
+  workspaceId: string,
+): void {
+  const toggled = raw.mcpServerToggled;
+  if (!toggled || typeof toggled !== 'object') return;
+  const { serverId, workspaceDisabled } = toggled as Record<string, unknown>;
+  if (typeof serverId !== 'string' || !serverId || typeof workspaceDisabled !== 'boolean') {
+    return;
+  }
+  const servers = appStore.state.mcpSettings.servers;
+  const match = servers.find((s) => s.id === serverId);
+  if (!match) return;
+  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, match.name, workspaceDisabled));
 }
 
 /**
@@ -2923,7 +3070,7 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
  * `scriptId` — self-sufficient per §6.7 — so the renderer mirrors it into
  * the scripts slice via `updateRuntimeState` without a follow-up
  * `script.status` read. The reducer no-ops if the script hasn't been
- * hydrated yet by `initializeScripts` (matches the reference saga).
+ * hydrated yet by lifecycle hydration (matches the reference saga).
  */
 function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -3640,6 +3787,14 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // agent-lock snapshot. Self-sufficient payload, folded straight into the
+  // agent-lock slice; no timeline value, so no eventReceived dispatch.
+  if (type === 'changes:agent-locks') {
+    handleAgentLocksEvent(event, workspaceId);
+    return;
+  }
+
   // Git/changes events should
   // refresh the changes slice so daemon-originated commits appear live in the
   // sidebar Changes panel. Debounce per workspace (~1s) because
@@ -3888,6 +4043,10 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'git:*',
   'changes:git-status',
   'changes:tracked',
+  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // agent-lock snapshot folded into the agent-lock slice; without the
+  // subscribe filter the gating in FileChangesSection never engages live.
+  'changes:agent-locks',
   'line-attribution:updated',
   'pr:*',
   'mcp.servers:status-changed',
@@ -4022,6 +4181,8 @@ export function disposeDaemonEventsRoutingState(): void {
   agentSummaryFetchFollowUpWantedByWorkspace.clear();
   activityFetchInFlightByWorkspace.clear();
   activityFetchFollowUpWantedByWorkspace.clear();
+  missingEntityFetchInFlightByWorkspace.clear();
+  missingEntityFetchFollowUpWantedByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */

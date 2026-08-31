@@ -32,6 +32,7 @@ import {
   bulkSetServerStatus,
   clearAllErrorMessages,
   clearServerErrorMessage,
+  hydrateWorkspaceMcpDisabled,
   importFromJson,
   importFromJsonCompleted,
   loadServers,
@@ -47,9 +48,12 @@ import {
   setServerErrorMessage,
   setServers,
   setServerStatus,
+  setWorkspaceDisabledMcpServers,
+  setWorkspaceMcpServerDisabled,
   toggleEnabled,
   toggleServer,
   toggleServerDisabled,
+  toggleWorkspaceMcpServer,
   updateServer,
 } from '../mcp-settings-slice';
 import type { McpServerConfig, McpServerStatus } from '../mcp-settings-types';
@@ -360,6 +364,70 @@ function* toggle(name: string): SagaGenerator<void> {
   yield* call(persist, servers, []);
 }
 
+/**
+ * Workspace-scoped toggle (PROTOCOL §5.22 per-workspace disable): resolve the
+ * server name to its daemon id and call `mcp.servers.toggle` with a
+ * `workspaceId` — the daemon sets/clears the per-workspace disabled marker
+ * only, leaving the global config untouched. State is written only from the
+ * daemon-confirmed result; a wire failure re-hydrates the scoped list so the
+ * switch converges back to the daemon's actual state.
+ */
+function* toggleForWorkspace(
+  workspaceId: string,
+  serverName: string,
+  enabled: boolean,
+): SagaGenerator<void> {
+  if (!workspaceId) return;
+  const servers: McpServerConfig[] = yield* selectMcpServers.effect();
+  const serverId = servers.find((server) => server.name === serverName)?.id;
+  if (!serverId) {
+    logger.warn('Cannot workspace-toggle an MCP server without a daemon id', { serverName });
+    return;
+  }
+  const result: Awaited<ReturnType<typeof appClient.settings.toggleWorkspaceMcpServer>> =
+    yield* call(
+      [appClient.settings, appClient.settings.toggleWorkspaceMcpServer],
+      workspaceId,
+      serverId,
+      enabled,
+    );
+  // Per §5.22 the scoped toggle result always carries `workspaceDisabled`;
+  // a success without it (possible on the typed seam — the mock client
+  // returns bare OK) is treated as unconfirmed rather than inferred from the
+  // request, so state stays daemon-confirmed-only: re-hydrate instead.
+  if (result.success && typeof result.workspaceDisabled === 'boolean') {
+    yield* put(setWorkspaceMcpServerDisabled(workspaceId, serverName, result.workspaceDisabled));
+    return;
+  }
+  if (!result.success) {
+    logger.warn('Workspace-scoped MCP toggle failed', { serverName, error: result.error });
+  }
+  yield* call(hydrateWorkspaceDisabled, workspaceId);
+}
+
+/**
+ * Hydrate one workspace's disabled-server map from the daemon's scoped
+ * `mcp.servers.list` (§5.22 — every entry carries `workspaceDisabled`). A
+ * failed read keeps the current state rather than clearing it. The snapshot
+ * is a point-in-time read: an `mcpServerToggled` delta landing between the
+ * list request and the `put` below is overwritten by the older snapshot —
+ * a narrow, self-correcting window (the next toggle/hydrate converges), so
+ * no versioning is layered on top.
+ */
+function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
+  if (!workspaceId) return;
+  const names: Awaited<
+    ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerNames>
+  > = yield* call(
+    [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerNames],
+    workspaceId,
+  );
+  if (names === null) return;
+  const disabled: Record<string, true> = {};
+  for (const name of names) disabled[name] = true;
+  yield* put(setWorkspaceDisabledMcpServers(workspaceId, disabled));
+}
+
 function* toggleFeature(): SagaGenerator<void> {
   const enabled: boolean = yield* selectMcpEnabled.effect();
   yield* put(setEnabled(!enabled));
@@ -469,6 +537,18 @@ function* toggleServerWorker(action: ReturnType<typeof toggleServer>): SagaGener
   yield* call(toggle, action.payload[0]);
 }
 
+function* toggleWorkspaceMcpServerWorker(
+  action: ReturnType<typeof toggleWorkspaceMcpServer>,
+): SagaGenerator<void> {
+  yield* call(toggleForWorkspace, action.payload[0], action.payload[1], action.payload[2]);
+}
+
+function* hydrateWorkspaceMcpDisabledWorker(
+  action: ReturnType<typeof hydrateWorkspaceMcpDisabled>,
+): SagaGenerator<void> {
+  yield* call(hydrateWorkspaceDisabled, action.payload[0]);
+}
+
 function* restartServerWorker(action: ReturnType<typeof restartServer>): SagaGenerator<void> {
   yield* call(restart, action.payload[0]);
 }
@@ -487,6 +567,8 @@ export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeEvery(updateServer, updateServerWorker);
   yield* takeEvery(importFromJson, importFromJsonWorker);
   yield* takeEvery(toggleServer, toggleServerWorker);
+  yield* takeEvery(toggleWorkspaceMcpServer, toggleWorkspaceMcpServerWorker);
+  yield* takeEvery(hydrateWorkspaceMcpDisabled, hydrateWorkspaceMcpDisabledWorker);
   yield* takeEvery(restartServer, restartServerWorker);
   yield* takeEvery(saveAdvancedJson, saveAdvancedJsonWorker);
 }

@@ -20,6 +20,10 @@ import {
   resetComposerMic,
   toggleComposerMicRecording,
 } from '../composer-mic-controller';
+import {
+  consumeComposerDictationTarget,
+  hasComposerDictationTarget,
+} from '../composer-dictation-target';
 
 class FakeMediaRecorder {
   static isTypeSupported(): boolean {
@@ -42,7 +46,14 @@ class FakeMediaRecorder {
 }
 
 class FakeMediaStream {
-  tracks = [{ stopped: false, stop(): void { this.stopped = true; } }];
+  tracks = [
+    {
+      stopped: false,
+      stop(): void {
+        this.stopped = true;
+      },
+    },
+  ];
   getTracks() {
     return this.tracks;
   }
@@ -130,6 +141,57 @@ describe('toggleComposerMicRecording', () => {
     expect(
       types(dispatched).filter((type) => type === 'hardwareConsole/pttRecordingStarted'),
     ).toHaveLength(2);
+  });
+});
+
+describe('composer dictation target capture', () => {
+  it('captures the originating composer agentId at start; a stop leaves it for the transcription flow', async () => {
+    const { context } = makeContext();
+    expect(toggleComposerMicRecording(context, 'agent-a')).toBe('started');
+    expect(hasComposerDictationTarget()).toBe(true);
+    await advance(PTT_MIN_RECORDING_MS);
+
+    // The stop itself does not consume the capture — handleFinishedRecording
+    // does (one-shot) when the finished seam reaches it.
+    expect(toggleComposerMicRecording(context, 'agent-a')).toBe('stopped');
+    expect(consumeComposerDictationTarget()).toBe('agent-a');
+  });
+
+  it('captures nothing without an agentId (hardware-parity fallback)', () => {
+    const { context } = makeContext();
+    expect(toggleComposerMicRecording(context)).toBe('started');
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('a blocked click never captures', () => {
+    const hardware = makeContext();
+    handleVoiceKeyDown(hardware.context);
+    const { context } = makeContext();
+    expect(toggleComposerMicRecording(context, 'agent-a')).toBe('blocked');
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('Esc cancel clears the captured agentId', async () => {
+    const { context } = makeContext();
+    toggleComposerMicRecording(context, 'agent-a');
+    await advance(PTT_MIN_RECORDING_MS);
+    expect(cancelComposerMicRecording(context)).toBe(true);
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('a capture dangling from a too-short session is cleared when the next session starts', async () => {
+    const { context } = makeContext();
+    toggleComposerMicRecording(context, 'agent-a');
+    // Stop before the min duration: no finished seam consumes the capture.
+    toggleComposerMicRecording(context, 'agent-a');
+    await advance(PTT_MIN_RECORDING_MS);
+    expect(hasComposerDictationTarget()).toBe(true);
+
+    // A later hardware session must never inherit the dangling capture.
+    const hardware = makeContext();
+    handleVoiceKeyDown(hardware.context);
+    expect(isPttRecordingActive()).toBe(true);
+    expect(hasComposerDictationTarget()).toBe(false);
   });
 });
 

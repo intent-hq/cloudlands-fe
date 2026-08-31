@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -157,10 +157,14 @@ export const setBundledSpecialistsLoaded = createAction<[loaded: boolean]>(
 export const setDefaultSpecialistId = createAction<[specialistId: string]>(
   'specialists/setDefaultSpecialistId',
 );
-export const saveFileSpecialist = createAction<[specialist: FileSpecialistWritePayload]>(
+// Async actions: the specialists saga settles the per-dispatch promise with the
+// daemon write outcome so callers (e.g. the proposal lifecycle) can await it.
+export const saveFileSpecialist = createAsyncAction<[specialist: FileSpecialistWritePayload], void>(
+  'specialists/saveFile',
   'specialists/saveFileSpecialist',
 );
-export const deleteFileSpecialist = createAction<[specialist: FileSpecialistReference]>(
+export const deleteFileSpecialist = createAsyncAction<[specialist: FileSpecialistReference], void>(
+  'specialists/deleteFile',
   'specialists/deleteFileSpecialist',
 );
 

@@ -164,8 +164,8 @@ For focused browser validation, run:
 corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
 ```
 
-The CT harness uses fixed port 3100 and has no override. Stop the process on that port
-before retrying if it is occupied. The full workflow is in
+The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
+process on that port before retrying if it is occupied. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against the production daemon (UDS→WS bridge)
@@ -367,6 +367,18 @@ The pending deletions are transient UI-only state (a module-level `Map`), never 
 During the window (and for a tombstone grace period after the deadline, so stale
 refetches cannot resurrect the agent) read paths consult `isAgentDeletionPending()` and
 drop wire rows carrying the additive `pendingDeleteAt` field.
+
+### Test observable behavior, not presentation
+
+- Tests **MUST** cover observable logic: state transitions, inputs/outputs and wire
+  payloads, validation, conditional behavior, routing, error/retry handling, persistence,
+  and accessibility interactions/state.
+- Do **not** add tests whose only purpose is exact copy, static source/markup/class
+  strings, source order, or unconditional visual presence.
+- Accessible text may locate a control in a behavioral test; assert the resulting
+  interaction or state, not the exact wording as the contract.
+- For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
+  `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
 ### Testing — every feature/fix against a mock BE
 

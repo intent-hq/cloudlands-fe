@@ -1,5 +1,6 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
+import { getAgentMessageAttribution, stripAgentMessageHeader } from './agent-message-attribution';
 import { getQueueInfo } from './queue-info';
 
 const ISO_TIMESTAMP = String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})`;
@@ -55,16 +56,26 @@ export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unkn
 
 /** Return immutable user-authored text for rendering and other UI surfaces. */
 export function getPresentedUserMessageText(message: AgentMessage): string {
+  // Rows sent by another agent carry the daemon-stamped sender header in
+  // content; the attribution chip conveys the sender, so presentation copies
+  // (render, preview, copy) drop the leading header line.
+  const attribution = getAgentMessageAttribution(message.metadata);
+  const presentLeadingHeader = attribution
+    ? (text: string) => stripAgentMessageHeader(text, attribution)
+    : (text: string) => text;
+
   const textParts = message.contentBlocks
     ?.filter((block) => block.type === 'text')
     .map((block) => block.text ?? '');
   if (!textParts?.length)
-    return stripInternalDeliveryNotes(extractAllContent(message), message.metadata);
+    return presentLeadingHeader(
+      stripInternalDeliveryNotes(extractAllContent(message), message.metadata),
+    );
 
   for (let index = textParts.length - 1; index >= 0; index -= 1) {
     const stripped = stripInternalDeliveryNotes(textParts[index], message.metadata);
     textParts[index] = stripped;
     if (stripped.trim()) break;
   }
-  return stripInternalDeliveryNotes(textParts.join(''), message.metadata);
+  return presentLeadingHeader(stripInternalDeliveryNotes(textParts.join(''), message.metadata));
 }

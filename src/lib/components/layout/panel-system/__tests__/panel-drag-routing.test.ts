@@ -117,9 +117,11 @@ import PanelContainer from '../PanelContainer.svelte';
 import PanelTabBar from '../PanelTabBar.svelte';
 import {
   PANE_DRAG_MIME,
+  clearDraggedPaneState,
   getDraggedPane,
   getPaneColumnDropZone,
   getPaneInsertionPlacement,
+  getPaneInsertionPlacementAtX,
   getPaneInsertionTargetAtX,
   getPaneInsertionTargets,
   setDraggedPane,
@@ -196,6 +198,10 @@ beforeEach(() => {
     configurable: true,
     value: vi.fn(),
   });
+  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
+    configurable: true,
+    value: () => [],
+  });
 });
 
 afterEach(() => {
@@ -258,6 +264,30 @@ describe('pane and tab drag MIME routing', () => {
     });
   });
 
+  it('keeps root insertion routing authoritative and stable for one pointer region', () => {
+    const layoutRect = { left: 0, width: 800 } as DOMRect;
+    const panelRects = [
+      { left: 0, width: 400 },
+      { left: 400, width: 400 },
+    ] as DOMRect[];
+    const panelIds = ['panel-a', 'panel-b'];
+    const targets = getPaneInsertionTargets(layoutRect, panelRects);
+    const placements = [395, 395, 396, 397].map((clientX) =>
+      getPaneInsertionPlacementAtX(clientX, layoutRect, targets, panelIds),
+    );
+
+    expect(placements).toEqual(
+      Array.from({ length: 4 }, () => ({
+        kind: 'panel',
+        targetPanelId: 'panel-b',
+        zone: 'left',
+      })),
+    );
+    expect(getPaneInsertionPlacementAtX(397, layoutRect, targets, panelIds)).toEqual(
+      placements.at(-1),
+    );
+  });
+
   it('drags only the active pane from the visible stack header', async () => {
     const { container } = renderTabBar({ panelId: 'source-panel', layoutId: 'workspace-1' });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
@@ -292,10 +322,102 @@ describe('pane and tab drag MIME routing', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag' });
   });
 
+  it.each(['dragend', 'Escape'] as const)(
+    'removes the source tab bar safely during %s cleanup',
+    async (route) => {
+      let removeSource = () => {};
+      const onPaneDragFinish = vi.fn(() => {
+        clearDraggedPaneState();
+        removeSource();
+      });
+      const result = renderTabBar({ panelId: 'source-panel', onPaneDragFinish });
+      removeSource = result.unmount;
+      const header = result.container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+      const dataTransfer = new TestDataTransfer();
+
+      await fireEvent(header, dragEvent('dragstart', dataTransfer));
+      if (route === 'Escape') await fireEvent.keyDown(window, { key: 'Escape' });
+      else await fireEvent(header, dragEvent('dragend', dataTransfer));
+
+      expect(onPaneDragFinish).toHaveBeenCalledOnce();
+      expect(getDraggedPane()).toBeNull();
+      expect(result.container.querySelector('[data-panel-tabless-header]')).toBeNull();
+    },
+  );
+
+  it('invokes the pane finish callback once when the source tab bar is destroyed', () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const result = renderTabBar({
+      panelId: 'source-panel',
+      onPaneDragFinish,
+    });
+    setDraggedPane({ tabId: 'one', panelId: 'source-panel' });
+
+    result.unmount();
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+    expect(getDraggedPane()).toBeNull();
+  });
+
+  it('keeps the source panel identity stable when source removal starts child cleanup', async () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const sourceNode = { type: 'panel' as const, panelId: 'source-panel' };
+    const targetNode = { type: 'panel' as const, panelId: 'target-panel' };
+    const props = {
+      node: {
+        type: 'split' as const,
+        direction: 'horizontal' as const,
+        sizes: [50, 50],
+        children: [sourceNode, targetNode],
+      },
+      panels: {
+        'source-panel': panel('source-panel', [tab('one')]),
+        'target-panel': panel('target-panel', [tab('two')]),
+      },
+      panelOrder: ['source-panel', 'target-panel'],
+      focusedPanelId: 'source-panel',
+      workspaceId: 'workspace-1',
+      layoutId: 'workspace-1',
+      onPaneDragFinish,
+    };
+    const result = render(PanelContainer, { props });
+    setDraggedPane({ tabId: 'one', panelId: 'source-panel' });
+
+    await result.rerender({
+      ...props,
+      node: { ...props.node, sizes: [100], children: [targetNode] },
+      panels: { 'target-panel': props.panels['target-panel'] },
+      panelOrder: ['target-panel'],
+    });
+
+    await vi.waitFor(() => expect(onPaneDragFinish).toHaveBeenCalledOnce());
+    expect(getDraggedPane()).toBeNull();
+    expect(document.querySelector('[data-panel-id="source-panel"]')).toBeNull();
+  });
+
+  it('does not finish the same pane drag again when dragend follows Escape', async () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const result = renderTabBar({ panelId: 'source-panel', onPaneDragFinish });
+    const header = result.container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+    const dataTransfer = new TestDataTransfer();
+
+    await fireEvent(header, dragEvent('dragstart', dataTransfer));
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent(header, dragEvent('dragend', dataTransfer));
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+  });
+
   it('adds a dropped pane to another stack from the full column surface', async () => {
     const onTabMoveToPanel = vi.fn();
+    const onPaneDropPreview = vi.fn();
     const { container } = render(Panel, {
-      props: { panel: panel(), workspaceId: 'workspace-1', onTabMoveToPanel },
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onTabMoveToPanel,
+        onPaneDropPreview,
+      },
     });
     const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
     targetPanel.getBoundingClientRect = () =>
@@ -307,12 +429,205 @@ describe('pane and tab drag MIME routing', () => {
     );
     setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
 
-    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 20));
-    expect(container.textContent).toContain('Move to stack');
-    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 20));
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200, 20));
+    expect(onPaneDropPreview).toHaveBeenLastCalledWith({
+      kind: 'panel',
+      targetPanelId: 'target-panel',
+      zone: 'center',
+    });
+    expect(container.textContent).not.toContain('Move to stack');
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200, 20));
 
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
+    expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
     expect(dataTransfer.dropEffect).toBe('move');
+    expect(getDraggedPane()).toBeNull();
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag' });
+  });
+
+  it.each([
+    ['left', 60],
+    ['right', 340],
+  ] as const)(
+    'keeps the %s pane preview aligned with the committed panel side',
+    async (zone, x) => {
+      const onTabDrop = vi.fn();
+      const onPaneDropPreview = vi.fn();
+      const { container } = render(Panel, {
+        props: {
+          panel: panel(),
+          workspaceId: 'workspace-1',
+          onTabDrop,
+          onPaneDropPreview,
+        },
+      });
+      const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+      targetPanel.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+      const dataTransfer = new TestDataTransfer();
+      dataTransfer.setData(
+        PANE_DRAG_MIME,
+        JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+      );
+      setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+
+      await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, x));
+      const preview = onPaneDropPreview.mock.calls.at(-1)?.[0];
+      expect(preview).toEqual({ kind: 'panel', targetPanelId: 'target-panel', zone });
+      expect(container.textContent).not.toContain(zone === 'left' ? 'Split left' : 'Split right');
+      await fireEvent(targetPanel, dragEvent('drop', dataTransfer, x));
+
+      expect(onTabDrop).toHaveBeenCalledWith('source-tab', 'source-panel', preview.zone);
+      expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
+    },
+  );
+
+  it.each([
+    ['center', 200],
+    ['left', 60],
+    ['right', 340],
+  ] as const)('finishes a %s pane drop before its layout callback', async (zone, x) => {
+    const order: string[] = [];
+    const onPaneDragFinish = vi.fn(() => {
+      order.push('finish');
+      clearDraggedPaneState();
+    });
+    const onTabMoveToPanel = vi.fn(() => {
+      expect(getDraggedPane()).toBeNull();
+      order.push('move-center');
+    });
+    const onTabDrop = vi.fn(() => {
+      expect(getDraggedPane()).toBeNull();
+      order.push(`move-${zone}`);
+    });
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onPaneDragFinish,
+        onTabMoveToPanel,
+        onTabDrop,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      PANE_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+    setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, x));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, x));
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+    expect(order).toEqual(['finish', `move-${zone}`]);
+  });
+
+  it('finishes a rejected self drop without invoking a layout callback', async () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const onTabMoveToPanel = vi.fn();
+    const onTabDrop = vi.fn();
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onPaneDragFinish,
+        onTabMoveToPanel,
+        onTabDrop,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify({ tabId: 'one', panelId: 'target-panel' }));
+    setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200));
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+    expect(onTabMoveToPanel).not.toHaveBeenCalled();
+    expect(onTabDrop).not.toHaveBeenCalled();
+    expect(getDraggedPane()).toBeNull();
+  });
+
+  it('keeps a slow pointer stable through side-zone hysteresis and commits its preview', async () => {
+    const onTabMoveToPanel = vi.fn();
+    const onPaneDropPreview = vi.fn();
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onTabMoveToPanel,
+        onPaneDropPreview,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      PANE_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+    setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+
+    for (const clientX of [81, 81, 80, 79, 78, 77]) {
+      await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, clientX));
+    }
+
+    const previews = onPaneDropPreview.mock.calls.map(([placement]) => placement);
+    expect(previews).toEqual(
+      Array.from({ length: 6 }, () => ({
+        kind: 'panel',
+        targetPanelId: 'target-panel',
+        zone: 'center',
+      })),
+    );
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 77));
+    expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
+  });
+
+  it('clears the active pane preview when the pointer leaves the panel', async () => {
+    const onPaneDropPreview = vi.fn();
+    const { container } = render(Panel, {
+      props: { panel: panel(), workspaceId: 'workspace-1', onPaneDropPreview },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 400, bottom: 400, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      PANE_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+    setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200));
+    await fireEvent(targetPanel, dragEvent('dragleave', dataTransfer, 500));
+
+    expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does not preview a no-op center drop into the source stack', async () => {
+    const onPaneDropPreview = vi.fn();
+    const { container } = render(Panel, {
+      props: { panel: panel(), workspaceId: 'workspace-1', onPaneDropPreview },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify({ tabId: 'one', panelId: 'target-panel' }));
+    setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200));
+
+    expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
   });
 
   it('keeps same-panel tab reordering visuals and drag cleanup', async () => {
@@ -388,6 +703,36 @@ describe('pane and tab drag MIME routing', () => {
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
   });
 
+  it('shows one neutral destination for a legacy tab drag over the panel body', async () => {
+    const { container } = render(Panel, {
+      props: { panel: panel(), workspaceId: 'workspace-1' },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, right: 400, top: 0, bottom: 400, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      TAB_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+
+    for (const [clientX, zone] of [
+      [60, 'left'],
+      [200, 'center'],
+      [340, 'right'],
+    ] as const) {
+      await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, clientX));
+      expect(
+        container
+          .querySelector('[data-panel-drop-destination]')
+          ?.getAttribute('data-panel-legacy-tab-drop-zone'),
+      ).toBe(zone);
+    }
+
+    await fireEvent(targetPanel, dragEvent('dragleave', dataTransfer, 500, 500));
+    expect(container.querySelector('[data-panel-drop-destination]')).toBeNull();
+  });
+
   it('removes side creation targets at the four-column limit', async () => {
     const onTabDrop = vi.fn();
     const onTabMoveToPanel = vi.fn();
@@ -410,7 +755,12 @@ describe('pane and tab drag MIME routing', () => {
     );
 
     await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 200));
-    expect(container.textContent).toContain('Move to stack');
+    expect(container.textContent).not.toContain('Move to stack');
+    expect(
+      container
+        .querySelector('[data-panel-drop-destination]')
+        ?.getAttribute('data-panel-legacy-tab-drop-zone'),
+    ).toBe('center');
     await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 200));
 
     expect(onTabDrop).not.toHaveBeenCalled();
@@ -620,6 +970,7 @@ describe('pane drop geometry', () => {
 
   it('resolves outer edges and the interior divider to their exact boundaries', () => {
     const layoutRect = { left: 100, width: 800 } as DOMRect;
+    const panelIds = ['left', 'right'];
     const targets = getPaneInsertionTargets(layoutRect, [
       { left: 100, width: 390 },
       { left: 500, width: 400 },
@@ -629,5 +980,19 @@ describe('pane drop geometry', () => {
     expect(getPaneInsertionTargetAtX(495, layoutRect, targets)?.index).toBe(1);
     expect(getPaneInsertionTargetAtX(898, layoutRect, targets)?.index).toBe(2);
     expect(getPaneInsertionTargetAtX(300, layoutRect, targets)).toBeNull();
+    expect(getPaneInsertionPlacementAtX(102, layoutRect, targets, panelIds)).toEqual({
+      kind: 'edge',
+      position: 'before',
+    });
+    expect(getPaneInsertionPlacementAtX(495, layoutRect, targets, panelIds)).toEqual({
+      kind: 'panel',
+      targetPanelId: 'right',
+      zone: 'left',
+    });
+    expect(getPaneInsertionPlacementAtX(898, layoutRect, targets, panelIds)).toEqual({
+      kind: 'edge',
+      position: 'after',
+    });
+    expect(getPaneInsertionPlacementAtX(300, layoutRect, targets, panelIds)).toBeNull();
   });
 });

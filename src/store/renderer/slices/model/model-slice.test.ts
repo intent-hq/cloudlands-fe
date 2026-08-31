@@ -1,17 +1,23 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
+  activeProviderReconciled,
   hydrateActiveProvider,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
-import { initialState as bareInitialState, loadDefaultReasoningEffortFromStorage, loadProviderModelsFromStorage, modelReducer, setDefaultReasoningEffort, setAvailableModels, setLoadingStateForProvider, setSelectedModel } from './model-slice';
+import {
+  initialState as bareInitialState,
+  loadDefaultReasoningEffortFromStorage,
+  loadProviderModelsFromStorage,
+  modelReducer,
+  setDefaultReasoningEffort,
+  setAvailableModels,
+  setLoadingStateForProvider,
+  setSelectedModel,
+} from './model-slice';
 import { selectAllProviderStaleFlags, selectAllProviderWarnings } from './model-selectors';
 
 // With nothing user-configured, the first catalog row is the effective default.
@@ -19,10 +25,7 @@ const defaultProviderId = MOCK_PROVIDER_CATALOG.providers[0].id;
 
 // Most cases exercise the slice after catalog hydration (the boot-time
 // contract: the provider-catalog seeder lands before user model picks).
-const initialState = modelReducer(
-  bareInitialState,
-  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-);
+const initialState = modelReducer(bareInitialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
 
 const mockModels: AuggieModel[] = [
   {
@@ -86,11 +89,18 @@ describe('modelReducer', () => {
     });
   });
 
+  it('does not independently apply raw active-provider hydration', () => {
+    const selected = modelReducer(initialState, setActiveProvider('claude-code'));
+    const stale = modelReducer(selected, hydrateActiveProvider('auggie'));
+    expect(stale).toBe(selected);
+    expect(stale.defaultProviderId).toBe('claude-code');
+  });
+
   it('resets a stale mirrored default at catalog hydration', () => {
-    // A pre-hydration mirror (e.g. hydrateActiveProvider from persisted
+    // A pre-hydration mirror (e.g. reconciled persisted provider hydration)
     // settings) naming a provider absent from the newly hydrated catalog is
     // stale — hydration falls back to the first row instead of keeping it.
-    const withStale = modelReducer(bareInitialState, hydrateActiveProvider('removed-provider'));
+    const withStale = modelReducer(bareInitialState, activeProviderReconciled('removed-provider'));
     expect(withStale.defaultProviderId).toBe('removed-provider');
 
     const hydrated = modelReducer(withStale, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
@@ -98,21 +108,21 @@ describe('modelReducer', () => {
   });
 
   it('rejects unknown provider ids mirrored after catalog hydration', () => {
-    // Post-hydration, hydrateActiveProvider/setActiveProvider payloads are
+    // Post-hydration, reconciled/setActiveProvider payloads are
     // validated against the catalog: unknown ids keep the current default so
     // model-id normalization never strips/prefixes against a bogus provider.
-    const fromHydrate = modelReducer(initialState, hydrateActiveProvider('removed-provider'));
+    const fromHydrate = modelReducer(initialState, activeProviderReconciled('removed-provider'));
     expect(fromHydrate.defaultProviderId).toBe(defaultProviderId);
 
     const fromSet = modelReducer(initialState, setActiveProvider('removed-provider'));
     expect(fromSet.defaultProviderId).toBe(defaultProviderId);
 
     // Known ids are still adopted.
-    const known = modelReducer(initialState, hydrateActiveProvider('codex'));
+    const known = modelReducer(initialState, activeProviderReconciled('codex'));
     expect(known.defaultProviderId).toBe('codex');
   });
 
-  it("keeps the first-row fallback when hydrateActiveProvider('') arrives (unset providers.active boot path)", () => {
+  it("keeps the first-row fallback when activeProviderReconciled('') arrives (unset providers.active boot path)", () => {
     // Boot ordering regression: `LiveSettingsClient.getProviderSettings()`
     // returns `activeProviderId: ''` when `providers.active` is unset but
     // `providers.enabled` is present, and the settings seeder dispatches it
@@ -123,7 +133,7 @@ describe('modelReducer', () => {
       initialState,
       loadProviderModelsFromStorage({ [defaultProviderId]: 'gpt5.4' }),
     );
-    const afterEmptyHydrate = modelReducer(withPicks, hydrateActiveProvider(''));
+    const afterEmptyHydrate = modelReducer(withPicks, activeProviderReconciled(''));
     expect(afterEmptyHydrate.defaultProviderId).toBe(defaultProviderId);
     expect(afterEmptyHydrate.providerModels).toEqual({ [defaultProviderId]: 'gpt5.4' });
 
