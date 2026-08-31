@@ -1,6 +1,6 @@
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
 
-interface FileSpecialistWritePayload {
+export interface FileSpecialistWritePayload {
   id: string;
   name: string;
   description: string;

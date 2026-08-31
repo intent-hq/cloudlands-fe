@@ -2431,6 +2431,8 @@
   "chat_settingsProposalActions_unknownError_fallback": "Error de configuración desconocido",
   "chat_settingsProposalActions_applyFailed_label": "Error al aplicar el cambio de configuración",
   "chat_settingsProposalActions_undoFailed_label": "Error al deshacer el cambio de configuración",
+  "chat_proposalLifecycle_applyFailed_label": "Error al aplicar los cambios",
+  "chat_proposalLifecycle_undoFailed_label": "Error al deshacer los cambios",
   "chat_proposalCard_addTitle_placeholder": "Agregar título…",
   "chat_proposalCard_notSet_label": "(sin establecer)",
   "chat_proposalCard_detectingPrBranch_label": "Detectando rama de la PR…",
