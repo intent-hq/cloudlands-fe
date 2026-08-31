@@ -4,6 +4,31 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.119.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.118.0...v2.119.0) (2026-08-31)
+
+
+### 🚀 Features
+
+* consume daemon-published agent lock state (protocol v8.8) ([#1952](https://github.com/intent-hq/cloudlands-fe/issues/1952)) ([10351c6](https://github.com/intent-hq/cloudlands-fe/commit/10351c6c6b3dcad23912d35c346f9e8d3b0048c4))
+* seed context-link split layout on first open of workspaces created elsewhere ([#1933](https://github.com/intent-hq/cloudlands-fe/issues/1933)) ([c50b718](https://github.com/intent-hq/cloudlands-fe/commit/c50b7189f032a26ea386daffd661756fadb3d585))
+* seed split layout with context-link browser tabs on workspace create ([#1930](https://github.com/intent-hq/cloudlands-fe/issues/1930)) ([422d7a5](https://github.com/intent-hq/cloudlands-fe/commit/422d7a51e386ef2430af3eb3f15a62fe23ba0b8f))
+* send contextLinks and PR head/base branch params on workspace.create ([#1927](https://github.com/intent-hq/cloudlands-fe/issues/1927)) ([c7e5c3e](https://github.com/intent-hq/cloudlands-fe/commit/c7e5c3e2975e8ae9847ee8624c176a59776cecae))
+* wire sidebar MCP toggle to daemon per-workspace disable ([#1953](https://github.com/intent-hq/cloudlands-fe/issues/1953)) ([39f9c90](https://github.com/intent-hq/cloudlands-fe/commit/39f9c90e3d79ec6f6d8f37de45270faa9d32ce41))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.30 ([#1958](https://github.com/intent-hq/cloudlands-fe/issues/1958)) ([33f11a1](https://github.com/intent-hq/cloudlands-fe/commit/33f11a114ea25690cc670ad68cf978e0c92cb383))
+* bump intentd sidecar to v0.8.31 ([#1960](https://github.com/intent-hq/cloudlands-fe/issues/1960)) ([39db39a](https://github.com/intent-hq/cloudlands-fe/commit/39db39a8375b2b901931c32443a298916752d6e4))
+* keep New Workspace modal within viewport when issues panel expands ([#1957](https://github.com/intent-hq/cloudlands-fe/issues/1957)) ([2574352](https://github.com/intent-hq/cloudlands-fe/commit/2574352e27597e6239cfa46d8954f113638a3ff2))
+* rebuild unread-notes computation saga ([#1945](https://github.com/intent-hq/cloudlands-fe/issues/1945)) ([7562c2e](https://github.com/intent-hq/cloudlands-fe/commit/7562c2e296e2da78e60790998c8e8db02a4ed915))
+* remove orphaned Changes-tab actions and dead components ([#1940](https://github.com/intent-hq/cloudlands-fe/issues/1940)) ([ecbdf85](https://github.com/intent-hq/cloudlands-fe/commit/ecbdf85f748658fc30557319b4143485c9104fad))
+* restore per-workspace sidebar persistence and remove superseded nav actions ([#1942](https://github.com/intent-hq/cloudlands-fe/issues/1942)) ([ec45cd0](https://github.com/intent-hq/cloudlands-fe/commit/ec45cd0c4faf2833a0f64f0facad59036aae6fa0))
+* restore proposal apply/undo lifecycle sagas and history (silent no-op since saga-infra removal) ([#1947](https://github.com/intent-hq/cloudlands-fe/issues/1947)) ([4f8ae91](https://github.com/intent-hq/cloudlands-fe/commit/4f8ae91389e09d10a6704cb87280d43cc83657a8))
+* rewire terminal-tab and model-refresh dispatches off deleted saga listeners ([#1937](https://github.com/intent-hq/cloudlands-fe/issues/1937)) ([e7a11f7](https://github.com/intent-hq/cloudlands-fe/commit/e7a11f745c36bf4670b67602b139094c552786fb))
+* **store:** remove orphaned saga-trigger actions and wire direct calls ([#1949](https://github.com/intent-hq/cloudlands-fe/issues/1949)) ([c52c81c](https://github.com/intent-hq/cloudlands-fe/commit/c52c81c560e99ba15657072da0bb51bab1087c42))
+* **store:** wire delegateExistingTaskRequested to daemon agent.delegate ([#1951](https://github.com/intent-hq/cloudlands-fe/issues/1951)) ([b55a64e](https://github.com/intent-hq/cloudlands-fe/commit/b55a64ed9d771656fcf5317ddf7283b8f8485270))
+
 ## [2.118.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.3...v2.118.0) (2026-08-31)
 
 
