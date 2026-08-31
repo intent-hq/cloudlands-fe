@@ -139,6 +139,7 @@
     restoreNewWorkspaceDraft,
   } from './initializer/new-workspace-draft';
   import { resolveGitHubPrefillSelection } from './initializer/github-prefill';
+  import { buildContextLinks } from './initializer/context-links';
   import { createRepoCacheWarmer } from './initializer/warm-repo-cache';
   import {
     matchGitHubPrefillRepo,
@@ -585,6 +586,9 @@
   // Track the selected PR's source branch and number (for "Use PR branch" suggestion and auto-linking)
   let selectedPRBranch = $state<string>('');
   let selectedPRNumber = $state<number | null>(null);
+  // The PR's target (base) branch — sent as `baseRef` on create so the
+  // workspace diffs/merges against the PR's merge target (PROTOCOL §5.1)
+  let selectedPRTargetBranch = $state<string>('');
 
   let didApplyHydratedCompactState = $state(false);
   let didApplyHydratedLastSelectedRepo = $state(false);
@@ -1140,6 +1144,11 @@
             if (!selectedPRBranch) {
               selectedPRBranch = metadata.sourceBranch;
             }
+            if (selectedPRBranch === metadata.sourceBranch) {
+              // Re-sync the target even when the source matched an existing
+              // selection — same head, different merge target must not go stale.
+              selectedPRTargetBranch = metadata.targetBranch ?? '';
+            }
             const prNumMatch = prWithBranch.identifier?.match(/#(\d+)$/);
             selectedPRNumber = prNumMatch ? parseInt(prNumMatch[1], 10) : null;
             logger.debug('Restored selectedPRBranch from context mention', {
@@ -1202,6 +1211,7 @@
           });
           if (response?.success && response.data?.sourceBranch) {
             selectedPRBranch = response.data.sourceBranch;
+            selectedPRTargetBranch = response.data.targetBranch ?? '';
             selectedPRNumber = number;
             logger.debug('Fetched and set selectedPRBranch from restored context mention', {
               branch: response.data.sourceBranch,
@@ -1527,6 +1537,7 @@
     branchBehind = 0;
     pullError = null;
     selectedPRBranch = '';
+    selectedPRTargetBranch = '';
   }
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
@@ -1704,12 +1715,13 @@
         isPulling = false;
       }
 
-      // Auto-apply PR branch: if a PR context mention set selectedPRBranch but the user
-      // hasn't manually switched to it, use the PR branch as the base.
-      // This ensures workspace.baseRef matches the PR's source branch for auto-discovery.
-      const effectiveBranch =
-        selectedPRBranch && branch !== selectedPRBranch && !isNewRepo ? selectedPRBranch : branch;
-      const baseBranch = isNewRepo ? 'main' : effectiveBranch;
+      // Auto-apply PR branch: when a PR context mention set selectedPRBranch, the
+      // daemon checks out the PR head as workspace.branch and diffs against the
+      // PR's target branch as baseRef (PROTOCOL §5.1). Send `branch` = PR head and
+      // `baseRef` = PR target when known (omitted → the daemon derives it from the
+      // PR). Non-PR creates keep sending the selected branch as `baseRef` only.
+      const prBranchActive = !!selectedPRBranch && !isNewRepo;
+      const baseBranch = isNewRepo ? 'main' : branch;
 
       // Build environment config if remote setup is selected
       const remoteSetupSnapshot = remoteSetup ? $state.snapshot(remoteSetup) : null;
@@ -2055,7 +2067,12 @@
           ? undefined
           : String(remoteSetupSnapshot?.workspacePath || repoPath),
         githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL of the picked repo
-        baseRef: String(baseBranch),
+        // PR-started workspace: branch = PR head (daemon checks it out), baseRef =
+        // PR target when known (omitted → the daemon derives it from the PR).
+        // Otherwise the selected branch rides as baseRef only (PROTOCOL §5.1).
+        branch: prBranchActive ? selectedPRBranch : undefined,
+        baseRef: prBranchActive ? selectedPRTargetBranch || undefined : String(baseBranch),
+        contextLinks: buildContextLinks(contextMentions),
         setupScript: setupScriptParam,
         environmentConfig,
         isNewRepo: Boolean(isNewRepo),
@@ -2318,11 +2335,13 @@
     // Track the selected PR's source branch and number for auto-linking
     if (metadata.type === 'github' && metadata.metadata?.sourceBranch) {
       selectedPRBranch = metadata.metadata.sourceBranch;
+      selectedPRTargetBranch = metadata.metadata.targetBranch ?? '';
       // Extract PR number from identifier (format: "owner/repo#123")
       const prNumMatch = metadata.identifier?.match(/#(\d+)$/);
       selectedPRNumber = prNumMatch ? parseInt(prNumMatch[1], 10) : null;
     } else {
       selectedPRBranch = '';
+      selectedPRTargetBranch = '';
       selectedPRNumber = null;
     }
 
@@ -2680,8 +2699,13 @@
       // Found a PR with a source branch - extract and set it
       try {
         const metadata = prWithBranch.metadata ? JSON.parse(prWithBranch.metadata) : null;
-        if (metadata?.sourceBranch && metadata.sourceBranch !== selectedPRBranch) {
-          selectedPRBranch = metadata.sourceBranch;
+        if (metadata?.sourceBranch) {
+          if (metadata.sourceBranch !== selectedPRBranch) {
+            selectedPRBranch = metadata.sourceBranch;
+          }
+          // Re-sync the target branch unconditionally: a remaining PR can share
+          // the removed PR's source branch while targeting a different base.
+          selectedPRTargetBranch = metadata.targetBranch ?? '';
         }
         // Always extract PR number so workspace creation can store it for PR discovery
         const prNumMatch = prWithBranch.identifier?.match(/#(\d+)$/);
@@ -2692,21 +2716,29 @@
       return;
     }
 
-    // Check if we still have any GitHub PRs in the content
-    const hasAnyGitHubPR = contextMentions.some(
+    const githubMentions = contextMentions.filter(
       (mention: any) =>
         (mention.itemType === 'github-issue' || mention.itemType === 'github-pr') &&
         mention.provider === 'github',
     );
 
-    if (!hasAnyGitHubPR) {
-      // No GitHub PRs found, clear the selection
+    // Clear the selection when the mention that provided it is gone: a leftover
+    // issue mention must not keep sending the removed PR's head/target branches.
+    const selectionStillPresent =
+      selectedPRNumber !== null
+        ? githubMentions.some((mention: any) =>
+            mention.identifier?.endsWith(`#${selectedPRNumber}`),
+          )
+        : githubMentions.length > 0;
+
+    if (!selectionStillPresent) {
       if (selectedPRBranch) {
         selectedPRBranch = '';
       }
+      selectedPRTargetBranch = '';
       selectedPRNumber = null;
       lastFetchedPRIdentifier = null;
-      return;
+      if (githubMentions.length === 0) return;
     }
 
     // Look for GitHub PRs without sourceBranch and fetch it
@@ -2752,6 +2784,7 @@
           });
           if (response?.success && response.data?.sourceBranch) {
             selectedPRBranch = response.data.sourceBranch;
+            selectedPRTargetBranch = response.data.targetBranch ?? '';
             selectedPRNumber = number;
           }
         } catch (err) {

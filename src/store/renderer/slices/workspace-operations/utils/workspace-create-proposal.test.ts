@@ -133,6 +133,24 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.clonePath).toBeUndefined();
   });
 
+  it('passes contextLinks through from proposal params (PROTOCOL §5.1)', () => {
+    const contextLinks = [
+      {
+        kind: 'pr',
+        url: 'https://github.com/acme/widgets/pull/42',
+        owner: 'acme',
+        repo: 'widgets',
+        number: 42,
+      },
+    ];
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ repositoryPath: '/repo/local', baseRef: 'main', contextLinks }),
+      undefined,
+    );
+
+    expect(request.contextLinks).toEqual(contextLinks);
+  });
+
   it('clears specialist metadata when specialist edit is null', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
