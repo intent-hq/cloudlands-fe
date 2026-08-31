@@ -1,5 +1,9 @@
 import type { Action } from 'svelte/action';
-import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+import {
+  scheduleLayoutRead,
+  scheduleLayoutWrite,
+  type CancelLayoutTask,
+} from '$lib/utils/layout-phases';
 
 export interface ScrollFadeOptions {
   /** Fade size in px at each overflowing edge. Defaults to 24. */
@@ -27,6 +31,7 @@ export const scrollFade: Action<HTMLElement, ScrollFadeOptions | undefined> = (
   let mutationObserver: MutationObserver | undefined;
   let readPending = false;
   let cancelRead: CancelLayoutTask | undefined;
+  let cancelWrite: CancelLayoutTask | undefined;
   let appliedMask: string | undefined;
 
   function update() {
@@ -46,7 +51,14 @@ export const scrollFade: Action<HTMLElement, ScrollFadeOptions | undefined> = (
     // readers batched into the same frame.
     if (mask === appliedMask) return;
     appliedMask = mask;
-    el.style.maskImage = mask;
+    // The style mutation is deferred to the write phase so it cannot dirty
+    // layout ahead of other read tasks batched into the same frame. Repeat
+    // reads in one frame supersede the pending write with the latest mask.
+    cancelWrite?.();
+    cancelWrite = scheduleLayoutWrite(() => {
+      cancelWrite = undefined;
+      el.style.maskImage = mask;
+    });
   }
 
   // Coalesce scroll/resize/mutation bursts into the shared read phase so the
@@ -72,6 +84,8 @@ export const scrollFade: Action<HTMLElement, ScrollFadeOptions | undefined> = (
     mutationObserver = undefined;
     cancelRead?.();
     cancelRead = undefined;
+    cancelWrite?.();
+    cancelWrite = undefined;
     readPending = false;
     appliedMask = undefined;
     el.style.maskImage = '';
