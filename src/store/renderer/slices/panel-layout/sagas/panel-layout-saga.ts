@@ -44,6 +44,11 @@ import {
   selectAllWorkspaceAgents,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
+import {
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+} from '../../workspace/workspace-selectors';
+import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
 import {
   applyNoteCreated,
@@ -106,6 +111,7 @@ import {
   resetLayout,
   restoreHiddenTab,
   resolveNewWorkspaceInitialAgent,
+  seedContextLinkEmptyLayout,
   revealDeferredSpecTab,
   revealHiddenTabAvoidingPanel,
   resizePanelLayoutAtRootDivider,
@@ -180,6 +186,7 @@ const PERSIST_ACTIONS = [
   revealDeferredSpecTab,
   resolveNewWorkspaceInitialAgent,
   reconcileStaleAgentTabs,
+  seedContextLinkEmptyLayout,
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
@@ -414,8 +421,39 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
   const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
-  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, layout.restoreStatus === 'empty');
+  const firstOpen = layout.restoreStatus === 'empty';
+  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, firstOpen);
   if (!agent) return;
+  // First open on this device of a workspace created elsewhere (iOS,
+  // chief-of-staff proposal, sibling workspace): nothing was ever stored
+  // ('empty', not 'invalid' or a restored-but-tabless layout the user
+  // emptied), so a workspace carrying context links gets the same
+  // agent-left / browser-right seed as a local create. Seeding and the
+  // agent-tab open happen together so a pre-agent-snapshot run leaves the
+  // layout untouched and the setAgents retrigger seeds the whole shape.
+  let focusedPanelId = layout.focusedPanelId;
+  if (firstOpen) {
+    const workspace = yield* selectWorkspaceById.effect(wsId);
+    if (!workspace) {
+      // The workspace record may simply not have landed yet (the mount can
+      // race the workspace-list load). Opening the plain agent tab now would
+      // persist a linkless layout and permanently lose the seed, so defer
+      // until either the entity arrives (setWorkspaceEntity) or the list
+      // load for this backend completes (setWorkspaceHasLoaded) — both
+      // retrigger this reconcile. A missing record AFTER the load is a
+      // workspace that genuinely has no entry (e.g. the chief virtual
+      // workspace) and proceeds with no links.
+      const backendId = yield* selectActiveBackendId();
+      const listLoaded = yield* selectWorkspaceListLoadedForBackend.effect(backendId);
+      if (!listLoaded) return;
+    }
+    const contextLinks = workspace?.contextLinks ?? [];
+    if (contextLinks.length > 0) {
+      yield* put(seedContextLinkEmptyLayout(wsId, contextLinks));
+      const seeded = yield* selectPanelLayoutWorkspace.effect(wsId);
+      focusedPanelId = seeded.focusedPanelId;
+    }
+  }
   yield* put(
     openTabInAdjacentOrSplit(
       wsId,
@@ -426,7 +464,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
         workspaceId: wsId,
         closable: true,
       },
-      layout.focusedPanelId ?? undefined,
+      focusedPanelId ?? undefined,
       { force: true },
     ),
   );
@@ -849,6 +887,23 @@ function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): Sag
   yield* call(reconcileEmptyRestoredLayout, workspaceId, agents);
 }
 
+// A first-open reconcile that found no workspace record defers rather than
+// opening a linkless agent tab (see reconcileEmptyRestoredLayout). These two
+// actions are how the record can arrive afterwards; each re-runs the cheap,
+// fully-guarded reconcile so the deferred seed eventually resolves.
+function* reconcileWorkspaceEntityArrived(
+  action: ReturnType<typeof setWorkspaceEntity>,
+): SagaGenerator<void> {
+  const [workspace] = action.payload;
+  yield* call(reconcileEmptyRestoredLayout, String(workspace.id));
+}
+
+function* reconcileWorkspaceListLoaded(): SagaGenerator<void> {
+  for (const wsId of restoredWorkspaceIds) {
+    yield* call(reconcileEmptyRestoredLayout, wsId);
+  }
+}
+
 function* resolvePendingInitialAgent(wsId: string): SagaGenerator<void> {
   const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (!workspace.newWorkspaceLifecycle?.initialAgentPending) return;
@@ -1015,6 +1070,8 @@ export function* panelLayoutSaga(options?: {
   try {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
     yield* takeEvery(setAgents, reconcileAgentsFromSnapshot);
+    yield* takeEvery(setWorkspaceEntity, reconcileWorkspaceEntityArrived);
+    yield* takeEvery(setWorkspaceHasLoaded, reconcileWorkspaceListLoaded);
     yield* takeEvery(
       [applyNoteCreated, applyNoteUpdated, loadWorkspaceNotesSucceeded],
       reconcileSpecFromNoteAction,

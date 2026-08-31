@@ -204,6 +204,25 @@ export const bootstrapNewWorkspaceLayout = createAction(
   }),
 );
 
+/**
+ * Seed the agent-left / browser-right split into an already-mounted workspace
+ * whose restore found no stored layout — a workspace created elsewhere (iOS,
+ * chief-of-staff proposal, sibling workspace) opening on this device for the
+ * first time. Mirrors the context-link seeding of bootstrapNewWorkspaceLayout
+ * without the new-workspace lifecycle.
+ */
+export const seedContextLinkEmptyLayout = createAction(
+  'panelLayout/seedContextLinkEmptyLayout',
+  (wsId: string, contextLinks: ContextLink[]) => ({
+    wsId,
+    agentPanelId: generatePanelId(),
+    browserPanelId: generatePanelId(),
+    contextLinkTabs: contextLinks
+      .slice(0, MAX_SEEDED_CONTEXT_LINK_TABS)
+      .map((link) => ({ link, tabId: generateTabId() })),
+  }),
+);
+
 export const resolveNewWorkspaceInitialAgent = createAction(
   'panelLayout/resolveNewWorkspaceInitialAgent',
   (wsId: string, agentId: string, title: string, timestamp?: number) => ({
@@ -2010,6 +2029,31 @@ panelLayoutReducer.with(resolveNewWorkspaceInitialAgent, (state, { payload }) =>
   const lifecycle = ws.newWorkspaceLifecycle;
   if (!lifecycle?.initialAgentPending) return state;
   return openNewWorkspaceInitialAgent(state, wsId, agentId, title, tabId, timestamp);
+});
+panelLayoutReducer.with(seedContextLinkEmptyLayout, (state, { payload }) => {
+  const { wsId, agentPanelId, browserPanelId, contextLinkTabs } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  // Only a genuinely empty workspace gets seeded: a fresh-create lifecycle,
+  // any visible tab, or any hidden tab means a layout already exists (or is
+  // being bootstrapped) and must win.
+  if (ws.newWorkspaceLifecycle) return state;
+  if (Object.values(ws.panels).some((panel) => panel.tabs.length > 0)) return state;
+  if (ws.hiddenTabs.ids.length > 0) return state;
+  const seed = buildContextLinkBrowserSeed(wsId, agentPanelId, browserPanelId, contextLinkTabs);
+  if (!seed) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    root: seed.root,
+    panels: seed.panels,
+    focusedPanelId: agentPanelId,
+    columnCount: 2 as PanelColumnCount,
+    columnCountInitialized: true,
+    ...resolveIntrinsicPanelCanvasWidth(
+      DEFAULT_CHAT_PANEL_WIDTH + DEFAULT_BROWSER_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
+    ),
+    pendingFocusTabId: null,
+    pendingPanelReveal: null,
+  });
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
   const ws = getWorkspaceState(state, wsId);

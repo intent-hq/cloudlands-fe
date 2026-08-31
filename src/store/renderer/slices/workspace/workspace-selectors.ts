@@ -36,6 +36,19 @@ export const selectWorkspaceHasLoaded = store.createSelector((state) => {
   return state.workspace.hasLoaded;
 });
 
+/**
+ * True once a workspace list load has completed for the given backend.
+ * `hasLoaded` alone is global and survives a backend switch, so consumers
+ * acting on the loaded list (e.g. first-open layout seeding) must also
+ * require the `loadedBackendId` stamp to match.
+ */
+export const selectWorkspaceListLoadedForBackend = store.createSelector<
+  [backendId: string],
+  boolean
+>((state, backendId) => {
+  return state.workspace.hasLoaded && state.workspace.loadedBackendId === backendId;
+});
+
 export const selectWorkspaceIsCreating = store.createSelector((state) => {
   return state.workspace.isCreating;
 });
