@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { flushSync } from 'svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import TipTapEditor from '../TipTapEditor.svelte';
+import TipTapEditorDeactivateHarness from './TipTapEditorDeactivateHarness.svelte';
 
 afterEach(() => cleanup());
 
@@ -47,5 +49,45 @@ describe('TipTapEditor programmatic content updates', () => {
     await view.rerender({ value: 'external update' });
 
     expect(view.container.querySelector('.ProseMirror')?.textContent).toBe('external update');
+  });
+});
+
+describe('TipTapEditor synchronous blur reentry', () => {
+  it('survives a blur fired from inside a reactive flush and closes the slash menu', async () => {
+    const view = render(TipTapEditorDeactivateHarness, {
+      skills: [{ name: 'audit', description: 'Review security', location: '/skills/audit' }],
+      releaseFocus: () => {
+        const active = document.activeElement as HTMLElement | null;
+        if (active?.closest('.ProseMirror')) active.blur();
+      },
+    });
+    const editor = await waitFor(() => {
+      const element = view.container.querySelector('.ProseMirror') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    editor.focus();
+    view.component.insertText('/');
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+
+    // Deactivating the wrapper blurs the editor synchronously from inside the
+    // reactive flush (see harness); without untrack() in onBlur this throws
+    // state_unsafe_mutation. The throw escapes through the DOM blur listener,
+    // so capture it via the window error event rather than expect(...).toThrow.
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => {
+      errors.push(event.error ?? event.message);
+      event.preventDefault();
+    };
+    window.addEventListener('error', onError);
+    try {
+      flushSync(() => view.component.deactivate());
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+
+    expect(errors).toEqual([]);
+    expect(document.activeElement).not.toBe(editor);
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 });
