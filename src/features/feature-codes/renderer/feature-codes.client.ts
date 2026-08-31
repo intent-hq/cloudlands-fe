@@ -14,14 +14,15 @@ export type ActivateCodeResult = {
 
 export const featureCodesClient = {
   /**
-   * Fetch the currently active feature IDs
+   * Fetch the currently active feature IDs (null when the fetch failed, so
+   * callers can keep existing state instead of clobbering it with []).
    */
-  async getActiveFeatures(): Promise<string[]> {
+  async getActiveFeatures(): Promise<string[] | null> {
     try {
       const result = await invoke<{ features?: string[] }>(FEATURE_CODES_CHANNELS.GET_ACTIVE);
       return Array.isArray(result?.features) ? result.features : [];
     } catch {
-      return [];
+      return null;
     }
   },
 

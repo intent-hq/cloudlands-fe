@@ -230,11 +230,17 @@
     ]);
     if (!diffResult.ok && !gitResult.ok) return;
 
+    // On a partial failure, keep the existing stored value for the failed
+    // side so stale summaries stay visible instead of being erased.
     appStore.dispatch(
       loadWorkspaceSummariesSucceeded(
         workspaceId,
-        diffResult.ok ? (diffResult.data ?? null) : null,
-        gitResult.ok ? (gitResult.data ?? null) : null,
+        diffResult.ok
+          ? (diffResult.data ?? null)
+          : selectWorkspaceDiffSummary.select(appStore.state, workspaceId),
+        gitResult.ok
+          ? (gitResult.data ?? null)
+          : selectWorkspaceGitSummary.select(appStore.state, workspaceId),
       ),
     );
   }

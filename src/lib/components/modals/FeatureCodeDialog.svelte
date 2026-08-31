@@ -75,7 +75,7 @@
         needsRestart = true;
       }
       // Refresh the renderer-side store so UI gates update immediately
-      appStore.dispatch(setActiveFeatures(await featureCodesClient.getActiveFeatures()));
+      await refreshActiveFeatures();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (
@@ -112,22 +112,29 @@
       clearFeedbackTimeout();
       feedback = null;
       inputValue = '';
-      featureCodesClient.getActiveFeatures().then((features) => {
-        appStore.dispatch(setActiveFeatures(features));
-      });
+      void refreshActiveFeatures();
       requestAnimationFrame(() => {
         inputRef?.focus();
       });
     }
   });
 
+  /** Re-fetch active features; keep existing store state when the fetch fails. */
+  async function refreshActiveFeatures() {
+    const features = await featureCodesClient.getActiveFeatures();
+    if (features !== null) {
+      appStore.dispatch(setActiveFeatures(features));
+    }
+  }
+
   async function restartApp() {
     await featureCodesClient.restartApp();
   }
 
   async function removeFeature(featureId: string) {
-    await featureCodesClient.deactivateFeature(featureId);
-    appStore.dispatch(setActiveFeatures(await featureCodesClient.getActiveFeatures()));
+    const result = await featureCodesClient.deactivateFeature(featureId);
+    await refreshActiveFeatures();
+    if (!result?.success) return;
     needsRestart = true;
     feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-yellow-400' };
     scheduleFeedbackClear();
