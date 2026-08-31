@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.117.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.1...v2.117.2) (2026-08-31)
+
+
+### ⚡ Performance
+
+* reduce hover card and tooltip positioning cost ([#1936](https://github.com/intent-hq/cloudlands-fe/issues/1936)) ([48b7a21](https://github.com/intent-hq/cloudlands-fe/commit/48b7a21b77d46ab8a36be855660aff1fc4983b01))
+
 ## [2.117.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.0...v2.117.1) (2026-08-31)
 
 
