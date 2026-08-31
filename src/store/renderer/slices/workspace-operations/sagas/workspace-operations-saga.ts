@@ -15,7 +15,7 @@ import {
 
 import { invoke } from '$lib/electron-bridge';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
-import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+import { withToastCountdown } from '$lib/components/ui/toast';
 import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';

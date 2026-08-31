@@ -58,7 +58,7 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { Button } from '$lib/components/ui/button';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';

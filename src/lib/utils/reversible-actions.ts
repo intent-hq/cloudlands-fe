@@ -1,7 +1,7 @@
 import { toast } from 'svelte-sonner';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+import { withToastCountdown } from '$lib/components/ui/toast';
 
 const logger = new Logger('ReversibleActions');
 

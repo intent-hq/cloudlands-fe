@@ -4,7 +4,7 @@
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';

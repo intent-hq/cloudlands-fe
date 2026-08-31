@@ -61,7 +61,7 @@ import {
   agentScopedProposalKey,
   proposalResolutionReconciled,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
-import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast/toast-countdown';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast';
 import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';

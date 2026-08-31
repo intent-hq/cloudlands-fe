@@ -28,7 +28,7 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { Button } from '$lib/components/ui/button';
-  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 

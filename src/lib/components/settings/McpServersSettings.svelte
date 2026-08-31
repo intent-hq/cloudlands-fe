@@ -20,8 +20,7 @@
   import { slide } from 'svelte/transition';
   import { faCheck, faCopy, faPlus, faRotateRight } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from '$lib/components/ui/toast';
-  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+  import { toast, withToastCountdown } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import Header from '../ui/Header.svelte';

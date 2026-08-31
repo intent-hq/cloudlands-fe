@@ -17,7 +17,7 @@ import {
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { appClient } from '$lib/client';
-import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+import { withToastCountdown } from '$lib/components/ui/toast';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';

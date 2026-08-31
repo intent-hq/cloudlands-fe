@@ -54,7 +54,7 @@
 
   import { deleteNote, createNote, updateNoteTitle } from '$features/notes/notes-write-service';
   import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';

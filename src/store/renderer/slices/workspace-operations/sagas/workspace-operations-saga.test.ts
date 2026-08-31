@@ -62,7 +62,7 @@ import {
   requestUnarchiveWorkspace,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
-import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast/toast-countdown';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast';
 import {
   WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
