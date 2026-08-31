@@ -141,4 +141,55 @@ describe('HoverCard positioning', () => {
     expect(computedStyleSpy).not.toHaveBeenCalled();
     computedStyleSpy.mockRestore();
   });
+
+  it('keeps re-measuring on scroll after the cached trigger is re-created', async () => {
+    const trigger = document.createElement('button');
+    trigger.setAttribute('style', `anchor-name: ${TEST_ANCHOR}`);
+    document.body.appendChild(trigger);
+
+    render(HoverCard, { props: { anchor: TEST_ANCHOR } });
+    await tick();
+    await tick();
+    flushFrames();
+
+    // Simulate the trigger node being re-created while the card is open.
+    trigger.remove();
+    const newTrigger = document.createElement('button');
+    newTrigger.setAttribute('style', `anchor-name: ${TEST_ANCHOR}`);
+    document.body.appendChild(newTrigger);
+    const rectSpy = vi.spyOn(newTrigger, 'getBoundingClientRect');
+
+    // A viewport scroll must not be suppressed by the stale (disconnected)
+    // cache entry; the re-scan resolves the new trigger and measures it.
+    window.dispatchEvent(new Event('scroll'));
+    flushFrames();
+
+    expect(rectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-resolves when the cached element is re-anchored to a different name', async () => {
+    const trigger = document.createElement('button');
+    trigger.setAttribute('style', `anchor-name: ${TEST_ANCHOR}`);
+    document.body.appendChild(trigger);
+
+    render(HoverCard, { props: { anchor: TEST_ANCHOR } });
+    await tick();
+    await tick();
+    flushFrames();
+
+    // The node stays connected but is reused for a different entity: its
+    // anchor-name is rewritten, and a new element now carries the anchor.
+    trigger.setAttribute('style', 'anchor-name: --other-anchor');
+    const newTrigger = document.createElement('button');
+    newTrigger.setAttribute('style', `anchor-name: ${TEST_ANCHOR}`);
+    document.body.appendChild(newTrigger);
+    const staleRectSpy = vi.spyOn(trigger, 'getBoundingClientRect');
+    const rectSpy = vi.spyOn(newTrigger, 'getBoundingClientRect');
+
+    window.dispatchEvent(new Event('scroll'));
+    flushFrames();
+
+    expect(staleRectSpy).not.toHaveBeenCalled();
+    expect(rectSpy).toHaveBeenCalledTimes(1);
+  });
 });

@@ -49,9 +49,21 @@
   let cachedTrigger: HTMLElement | null = null;
   let cachedTriggerAnchor: string | null = null;
 
+  function isCachedTriggerValid() {
+    if (!cachedTrigger?.isConnected || cachedTriggerAnchor !== anchor) return false;
+    // The node can stay in the DOM while its anchor-name is rewritten to a
+    // different anchor (DOM node reuse across per-entity anchors). Recheck the
+    // inline style first, then one computed-style read — still far cheaper
+    // than re-scanning every anchored element.
+    return (
+      cachedTrigger.style.getPropertyValue('anchor-name').includes(anchor) ||
+      getComputedStyle(cachedTrigger).getPropertyValue('anchor-name').includes(anchor)
+    );
+  }
+
   function findAnchorElement() {
     if (anchorElement) return anchorElement;
-    if (cachedTrigger?.isConnected && cachedTriggerAnchor === anchor) return cachedTrigger;
+    if (isCachedTriggerValid()) return cachedTrigger;
     cachedTrigger =
       Array.from(document.querySelectorAll<HTMLElement>('[style*="anchor-name"]')).find((el) => {
         const inlineAnchor = el.style.getPropertyValue('anchor-name');
@@ -154,8 +166,10 @@
 
   function handleScroll(event: Event) {
     // The capture-phase listener sees every scroll in the app; only a scroll
-    // of an ancestor of the trigger can move the card.
-    const trigger = anchorElement ?? cachedTrigger;
+    // of an ancestor of the trigger can move the card. A stale cache entry
+    // (disconnected or re-anchored node) would fail the contains() check for
+    // every scroll source, so fall through and re-measure conservatively.
+    const trigger = anchorElement ?? (isCachedTriggerValid() ? cachedTrigger : null);
     if (trigger && event.target instanceof Node && !event.target.contains(trigger)) return;
     requestMeasuredPositionUpdate();
   }
