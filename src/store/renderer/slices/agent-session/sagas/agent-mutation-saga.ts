@@ -85,13 +85,16 @@ async function showUndoToast(wsId: string, agentId: string, agentName?: string):
       agentName
         ? m.agent_mutation_deletedAgent_message({ name: agentName })
         : m.agent_mutation_deletedAgentGeneric_message(),
-      withToastCountdown({
-        duration: UNDO_DURATION_MS,
-        action: {
-          label: m.agent_mutation_undo_label(),
-          onClick: () => store.dispatch(undoAgentDeletionRequested(wsId, agentId)),
+      withToastCountdown(
+        {
+          duration: UNDO_DURATION_MS,
+          action: {
+            label: m.agent_mutation_undo_label(),
+            onClick: () => store.dispatch(undoAgentDeletionRequested(wsId, agentId)),
+          },
         },
-      }),
+        { pauseOnHover: false },
+      ),
     );
   } catch (error) {
     logger.error('Failed to show agent deletion undo toast', error);

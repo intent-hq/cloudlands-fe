@@ -196,10 +196,13 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
 
     toast.warning(
       m.workspace_ops_deleted_toast({ title: workspace.title || m.workspace_ops_space_fallback() }),
-      withToastCountdown({
-        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-        action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-      }),
+      withToastCountdown(
+        {
+          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+        },
+        { pauseOnHover: false },
+      ),
     );
     const outcome = yield* race({
       undo: take(undo),
@@ -328,10 +331,13 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
       m.workspace_ops_archived_toast({
         title: workspace?.title || m.workspace_ops_space_fallback(),
       }),
-      withToastCountdown({
-        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-        action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-      }),
+      withToastCountdown(
+        {
+          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+        },
+        { pauseOnHover: false },
+      ),
     );
   } catch (error) {
     logger.error('workspace.archive failed', { workspaceId, error });
@@ -426,10 +432,13 @@ function* bulkArchive(): SagaGenerator<void> {
         : m.workspace_ops_archivedCount_many({ count: archivedIds.length });
     toast.warning(
       message,
-      withToastCountdown({
-        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-        action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-      }),
+      withToastCountdown(
+        {
+          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+        },
+        { pauseOnHover: false },
+      ),
     );
   }
   if (failCount > 0) {

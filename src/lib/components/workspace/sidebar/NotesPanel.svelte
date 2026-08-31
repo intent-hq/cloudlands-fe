@@ -214,24 +214,27 @@
           closeContextMenu();
 
           toast.warning(
-            `Deleted "${noteTitle}"`,
-            withToastCountdown({
-              duration: 15000,
-              action: {
-                label: 'Undo',
-                onClick: () => {
-                  // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-                  void createNote(workspaceId, {
-                    title: savedNote.title,
-                    content: savedNote.content,
-                    contentType: savedNote.contentType,
-                    tags: savedNote.tags,
-                    parentId: savedNote.parentId,
-                    visibility: savedNote.visibility,
-                  });
+            m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
+            withToastCountdown(
+              {
+                duration: 15000,
+                action: {
+                  label: m.ui_workspaceActions_undo_label(),
+                  onClick: () => {
+                    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
+                    void createNote(workspaceId, {
+                      title: savedNote.title,
+                      content: savedNote.content,
+                      contentType: savedNote.contentType,
+                      tags: savedNote.tags,
+                      parentId: savedNote.parentId,
+                      visibility: savedNote.visibility,
+                    });
+                  },
                 },
               },
-            }),
+              { pauseOnHover: false },
+            ),
           );
         },
       });

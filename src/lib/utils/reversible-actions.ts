@@ -43,28 +43,31 @@ class ReversibleActionManager {
         if (onUndo) {
           const toastId = toast.warning(
             config.message,
-            withToastCountdown({
-              duration: duration * 1000,
-              action: {
-                label: m.ui_reversibleActions_undo_label(),
-                onClick: async () => {
-                  try {
-                    undoExecuted = true;
-                    await onUndo();
-                    this.completedActions.delete(actionId);
-                    // Just dismiss the toast, don't show a new one
-                    toast.dismiss(toastId);
-                  } catch (error) {
-                    logger.error(
-                      // i18n-ignore (developer log message)
-                      'Failed to undo action:',
-                      error instanceof Error ? error : new Error(String(error)),
-                    );
-                    toast.error(m.ui_reversibleActions_undoFailed_error());
-                  }
+            withToastCountdown(
+              {
+                duration: duration * 1000,
+                action: {
+                  label: m.ui_reversibleActions_undo_label(),
+                  onClick: async () => {
+                    try {
+                      undoExecuted = true;
+                      await onUndo();
+                      this.completedActions.delete(actionId);
+                      // Just dismiss the toast, don't show a new one
+                      toast.dismiss(toastId);
+                    } catch (error) {
+                      logger.error(
+                        // i18n-ignore (developer log message)
+                        'Failed to undo action:',
+                        error instanceof Error ? error : new Error(String(error)),
+                      );
+                      toast.error(m.ui_reversibleActions_undoFailed_error());
+                    }
+                  },
                 },
               },
-            }),
+              { pauseOnHover: false },
+            ),
           );
         } else {
           toast.success(config.message);

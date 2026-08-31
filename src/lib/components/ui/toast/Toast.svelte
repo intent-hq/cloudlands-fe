@@ -248,17 +248,25 @@
     animation: toast-countdown-shrink var(--toast-countdown-duration, 10000ms) linear forwards;
   }
 
-  /* Undo/warning toasts tint the bar with the same accent as their border. */
-  :global([data-sonner-toast][data-type='warning'].toast-countdown) {
+  /* Undo/warning toasts tint the bar with the same accent as their border.
+     The [data-sonner-toaster] prefix ties specificity (0,4,0) with the base
+     rule above (whose :not() argument counts); later source order wins. */
+  :global([data-sonner-toaster] [data-sonner-toast][data-type='warning'].toast-countdown) {
     --toast-countdown-color: hsl(var(--toast-warning-accent) / 0.6);
   }
 
-  /* Sonner pauses its dismiss timer while the toaster is hovered or holds
-     focus (its expanded/interacting pause states are driven by the <ol>'s
-     mouseenter/focus events) — pause the bar in sync so it never empties
-     while the toast lingers. */
-  :global([data-sonner-toaster]:hover [data-sonner-toast].toast-countdown),
-  :global([data-sonner-toaster]:focus-within [data-sonner-toast].toast-countdown) {
+  /* Sonner pauses its dismiss timer while the toaster is hovered (its
+     expanded/interacting pause states are driven by the <ol>'s
+     mouseenter/mousemove and pointer handlers; focus alone never pauses the
+     timer, so no :focus-within here) — pause the bar in sync so it never
+     empties while the toast lingers. Toasts whose countdown mirrors an
+     independent deadline that keeps running during sonner's pause opt out
+     via withToastCountdown's pauseOnHover: false (the
+     .toast-countdown-no-hover-pause class). */
+  :global(
+    [data-sonner-toaster]:hover
+      [data-sonner-toast].toast-countdown:not(.toast-countdown-no-hover-pause)
+  ) {
     animation-play-state: paused;
   }
 

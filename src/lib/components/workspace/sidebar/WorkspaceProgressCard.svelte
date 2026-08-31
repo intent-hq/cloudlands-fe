@@ -379,18 +379,21 @@
       appStore.dispatch(loadWorkspacesRequested());
       toast.warning(
         m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
-        withToastCountdown({
-          duration: 15000,
-          action: {
-            label: m.workspace_multiSelectSidebar_undo_label(),
-            onClick: async () => {
-              const undoResult = await workspaceClient.unarchive($workspace.id);
-              if (undoResult.ok) {
-                appStore.dispatch(loadWorkspacesRequested());
-              }
+        withToastCountdown(
+          {
+            duration: 15000,
+            action: {
+              label: m.workspace_multiSelectSidebar_undo_label(),
+              onClick: async () => {
+                const undoResult = await workspaceClient.unarchive($workspace.id);
+                if (undoResult.ok) {
+                  appStore.dispatch(loadWorkspacesRequested());
+                }
+              },
             },
           },
-        }),
+          { pauseOnHover: false },
+        ),
       );
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());

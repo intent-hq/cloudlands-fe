@@ -176,16 +176,19 @@
     // Show toast with undo action
     toast.warning(
       m.settings_mcpServers_deletedToast({ name }),
-      withToastCountdown({
-        action: {
-          label: m.settings_mcpServers_undo(),
-          onClick: () => {
-            appStore.dispatch(addServer(serverConfig));
-            loadSettingsFile();
+      withToastCountdown(
+        {
+          action: {
+            label: m.settings_mcpServers_undo(),
+            onClick: () => {
+              appStore.dispatch(addServer(serverConfig));
+              loadSettingsFile();
+            },
           },
+          duration: 5000,
         },
-        duration: 5000,
-      }),
+        { pauseOnHover: false },
+      ),
     );
   }
 

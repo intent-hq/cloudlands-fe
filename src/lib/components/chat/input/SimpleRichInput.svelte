@@ -836,13 +836,26 @@
         enhancementUndoValue = originalPrompt;
         enhancedPromptValue = result.enhanced;
         updateValue(result.enhanced);
+        // Capture THIS enhancement's undo state in the closure: a lingering
+        // toast's Undo must not revert a newer enhancement (or a cancelled
+        // one) based on whatever the component state holds at click time.
+        const undoValueForToast = originalPrompt;
+        const enhancedValueForToast = result.enhanced;
         toast.success(
           m.chat_richInput_promptEnhanced_toast(),
           withToastCountdown({
             duration: 10000,
             action: {
               label: m.chat_richInput_undoEnhance_label(),
-              onClick: handleUndoEnhance,
+              onClick: () => {
+                if (
+                  enhancementUndoValue !== undoValueForToast ||
+                  enhancedPromptValue !== enhancedValueForToast
+                ) {
+                  return;
+                }
+                handleUndoEnhance();
+              },
             },
           }),
         );

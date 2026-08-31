@@ -836,6 +836,34 @@ describe('connectionsSaga', () => {
       await run.task.toPromise();
     });
 
+    it('keeps the sticky toast through inconclusive re-broadcasts while connected', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Still connected, but the broadcast lost its verdict inputs (e.g. a
+      // refresh raced the fire-and-forget captures): no daemonVersion, no
+      // pinnedVersion, no updateSupported. None of these may dismiss.
+      changed([LOCAL, { ...BEHIND, daemonVersion: undefined }], [BEHIND.id], '0.10.0');
+      await settle();
+      changed([LOCAL, BEHIND], [BEHIND.id], undefined);
+      await settle();
+      changed([LOCAL, { ...BEHIND, updateSupported: undefined }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      // A later conclusive verdict (back at the pin) still dismisses.
+      changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('never dismisses when no toast was raised', async () => {
       const run = start();
       await settle();
