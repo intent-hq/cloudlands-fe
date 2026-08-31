@@ -560,7 +560,7 @@
           <div class="breakdown-grid grid grid-cols-2 border-b border-border">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 py-3"
+                class="breakdown-section min-w-0 px-4 pb-4 pt-3"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -571,11 +571,11 @@
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
-                        class="min-w-0 truncate text-sm font-medium text-foreground"
+                        class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
                         title={selectedAgentRow.title}>{selectedAgentRow.label}</span
                       >
                       <span
-                        class="ml-auto w-14 shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
+                        class="shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
                       >
                         <AnimatedNumber
                           value={share(selectedAgentRow.tokens, agentTokenTotal)}
@@ -635,7 +635,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 py-3"
+                class="breakdown-section min-w-0 px-4 pb-4 pt-3"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
@@ -646,11 +646,11 @@
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
-                        class="min-w-0 truncate text-sm font-medium text-foreground"
+                        class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
                         title={selectedModelRow.title}>{selectedModelRow.label}</span
                       >
                       <span
-                        class="ml-auto w-14 shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
+                        class="shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
                       >
                         <AnimatedNumber
                           value={share(selectedModelRow.tokens, modelTokenTotal)}
@@ -731,12 +731,10 @@
             </span>
           </span>
           <div
-            class="token-summary mb-2 flex min-w-0 items-center justify-between gap-3 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+            class="token-summary mb-2 flex min-w-0 items-center justify-between gap-3 text-xs font-normal tracking-normal text-muted-foreground"
           >
             <span>{m.workspace_tokenUsage_title()}</span>
-            <span
-              class="shrink-0 text-right text-sm font-medium normal-case tracking-normal tabular-nums text-foreground"
-            >
+            <span class="shrink-0 text-right text-sm font-normal tabular-nums text-foreground">
               <AnimatedNumber
                 value={previewProcessedTokens}
                 format={compactWholeNumber}
@@ -762,7 +760,7 @@
             </div>
           {/if}
           <div
-            class="composition-header min-w-0 border-b border-border pb-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+            class="composition-header min-w-0 border-b border-border pb-1 text-xs font-normal tracking-normal text-muted-foreground"
           >
             <span>{m.workspace_tokenUsage_metric_label()}</span>
             <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
@@ -782,7 +780,7 @@
                   <span class="min-w-0 truncate">{row.label}</span>
                 </dt>
                 <dd
-                  class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
+                  class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
                 >
                   <AnimatedNumber
                     value={row.tokens}
@@ -805,12 +803,14 @@
               {#if row.id === 'input' && crossFilterAvailable}
                 <div class="composition-row message-composition-row min-w-0 py-1">
                   <dt
-                    class="composition-metric min-w-0 truncate text-sm font-normal text-foreground"
+                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
                   >
-                    {m.workspace_tokenUsage_humanMessages_label()}
+                    <span class="message-composition-label min-w-0 truncate">
+                      {m.workspace_tokenUsage_humanMessages_label()}
+                    </span>
                   </dt>
                   <dd
-                    class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
+                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
                   >
                     <AnimatedNumber
                       value={previewHumanMessages ?? 0}
@@ -823,12 +823,14 @@
                 </div>
                 <div class="composition-row message-composition-row min-w-0 py-1">
                   <dt
-                    class="composition-metric min-w-0 truncate text-sm font-normal text-foreground"
+                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
                   >
-                    {m.workspace_tokenUsage_agentMessages_label()}
+                    <span class="message-composition-label min-w-0 truncate">
+                      {m.workspace_tokenUsage_agentMessages_label()}
+                    </span>
                   </dt>
                   <dd
-                    class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
+                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
                   >
                     <AnimatedNumber
                       value={previewAgentMessages ?? 0}
@@ -850,7 +852,7 @@
             data-testid="token-usage-total-cost"
           >
             <span class="text-muted-foreground">{m.workspace_tokenUsage_totalCost_label()}</span>
-            <span class="font-medium tabular-nums text-foreground">{previewCost}</span>
+            <span class="text-right font-normal tabular-nums text-foreground">{previewCost}</span>
           </div>
         {/if}
       </section>
@@ -887,6 +889,10 @@
 
   .composition-context {
     grid-area: context;
+  }
+
+  .message-composition-metric {
+    padding-inline-start: calc(0.375rem + 0.5rem + 1rem);
   }
 
   .breakdown-stack-item {

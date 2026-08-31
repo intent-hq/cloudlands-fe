@@ -649,6 +649,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     breakdownDivider,
     compositionAlignment,
     compositionHeaderAlignment,
+    messageAlignment,
     breakdownAlignment,
     compositionBar,
     visibleTextWeights,
@@ -764,14 +765,37 @@ test('renders the full reference table as a wide overlay from the real workspace
     compositionHeader.evaluate((header) =>
       Array.from(header.children).map((cell) => cell.getBoundingClientRect().toJSON()),
     ),
+    details.evaluate((element) => {
+      const inputKey = element.querySelector('.composition-key[data-metric="input"]')!;
+      const inputRow = inputKey.closest('.token-composition-row')!;
+      const inputLabel = inputRow.querySelector('.composition-metric > span:last-child')!;
+      return {
+        inputLabelLeft: inputLabel.getBoundingClientRect().left,
+        rows: Array.from(element.querySelectorAll('.message-composition-row')).map((row) => {
+          const label = row.querySelector('.message-composition-label')!;
+          const value = row.querySelector('.composition-value')!;
+          const context = row.querySelector('.composition-context')!;
+          return {
+            labelLeft: label.getBoundingClientRect().left,
+            value: value.getBoundingClientRect().toJSON(),
+            valueFontWeight: getComputedStyle(value).fontWeight,
+            contextText: context.textContent?.trim(),
+          };
+        }),
+      };
+    }),
     details.locator('.breakdown-section').evaluateAll((sections) =>
       sections.map((section) => {
         const selection = section.querySelector('.navigator-selection')!;
         return {
           section: section.getBoundingClientRect().toJSON(),
           selection: selection.getBoundingClientRect().toJSON(),
+          title: selection.firstElementChild!.getBoundingClientRect().toJSON(),
           bar: section.querySelector('.breakdown-stack')!.getBoundingClientRect().toJSON(),
           percentage: selection.lastElementChild!.getBoundingClientRect().toJSON(),
+          titleFlexGrow: getComputedStyle(selection.firstElementChild!).flexGrow,
+          titleMinWidth: getComputedStyle(selection.firstElementChild!).minWidth,
+          percentFlexShrink: getComputedStyle(selection.lastElementChild!).flexShrink,
           percentTextAlign: getComputedStyle(selection.lastElementChild!).textAlign,
           percentColor: getComputedStyle(selection.lastElementChild!).color,
           percentFontWeight: getComputedStyle(selection.lastElementChild!).fontWeight,
@@ -834,6 +858,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         metricLabel: style('.composition-metric'),
         metricValue: style('.composition-value'),
         metricShare: style('.composition-context'),
+        totalCost: style('[data-testid="token-usage-total-cost"] > :last-child'),
       };
     }),
   ]);
@@ -852,7 +877,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
   expect(detailsBox!.height).toBeGreaterThanOrEqual(220);
-  expect(detailsBox!.height).toBeLessThanOrEqual(360);
+  expect(detailsBox!.height).toBeLessThanOrEqual(400);
   expect(agentBox!.height).toBeGreaterThanOrEqual(40);
   expect(modelBox!.height).toBeGreaterThanOrEqual(40);
   expect(breakdownDivider.content).toBe('none');
@@ -875,11 +900,27 @@ test('renders the full reference table as a wide overlay from the real workspace
   ).toBeLessThanOrEqual(1);
   expect(
     breakdownAlignment.every(
-      ({ section, selection, bar, percentage, percentTextAlign, percentFontWeight }) =>
+      ({
+        section,
+        selection,
+        title,
+        bar,
+        percentage,
+        titleFlexGrow,
+        titleMinWidth,
+        percentFlexShrink,
+        percentTextAlign,
+        percentFontWeight,
+      }) =>
         Math.abs(bar.left - selection.left) <= 1 &&
         bar.top >= selection.top + selection.height + 5 &&
+        Math.abs(section.bottom - bar.bottom - 16) <= 0.01 &&
         bar.right <= section.right + 1 &&
+        Math.abs(percentage.left - title.right - 6) <= 0.01 &&
         Math.abs(percentage.right - bar.right) <= 1 &&
+        titleFlexGrow === '1' &&
+        titleMinWidth === '0px' &&
+        percentFlexShrink === '0' &&
         percentTextAlign === 'right' &&
         percentFontWeight === '400',
     ),
@@ -955,18 +996,22 @@ test('renders the full reference table as a wide overlay from the real workspace
   ).toBeLessThanOrEqual(1);
   expect(visibleTextWeights.length).toBeGreaterThan(0);
   expect(new Set(visibleTextWeights.map(({ weight }) => weight))).toEqual(new Set(['400', '500']));
+  expect(visibleTextWeights.filter(({ weight }) => weight === '500')).toHaveLength(2);
   expect(typeHierarchy).toMatchObject({
     navigatorLabel: { fontSize: '14px', fontWeight: '500' },
     navigatorShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
-    summaryLabel: { fontSize: '13px', fontWeight: '500', textTransform: 'uppercase' },
-    summaryTotal: { fontSize: '14px', fontWeight: '500', textAlign: 'right' },
-    tableHeader: { fontSize: '13px', fontWeight: '500', textTransform: 'uppercase' },
+    summaryLabel: { fontSize: '13px', fontWeight: '400', textTransform: 'none' },
+    summaryTotal: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
+    tableHeader: { fontSize: '13px', fontWeight: '400', textTransform: 'none' },
     metricLabel: { fontSize: '14px', fontWeight: '400' },
-    metricValue: { fontSize: '14px', fontWeight: '500', textAlign: 'right' },
+    metricValue: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
     metricShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
+    totalCost: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
   });
-  expect(Number.parseFloat(typeHierarchy.summaryLabel.letterSpacing)).toBeGreaterThan(0);
-  expect(Number.parseFloat(typeHierarchy.tableHeader.letterSpacing)).toBeGreaterThan(0);
+  expect(typeHierarchy.summaryLabel.letterSpacing).toBe('normal');
+  expect(typeHierarchy.tableHeader.letterSpacing).toBe('normal');
+  expect(typeHierarchy.summaryLabel.color).toBe(typeHierarchy.metricShare.color);
+  expect(typeHierarchy.tableHeader.color).toBe(typeHierarchy.metricShare.color);
   expect(typeHierarchy.navigatorShare.color).toBe(typeHierarchy.metricShare.color);
   expect(typeHierarchy.metricValue.color).not.toBe(typeHierarchy.metricShare.color);
   expect(compositionHeaderAlignment).toHaveLength(3);
@@ -1043,7 +1088,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         valueAlign === 'right' &&
         contextAlign === 'right' &&
         valueColor !== contextColor &&
-        valueFontWeight === '500' &&
+        valueFontWeight === '400' &&
         contextFontWeight === '400' &&
         metric.x < value.x &&
         value.x < context.x &&
@@ -1055,6 +1100,75 @@ test('renders the full reference table as a wide overlay from the real workspace
   const contextRightEdges = desktopRows.map(({ context }) => context.x + context.width);
   expect(Math.max(...valueRightEdges) - Math.min(...valueRightEdges)).toBeLessThanOrEqual(1);
   expect(Math.max(...contextRightEdges) - Math.min(...contextRightEdges)).toBeLessThanOrEqual(1);
+  expect(messageAlignment.rows).toHaveLength(2);
+  expect(
+    messageAlignment.rows.every(
+      ({ labelLeft, valueFontWeight, contextText }) =>
+        Math.abs(labelLeft - messageAlignment.inputLabelLeft - 16) <= 0.01 &&
+        valueFontWeight === '400' &&
+        contextText === '',
+    ),
+  ).toBe(true);
+  expect(
+    messageAlignment.rows.every(
+      ({ value }) => Math.abs(value.right - desktopRows[0].value.right) <= 0.01,
+    ),
+  ).toBe(true);
+  const intrinsicNavigatorGeometry = await modelSection
+    .locator('.navigator-selection')
+    .evaluate((selection) => {
+      const clone = selection.cloneNode(true) as HTMLElement;
+      clone.style.position = 'fixed';
+      clone.style.visibility = 'hidden';
+      clone.style.width = `${selection.getBoundingClientRect().width}px`;
+      document.body.append(clone);
+      const title = clone.firstElementChild as HTMLElement;
+      const percentage = clone.lastElementChild as HTMLElement;
+      title.textContent = 'Acme code model with an intentionally long display name';
+      const value = percentage.querySelector('.animated-number-value')!;
+      const measure = (text: string) => {
+        value.textContent = text;
+        const titleBox = title.getBoundingClientRect();
+        const percentageBox = percentage.getBoundingClientRect();
+        return {
+          titleWidth: titleBox.width,
+          percentageWidth: percentageBox.width,
+          gap: percentageBox.left - titleBox.right,
+          selectionWidth: clone.getBoundingClientRect().width,
+          truncated: title.scrollWidth > title.clientWidth,
+        };
+      };
+      const zero = measure('0%');
+      const hundred = measure('100%');
+      const styles = {
+        titleFlexGrow: getComputedStyle(title).flexGrow,
+        titleMinWidth: getComputedStyle(title).minWidth,
+        percentageFlexShrink: getComputedStyle(percentage).flexShrink,
+      };
+      clone.remove();
+      return { zero, hundred, styles };
+    });
+  expect(intrinsicNavigatorGeometry.hundred.percentageWidth).toBeGreaterThan(
+    intrinsicNavigatorGeometry.zero.percentageWidth,
+  );
+  expect(intrinsicNavigatorGeometry.zero.gap).toBeCloseTo(6, 2);
+  expect(intrinsicNavigatorGeometry.hundred.gap).toBeCloseTo(6, 2);
+  expect(
+    intrinsicNavigatorGeometry.zero.titleWidth - intrinsicNavigatorGeometry.hundred.titleWidth,
+  ).toBeCloseTo(
+    intrinsicNavigatorGeometry.hundred.percentageWidth -
+      intrinsicNavigatorGeometry.zero.percentageWidth,
+    2,
+  );
+  expect(intrinsicNavigatorGeometry.hundred.truncated).toBe(true);
+  expect(
+    intrinsicNavigatorGeometry.hundred.titleWidth +
+      intrinsicNavigatorGeometry.hundred.percentageWidth +
+      intrinsicNavigatorGeometry.hundred.gap,
+  ).toBeCloseTo(intrinsicNavigatorGeometry.hundred.selectionWidth, 2);
+  expect(intrinsicNavigatorGeometry).toMatchObject({
+    styles: { titleFlexGrow: '1', titleMinWidth: '0px', percentageFlexShrink: '0' },
+  });
   const topmost = await page.evaluate(
     ({ x, y }) =>
       document
