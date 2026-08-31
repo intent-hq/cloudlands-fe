@@ -23,10 +23,7 @@ triggers:
 ---
 # Domain-Scoped State — `createDomainScopedHelpers`
 
-> State keyed by a domain id (e.g. workspace id, project id, tenant id). All
-> three returned helpers are immutable: reads fall through to `emptyState`,
-> writes produce a new state with a new `byDomainId`, and `clearDomainState`
-> returns the same reference when the id was already absent.
+> State keyed by a domain id (e.g. workspace id, project id, tenant id). All three returned helpers are immutable: reads fall through to `emptyState`, writes produce a new state when the domain value changes, and `clearDomainState` returns the same reference when the id was already absent.
 
 ## 1. Shape
 
@@ -68,11 +65,9 @@ export function createDomainScopedHelpers<T>(emptyState: T) {
 Key guarantees:
 
 - `getDomainState` returns `emptyState` (not `undefined`) for unknown ids.
-- `setDomainState` always produces a new `state` and a new `byDomainId`.
-- `clearDomainState` returns the **same** `state` reference when the id was
-  absent, so selectors do not re-emit on no-op clears.
-- The state type is constrained so `state.byDomainId` is typed as
-  `Record<string, T>`.
+- `setDomainState` returns the same `state` when the existing domain value is shallow-equal; otherwise it produces a new `state` and a new `byDomainId`.
+- `clearDomainState` returns the **same** `state` reference when the id was absent, so selectors do not re-emit on no-op clears.
+- The state type is constrained so `state.byDomainId` is typed as `Record<string, T>`.
 
 ## 2. Setup — minimum working slice
 
@@ -116,7 +111,7 @@ export const workspaceItemsReducer = createReducer<State>(initialState)
     setDomainState(state, id, {
       ...getDomainState(state, id),
       items: createCollection<Item, "id">("id", items),
-      loadedAt: Date.now ? 0 : 0, // (store a timestamp you dispatch in, not Date.now here)
+      loadedAt: 0, // store a timestamp you dispatch in, not Date.now here
     })
   )
   .with(clearDomain, (state, { payload: [id] }) => clearDomainState(state, id));
@@ -124,10 +119,8 @@ export const workspaceItemsReducer = createReducer<State>(initialState)
 
 Notes:
 
-- Pass the domain id as the **first** tuple element so saga code can key
-  subscriptions by it.
-- Use `getDomainState(state, id)` inside reducer handlers to read the current
-  per-domain slice safely (falls back to `emptyState` for unknown ids).
+- Pass the domain id as the **first** tuple element so saga code can key subscriptions by it.
+- Use `getDomainState(state, id)` inside reducer handlers to read the current per-domain slice safely (falls back to `emptyState` for unknown ids).
 - `clearDomainState` is the right tool for logout / workspace-change cleanup.
 
 ## 3. Core patterns
@@ -174,16 +167,13 @@ Combine `getDomainState` + spread + `setDomainState`:
 );
 ```
 
-Because `clearDomainState` returns the same reference if the id was absent,
-selectors keyed on unrelated domains won't re-emit.
+Because `clearDomainState` returns the same reference if the id was absent, selectors keyed on unrelated domains won't re-emit.
 
 ## 4. Common Mistakes
 
 ### Hand-rolling domain-keyed state with nested setters
 
-**Mechanism:** custom nested updates forget the `emptyState` fallback;
-reading an unknown domain id returns `undefined` instead of the empty state
-and downstream code crashes on property access.
+**Mechanism:** custom nested updates forget the `emptyState` fallback; reading an unknown domain id returns `undefined` instead of the empty state and downstream code crashes on property access.
 
 ```typescript
 // ❌ WRONG
@@ -198,13 +188,11 @@ and downstream code crashes on property access.
 )
 ```
 
-*Source: `../SKILL.md §10`.*
+Source: `../SKILL.md §10`.
 
 ### Storing a non-serializable `emptyState`
 
-**Mechanism:** `emptyState` is read for every new domain id; any `Date`,
-`Map`, `Set`, or class instance inside will break the serializable state
-contract once it's written back into the state tree.
+**Mechanism:** `emptyState` is read for every new domain id; any `Date`, `Map`, `Set`, or class instance inside will break the serializable state contract once it's written back into the state tree.
 
 ```typescript
 // ❌ WRONG
@@ -217,14 +205,11 @@ const emptyState = {
 };
 ```
 
-*Source: `../SKILL.md §10, §12`. See also
-`core/state-serialization`.*
+*Source: `../SKILL.md §10, §12`. See also `core/state-serialization`.*
 
 ### Using a different key than `byDomainId`
 
-**Mechanism:** the helpers are typed against `DomainScopedState<T>`, i.e.
-`{ byDomainId: Record<string, T> }`. Renaming to `byId` or `byWorkspaceId`
-type-errors on the helpers and forces consumers back to hand-rolled setters.
+**Mechanism:** the helpers are typed against `DomainScopedState<T>`, i.e. `{ byDomainId: Record<string, T> }`. Renaming to `byId` or `byWorkspaceId` type-errors on the helpers and forces consumers back to hand-rolled setters.
 
 ```typescript
 // ❌ WRONG
@@ -238,18 +223,14 @@ type State = { byDomainId: Record<string, WorkspaceItemsState> };
 
 ## 5. When to use
 
-- State must be partitioned by a stable id (workspace / project / tenant /
-  session).
+- State must be partitioned by a stable id (workspace / project / tenant / session).
 - You want automatic cleanup on domain removal (`clearDomainState`).
 - You want reads to gracefully fall back to a known empty shape.
 
-If every consumer shares a single domain (no multi-tenant / multi-workspace
-concept), a plain slice is simpler — reach for `createDomainScopedHelpers`
-only when the domain id is part of the key.
+If every consumer shares a single domain (no multi-tenant / multi-workspace concept), a plain slice is simpler — reach for `createDomainScopedHelpers` only when the domain id is part of the key.
 
 ## 6. See also
 
 - `core/reducers` — pure-update rules, `createReducer` builder.
-- `core/state-serialization` — why `emptyState` must be
-  structured-cloneable.
+- `core/state-serialization` — why `emptyState` must be structured-cloneable.
 - `core/collections` — the usual shape of per-domain data.

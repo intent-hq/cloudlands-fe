@@ -36,32 +36,32 @@ Before editing code or docs under this skill:
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
 
-> Index for the migration playbook. Each step below links to a focusedsub-skill; read them in order for a full slice migration.
+> Index for the migration playbook. Each step below links to a focused sub-skill; read them in order for a full slice migration.
 
 ## Migration Policy
 
 Migrating from Svelte stores to `themis` is driven by two rules:
 
-1. **Redux owns shared, persisted, or async-driven state.** Anything read orwritten by more than one component, anything synced to localStorage / theserver / IPC, and anything involved in async flows (API calls, timers,debouncing) moves into a slice.
-2. **Component-local ephemeral state stays local.** Hover, focus, open/closedtoggles, scroll position, and single-form field values do not need aslice. **When in doubt → move to Redux.**
+1. **Redux owns shared, persisted, or async-driven state.** Anything read or written by more than one component, anything synced to localStorage / the server / IPC, and anything involved in async flows (API calls, timers, debouncing) moves into a slice.
+2. **Component-local ephemeral state stays local.** Hover, focus, open/closed toggles, scroll position, and single-form field values do not need a slice. **When in doubt → move to Redux.**
 
-Migrate one store at a time, simplest and most isolated first. Each slicelands in its own branch and PR; never batch multiple store migrations in onecommit. Keep the old `.store.svelte.ts` file in git history until the newslice passes tests and manual UI verification — then delete it and run`grep` to confirm zero residual references. Do not leave the old path as a one-line re-export, proxy, or delegate-only wrapper; remove it, inline it, or document it as a compatibility shim with a sunset/removal condition.
+Migrate one store at a time, simplest and most isolated first. Each slice lands in its own branch and PR; never batch multiple store migrations in one commit. Keep the old `.store.svelte.ts` file in git history until the new slice passes tests and manual UI verification — then delete it and run `grep` to confirm zero residual references. Do not leave the old path as a one-line re-export, proxy, or delegate-only wrapper; remove it, inline it, or document it as a compatibility shim with a sunset/removal condition.
 
-Reducers must stay pure (no `fetch`, no `localStorage`, no `Date.now()`, nomutation) and state must stay structured-cloneable (no `Date` / `Map` /`Set` / `RegExp` / class instances / functions / `Promise`). Side effects —subscriptions, `$effect`, timers, IPC, fetches — go into sagas. Every `selectFoo()` readable call is a component-init API: capture it at the top ofthe `<script>` block, never inside callbacks, or Svelte will throw`lifecycle_outside_component`. Dispatch through the configured app `Store` instance.
+Reducers must stay pure (no `fetch`, no `localStorage`, no `Date.now()`, no mutation) and state must stay structured-cloneable (no `Date` / `Map` / `Set` / `RegExp` / class instances / functions / `Promise`). Side effects — subscriptions, `$effect`, timers, IPC, fetches — go into sagas. Every `selectFoo()` readable call is a component-init API: capture it at the top of the `<script>` block, never inside callbacks, or Svelte will throw `lifecycle_outside_component`. Dispatch through the configured app `Store` instance.
 
 Migration uses the Svelte Store family for the app being migrated.
 
 ## Recommended Order
 
-Run these sub-skills in order. Steps 3–6 repeat per slice; step 7 closesout each slice.
+Run these sub-skills in order. Steps 3–6 repeat per slice; step 7 closes out each slice.
 
-1. `assessment` — Inventory existing Svelte stores and`$state` / `$derived` runes; classify each as shared (→ Redux) vscomponent-local using the decision framework.
+1. `assessment` — Inventory existing Svelte stores and `$state` / `$derived` runes; classify each as shared (→ Redux) vs component-local using the decision framework.
 2. `setup` — Install the package and peer deps, wire the `Store` class in `+layout.svelte`, and create empty reducer + saga registrations.
-3. `writable-stores` — Convert `writable()` and`$state` into slice initial state + `createAction` + `createReducer` withimmutable updates.
-4. `derived-stores` — Convert `derived()` and`$derived` into `store.createSelector` when a configured Store exists, composing with upstream selectors via`.select(state)`.
-5. `side-effects` — Move `$effect` blocks,subscriptions, timers, IPC listeners, and fetches into sagas using`takeEvery` / `takeLatest` + `call` / `put` / `delay`.
-6. `component-migration` — Swap Sveltestore imports for `selectFoo()` readables and Store-first dispatch; keep templates reactive via `$selectorResult$`.
-7. `cleanup` — Delete the old `.store.svelte.ts` file,verify zero residual references, check old paths for pass-through wrappers, and apply the rollback recipe if theslice regresses.
+3. `writable-stores` — Convert `writable()` and `$state` into slice initial state + `createAction` + `createReducer` with immutable updates.
+4. `derived-stores` — Convert `derived()` and `$derived` into `store.createSelector` when a configured Store exists, composing with upstream selectors via `.select(state)`.
+5. `side-effects` — Move `$effect` blocks, subscriptions, timers, IPC listeners, and fetches into sagas using `takeEvery` / `takeLatest` + `call` / `put` / `delay`.
+6. `component-migration` — Swap Svelte store imports for `selectFoo()` readables and Store-first dispatch; keep templates reactive via `$selectorResult$`.
+7. `cleanup` — Delete the old `.store.svelte.ts` file, verify zero residual references, check old paths for pass-through wrappers, and apply the rollback recipe if the slice regresses.
 
 ## Quick Reference Card
 

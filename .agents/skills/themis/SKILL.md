@@ -36,15 +36,15 @@ triggers:
 ---
 # themis skill router
 
-Use this repository root skill first when choosing package guidance. Its job isrouting only: load `./setup/SKILL.md` for first-time app setup, load the family that matches the environment and touched code path,then load the leaf skills named by that family. Do not treat this file as areplacement index for `./setup/`, `./core/`, `./svelte/`, `./react/`, or `./streaming/`.
+Use this repository root skill first when choosing package guidance. Its job is routing only: load `./setup/SKILL.md` for first-time app setup, load the family that matches the environment and touched code path, then load the leaf skills named by that family. Do not treat this file as a replacement index for `./setup/`, `./core/`, `./svelte/`, `./react/`, or `./streaming/`.
 
-> This package uses a CUSTOM Redux setup — not Redux Toolkit (RTK). Do not usecreateSlice, configureStore, createAsyncThunk, or any RTK API.
+> This package uses a CUSTOM Redux setup — not Redux Toolkit (RTK). Do not use `createSlice`, `configureStore`, `createAsyncThunk`, or any RTK API.
 
 ## App-level Store family rule
 
-- **Svelte Store, React Store, and Streaming Store patterns are mutually exclusive fora single app.** One app must choose exactly one concrete Store family:`Store` plus Svelte readable/component lifecycle patterns, `ReactStore` plus Preact signal/React `.useValue(...)` patterns, or`StreamingStore` plus Kefir/observable selector patterns.
-- Do not mix `./svelte/`, `./react/`, and `./streaming/` concrete Store guidance forthe same app, package entry, runtime, or code path. `./core/` may be pairedwith the one selected concrete family because it is shared Redux/redux-sagaguidance, not a second Store family.
-- Mixed repositories must route per app/package/code path. Separate apps in thesame repository may choose different families, but one app must not usepatterns from multiple concrete Store families.
+- **Svelte Store, React Store, and Streaming Store patterns are mutually exclusive for a single app.** One app must choose exactly one concrete Store family: `Store` plus Svelte readable/component lifecycle patterns, `ReactStore` plus Preact signal/React `.useValue(...)` patterns, or `StreamingStore` plus Kefir/observable selector patterns.
+- Do not mix `./svelte/`, `./react/`, and `./streaming/` concrete Store guidance for the same app, package entry, runtime, or code path. `./core/` may be paired with the one selected concrete family because it is shared Redux/redux-saga guidance, not a second Store family.
+- Mixed repositories must route per app/package/code path. Separate apps in the same repository may choose different families, but one app must not use patterns from multiple concrete Store families.
 
 ## Selector output cache routing
 
@@ -62,11 +62,11 @@ For the canonical statement of this rule and for migrating any existing effects 
 
 ## Routing decision order
 
-1. **Shared Redux or saga concept only → **`./core/`**.** Use core for actioncreators, reducers, state modeling, serializability, typed-redux-saga flows,saga manager behavior, selector channels, `waitFor`, explicit Redux store pruning, testing, debugging, andverifier handoff that apply across Store families.
-2. **Frontend-facing plus Svelte/SvelteKit evidence → **`./svelte/`**.** UseSvelte only when the target app/code path is UI/frontend-facing and there isconcrete Svelte or SvelteKit evidence: a Svelte dependency, `svelte.config.*`,`.svelte` component files, SvelteKit `+layout`/`+page` files, imports from`svelte`, `Store` from `@augmentcode/themis/svelte-store`, orSvelte readable/template integration. Generic browser or web work is notenough. Do not also apply ReactStore/signals or StreamingStore/Kefir selector,setup, or lifecycle guidance to that same app.
-3. **Frontend-facing plus React evidence → **`./react/`**.** Use React when thetarget app/code path imports React, uses JSX/TSX React components/hooks, imports`ReactStore` from `@augmentcode/themis/react-store`, or expects Preact React signal selectors/`.useValue(...)` component reads. Do not also apply Svelte readable orStreamingStore/Kefir guidance to that same app.
-4. **Node/server/no-UI path → **`./streaming/`** by default.** UseStreaming for Node services, server routes, background workers, CLIs, scripts,test harnesses, Kefir/observable selectors, `StreamingStore`, or any app/codepath where concrete Svelte or React UI evidence is absent. Absence of UI evidence defaults toStreaming. Do not also apply Store/readable/component/setup, React `.useValue(...)`, or signal-render guidance to that same app.
-5. **Mixed repositories route by the task path.** A repository-level Svelte orReact dependency does not make every change UI-specific. Classify the specificfiles and behavior being changed, then choose Core plus at most one concreteStore family for each app/package/code path.
+1. **Shared Redux or saga concept only.** → `./core/` Use core for action creators, reducers, state modeling, serializability, typed-redux-saga flows, saga manager behavior, selector channels, `waitFor`, explicit Redux store pruning, testing, debugging, and verifier handoff that apply across Store families.
+2. **Frontend-facing plus Svelte/SvelteKit evidence.** → `./svelte/` Use Svelte only when the target app/code path is UI/frontend-facing and there is concrete Svelte or SvelteKit evidence: a Svelte dependency, `svelte.config.*`, `.svelte` component files, SvelteKit `+layout`/`+page` files, imports from `svelte`, `Store` from `@augmentcode/themis/svelte-store`, or Svelte readable/template integration. Generic browser or web work is not enough. Do not also apply ReactStore/signals or StreamingStore/Kefir selector, setup, or lifecycle guidance to that same app.
+3. **Frontend-facing plus React evidence.** → `./react/` Use React when the target app/code path imports React, uses JSX/TSX React components/hooks, imports `ReactStore` from `@augmentcode/themis/react-store`, or expects Preact React signal selectors/`.useValue(...)` component reads. Do not also apply Svelte readable or StreamingStore/Kefir guidance to that same app.
+4. **Node/server/no-UI path.** → `./streaming/` by default. Use Streaming for Node services, server routes, background workers, CLIs, scripts, test harnesses, Kefir/observable selectors, `StreamingStore`, or any app/code path where concrete Svelte or React UI evidence is absent. Absence of UI evidence defaults to Streaming. Do not also apply Store/readable/component/setup, React `.useValue(...)`, or signal-render guidance to that same app.
+5. **Mixed repositories route by the task path.** A repository-level Svelte or React dependency does not make every change UI-specific. Classify the specific files and behavior being changed, then choose Core plus at most one concrete Store family for each app/package/code path.
 
 ## Route matrix
 
@@ -96,8 +96,8 @@ Package installation itself never copies skills automatically. Explicit installs
 
 ## Evidence to record in handoff
 
-- The code path classified as frontend/Svelte, frontend/React, Node/server/Streaming, or sharedCore, with the concrete evidence used and the single concrete Store familychosen for that app.
+- The code path classified as frontend/Svelte, frontend/React, Node/server/Streaming, or shared Core, with the concrete evidence used and the single concrete Store family chosen for that app.
 - The exact skill family and leaf skills read.
-- For mixed repositories, why repository-wide dependencies did or did not affectthe specific path being changed.
-- Confirmation that the same app/package/code path did not mix Svelte, React, andStreaming Store concrete patterns.
-- Verification that no placeholder, shim-only, or barrel-only skill replaced themeaningful core, Svelte, React, or Streaming directory roots.
+- For mixed repositories, why repository-wide dependencies did or did not affect the specific path being changed.
+- Confirmation that the same app/package/code path did not mix Svelte, React, and Streaming Store concrete patterns.
+- Verification that no placeholder, shim-only, or barrel-only skill replaced the meaningful core, Svelte, React, or Streaming directory roots.
