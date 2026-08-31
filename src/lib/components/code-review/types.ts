@@ -276,26 +276,3 @@ export function parseReviewSummary(reviewText: string): string | null {
 
   return null;
 }
-
-/**
- * Get review statistics from parsed comments
- */
-export function getReviewStats(comments: ReviewComment[]): {
-  total: number;
-  hasCritical: boolean;
-  criticalCount: number;
-  importantCount: number;
-  minorCount: number;
-} {
-  const criticalCount = comments.filter((c) => c.severity === 'critical').length;
-  const importantCount = comments.filter((c) => c.severity === 'important').length;
-  const minorCount = comments.filter((c) => c.severity === 'minor').length;
-
-  return {
-    total: comments.length,
-    hasCritical: criticalCount > 0,
-    criticalCount,
-    importantCount,
-    minorCount,
-  };
-}

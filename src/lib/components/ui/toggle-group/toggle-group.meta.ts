@@ -14,7 +14,6 @@ export const toggleGroupMetadata = {
     'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-    'src/lib/components/file-tracking/CodeChangesPanel.svelte',
     'src/lib/components/settings/ColorThemeSettings.svelte',
   ],
   replacement: null,

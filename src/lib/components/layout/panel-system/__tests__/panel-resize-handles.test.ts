@@ -51,7 +51,6 @@ describe('editorial panel resize handles', () => {
       '../PanelSplitHandle.svelte',
       '../PanelCornerHandle.svelte',
       '../../sidebar-nav/SidebarPanel.svelte',
-      '../../../workspace/VSCodeResizablePanels.svelte',
       '../../../terminal/QuakeTerminalOverlay.svelte',
       '../../../terminal/RootQuakeTerminalOverlay.svelte',
       '../../../terminal/TerminalSidebar.svelte',

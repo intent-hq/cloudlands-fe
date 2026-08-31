@@ -4,21 +4,17 @@
  * Consolidated from file-tracking + line-changes slices.
  */
 
-import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
   AcceptChangesState,
-  BackgroundOperationPhase,
-  BackgroundOperationType,
   FileTrackingState,
   FileTrackingWorkspaceState,
   MainPanelViewState,
   PendingAutoAction,
   PendingCommitAction,
-  PendingPRContext,
   TrackedChange,
   CommitInfo,
   LineChangeStats,
@@ -40,9 +36,6 @@ function createEmptyAcceptChangesState(): AcceptChangesState {
     pendingPRContext: null,
     isAutofillAndCommitting: false,
     isAutofillAndCreatingPR: false,
-    backgroundOperation: null,
-    cachedGitStatus: null,
-    cachedGitStatusTimestamp: null,
     commitWhenReady: false,
     createPRWhenReady: false,
     mergeWhenReady: false,
@@ -149,26 +142,6 @@ export const setMainPanelView = createAction<[view: MainPanelViewState | null]>(
   'changes/setMainPanelView',
 );
 export const clearMainPanelView = createAction('changes/clearMainPanelView');
-export const unstageChangesRequested = createAction(
-  'changes/unstageChangesRequested',
-  (wsId: string, changeIds: string[], changesFromUI?: TrackedChange[]) => ({
-    wsId,
-    changeIds,
-    changesFromUI,
-  }),
-);
-export const stageByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
-  'changes/stageByPathRequested',
-);
-export const unstageByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
-  'changes/unstageByPathRequested',
-);
-export const revertChangeRequested = createAction<[wsId: string, change: TrackedChange]>(
-  'changes/revertChangeRequested',
-);
-export const revertByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
-  'changes/revertByPathRequested',
-);
 export const refreshRequested = createAction<[wsId: string, forceSync?: boolean]>(
   'changes/refreshRequested',
 );
@@ -222,46 +195,17 @@ export const agentLineStatsRequestFailed = createAction(
 export const setCommitMessage = createAction<[workspaceId: string, message: string]>(
   'changes/setCommitMessage',
 );
-export const setPRTitle = createAction<[workspaceId: string, title: string]>('changes/setPRTitle');
-export const setPRDescription = createAction<[workspaceId: string, description: string]>(
-  'changes/setPRDescription',
-);
 export const setTargetBranch =
   createAction<[workspaceId: string, branch: string]>('changes/setTargetBranch');
 export const setPendingCommitAction = createAction<
   [workspaceId: string, action: PendingCommitAction]
 >('changes/setPendingCommitAction');
-export const setPendingPRContext = createAction<
-  [workspaceId: string, context: PendingPRContext | null]
->('changes/setPendingPRContext');
 export const setIsAutofillAndCommitting = createAction<[workspaceId: string, value: boolean]>(
   'changes/setIsAutofillAndCommitting',
 );
 export const setIsAutofillAndCreatingPR = createAction<[workspaceId: string, value: boolean]>(
   'changes/setIsAutofillAndCreatingPR',
 );
-export const startBackgroundOperation = createAction<
-  [workspaceId: string, type: BackgroundOperationType, startedAt: number, label?: string]
->('changes/startBackgroundOperation');
-export const updateBackgroundOperationPhase = createAction<
-  [workspaceId: string, phase: BackgroundOperationPhase]
->('changes/updateBackgroundOperationPhase');
-export const clearBackgroundOperation = createAction<[workspaceId: string]>(
-  'changes/clearBackgroundOperation',
-);
-export const clearAcceptChangesForm = createAction<[workspaceId: string]>(
-  'changes/clearAcceptChangesForm',
-);
-export const resetAcceptChangesOperations = createAction<[workspaceId: string]>(
-  'changes/resetAcceptChangesOperations',
-);
-export const setCachedGitStatus = createAction<
-  [
-    workspaceId: string,
-    gitStatus: WorkspaceGitStatus | null,
-    cachedGitStatusTimestamp: number | null,
-  ]
->('changes/setCachedGitStatus');
 
 /** Saga trigger: fetch AcceptChangesClient.getStatus and update post-merge state */
 export const refreshAcceptChangesStatus = createAction<[workspaceId: string]>(
@@ -422,20 +366,6 @@ fileTrackingReducer.with(setCommitMessage, (state, { payload: [wsId, message] })
     acceptChanges: { ...ws.acceptChanges, commitMessage: message },
   });
 });
-fileTrackingReducer.with(setPRTitle, (state, { payload: [wsId, title] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, prTitle: title },
-  });
-});
-fileTrackingReducer.with(setPRDescription, (state, { payload: [wsId, description] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, prDescription: description },
-  });
-});
 fileTrackingReducer.with(setTargetBranch, (state, { payload: [wsId, branch] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, {
@@ -448,13 +378,6 @@ fileTrackingReducer.with(setPendingCommitAction, (state, { payload: [wsId, actio
   return setWorkspaceState(state, wsId, {
     ...ws,
     acceptChanges: { ...ws.acceptChanges, pendingCommitAction: action },
-  });
-});
-fileTrackingReducer.with(setPendingPRContext, (state, { payload: [wsId, context] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, pendingPRContext: context },
   });
 });
 fileTrackingReducer.with(setIsAutofillAndCommitting, (state, { payload: [wsId, value] }) => {
@@ -471,79 +394,6 @@ fileTrackingReducer.with(setIsAutofillAndCreatingPR, (state, { payload: [wsId, v
     acceptChanges: { ...ws.acceptChanges, isAutofillAndCreatingPR: value },
   });
 });
-fileTrackingReducer.with(
-  startBackgroundOperation,
-  (state, { payload: [wsId, type, startedAt, label] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      acceptChanges: {
-        ...ws.acceptChanges,
-        backgroundOperation: { type, startedAt, phase: 'generating', label },
-      },
-    });
-  },
-);
-fileTrackingReducer.with(updateBackgroundOperationPhase, (state, { payload: [wsId, phase] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  if (!ws.acceptChanges.backgroundOperation) {
-    return state;
-  }
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: {
-      ...ws.acceptChanges,
-      backgroundOperation: { ...ws.acceptChanges.backgroundOperation, phase },
-    },
-  });
-});
-fileTrackingReducer.with(clearBackgroundOperation, (state, { payload: [wsId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, backgroundOperation: null },
-  });
-});
-fileTrackingReducer.with(clearAcceptChangesForm, (state, { payload: [wsId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: {
-      ...ws.acceptChanges,
-      commitMessage: '',
-      prTitle: '',
-      prDescription: '',
-    },
-  });
-});
-fileTrackingReducer.with(resetAcceptChangesOperations, (state, { payload: [wsId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: {
-      ...ws.acceptChanges,
-      pendingCommitAction: null,
-      pendingPRContext: null,
-      isAutofillAndCommitting: false,
-      isAutofillAndCreatingPR: false,
-      backgroundOperation: null,
-    },
-  });
-});
-fileTrackingReducer.with(
-  setCachedGitStatus,
-  (state, { payload: [wsId, gitStatus, cachedGitStatusTimestamp] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      acceptChanges: {
-        ...ws.acceptChanges,
-        cachedGitStatus: gitStatus,
-        cachedGitStatusTimestamp: gitStatus ? cachedGitStatusTimestamp : null,
-      },
-    });
-  },
-);
 // Sidebar auto-action state (moved from transient-ui slice)
 fileTrackingReducer.with(setSidebarCommitWhenReady, (state, { payload: [wsId, value] }) => {
   const ws = getWorkspaceState(state, wsId);

@@ -37,13 +37,3 @@ export type OpenTerminalTabDetail = {
   sourcePanelId?: string;
   panelLayoutId?: string;
 };
-
-export type CreateWorkspaceForRepoDetail = {
-  repositoryPath: string;
-  workspaceId?: string;
-  workspaceTitle?: string;
-};
-
-export type OpenNewSpaceModalDetail = {
-  initialRepo?: { repoPath?: string };
-};
