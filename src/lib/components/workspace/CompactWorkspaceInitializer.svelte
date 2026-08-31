@@ -2061,6 +2061,8 @@
         repoConfigScriptRepo,
       });
 
+      const requestContextLinks = buildContextLinks(contextMentions);
+
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
@@ -2072,7 +2074,7 @@
         // Otherwise the selected branch rides as baseRef only (PROTOCOL §5.1).
         branch: prBranchActive ? selectedPRBranch : undefined,
         baseRef: prBranchActive ? selectedPRTargetBranch || undefined : String(baseBranch),
-        contextLinks: buildContextLinks(contextMentions),
+        contextLinks: requestContextLinks,
         setupScript: setupScriptParam,
         environmentConfig,
         isNewRepo: Boolean(isNewRepo),
@@ -2137,6 +2139,10 @@
           agentName,
           specialistId !== undefined &&
             specialistId === selectOrchestratorSpecialist.select(appStore.state)?.id,
+          undefined,
+          // Daemon-persisted links are canonical; fall back to the request's
+          // links when an older daemon does not echo them (PROTOCOL §5.1).
+          workspace.contextLinks ?? requestContextLinks,
         ),
       );
       const initialState: WorkspaceNavigationWorkspaceState = {

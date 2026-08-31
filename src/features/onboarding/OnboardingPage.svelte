@@ -1331,6 +1331,8 @@
           agentId ?? null,
           'Coordinator',
           specialistId === 'spec-writer',
+          undefined,
+          workspace.contextLinks,
         ),
       );
       appStore.dispatch(

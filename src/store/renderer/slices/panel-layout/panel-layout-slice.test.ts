@@ -49,6 +49,7 @@ import {
   setTabOwnerAgent,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
+  MAX_SEEDED_CONTEXT_LINK_TABS,
   markPanelTouched,
   observeDeferredSpecGeneration,
   resolveNewWorkspaceInitialAgent,
@@ -71,7 +72,9 @@ import type {
   WorkspacePanelLayoutState,
 } from './panel-layout-types';
 import { getPanelOrder } from './panel-layout-tabless';
+import type { ContextLink } from '../../../../shared/types';
 import {
+  DEFAULT_BROWSER_PANEL_WIDTH,
   DEFAULT_CHAT_PANEL_WIDTH,
   DEFAULT_MEDIUM_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
@@ -682,6 +685,129 @@ describe('panelLayoutReducer', () => {
       expect(
         panelLayoutReducer(seeded, revealDeferredSpecTab(WS, 'spec:created', 'Spec', 10)),
       ).toBe(seeded);
+    });
+  });
+
+  describe('context-link split bootstrap', () => {
+    const issueLink = (number: number): ContextLink => ({
+      kind: 'issue',
+      url: `https://github.com/acme/widgets/issues/${number}`,
+      owner: 'acme',
+      repo: 'widgets',
+      number,
+    });
+
+    it('seeds agent-left and one browser panel right with a tab per link', () => {
+      const prLink: ContextLink = {
+        kind: 'pr',
+        url: 'https://github.com/acme/widgets/pull/9',
+        owner: 'acme',
+        repo: 'widgets',
+        number: 9,
+      };
+      const seeded = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Initial agent', false, 1, [
+          issueLink(7),
+          prLink,
+        ]),
+      ).byWorkspaceId[WS];
+
+      expect(seeded.root.type).toBe('split');
+      const order = seeded.root.type === 'split' ? seeded.root.children : [];
+      expect(order).toHaveLength(2);
+      expect(seeded.root.type === 'split' ? seeded.root.direction : null).toBe('horizontal');
+
+      const agentPanelId = order[0].type === 'panel' ? order[0].panelId : '';
+      const browserPanelId = order[1].type === 'panel' ? order[1].panelId : '';
+      expect(seeded.panels[agentPanelId].tabs).toEqual([
+        expect.objectContaining({ type: 'agent', agentId: 'agent-1' }),
+      ]);
+      expect(seeded.panels[browserPanelId].tabs).toEqual([
+        expect.objectContaining({ type: 'browser', browserUrl: issueLink(7).url }),
+        expect.objectContaining({ type: 'browser', browserUrl: prLink.url }),
+      ]);
+      expect(seeded.panels[browserPanelId].activeTabId).toBe(
+        seeded.panels[browserPanelId].tabs[0].id,
+      );
+      expect(seeded.focusedPanelId).toBe(agentPanelId);
+      expect(seeded.columnCount).toBe(2);
+      expect(seeded.canvasWidthSource).toBe('intrinsic');
+      expect(seeded.canvasWidth).toBe(
+        DEFAULT_CHAT_PANEL_WIDTH + DEFAULT_BROWSER_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
+      );
+    });
+
+    it('caps seeded browser tabs at the limit', () => {
+      const links = Array.from({ length: MAX_SEEDED_CONTEXT_LINK_TABS + 3 }, (_, i) =>
+        issueLink(i + 1),
+      );
+      const seeded = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Initial agent', false, 1, links),
+      ).byWorkspaceId[WS];
+      const order = seeded.root.type === 'split' ? seeded.root.children : [];
+      const browserPanelId = order[1]?.type === 'panel' ? order[1].panelId : '';
+
+      expect(seeded.panels[browserPanelId].tabs).toHaveLength(MAX_SEEDED_CONTEXT_LINK_TABS);
+    });
+
+    it('keeps the single-panel bootstrap when there are no context links', () => {
+      const withEmpty = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Initial agent', false, 1, []),
+      ).byWorkspaceId[WS];
+      const withOmitted = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Initial agent', false, 1),
+      ).byWorkspaceId[WS];
+
+      for (const seeded of [withEmpty, withOmitted]) {
+        expect(seeded.root.type).toBe('panel');
+        expect(seeded.columnCount).toBe(1);
+        expect(seeded.canvasWidth).toBeNull();
+        expect(seeded.canvasWidthSource).toBeNull();
+      }
+    });
+
+    it('resolves a delayed initial agent into the left panel', () => {
+      const pending = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, null, 'Specialist', false, 1, [issueLink(7)]),
+      );
+      const resolved = panelLayoutReducer(
+        pending,
+        resolveNewWorkspaceInitialAgent(WS, 'agent-1', 'Specialist', 10),
+      ).byWorkspaceId[WS];
+      const order = resolved.root.type === 'split' ? resolved.root.children : [];
+      const agentPanelId = order[0]?.type === 'panel' ? order[0].panelId : '';
+
+      expect(resolved.panels[agentPanelId].tabs).toEqual([
+        expect.objectContaining({ type: 'agent', agentId: 'agent-1' }),
+      ]);
+      expect(resolved.newWorkspaceLifecycle).toMatchObject({
+        initialAgentId: 'agent-1',
+        initialAgentPending: false,
+      });
+    });
+
+    it('reveals the deferred Spec tab in the right browser panel for a coordinator', () => {
+      const seeded = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true, 1, [issueLink(7)]),
+      );
+      const revealed = panelLayoutReducer(
+        seeded,
+        revealDeferredSpecTab(WS, 'spec:created', 'Spec', 10),
+      ).byWorkspaceId[WS];
+      const order = revealed.root.type === 'split' ? revealed.root.children : [];
+      const rightPanelId = order.at(-1)?.type === 'panel' ? (order.at(-1) as any).panelId : '';
+
+      expect(revealed.panels[rightPanelId].tabs).toEqual([
+        expect.objectContaining({ type: 'browser' }),
+        expect.objectContaining({ type: 'note', noteId: 'spec' }),
+      ]);
+      expect(revealed.newWorkspaceLifecycle?.spec.state).toBe('revealed');
     });
   });
 
