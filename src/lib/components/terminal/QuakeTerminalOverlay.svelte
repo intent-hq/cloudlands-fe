@@ -57,6 +57,7 @@
     faStop,
     faRotateRight,
     faSpinner,
+    faTableColumns,
     faArrowUpRightFromSquare,
     faCircle,
     faPencil,
@@ -85,6 +86,7 @@
   import Header from '../ui/Header.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { createTerminalOverlayResize } from './terminal-overlay-resize';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   // ============================================================================
   // Props & State
@@ -506,6 +508,31 @@
   function handleScriptOpenUrl(): void {
     if (!selectedScriptRuntime?.detectedUrl) return;
     openScriptUrl(selectedScriptRuntime.detectedUrl);
+  }
+
+  function moveSelectionToPanel(): void {
+    if (!workspaceId) return;
+    const activeTerminal = $terminals.find((terminal) => terminal.id === $activeTerminalId);
+    if (selectedScript) {
+      getPanelLayoutManager(workspaceId).openUserTab({
+        type: 'terminal',
+        title: selectedScript.name,
+        scriptId: selectedScript.id,
+        workspaceId,
+        closable: true,
+      });
+    } else if (activeTerminal) {
+      getPanelLayoutManager(workspaceId).openUserTab({
+        type: 'terminal',
+        title: terminalDisplayName(activeTerminal),
+        terminalId: activeTerminal.id,
+        workspaceId,
+        closable: true,
+      });
+    } else {
+      return;
+    }
+    appStore.dispatch(closeTerminalOverlay(workspaceId));
   }
 
   // Live and previously-running scripts shown as tabs in the bottom bar.
@@ -1027,6 +1054,16 @@
 
             <!-- Script Controls -->
             <div class="flex items-center gap-0.5 flex-shrink-0">
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={moveSelectionToPanel}
+                tooltip={m.workspace_shell_showInPanel_tooltip()}
+                aria-label={m.workspace_shell_showInPanel_tooltip()}
+                data-move-to-panel
+              >
+                <Fa icon={faTableColumns} size="xs" />
+              </Button>
               {#if isLiveScriptStatus(selectedScriptRuntime.status)}
                 <Button
                   variant="ghost-light"
@@ -1121,6 +1158,16 @@
 
             <!-- Clear and Collapse Buttons -->
             <div class="flex items-center gap-0.5">
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={moveSelectionToPanel}
+                tooltip={m.workspace_shell_showInPanel_tooltip()}
+                aria-label={m.workspace_shell_showInPanel_tooltip()}
+                data-move-to-panel
+              >
+                <Fa icon={faTableColumns} size="xs" />
+              </Button>
               <!-- Clear Button -->
               <Button
                 variant="ghost-light"
