@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.117.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.2...v2.117.3) (2026-08-31)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** honor persisted older-scrollback token when history segment is empty ([#1939](https://github.com/intent-hq/cloudlands-fe/issues/1939)) ([83ad1bd](https://github.com/intent-hq/cloudlands-fe/commit/83ad1bdcefc8e0692f1bd7c9549d83adace559b0))
+* subscribe notification service to agent:idle on every backend ([#1943](https://github.com/intent-hq/cloudlands-fe/issues/1943)) ([2f2d3c1](https://github.com/intent-hq/cloudlands-fe/commit/2f2d3c1752fb709f940ce712d4f64aa1891c22a0))
+
 ## [2.117.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.1...v2.117.2) (2026-08-31)
 
 
