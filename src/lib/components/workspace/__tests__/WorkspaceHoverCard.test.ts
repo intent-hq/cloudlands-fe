@@ -497,9 +497,7 @@ describe('WorkspaceHoverCard', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.getAttribute('data-agent-avatar-stack-agent-id')).toBe('agent-root');
     expect(
-      items[0]
-        ?.querySelector('[data-agent-avatar-with-state]')
-        ?.getAttribute('data-avatar-state'),
+      items[0]?.querySelector('[data-agent-avatar-with-state]')?.getAttribute('data-avatar-state'),
     ).toBe('unread');
   });
 
@@ -794,7 +792,7 @@ describe('WorkspaceHoverCard', () => {
       'text-success',
     );
     expect(rows[2].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
-      'text-primary',
+      'text-purple-500',
     );
     expect(screen.getByText('other-org/tooling')).toBeTruthy();
     expect(screen.getByText('Cross-repo monitor')).toBeTruthy();

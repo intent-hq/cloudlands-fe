@@ -64,8 +64,8 @@ function getPRStatusPresentation(
   if (status === 'merged') {
     return {
       statusIcon: faCodeMerge,
-      foregroundClass: 'text-primary',
-      backgroundClass: 'bg-primary/10',
+      foregroundClass: 'text-purple-500',
+      backgroundClass: 'bg-purple-500/10',
       accessibleStateLabel: m.workspace_prSection_merged_label(),
     };
   }

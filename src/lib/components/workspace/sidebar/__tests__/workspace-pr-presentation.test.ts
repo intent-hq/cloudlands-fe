@@ -146,8 +146,8 @@ describe('buildWorkspacePRPresentationModel', () => {
       },
       {
         status: 'merged',
-        foregroundClass: 'text-primary',
-        backgroundClass: 'bg-primary/10',
+        foregroundClass: 'text-purple-500',
+        backgroundClass: 'bg-purple-500/10',
         accessibleStateLabel: 'Merged',
       },
       {
