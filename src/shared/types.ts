@@ -1533,6 +1533,19 @@ export interface WorkspaceUIContext {
 // Request/Response Types
 // ============================================================================
 
+/**
+ * Issue/PR context link supplied at `workspace.create` and persisted on the
+ * workspace row (PROTOCOL §5.1 `contextLinks`). Write-once at create; at most
+ * 20 entries per request.
+ */
+export interface ContextLink {
+  kind: 'issue' | 'pr';
+  url: string;
+  owner: string;
+  repo: string;
+  number: number;
+}
+
 export interface CreateWorkspaceRequest {
   idempotencyKey?: string;
   title?: string;
@@ -1549,6 +1562,7 @@ export interface CreateWorkspaceRequest {
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
+  contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
   initialAgent?: {
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on

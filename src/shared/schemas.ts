@@ -181,6 +181,16 @@ const EnvironmentConfigSchema = z.object({
   workspace_path: z.string().optional(),
 });
 
+// Issue/PR context link on `workspace.create` (PROTOCOL §5.1 `contextLinks`):
+// lowercase `kind`, non-empty url/owner/repo, positive integer `number`.
+export const ContextLinkSchema = z.object({
+  kind: z.enum(['issue', 'pr']),
+  url: z.string().min(1),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  number: z.number().int().positive(),
+});
+
 export const CreateWorkspaceRequestSchema = z.object({
   idempotencyKey: z.string().optional(),
   title: z.string().max(100).optional(),
@@ -197,6 +207,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   isNewRepo: z.boolean().optional(),
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
+  contextLinks: z.array(ContextLinkSchema).max(20).optional(), // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1)
 });
 
 /**
