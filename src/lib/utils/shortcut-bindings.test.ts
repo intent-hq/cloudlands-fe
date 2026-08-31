@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyShortcutCapture,
+  matchesShortcutPattern,
+  getShortcutSequenceTrigger,
   SHORTCUT_DEFAULTS,
   matchesShortcut,
   normalizeShortcut,
@@ -100,5 +103,29 @@ describe('shortcut bindings', () => {
   it('does not reject contextual duplicate defaults', () => {
     expect(SHORTCUTS.NEW_TAB.key).toBe(SHORTCUTS.NEW_AGENT.key);
     expect(SHORTCUTS.SEND.key).toBe(SHORTCUTS.CONFIRM.key);
+  });
+
+  it('preserves ranges and directional alternatives when capturing collective shortcuts', () => {
+    expect(applyShortcutCapture('navigation.go-to-tab', 'alt+4')).toBe('alt+1-9');
+    expect(normalizeShortcut('mod+shift+1-9')).toBe('mod+shift+1-9');
+    expect(applyShortcutCapture('leader.navigate-panels', 'ctrl+x')).toBe('ctrl+h/j/k/l');
+    expect(applyShortcutCapture('leader.resize-panels', 'mod+x')).toBe('mod+H/J/K/L');
+    expect(applyShortcutCapture('leader.jump-to-panel', 'alt+x')).toBe('alt+x + 1-9');
+
+    expect(normalizeShortcut('ctrl+h/j/k/l')).toBe('ctrl+h/ctrl+j/ctrl+k/ctrl+l');
+    expect(normalizeShortcut('mod+H/J/K/L')).toBe(
+      'mod+shift+h/mod+shift+j/mod+shift+k/mod+shift+l',
+    );
+    for (const [index, key] of ['h', 'j', 'k', 'l'].entries()) {
+      expect(
+        matchesShortcutPattern(
+          { key, metaKey: false, ctrlKey: true, altKey: false, shiftKey: false },
+          'ctrl+h/ctrl+j/ctrl+k/ctrl+l',
+          true,
+        ),
+      ).toBe(index);
+    }
+    expect(normalizeShortcut('alt+x + 1-9')).toBe('alt+x + 1-9');
+    expect(getShortcutSequenceTrigger('alt+x + 1-9')).toBe('alt+x');
   });
 });

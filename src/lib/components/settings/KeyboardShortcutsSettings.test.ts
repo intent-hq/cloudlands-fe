@@ -89,6 +89,24 @@ describe('KeyboardShortcutsSettings', () => {
     expect(document.activeElement).not.toBe(input);
   });
 
+  it('retains every key in range and directional rows when captured', async () => {
+    render(KeyboardShortcutsSettings);
+    const tabs = screen.getByRole('textbox', { name: 'Go to Tab' });
+    const panels = screen.getByRole('textbox', { name: 'Navigate Panels' });
+
+    await fireEvent.focus(tabs);
+    await fireEvent.keyDown(tabs, { key: '4', code: 'Digit4', altKey: true });
+    await fireEvent.focus(panels);
+    await fireEvent.keyDown(panels, { key: 'X', code: 'KeyX', ctrlKey: true });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setShortcutOverride('navigation.go-to-tab', 'alt+1-9'),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setShortcutOverride('leader.navigate-panels', 'mod+h/j/k/l'),
+    );
+  });
+
   it('preserves the last effective binding when capture is cancelled', async () => {
     mocks.state.userPreferences.shortcutOverrides = { 'global.settings': 'alt+,' };
     render(KeyboardShortcutsSettings);

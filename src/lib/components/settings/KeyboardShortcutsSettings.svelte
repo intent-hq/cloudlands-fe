@@ -1,6 +1,10 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import { shortcutFromKeyboardEvent, type ShortcutId } from '$lib/utils/shortcut-bindings';
+  import {
+    applyShortcutCapture,
+    shortcutFromKeyboardEvent,
+    type ShortcutId,
+  } from '$lib/utils/shortcut-bindings';
   import { formatShortcut, SHORTCUT_CATEGORIES, SHORTCUT_REGISTRY } from '$lib/utils/shortcuts';
   import { m } from '$shared/paraglide/messages.js';
   import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -39,8 +43,9 @@
     }
     const normalized = shortcutFromKeyboardEvent(event, isMac);
     if (!normalized) return;
-    capturedValues[id] = normalized;
-    appStore.dispatch(setShortcutOverride(id, normalized));
+    const binding = applyShortcutCapture(id, normalized);
+    capturedValues[id] = binding;
+    appStore.dispatch(setShortcutOverride(id, binding));
     capturing = null;
     (event.currentTarget as HTMLInputElement).blur();
   }

@@ -36,6 +36,7 @@ import { store as appStore } from '$store/renderer/store';
 import {
   matchesShortcut,
   matchesShortcutPattern,
+  getShortcutSequenceTrigger,
   resolveShortcut,
   type ShortcutId,
 } from '$lib/utils/shortcut-bindings';
@@ -486,7 +487,7 @@ export function createPanelKeyboardShortcuts(
     if (match('leader.toggle-zoom') >= 0) return 'zoom-toggle';
     if (match('leader.close-panel') >= 0) return 'close-panel';
     if (match('leader.equalize-sizes') >= 0) return 'resize-equal';
-    const jumpBinding = binding('leader.jump-to-panel').split('+')[0]?.trim();
+    const jumpBinding = getShortcutSequenceTrigger(binding('leader.jump-to-panel'));
     if (jumpBinding && matchesShortcut(e, jumpBinding, isMac)) return 'show-panel-numbers';
     if (match('leader.cycle-layout') >= 0) return 'cycle-layout-presets';
 

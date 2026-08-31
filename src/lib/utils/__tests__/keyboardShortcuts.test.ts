@@ -265,4 +265,25 @@ describe('effective shortcut bindings', () => {
     expect(event.defaultPrevented).toBe(false);
     expect(action).not.toHaveBeenCalled();
   });
+
+  it('does not treat a plain dynamic rebinding as globally modified inside an input', () => {
+    const action = vi.fn();
+    const manager = new KeyboardShortcutManager();
+    managers.push(manager);
+    manager.register({
+      key: 'k',
+      meta: true,
+      binding: () => 'k',
+      description: 'Dynamically rebound action',
+      action,
+    });
+    manager.attach();
+    const input = document.createElement('input');
+    document.body.append(input);
+
+    const event = dispatchShortcut(input, { key: 'k', code: 'KeyK' });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(action).not.toHaveBeenCalled();
+  });
 });

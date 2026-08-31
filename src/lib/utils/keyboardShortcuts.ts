@@ -312,8 +312,8 @@ export class KeyboardShortcutManager {
       // On macOS, Ctrl+key are Emacs shortcuts (Ctrl+A/E/K/P/N/etc.) and should NOT
       // be intercepted when in an editable element. Only Meta (Cmd) shortcuts are global on Mac.
       const isGlobalShortcut = isMac
-        ? shortcut.meta || shortcut.alt // On Mac, only Cmd/Alt shortcuts are global
-        : shortcut.ctrl || shortcut.meta || shortcut.alt; // On Win/Linux, Ctrl is also global
+        ? e.metaKey || e.altKey // On Mac, only Cmd/Alt shortcuts are global
+        : e.ctrlKey || e.metaKey || e.altKey; // On Win/Linux, Ctrl is also global
 
       if (!isInput || isGlobalShortcut || shortcut.global) {
         e.preventDefault();

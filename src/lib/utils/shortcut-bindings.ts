@@ -181,20 +181,56 @@ export function normalizeShortcut(value: string): string | null {
   const input = value.trim();
   if (input.includes('/')) {
     const alternatives = input.split('/').map((part) => part.trim());
-    if (alternatives.some((part) => !/^[A-Za-z0-9%=" ]$/.test(part))) return null;
-    return alternatives.join('/');
+    const first = alternatives[0] ?? '';
+    const commonPrefix = first.includes('+') ? `${first.slice(0, first.lastIndexOf('+'))}+` : '';
+    const normalized = alternatives.map((part, index) => {
+      const candidate = index > 0 && commonPrefix && !part.includes('+') ? commonPrefix + part : part;
+      const rawKey = candidate.slice(candidate.lastIndexOf('+') + 1);
+      const parsed = parseShortcut(
+        /^[A-Z]$/.test(rawKey) ? `${candidate.slice(0, -1)}shift+${rawKey.toLowerCase()}` : candidate,
+      );
+      if (!parsed) return null;
+      const modifiers = MODIFIER_ORDER.filter((modifier) => parsed[modifier]);
+      return [...modifiers, parsed.key].join('+');
+    });
+    if (normalized.some((part) => !part)) return null;
+    return normalized.join('/');
   }
-  const rangeMatch = input.match(/^(?:(mod|ctrl|alt|shift)\+)?([1-8])-9$/i);
+  const rangeMatch = input.match(/^(.*\+)?([1-8])-9$/i);
   if (rangeMatch) {
-    const modifier = rangeMatch[1]?.toLowerCase();
-    return `${modifier ? `${modifier}+` : ''}${rangeMatch[2]}-9`;
+    const parsed = parseShortcut(`${rangeMatch[1] ?? ''}${rangeMatch[2]}`);
+    if (!parsed) return null;
+    const modifiers = MODIFIER_ORDER.filter((modifier) => parsed[modifier]);
+    return `${modifiers.length ? `${modifiers.join('+')}+` : ''}${rangeMatch[2]}-9`;
   }
-  const sequenceMatch = input.match(/^([A-Za-z])\s*\+\s*([1-8]-9)$/);
-  if (sequenceMatch) return `${sequenceMatch[1].toLowerCase()} + ${sequenceMatch[2]}`;
+  const sequenceMatch = input.match(/^(.+?)\s+\+\s+([1-8]-9)$/);
+  if (sequenceMatch) {
+    const trigger = normalizeShortcut(sequenceMatch[1]);
+    return trigger ? `${trigger} + ${sequenceMatch[2]}` : null;
+  }
   const parsed = parseShortcut(value);
   if (!parsed) return null;
   const modifiers = MODIFIER_ORDER.filter((modifier) => parsed[modifier]);
   return [...modifiers, parsed.key].join('+');
+}
+
+/** Preserve a collective shortcut's range/alternatives while changing its captured chord. */
+export function applyShortcutCapture(id: ShortcutId, captured: string): string {
+  const defaultBinding = SHORTCUT_DEFAULTS[id];
+  const modifiers = captured.includes('+') ? `${captured.slice(0, captured.lastIndexOf('+'))}+` : '';
+  const sequenceMatch = defaultBinding.match(/^(.+?)\s+\+\s+([1-8]-9)$/);
+  if (sequenceMatch) return `${captured} + ${sequenceMatch[2]}`;
+
+  const rangeMatch = defaultBinding.match(/^(?:.*\+)?([1-8]-9)$/);
+  if (rangeMatch) return `${modifiers}${rangeMatch[1]}`;
+
+  if (defaultBinding.includes('/')) return `${modifiers}${defaultBinding}`;
+
+  return captured;
+}
+
+export function getShortcutSequenceTrigger(shortcut: string): string | null {
+  return shortcut.match(/^(.+?)\s+\+\s+[1-8]-9$/)?.[1] ?? null;
 }
 
 /** Expand a displayed alternative/range binding into the concrete keys it represents. */
@@ -207,13 +243,17 @@ function expandShortcutPattern(shortcut: string): string[] {
       (_, index) => `${prefix}${Number(rangeMatch[2]) + index}`,
     );
   }
-  return shortcut.split('/').map((part) => {
+  const alternatives = shortcut.split('/');
+  const first = alternatives[0] ?? '';
+  const commonPrefix = first.includes('+') ? `${first.slice(0, first.lastIndexOf('+'))}+` : '';
+  return alternatives.map((part, index) => {
     const token = part.trim();
-    return /^[A-Z]$/.test(token)
-      ? `shift+${token.toLowerCase()}`
-      : token === 'space'
+    const binding = index > 0 && commonPrefix && !token.includes('+') ? commonPrefix + token : token;
+    return /^[A-Z]$/.test(binding)
+      ? `shift+${binding.toLowerCase()}`
+      : binding === 'space'
         ? 'space'
-        : token;
+        : binding;
   });
 }
 
