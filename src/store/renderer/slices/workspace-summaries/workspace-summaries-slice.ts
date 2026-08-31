@@ -14,8 +14,6 @@ export type { WorkspaceSummariesState };
 const emptyWorkspaceSummariesState: WorkspaceSummariesWorkspaceState = {
   diffSummary: null,
   gitSummary: null,
-  loading: false,
-  error: null,
   initialized: false,
 };
 
@@ -31,11 +29,6 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 // Actions
 // ---------------------------------------------------------------------------
 
-/** Saga trigger: fetch on-demand diff/git summaries for a workspace. */
-export const loadWorkspaceSummariesRequested = createAction<[workspaceId: string]>(
-  'workspaceSummaries/loadWorkspaceSummariesRequested',
-);
-
 export const loadWorkspaceSummariesSucceeded = createAction<
   [
     workspaceId: string,
@@ -43,10 +36,6 @@ export const loadWorkspaceSummariesSucceeded = createAction<
     gitSummary: WorkspaceGitSummary | null,
   ]
 >('workspaceSummaries/loadWorkspaceSummariesSucceeded');
-
-export const loadWorkspaceSummariesFailed = createAction<[workspaceId: string, error: string]>(
-  'workspaceSummaries/loadWorkspaceSummariesFailed',
-);
 
 /** Clear all summary state for a workspace. */
 export const clearWorkspaceSummaries = createAction<[workspaceId: string]>(
@@ -59,18 +48,6 @@ export const clearWorkspaceSummaries = createAction<[workspaceId: string]>(
 
 export const workspaceSummariesReducer = createReducer<WorkspaceSummariesState>(initialState);
 workspaceSummariesReducer.with(
-  loadWorkspaceSummariesRequested,
-  (state, { payload: [workspaceId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (ws.loading && ws.error === null) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      loading: true,
-      error: null,
-    });
-  },
-);
-workspaceSummariesReducer.with(
   loadWorkspaceSummariesSucceeded,
   (state, { payload: [workspaceId, diffSummary, gitSummary] }) => {
     const ws = getWorkspaceState(state, workspaceId);
@@ -78,21 +55,7 @@ workspaceSummariesReducer.with(
       ...ws,
       diffSummary,
       gitSummary,
-      loading: false,
-      error: null,
       initialized: true,
-    });
-  },
-);
-workspaceSummariesReducer.with(
-  loadWorkspaceSummariesFailed,
-  (state, { payload: [workspaceId, error] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (!ws.loading && ws.error === error) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      loading: false,
-      error,
     });
   },
 );

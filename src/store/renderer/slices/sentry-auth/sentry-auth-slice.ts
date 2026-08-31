@@ -8,7 +8,6 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { SentryAuthState } from './sentry-auth-types';
 import type { SentryProject } from '$features/sentry-auth/types';
-import type { SentryIssueStatusType } from '$features/sentry-auth/constants';
 
 // =============================================================================
 // Initial State
@@ -21,8 +20,6 @@ const initialState: SentryAuthState = {
   error: null,
   projects: [],
   isLoadingProjects: false,
-  issues: [],
-  isLoadingIssues: false,
 };
 
 // =============================================================================
@@ -38,12 +35,6 @@ export const connectSentry =
 
 /** Trigger: disconnect / logout from Sentry */
 export const logoutSentry = createAction('sentryAuth/logout');
-
-/** Trigger: fetch issues with optional filters */
-export const fetchSentryIssues = createAction(
-  'sentryAuth/fetchIssues',
-  (status?: SentryIssueStatusType | 'all', project?: string) => ({ status, project }),
-);
 
 // =============================================================================
 // State-setting actions (dispatched by sagas to update reducer)
@@ -123,7 +114,6 @@ sentryAuthReducer.with(setSentryLoggedOut, (state) => ({
   isAuthenticated: false,
   organization: null,
   projects: [],
-  issues: [],
 }));
 sentryAuthReducer.with(setSentryProjects, (state, { payload: [projects] }) => ({
   ...state,

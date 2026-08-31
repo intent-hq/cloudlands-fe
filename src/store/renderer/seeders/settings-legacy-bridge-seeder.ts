@@ -172,10 +172,20 @@ registerMockIpcHandler(SETTINGS_CHANNELS.UPDATE, async (arg) => {
 });
 
 // Feature-codes gate (see module doc): a resolved value would fake success in
-// FeatureCodeDialog, so both handlers throw — the dialog catches `activate`
-// into its failure feedback; `restart-app` is unreachable while activation
-// is gated (the restart affordance only renders after a successful change).
+// FeatureCodeDialog, so the mutating handlers throw — the dialog catches
+// `activate` into its failure feedback; `deactivate` and `restart-app` are
+// unreachable while activation is gated (they only render for active features
+// or after a successful change). `get-active` resolves honestly with no
+// features so the dialog's active-features list stays empty.
+registerMockIpcHandler(FEATURE_CODES_CHANNELS.GET_ACTIVE, () => {
+  return { features: [] };
+});
+
 registerMockIpcHandler(FEATURE_CODES_CHANNELS.ACTIVATE, () => {
+  throw new Error("Feature codes are not supported in this build");
+});
+
+registerMockIpcHandler(FEATURE_CODES_CHANNELS.DEACTIVATE, () => {
   throw new Error("Feature codes are not supported in this build");
 });
 
