@@ -159,9 +159,12 @@ describe('HoverCard positioning', () => {
     document.body.appendChild(newTrigger);
     const rectSpy = vi.spyOn(newTrigger, 'getBoundingClientRect');
 
-    // A viewport scroll must not be suppressed by the stale (disconnected)
-    // cache entry; the re-scan resolves the new trigger and measures it.
-    window.dispatchEvent(new Event('scroll'));
+    // A document scroll must not be suppressed by the stale (disconnected)
+    // cache entry: document.contains(disconnectedNode) is false, so only the
+    // stale-cache fallback lets the re-scan resolve and measure the new
+    // trigger. (Dispatching on window would bypass the ancestor filter, since
+    // window is not a Node.)
+    document.dispatchEvent(new Event('scroll'));
     flushFrames();
 
     expect(rectSpy).toHaveBeenCalledTimes(1);
