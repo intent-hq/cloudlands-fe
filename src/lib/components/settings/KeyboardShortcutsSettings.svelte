@@ -148,7 +148,7 @@
 
   <Button
     variant="outline"
-    class="self-start"
+    class="self-end mr-4"
     disabled={Object.keys($shortcutOverrides).length === 0}
     onclick={resetAll}
   >
