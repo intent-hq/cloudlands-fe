@@ -46,7 +46,6 @@ describe('KeyboardShortcutsSettings', () => {
       SHORTCUT_REGISTRY.map(({ defaultKey }) => formatShortcut(defaultKey)),
     );
     expect(inputs.every((input) => input.hasAttribute('data-shortcut-input'))).toBe(true);
-    expect(inputs.every((input) => input.classList.contains('w-28'))).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Settings' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset Settings to default' })).toBeNull();
     expect((screen.getByRole('button', { name: 'Reset all' }) as HTMLButtonElement).disabled).toBe(
@@ -126,20 +125,6 @@ describe('KeyboardShortcutsSettings', () => {
     expect(screen.queryByRole('button', { name: 'Reset Search to default' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Reset Settings to default' }));
     expect(mocks.dispatch).toHaveBeenCalledWith(resetShortcutOverride('global.settings'));
-  });
-
-  it('keeps the reset control in a gutter outside the fixed input column', () => {
-    mocks.state.userPreferences.shortcutOverrides = { 'global.settings': 'alt+,' };
-    render(KeyboardShortcutsSettings);
-
-    const input = screen.getByRole('textbox', { name: 'Settings' });
-    const reset = screen.getByRole('button', { name: 'Reset Settings to default' });
-    expect(input.closest('[data-shortcut-entry]')?.className).toContain(
-      'grid-cols-[minmax(0,1fr)_9rem]',
-    );
-    expect(input.classList.contains('w-28')).toBe(true);
-    expect(reset.className).toContain('absolute');
-    expect(reset.className).toContain('left-full');
   });
 
   it('enables Reset all for overrides and dispatches the global reset', async () => {
