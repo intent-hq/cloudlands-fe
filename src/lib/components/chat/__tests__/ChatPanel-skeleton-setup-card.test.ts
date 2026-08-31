@@ -85,6 +85,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     historyCount: 0,
     tailCount: 0,
   }),
+  selectAgentTailCapPruned: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: testState.selector(false),
