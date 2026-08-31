@@ -419,8 +419,6 @@
     if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
     resizeCommitMotionFrame = null;
     suppressResizeCommitMotion = false;
-    liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
-    isResizing = true;
     resizePanelElements = containerRef
       ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'))
       : [];
@@ -442,6 +440,8 @@
     rootResizeStartChildWidths = measureRootResizeChildWidths();
     rootResizeNextChildWidths = rootResizeStartChildWidths ? [...rootResizeStartChildWidths] : null;
     rootResizeRequestedDelta = 0;
+    liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
+    isResizing = true;
   }
 
   function handleResizeEnd() {

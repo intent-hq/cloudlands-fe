@@ -94,7 +94,7 @@ async function dragDividerBeforeNextFrame(
   zoomFactor: number,
 ) {
   const immediate = await component.evaluate(
-    (_, { dividerIndex, visualDelta }) => {
+    async (_, { dividerIndex, visualDelta }) => {
       function snapshot(): Geometry {
         const canvas = document.querySelector('.panel-canvas-resize-handle')
           ?.parentElement as HTMLElement;
@@ -136,6 +136,7 @@ async function dragDividerBeforeNextFrame(
       handle.dispatchEvent(
         new MouseEvent('mousedown', { bubbles: true, clientX: startX, clientY: startY }),
       );
+      await Promise.resolve();
       window.dispatchEvent(
         new MouseEvent('mousemove', { bubbles: true, clientX: startX + visualDelta, clientY: 1 }),
       );
@@ -143,14 +144,15 @@ async function dragDividerBeforeNextFrame(
       window.dispatchEvent(
         new MouseEvent('mouseup', { bubbles: true, clientX: startX + visualDelta, clientY: 1 }),
       );
-      return { preview };
+      const pointerUp = await new Promise<Geometry>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(snapshot())));
+      });
+      return { preview, pointerUp };
     },
     { dividerIndex, visualDelta: cssDelta * zoomFactor },
   );
-  await nextFrames(page, 1);
-  const pointerUp = await readGeometry(component);
   await nextFrames(page, 2);
-  return { ...immediate, pointerUp, settled: await readGeometry(component) };
+  return { ...immediate, settled: await readGeometry(component) };
 }
 
 function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) {
