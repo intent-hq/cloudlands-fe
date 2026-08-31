@@ -336,3 +336,74 @@ describe('ProviderSelector progressive rendering', () => {
     expect(mocks.installPiMcpAdapter).toHaveBeenCalledOnce();
   });
 });
+
+describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
+    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('dispatches reloadModelsForProvider when retrying the availability check', async () => {
+    // Mount fails the aggregated check (surfacing Try Again); the retry succeeds.
+    let availabilityCalls = 0;
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+        availabilityCalls += 1;
+        if (availabilityCalls === 1) return { success: false, error: 'availability check failed' };
+        return { success: true, data: { hasAnyProvider: true, providers: {} } };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
+      }
+      return { success: true, data: {} };
+    });
+    mocks.state.current = await buildState({});
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    const tryAgain = await result.findByRole('button', { name: 'Try Again' });
+    // The mount-time check does not refresh models.
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+    );
+
+    await fireEvent.click(tryAgain);
+
+    await waitFor(() => {
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+      );
+    });
+  });
+
+  it('dispatches reloadModelsForProvider when switching the default provider', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
+      }
+      return { success: true, data: {} };
+    });
+    mocks.state.current = await buildState({
+      codex: { available: true, authenticated: true },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
+    );
+    await fireEvent.click(result.getByRole('menuitem', { name: 'Set as default' }));
+
+    await waitFor(() => {
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+      );
+    });
+  });
+});
