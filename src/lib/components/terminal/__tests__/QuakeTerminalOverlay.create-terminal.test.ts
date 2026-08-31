@@ -209,17 +209,9 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
     await rerender({ workspaceId: WS_B });
 
     resolveCreate({ success: true, id: 'pty-1' });
-    await waitFor(() => {
-      // The PTY is real: terminalCreated still fires (for WS_A's refetch)...
-      expect(dispatchedTypes()).toContain('terminals/terminalCreated');
-    });
-    const dispatched = (appStore as any).__dispatched as Array<{
-      type: string;
-      payload?: unknown[];
-    }>;
-    const created = dispatched.find((action) => action.type === 'terminals/terminalCreated');
-    expect(created?.payload?.[0]).toBe(WS_A);
-    // ...but no tab/open mutation lands in either workspace's live state.
+    // Let the settled create promise's continuation run to completion.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // No tab/open mutation lands in either workspace's live state.
     expect(dispatchedTypes()).not.toContain('terminals/addTerminal');
     expect(dispatchedTypes()).not.toContain('terminals/open');
   });

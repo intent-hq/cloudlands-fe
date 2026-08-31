@@ -5,7 +5,6 @@ import type {
   CreateWorkspaceForRepoDetail,
   OpenAgentTabDetail,
   OpenNewSpaceModalDetail,
-  OpenTerminalTabDetail,
   SidebarLocateTarget,
 } from './app-layout-types';
 
@@ -20,10 +19,6 @@ export const createFileRequested = createAction<
 
 export const openAgentTabRequested = createAction<[wsId: string, detail: OpenAgentTabDetail]>(
   'appLayout/openAgentTabRequested',
-);
-
-export const openTerminalTabRequested = createAction<[wsId: string, detail: OpenTerminalTabDetail]>(
-  'appLayout/openTerminalTabRequested',
 );
 
 export const createWorkspaceForRepoRequested = createAction<[detail: CreateWorkspaceForRepoDetail]>(

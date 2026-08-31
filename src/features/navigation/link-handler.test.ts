@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
-import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
@@ -87,7 +86,7 @@ describe('handleLink – devspace://terminal routing', () => {
     reduxDispatchMock.mockClear();
   });
 
-  it('should dispatch openTerminalTabRequested for devspace://terminal/{id}', async () => {
+  it('should dispatch panel-layout openTab for devspace://terminal/{id}', async () => {
     const result = await handleLink('devspace://terminal/term-123', {
       workspaceId: TEST_WORKSPACE_ID,
     });
@@ -95,7 +94,17 @@ describe('handleLink – devspace://terminal routing', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledOnce();
     expect(reduxDispatchMock).toHaveBeenCalledWith(
-      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'term-123' }),
+      expect.objectContaining({
+        type: 'panelLayout/openTab',
+        payload: expect.objectContaining({
+          wsId: TEST_WORKSPACE_ID,
+          tab: expect.objectContaining({
+            type: 'terminal',
+            terminalId: 'term-123',
+            closable: true,
+          }),
+        }),
+      }),
     );
   });
 
@@ -106,7 +115,39 @@ describe('handleLink – devspace://terminal routing', () => {
 
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
-      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'terminal with spaces' }),
+      expect.objectContaining({
+        type: 'panelLayout/openTab',
+        payload: expect.objectContaining({
+          wsId: TEST_WORKSPACE_ID,
+          tab: expect.objectContaining({
+            type: 'terminal',
+            terminalId: 'terminal with spaces',
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('should open the terminal beside the source panel on Cmd/Ctrl+Click', async () => {
+    const result = await handleLink('devspace://terminal/term-123', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sourcePanelId: 'panel-chat',
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: expect.objectContaining({
+          wsId: TEST_WORKSPACE_ID,
+          sourcePanelId: 'panel-chat',
+          tab: expect.objectContaining({
+            type: 'terminal',
+            terminalId: 'term-123',
+          }),
+        }),
+      }),
     );
   });
 
@@ -185,7 +226,7 @@ describe('createGlobalLinkClickHandler – click-path regression', () => {
     document.body.innerHTML = '';
   });
 
-  it('should route devspace://terminal links to openTerminalTabRequested via click', async () => {
+  it('should route devspace://terminal links to a panel-layout openTab via click', async () => {
     const { container, anchor } = buildContainerWithLink('devspace://terminal/abc-456');
     const cleanup = createGlobalLinkClickHandler(container, { workspaceId: TEST_WORKSPACE_ID });
 
@@ -198,7 +239,13 @@ describe('createGlobalLinkClickHandler – click-path regression', () => {
     });
 
     expect(reduxDispatchMock).toHaveBeenCalledWith(
-      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'abc-456' }),
+      expect.objectContaining({
+        type: 'panelLayout/openTab',
+        payload: expect.objectContaining({
+          wsId: TEST_WORKSPACE_ID,
+          tab: expect.objectContaining({ type: 'terminal', terminalId: 'abc-456' }),
+        }),
+      }),
     );
 
     cleanup();
@@ -272,7 +319,13 @@ describe('createLinkClickHandler (deprecated) – click-path regression', () => 
     await handler(event);
 
     expect(reduxDispatchMock).toHaveBeenCalledWith(
-      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'legacy-term' }),
+      expect.objectContaining({
+        type: 'panelLayout/openTab',
+        payload: expect.objectContaining({
+          wsId: TEST_WORKSPACE_ID,
+          tab: expect.objectContaining({ type: 'terminal', terminalId: 'legacy-term' }),
+        }),
+      }),
     );
   });
 });

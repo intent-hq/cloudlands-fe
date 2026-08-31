@@ -3004,7 +3004,7 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
  * `scriptId` — self-sufficient per §6.7 — so the renderer mirrors it into
  * the scripts slice via `updateRuntimeState` without a follow-up
  * `script.status` read. The reducer no-ops if the script hasn't been
- * hydrated yet by `initializeScripts` (matches the reference saga).
+ * hydrated yet by lifecycle hydration (matches the reference saga).
  */
 function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;

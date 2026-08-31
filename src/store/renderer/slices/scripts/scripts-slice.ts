@@ -74,9 +74,6 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // Actions
 // ============================================================================
 
-/** Initialize scripts for a workspace (triggers saga) */
-export const initializeScripts = createAction<[wsId: string]>('scripts/initializeScripts');
-
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
 

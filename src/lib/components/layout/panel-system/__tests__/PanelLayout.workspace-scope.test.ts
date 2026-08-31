@@ -52,7 +52,6 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
 
 vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   removeTerminal: vi.fn(),
-  terminalCreated: vi.fn(),
 }));
 
 const layoutManager = {

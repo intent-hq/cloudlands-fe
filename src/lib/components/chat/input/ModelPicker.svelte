@@ -48,7 +48,6 @@
   } from '$store/renderer/slices/model/model-selectors';
   import {
     clearModelFallbackInfo,
-    requestHydrateModelFallbackInfo,
     selectModel,
     setLoadingStateForProvider,
     setModelFallbackInfo,
@@ -1382,13 +1381,8 @@
     }
   }
 
-  // Load persisted fallback info for this agent
   $effect(() => {
     agentIdStore.set(agentId ?? '');
-    if (!agentId) {
-      return;
-    }
-    appStore.dispatch(requestHydrateModelFallbackInfo(agentId));
   });
 
   function setFallbackInfo(info: ModelFallbackInfo) {

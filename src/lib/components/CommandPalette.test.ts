@@ -160,6 +160,10 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
     type: 'terminals/createTerminalRequested',
     payload: args,
   })),
+  removeTerminal: vi.fn((...args: any[]) => ({
+    type: 'terminals/removeTerminal',
+    payload: args,
+  })),
 }));
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: vi.fn((...args: any[]) => ({

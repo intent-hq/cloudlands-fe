@@ -18,10 +18,7 @@
     setActiveProvider,
     setProviderEnabled,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import {
-    retryLoadModels,
-    reloadModelsForProvider,
-  } from '$store/renderer/slices/model/model-slice';
+  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import {
     checkAllProvidersRequested,
     checkSingleProviderRequested,
@@ -372,7 +369,7 @@
       providerAvailability = providerResult.data || null;
 
       if (refreshModels) {
-        appStore.dispatch(retryLoadModels());
+        appStore.dispatch(reloadModelsForProvider());
       }
     } catch (err) {
       logger.error('Failed to check provider availability', { error: err });

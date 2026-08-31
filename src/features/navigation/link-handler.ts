@@ -25,12 +25,16 @@ import {
   isCmdClickModifier,
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
-import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import { focusPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  focusPanel,
+  openTab,
+  openTabInAdjacentOrSplit,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
@@ -203,13 +207,19 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
         workspaceId: options.workspaceId,
       });
       focusSourcePanel(options);
-      appStore.dispatch(
-        openTerminalTabRequested(options.workspaceId, {
-          terminalId,
-          ...(options.sourcePanelId ? { sourcePanelId: options.sourcePanelId } : {}),
-          ...(isCmdClickModifier(options) ? { openInAdjacentPanel: true } : {}),
-        }),
-      );
+      const terminalTab = {
+        type: 'terminal' as const,
+        title: m.layout_tabTypes_terminal_title(),
+        terminalId,
+        closable: true,
+      };
+      if (isCmdClickModifier(options)) {
+        appStore.dispatch(
+          openTabInAdjacentOrSplit(options.workspaceId, terminalTab, options.sourcePanelId),
+        );
+      } else {
+        appStore.dispatch(openTab(options.workspaceId, terminalTab));
+      }
       return true;
     }
 
