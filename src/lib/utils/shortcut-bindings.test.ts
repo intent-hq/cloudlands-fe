@@ -43,6 +43,14 @@ describe('shortcut bindings', () => {
     expect(matchesShortcut({ ...macEvent, altKey: true }, 'mod+shift+p', true)).toBe(false);
   });
 
+  it('matches shifted digits and slash across browser key reporting variants', () => {
+    const modifiers = { metaKey: true, ctrlKey: false, altKey: false, shiftKey: true };
+    expect(matchesShortcut({ key: '(', ...modifiers }, 'mod+shift+9', true)).toBe(true);
+    expect(matchesShortcut({ key: '9', ...modifiers }, 'mod+shift+9', true)).toBe(true);
+    expect(matchesShortcut({ key: '?', ...modifiers }, 'mod+?', true)).toBe(true);
+    expect(matchesShortcut({ key: '/', ...modifiers }, 'mod+?', true)).toBe(true);
+  });
+
   it('converts platform modifiers and pressed keys into canonical bindings', () => {
     const keyPress = {
       key: 'P',

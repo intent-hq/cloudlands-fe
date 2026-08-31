@@ -1367,14 +1367,6 @@
     // Note: Mod+/ for keyboard shortcuts cheat sheet is handled globally in +layout.svelte
     // Do NOT add a handler here or it will toggle twice (once per handler)
 
-    // Mod+Shift+M - Toggle zoom on focused panel
-    if (isMod && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-      e.preventDefault();
-      e.stopPropagation();
-      keyboardShortcuts.executeAction('zoom-toggle');
-      return;
-    }
-
     // Mod+Shift+Enter - Toggle zoom on focused panel (alternative)
     if (isMod && e.shiftKey && e.key === 'Enter') {
       e.preventDefault();

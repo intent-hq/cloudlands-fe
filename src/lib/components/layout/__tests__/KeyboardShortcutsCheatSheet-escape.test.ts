@@ -4,20 +4,8 @@
  * from the real `shortcutsCheatSheet` slice so Escape dispatching
  * `closeCheatSheet()` actually hides it.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -26,9 +14,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 vi.mock('svelte-fa', async () => {
-  const MockFa = (
-    await import('../../ui/__tests__/mocks/Fa.svelte')
-  ).default;
+  const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
 });
 
@@ -38,6 +24,10 @@ import {
   closeCheatSheet,
 } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
 import KeyboardShortcutsCheatSheet from '../KeyboardShortcutsCheatSheet.svelte';
+import {
+  resetShortcutOverride,
+  setShortcutOverride,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 describe('KeyboardShortcutsCheatSheet Escape handling (escape-layer stack)', () => {
   beforeAll(() => {
@@ -47,6 +37,17 @@ describe('KeyboardShortcutsCheatSheet Escape handling (escape-layer stack)', () 
   afterEach(() => {
     cleanup();
     appStore.dispatch(closeCheatSheet());
+    appStore.dispatch(resetShortcutOverride('global.settings'));
+  });
+
+  it('shows the effective shortcut after a user override', async () => {
+    const { container } = render(KeyboardShortcutsCheatSheet);
+    appStore.dispatch(setShortcutOverride('global.settings', 'alt+p'));
+    appStore.dispatch(openCheatSheet('global'));
+
+    await waitFor(() => {
+      expect(container.querySelector('.cheat-sheet')?.textContent).toContain('Alt+P');
+    });
   });
 
   it('Escape closes the open cheat sheet', async () => {

@@ -6,7 +6,12 @@
  * Labels/titles use property getters so they re-resolve on locale change.
  */
 import { m } from '$shared/paraglide/messages.js';
-import { SHORTCUT_DEFAULTS, type ShortcutId } from './shortcut-bindings';
+import {
+  resolveShortcut,
+  SHORTCUT_DEFAULTS,
+  type ShortcutId,
+  type ShortcutOverrides,
+} from './shortcut-bindings';
 
 // Detect platform once
 const isMac =
@@ -1038,6 +1043,24 @@ export function getShortcutsForContext(
 /**
  * Get all shortcuts organized by category
  */
-export function getAllShortcutCategories(): typeof SHORTCUT_CATEGORIES {
-  return SHORTCUT_CATEGORIES;
+export function getAllShortcutCategories(
+  overrides: ShortcutOverrides = {},
+): Record<ShortcutCategory, { title: string; shortcuts: ShortcutEntry[] }> {
+  return Object.fromEntries(
+    (
+      Object.entries(SHORTCUT_CATEGORIES) as [
+        ShortcutCategory,
+        (typeof SHORTCUT_CATEGORIES)[ShortcutCategory],
+      ][]
+    ).map(([category, data]) => [
+      category,
+      {
+        title: data.title,
+        shortcuts: data.shortcuts.map((shortcut, index) => ({
+          ...shortcut,
+          key: resolveShortcut(SHORTCUT_IDS_BY_CATEGORY[category][index], overrides),
+        })),
+      },
+    ]),
+  ) as Record<ShortcutCategory, { title: string; shortcuts: ShortcutEntry[] }>;
 }

@@ -122,6 +122,32 @@ export interface ShortcutKeyboardEvent {
 }
 
 const MODIFIER_EVENT_KEYS = new Set(['alt', 'control', 'meta', 'shift']);
+const SHIFTED_KEY_BASES: Record<string, string> = {
+  '~': '`',
+  '!': '1',
+  '@': '2',
+  '#': '3',
+  $: '4',
+  '%': '5',
+  '^': '6',
+  '&': '7',
+  '*': '8',
+  '(': '9',
+  ')': '0',
+  _: '-',
+  '+': '=',
+  '{': '[',
+  '}': ']',
+  '|': '\\',
+  ':': ';',
+  '"': "'",
+  '<': ',',
+  '>': '.',
+  '?': '/',
+};
+const BASE_KEY_SHIFTS = Object.fromEntries(
+  Object.entries(SHIFTED_KEY_BASES).map(([shifted, base]) => [base, shifted]),
+);
 
 /** Convert a supported key press into the canonical value stored in preferences. */
 export function shortcutFromKeyboardEvent(
@@ -184,10 +210,13 @@ export function normalizeShortcut(value: string): string | null {
     const first = alternatives[0] ?? '';
     const commonPrefix = first.includes('+') ? `${first.slice(0, first.lastIndexOf('+'))}+` : '';
     const normalized = alternatives.map((part, index) => {
-      const candidate = index > 0 && commonPrefix && !part.includes('+') ? commonPrefix + part : part;
+      const candidate =
+        index > 0 && commonPrefix && !part.includes('+') ? commonPrefix + part : part;
       const rawKey = candidate.slice(candidate.lastIndexOf('+') + 1);
       const parsed = parseShortcut(
-        /^[A-Z]$/.test(rawKey) ? `${candidate.slice(0, -1)}shift+${rawKey.toLowerCase()}` : candidate,
+        /^[A-Z]$/.test(rawKey)
+          ? `${candidate.slice(0, -1)}shift+${rawKey.toLowerCase()}`
+          : candidate,
       );
       if (!parsed) return null;
       const modifiers = MODIFIER_ORDER.filter((modifier) => parsed[modifier]);
@@ -217,7 +246,9 @@ export function normalizeShortcut(value: string): string | null {
 /** Preserve a collective shortcut's range/alternatives while changing its captured chord. */
 export function applyShortcutCapture(id: ShortcutId, captured: string): string {
   const defaultBinding = SHORTCUT_DEFAULTS[id];
-  const modifiers = captured.includes('+') ? `${captured.slice(0, captured.lastIndexOf('+'))}+` : '';
+  const modifiers = captured.includes('+')
+    ? `${captured.slice(0, captured.lastIndexOf('+'))}+`
+    : '';
   const sequenceMatch = defaultBinding.match(/^(.+?)\s+\+\s+([1-8]-9)$/);
   if (sequenceMatch) return `${captured} + ${sequenceMatch[2]}`;
 
@@ -248,7 +279,8 @@ function expandShortcutPattern(shortcut: string): string[] {
   const commonPrefix = first.includes('+') ? `${first.slice(0, first.lastIndexOf('+'))}+` : '';
   return alternatives.map((part, index) => {
     const token = part.trim();
-    const binding = index > 0 && commonPrefix && !token.includes('+') ? commonPrefix + token : token;
+    const binding =
+      index > 0 && commonPrefix && !token.includes('+') ? commonPrefix + token : token;
     return /^[A-Z]$/.test(binding)
       ? `shift+${binding.toLowerCase()}`
       : binding === 'space'
@@ -275,12 +307,14 @@ export function matchesShortcut(
   const parsed = parseShortcut(shortcut);
   if (!parsed) return false;
   const eventKey = KEY_ALIASES[event.key.toLowerCase()] ?? event.key.toLowerCase();
-  const shiftedBaseKey = parsed.shift
-    ? ({ '{': '[', '}': ']', '|': '\\' } as Record<string, string>)[eventKey]
-    : undefined;
   const implicitShift = parsed.key.length === 1 && '~!@#$%^&*()_+{}|:"<>?'.includes(parsed.key);
+  const equivalentKeys = new Set([
+    eventKey,
+    SHIFTED_KEY_BASES[eventKey],
+    event.shiftKey ? BASE_KEY_SHIFTS[eventKey] : undefined,
+  ]);
   return (
-    (eventKey === parsed.key || shiftedBaseKey === parsed.key) &&
+    equivalentKeys.has(parsed.key) &&
     event.metaKey === (parsed.mod && mac) &&
     event.ctrlKey === (parsed.ctrl || (parsed.mod && !mac)) &&
     event.altKey === parsed.alt &&

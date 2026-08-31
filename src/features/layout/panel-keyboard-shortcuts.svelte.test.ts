@@ -10,9 +10,12 @@ const mocks = vi.hoisted(() => ({
     activeTabId: 'pane-1',
     tabs: [{ id: 'pane-1' }, { id: 'pane-2' }],
   } as { id: string; activeTabId: string | null; tabs: Array<{ id: string }> } | null,
+  shortcutOverrides: {} as Record<string, string>,
 }));
 
-vi.mock('$store/renderer/store', () => ({ store: { state: {} } }));
+vi.mock('$store/renderer/store', () => ({
+  store: { state: { userPreferences: { shortcutOverrides: mocks.shortcutOverrides } } },
+}));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectFocusedPanelId: { select: () => mocks.focusedPanelId },
   selectFocusedPanel: { select: () => mocks.focusedPanel },
@@ -76,6 +79,7 @@ describe('fixed-column panel keyboard shortcuts', () => {
       activeTabId: 'pane-1',
       tabs: [{ id: 'pane-1' }, { id: 'pane-2' }],
     };
+    for (const key of Object.keys(mocks.shortcutOverrides)) delete mocks.shortcutOverrides[key];
   });
 
   it('keeps split-right horizontal', () => {
@@ -321,6 +325,19 @@ describe('fixed-column panel keyboard shortcuts', () => {
     expect(shortcuts.handleKeyDown(event)).toBe(true);
     expect(splitPanel).toHaveBeenCalledWith('p1', 'vertical');
     expect(shortcuts.leaderActive).toBe(false);
+    shortcuts.cleanup();
+  });
+
+  it('keeps a modified jump-to-panel trigger intact', () => {
+    mocks.shortcutOverrides['leader.jump-to-panel'] = 'alt+x + 1-9';
+    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+      isMac: true,
+    });
+    shortcuts.activateLeader();
+
+    expect(shortcuts.handleKeyDown(event('x', { altKey: true }))).toBe(true);
+    expect(shortcuts.showPanelNumbers).toBe(true);
+    expect(shortcuts.leaderActive).toBe(true);
     shortcuts.cleanup();
   });
 });
