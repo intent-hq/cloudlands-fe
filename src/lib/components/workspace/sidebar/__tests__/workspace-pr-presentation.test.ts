@@ -107,6 +107,106 @@ describe('buildWorkspacePRPresentationModel', () => {
     expect(rows[1]).toMatchObject({ repo: 'other/tools', repoContext: 'other/tools' });
   });
 
+  it('keeps repo context on a cross-repo pool entry (intent-hq/intent#3964)', () => {
+    const rows = build(
+      [
+        makePR({ id: 'own', number: 7 }),
+        makePR({
+          id: 'cross',
+          number: 16,
+          title: 'Cross-repo PR',
+          url: 'https://github.com/other-org/tools/pull/16',
+        }),
+      ],
+      null,
+      [],
+    );
+
+    expect(rows.map(({ identity }) => identity).sort()).toEqual([
+      'acme/widgets#7',
+      'other-org/tools#16',
+    ]);
+    expect(rows.find((row) => row.number === 16)).toMatchObject({
+      repo: 'other-org/tools',
+      repoContext: 'other-org/tools',
+      url: 'https://github.com/other-org/tools/pull/16',
+    });
+    expect(rows.find((row) => row.number === 7)?.repoContext).toBeUndefined();
+  });
+
+  it('annotates a cross-repo pool entry with its monitor instead of duplicating it', () => {
+    const rows = build(
+      [
+        makePR({
+          id: 'cross',
+          number: 16,
+          title: 'Cross-repo PR',
+          url: 'https://github.com/other-org/tools/pull/16',
+        }),
+      ],
+      null,
+      [
+        makeMonitor({
+          repo: 'other-org/tools',
+          prNumber: 16,
+          title: 'Monitored cross-repo PR',
+          url: 'https://github.com/other-org/tools/pull/16',
+        }),
+      ],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      identity: 'other-org/tools#16',
+      repo: 'other-org/tools',
+      repoContext: 'other-org/tools',
+      monitorAgentId: 'agent-1',
+      monitorOnly: false,
+    });
+  });
+
+  it('does not let same-numbered PRs collide across repos in the isDraft lookup', () => {
+    const rows = build(
+      [
+        makePR({ id: 'own', number: 5, isDraft: true }),
+        makePR({
+          id: 'cross',
+          number: 5,
+          title: 'Cross-repo PR',
+          url: 'https://github.com/other-org/tools/pull/5',
+        }),
+      ],
+      null,
+      [],
+    );
+
+    const own = rows.find((row) => row.identity === 'acme/widgets#5');
+    const cross = rows.find((row) => row.identity === 'other-org/tools#5');
+    expect(own?.status).toBe('draft');
+    expect(cross?.status).toBe('open');
+  });
+
+  it('keeps source-backed details when the workspace repo is unknown', () => {
+    const rows = buildWorkspacePRPresentationModel({
+      workspacePRs: [
+        makePR({
+          number: 3,
+          isDraft: true,
+          reviewDecision: 'CHANGES_REQUESTED',
+        }),
+      ],
+      activePR: null,
+      monitors: [],
+      workspaceRepo: undefined,
+      buildPrUrl,
+      getDisplayTitle,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ identity: '3', status: 'draft' });
+    expect(rows[0].details).toContain('Changes requested');
+  });
+
   it('presents a snapshotless monitor without inventing merge state', () => {
     const [row] = build([], null, [makeMonitor({ prNumber: 8, lastSnapshot: undefined })]);
     expect(row).toMatchObject({ status: 'open', accessibleStateLabel: 'Open', details: 'Open' });

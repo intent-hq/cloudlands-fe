@@ -5,7 +5,12 @@ import { m } from '$shared/paraglide/messages.js';
 import type { PullRequestInfo } from '$shared/types';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
-import { getPRStatusTooltip, mapWorkspacePRs, mergeMonitoredPRs } from './sidebar-changes-utils';
+import {
+  getPRStatusTooltip,
+  mapWorkspacePRs,
+  mergeMonitoredPRs,
+  prRepoFromUrl,
+} from './sidebar-changes-utils';
 
 export interface WorkspacePRPresentationOptions {
   workspacePRs: PullRequestInfo[] | undefined;
@@ -107,11 +112,23 @@ export function buildWorkspacePRPresentationModel({
   getDisplayTitle,
 }: WorkspacePRPresentationOptions): WorkspacePRPresentationRow[] {
   const branchSources = workspacePRs?.length ? workspacePRs : activePR ? [activePR] : [];
+  // The daemon-merged `pullRequests` pool can contain cross-repo entries whose
+  // `url` is authoritative for their repo (intent-hq/intentd#1330) — key each
+  // source by its own repo so a cross-repo entry never collides with a
+  // same-numbered workspace-repo PR (intent-hq/intent#3964). Without a
+  // workspace repo, mapWorkspacePRs leaves every row unqualified and lookups
+  // key by bare number, so the sources must too.
   const sourceByIdentity = new Map(
-    branchSources.map((pr) => [normalizedPrIdentity(workspaceRepo, pr.number), pr]),
+    branchSources.map((pr) => [
+      normalizedPrIdentity(
+        workspaceRepo === undefined ? undefined : (prRepoFromUrl(pr.url) ?? workspaceRepo),
+        pr.number,
+      ),
+      pr,
+    ]),
   );
   const combined = mergeMonitoredPRs(
-    mapWorkspacePRs(workspacePRs, activePR, buildPrUrl, getDisplayTitle),
+    mapWorkspacePRs(workspacePRs, activePR, buildPrUrl, getDisplayTitle, workspaceRepo),
     monitors,
     workspaceRepo,
   );
