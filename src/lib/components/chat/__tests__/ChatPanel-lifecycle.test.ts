@@ -109,6 +109,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     historyCount: 0,
     tailCount: 0,
   }),
+  selectAgentTailCapPruned: mocks.selector(false),
   selectAgentSessionStreamingContent: mocks.selector(''),
   selectAgentIsResponding: mocks.selector(false),
   selectAgentIsRunning: mocks.selector(false),
@@ -146,6 +147,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   }),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
+  selectPendingProposalRecovery: mocks.selector(undefined),
   selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
@@ -774,7 +776,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('preserves typed text when the composer remounts', async () => {
+  it('keeps the composer mounted (wizard auto-collapsed) when questions arrive mid-typing', async () => {
     mocks.draftGet.mockResolvedValue(null);
     render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -783,13 +785,24 @@ describe('ChatPanel mounted lifecycle', () => {
     await Promise.resolve();
     await tick();
 
-    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+    const editorBefore = screen.getByTestId('mock-rich-input-editor');
+    await fireEvent.input(editorBefore, {
       target: { value: 'keep this draft' },
     });
     mocks.pendingQuestions = { messageId: 'question-1', questions: [] };
     mocks.agentMessages.set([{ id: 'question-1' }]);
     await tick();
-    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    // Auto-collapse resolves synchronously with the pendingQuestions change:
+    // the wizard's first render is already the collapsed banner and the
+    // composer's input element is NEVER destroyed — the exact same DOM node
+    // survives (a transient expanded render would recreate it, dropping
+    // editor focus/selection and in-progress IME composition even though the
+    // text rebinds).
+    expect(screen.getByTestId('question-wizard-slot')).not.toBeNull();
+    expect(screen.getByTestId('mock-rich-input-editor')).toBe(editorBefore);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'keep this draft',
+    );
 
     mocks.pendingQuestions = null;
     mocks.agentMessages.set([]);
@@ -800,6 +813,22 @@ describe('ChatPanel mounted lifecycle', () => {
       'keep this draft',
     );
     expect(mocks.draftGet).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the composer with the wizard when questions arrive on an empty composer', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    mocks.pendingQuestions = { messageId: 'question-1', questions: [] };
+    mocks.agentMessages.set([{ id: 'question-1' }]);
+    await tick();
+    expect(screen.getByTestId('question-wizard-slot')).not.toBeNull();
+    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
   });
 
   it('does not overwrite typing that races delayed draft hydration', async () => {

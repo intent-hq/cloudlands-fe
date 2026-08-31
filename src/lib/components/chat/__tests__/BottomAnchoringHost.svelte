@@ -92,6 +92,7 @@
     use:followBottom={{
       follow,
       threshold: 100,
+      layoutNeutralBottomAnchor: true,
       onFollowChange: (next) => (follow = next),
       onScrollStateChange: report,
     }}

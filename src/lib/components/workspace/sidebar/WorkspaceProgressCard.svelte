@@ -22,6 +22,7 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -376,18 +377,24 @@
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
-        duration: 15000,
-        action: {
-          label: m.workspace_multiSelectSidebar_undo_label(),
-          onClick: async () => {
-            const undoResult = await workspaceClient.unarchive($workspace.id);
-            if (undoResult.ok) {
-              appStore.dispatch(loadWorkspacesRequested());
-            }
+      toast.warning(
+        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
+        withToastCountdown(
+          {
+            duration: 15000,
+            action: {
+              label: m.workspace_multiSelectSidebar_undo_label(),
+              onClick: async () => {
+                const undoResult = await workspaceClient.unarchive($workspace.id);
+                if (undoResult.ok) {
+                  appStore.dispatch(loadWorkspacesRequested());
+                }
+              },
+            },
           },
-        },
-      });
+          { pauseOnHover: false },
+        ),
+      );
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
@@ -1111,6 +1118,7 @@
               content={action?.tooltip}
               side="bottom"
               align="start"
+              delayDuration={300}
               disabled={!action?.tooltip}
             >
               <Button
@@ -1231,6 +1239,7 @@
             content={action?.tooltip}
             side="bottom"
             align="start"
+            delayDuration={300}
             disabled={!action?.tooltip}
           >
             <Button

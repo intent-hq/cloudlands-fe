@@ -14,6 +14,7 @@ import {
 } from '../../workspace/workspace-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import {
+  backendReconnected,
   initialState as initialLifecycleState,
   workspaceDeleted,
   workspaceHydrationRequested,
@@ -205,6 +206,21 @@ describe('workspaceLoadSaga', () => {
       ui: { hasInitialized: true },
       navigation: { currentIndex: 0, history: [expect.objectContaining({ id: 'spec' })] },
     });
+    await stop(run.task);
+  });
+
+  it('takes the cold path on revisit after a backend reconnect (#3788)', async () => {
+    const cached = workspace('reconnect-space');
+    mocks.open.mockResolvedValueOnce({ ok: true, data: cached });
+    const run = createHarness({ cached, live: true });
+
+    run.dispatch(backendReconnected());
+    run.dispatch(workspaceLoadRequested(cached.id));
+    await settle();
+
+    expect(mocks.open).toHaveBeenCalledExactlyOnceWith(cached.id);
+    expect(run.actions).toContainEqual(workspaceHydrationRequested(cached.id));
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe('ready');
     await stop(run.task);
   });
 

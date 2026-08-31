@@ -195,6 +195,8 @@ import {
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
+import { toLockRecord } from '$features/file-tracking/file-tracking.client';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
@@ -263,6 +265,7 @@ import {
   clearServerErrorMessage,
   setServerErrorMessage,
   setServerStatus,
+  setWorkspaceMcpServerDisabled,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -2143,6 +2146,36 @@ function handlePrEvent(
 }
 
 /**
+ * `changes:agent-locks` (§6.5, protocol v8.8) carries the self-sufficient
+ * daemon-computed agent-lock snapshot `{ workspaceId, autoCommitEnabled,
+ * lockedAgentIds: string[], lockedFilePaths: string[] }` — which agents' files
+ * must not be manually staged/reverted (agent actively working + auto-commit
+ * enabled). The wire arrays fold into the slice's `Record<string, true>`
+ * lookup shape and dispatch straight into the agent-lock slice; the payload's
+ * own `data.workspaceId` wins over the envelope id when present (same
+ * convention as the tokenUsage/context handlers). Hydration on workspace
+ * switch goes through the same-shaped `file-tracking.getAgentLocks` read
+ * (§5.19, `hydrateAgentLocks` in file-tracking.client).
+ */
+function handleAgentLocksEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  if (!Array.isArray(data.lockedAgentIds) || !Array.isArray(data.lockedFilePaths)) return;
+  appStore.dispatch(
+    setAgentLockState(
+      workspaceId,
+      toLockRecord(data.lockedAgentIds),
+      toLockRecord(data.lockedFilePaths),
+    ),
+  );
+}
+
+/**
  * `workspace:activity-changed` (PROTOCOL §6.5 / §10.1) carries the
  * self-sufficient payload `{ workspaceId, activity }` — the daemon emits this
  * only on the `Idle ↔ AgentRunning` edge (count `0 ↔ 1` transitions), so the
@@ -2509,6 +2542,14 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   const wireChanges = (data as { changes?: unknown }).changes;
   if (!wireChanges || typeof wireChanges !== 'object') return;
   const raw = wireChanges as Record<string, unknown>;
+  // `mcpServerToggled` (§5.22 per-workspace disable) is a non-column delta —
+  // a self-sufficient notification of a workspace-scoped `mcp.servers.toggle`,
+  // never a `Workspace` field — so it routes to the mcp-settings slice and is
+  // excluded from the entity whitelist below. Resolve serverId → name via the
+  // current server list (same pattern as `mcp.servers:status-changed`); when
+  // the list has not loaded the id yet, drop the update — the sidebar's
+  // hydrate on mount converges the state.
+  handleWorkspaceMcpServerToggled(raw, workspaceId);
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
   if (typeof raw.statusMessage === 'string') changes.statusMessage = raw.statusMessage;
@@ -2618,6 +2659,31 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
       });
     }
   }
+}
+
+/**
+ * `mcpServerToggled` on a `workspace:updated` delta (PROTOCOL §5.22
+ * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
+ * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
+ * agent-driven toggles) mirror the per-workspace state without a follow-up
+ * `mcp.servers.list` read. The slice keys the map by server *name*, so the
+ * daemon id resolves via the current server list; an unresolvable id is
+ * dropped (the sidebar's mount hydrate converges the state later).
+ */
+function handleWorkspaceMcpServerToggled(
+  raw: Record<string, unknown>,
+  workspaceId: string,
+): void {
+  const toggled = raw.mcpServerToggled;
+  if (!toggled || typeof toggled !== 'object') return;
+  const { serverId, workspaceDisabled } = toggled as Record<string, unknown>;
+  if (typeof serverId !== 'string' || !serverId || typeof workspaceDisabled !== 'boolean') {
+    return;
+  }
+  const servers = appStore.state.mcpSettings.servers;
+  const match = servers.find((s) => s.id === serverId);
+  if (!match) return;
+  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, match.name, workspaceDisabled));
 }
 
 /**
@@ -3004,7 +3070,7 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
  * `scriptId` — self-sufficient per §6.7 — so the renderer mirrors it into
  * the scripts slice via `updateRuntimeState` without a follow-up
  * `script.status` read. The reducer no-ops if the script hasn't been
- * hydrated yet by `initializeScripts` (matches the reference saga).
+ * hydrated yet by lifecycle hydration (matches the reference saga).
  */
 function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -3721,6 +3787,14 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // agent-lock snapshot. Self-sufficient payload, folded straight into the
+  // agent-lock slice; no timeline value, so no eventReceived dispatch.
+  if (type === 'changes:agent-locks') {
+    handleAgentLocksEvent(event, workspaceId);
+    return;
+  }
+
   // Git/changes events should
   // refresh the changes slice so daemon-originated commits appear live in the
   // sidebar Changes panel. Debounce per workspace (~1s) because
@@ -3969,6 +4043,10 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'git:*',
   'changes:git-status',
   'changes:tracked',
+  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // agent-lock snapshot folded into the agent-lock slice; without the
+  // subscribe filter the gating in FileChangesSection never engages live.
+  'changes:agent-locks',
   'line-attribution:updated',
   'pr:*',
   'mcp.servers:status-changed',

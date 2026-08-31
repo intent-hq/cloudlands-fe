@@ -45,7 +45,7 @@ import {
   refreshPRStatusRequested,
 } from '../../pr-status/pr-status-slice';
 import { refreshScripts, setScriptsData, setScriptsInitialized } from '../../scripts/scripts-slice';
-import { loadSkillsRequested, setSkills } from '../../skills/skills-slice';
+import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
   hydrateTaskAgentAssociations,
   hydrateTaskAgentAssociationsRequested,
@@ -471,11 +471,16 @@ function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
 }
 
 function* refreshSkills(workspaceId: string): SagaGenerator<void> {
-  const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(
-    [appClient.skills, appClient.skills.list],
-    workspaceId,
-  );
-  yield* put(setSkills(workspaceId, skills));
+  try {
+    const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(
+      [appClient.skills, appClient.skills.list],
+      workspaceId,
+    );
+    yield* put(setSkills(workspaceId, skills));
+  } catch (error) {
+    yield* put(loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)));
+    throw error;
+  }
 }
 
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {

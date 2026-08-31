@@ -3,6 +3,13 @@ export interface ChatFocusRequest {
   agentId?: string;
   workspaceId?: string;
   panelId?: string;
+  /**
+   * Dictation-flagged requests target the composer that started a dictation,
+   * so they bypass the panel-focused guard: the user may have focused another
+   * panel mid-dictation, and the transcript must still land in the
+   * originating composer. Agent/workspace/active-tab matching is unchanged.
+   */
+  source?: 'dictation';
 }
 
 interface ChatFocusOwner {
@@ -24,7 +31,7 @@ export function shouldHandleChatFocusRequest(
   if (request.workspaceId && request.workspaceId !== owner.workspaceId) return false;
 
   if (owner.panelId) {
-    if (!owner.isPanelFocused) return false;
+    if (request.source !== 'dictation' && !owner.isPanelFocused) return false;
     if (request.panelId && request.panelId !== owner.panelId) return false;
   }
 

@@ -4,8 +4,12 @@
  * The input order is the composed chronological order. A displayport frontier
  * is the oldest currently adjacent row; once known, hydrated rows newer than
  * it are retained even after they leave the preload band. Only older,
- * non-user, non-forced rows may dehydrate. DOM observation and geometry stay
- * with the component; this module only reports deterministic transitions.
+ * non-user, non-forced rows may dehydrate. Every row — user rows included —
+ * starts as a placeholder so a workspace switch mounts only the displayport;
+ * user rows differ solely in that once hydrated they never dehydrate (their
+ * DOM anchors pinned-prompt tracking and prompt navigation). DOM observation
+ * and geometry stay with the component; this module only reports
+ * deterministic transitions.
  */
 
 import { observeLazyTurnVisibility } from './lazy-turn-observer';
@@ -22,6 +26,14 @@ interface MessageHydrationPolicyOptions {
 }
 
 export interface MessageHydrationPolicy {
+  /**
+   * Registers a mounted row element for visibility observation. The returned
+   * cleanup is the ONLY way a registration is released before dispose() —
+   * updateMessages() never releases registrations (ids transiently absent
+   * from the list stay observed) — so callers MUST invoke it on unmount, and
+   * boundedness relies on every observed id being a row rendered from the
+   * same composed message list.
+   */
   observe(id: string, element: Element, root: HTMLElement | null): () => void;
   setActive(active: boolean): void;
   setForced(id: string, forced: boolean): void;
@@ -42,10 +54,6 @@ function isUserHydrationMessage(message: HydrationMessage): boolean {
   return message.role === 'user' || message.isUser === true;
 }
 
-function shouldStartAsMessagePlaceholder(message: HydrationMessage, forced = false): boolean {
-  return !isUserHydrationMessage(message) && !forced;
-}
-
 function sortByIndex(records: Iterable<MessageRecord>): MessageRecord[] {
   return [...records].sort((a, b) => a.index - b.index);
 }
@@ -55,24 +63,36 @@ export function createMessageHydrationPolicy(
   options: MessageHydrationPolicyOptions = {},
 ): MessageHydrationPolicy {
   const records = new Map<string, MessageRecord>();
-  const registrations = new Map<
-    string,
-    { element: Element; root: HTMLElement | null; release: (() => void) | null }
-  >();
+  interface Registration {
+    element: Element;
+    root: HTMLElement | null;
+    release: (() => void) | null;
+    /** Last visibility report seen before a matching record existed. */
+    pendingReport: boolean | null;
+  }
+  const registrations = new Map<string, Registration>();
   let frontierId: string | undefined;
   let disposed = false;
   let active = true;
 
+  /**
+   * At most this many appended rows hydrate eagerly per update. A single send
+   * or streaming turn appends only a handful of rows, so the "sends never
+   * flash" property is unaffected; a large batch append (an inactive panel
+   * reactivating after heavy background chatter delivers the whole backlog as
+   * one append) must not mount synchronously — rows beyond the tail window
+   * stay placeholders for the observer/frontier to hydrate on demand.
+   */
+  const MAX_EAGER_APPEND_ROWS = 8;
+
   function makeRecord(message: HydrationMessage, index: number): MessageRecord {
-    const forced = false;
-    const isUser = isUserHydrationMessage(message);
     return {
       ...message,
       index,
-      isUser,
-      forced,
+      isUser: isUserHydrationMessage(message),
+      forced: false,
       isIntersecting: false,
-      hydrated: !shouldStartAsMessagePlaceholder(message, forced),
+      hydrated: false,
     };
   }
 
@@ -103,8 +123,7 @@ export function createMessageHydrationPolicy(
     const boundary = frontierIndex();
     for (const record of sortByIndex(records.values())) {
       const isAtOrNewerThanFrontier = boundary !== undefined && record.index >= boundary;
-      const shouldHydrate =
-        record.isUser || record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
+      const shouldHydrate = record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
       if (shouldHydrate && !record.hydrated) {
         record.hydrated = true;
         options.onHydrate?.(record.id);
@@ -118,16 +137,20 @@ export function createMessageHydrationPolicy(
   function reportVisibility(id: string, isIntersecting: boolean): void {
     if (disposed) return;
     const record = records.get(id);
-    if (!record) return;
+    if (!record) {
+      // Rows can report before updateMessages() installs their record, and
+      // IntersectionObserver only re-fires on boundary crossings — retain the
+      // report so updateMessages() can replay it instead of dropping it.
+      const registration = registrations.get(id);
+      if (registration) registration.pendingReport = isIntersecting;
+      return;
+    }
     record.isIntersecting = isIntersecting;
     recomputeFrontier();
     reconcile();
   }
 
-  function attachRegistration(
-    id: string,
-    registration: { element: Element; root: HTMLElement | null; release: (() => void) | null },
-  ) {
+  function attachRegistration(id: string, registration: Registration) {
     if (!active || disposed || registration.release) return;
     registration.release = observeLazyTurnVisibility(
       registration.element,
@@ -140,10 +163,10 @@ export function createMessageHydrationPolicy(
     observe(id, element, root) {
       // Child rows may mount before the parent effect publishes the composed
       // message list. Keep that stable registration; visibility reports are
-      // safely ignored until updateMessages() installs the matching record.
+      // retained until updateMessages() installs the matching record.
       if (disposed) return () => {};
       registrations.get(id)?.release?.();
-      const registration = { element, root, release: null as (() => void) | null };
+      const registration: Registration = { element, root, release: null, pendingReport: null };
       registrations.set(id, registration);
       attachRegistration(id, registration);
       return () => {
@@ -161,6 +184,9 @@ export function createMessageHydrationPolicy(
         for (const registration of registrations.values()) {
           registration.release?.();
           registration.release = null;
+          // A retained pre-record report is stale once observation stops; the
+          // re-attached observer reports fresh visibility on activation.
+          registration.pendingReport = null;
         }
       }
     },
@@ -175,11 +201,34 @@ export function createMessageHydrationPolicy(
       if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
+      // Appended rows (newer than every previously known row) hydrate eagerly:
+      // a just-sent user message or a fresh streaming row must not paint as a
+      // placeholder while waiting for an intersection report. Interior
+      // insertions and older-history prepends stay placeholders. Eagerness
+      // requires a surviving previous row (lastKnownIndex >= 0): both an
+      // initial install AND a full transcript replacement (a rebound panel
+      // publishing a disjoint id set on workspace/agent switch) start fully
+      // dehydrated so only what the observer reports visible mounts. Eagerness
+      // is also capped to the trailing MAX_EAGER_APPEND_ROWS of the list so a
+      // reactivation backlog (every row a background agent appended while the
+      // panel was inactive, delivered as one large append) cannot mount
+      // synchronously either.
+      let lastKnownIndex = -1;
+      nextMessages.forEach((message, index) => {
+        if (previous.has(message.id)) lastKnownIndex = index;
+      });
+      const eagerTailStart = nextMessages.length - MAX_EAGER_APPEND_ROWS;
       for (const [id, registration] of registrations) {
-        if (!nextIds.has(id)) {
-          registration.release?.();
-          registrations.delete(id);
-        }
+        if (nextIds.has(id)) continue;
+        // The component owns the registration lifecycle (observe()'s cleanup
+        // runs on unmount). A mounted row whose message transiently leaves
+        // the composed list must keep its observation — IntersectionObserver
+        // only re-fires on boundary crossings, so a released registration
+        // goes permanently silent and the republished row stays a blank
+        // placeholder. Retain the dropped record's last visibility so the
+        // replay below restores it when the message returns.
+        const dropped = previous.get(id);
+        if (dropped) registration.pendingReport = dropped.isIntersecting;
       }
       records.clear();
       nextMessages.forEach((message, index) => {
@@ -192,9 +241,21 @@ export function createMessageHydrationPolicy(
             isUser: isUserHydrationMessage(message),
           });
         } else {
-          records.set(message.id, makeRecord(message, index));
+          const record = makeRecord(message, index);
+          records.set(message.id, record);
+          if (lastKnownIndex >= 0 && index > lastKnownIndex && index >= eagerTailStart) {
+            record.hydrated = true;
+            options.onHydrate?.(record.id);
+          }
         }
       });
+      for (const [id, registration] of registrations) {
+        if (registration.pendingReport === null) continue;
+        const record = records.get(id);
+        if (!record) continue;
+        record.isIntersecting = registration.pendingReport;
+        registration.pendingReport = null;
+      }
       recomputeFrontier();
       reconcile();
     },

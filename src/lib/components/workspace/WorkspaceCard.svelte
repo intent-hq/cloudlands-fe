@@ -183,6 +183,21 @@
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
 
+  // Hover-intent delay before mounting the hover card. Mounting
+  // WorkspaceHoverCard is expensive (7 store selector subscriptions plus
+  // on-demand load dispatches that fan out to every live selector in the
+  // app), so scrubbing the pointer across the list must not mount one per
+  // row — only a pointer that rests on a row opens the card.
+  const HOVER_CARD_OPEN_DELAY_MS = 250;
+  let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearHoverCardOpenTimer() {
+    if (hoverCardOpenTimer !== null) {
+      clearTimeout(hoverCardOpenTimer);
+      hoverCardOpenTimer = null;
+    }
+  }
+
   const activePullRequest = $derived.by(() => {
     if (!workspace) return null;
     return selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
@@ -230,15 +245,25 @@
 
   function handleMouseEnter() {
     onHover?.();
-    if (workspace && !suppressHover) hoverCardVisible = true;
+    if (workspace && !suppressHover) {
+      clearHoverCardOpenTimer();
+      hoverCardOpenTimer = setTimeout(() => {
+        hoverCardOpenTimer = null;
+        hoverCardVisible = true;
+      }, HOVER_CARD_OPEN_DELAY_MS);
+    }
   }
 
   function handleMouseLeave() {
+    clearHoverCardOpenTimer();
     hoverCardVisible = false;
   }
 
   $effect(() => {
-    if (suppressHover) hoverCardVisible = false;
+    if (suppressHover) {
+      clearHoverCardOpenTimer();
+      hoverCardVisible = false;
+    }
   });
 
   let contextMenu: { x: number; y: number } | null = $state(null);
@@ -271,6 +296,7 @@
   });
 
   onDestroy(() => {
+    clearHoverCardOpenTimer();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
@@ -797,7 +823,7 @@
             <span
               class={cn(
                 'inline-flex items-center gap-1',
-                stats.pr.hasMerged ? 'text-primary' : 'text-success',
+                stats.pr.hasMerged ? 'text-purple-500' : 'text-success',
               )}>{statusPrLabel}</span
             >
           </div>

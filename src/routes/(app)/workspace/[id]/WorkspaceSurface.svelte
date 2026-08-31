@@ -139,7 +139,6 @@
     if (cachedWorkspace) {
       newState.updateState({
         workspaceData: cachedWorkspace,
-        workspace: { id: wsId, status: 'ready' },
       });
     }
 
@@ -321,12 +320,6 @@
       logger.debug('Transitioning workspace state from optimistic to real', {
         from: previousWorkspaceId,
         to: currentWorkspaceId,
-      });
-
-      // Update the workspace ID in the existing state
-      // Don't set status to "loading" to avoid showing loading states
-      workspaceState.updateState({
-        workspace: { id: currentWorkspaceId, status: 'ready' },
       });
 
       // Use untrack to prevent this state mutation from triggering effect re-runs

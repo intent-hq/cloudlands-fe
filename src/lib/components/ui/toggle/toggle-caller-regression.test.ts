@@ -109,7 +109,6 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/debug/DebugPanel.svelte',
-        'src/lib/components/file-tracking/CodeChangesPanel.svelte',
         'src/lib/components/settings/AgentBackendSettings.svelte',
         'src/lib/components/settings/BackendSyncSettings.svelte',
         'src/lib/components/settings/OpenInAppsSettings.svelte',
@@ -136,7 +135,6 @@ describe('B2 caller metadata regression', () => {
         'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/file-tracking/CodeChangesPanel.svelte',
         'src/lib/components/settings/ColorThemeSettings.svelte',
       ],
     };
@@ -146,9 +144,6 @@ describe('B2 caller metadata regression', () => {
     for (const aggregator of structuralAggregatorPaths) {
       expect(Object.values(discovered).flat()).not.toContain(aggregator);
     }
-    expect(discovered['toggle-group']).toContain(
-      'src/lib/components/file-tracking/CodeChangesPanel.svelte',
-    );
     expect({
       checkbox: checkboxMetadata.callers,
       switch: switchMetadata.callers,

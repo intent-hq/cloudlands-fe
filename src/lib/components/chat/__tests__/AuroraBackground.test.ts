@@ -189,6 +189,11 @@ describe('AuroraBackground cleanup', () => {
   it('sets every shader color to the computed active surface on initial mount', () => {
     render(AuroraBackground);
 
+    // The mount-time color sync is deferred to the batched layout read phase
+    // (one rAF) instead of forcing a style recalc synchronously.
+    expect(mockGL.gl.uniform3f).not.toHaveBeenCalled();
+    flushRafCallbacks();
+
     const expected = [202 / 255, 213 / 255, 91 / 255];
     expect(uniformColors()).toEqual([expected, expected, expected]);
   });

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceId } from '$shared/types/branded-ids';
-import { initialState, pruneAppliedProposalLifecycleEntries, proposalApplyStarted, proposalApplySucceeded, proposalFailed, proposalLifecycleReducer } from './proposal-lifecycle-slice';
+import {
+  initialState,
+  pruneAppliedProposalLifecycleEntries,
+  proposalApplyStarted,
+  proposalApplySucceeded,
+  proposalFailed,
+  proposalLifecycleReducer,
+  proposalResolutionReconciled,
+} from './proposal-lifecycle-slice';
 
 describe('proposalLifecycleReducer', () => {
   it('returns the initial state', () => {
@@ -116,17 +124,73 @@ describe('proposalLifecycleReducer', () => {
     expect(applied.p1.result).toBeUndefined();
   });
 
-  it('prunes non-applied and expired lifecycle entries before persistence', () => {
+  it('prunes non-resolved and expired lifecycle entries before persistence', () => {
     const now = 31 * 24 * 60 * 60 * 1000;
     expect(
       pruneAppliedProposalLifecycleEntries(
         {
           applied: { status: 'applied', completedAt: now },
+          dismissed: { status: 'dismissed', completedAt: now, lastAction: 'dismiss' },
           expired: { status: 'applied', completedAt: 10 },
           failed: { status: 'failed', completedAt: now, error: 'Nope', lastAction: 'apply' },
         },
         now,
       ),
-    ).toEqual({ applied: { status: 'applied', completedAt: now } });
+    ).toEqual({
+      applied: { status: 'applied', completedAt: now },
+      dismissed: { status: 'dismissed', completedAt: now, lastAction: 'dismiss' },
+    });
+  });
+
+  it('reconciles a daemon dismissed resolution into the dismissed status', () => {
+    const dismissed = proposalLifecycleReducer(
+      initialState,
+      proposalResolutionReconciled({ proposalId: 'p1', outcome: 'dismissed', completedAt: 70 }),
+    );
+    expect(dismissed.p1).toEqual({
+      status: 'dismissed',
+      error: undefined,
+      errorCode: undefined,
+      completedAt: 70,
+      lastAction: 'dismiss',
+    });
+  });
+
+  it('reconciles a daemon applied resolution and clears a stale failure', () => {
+    const failed = proposalLifecycleReducer(
+      initialState,
+      proposalFailed({ proposalId: 'p1', error: 'Nope', completedAt: 50, lastAction: 'apply' }),
+    );
+    const applied = proposalLifecycleReducer(
+      failed,
+      proposalResolutionReconciled({ proposalId: 'p1', outcome: 'applied', completedAt: 70 }),
+    );
+    expect(applied.p1.status).toBe('applied');
+    expect(applied.p1.error).toBeUndefined();
+    expect(applied.p1.lastAction).toBe('apply');
+  });
+
+  it('never downgrades an applied entry on a later dismissed reconciliation (first outcome wins)', () => {
+    const applied = proposalLifecycleReducer(
+      initialState,
+      proposalApplySucceeded({ proposalId: 'p1', completedAt: 20 }),
+    );
+    const after = proposalLifecycleReducer(
+      applied,
+      proposalResolutionReconciled({ proposalId: 'p1', outcome: 'dismissed', completedAt: 90 }),
+    );
+    expect(after).toBe(applied);
+  });
+
+  it('is idempotent on re-reconciling the same outcome', () => {
+    const dismissed = proposalLifecycleReducer(
+      initialState,
+      proposalResolutionReconciled({ proposalId: 'p1', outcome: 'dismissed', completedAt: 70 }),
+    );
+    const again = proposalLifecycleReducer(
+      dismissed,
+      proposalResolutionReconciled({ proposalId: 'p1', outcome: 'dismissed', completedAt: 99 }),
+    );
+    expect(again).toBe(dismissed);
   });
 });

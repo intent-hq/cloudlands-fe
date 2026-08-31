@@ -24,6 +24,12 @@ for (const theme of ['light', 'dark'] as const) {
               batchSeam: root
                 .querySelector('[data-testid="conversation-turn-gap"]')!
                 .getAttribute('data-batched-seam'),
+              batchedWakeSeam:
+                root
+                  .querySelector(
+                    '[data-testid="batched-wake-lane"] [data-testid="event-wakeup-card"]',
+                  )!
+                  .getBoundingClientRect().top - rect('batched-wake-predecessor').bottom,
             };
           });
 
@@ -32,6 +38,7 @@ for (const theme of ['light', 'dark'] as const) {
           finishedToAnswer: 24 * zoom,
           attentionAnswerSeam: 'true',
           batchSeam: null,
+          batchedWakeSeam: 8 * zoom,
         });
 
         for (const scenario of ['ordinary-batch', 'malformed-answer'] as const) {

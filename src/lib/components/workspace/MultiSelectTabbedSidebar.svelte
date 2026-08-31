@@ -28,6 +28,7 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { Button } from '$lib/components/ui/button';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
@@ -35,7 +36,6 @@
     markNoteRead,
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
-  import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
@@ -52,6 +52,7 @@
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
   import { scrollFade } from '$lib/actions/scroll-fade';
+  import { scheduleLayoutRead } from '$lib/utils/layout-phases';
 
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -468,19 +469,11 @@
   const focusedContentAgentId = $derived($activeTab$?.agentId ?? null);
   const focusedContentFilePath = $derived($activeTab$?.filePath ?? null);
   const focusedContentDiffPath = $derived($activeTab$?.diffPath ?? null);
-  let lastInitializedNotesWorkspaceId: string | null = null;
 
   $effect(() => {
     workspaceId;
     agentSearchQuery = '';
     contextSearchQuery = '';
-  });
-
-  $effect(() => {
-    if (!workspaceId || lastInitializedNotesWorkspaceId === workspaceId) return;
-    lastInitializedNotesWorkspaceId = workspaceId;
-    const initialSelectedNoteId = focusedContentType === 'note' ? focusedContentNoteId : undefined;
-    appStore.dispatch(initializeNotes(workspaceId, initialSelectedNoteId ?? undefined));
   });
 
   const effectiveSelectedNoteId = $derived(
@@ -602,18 +595,24 @@
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
-        duration: 15000,
-        action: {
-          label: m.workspace_multiSelectSidebar_undo_label(),
-          onClick: async () => {
-            const undoResult = await workspaceClient.unarchive($workspace.id);
-            if (undoResult.ok) {
-              appStore.dispatch(loadWorkspacesRequested());
-            }
+      toast.warning(
+        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
+        withToastCountdown(
+          {
+            duration: 15000,
+            action: {
+              label: m.workspace_multiSelectSidebar_undo_label(),
+              onClick: async () => {
+                const undoResult = await workspaceClient.unarchive($workspace.id);
+                if (undoResult.ok) {
+                  appStore.dispatch(loadWorkspacesRequested());
+                }
+              },
+            },
           },
-        },
-      });
+          { pauseOnHover: false },
+        ),
+      );
       await navigateAfterWorkspaceRemoval($workspace.id);
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
@@ -688,28 +687,29 @@
   }
 
   onMount(() => {
-    updateExpandedOverlayBounds();
-    updateLauncherIconLimit();
-    const frame = requestAnimationFrame(() => {
+    // Measurement is deferred to ResizeObserver's guaranteed initial
+    // delivery (after layout, pre-paint) instead of running synchronously
+    // here: mount happens mid-flush on workspace switches, where the
+    // getBoundingClientRect sweep forces a reflow.
+    let cancelRead: (() => void) | null = null;
+    const measure = () => {
       updateExpandedOverlayBounds();
       updateLauncherIconLimit();
-    });
+    };
     if (typeof ResizeObserver === 'undefined' || !sidebarElement) {
-      return () => cancelAnimationFrame(frame);
+      cancelRead = scheduleLayoutRead(() => {
+        cancelRead = null;
+        measure();
+      });
+      return () => cancelRead?.();
     }
 
-    const observer = new ResizeObserver(() => {
-      updateExpandedOverlayBounds();
-      updateLauncherIconLimit();
-    });
+    const observer = new ResizeObserver(measure);
     observer.observe(sidebarElement);
     const titleRegion = sidebarElement.querySelector<HTMLElement>('[data-workspace-title-region]');
     if (titleRegion) observer.observe(titleRegion);
     if (bottomLaunchersElement) observer.observe(bottomLaunchersElement);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   });
 
   // Map registry sidebar tab IDs to MultiSelectTabbedSidebar tab IDs

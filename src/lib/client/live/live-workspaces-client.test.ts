@@ -69,6 +69,46 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(parsed.progressId).toBe(progressId);
   });
 
+  it('create forwards contextLinks on the wire (PROTOCOL §5.1)', async () => {
+    mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
+    const client = new LiveWorkspacesClient();
+    const contextLinks = [
+      {
+        kind: 'pr' as const,
+        url: 'https://github.com/acme/widgets/pull/42',
+        owner: 'acme',
+        repo: 'widgets',
+        number: 42,
+      },
+      {
+        kind: 'issue' as const,
+        url: 'https://github.com/acme/widgets/issues/7',
+        owner: 'acme',
+        repo: 'widgets',
+        number: 7,
+      },
+    ];
+
+    await client.create({
+      title: 'With context links',
+      branch: 'feature/pr-head',
+      baseRef: 'main',
+      contextLinks,
+    } as CreateWorkspaceRequest);
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      'workspace.create',
+      expect.objectContaining({ contextLinks, branch: 'feature/pr-head', baseRef: 'main' }),
+      { timeoutMs: 120_000 },
+    );
+    // The wire params (minus the per-call idempotencyKey) must satisfy the
+    // shared request schema, which now admits contextLinks.
+    const [, params] = mockedRequest.mock.calls[0];
+    const { idempotencyKey: _ignored, ...request } = params as Record<string, unknown>;
+    const parsed = CreateWorkspaceRequestSchema.parse(request);
+    expect(parsed.contextLinks).toEqual(contextLinks);
+  });
+
   it("create surfaces the daemon's { workspace } normalized on the result", async () => {
     // PROTOCOL §5.1: workspace.create → { workspace: Workspace }. The legacy
     // `workspace:create` bridge hands this to the creation flow as

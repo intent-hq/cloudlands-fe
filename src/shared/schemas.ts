@@ -93,6 +93,17 @@ export const WorkspaceStatusMessageSchema = z
   .string()
   .max(WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, 'Workspace status message is too long');
 
+// Issue/PR context link on `workspace.create` and the persisted `Workspace`
+// payload (PROTOCOL §5.1 `contextLinks`): lowercase `kind`, non-empty
+// url/owner/repo, positive integer `number`.
+const ContextLinkSchema = z.object({
+  kind: z.enum(['issue', 'pr']),
+  url: z.string().min(1),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  number: z.number().int().positive(),
+});
+
 export const WorkspaceSchema = z.object({
   id: workspaceIdSchema, // Accepts slug format, UUID, or optimistic IDs
   name: z.string().optional(), // Compatibility with agent system
@@ -136,6 +147,8 @@ export const WorkspaceSchema = z.object({
   prStatus: z.string().nullable().optional(),
   pullRequests: z.array(z.any()).optional(),
   activePullRequest: z.any().optional(),
+  /** Issue/PR context links persisted at create (PROTOCOL §5.1); write-once, omitted when there are none. */
+  contextLinks: z.array(ContextLinkSchema).max(20).optional(),
   environmentConfig: z.any().optional(),
   defaultModel: z.string().optional(),
   agentSummary: z.object({ agentIds: z.array(z.string()) }).optional(),
@@ -197,6 +210,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   isNewRepo: z.boolean().optional(),
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
+  contextLinks: z.array(ContextLinkSchema).max(20).optional(), // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1)
 });
 
 /**

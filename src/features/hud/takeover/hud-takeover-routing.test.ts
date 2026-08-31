@@ -83,10 +83,29 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
     ]);
   });
 
-  it('dodges same-row far targets through gutters, never crossing the row of cells', () => {
+  it('routes same-row far targets straight through empty intermediate cells', () => {
     const graph = g(
       [
         ['a', { x: 1, y: 0 }],
+        ['b', { x: 4, y: 0 }],
+      ],
+      [{ from: 'a', to: 'b', kind: 'dep' }],
+    );
+    const { routes, maxLanes } = takeoverEdgeRoutes(graph);
+    expect(routes[0].points).toEqual([
+      { x: 1 + HALF, y: 0 },
+      { x: 4 - HALF, y: 0 },
+    ]);
+    expect(routes[0].segments).toEqual([{ axis: 'h', channel: 0, lane: 0 }]);
+    // The straight run lies in the row corridor (integer channel) — no gutter demand.
+    expect(maxLanes).toBe(0);
+  });
+
+  it('dodges same-row far targets through gutters when an intermediate cell is occupied', () => {
+    const graph = g(
+      [
+        ['a', { x: 1, y: 0 }],
+        ['x', { x: 2, y: 0 }],
         ['b', { x: 3, y: 0 }],
       ],
       [{ from: 'a', to: 'b', kind: 'dep' }],
@@ -175,11 +194,12 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
 
   it('stickiness: a blocked member falls back to first-fit without overwriting the memo', () => {
     // As above, s's bundle memoizes lane 1 on v:1.5 (s→c bumped by u→v).
-    // u→q's conflict run then claims lane 1 over [2.5,3.5], so s→e's run
-    // ([0,4]) finds its sticky lane blocked and falls back to first-fit
-    // (lanes 0 and 1 both blocked ⇒ lane 2). The fallback must not overwrite
-    // the memo: s→b's run ([0,1]) clears every blocker and still converges
-    // on the sticky lane 1, not lane 0 or the fallback lane 2.
+    // u→q's conflict run (kept in the gutter by the occupied (1,3)) then
+    // claims lane 1 over [2.5,3.5], so s→e's run ([0,4]) finds its sticky
+    // lane blocked and falls back to first-fit (lanes 0 and 1 both blocked ⇒
+    // lane 2). The fallback must not overwrite the memo: s→b's run ([0,1])
+    // clears every blocker and still converges on the sticky lane 1, not
+    // lane 0 or the fallback lane 2.
     const graph = g(
       [
         ['s', { x: 1, y: 0 }],
@@ -188,6 +208,7 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
         ['e', { x: 2, y: 4 }],
         ['u', { x: 1, y: 2 }],
         ['v', { x: 2, y: 3 }],
+        ['w', { x: 1, y: 3 }],
         ['q', { x: 1, y: 4 }],
       ],
       [
@@ -270,10 +291,27 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
     expect(routes[0].segments).toEqual([{ axis: 'v', channel: 1, lane: 0 }]);
   });
 
-  it('same-column far conflict detours through the right-hand gutters, oriented from → to', () => {
+  it('routes same-column far conflicts straight through empty intermediate cells, oriented from → to', () => {
     const graph = g(
       [
         ['a', { x: 1, y: 0 }],
+        ['b', { x: 1, y: 3 }],
+      ],
+      [{ from: 'b', to: 'a', kind: 'conflict' }],
+    );
+    const { routes } = takeoverEdgeRoutes(graph);
+    expect(routes[0].points).toEqual([
+      { x: 1, y: 3 - HALF },
+      { x: 1, y: HALF },
+    ]);
+    expect(routes[0].segments).toEqual([{ axis: 'v', channel: 1, lane: 0 }]);
+  });
+
+  it('same-column far conflict detours through the right-hand gutters when an intermediate cell is occupied', () => {
+    const graph = g(
+      [
+        ['a', { x: 1, y: 0 }],
+        ['x', { x: 1, y: 1 }],
         ['b', { x: 1, y: 2 }],
       ],
       [{ from: 'b', to: 'a', kind: 'conflict' }],
@@ -294,6 +332,45 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
       'h:0.5',
       'v:1',
     ]);
+  });
+
+  it('treats the spec cell at (0,0) as occupied when checking straight corridors', () => {
+    const graph = g(
+      [
+        ['p', { x: 0, y: -1 }],
+        ['q', { x: 0, y: 1 }],
+      ],
+      [{ from: 'p', to: 'q', kind: 'conflict' }],
+    );
+    const { routes } = takeoverEdgeRoutes(graph);
+    // (0,0) hosts the virtual spec node, so the straight column is blocked.
+    expect(routes[0].points).toHaveLength(6);
+  });
+
+  it('corridor straight runs: same-bundle spans share the lane, other bundles take distinct lanes', () => {
+    const graph = g(
+      [
+        ['a', { x: 1, y: 0 }],
+        ['b', { x: 3, y: 0 }],
+        ['c', { x: 2, y: 1 }],
+      ],
+      [
+        { from: 'a', to: 'b', kind: 'dep' },
+        { from: 'a', to: 'c', kind: 'dep' },
+        { from: 'a', to: 'b', kind: 'conflict' },
+      ],
+    );
+    const { routes, maxLanes } = takeoverEdgeRoutes(graph);
+    // a→b dep runs straight through the empty (2,0) on corridor h:0, lane 0.
+    expect(routes[0].points).toHaveLength(2);
+    expect(routes[0].segments).toEqual([{ axis: 'h', channel: 0, lane: 0 }]);
+    // a→c's exit stub overlaps it on h:0 — same bundle (dep, from a) shares lane 0.
+    expect(routes[1].segments[0]).toEqual({ axis: 'h', channel: 0, lane: 0 });
+    // a→b conflict is a different bundle: its straight run is blocked onto lane 1.
+    expect(routes[2].points).toHaveLength(2);
+    expect(routes[2].segments).toEqual([{ axis: 'h', channel: 0, lane: 1 }]);
+    // Corridor lanes never drive maxLanes; only a→c's gutter run (v:1.5) counts.
+    expect(maxLanes).toBe(1);
   });
 
   it('right-to-left conflicts route mirrored, preserving from → to point order', () => {

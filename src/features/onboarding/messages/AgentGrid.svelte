@@ -208,6 +208,9 @@
           docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
           installCommand: meta?.installCommand ?? '',
           loginCommand: meta?.loginCommand ?? '',
+          /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
+           *  rendered as copyable guidance when the provider needs login. */
+          loginCommandHint: p.loginCommandHint,
           description: PROVIDER_DESCRIPTIONS[p.id] ?? '',
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */

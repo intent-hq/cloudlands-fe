@@ -162,6 +162,54 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     expect(await client.getMcpServers()).toEqual([]);
   });
 
+  it("getWorkspaceDisabledMcpServerNames reads the workspace-scoped mcp.servers.list (§5.22)", async () => {
+    // Workspace-scoped read: every entry adds `workspaceDisabled: boolean`.
+    mockedRequest.mockResolvedValueOnce({
+      servers: [
+        { id: "srv-fs", name: "filesystem", transport: "stdio", command: "npx", enabled: true, workspaceDisabled: true },
+        { id: "srv-gh", name: "github", transport: "http", url: "https://mcp.github.com/mcp", enabled: true, workspaceDisabled: false },
+      ],
+    });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getWorkspaceDisabledMcpServerNames("ws-1");
+    expect(mockedRequest).toHaveBeenCalledWith("mcp.servers.list", { workspaceId: "ws-1" });
+    expect(result).toEqual(["filesystem"]);
+  });
+
+  it("getWorkspaceDisabledMcpServerNames folds a transport failure to null", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveSettingsClient();
+    expect(await client.getWorkspaceDisabledMcpServerNames("ws-1")).toBeNull();
+  });
+
+  it("toggleWorkspaceMcpServer sends the workspace-scoped mcp.servers.toggle (§5.22)", async () => {
+    // Scoped toggle result: { status, workspaceDisabled } per the H1 contract.
+    mockedRequest.mockResolvedValueOnce({
+      status: { serverId: "srv-fs", state: "running", pid: 4821, toolCount: 7, startedAt: 1750000000000 },
+      workspaceDisabled: true,
+    });
+    const client = new LiveSettingsClient();
+
+    const result = await client.toggleWorkspaceMcpServer("ws-1", "srv-fs", false);
+    expect(mockedRequest).toHaveBeenCalledWith("mcp.servers.toggle", {
+      serverId: "srv-fs",
+      enabled: false,
+      workspaceId: "ws-1",
+    });
+    expect(result).toEqual({ success: true, workspaceDisabled: true });
+  });
+
+  it("toggleWorkspaceMcpServer folds a not-found rejection to a failed MutationResult", async () => {
+    // Unknown serverId or workspaceId → -32602 with data.code "not-found" (§5.22).
+    mockedRequest.mockRejectedValueOnce(new Error("Invalid params"));
+    const client = new LiveSettingsClient();
+    expect(await client.toggleWorkspaceMcpServer("ws-x", "srv-x", true)).toEqual({
+      success: false,
+      error: "Invalid params",
+    });
+  });
+
   it("getMcpServerStatuses fans out mcp.servers.getStatus (§5.22) per serverId", async () => {
     // PROTOCOL §5.22 McpServerStatus — daemon-probed running server, then a
     // failed one. Point reads are issued in serverIds order.

@@ -1,11 +1,18 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { AgentMessage } from '$shared/types';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
   import ConversationTurnGap from '../ConversationTurnGap.svelte';
+  import EventWakeupBanner from '../EventWakeupBanner.svelte';
   import {
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
   } from '../attention-flow-spacing';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { store } from '$store/renderer/store';
+
+  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  onDestroy(disposeStore);
 
   interface Props {
     theme?: 'light' | 'dark';
@@ -50,6 +57,18 @@
   const nextTurn = $derived({ userMessage: nextMessage, assistantMessages: [] });
   const attentionAnswerSeam = $derived(isAttentionQuestionAnswerSeam(currentTurn, nextTurn));
   const batchSeam = $derived(!attentionAnswerSeam && isBatchedDeliverySeam(currentTurn, nextTurn));
+  const wakeMetadata = {
+    type: 'event_notification' as const,
+    eventCount: 1,
+    eventTypes: ['agent:idle'],
+    events: [
+      {
+        type: 'agent:idle',
+        data: { agentName: 'Builder', completionReport: 'Done' },
+        timestamp: '2026-08-25T00:00:02.000Z',
+      },
+    ],
+  };
 </script>
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom>
@@ -72,6 +91,25 @@
         attentionQuestionAnswerSeam={attentionAnswerSeam}
       />
       <div class="h-9 rounded-lg bg-sidebar" data-testid="question-answer-card">Answers</div>
+    </div>
+
+    <!-- Batched wake-banner seam: the h-2 gap is the sole spacing owner, so the
+         banner's own mt-8 is suppressed and the seam measures exactly 8px. -->
+    <div class="mt-8" data-testid="batched-wake-lane">
+      <div class="h-7" data-testid="batched-wake-predecessor">Batch member</div>
+      <ConversationTurnGap
+        currentIsEventNotification={false}
+        currentHasAssistantMessages={false}
+        nextIsEventNotification
+        batchedDeliverySeam
+      />
+      <EventWakeupBanner
+        metadata={wakeMetadata}
+        asDivider
+        suppressTopGap
+        showAgentCards={false}
+        workspace={null}
+      />
     </div>
   </div>
 </section>

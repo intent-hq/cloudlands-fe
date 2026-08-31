@@ -590,7 +590,7 @@ export interface HudWorkspaceCard {
   keySlot: number | null;
   /** BE-owned task rollup (`task.list` stats; zeros until loaded). */
   tasks: { total: number; completed: number; inProgress: number };
-  /** Sum of the four token counters from the workspace usage rollup. */
+  /** Five-counter token sum from the workspace usage rollup (§5.23). */
   tokens: number;
   /** Live agents only (running / needs-attention / failed buckets), wire order. */
   agents: HudCardAgent[];
@@ -1034,12 +1034,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       tasks: stats
         ? { total: stats.total, completed: stats.completed, inProgress: stats.inProgress }
         : ZERO_TASKS,
-      tokens: usageTotals
-        ? usageTotals.inputTokens +
-          usageTotals.outputTokens +
-          usageTotals.cacheReadTokens +
-          usageTotals.cacheCreationTokens
-        : 0,
+      tokens: usageTotals ? sumHudUsageTotals(usageTotals) : 0,
       agents: keepLiveWithAncestors(agents),
     };
   });

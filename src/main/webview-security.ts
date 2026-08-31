@@ -195,6 +195,15 @@ function isWebviewPopup(contents: Electron.WebContents): boolean {
 }
 
 /**
+ * Check if a BrowserWindow is an external popup created from a webview
+ * (OAuth/auth flows). These are not app windows — callers enumerating the
+ * app's windows (e.g. the Window menu) should exclude them.
+ */
+export function isWebviewPopupWindow(win: Electron.BrowserWindow): boolean {
+  return !win.webContents.isDestroyed() && isWebviewPopup(win.webContents);
+}
+
+/**
  * Track a popup window created from a webview (or from another tracked popup).
  * Registers the popup's webContents ID so navigation handlers allow free
  * http/https navigation (needed for OAuth redirect chains). Also attaches

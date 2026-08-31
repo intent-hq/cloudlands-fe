@@ -3121,6 +3121,26 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.tasks).toEqual({ total: 6, completed: 2, inProgress: 1 });
     expect(card.tokens).toBe(175);
   });
+
+  it('includes thoughtTokens in the card token sum when reported (§5.23)', () => {
+    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })], [], {
+      tokenUsage: {
+        byWorkspaceId: {
+          'ws-1': {
+            totals: {
+              inputTokens: 100,
+              outputTokens: 40,
+              cacheReadTokens: 30,
+              cacheCreationTokens: 5,
+              thoughtTokens: 25,
+            },
+          },
+        },
+      },
+    });
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.tokens).toBe(200);
+  });
 });
 
 describe('HUD agent running-state consistency (mid-turn delegated agents)', () => {

@@ -299,6 +299,17 @@ export const FILE_EXTENSIONS = {
 // Single source of truth for URL protocol validation across the app.
 // If you need to change which protocols are allowed, update ONLY this section.
 
+/**
+ * macOS System Settings deep link to Privacy & Security → Input Monitoring,
+ * where the user re-grants the HID permission the hardware console needs.
+ * The only non-http(s) URL allowed through the external opener (see
+ * BROWSER_PROTOCOLS.EXTERNAL_EXACT below); the scheme is a no-op on other
+ * platforms.
+ */
+// i18n-ignore (URL)
+export const MACOS_INPUT_MONITORING_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent';
+
 export const BROWSER_PROTOCOLS = {
   /**
    * Protocols allowed in the embedded browser (webview).
@@ -320,8 +331,20 @@ export const BROWSER_PROTOCOLS = {
 
   /**
    * Protocols for external URL opening (system browser, shell:openExternal).
+   * http/https only — non-web schemes are never allowlisted wholesale here
+   * (every caller converges on the same opener, including the daemon→client
+   * host.openExternal reverse RPC); known OS deep links go in EXTERNAL_EXACT
+   * as full-string entries instead.
    */
   EXTERNAL: ['http:', 'https:'] as readonly string[],
+
+  /**
+   * Exact non-http(s) URLs allowed for external opening (full-string match,
+   * checked alongside EXTERNAL). Keeps hardcoded OS deep links working —
+   * e.g. the macOS Input Monitoring System Settings pane, which cannot
+   * inject code — without opening up their whole scheme to runtime URLs.
+   */
+  EXTERNAL_EXACT: [MACOS_INPUT_MONITORING_SETTINGS_URL] as readonly string[],
 
   /**
    * Internal app protocols (not user-facing).

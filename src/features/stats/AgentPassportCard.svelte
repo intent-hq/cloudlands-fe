@@ -3,9 +3,10 @@
    * Agent Passport card (design card 1, 360×640).
    *
    * Pixel recreation of `Agent Stats Share.dc.html` card 1 with the design's
-   * in/out row extended to all separate token counters (Spec D6). Reasoning
-   * `thoughtTokens` (optional-when-zero, §5.23) get a fifth counter rendered
-   * only when reported, so the breakdown always reconciles to the hero total.
+   * in/out row extended to all separate token counters. The counters are
+   * disjoint buckets (§5.23 / §5.36); reasoning `thoughtTokens` (omitted when
+   * zero) get a fifth counter rendered only when reported, so the breakdown
+   * always reconciles to the hero total (the five-counter `totalTokens` sum).
    * Every number comes from the fetched `stats.getUsage` result; `null` (not
    * yet loaded) and zero-data periods render the same zeroed layout.
    */

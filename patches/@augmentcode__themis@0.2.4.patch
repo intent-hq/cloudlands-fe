@@ -1,0 +1,70 @@
+diff --git a/dist/utils/selector-core/create-cached-selector.js b/dist/utils/selector-core/create-cached-selector.js
+index 765cfed5373c132365acfb89a80172f52c72e56e..8da3d06b1cf9c13270e248e43d9d256a4e88a079 100644
+--- a/dist/utils/selector-core/create-cached-selector.js
++++ b/dist/utils/selector-core/create-cached-selector.js
+@@ -69,6 +69,47 @@ var createTrackingProxy = (target, accessedPaths, parsedPaths, currentPath = [])
+ 	proxyValuesWeakMap.set(proxy, rawTarget);
+ 	return proxy;
+ };
++// Patched (pnpm patchedDependencies): cache tracking proxies per (raw object, path)
++// and build path keys incrementally to remove per-property-access allocations on
++// selector recompute. Retire this patch once fixed upstream:
++// https://github.com/augmentcode/themis/issues/15
++var pathKeySeparator = "\u0001";
++var createTrackingContext = (parsedPaths) => ({
++	accessedPaths: void 0,
++	parsedPaths,
++	proxyCache: /* @__PURE__ */ new WeakMap()
++});
++var createCachedTrackingProxy = (target, context, pathKey = "", currentPath = []) => {
++	if (target === null || target === void 0 || typeof target !== "object") return target;
++	const rawTarget = getRawValue(target);
++	let proxiesByPath = context.proxyCache.get(rawTarget);
++	if (proxiesByPath) {
++		const cachedProxy = proxiesByPath.get(pathKey);
++		if (cachedProxy) return cachedProxy;
++	} else {
++		proxiesByPath = /* @__PURE__ */ new Map();
++		context.proxyCache.set(rawTarget, proxiesByPath);
++	}
++	const proxy = new Proxy(rawTarget, { get(obj, prop) {
++		const value = Reflect.get(obj, prop);
++		if (!prop) return value;
++		if (typeof prop === "string" && collectionFieldsSet.has(prop) && isCollectionLike(obj)) return value;
++		const segment = typeof prop === "symbol" ? String(prop) : prop;
++		const encodedSegment = segment.length + ":" + segment;
++		const pathString = pathKey === "" ? encodedSegment : pathKey + pathKeySeparator + encodedSegment;
++		let newPath = context.parsedPaths.get(pathString);
++		if (!newPath) {
++			newPath = [...currentPath, prop];
++			context.parsedPaths.set(pathString, newPath);
++		}
++		context.accessedPaths.add(pathString);
++		if (value !== null && typeof value === "object" && !Array.isArray(value) && !isCollectionLike(value)) return createCachedTrackingProxy(value, context, pathString, newPath);
++		return value;
++	} });
++	proxyValuesWeakMap.set(proxy, rawTarget);
++	proxiesByPath.set(pathKey, proxy);
++	return proxy;
++};
+ var isValueChangedAtPath = (prevState, nextState, path) => {
+ 	let currentPrev = prevState;
+ 	let currentNext = nextState;
+@@ -125,6 +166,7 @@ var createCachedSelector = (selectorFunc, options) => {
+ 	let previousState = void 0;
+ 	let accessedPaths = /* @__PURE__ */ new Set();
+ 	const parsedPaths = /* @__PURE__ */ new Map();
++	const trackingContext = createTrackingContext(parsedPaths);
+ 	return (state, ...args) => {
+ 		const rawValue = getRawValue(state);
+ 		if (options?.lockUpdatesPredicate?.(rawValue) && previousSelectResult !== void 0) return previousSelectResult;
+@@ -143,7 +185,8 @@ var createCachedSelector = (selectorFunc, options) => {
+ 			return result;
+ 		}
+ 		const newAccessedPaths = /* @__PURE__ */ new Set();
+-		const trackedState = createTrackingProxy(state, newAccessedPaths, parsedPaths);
++		trackingContext.accessedPaths = newAccessedPaths;
++		const trackedState = createCachedTrackingProxy(state, trackingContext);
+ 		const executionStartedAt = traceExecution ? performance.now() : void 0;
+ 		const result = getRawValue(selectorFunc(trackedState, ...args));
+ 		const executionDurationMs = executionStartedAt === void 0 ? void 0 : performance.now() - executionStartedAt;

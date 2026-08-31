@@ -12,12 +12,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const {
   mockGetBranches,
+  mockBranchStatus,
   mockGithubBranches,
   mockGithubBranchesCached,
   debugFlags,
   savedBranchByRepo,
 } = vi.hoisted(() => ({
   mockGetBranches: vi.fn(),
+  mockBranchStatus: vi.fn(async () => null),
   mockGithubBranches: vi.fn(),
   mockGithubBranchesCached: vi.fn(),
   // Mutable knobs for the module-level mocks below. Tests arm form
@@ -28,7 +30,7 @@ const {
 
 vi.mock('$lib/client', () => ({
   appClient: {
-    git: { getBranches: mockGetBranches, branchStatus: vi.fn(async () => null) },
+    git: { getBranches: mockGetBranches, branchStatus: mockBranchStatus },
     integrations: {
       githubBranches: mockGithubBranches,
       githubBranchesCached: mockGithubBranchesCached,
@@ -651,5 +653,85 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     // Let the 100ms search debounce (and the effect behind it) settle.
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(mockGithubBranches).not.toHaveBeenCalled();
+  });
+});
+
+describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, intent-hq/intent#3945)', () => {
+  beforeEach(() => {
+    mockGetBranches.mockReset();
+    mockBranchStatus.mockReset();
+    mockGithubBranches.mockReset();
+    mockGithubBranchesCached.mockReset();
+    for (const key of Object.keys(debugFlags)) delete debugFlags[key];
+    for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
+    // Local repo where the auto-selected default IS the current branch, so the
+    // uncommitted-changes flag reported by the daemon applies to the selection.
+    mockGetBranches.mockResolvedValue({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+  });
+
+  const localProps = {
+    repoPath: '/tmp/repo',
+    repoType: 'local' as const,
+    showUncommittedIndicator: true,
+  };
+
+  /** The amber status dot (trigger + dropdown notice share the same marker). */
+  function uncommittedDot(root: ParentNode) {
+    return root.querySelector('.bg-amber-500');
+  }
+
+  it('shows the indicator and dropdown notice with uncommitted changes on the current branch', async () => {
+    mockBranchStatus.mockResolvedValue({ behind: 0, hasUncommittedChanges: true });
+    const { container } = render(BranchSelector, {
+      props: { ...localProps, skipIsolation: false },
+    });
+
+    await waitFor(() => expect(mockBranchStatus).toHaveBeenCalledWith('/tmp/repo', 'main'));
+    // Trigger dot appears once the status settles (isolated checkout planned →
+    // uncommitted working-directory changes really are left behind).
+    await waitFor(() => expect(uncommittedDot(container)).toBeTruthy());
+
+    await openDropdown(container);
+    await waitFor(() =>
+      expect(screen.getByText("Uncommitted changes won't be included.")).toBeTruthy(),
+    );
+  });
+
+  it('hides the indicator and dropdown notice when skipIsolation is on', async () => {
+    // Identical daemon-reported status — only skipIsolation differs. Working
+    // directly on the current branch DOES include uncommitted changes, so the
+    // warning would be misleading.
+    mockBranchStatus.mockResolvedValue({ behind: 0, hasUncommittedChanges: true });
+    const { container } = render(BranchSelector, {
+      props: { ...localProps, skipIsolation: true },
+    });
+
+    await waitFor(() => expect(mockBranchStatus).toHaveBeenCalledWith('/tmp/repo', 'main'));
+    // Let the settled status render before asserting absence.
+    await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
+    expect(uncommittedDot(container)).toBeNull();
+
+    await openDropdown(container);
+    expect(screen.queryByText("Uncommitted changes won't be included.")).toBeNull();
+  });
+
+  it('keeps the behind-branch notice visible when skipIsolation hides the uncommitted one', async () => {
+    mockBranchStatus.mockResolvedValue({ behind: 2, hasUncommittedChanges: true });
+    const { container } = render(BranchSelector, {
+      props: { ...localProps, skipIsolation: true },
+    });
+
+    await waitFor(() => expect(mockBranchStatus).toHaveBeenCalledWith('/tmp/repo', 'main'));
+    await openDropdown(container);
+    await waitFor(() =>
+      expect(screen.getByText("We'll pull the latest changes into your workspace.")).toBeTruthy(),
+    );
+    expect(screen.queryByText("Uncommitted changes won't be included.")).toBeNull();
   });
 });

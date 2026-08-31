@@ -41,6 +41,7 @@ const mockState: {
     provider: 'elevenlabs',
     keyConfigured: { elevenlabs: true, openai: false },
   },
+  panelLayout: { byWorkspaceId: {} },
 };
 
 const dispatched: { type: string; payload?: unknown }[] = [];
@@ -179,6 +180,16 @@ function invokeActionKeySaga() {
   };
 }
 
+/** Pin the CM2 slot 5 (ACT11) mapping — the default is now cycle-open-windows. */
+function mapCm2Act11To(actionId: string): void {
+  const mapping = [...mockState.hardwareConsole.actionMappingByModel['creator-micro-2']];
+  mapping[5] = actionId;
+  mockState.hardwareConsole.actionMappingByModel['creator-micro-2'] = normalizeActionMapping(
+    mapping,
+    'creator-micro-2',
+  );
+}
+
 describe('handleActionKeyPress', () => {
   it('executes the mapped action for an available action key', () => {
     // Slot 0 (ACT06) = new-workspace, always available.
@@ -203,7 +214,9 @@ describe('handleActionKeyPress', () => {
   });
 
   it('no-ops with the no-in-progress-agents hint when no agents are in progress', () => {
-    // Slot 5 (ACT11) = cycle-in-progress-agents; no in-progress agents anywhere.
+    // Slot 5 (ACT11) mapped to cycle-in-progress-agents; no in-progress
+    // agents anywhere.
+    mapCm2Act11To('cycle-in-progress-agents');
     const showUnavailableHint = vi.fn();
     const result = handleActionKeyPress('ACT11', { showUnavailableHint });
     expect(result).toBeNull();
@@ -324,7 +337,8 @@ describe('handleActionKeyPress', () => {
       'a-1': { id: 'a-1', status: 'active', isProcessing: true, messages: [] } as never,
     };
     const showUnavailableHint = vi.fn();
-    // Slot 5 (ACT11) = cycle-in-progress-agents on the CM2.
+    // Slot 5 (ACT11) mapped to cycle-in-progress-agents on the CM2.
+    mapCm2Act11To('cycle-in-progress-agents');
     const result = handleActionKeyPress('ACT11', { showUnavailableHint });
     expect(result).toBe('cycle-in-progress-agents');
     expect(showUnavailableHint).toHaveBeenCalledWith(
@@ -351,6 +365,7 @@ describe('handleActionKeyPress', () => {
     const navigate = vi.fn(() => Promise.resolve());
     const focusComposer = vi.fn();
 
+    mapCm2Act11To('cycle-in-progress-agents');
     expect(handleActionKeyPress('ACT11', { navigate, focusComposer })).toBe(
       'cycle-in-progress-agents',
     );
@@ -386,7 +401,9 @@ describe('handleActionKeyPress', () => {
   });
 
   it('does not show the action HUD on unavailable cycle presses', () => {
-    // Slot 5 (ACT11) = cycle-in-progress-agents; no agents anywhere → hint only.
+    // Slot 5 (ACT11) mapped to cycle-in-progress-agents; no agents anywhere
+    // → hint only.
+    mapCm2Act11To('cycle-in-progress-agents');
     const showUnavailableHint = vi.fn();
     expect(handleActionKeyPress('ACT11', { showUnavailableHint })).toBeNull();
     expect(showUnavailableHint).toHaveBeenCalledTimes(1);
@@ -465,6 +482,32 @@ describe('composer focus', () => {
       expect(dispatchWindowEvent).not.toHaveBeenCalled();
       vi.advanceTimersByTime(COMPOSER_FOCUS_DELAYS_MS[COMPOSER_FOCUS_DELAYS_MS.length - 1]);
       expect(dispatchWindowEvent).toHaveBeenCalledTimes(COMPOSER_FOCUS_DELAYS_MS.length);
+      expect(dispatchWindowEvent).toHaveBeenCalledWith('panel:focus-content', {
+        tabType: 'agent',
+        agentId: 'a-1',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('focusAgentComposer includes the dictation source flag only when asked', async () => {
+    vi.useFakeTimers();
+    try {
+      const { focusAgentComposer } = await import('../action-key-service');
+      focusAgentComposer('a-1', { source: 'dictation' });
+      vi.advanceTimersByTime(COMPOSER_FOCUS_DELAYS_MS[COMPOSER_FOCUS_DELAYS_MS.length - 1]);
+      expect(dispatchWindowEvent).toHaveBeenCalledTimes(COMPOSER_FOCUS_DELAYS_MS.length);
+      expect(dispatchWindowEvent).toHaveBeenCalledWith('panel:focus-content', {
+        tabType: 'agent',
+        agentId: 'a-1',
+        source: 'dictation',
+      });
+
+      (dispatchWindowEvent as ReturnType<typeof vi.fn>).mockClear();
+      focusAgentComposer('a-1');
+      vi.advanceTimersByTime(COMPOSER_FOCUS_DELAYS_MS[COMPOSER_FOCUS_DELAYS_MS.length - 1]);
+      // Panel keyboard-navigation semantics untouched: no source flag.
       expect(dispatchWindowEvent).toHaveBeenCalledWith('panel:focus-content', {
         tabType: 'agent',
         agentId: 'a-1',
@@ -749,6 +792,18 @@ describe('persistence key on the daemon bag', () => {
         'switch-window-layouts',
         'cycle-in-progress-agents',
         'cycle-attention-agents',
+        'cycle-unread-agents',
+      ],
+    ],
+    [
+      'pre-window-cycle (ACT11 in-progress) defaults',
+      [
+        'new-workspace',
+        'new-agent',
+        'see-spec',
+        'switch-window-layouts',
+        'push-to-talk',
+        'cycle-in-progress-agents',
         'cycle-unread-agents',
       ],
     ],

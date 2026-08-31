@@ -53,4 +53,33 @@ describe('chat focus ownership', () => {
       ),
     ).toBe(true);
   });
+
+  it('accepts a dictation-flagged request for an unfocused panel (mid-dictation panel switch)', () => {
+    expect(
+      shouldHandleChatFocusRequest(
+        { tabType: 'agent', agentId: 'agent-a', source: 'dictation' },
+        { ...owner, isPanelFocused: false },
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['another agent', { agentId: 'agent-b' }, owner],
+    ['another workspace', { workspaceId: 'workspace-b' }, owner],
+    ['another panel', { panelId: 'panel-b' }, owner],
+    ['an inactive tab', {}, { ...owner, isActive: false }],
+  ])('rejects a dictation-flagged request for %s', (_label, requestOverrides, ownerOverrides) => {
+    expect(
+      shouldHandleChatFocusRequest(
+        {
+          tabType: 'agent',
+          agentId: 'agent-a',
+          workspaceId: 'workspace-a',
+          source: 'dictation',
+          ...requestOverrides,
+        },
+        { ...ownerOverrides, isPanelFocused: false },
+      ),
+    ).toBe(false);
+  });
 });

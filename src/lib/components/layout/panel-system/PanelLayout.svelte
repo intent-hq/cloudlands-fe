@@ -53,6 +53,7 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { scrollFade } from '$lib/actions/scroll-fade';
+  import { scheduleLayoutRead } from '$lib/utils/layout-phases';
   import { cn } from '$lib/utils';
   import { createBrowserFocusOwnershipReporter } from './browser-focus-ownership';
   import { closePanelWithLastPanelPolicy } from './close-panel';
@@ -348,6 +349,7 @@
 
   function measurePanelViewportWidth(node: HTMLElement, enabled = true) {
     let observer: ResizeObserver | null = null;
+    let cancelRead: (() => void) | null = null;
     function update() {
       const styles = getComputedStyle(node);
       panelViewportWidth = getPanelViewportContentWidth(
@@ -361,8 +363,17 @@
     function sync(nextEnabled: boolean) {
       observer?.disconnect();
       observer = null;
+      cancelRead?.();
+      cancelRead = null;
       if (!nextEnabled) return;
-      update();
+      // No synchronous update here: it runs mid-flush on workspace switches
+      // and forces a reflow. The initial measurement goes through the shared
+      // batched read phase instead; the observer covers later resizes.
+      cancelRead = scheduleLayoutRead(() => {
+        cancelRead = null;
+        update();
+      });
+      if (typeof ResizeObserver === 'undefined') return;
       observer = new ResizeObserver(update);
       observer.observe(node);
     }
@@ -370,7 +381,10 @@
     sync(enabled);
     return {
       update: sync,
-      destroy: () => observer?.disconnect(),
+      destroy: () => {
+        observer?.disconnect();
+        cancelRead?.();
+      },
     };
   }
   const retainedRootPanelWidth = $derived(

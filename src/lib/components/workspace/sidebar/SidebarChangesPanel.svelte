@@ -7,7 +7,7 @@
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
   import { invoke } from '$shared/generated/ipc-client';
 
-  import { recomputeAgentLocks } from '$store/renderer/slices/agent-lock/agent-lock-slice';
+  import { hydrateAgentLocks } from '$features/file-tracking/file-tracking.client';
   import {
     selectStagedWorkingChanges as selectFtStagedChanges,
     selectUnstagedWorkingChanges as selectFtUnstagedChanges,
@@ -364,7 +364,9 @@
       lastWorkspaceId = workspaceId;
       // Sync workspace settings for the new workspace
       appStore.dispatch(syncWorkspaceSettings(workspaceId as string));
-      appStore.dispatch(recomputeAgentLocks(workspaceId as string));
+      // Hydrate the daemon-computed agent-lock snapshot (PROTOCOL §5.19);
+      // live updates arrive via the `changes:agent-locks` event (§6.5).
+      void hydrateAgentLocks(workspaceId as string);
       // Reset form state that is workspace-specific to prevent leaking between workspaces
       targetBranch = '';
       // Post-merge state is now read from Redux via selectPostMergeState — no manual restoration needed

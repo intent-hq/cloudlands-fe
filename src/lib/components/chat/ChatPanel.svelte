@@ -51,6 +51,7 @@
     saveAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+    agentProposalResolveRequested,
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
@@ -70,6 +71,7 @@
     selectAgentMessages,
     selectAgentHistoryMessages,
     selectHistorySegmentMeta,
+    selectAgentTailCapPruned,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -109,6 +111,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    pendingProposalRecoveryPruned,
+    pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
     pendingQuestionRecoveryCleared,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -127,6 +131,7 @@
     selectFetchingOlderHistory,
     selectHistoryExhausted,
     selectHistorySeekUnsupported,
+    selectPendingProposalRecovery,
     selectPendingQuestionRecovery,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
@@ -174,6 +179,39 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
+  import ProposalTray, { trayBodyMaxHeight } from './proposals/ProposalTray.svelte';
+  import {
+    derivePendingProposalRecoveryState,
+    deriveTrayPendingProposals,
+    proposalTrayVisible,
+  } from './proposals/proposal-tray-gate';
+  import {
+    clearTrayDraft,
+    loadTrayCollapsed,
+    saveTrayCollapsed,
+  } from './proposals/proposal-tray-storage';
+  import {
+    classifyPendingProposalRefs,
+    type PendingProposalEntry,
+  } from './proposals/pending-proposals';
+  import { getProposalId } from './proposals/proposal-id';
+  import {
+    applySpecialistProposal,
+    undoSpecialistProposal,
+  } from './proposals/specialist-proposal-actions';
+  import {
+    applySettingsProposal,
+    undoSettingsProposal,
+  } from './proposals/settings-proposal-actions';
+  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
+  import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+  import type { ProposalActionDetail } from '$shared/types/proposal';
+  import {
+    initialWizardCollapsed,
+    saveWizardCollapsed,
+    wizardDraftKey,
+  } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -207,7 +245,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { seekConversationToMessage } from '$lib/utils/open-message';
-  import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
@@ -257,6 +295,7 @@
     INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
     nextLazyMode,
+    USER_ROW_ESTIMATED_HEIGHT,
   } from './chat-turn-virtualization';
   import {
     EMPTY_TEMPORARY_TURN_MATERIALIZATION,
@@ -408,12 +447,19 @@
   // Scrollback history segment (older rows hydrated on demand) + paging state.
   const agentHistoryMessages$ = selectAgentHistoryMessages(agentIdStore);
   const historySegmentMeta$ = selectHistorySegmentMeta(agentIdStore);
+  // FE-owned latch: the client cap dropped live tail rows, so older rows
+  // exist even when the (stale) chat-init snapshot meta says otherwise.
+  const agentTailCapPruned$ = selectAgentTailCapPruned(agentIdStore);
   const fetchingOlderHistory$ = selectFetchingOlderHistory(agentIdStore);
   const fetchingGapFill$ = selectFetchingGapFill(agentIdStore);
   const fetchingHistorySeek$ = selectFetchingHistorySeek(agentIdStore);
   const historySeekUnsupported$ = selectHistorySeekUnsupported(agentIdStore);
   const historyExhausted$ = selectHistoryExhausted(agentIdStore);
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
+  const pendingProposalRecovery$ = selectPendingProposalRecovery(agentIdStore);
+  // Whole-map lifecycle readable: the tray derivation scans resolution
+  // statuses across all pending proposals at once.
+  const proposalLifecycleMap$ = selectProposalLifecycleMap();
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
@@ -778,7 +824,14 @@
   function handleFocusSetupTerminal() {
     const setupTerminal = selectWorkspaceSetupTerminal.select(appStore.state, workspace.id);
     if (setupTerminal) {
-      appStore.dispatch(openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }));
+      appStore.dispatch(
+        openTab(workspace.id, {
+          type: 'terminal',
+          title: m.layout_tabTypes_terminal_title(),
+          terminalId: setupTerminal.id,
+          closable: true,
+        }),
+      );
     }
   }
 
@@ -925,14 +978,40 @@
     );
   });
 
-  let questionWizardCollapsed = $state(false);
-  let questionWizardMessageId = $state<string | null>(null);
-  $effect(() => {
+  // Collapsed (Hide) state is host-owned and persisted per question set
+  // alongside the answer draft. A newly pending set starts from its persisted
+  // value when one exists; otherwise it auto-collapses when the composer
+  // holds in-flight user input (text or attachments) so the input textbox is
+  // never replaced mid-typing — Hide semantics only, nothing is dismissed.
+  // Resolved in a $derived (not a post-render $effect) so the very first
+  // render of a newly pending set already sees the collapsed value — an
+  // effect would run after the DOM update, transiently unmounting the
+  // composer (losing editor focus/selection/IME composition) before
+  // collapsing. The initial resolution is latched per messageId in a
+  // non-reactive cache so it is decided once per set; user toggles override
+  // it reactively.
+  let wizardCollapsedInitial: { messageId: string; collapsed: boolean } | null = null;
+  let questionWizardCollapsedOverride = $state<{ messageId: string; collapsed: boolean } | null>(
+    null,
+  );
+  const questionWizardCollapsed = $derived.by(() => {
     const id = pendingQuestions?.messageId ?? null;
-    if (id !== questionWizardMessageId) {
-      questionWizardMessageId = id;
-      questionWizardCollapsed = false;
+    if (id === null) return false;
+    if (questionWizardCollapsedOverride?.messageId === id) {
+      return questionWizardCollapsedOverride.collapsed;
     }
+    if (wizardCollapsedInitial?.messageId !== id) {
+      wizardCollapsedInitial = {
+        messageId: id,
+        collapsed: untrack(() =>
+          initialWizardCollapsed(
+            wizardDraftKey(agentId, id),
+            inputValue.trim() !== '' || contextItems.length > 0,
+          ),
+        ),
+      };
+    }
+    return wizardCollapsedInitial.collapsed;
   });
 
   // Queue entries the user should see: user-authored ones only. Daemon-origin
@@ -968,11 +1047,17 @@
   // `agent.dismissQuestions` — the daemon persists the marker (survives
   // reload) and releases the question hold. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  function handleQuestionWizardDismiss() {
+  // Returns the action promise so the wizard clears its stored draft only
+  // after the dismissal is confirmed (a failure keeps the draft).
+  async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    appStore.dispatch(
-      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    const action = agentSessionDismissQuestionsRequested(
+      agentId,
+      workspace.id,
+      pendingQuestions.messageId,
     );
+    appStore.dispatch(action);
+    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -997,6 +1082,169 @@
     );
     void performLocalSendCleanup({ followBottom: true });
   }
+
+  // ── Pending-proposal tray (composer slot) ────────────────────────────────
+  // Derived from the daemon's `pendingProposals` session metadata (PROTOCOL
+  // §5.5) intersected with transcript resource blocks + the targeted-recovery
+  // cache. Unlike the Q&A wizard there is NO turn-active gating: proposals
+  // hold no deliveries, so the tray stays visible/actionable while the agent
+  // runs later turns. The void reads keep the $derived reactive to every
+  // store input the shared helper re-reads from state.
+  const trayPendingProposals = $derived.by(() => {
+    void $agentSession$?.metadata?.pendingProposals;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    return deriveTrayPendingProposals(appStore.state, agentId, $agentMessages$);
+  });
+  const showProposalTray = $derived(
+    proposalTrayVisible({
+      hasPendingProposals: trayPendingProposals.length > 0,
+      hasPendingQuestions: !!pendingQuestions,
+      questionWizardCollapsed,
+    }),
+  );
+
+  // Targeted recovery for refs whose carrying message is not hydrated
+  // (mirrors the marked-question recovery): request each missing messageId
+  // once the transcript settles; prune cache entries for refs that left the
+  // metadata so resolved proposals do not pin stale recoveries.
+  const pendingProposalRecoveryRequests = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $agentSession$?.metadata?.pendingProposals;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    return derivePendingProposalRecoveryState(appStore.state, agentId);
+  });
+  $effect(() => {
+    if ($agentSession$?.id !== agentId) return;
+    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    const tracked = $pendingProposalRecovery$;
+    const keep = [...new Set(refs.map((ref) => ref.messageId))];
+    if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
+      appStore.dispatch(pendingProposalRecoveryPruned(agentId, keep));
+    }
+    if (refs.length === 0 || $transcriptHydration$ !== 'settled') return;
+    for (const request of pendingProposalRecoveryRequests) {
+      if (request.shouldRequest) {
+        appStore.dispatch(pendingProposalRecoveryRequested(agentId, request.messageId));
+      }
+    }
+  });
+
+  // Measured panel height driving the tray body's scroll cap, so a tall
+  // proposal card in a short/narrow panel (the Chief sidebar) scrolls
+  // internally instead of pushing the composer out of reach.
+  let panelClientHeight = $state(0);
+
+  // Hide state is host-owned and persisted per agent, like the wizard's
+  // collapse flag; the initial value restores from storage (untracked so the
+  // load never re-runs on unrelated state flips).
+  let proposalTrayCollapsedOverride = $state<{ agentId: string; collapsed: boolean } | null>(null);
+  const proposalTrayCollapsed = $derived.by(() => {
+    if (proposalTrayCollapsedOverride?.agentId === agentId) {
+      return proposalTrayCollapsedOverride.collapsed;
+    }
+    return untrack(() => loadTrayCollapsed(agentId)) ?? false;
+  });
+
+  // Apply routing: workspace-create/bulk-op go through the
+  // workspace-operations saga, specialist edits through the specialist
+  // actions, everything else through the settings actions. Lifecycle success
+  // is bridged to the daemon resolution below.
+  function handleProposalTrayApply(detail: ProposalActionDetail) {
+    const { proposal } = detail;
+    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal,
+          editedFields: detail.editedFields,
+          selectedBulkItemIds: detail.selectedBulkItemIds,
+        }),
+      );
+      return;
+    }
+    if (applySpecialistProposal(detail)) return;
+    applySettingsProposal(detail);
+  }
+
+  function handleProposalTrayUndo(proposalId: string) {
+    if (undoSpecialistProposal(proposalId)) return;
+    undoSettingsProposal(proposalId);
+  }
+
+  // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
+  // The wire ack reconciles lifecycle (the saga dispatches
+  // proposalResolutionReconciled), which retires the entry from the gate; a
+  // failure (middleware toasts) rethrows so the tray keeps the entry pending.
+  async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
+    if (!workspace) return;
+    proposalResolveSent.add(entry.proposalId);
+    const action = agentProposalResolveRequested(agentId, workspace.id, {
+      proposalId: entry.proposalId,
+      outcome: 'dismissed',
+    });
+    appStore.dispatch(action);
+    try {
+      await action.promise;
+      clearTrayDraft(agentId, entry.proposalId);
+    } catch (error) {
+      proposalResolveSent.delete(entry.proposalId);
+      throw error;
+    }
+  }
+
+  // Apply→resolve bridge. Applies key lifecycle under
+  // `getProposalId(proposal)` — which can differ from the daemon's metadata
+  // ref key — and the gate retires an entry the instant its lifecycle turns
+  // 'applied', so the bridge works off a captured ref→local identity
+  // map rather than the filtered entries. Any still-pending metadata ref
+  // whose lifecycle shows 'applied' under either identity gets ONE
+  // resolve(applied) (daemon resolution is idempotent; first outcome wins).
+  const trayProposalIdentities = new Map<string, string>();
+  const proposalResolveSent = new Set<string>();
+  $effect(() => {
+    for (const entry of trayPendingProposals) {
+      trayProposalIdentities.set(entry.proposalId, getProposalId(entry.proposal));
+    }
+  });
+  $effect(() => {
+    const wsId = workspace?.id;
+    if (!wsId || $agentSession$?.id !== agentId) return;
+    const lifecycle = $proposalLifecycleMap$ ?? {};
+    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    for (const ref of refs) {
+      if (proposalResolveSent.has(ref.proposalId)) continue;
+      const localId = trayProposalIdentities.get(ref.proposalId);
+      const scopedEntry = lifecycle[agentScopedProposalKey(agentId, ref.proposalId)];
+      const localEntry = localId !== undefined ? lifecycle[localId] : undefined;
+      const appliedEntry =
+        scopedEntry?.status === 'applied'
+          ? scopedEntry
+          : localEntry?.status === 'applied'
+            ? localEntry
+            : undefined;
+      if (!appliedEntry) continue;
+      proposalResolveSent.add(ref.proposalId);
+      clearTrayDraft(agentId, ref.proposalId);
+      // Workspace-create applies carry the created workspace id in the
+      // lifecycle result; forward it as the resolution detail so the
+      // daemon's applied notice gives the model the created-workspace
+      // context (PROTOCOL §5.5).
+      const createdWorkspaceId = appliedEntry.result?.workspaceId;
+      // i18n-ignore (wire detail appended to the model notice, not UI copy)
+      const detail = createdWorkspaceId ? `Created workspace ${createdWorkspaceId}.` : undefined;
+      const action = agentProposalResolveRequested(agentId, wsId, {
+        proposalId: ref.proposalId,
+        outcome: 'applied',
+        ...(detail ? { detail } : {}),
+      });
+      appStore.dispatch(action);
+      // A wire failure (middleware toasts) drops the sent mark so a later
+      // pass retries the resolution — mirrors the dismiss path.
+      action.promise.catch(() => proposalResolveSent.delete(ref.proposalId));
+    }
+  });
 
   // Search state
   let showSearch = $state(false);
@@ -1879,7 +2127,7 @@
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
       tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
     }),
   );
@@ -1902,7 +2150,7 @@
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
       tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
       // Any viewport position inside the virtual spacer (reached by dragging
       // the scrollbar thumb up) drives the same older-history walk.
@@ -3591,8 +3839,9 @@
   }
 
   // The controller order is the composed history + live-tail chronology, not
-  // turn position. Users remain eagerly rendered; assistant rows register with
-  // the shared observer and follow the asymmetric displayport frontier.
+  // turn position. User and assistant rows both register with the shared
+  // observer and follow the asymmetric displayport frontier; user rows never
+  // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
     const messages = hydrationMessages;
     messageHydrationPolicy.setActive(isActive);
@@ -3601,9 +3850,7 @@
     for (const message of messages) {
       messageHydrationPolicy.setForced(message.id, isMessageForceVisible(message.id));
     }
-    lazyTurnHeightCache.retain(
-      messages.filter((message) => message.role === 'assistant').map((message) => message.id),
-    );
+    lazyTurnHeightCache.retain(messages.map((message) => message.id));
     syncHydratedMessageIds();
   });
 
@@ -3866,6 +4113,8 @@
             }
           } else if (entry.target === composerElement) {
             composerHeight = entry.contentRect.height;
+          } else if (entry.target === panelElement) {
+            panelClientHeight = entry.contentRect.height;
           }
         }
         if (scrollContainer) {
@@ -3877,6 +4126,9 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
+      // The panel root's height is layout-fixed (h-full), so observing it
+      // creates no feedback loop with the tray's capped body height.
+      if (panelElement) observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -5125,6 +5377,7 @@
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
+                        isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
                       />
                     </div>
@@ -5234,6 +5487,7 @@
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
+                        isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
                       />
                     </div>
@@ -5480,6 +5734,18 @@
                        structured attention-to-answer flow has its own rhythm. -->
                   {@const batchedDeliveryTurnSeam =
                     !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
+                  <!-- Seam BEFORE this turn: the same batch test against the
+                       previous rendered turn (crossing group boundaries like
+                       nextTurn). When true, the preceding h-2 gap owns the
+                       seam and this turn's rows drop their own top margins. -->
+                  {@const prevTurn =
+                    turns[turnIndex - 1] ??
+                    conversationTurnIndex.groups[groupIndex - 1]?.turns.at(-1)}
+                  {@const batchedSeamBefore = Boolean(
+                    prevTurn &&
+                    !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
+                    isBatchedDeliverySeam(prevTurn, turn),
+                  )}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -5530,6 +5796,7 @@
                           {messageText}
                           asDivider={true}
                           compact={isCompactMode}
+                          suppressTopGap={batchedSeamBefore}
                           showAgentCards={!isDelegatedBackgroundTaskAgent}
                           {workspace}
                         />
@@ -5541,6 +5808,12 @@
                     {#if turn.userMessage && !isEventNotification}
                       {@const message = turn.userMessage}
                       {@const globalIndex = getMessageIndex(message.id)}
+                      <!-- Outer div stays always mounted: it carries the nav/
+                           pinned-prompt/send-transition anchors (data attributes
+                           and geometry) that scroll restoration and the pinned
+                           prompt overlay query even while the row's content is a
+                           virtualized placeholder. Only the inner ChatMessage
+                           goes through LazyTurn. -->
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
@@ -5549,31 +5822,45 @@
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-5={isAutomatedMessage(message)}
-                        class:mb-7={!isAutomatedMessage(message)}
+                        class:mb-0={batchedDeliveryTurnSeam}
+                        class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}
+                        class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
                         )}
                         use:attachPinnedPromptMessage={message}
                       >
-                        <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-                          <ChatMessage
-                            {agentId}
-                            messageId={message.id}
-                            ownsMessageIdentity={false}
-                            {workspace}
-                            onEditSubmit={isRetiredSession
-                              ? undefined
-                              : (newText, model, blocks) =>
-                                  handleEditMessage(message.id, newText, model, blocks)}
-                            onEditStateChange={(isEditing) =>
-                              handleTurnEditStateChange(turnKey, isEditing)}
-                            editModel={turn.assistantMessages[0]?.metadata?.model ??
-                              hydratedInputModel}
-                            onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                            backendSessionId={auggieSessionId}
-                          />
-                        </div>
+                        <LazyTurn
+                          turnKey={message.id}
+                          scrollRoot={scrollContainer}
+                          heightCache={lazyTurnHeightCache}
+                          hydrationController={messageHydrationPolicy}
+                          hydrated={hydratedMessageIds.has(message.id)}
+                          forceVisible={isMessageForceVisible(message.id)}
+                          estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
+                        >
+                          {#snippet children()}
+                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+                              <ChatMessage
+                                {agentId}
+                                messageId={message.id}
+                                ownsMessageIdentity={false}
+                                {workspace}
+                                onEditSubmit={isRetiredSession
+                                  ? undefined
+                                  : (newText, model, blocks) =>
+                                      handleEditMessage(message.id, newText, model, blocks)}
+                                onEditStateChange={(isEditing) =>
+                                  handleTurnEditStateChange(turnKey, isEditing)}
+                                editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                  hydratedInputModel}
+                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                backendSessionId={auggieSessionId}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore}
+                              />
+                            </div>
+                          {/snippet}
+                        </LazyTurn>
                       </div>
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
@@ -5662,6 +5949,7 @@
                               ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
+                              isLastConversationMessage={isLastMessage}
                               onEditSubmit={isRetiredSession
                                 ? undefined
                                 : (newText, model, blocks) =>
@@ -5945,10 +6233,42 @@
                 <div class="w-full" data-testid="question-wizard-slot">
                   <QuestionWizard
                     questions={pendingQuestions.questions}
+                    draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
-                    onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                    onToggleCollapsed={(collapsed) => {
+                      // Can be invoked around the teardown frame after the
+                      // pending-questions source is already nulled.
+                      if (!pendingQuestions) return;
+                      questionWizardCollapsedOverride = {
+                        messageId: pendingQuestions.messageId,
+                        collapsed,
+                      };
+                      saveWizardCollapsed(
+                        wizardDraftKey(agentId, pendingQuestions.messageId),
+                        collapsed,
+                      );
+                    }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
+                  />
+                </div>
+              {/key}
+            {/if}
+            {#if showProposalTray}
+              {#key agentId}
+                <div class="w-full" data-testid="proposal-tray-slot">
+                  <ProposalTray
+                    {agentId}
+                    entries={trayPendingProposals}
+                    maxBodyHeight={trayBodyMaxHeight(panelClientHeight)}
+                    collapsed={proposalTrayCollapsed}
+                    onToggleCollapsed={(collapsed) => {
+                      proposalTrayCollapsedOverride = { agentId, collapsed };
+                      saveTrayCollapsed(agentId, collapsed);
+                    }}
+                    onApply={handleProposalTrayApply}
+                    onDismiss={handleProposalTrayDismiss}
+                    onUndo={handleProposalTrayUndo}
                   />
                 </div>
               {/key}
@@ -5980,8 +6300,9 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
+                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
+                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -6075,24 +6396,28 @@
   }
 
   .conversation-composer {
-    --composer-lane-inset: 1rem;
+    --composer-lane-inset-x: 1rem;
+    --composer-lane-inset-bottom: 1rem;
   }
 
   .conversation-composer.chief-composer {
-    --composer-lane-inset: 0.25rem;
+    --composer-lane-inset-x: 0;
+    --composer-lane-inset-bottom: 0.25rem;
   }
 
   .composer-prompt-lane {
-    padding: 0.5rem var(--composer-lane-inset) var(--composer-lane-inset);
+    padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
   }
 
   @media (min-width: 640px) {
     .conversation-composer {
-      --composer-lane-inset: 1.5rem;
+      --composer-lane-inset-x: 1.5rem;
+      --composer-lane-inset-bottom: 1.5rem;
     }
 
     .conversation-composer.chief-composer {
-      --composer-lane-inset: 0.5rem;
+      --composer-lane-inset-x: 0;
+      --composer-lane-inset-bottom: 0.5rem;
     }
   }
 

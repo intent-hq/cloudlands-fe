@@ -71,6 +71,51 @@ describe('LazyTurn lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
+  it('sizes an unmeasured placeholder with the row-type estimatedHeight, then hydrates on approach', async () => {
+    const scrollRoot = document.createElement('div');
+    const heightCache = createLazyTurnHeightCache('user-row');
+    const hydrationController = createMessageHydrationPolicy([{ id: 'user-row', role: 'user' }]);
+    const view = render(LazyTurn, {
+      props: {
+        turnKey: 'user-row',
+        heightCache,
+        scrollRoot,
+        hydrationController,
+        hydrated: hydrationController.getHydratedIds().includes('user-row'),
+        estimatedHeight: 80,
+        children,
+      },
+    });
+    try {
+      // A virtualized user row starts as a placeholder sized by the
+      // row-type estimate, not the assistant-sized default.
+      const container = view.container.querySelector<HTMLElement>('.lazy-turn');
+      expect(container?.dataset.lazyVisible).toBe('false');
+      expect(view.queryByTestId('turn-content')).toBeNull();
+      expect(container?.querySelector<HTMLElement>('.lazy-turn-placeholder')?.style.height).toBe(
+        '80px',
+      );
+
+      MockIntersectionObserver.instances[0].fire(true);
+      await view.rerender({
+        turnKey: 'user-row',
+        heightCache,
+        scrollRoot,
+        hydrationController,
+        hydrated: hydrationController.getHydratedIds().includes('user-row'),
+        estimatedHeight: 80,
+        children,
+      });
+      await tick();
+
+      expect(container?.dataset.lazyVisible).toBe('true');
+      expect(view.queryByTestId('turn-content')).not.toBeNull();
+    } finally {
+      hydrationController.dispose();
+      view.unmount();
+    }
+  });
+
   it('starts as an empty placeholder and hydrates when it approaches the displayport', async () => {
     const scrollRoot = document.createElement('div');
     const heightCache = createLazyTurnHeightCache('displayport');

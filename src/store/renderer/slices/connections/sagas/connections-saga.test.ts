@@ -2,7 +2,12 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The update saga lazy-imports svelte-sonner for its outcome toasts.
-const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  dismiss: vi.fn(),
+}));
 vi.mock('svelte-sonner', () => ({ toast }));
 
 import {
@@ -79,6 +84,8 @@ describe('connectionsSaga', () => {
     callbacks = {};
     toast.success.mockClear();
     toast.error.mockClear();
+    toast.warning.mockClear();
+    toast.dismiss.mockClear();
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return {
@@ -725,5 +732,431 @@ describe('connectionsSaga', () => {
 
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  describe('daemon-behind-pin toast on connect', () => {
+    const BEHIND = { ...REMOTE, daemonVersion: '0.9.0', updateSupported: true };
+    // The toast is scoped to the window's own backend, so the simulated
+    // window is bound to the behind remote unless a test overrides it.
+    const changed = (
+      connections: ConnectionRecord[],
+      connectedIds: string[],
+      pinnedVersion?: string,
+      windowBackendId: string = BEHIND.id,
+    ) =>
+      callbacks[CONNECTIONS_CHANGED_EVENT]!({
+        connections,
+        activeId: LOCAL.id,
+        windowBackendId,
+        connectedIds,
+        ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
+      });
+
+    it('toasts once on the transition to connected, not on re-broadcasts', async () => {
+      const run = start();
+      await settle();
+
+      // v-prefixed reported versions must not double the template's own "v".
+      const vBehind = { ...BEHIND, daemonVersion: 'v0.9.0' };
+      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('Studio Mac');
+      expect(String(message)).toContain('v0.9.0');
+      expect(String(message)).toContain('v0.10.0');
+      expect(String(message)).not.toContain('vv');
+      expect(options.id).toBe(`connections-daemon-behind-${BEHIND.id}`);
+      // Sticky: never auto-dismisses — dismissal is programmatic.
+      expect(options.duration).toBe(Number.POSITIVE_INFINITY);
+      expect(options.action.label).toEqual(expect.any(String));
+
+      // Same connected pool re-broadcast: no second toast, and the sticky
+      // toast still applies — no dismissal either.
+      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(toast.dismiss).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts again after a disconnect/reconnect cycle', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      changed([LOCAL, BEHIND], [], '0.10.0');
+      await settle();
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('dismisses the sticky toast when the tracked backend disconnects', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).not.toHaveBeenCalled();
+
+      changed([LOCAL, BEHIND], [], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+
+      // The toast was already dismissed: a further disconnected re-broadcast
+      // must not dismiss again.
+      changed([LOCAL, BEHIND], [], '0.10.0');
+      await settle();
+      expect(toast.dismiss).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('dismisses the sticky toast when the daemon comes back at/above the pin', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // The version refresh (e.g. after a successful update) re-evaluates the
+      // still-connected backend as no longer behind the pin.
+      changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('keeps the sticky toast through inconclusive re-broadcasts while connected', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Still connected, but the broadcast lost its verdict inputs (e.g. a
+      // refresh raced the fire-and-forget captures): no daemonVersion, no
+      // pinnedVersion, no updateSupported. None of these may dismiss.
+      changed([LOCAL, { ...BEHIND, daemonVersion: undefined }], [BEHIND.id], '0.10.0');
+      await settle();
+      changed([LOCAL, BEHIND], [BEHIND.id], undefined);
+      await settle();
+      changed([LOCAL, { ...BEHIND, updateSupported: undefined }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      // A later conclusive verdict (back at the pin) still dismisses.
+      changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never dismisses when no toast was raised', async () => {
+      const run = start();
+      await settle();
+
+      // Evaluated but suppressed (updateSupported: false): no toast raised,
+      // so its disconnect must not fire a spurious dismiss.
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(toast.dismiss).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts on the version-bearing follow-up when the connect broadcast precedes the capture', async () => {
+      const run = start();
+      await settle();
+
+      // The fire-and-forget daemonVersion capture hasn't landed yet: the
+      // first 'connected' broadcast carries no version — inconclusive, so the
+      // id must NOT count as evaluated.
+      changed([LOCAL, { ...BEHIND, daemonVersion: null }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The capture's write/broadcast arrives: still counts as the transition.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Unchanged re-broadcast after the conclusive one: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never toasts a behind daemon that reports updateSupported: false', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // Re-broadcasts of the same conclusive state stay silent too.
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts when the flag refreshes false→true at an unchanged daemonVersion', async () => {
+      const run = start();
+      await settle();
+
+      // A stale/conclusive false is evaluated but suppressed.
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The fire-and-forget capture then flips the flag with the SAME
+      // daemonVersion: the refresh must re-evaluate and toast exactly once.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Unchanged re-broadcast after the toast: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts on the flag-bearing follow-up when the connect broadcast precedes the updateSupported capture', async () => {
+      const run = start();
+      await settle();
+
+      // The fire-and-forget updateSupported capture hasn't landed yet:
+      // unknown is inconclusive, so the id must NOT count as evaluated.
+      changed([LOCAL, { ...BEHIND, updateSupported: null }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The capture's write/broadcast arrives: still counts as the transition.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('announces an already-connected behind backend once at startup hydration', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return {
+            connections: [LOCAL, BEHIND],
+            activeId: LOCAL.id,
+            windowBackendId: BEHIND.id,
+            connectedIds: [BEHIND.id],
+            pinnedVersion: '0.10.0',
+          };
+        return {};
+      });
+      const run = start();
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // The first post-hydration broadcast of the same pool stays silent —
+      // the hydration announcement seeded the tracker.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('stays silent for equal/newer/unknown versions, missing pin, local sidecar, and not-connected', async () => {
+      const run = start();
+      await settle();
+
+      const equal = { ...BEHIND, id: 'remote-eq', daemonVersion: '0.10.0' };
+      const newer = { ...BEHIND, id: 'remote-new', daemonVersion: '0.11.0' };
+      const unknown = { ...BEHIND, id: 'remote-unk', daemonVersion: null };
+      const notConnected = { ...BEHIND, id: 'remote-off', daemonVersion: '0.9.0' };
+      const pool = [LOCAL, equal, newer, unknown, notConnected];
+      const connectedIds = [equal.id, newer.id, unknown.id];
+      // One broadcast per window-backend binding: each candidate is evaluated
+      // as the window's own backend and must still stay silent.
+      for (const own of [LOCAL.id, equal.id, newer.id, unknown.id, notConnected.id]) {
+        changed(pool, connectedIds, '0.10.0', own);
+      }
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // Behind but no pinned version reported: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id]);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("never toasts a behind daemon that is not the window's own backend", async () => {
+      const run = start();
+      await settle();
+
+      // Window bound to the local backend: another backend's behind daemon
+      // is not this window's to announce.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // Window bound to a different remote: same silence.
+      const other = { ...REMOTE, id: 'remote-2', daemonVersion: '0.10.0' };
+      changed([LOCAL, BEHIND, other], [BEHIND.id, other.id], '0.10.0', other.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The skipped backend was never marked evaluated: the window that owns
+      // it still announces on its own broadcast.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', BEHIND.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      expect(toast.warning.mock.calls[0]![1].id).toBe(`connections-daemon-behind-${BEHIND.id}`);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('dispatches updateBackendRequested for the right id when Update is clicked', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+        return {};
+      });
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [, options] = toast.warning.mock.calls[0]!;
+      options.action.onClick();
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
+          id: BEHIND.id,
+        }),
+      );
+      // The outcome surfaces via the existing per-result update toast.
+      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts the local entry once its adopted external daemon is captured behind the pin', async () => {
+      const run = start();
+      await settle();
+
+      // Sidecar-shaped local record (no captured version/flag): inconclusive,
+      // silent, and not marked evaluated.
+      changed([LOCAL], [LOCAL.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The external-daemon capture enriches the local record: toast once.
+      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('This machine (local)');
+      expect(String(message)).toContain('v0.9.0');
+      expect(String(message)).toContain('v0.10.0');
+      expect(options.id).toBe(`connections-daemon-behind-${LOCAL.id}`);
+
+      // Unchanged re-broadcast: silent.
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("names the local entry's toast via the localized label, not the persisted fallback", async () => {
+      const run = start();
+      await settle();
+
+      // The main-process record's `label` is an untranslated English
+      // fallback — the toast must use the localized message instead (same as
+      // DeviceRow), so a divergent persisted label never leaks through.
+      const localExternal = {
+        ...LOCAL,
+        label: 'persisted-fallback-label',
+        daemonVersion: '0.9.0',
+        updateSupported: true,
+      };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('This machine (local)');
+      expect(String(message)).not.toContain('persisted-fallback-label');
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("dispatches updateBackendRequested for the local entry when its toast's Update is clicked", async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+        return {};
+      });
+      const run = start();
+      await settle();
+
+      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [, options] = toast.warning.mock.calls[0]!;
+      options.action.onClick();
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
+          id: LOCAL.id,
+        }),
+      );
+      // The outcome surfaces via the existing per-result update toast.
+      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never toasts the local entry when its external daemon reports updateSupported: false', async () => {
+      const run = start();
+      await settle();
+
+      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: false };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
   });
 });

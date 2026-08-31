@@ -9,12 +9,24 @@ import type { ConnectionRecord } from '$shared/types/connections';
 const mocks = vi.hoisted(() => ({
   loaded: true,
   connections: [] as ConnectionRecord[],
+  pinnedVersion: null as string | null,
+  connectedIds: [] as string[],
+  // Optional overrides for the shared eligibility predicates (null = real
+  // implementation). Lets local-row tests exercise the eligible path without
+  // depending on the predicate's local-entry handling.
+  isDaemonBehindPin: null as
+    | (typeof import('$lib/utils/device-update-eligibility'))['isDaemonBehindPin']
+    | null,
+  canRequestDeviceUpdate: null as
+    | (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate']
+    | null,
   dispatch: vi.fn(),
   update: vi.fn(),
   test: vi.fn(),
   rotate: vi.fn(),
   open: vi.fn(),
   forget: vi.fn(),
+  updateBackend: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -28,11 +40,27 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
+  selectConnections: () => mocks.readable(() => mocks.connections),
   selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
   selectRemoteConnections: () =>
     mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
   selectKeychainSyncState: () => mocks.readable(() => null),
+  selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
+  selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
 }));
+
+vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/utils/device-update-eligibility')>();
+  return {
+    ...actual,
+    isDaemonBehindPin: (...args: Parameters<typeof actual.isDaemonBehindPin>) =>
+      mocks.isDaemonBehindPin ? mocks.isDaemonBehindPin(...args) : actual.isDaemonBehindPin(...args),
+    canRequestDeviceUpdate: (...args: Parameters<typeof actual.canRequestDeviceUpdate>) =>
+      mocks.canRequestDeviceUpdate
+        ? mocks.canRequestDeviceUpdate(...args)
+        : actual.canRequestDeviceUpdate(...args),
+  };
+});
 
 vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   updateConnectionRequested: (params: unknown) => mocks.update(params),
@@ -40,6 +68,7 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
   openConnectionRequested: (id: string) => mocks.open(id),
   forgetConnectionRequested: (id: string) => mocks.forget(id),
+  updateBackendRequested: (id: string) => mocks.updateBackend(id),
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
@@ -74,6 +103,10 @@ describe('DevicesSettings', () => {
     vi.clearAllMocks();
     mocks.loaded = true;
     mocks.connections = [local, remote];
+    mocks.pinnedVersion = null;
+    mocks.connectedIds = [];
+    mocks.isDaemonBehindPin = null;
+    mocks.canRequestDeviceUpdate = null;
     mocks.update.mockImplementation((params) => ({
       type: 'connections/updateRequested',
       payload: [params],
@@ -99,6 +132,11 @@ describe('DevicesSettings', () => {
       payload: [id],
       promise: Promise.resolve(),
     }));
+    mocks.updateBackend.mockImplementation((id) => ({
+      type: 'connections/updateBackendRequested',
+      payload: [id],
+      promise: Promise.resolve({ ok: true }),
+    }));
   });
 
   afterEach(cleanup);
@@ -109,7 +147,7 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('Studio Mac')).toBeTruthy();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
     expect(screen.getByRole('status', { name: 'Status: Not open' }).textContent).toBe('');
-    expect(screen.queryByText('This machine')).toBeNull();
+    expect(screen.getByText('This machine (local)')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
@@ -124,7 +162,9 @@ describe('DevicesSettings', () => {
     expect(screen.queryByText('studio-host')).toBeNull();
     expect(screen.getByText('6.8.0')).toBeTruthy();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBeTruthy();
+    for (const status of screen.getAllByRole('status')) {
+      expect(status.getAttribute('aria-label')).toBeTruthy();
+    }
   });
 
   it('omits hostname and version when the connected version is unknown', () => {
@@ -133,7 +173,9 @@ describe('DevicesSettings', () => {
 
     expect(screen.getByText('Studio Mac')).toBeTruthy();
     expect(screen.queryByText('studio-host')).toBeNull();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBeTruthy();
+    for (const status of screen.getAllByRole('status')) {
+      expect(status.getAttribute('aria-label')).toBeTruthy();
+    }
   });
 
   it('falls back to the address for a blank name', () => {
@@ -142,6 +184,63 @@ describe('DevicesSettings', () => {
 
     expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Actions for 10.0.0.2:5181' })).toBeTruthy();
+  });
+
+  it('shows the backend pretty hostname when the label is just the saved address', () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: '10.0.0.2:5181', hostname: 'Clement’s Mac Studio' },
+    ];
+    render(DevicesSettings);
+
+    expect(screen.getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Actions for Clement’s Mac Studio' })).toBeTruthy();
+  });
+
+  it('prefers the backend hostname over the address for a blank name', () => {
+    mocks.connections = [local, { ...remote, label: '  ', hostname: 'studio-pretty' }];
+    render(DevicesSettings);
+
+    expect(screen.getByText('studio-pretty')).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+  });
+
+  it('still edits the stored label when the hostname is displayed', async () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: '10.0.0.2:5181', hostname: 'Clement’s Mac Studio' },
+    ];
+    render(DevicesSettings);
+
+    await openAction('Edit', 'Clement’s Mac Studio');
+
+    // The Name field always edits the raw stored label. For an unmigrated
+    // record (never reconnected since pretty-name defaulting landed) that is
+    // still the address — the store migrates it on the next hostname capture.
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
+      '10.0.0.2:5181',
+    );
+  });
+
+  it('shows the migrated pretty name in the row and the edit form', async () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: 'Clement’s Mac Studio', hostname: 'Clement’s Mac Studio' },
+    ];
+    render(DevicesSettings);
+
+    expect(screen.getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Actions for Clement’s Mac Studio' })).toBeTruthy();
+
+    await openAction('Edit', 'Clement’s Mac Studio');
+
+    // Post-migration the stored label IS the pretty name, so the Name field
+    // shows it directly.
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
+      'Clement’s Mac Studio',
+    );
   });
 
   it('dispatches Connect through the existing open/focus action', async () => {
@@ -193,16 +292,210 @@ describe('DevicesSettings', () => {
     expect(screen.getByRole('status').textContent).toContain('Loading devices');
     loading.unmount();
 
+    // The local row alone suppresses the empty-state box — the two must not
+    // render together (the box only appears when there are no rows at all).
     mocks.loaded = true;
     mocks.connections = [local];
+    const withLocal = render(DevicesSettings);
+    expect(screen.queryByText('No remote devices saved')).toBeNull();
+    withLocal.unmount();
+
+    mocks.connections = [];
     render(DevicesSettings);
     expect(screen.getByText('No remote devices saved')).toBeTruthy();
   });
 
-  async function openAction(name: 'Connect' | 'Edit' | 'Remove', deviceName = 'Studio Mac') {
+  it('cycles automatic accents through only the selectable palette', async () => {
+    mocks.connections = [
+      local,
+      remote,
+      { ...remote, id: 'remote-2' },
+      { ...remote, id: 'remote-3' },
+    ];
+    render(DevicesSettings);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Use Teal accent' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Use Rose accent' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
+  });
+
+  async function openAction(
+    name: 'Connect' | 'Edit' | 'Remove' | 'Update',
+    deviceName = 'Studio Mac',
+  ) {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
+
+  describe('behind-pin indicator and Update action', () => {
+    const behindLabel = m.settings_devices_daemonBehind_tooltip({
+      daemonVersion: '0.9.0',
+      pinnedVersion: '0.9.1',
+    });
+
+    it('marks a device whose captured daemon version is behind the pin, even while disconnected', () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [local, { ...remote, daemonVersion: 'v0.9.0' }];
+      render(DevicesSettings);
+
+      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+    });
+
+    it('shows no indicator for up-to-date or unknown versions', () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.1' },
+        { ...remote, id: 'remote-2', label: 'Other Mac' },
+      ];
+      render(DevicesSettings);
+
+      expect(screen.queryByRole('img')).toBeNull();
+    });
+
+    it('shows no indicator when the pinned version is unknown', () => {
+      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0' }];
+      render(DevicesSettings);
+
+      expect(screen.queryByRole('img')).toBeNull();
+    });
+
+    it('offers Update only for connected behind devices and dispatches the backend update', async () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['remote-1'];
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.0', updateSupported: true, status: 'connected' },
+      ];
+      render(DevicesSettings);
+
+      await openAction('Update');
+
+      expect(mocks.updateBackend).toHaveBeenCalledWith('remote-1');
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'connections/updateBackendRequested',
+          payload: ['remote-1'],
+        }),
+      );
+      expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it('hides Update for a behind device without a live connection', async () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0', updateSupported: true }];
+      render(DevicesSettings);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+      await screen.findByRole('menuitem', { name: 'Connect' });
+
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+      expect(mocks.updateBackend).not.toHaveBeenCalled();
+    });
+
+    it('hides Update when the daemon does not support self-update or the flag is unknown', async () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['remote-1', 'remote-2'];
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.0', updateSupported: false, status: 'connected' },
+        {
+          ...remote,
+          id: 'remote-2',
+          label: 'Other Mac',
+          daemonVersion: '0.9.0',
+          status: 'connected',
+        },
+      ];
+      render(DevicesSettings);
+
+      // The behind-pin badge stays informational even without update support.
+      expect(screen.getAllByRole('img', { name: behindLabel })).toHaveLength(2);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+      await screen.findByRole('menuitem', { name: 'Edit' });
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+      // Close before opening the second device's menu.
+      await fireEvent.keyDown(document.body, { key: 'Escape' });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Other Mac' }));
+      await screen.findByRole('menuitem', { name: 'Edit' });
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+      expect(mocks.updateBackend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('local device row', () => {
+    const localLabel = m.layout_daemonStatus_localConnection_label();
+    const behindLabel = m.settings_devices_daemonBehind_tooltip({
+      daemonVersion: '0.9.0',
+      pinnedVersion: '0.9.1',
+    });
+
+    it('lists the local machine first with its connection status and no remote-only actions', () => {
+      render(DevicesSettings);
+
+      const [firstRow] = screen.getAllByRole('article');
+      expect(within(firstRow).getByText(localLabel)).toBeTruthy();
+      expect(within(firstRow).getByRole('status', { name: 'Status: Connected' })).toBeTruthy();
+      // Ineligible local rows expose no actions at all — Connect, Edit, and
+      // Remove are remote-only.
+      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+    });
+
+    it('shows no badge or Update affordance for the sidecar local row', () => {
+      // Sidecar mode: the local record is never enriched with daemonVersion /
+      // updateSupported, so the real predicates keep both affordances hidden.
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['local'];
+      mocks.connections = [local];
+      render(DevicesSettings);
+
+      expect(screen.queryByRole('img')).toBeNull();
+      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+    });
+
+    it('offers the badge and Update when the shared predicates deem the local row eligible', async () => {
+      const actual = await vi.importActual<typeof import('$lib/utils/device-update-eligibility')>(
+        '$lib/utils/device-update-eligibility',
+      );
+      // The eligibility predicates' local-entry exclusion is being lifted for
+      // the behind-pin external local daemon (owned by the behind-pin toast
+      // change). Model that here: the row stays entirely predicate-driven.
+      mocks.isDaemonBehindPin = (conn, pinned) =>
+        actual.isDaemonBehindPin({ ...conn, isLocal: false }, pinned);
+      mocks.canRequestDeviceUpdate = (conn, ids, pinned) =>
+        actual.canRequestDeviceUpdate({ ...conn, isLocal: false }, ids, pinned);
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['local'];
+      mocks.connections = [
+        { ...local, daemonVersion: '0.9.0', updateSupported: true },
+        remote,
+      ];
+      render(DevicesSettings);
+
+      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
+      expect(await screen.findByRole('menuitem', { name: 'Update' })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
+
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Update' }));
+      expect(mocks.updateBackend).toHaveBeenCalledWith('local');
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'connections/updateBackendRequested',
+          payload: ['local'],
+        }),
+      );
+    });
+  });
 
   it('edits metadata inline', async () => {
     render(DevicesSettings);
@@ -218,12 +511,13 @@ describe('DevicesSettings', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Port' }), {
       target: { value: '5190' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Use Rose accent' }));
+    expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Use Emerald accent' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
     expect(mocks.update).toHaveBeenCalledWith({
       id: 'remote-1',
       label: 'Render box',
-      accent: 'rose',
+      accent: 'emerald',
       host: 'render.local',
       port: 5190,
     });
@@ -232,6 +526,33 @@ describe('DevicesSettings', () => {
     );
     expect(mocks.rotate).not.toHaveBeenCalled();
   });
+
+  it.each(['rose', 'orange'] as const)(
+    'preserves a legacy %s accent until the user explicitly changes it',
+    async (legacyAccent) => {
+      mocks.connections = [local, { ...remote, accent: legacyAccent }];
+      render(DevicesSettings);
+
+      await openAction('Edit');
+      const legacyOption = screen.getByRole('button', {
+        name: `Use ${legacyAccent[0].toUpperCase()}${legacyAccent.slice(1)} accent`,
+      });
+      expect(legacyOption.getAttribute('aria-pressed')).toBe('true');
+      const unavailableWarmAccent = legacyAccent === 'rose' ? 'Orange' : 'Rose';
+      expect(
+        screen.queryByRole('button', { name: `Use ${unavailableWarmAccent} accent` }),
+      ).toBeNull();
+
+      await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'Renamed device' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      expect(mocks.update).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'Renamed device', accent: legacyAccent }),
+      );
+    },
+  );
 
   it('can clear a previously selected device accent', async () => {
     render(DevicesSettings);

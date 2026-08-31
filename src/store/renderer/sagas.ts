@@ -55,26 +55,31 @@ import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
 import { modelReloadSaga } from './slices/model/sagas/model-reload-saga';
 import { modelSelectionSaga } from './slices/model/sagas/model-selection-saga';
+import { noteReadTrackingSaga } from './slices/note-read-tracking/sagas/note-read-tracking-saga';
 import {
   notificationIpcSaga,
   webNotificationSaga,
 } from './slices/notifications/sagas/notifications-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
+import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
 import { scriptsOperationSaga } from './slices/scripts/sagas/scripts-operation-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
+import { settingsProposalHistorySaga } from './slices/settings-proposal-history/sagas/settings-proposal-history-saga';
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
+import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
 import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
+import { workspaceReconnectSaga } from './slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
 import { themeSaga } from './slices/theme/sagas/theme-saga';
@@ -140,6 +145,7 @@ export const sagas = [
   filesReadSaga,
   filesWriteSaga,
   workspaceNotesSaga,
+  noteReadTrackingSaga,
   contextSaga,
   taskAgentAssociationsSaga,
   appLayoutNavigationSaga,
@@ -152,6 +158,7 @@ export const sagas = [
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
   workspaceLoadSaga,
+  workspaceReconnectSaga,
   modelSelectionSaga,
   backgroundAgentSettingsSaga,
   providerSettingsSaga,
@@ -166,6 +173,9 @@ export const sagas = [
   themeSaga,
   autoUpdateSaga,
   specialistsSaga,
+  proposalLifecycleSaga,
+  settingsProposalHistorySaga,
+  specialistProposalHistorySaga,
   githubAuthSaga,
   githubRepoSearchSaga,
   sentryAuthSaga,

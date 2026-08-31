@@ -3,12 +3,15 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
+
+const openExternalUrlMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('$lib/utils/open-external', () => ({ openExternalUrl: openExternalUrlMock }));
 
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
@@ -16,6 +19,10 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../DeleteWarningDialog.svelte'));
 
 describe('DeleteWarningDialog', () => {
+  beforeEach(() => {
+    openExternalUrlMock.mockClear();
+  });
+
   it('shows a clear stop-and-delete action for spaces with running agents', async () => {
     const onDeleteAnyway = vi.fn();
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
@@ -85,11 +92,122 @@ describe('DeleteWarningDialog', () => {
         open: true,
         agentNames: [],
         hookNames: [],
+        openPrs: [],
       },
     });
 
     expect(screen.queryByText(/active agent/)).toBeNull();
     expect(screen.queryByText(/background hook/)).toBeNull();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('lists open PRs with status badges and a conflict indicator', async () => {
+    const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+    render(DeleteWarningDialog, {
+      props: {
+        open: true,
+        openPrs: [
+          {
+            number: 12,
+            title: 'Add feature',
+            url: 'https://github.com/acme/repo/pull/12',
+            status: 'Open' as const,
+          },
+          {
+            number: 13,
+            title: 'Draft feature',
+            url: 'https://github.com/acme/repo/pull/13',
+            status: 'Draft' as const,
+            mergeConflicts: true,
+          },
+        ],
+      },
+    });
+
+    expect(
+      screen.getByText(m.modals_deleteWarning_openPrs_many({ count: '2' })),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: '#12 Add feature' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '#13 Draft feature' })).toBeTruthy();
+    expect(screen.getAllByText(m.workspace_prSection_statusOpen_label())).toHaveLength(1);
+    expect(screen.getAllByText(m.workspace_prSection_statusDraft_label())).toHaveLength(1);
+    expect(screen.getAllByText(m.modals_deleteWarning_prMergeConflicts_label())).toHaveLength(1);
+  });
+
+  it('opens a PR link externally instead of navigating the window', async () => {
+    const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+    render(DeleteWarningDialog, {
+      props: {
+        open: true,
+        openPrs: [
+          {
+            number: 7,
+            title: 'Fix bug',
+            url: 'https://github.com/acme/repo/pull/7',
+            status: 'Open' as const,
+          },
+        ],
+      },
+    });
+
+    const link = screen.getByRole('link', { name: '#7 Fix bug' });
+    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    await fireEvent(link, clickEvent);
+
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://github.com/acme/repo/pull/7');
+    expect(clickEvent.defaultPrevented).toBe(true);
+  });
+
+  it('renders a URL-less PR as plain text instead of a link', async () => {
+    const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+    render(DeleteWarningDialog, {
+      props: {
+        open: true,
+        openPrs: [
+          {
+            number: 9,
+            title: 'No url yet',
+            url: '',
+            status: 'Open' as const,
+          },
+        ],
+      },
+    });
+
+    expect(screen.queryByRole('link')).toBeNull();
+    const item = screen.getByText('#9 No url yet');
+    await fireEvent.click(item);
+
+    expect(openExternalUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('renders the PR section in archive mode with no agents or hooks', async () => {
+    const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+    render(DeleteWarningDialog, {
+      props: {
+        open: true,
+        mode: 'archive' as const,
+        openPrs: [
+          {
+            number: 42,
+            title: 'Pending work',
+            url: 'https://github.com/acme/repo/pull/42',
+            status: 'Draft' as const,
+          },
+        ],
+      },
+    });
+
+    expect(
+      screen.getByText(m.modals_deleteWarning_openPrs_one({ count: '1' })),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: '#42 Pending work' })).toBeTruthy();
+    expect(screen.getByText(m.workspace_prSection_statusDraft_label())).toBeTruthy();
+    expect(screen.queryByText(m.modals_deleteWarning_prMergeConflicts_label())).toBeNull();
   });
 
   it('renders archive copy and confirm label in archive mode', async () => {

@@ -114,15 +114,13 @@
 />
 
 <style>
-  .reasoning-expanded-body :global(.markdown-viewer),
-  .reasoning-expanded-body :global(.markdown-viewer > .ProseMirror) {
+  .reasoning-expanded-body :global(.markdown-viewer) {
     display: flex;
     flex-direction: column;
     row-gap: 0.5rem;
   }
 
-  .reasoning-expanded-body :global(.markdown-viewer > *),
-  .reasoning-expanded-body :global(.markdown-viewer > .ProseMirror > *) {
+  .reasoning-expanded-body :global(.markdown-viewer > *) {
     margin-block: 0 !important;
   }
 

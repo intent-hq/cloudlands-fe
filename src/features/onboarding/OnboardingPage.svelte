@@ -92,6 +92,7 @@
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
+  import { buildContextLinks } from '$lib/components/workspace/initializer/context-links';
 
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -1177,9 +1178,8 @@
 
       // Parse context from the rich textarea
       const richTextareaMentions = getOnboardingRichTextarea()?.getMentions() ?? [];
-      const contextMentionRefs = parseContextMentions(
-        getOnboardingRichTextarea()?.getContextMentions() ?? [],
-      );
+      const contextMentions = getOnboardingRichTextarea()?.getContextMentions() ?? [];
+      const contextMentionRefs = parseContextMentions(contextMentions);
       const fileMentionRefs = parseFileMentions(richTextareaMentions);
       const runtimeMentionRefs = await parseRuntimeMentions(richTextareaMentions, logger);
       const contextReferences = [...contextMentionRefs, ...fileMentionRefs, ...runtimeMentionRefs];
@@ -1261,6 +1261,8 @@
       // inline base64 rides the workspace.create frame.
       const hasStagedFiles = hasStagedFileItems(onboardingStagedItems) || imageBlocks.length > 0;
 
+      const requestContextLinks = buildContextLinks(contextMentions);
+
       const result = await workspaceClient.create({
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
@@ -1270,6 +1272,7 @@
         skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,
         setupScript: setupScriptParam,
+        contextLinks: requestContextLinks,
         linearIssue,
         sentryIssue,
         initialAgent: {
@@ -1331,12 +1334,16 @@
           agentId ?? null,
           'Coordinator',
           specialistId === 'spec-writer',
+          undefined,
+          // Daemon-persisted links are canonical; fall back to the request's
+          // links when an older daemon does not echo them (PROTOCOL §5.1).
+          workspace.contextLinks ?? requestContextLinks,
         ),
       );
       appStore.dispatch(
         hydrateWorkspaceNavigation(workspace.id, {
           version: 2,
-          workspace: { id: workspace.id, status: 'loading' },
+          workspace: { id: workspace.id },
           mainPanel: { type: 'empty' },
           drawer: { open: false, type: null, itemId: null },
           navigation: { history: [], currentIndex: -1 },

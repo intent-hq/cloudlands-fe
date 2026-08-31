@@ -34,7 +34,6 @@
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
-    terminalCreated,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
@@ -212,8 +211,6 @@
           m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
         ),
       );
-      // Correct any in-flight terminal.list snapshot that predates the create.
-      appStore.dispatch(terminalCreated(ROOT_WORKSPACE_ID));
       if (!$isOpen) {
         appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
       }

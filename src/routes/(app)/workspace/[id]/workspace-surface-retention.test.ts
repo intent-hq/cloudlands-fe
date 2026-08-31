@@ -117,6 +117,37 @@ describe('workspace surface retention', () => {
     await waitFor(() => expect(inactiveA?.hasAttribute('hidden')).toBe(false));
     expect(view.getByRole('button', { name: 'workspace-a' })).toBe(retainedA);
   });
+
+  it('blurs focus inside the deactivating surface before inert applies', async () => {
+    const view = render(RetentionHarness, {
+      props: input('workspace-a'),
+    });
+    await waitFor(() =>
+      expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(1),
+    );
+    const retainedA = view.getByRole('button', { name: 'workspace-a' });
+    const surfaceA = view.container.querySelector<HTMLElement & { inert: boolean }>(
+      '[data-retained-workspace-surface="workspace-a"]',
+    )!;
+    retainedA.focus();
+    expect(document.activeElement).toBe(retainedA);
+    expect(surfaceA.inert).toBe(false);
+
+    // Flipping `inert` while a descendant holds focus makes the browser blur
+    // it synchronously inside the template effect, where widgets that write
+    // $state on blur (e.g. TipTap) throw state_unsafe_mutation — so the blur
+    // must land before the surface's `inert` attribute updates.
+    let surfaceInertAtBlur: boolean | null = null;
+    retainedA.addEventListener('blur', () => {
+      surfaceInertAtBlur = surfaceA.inert;
+    });
+
+    await view.rerender(input('workspace-b'));
+
+    expect(document.activeElement).not.toBe(retainedA);
+    expect(surfaceInertAtBlur).toBe(false);
+    expect(surfaceA.inert).toBe(true);
+  });
 });
 
 function input(activeWorkspaceId: string) {

@@ -21,9 +21,16 @@ export interface FollowBottomOptions {
   threshold?: number;
   /** Callback when follow state changes due to user interaction */
   onFollowChange?: (follow: boolean) => void;
-  /** Reports live geometry for controls outside the scroll container. */
+  /**
+   * Reports live geometry for controls outside the scroll container.
+   *
+   * While following, this can fire synchronously inside ResizeObserver
+   * delivery (see handleResizeDelivery), so it must stay layout-cheap:
+   * reads of already-clean geometry and state writes are fine, but dirtying
+   * style and then reading geometry here would force layout mid-broadcast.
+   */
   onScrollStateChange?: (state: FollowBottomState) => void;
-  /** Keep the native anchor active without reserving a layout pixel. */
+  /** Keep the native anchor active without contributing layout height. */
   layoutNeutralBottomAnchor?: boolean;
 }
 
@@ -74,6 +81,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let settleFrame: number | null = null;
+  let reactivationFrame: number | null = null;
+  let layoutReportFrame: number | null = null;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
@@ -84,8 +93,18 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   const nativeBottomAnchor = document.createElement('div');
   nativeBottomAnchor.dataset.followBottomAnchor = '';
   nativeBottomAnchor.setAttribute('aria-hidden', 'true');
+  // Zero-sized elements are rejected as scroll-anchor candidates by both
+  // Chromium and Gecko (w3c/csswg-drafts#3483), so the layout-neutral form
+  // keeps a 1px box and cancels it with a negative margin instead of
+  // collapsing to 0px — net scrollHeight contribution stays zero while the
+  // anchor remains eligible to hold a followed viewport pinned. Neutrality
+  // holds in flex parents (margins don't collapse) and in block containers
+  // via adjacent-margin collapsing — ChatPanel appends the anchor to its
+  // block scroll viewport, where the -1px margin collapses with the
+  // preceding sibling's bottom margin and the 1px height restores the
+  // difference.
   nativeBottomAnchor.style.cssText =
-    `height:${options.layoutNeutralBottomAnchor ? 0 : 1}px;` +
+    `height:1px;${options.layoutNeutralBottomAnchor ? 'margin-top:-1px;' : ''}` +
     'overflow-anchor:auto;pointer-events:none;flex:0 0 auto;';
 
   function excludeNativeAnchor(element: HTMLElement) {
@@ -207,14 +226,47 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     scheduleBottomSettle();
   }
 
+  function scheduleLayoutReport() {
+    if (layoutReportFrame !== null) return;
+    layoutReportFrame = requestAnimationFrame(() => {
+      layoutReportFrame = null;
+      if (destroyed || !enabled) return;
+      reportState();
+    });
+  }
+
   function handleLayoutChange() {
+    // Mutation callbacks fire as microtasks on a dirty tree — e.g. when a
+    // retained surface is revealed — where a synchronous
+    // scrollHeight/clientHeight read forces layout. Defer all layout reads
+    // to a single coalesced animation frame (still pre-paint); the native
+    // bottom anchor keeps a followed viewport pinned until the settle frame
+    // snaps exactly.
+    if (destroyed || !enabled) return;
     if (isFollowing) {
-      const maximum = setExactBottom();
       stableFrames = 0;
-      previousMaximum = maximum;
+      previousMaximum = null;
       scheduleBottomSettle();
+      return;
     }
-    reportState();
+    scheduleLayoutReport();
+  }
+
+  function handleResizeDelivery() {
+    // ResizeObserver delivers after layout, pre-paint, on a clean tree, so
+    // geometry reads here are cheap. Snap synchronously while following:
+    // deferring to a rAF (which runs in the NEXT frame from an RO callback)
+    // would paint one stale-scrollTop frame per resize burst — the footer
+    // utility bar flicker under rapid streaming. ("Clean" is per broadcast
+    // depth: an earlier ResizeObserver in the same broadcast that dirties
+    // style forces one bounded re-layout here; the settle tail corrects any
+    // residue.)
+    if (destroyed || !enabled) return;
+    if (isFollowing) {
+      requestBottomSettle();
+      return;
+    }
+    scheduleLayoutReport();
   }
 
   const follower: BottomFollower = {
@@ -391,7 +443,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     });
 
     // Watch for size changes
-    resizeObserver = new ResizeObserver(handleLayoutChange);
+    resizeObserver = new ResizeObserver(handleResizeDelivery);
     observePersistentResize(container);
 
     // Also observe children for size changes
@@ -409,7 +461,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     resizeObserver = null;
   }
 
-  function attachLifecycle() {
+  function attachLifecycle(deferSnap = false) {
     if (!enabled || destroyed) return;
     bottomFollowers.set(container, follower);
     container.addEventListener('scroll', handleScroll, { passive: true });
@@ -423,6 +475,19 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     window.addEventListener('pointercancel', handlePointerUp, { passive: true });
     setupNativeBottomAnchor();
     setupObservers();
+    if (deferSnap) {
+      // Re-enable of a retained surface: its DOM and scroll position were
+      // preserved while detached, and the surface was just revealed, so a
+      // synchronous scrollHeight/clientHeight read here forces layout on a
+      // dirty tree. Defer the snap/report to the frame (still pre-paint).
+      reactivationFrame = requestAnimationFrame(() => {
+        reactivationFrame = null;
+        if (destroyed || !enabled) return;
+        if (isFollowing) requestBottomSettle();
+        else reportState();
+      });
+      return;
+    }
     if (isFollowing) setExactBottom();
     reportState();
   }
@@ -432,6 +497,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     mutationElements.clear();
     pointerScrolling = false;
     cancelSettle();
+    if (reactivationFrame !== null) cancelAnimationFrame(reactivationFrame);
+    reactivationFrame = null;
+    if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
+    layoutReportFrame = null;
     if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
     teardownObservers();
     teardownNativeBottomAnchor();
@@ -446,7 +515,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     window.removeEventListener('pointercancel', handlePointerUp);
   }
 
-  attachLifecycle();
+  // Initial mount runs inside the component mount flush on a dirty tree, so
+  // the same deferred snap/report as a retained-surface re-enable applies: a
+  // synchronous scrollHeight/clientHeight read here forces layout mid-flush.
+  attachLifecycle(true);
 
   return {
     update(newOptions: FollowBottomOptions) {
@@ -458,7 +530,14 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       if (enabled !== nextEnabled) {
         if (!nextEnabled) detachLifecycle();
         enabled = nextEnabled;
-        if (enabled) attachLifecycle();
+        if (enabled) {
+          // Sync the consumer's follow policy first (no onFollowChange echo),
+          // then attach with the bottom snap/report deferred — the reveal of
+          // a retained surface must not force layout synchronously.
+          isFollowing = newOptions.follow;
+          attachLifecycle(true);
+          return;
+        }
       }
 
       // Consumer-driven changes do not echo through onFollowChange. That

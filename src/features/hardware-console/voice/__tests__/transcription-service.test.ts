@@ -105,6 +105,11 @@ import {
   setPromptDictationTarget,
 } from '../prompt-dictation-target';
 import {
+  clearComposerDictationTarget,
+  hasComposerDictationTarget,
+  setComposerDictationTarget,
+} from '../composer-dictation-target';
+import {
   cancelActiveTranscription,
   hasActiveTranscriptionSession,
   resetTranscriptionCancellation,
@@ -132,6 +137,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearPromptDictationTarget();
+  clearComposerDictationTarget();
   resetTranscriptionCancellation();
   document.body.innerHTML = '';
   vi.clearAllMocks();
@@ -682,18 +688,41 @@ describe('handleFinishedRecording', () => {
     );
   });
 
-  it('retries insertion after composer focus and toasts (with the text) when it never lands', async () => {
+  it('retries insertion after composer focus, copies to the clipboard, and toasts (with the text) when it never lands', async () => {
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn().mockReturnValue(false);
+    const copyToClipboard = vi.fn().mockResolvedValue(undefined);
     vi.useFakeTimers();
     const flow = handleFinishedRecording(RECORDING, {
       transcribe,
       insertText,
       focusComposer: vi.fn(),
+      copyToClipboard,
     });
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(insertText).toHaveBeenCalledTimes(2);
+    expect(copyToClipboard).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).toHaveBeenCalledWith(
+      m.hardwareConsole_voice_insertFailedCopied_error(),
+      expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
+    );
+  });
+
+  it('falls back to the original insert-failed toast when the clipboard write also fails', async () => {
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(false);
+    const copyToClipboard = vi.fn().mockRejectedValue(new Error('clipboard unavailable'));
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText,
+      focusComposer: vi.fn(),
+      copyToClipboard,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(copyToClipboard).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_insertFailed_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
@@ -746,6 +775,7 @@ describe('handleFinishedRecording', () => {
   it('with autoSend, does not send when insertion never lands (transcript preserved in toast)', async () => {
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const sendComposer = vi.fn();
+    const copyToClipboard = vi.fn().mockResolvedValue(undefined);
     vi.useFakeTimers();
     const flow = handleFinishedRecording(
       RECORDING,
@@ -754,6 +784,7 @@ describe('handleFinishedRecording', () => {
         insertText: vi.fn().mockReturnValue(false),
         sendComposer,
         focusComposer: vi.fn(),
+        copyToClipboard,
       },
       { autoSend: true },
     );
@@ -761,7 +792,7 @@ describe('handleFinishedRecording', () => {
     await flow;
     expect(sendComposer).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith(
-      m.hardwareConsole_voice_insertFailed_error(),
+      m.hardwareConsole_voice_insertFailedCopied_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
     );
   });
@@ -824,10 +855,11 @@ describe('handleFinishedRecording with a prompt dictation target', () => {
     expect(sendComposer).not.toHaveBeenCalled();
   });
 
-  it('toasts (with the text) when the prompt insertion never lands', async () => {
+  it('copies to the clipboard and toasts (with the text) when the prompt insertion never lands', async () => {
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn().mockReturnValue(false);
     const promptFocus = vi.fn();
+    const copyToClipboard = vi.fn().mockResolvedValue(undefined);
     setPromptDictationTarget({ focus: promptFocus });
 
     vi.useFakeTimers();
@@ -835,12 +867,14 @@ describe('handleFinishedRecording with a prompt dictation target', () => {
       transcribe,
       insertText,
       focusComposer: vi.fn(),
+      copyToClipboard,
     });
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(insertText).toHaveBeenCalledTimes(2);
+    expect(copyToClipboard).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
     expect(toastError).toHaveBeenCalledWith(
-      m.hardwareConsole_voice_insertFailed_error(),
+      m.hardwareConsole_voice_insertFailedCopied_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
     );
   });
@@ -966,6 +1000,134 @@ describe('handleFinishedRecording with focus inside a modal dialog', () => {
 
     expect(focusComposer).toHaveBeenCalledWith('agent-a');
     expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(sendComposer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('handleFinishedRecording with a composer dictation target', () => {
+  it('routes the transcript to the captured composer, not the active agent', async () => {
+    // The store's active agent is 'agent-a'; the mic button that started
+    // this dictation belonged to a different composer.
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).toHaveBeenCalledWith('agent-b');
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('consumes the capture (one-shot): the next dictation falls back to the active agent', async () => {
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    let flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(hasComposerDictationTarget()).toBe(false);
+
+    flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(focusComposer).toHaveBeenLastCalledWith('agent-a');
+  });
+
+  it('a prompt dictation target wins, and the capture is still consumed', async () => {
+    setComposerDictationTarget('agent-b');
+    const promptFocus = vi.fn();
+    setPromptDictationTarget({ focus: promptFocus });
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(promptFocus).toHaveBeenCalled();
+    expect(focusComposer).not.toHaveBeenCalled();
+    // Consumed even though the prompt route won — this session's capture
+    // must never leak into a later session.
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('a focused modal dialog wins, and the capture is still consumed', async () => {
+    setComposerDictationTarget('agent-b');
+    focusEditableInDialog();
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('the default focus path dispatches dictation-flagged requests, so a mid-dictation panel switch cannot misroute', async () => {
+    // The mic button that started the dictation belonged to agent-b; by
+    // finish time the user focused another panel, so ChatPanel's plain
+    // panel-navigation guard would reject the focus request for agent-b's
+    // (now unfocused) panel. The dictation flow must dispatch the seam
+    // with `source: 'dictation'` so the originating composer still accepts.
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusRequests: unknown[] = [];
+    const onFocusContent = (event: Event) =>
+      focusRequests.push((event as CustomEvent<unknown>).detail);
+    window.addEventListener('panel:focus-content', onFocusContent);
+
+    try {
+      vi.useFakeTimers();
+      // No focusComposer dep: the real default (focusAgentComposer with the
+      // dictation flag) dispatches the panel:focus-content window events.
+      const flow = handleFinishedRecording(RECORDING, { transcribe, insertText });
+      await vi.advanceTimersByTimeAsync(1000);
+      await flow;
+    } finally {
+      window.removeEventListener('panel:focus-content', onFocusContent);
+    }
+
+    expect(focusRequests.length).toBeGreaterThan(0);
+    for (const detail of focusRequests) {
+      expect(detail).toEqual({ tabType: 'agent', agentId: 'agent-b', source: 'dictation' });
+    }
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('with autoSend, the send lands on the captured composer', async () => {
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const sendComposer = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(
+      RECORDING,
+      { transcribe, insertText, sendComposer, focusComposer },
+      { autoSend: true },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).toHaveBeenCalledWith('agent-b');
     expect(sendComposer).toHaveBeenCalledTimes(1);
   });
 });

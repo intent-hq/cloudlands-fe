@@ -110,18 +110,6 @@ vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) =
     type: 'changes/clearOlderCommits',
     payload: wsId,
   })),
-  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/stageByPathRequested',
-    payload: [wsId, paths],
-  })),
-  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/unstageByPathRequested',
-    payload: [wsId, paths],
-  })),
-  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'changes/revertByPathRequested',
-    payload: [wsId, paths],
-  })),
   refreshRequested: vi.fn((wsId: string) => ({
     type: 'changes/refreshRequested',
     payload: [wsId],
@@ -255,7 +243,6 @@ const mockAcceptChangesState = {
   isAutofillAndCreatingPR: false,
   pendingCommitAction: null as any,
   pendingPRContext: null as any,
-  backgroundOperation: null as any,
 };
 
 function createReadable<T>(value: T) {
@@ -349,12 +336,11 @@ vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
     },
   }),
 }));
-vi.mock('$store/renderer/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
+// The panel hydrates the daemon-computed agent-lock snapshot on workspace
+// switch (PROTOCOL §5.19); fake the client so no wire read is attempted.
+vi.mock('$features/file-tracking/file-tracking.client', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  recomputeAgentLocks: vi.fn((wsId: string) => ({
-    type: 'agentLock/recomputeAgentLocks',
-    payload: [wsId],
-  })),
+  hydrateAgentLocks: vi.fn(() => Promise.resolve()),
 }));
 
 const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));

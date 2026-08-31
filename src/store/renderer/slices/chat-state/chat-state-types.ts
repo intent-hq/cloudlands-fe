@@ -108,6 +108,17 @@ interface PendingQuestionRecovery {
 }
 
 /**
+ * One bounded lookup for a pending-proposal carrying message outside the
+ * loaded window. Unlike the single-slot question recovery, proposals may span
+ * multiple carrying messages, so these are kept in a per-messageId record.
+ */
+export interface PendingProposalRecovery {
+  status: 'loading' | 'found' | 'not-found' | 'error';
+  /** Tray projection retained after one successful lookup; never transcript state. */
+  proposals?: { proposalId: string; proposal: Proposal }[];
+}
+
+/**
  * Metadata of the LAST seq-0 snapshot the standing `chat.subscribe`
  * subscription applied to the store (single-transfer hydration). Written by
  * the chat-subscribe saga on every `fromSnapshot` transcript emit; consumed
@@ -257,6 +268,12 @@ export interface ChatAgentState {
   /** State of the single targeted `aroundMessageId` lookup for the current marker. */
   pendingQuestionRecovery?: PendingQuestionRecovery;
   /**
+   * Targeted `aroundMessageId` lookups for pending-proposal carrying messages
+   * outside the loaded window, keyed by carrying messageId. Entries are
+   * pruned when the metadata refs no longer name the message.
+   */
+  pendingProposalRecovery?: Record<string, PendingProposalRecovery>;
+  /**
    * Switch-back transcript reveal gate: true while the VIEWED conversation is
    * awaiting a fresh seq-0 snapshot from its (re)opening standing
    * subscription. Armed synchronously by the `markAgentAsViewed` reducer case
@@ -351,6 +368,7 @@ import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/i
 import type { ContextReference } from '$features/agent/agent-context';
 import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
+import type { Proposal } from '$shared/types/proposal';
 
 // ============================================================================
 // Top-level slice state (flat, agent-keyed)

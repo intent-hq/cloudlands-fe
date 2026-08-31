@@ -93,7 +93,11 @@
   }
 
   :global([data-sonner-toast]) {
-    background: hsl(var(--card)) !important;
+    /* background-COLOR, not the shorthand: the countdown bar (below) animates
+       background-size on opted-in toasts, and an !important shorthand here
+       would lock every background longhand (CSS animations cannot override
+       !important declarations). */
+    background-color: hsl(var(--card)) !important;
     color: hsl(var(--foreground)) !important;
     /* Width/style stay !important, but color must NOT be — per-toast Tailwind
        classes (e.g. !border-destructive/50 on custom toasts) override it.
@@ -224,5 +228,63 @@
 
   :global([data-sonner-toast][data-type='warning'] [data-icon]) {
     color: hsl(var(--toast-warning-accent));
+  }
+
+  /* Countdown progress bar — opt-in via withToastCountdown() (see
+     toast-countdown.ts). A thin bar along the toast's bottom edge shrinks
+     linearly over --toast-countdown-duration, which the helper derives from
+     the same duration passed to the toast. Drawn as a bottom-anchored
+     background gradient because sonner owns both pseudo-elements (::after is
+     the hover gap-filler between stacked toasts, ::before the swipe
+     hit-area). Excluded during swipe-out so sonner's swipe-out keyframes keep
+     the element's animation slot. */
+  :global([data-sonner-toaster] [data-sonner-toast].toast-countdown:not([data-swipe-out='true'])) {
+    --toast-countdown-color: hsl(var(--muted-foreground) / 0.4);
+    background-image: linear-gradient(var(--toast-countdown-color), var(--toast-countdown-color));
+    background-repeat: no-repeat;
+    background-position: left bottom;
+    /* Pre-animation value; also the static reduced-motion rendering. */
+    background-size: 100% 2px;
+    animation: toast-countdown-shrink var(--toast-countdown-duration, 10000ms) linear forwards;
+  }
+
+  /* Undo/warning toasts tint the bar with the same accent as their border.
+     The [data-sonner-toaster] prefix ties specificity (0,4,0) with the base
+     rule above (whose :not() argument counts); later source order wins. */
+  :global([data-sonner-toaster] [data-sonner-toast][data-type='warning'].toast-countdown) {
+    --toast-countdown-color: hsl(var(--toast-warning-accent) / 0.6);
+  }
+
+  /* Sonner pauses its dismiss timer while the toaster is hovered (its
+     expanded/interacting pause states are driven by the <ol>'s
+     mouseenter/mousemove and pointer handlers; focus alone never pauses the
+     timer, so no :focus-within here) — pause the bar in sync so it never
+     empties while the toast lingers. Toasts whose countdown mirrors an
+     independent deadline that keeps running during sonner's pause opt out
+     via withToastCountdown's pauseOnHover: false (the
+     .toast-countdown-no-hover-pause class). */
+  :global(
+    [data-sonner-toaster]:hover
+      [data-sonner-toast].toast-countdown:not(.toast-countdown-no-hover-pause)
+  ) {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(
+      [data-sonner-toaster] [data-sonner-toast].toast-countdown:not([data-swipe-out='true'])
+    ) {
+      /* No moving bar — the static full-width bar from background-size stays. */
+      animation: none;
+    }
+  }
+
+  @keyframes -global-toast-countdown-shrink {
+    from {
+      background-size: 100% 2px;
+    }
+    to {
+      background-size: 0% 2px;
+    }
   }
 </style>

@@ -212,6 +212,7 @@ import {
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
+import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
   chatReset,
@@ -238,6 +239,7 @@ import {
   clearAllErrorMessages,
   setServerErrorMessage,
   setServers,
+  setWorkspaceDisabledMcpServers,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
@@ -3750,6 +3752,113 @@ describe('daemonEventsBridge (context wire contract — workspace:context-change
   });
 });
 
+describe('daemonEventsBridge (agent-locks wire contract — changes:agent-locks → agent-lock slice)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('folds the §6.5 snapshot arrays into lockedAgentIds/lockedFilePaths (gating engages)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-a', 'agent-b'],
+        lockedFilePaths: ['src/a.ts', 'src/b.ts'],
+      }),
+    );
+
+    // The FileChangesSection gates on `agentId in $lockedAgentIds$` — assert
+    // through the same selector the component uses.
+    expect(selectLockedAgentIds.select(appStore.state, WS)).toEqual({
+      'agent-a': true,
+      'agent-b': true,
+    });
+    const lockState = (appStore.state as { agentLock: { byWorkspaceId: Record<string, unknown> } })
+      .agentLock.byWorkspaceId[WS];
+    expect(lockState).toEqual({
+      lockedAgentIds: { 'agent-a': true, 'agent-b': true },
+      lockedFilePaths: { 'src/a.ts': true, 'src/b.ts': true },
+    });
+  });
+
+  it('clears the snapshot on empty arrays (auto-commit off / no active agents)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-a'],
+        lockedFilePaths: ['src/a.ts'],
+      }),
+    );
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: false,
+        lockedAgentIds: [],
+        lockedFilePaths: [],
+      }),
+    );
+
+    expect(selectLockedAgentIds.select(appStore.state, WS)).toEqual({});
+  });
+
+  it('prefers the payload workspaceId over the envelope id', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    // The notification helper stamps the envelope with WS; the payload names
+    // a different workspace, which must win (same convention as the
+    // tokenUsage/context handlers).
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: 'ws-locks-other',
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-x'],
+        lockedFilePaths: [],
+      }),
+    );
+
+    expect(selectLockedAgentIds.select(appStore.state, 'ws-locks-other')).toEqual({
+      'agent-x': true,
+    });
+  });
+
+  it('ignores a malformed payload (missing arrays)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: 'ws-locks-malformed',
+        autoCommitEnabled: true,
+      }),
+    );
+
+    const state = appStore.state as { agentLock: { byWorkspaceId: Record<string, unknown> } };
+    expect(state.agentLock.byWorkspaceId['ws-locks-malformed']).toBeUndefined();
+  });
+
+  it('subscribes to changes:agent-locks on the firehose', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('changes:agent-locks');
+  });
+});
+
+
 describe('daemonEventsBridge (linkage wire contract — task:agent-linked / task:agent-unlinked)', () => {
   beforeAll(() => {
     appStore.init();
@@ -4713,6 +4822,114 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     handler(mcpNotification({ serverId: 'srv-x' }));
 
     expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+});
+
+describe('daemonEventsBridge (wire contract — mcpServerToggled on workspace:updated §5.22/§6.5)', () => {
+  const WS_TOGGLE = 'ws-mcp-toggle-1';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    appStore.dispatch(setServers([]));
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, {}));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function seedMcpServer(id: string, name: string): void {
+    appStore.dispatch(setServers([{ id, name, type: 'stdio', command: 'npx' }]));
+  }
+
+  function toggledNotification(changes: Record<string, unknown>) {
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-ws-mcp-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_TOGGLE,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:updated',
+          actor: { type: 'system', id: 'daemon' },
+          data: { workspaceId: WS_TOGGLE, changes },
+        },
+      },
+    };
+  }
+
+  function readDisabled(): Record<string, true> {
+    return appStore.state.mcpSettings.byWorkspaceId[WS_TOGGLE]?.disabledServers ?? {};
+  }
+
+  it('disable delta → resolves serverId to name and marks it disabled in byWorkspaceId', async () => {
+    seedMcpServer('srv-fs', 'filesystem');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-fs', workspaceDisabled: true } }),
+    );
+
+    expect(readDisabled()).toEqual({ filesystem: true });
+  });
+
+  it('re-enable delta → clears the name from byWorkspaceId', async () => {
+    seedMcpServer('srv-fs', 'filesystem');
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { filesystem: true }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-fs', workspaceDisabled: false } }),
+    );
+
+    expect(readDisabled()).toEqual({});
+  });
+
+  it('drops a delta whose serverId is not in the loaded server list (mount hydrate converges later)', async () => {
+    seedMcpServer('srv-known', 'known');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.byWorkspaceId;
+
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-ghost', workspaceDisabled: true } }),
+    );
+
+    expect(appStore.state.mcpSettings.byWorkspaceId).toEqual(before);
+  });
+
+  it('ignores malformed payloads (missing serverId or non-boolean workspaceDisabled)', async () => {
+    seedMcpServer('srv-x', 'x');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.byWorkspaceId;
+
+    handler(toggledNotification({ mcpServerToggled: { workspaceDisabled: true } }));
+    handler(toggledNotification({ mcpServerToggled: { serverId: 'srv-x' } }));
+    handler(
+      toggledNotification({ mcpServerToggled: { serverId: 'srv-x', workspaceDisabled: 'yes' } }),
+    );
+    handler(toggledNotification({ mcpServerToggled: 'not-an-object' }));
+
+    expect(appStore.state.mcpSettings.byWorkspaceId).toEqual(before);
+  });
+
+  it('a workspace:updated delta without mcpServerToggled leaves byWorkspaceId untouched', async () => {
+    seedMcpServer('srv-x', 'x');
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { x: true }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(toggledNotification({ title: 'Renamed' }));
+
+    expect(readDisabled()).toEqual({ x: true });
   });
 });
 

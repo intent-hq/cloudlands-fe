@@ -10,9 +10,11 @@ import {
   __resetConnectionModeForTesting,
   getConnectionMode,
   getDaemonVersionInfo,
+  getLocalUpdateSupported,
   getOrphanedSidecarInfo,
   setConnectionMode,
   setDaemonVersionInfo,
+  setLocalUpdateSupported,
   setOrphanedSidecarInfo,
 } from '../connection-mode';
 import { computeDaemonVersionRefresh } from '../daemon-version-refresh';
@@ -61,6 +63,19 @@ describe('connection-mode', () => {
     });
     __resetConnectionModeForTesting();
     expect(getOrphanedSidecarInfo()).toBeNull();
+  });
+
+  it('round-trips the local updateSupported capture and clears it on reset', () => {
+    expect(getLocalUpdateSupported()).toBeNull();
+    setLocalUpdateSupported(true);
+    expect(getLocalUpdateSupported()).toBe(true);
+    setLocalUpdateSupported(false);
+    expect(getLocalUpdateSupported()).toBe(false);
+    setLocalUpdateSupported(null);
+    expect(getLocalUpdateSupported()).toBeNull();
+    setLocalUpdateSupported(true);
+    __resetConnectionModeForTesting();
+    expect(getLocalUpdateSupported()).toBeNull();
   });
 });
 
@@ -143,6 +158,39 @@ describe('formatTransportInfo', () => {
   it('omits version fields for sidecar UDS even when version info is set', () => {
     setConnectionMode('sidecar');
     setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'sidecar-uds',
+      target: '/tmp/i.sock',
+    });
+  });
+
+  it('includes the captured updateSupported flag for external UDS (true and false)', () => {
+    setConnectionMode('external');
+    setLocalUpdateSupported(true);
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+      updateSupported: true,
+    });
+    setLocalUpdateSupported(false);
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+      updateSupported: false,
+    });
+  });
+
+  it('omits updateSupported for external UDS while the capture is unknown (null)', () => {
+    setConnectionMode('external');
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+    });
+  });
+
+  it('omits updateSupported for sidecar UDS even when the flag is set', () => {
+    setConnectionMode('sidecar');
+    setLocalUpdateSupported(true);
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'sidecar-uds',
       target: '/tmp/i.sock',

@@ -172,6 +172,7 @@ function makeCycleState(
       provider: 'elevenlabs',
       keyConfigured: { elevenlabs: true, openai: false },
     },
+    panelLayout: { byWorkspaceId: {} },
   };
 }
 

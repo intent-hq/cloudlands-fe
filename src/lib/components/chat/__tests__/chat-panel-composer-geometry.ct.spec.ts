@@ -60,11 +60,13 @@ for (const state of states) {
     const geometry = await input.evaluate((node) => {
       const shell = node.closest('[data-testid="chat-composer-shell"]')!;
       const prompt = node.closest('[data-testid="composer-prompt-layer"]')!;
+      const lane = node.closest('[data-testid="chat-composer-lane"]')!;
       const editor = node.querySelector('.editor-wrapper')!;
       const action = node.querySelector('[data-chat-input-action-bar]')!;
       const box = node.getBoundingClientRect();
       const shellBox = shell.getBoundingClientRect();
       const promptBox = prompt.getBoundingClientRect();
+      const laneBox = lane.getBoundingClientRect();
       const editorBox = editor.getBoundingClientRect();
       const actionBox = action.getBoundingClientRect();
       const style = getComputedStyle(node);
@@ -77,6 +79,7 @@ for (const state of states) {
         box: [box.left, box.top, box.right, box.bottom],
         shell: [shellBox.left, shellBox.top, shellBox.right, shellBox.bottom],
         prompt: [promptBox.left, promptBox.top, promptBox.right, promptBox.bottom],
+        lane: [laneBox.left, laneBox.top, laneBox.right, laneBox.bottom],
         background: style.backgroundColor,
         sidebarBackground,
         borders: [
@@ -97,8 +100,18 @@ for (const state of states) {
     expect(geometry.borders).toEqual(['0px', '0px', '0px', '0px']);
     expect(geometry.radii[0]).toBe(geometry.radii[1]);
     expect(Number.parseFloat(geometry.radii[0])).toBeGreaterThan(0);
-    expect(geometry.box[0]).toBeGreaterThan(geometry.shell[0]);
-    expect(geometry.box[2]).toBeLessThan(geometry.shell[2]);
+    if (state.chief) {
+      // Chief zeroes the lane's horizontal inset: the input box is flush with
+      // the lane on both edges — flush with the shell's left edge, while the
+      // prompt layer keeps only the scrollbar-gutter compensation inline-end.
+      expect(geometry.box[0]).toBeCloseTo(geometry.shell[0], 1);
+      expect(geometry.box[0]).toBeCloseTo(geometry.lane[0], 1);
+      expect(geometry.box[2]).toBeCloseTo(geometry.lane[2], 1);
+      expect(geometry.box[2]).toBeLessThanOrEqual(geometry.shell[2]);
+    } else {
+      expect(geometry.box[0]).toBeGreaterThan(geometry.shell[0]);
+      expect(geometry.box[2]).toBeLessThan(geometry.shell[2]);
+    }
     expect(geometry.box[1]).toBeGreaterThan(geometry.prompt[1]);
     expect(geometry.box[3]).toBeLessThan(geometry.prompt[3]);
     expect(geometry.layersSeparated).toBe(true);

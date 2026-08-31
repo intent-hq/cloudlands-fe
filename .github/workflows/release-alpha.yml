@@ -230,11 +230,12 @@ jobs:
       # Stage the Developer ID provisioning profile for the keychain-sync
       # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
       # sign-sidecar.js embeds it and signs the helper with the restricted
-      # keychain entitlements the profile authorizes. Fail-soft: when the
-      # secret is empty the env var stays unset, the helper ships
-      # unprovisioned, and keychain sync reports "unavailable" at runtime —
-      # the build never fails. The decoded file is removed by the always()
-      # cleanup step.
+      # keychain entitlements the profile authorizes. When the secret is
+      # empty the env var stays unset and this step exits 0 — but because
+      # this job sets REQUIRE_SHARED_KEYCHAIN_GROUP=1 on the build step,
+      # scripts/sign-sidecar.js then FAILS the build (intent-hq/intent#3848)
+      # instead of shipping a helper without keychain sync. The decoded file
+      # is removed by the always() cleanup step.
       - name: Stage keychain-helper provisioning profile
         env:
           KEYCHAIN_HELPER_PROFILE_B64: ${{ secrets.CLOUDLANDS_KEYCHAIN_HELPER_PROFILE_B64 }}
@@ -295,7 +296,14 @@ jobs:
           # GITHUB_ENV from "Stage keychain-helper provisioning profile"
           # (only when the secret is present); when unset,
           # scripts/sign-sidecar.js signs the helper without restricted
-          # entitlements (fail-soft).
+          # entitlements (fail-soft) — except that the guardrail below
+          # overrides the fail-soft posture for this release job.
+          # Guardrail (intent-hq/intent#3848): fail the release build if the
+          # keychain helper cannot be signed with the shared cross-app group
+          # (TEAMID.dev.intentapp.backends) — a missing profile, failed
+          # entitlement extraction, or an unauthorized profile must not
+          # silently ship an alpha without keychain sync.
+          REQUIRE_SHARED_KEYCHAIN_GROUP: '1'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts

@@ -56,7 +56,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
-    expect(panel).toContain("? 'w-full px-1.5!'");
+    expect(panel).toContain("? 'w-full px-3!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
@@ -219,14 +219,18 @@ describe('editorial conversation presentation contract', () => {
       'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
     );
     expect(staticContent).toMatch(
-      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
+      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
     );
     expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toContain(
-      "getOperationalClusterSpacingClass(\n      group.children,\n      childIndex,\n      (candidate) => candidate.type !== 'tool_result',",
+    expect(streamingContent).toMatch(
+      /suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+\(candidate\) => candidate\.type !== 'tool_result',/,
     );
+    expect(staticContent).toContain('suppressSpacing: boolean = false,');
+    expect(streamingContent).toContain('suppressSpacing: boolean = false,');
+    expect(staticContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
+    expect(streamingContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
     expect(streamingContent).toContain(
       '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );
@@ -254,7 +258,7 @@ describe('editorial conversation presentation contract', () => {
     );
   });
 
-  it('uses quieter Chief message surfaces and neutral proposal borders', () => {
+  it('uses quieter Chief message surfaces and keeps proposals out of the transcript', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const streaming = source('src/lib/components/chat/StreamingMessageContent.svelte');
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
@@ -262,10 +266,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
     expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
-    expect(streaming).toContain('neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}');
-    expect(
-      messageContent.match(/neutralBorder=\{workspaceId === CHIEF_WORKSPACE_ID\}/g),
-    ).toHaveLength(2);
+    // Proposals are tray-only: neither transcript renderer mounts ProposalCard.
+    expect(streaming).not.toContain('ProposalCard');
+    expect(messageContent).not.toContain('ProposalCard');
   });
 
   it('keeps user rows transparent with the opaque surface on the bubble itself', () => {
@@ -274,8 +277,10 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
     expect(panel).not.toContain('class:bg-card={!isChiefWorkspace}');
+    // The window spans the LazyTurn virtualization wrapper between the
+    // always-mounted nav-target div and the inner bubble surface.
     expect(panel).toMatch(
-      /message-nav-target relative z-20[\s\S]{0,700}<div class=\{isChiefWorkspace \? 'mx-1 sm:mx-2' : ''\}>/,
+      /message-nav-target relative z-20[\s\S]{0,1400}<div class=\{isChiefWorkspace \? 'mx-1 sm:mx-2' : ''\}>/,
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
@@ -326,8 +331,25 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeupWrapper).toContain('use:attachPinnedPromptMessage={message}');
     expect(wakeupWrapper).toContain('eventCardAssistantMarginClass(');
     expect(wakeupWrapper).toContain('turn.assistantMessages.length > 0');
-    expect(panel).toContain('class:mb-5={isAutomatedMessage(message)}');
-    expect(panel).toContain('class:mb-7={!isAutomatedMessage(message)}');
+    expect(panel).toContain('class:mb-0={batchedDeliveryTurnSeam}');
+    expect(panel).toContain('class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}');
+    expect(panel).toContain(
+      'class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}',
+    );
+    expect(panel).toContain(
+      '{@const prevTurn =\n' +
+        '                    turns[turnIndex - 1] ??\n' +
+        '                    conversationTurnIndex.groups[groupIndex - 1]?.turns.at(-1)}',
+    );
+    expect(panel).toContain(
+      '{@const batchedSeamBefore = Boolean(\n' +
+        '                    prevTurn &&\n' +
+        '                    !isAttentionQuestionAnswerSeam(prevTurn, turn) &&\n' +
+        '                    isBatchedDeliverySeam(prevTurn, turn),\n' +
+        '                  )}',
+    );
+    expect(panel).toContain('suppressTopGap={batchedSeamBefore}');
+    expect(panel).toContain('suppressAutomatedWakeTopSpacing={batchedSeamBefore}');
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');

@@ -188,6 +188,20 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('publishes a workspace-scoped skills failure when loading rejects', async () => {
+    mocks.skills.list.mockRejectedValue(new Error('skill load failed'));
+    const run = start();
+
+    run.channel.put(loadSkillsRequested(WS));
+    await settle();
+
+    expect(run.actions).toContainEqual({
+      type: 'skills/loadSkillsFailed',
+      payload: [WS, 'skill load failed'],
+    });
+    await stop(run.task);
+  });
+
   it('coalesces workspace-list loads arriving mid-fetch into one trailing refetch', async () => {
     const resolvers: ((value: unknown[]) => void)[] = [];
     mocks.workspaces.list.mockImplementation(

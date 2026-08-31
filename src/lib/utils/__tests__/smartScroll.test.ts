@@ -436,9 +436,53 @@ describe('followBottom policy', () => {
     expect(child.style.overflowAnchor).toBe('auto');
   });
 
-  it('starts followed and idle with no pending animation frame', () => {
+  it('keeps the layout-neutral anchor a viable non-zero-sized anchor candidate', () => {
+    const action = followBottom(container, { follow: true, layoutNeutralBottomAnchor: true });
+    const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
+
+    // Zero-sized boxes are rejected as scroll-anchor candidates by Chromium
+    // and Gecko (w3c/csswg-drafts#3483): the declared box must be non-zero
+    // and its margin must cancel that height exactly so the net scrollable
+    // extent is unchanged. jsdom has no layout, so assert the numeric
+    // invariant here; real-browser eligibility + neutrality is covered by
+    // bottom-anchoring.ct.spec.ts ("layout-neutral bottom anchor is a real
+    // anchor candidate with zero net scroll height").
+    const declaredHeight = Number.parseFloat(anchor.style.height);
+    const cancellingMargin = Number.parseFloat(anchor.style.marginTop);
+    expect(declaredHeight).toBeGreaterThan(0);
+    expect(declaredHeight + cancellingMargin).toBe(0);
+    action.destroy();
+  });
+
+  it('defers the initial mount snap and layout reads to an animation frame', () => {
+    // Start the viewport away from the bottom so the deferred path must
+    // actually snap it there — a no-op attach would leave it at 100.
+    scrollTop = 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
     const action = followBottom(container, { follow: true });
 
+    // Initial mount runs inside the component mount flush on a dirty tree:
+    // no synchronous layout read, snap deferred to the frame (pre-paint).
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(100);
+    expect(animationFrames).toHaveLength(1);
+
+    runSettleTail();
+    expect(layoutReads).toBeGreaterThan(0);
     expect(scrollTop).toBe(600);
     expect(animationFrames).toHaveLength(0);
     action.destroy();
@@ -501,14 +545,18 @@ describe('followBottom policy', () => {
       follow: true,
       onScrollStateChange: (state) => distances.push(state.distanceFromBottom),
     });
+    runSettleTail();
 
     scrollHeight += 120;
     fireMutation();
+    expect(animationFrames).toHaveLength(1);
+    runFrame();
     expect(scrollTop).toBe(720);
     expect(distances.at(-1)).toBe(0);
 
     scrollHeight += 30;
     fireResize();
+    runFrame();
     expect(scrollTop).toBe(750);
     runFrame();
     expect(scrollTop).toBe(750);
@@ -573,6 +621,7 @@ describe('followBottom policy', () => {
 
     scrollHeight += 21;
     fireResizeFor(child);
+    runFrame();
     expect(scrollTop).toBe(621);
     action.destroy();
   });
@@ -590,6 +639,7 @@ describe('followBottom policy', () => {
     expect(resizeUnobserved).not.toContain(child);
     scrollHeight += 17;
     fireResizeFor(child);
+    runFrame();
     expect(scrollTop).toBe(617);
     action.destroy();
   });
@@ -621,6 +671,7 @@ describe('followBottom policy', () => {
     wrapper.append(row);
     container.append(wrapper);
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     const trace: Array<{
       phase: string;
       maximum: number;
@@ -646,6 +697,8 @@ describe('followBottom policy', () => {
     fireResizeFor(row);
     runFrame();
 
+    // Resize delivery snaps synchronously (post-layout, pre-paint), so the
+    // trace callback already sees the corrected position in the same frame.
     expect(trace).toEqual([
       {
         phase: 'edit-grow-first-frame',
@@ -655,6 +708,7 @@ describe('followBottom policy', () => {
         settleFrames: 0,
       },
     ]);
+    expect(scrollTop).toBe(613);
     mutation.settle();
     expect(resizeUnobserved).toContain(row);
     action.destroy();
@@ -943,8 +997,9 @@ describe('followBottom policy', () => {
 
     scrollHeight += 17;
     fireMutation();
-    expect(scrollTop).toBe(scrollHeight - clientHeight);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(scrollHeight - clientHeight);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
     expect(followChanges).toEqual([]);
@@ -953,21 +1008,238 @@ describe('followBottom policy', () => {
 
   it('restarts an idle settle tail for attribute and resize observations', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 11;
     fireAttributeMutation();
-    expect(scrollTop).toBe(611);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(611);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 13;
     fireResize();
-    expect(scrollTop).toBe(624);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(624);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('defers the reactivation snap and layout reads to an animation frame', () => {
+    const distances: number[] = [];
+    const options = {
+      enabled: true,
+      follow: true,
+      onScrollStateChange: (state: { distanceFromBottom: number }) =>
+        distances.push(state.distanceFromBottom),
+    };
+    const action = followBottom(container, options);
+    runSettleTail();
+    action.update({ ...options, enabled: false });
+
+    // Content grew while the surface was retained/disabled.
+    scrollHeight += 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
+    distances.length = 0;
+
+    action.update({ ...options, enabled: true });
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(600);
+    expect(distances).toEqual([]);
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(animationFrames).toHaveLength(1);
+
+    runFrame();
+    expect(layoutReads).toBeGreaterThan(0);
+    expect(scrollTop).toBe(700);
+    expect(distances).toEqual([0]);
+    action.destroy();
+  });
+
+  it('applies an unfollowed reactivation without snapping to the bottom', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+    scrollTop = 300;
+
+    action.update({ ...options, enabled: true, follow: false });
+    expect(isFollowingBottom(container)).toBe(false);
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it('abandons a pending reactivation snap when disabled before the frame', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    runSettleTail();
+    action.update({ ...options, enabled: false });
+    scrollTop = 300;
+
+    action.update({ ...options, enabled: true });
+    expect(animationFrames).toHaveLength(1);
+    action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it('defers mutation-driven layout work out of the reveal frame', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+
+    // Content grew while the surface was retained/disabled.
+    scrollHeight += 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
+
+    action.update({ ...options, enabled: true });
+    // Mutation observers fire as microtasks during the reveal on the
+    // still-dirty tree — their layout work stays deferred to the frame.
+    fireMutation();
+    fireMutation();
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(600);
+
+    runSettleTail();
+    expect(layoutReads).toBeGreaterThan(0);
+    expect(scrollTop).toBe(700);
+    action.destroy();
+  });
+
+  it('snaps synchronously on resize delivery while following', () => {
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+
+    // ResizeObserver delivers after layout, pre-paint, on a clean tree. The
+    // snap must land in the same frame: deferring it to a rAF (which runs in
+    // the NEXT frame from an RO callback) paints one stale-scrollTop frame
+    // per resize burst — the footer utility bar flicker under rapid streaming.
+    scrollHeight += 40;
+    fireResize();
+    expect(scrollTop).toBe(640);
+
+    scrollHeight += 25;
+    fireResize();
+    expect(scrollTop).toBe(665);
+
+    runSettleTail();
+    expect(scrollTop).toBe(665);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces a burst of mutation callbacks into one deferred settle', () => {
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+
+    scrollHeight += 40;
+    fireMutation();
+    fireAttributeMutation();
+    expect(animationFrames).toHaveLength(1);
+    expect(scrollTop).toBe(600);
+
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+    expect(scrollTop).toBe(640);
+
+    runFrame();
+    expect(scrollTop).toBe(640);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces unfollowed observer reports into one deferred frame without snapping', () => {
+    const distances: number[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onScrollStateChange: (state) => distances.push(state.distanceFromBottom),
+    });
+    runSettleTail();
+    distances.length = 0;
+    scrollTop = 300;
+    scrollHeight += 100;
+    fireMutation();
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+    expect(distances).toEqual([]);
+
+    runFrame();
+    expect(scrollTop).toBe(300);
+    expect(distances).toEqual([400]);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('cancels a deferred observer settle on destroy', () => {
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    scrollHeight += 50;
+    fireMutation();
+    expect(animationFrames).toHaveLength(1);
+
+    action.destroy();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+    expect(scrollTop).toBe(600);
+  });
+
+  it('cancels a pending unfollowed report frame when disabled', () => {
+    const distances: number[] = [];
+    const options = {
+      enabled: true,
+      follow: false,
+      onScrollStateChange: (state: { distanceFromBottom: number }) =>
+        distances.push(state.distanceFromBottom),
+    };
+    const action = followBottom(container, options);
+    runSettleTail();
+    distances.length = 0;
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+
+    action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+    expect(distances).toEqual([]);
     action.destroy();
   });
 

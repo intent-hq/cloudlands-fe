@@ -267,6 +267,255 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
+  function previewContent(container: HTMLElement): HTMLElement | null {
+    return container.querySelector('[data-operational-preview-content]');
+  }
+
+  // jsdom reports zero layout height, which short-circuits the disclosure
+  // motion; give the preview container and the keyed preview child a
+  // measurable height so their outros run.
+  function mockMeasuredPreviewStyle() {
+    const original = window.getComputedStyle.bind(window);
+    return vi
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation((element: Element, pseudo?: string | null) => {
+        if (
+          element instanceof HTMLElement &&
+          element.matches('[data-operational-preview-content], [data-response-group-preview-child]')
+        ) {
+          return {
+            height: '40px',
+            opacity: '1',
+            paddingTop: '0px',
+            paddingBottom: '0px',
+            marginTop: '0px',
+            marginBottom: '0px',
+          } as CSSStyleDeclaration;
+        }
+        return original(element, pseudo);
+      });
+  }
+
+  const livePreviewChild = createRawSnippet(() => ({
+    render: () => '<div data-testid="live-preview-child">live chunk</div>',
+  }));
+
+  it('animates the streaming preview out instead of removing it instantly', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, currentChild: livePreviewChild, children },
+      });
+      expect(previewContent(container)).not.toBeNull();
+
+      await rerender({ isStreaming: false });
+      expect(previewContent(container)).not.toBeNull();
+      await waitFor(() => expect(previewContent(container)).toBeNull());
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('removes the streaming preview immediately under reduced motion', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(
+        (query: string) =>
+          ({
+            matches: query.includes('prefers-reduced-motion'),
+            media: query,
+            onchange: null,
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+          }) as unknown as MediaQueryList,
+      ),
+    );
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, currentChild: livePreviewChild, children },
+      });
+      expect(previewContent(container)).not.toBeNull();
+
+      await rerender({ isStreaming: false });
+      expect(previewContent(container)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('hands the preview off to the details body without stacking during expand', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, currentChild: livePreviewChild, children },
+      });
+      const btn = header(container);
+      expect(previewContent(container)).not.toBeNull();
+      expect(details(container)).toBeNull();
+
+      await fireEvent.click(btn);
+      expect(previewContent(container)).toBeNull();
+      expect(details(container)).not.toBeNull();
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('hands the preview off without stacking when the terminal stream ends', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          isTerminal: true,
+          currentChild: livePreviewChild,
+          children,
+        },
+      });
+      const btn = header(container);
+      expect(previewContent(container)).not.toBeNull();
+      expect(details(container)).toBeNull();
+
+      await rerender({ isStreaming: false, isTerminal: true });
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(details(container)).not.toBeNull();
+      expect(previewContent(container)).toBeNull();
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('still animates the preview out when a user-collapsed terminal stream ends', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          isTerminal: true,
+          currentChild: livePreviewChild,
+          children,
+        },
+      });
+      const btn = header(container);
+
+      await fireEvent.click(btn);
+      await fireEvent.click(btn);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(previewContent(container)).not.toBeNull();
+
+      await rerender({ isStreaming: false, isTerminal: true });
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBeNull();
+      expect(previewContent(container)).not.toBeNull();
+      await waitFor(() => expect(previewContent(container)).toBeNull());
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  const firstPreviewChild = createRawSnippet(() => ({
+    render: () => '<div data-testid="preview-child-first">first chunk</div>',
+  }));
+  const secondPreviewChild = createRawSnippet(() => ({
+    render: () => '<div data-testid="preview-child-second">second chunk</div>',
+  }));
+
+  it('animates a current-child swap instead of replacing it instantly', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          currentChild: firstPreviewChild,
+          currentChildKey: 'child-1',
+          children,
+        },
+      });
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+
+      await rerender({ currentChild: secondPreviewChild, currentChildKey: 'child-2' });
+      expect(container.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+      await waitFor(() =>
+        expect(container.querySelector('[data-testid="preview-child-first"]')).toBeNull(),
+      );
+      expect(container.querySelectorAll('[data-response-group-preview-child]')).toHaveLength(1);
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('updates the current child in place when its key is unchanged', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          currentChild: firstPreviewChild,
+          currentChildKey: 'child-1',
+          children,
+        },
+      });
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+
+      await rerender({ currentChild: secondPreviewChild });
+      expect(container.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="preview-child-first"]')).toBeNull();
+      expect(container.querySelectorAll('[data-response-group-preview-child]')).toHaveLength(1);
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('swaps the current child immediately under reduced motion', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(
+        (query: string) =>
+          ({
+            matches: query.includes('prefers-reduced-motion'),
+            media: query,
+            onchange: null,
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+          }) as unknown as MediaQueryList,
+      ),
+    );
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          currentChild: firstPreviewChild,
+          currentChildKey: 'child-1',
+          children,
+        },
+      });
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+
+      await rerender({ currentChild: secondPreviewChild, currentChildKey: 'child-2' });
+      expect(container.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="preview-child-first"]')).toBeNull();
+      expect(container.querySelectorAll('[data-response-group-preview-child]')).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+      styleSpy.mockRestore();
+    }
+  });
+
   it('auto-collapses exactly 800 ms after its own stream completes', async () => {
     vi.useFakeTimers();
     try {
@@ -302,6 +551,99 @@ describe('ResponseGroup - collapse state model', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('mounts expanded when terminal in the conversation-final message and not streaming', () => {
+    const { container } = render(ResponseGroup, {
+      props: {
+        name: 'Final group',
+        isStreaming: false,
+        isTerminal: true,
+        isLastConversationMessage: true,
+        children,
+      },
+    });
+    const btn = header(container);
+
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(details(container)).not.toBeNull();
+  });
+
+  it('mounts collapsed when terminal but not in the conversation-final message', () => {
+    const { container } = render(ResponseGroup, {
+      props: {
+        name: 'History group',
+        isStreaming: false,
+        isTerminal: true,
+        isLastConversationMessage: false,
+        children,
+      },
+    });
+
+    expect(header(container).getAttribute('aria-expanded')).toBe('false');
+    expect(details(container)).toBeNull();
+  });
+
+  it('mounts collapsed when non-terminal in the conversation-final message', () => {
+    const { container } = render(ResponseGroup, {
+      props: {
+        name: 'Earlier group',
+        isStreaming: false,
+        isTerminal: false,
+        isLastConversationMessage: true,
+        children,
+      },
+    });
+
+    expect(header(container).getAttribute('aria-expanded')).toBe('false');
+    expect(details(container)).toBeNull();
+  });
+
+  it('collapses the expanded terminal group when its message stops being conversation-final', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Final group',
+          isStreaming: false,
+          isTerminal: true,
+          isLastConversationMessage: true,
+          children,
+        },
+      });
+      const btn = header(container);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+
+      await rerender({ isLastConversationMessage: false });
+      await vi.advanceTimersByTimeAsync(799);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a user-collapsed conversation-final terminal group collapsed through prop churn', async () => {
+    const { container, rerender } = render(ResponseGroup, {
+      props: {
+        name: 'Final group',
+        isStreaming: false,
+        isTerminal: true,
+        isLastConversationMessage: true,
+        children,
+      },
+    });
+    const btn = header(container);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('false'));
+
+    await rerender({ isLastConversationMessage: true, isTerminal: true });
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(details(container)).toBeNull();
   });
 
   it('preserves a user-collapsed terminal group when its stream completes', async () => {
@@ -851,6 +1193,45 @@ describe('MessageContent - top-level response rows', () => {
     ['MessageContent', () => import('../MessageContent.svelte')],
     ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
   ] as const)(
+    'renders the collapsed %s preview child without text-adjacency spacing',
+    async (_name, loadComponent) => {
+      const Component = (await loadComponent()).default;
+      const content: ContentBlock[] = [
+        { type: 'text', text: '<group:Working>' },
+        { type: 'text', text: 'Group description' },
+        { type: 'tool_use', id: 'group-tool', name: 'view', input: { path: 'src/example.ts' } },
+      ];
+
+      const { container } = render(Component, {
+        props: { content, isStreaming: true },
+      });
+
+      const preview = container.querySelector('[data-operational-preview-content]')!;
+      expect(preview).not.toBeNull();
+      expect(preview.className).not.toMatch(/\bpt-4\b/);
+      const previewChild = preview.querySelector('[data-message-content-block="tool_use"]')!;
+      expect(previewChild).not.toBeNull();
+      expect(previewChild.className).not.toMatch(/\bpt-/);
+
+      await fireEvent.click(
+        container.querySelector('[data-testid="response-group-disclosure"]')!,
+      );
+      const details = await waitFor(() => {
+        const node = container.querySelector('[data-operational-expanded-content]');
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      expect(details.className).toMatch(/\bpt-4\b/);
+      const detailsChild = details.querySelector('[data-message-content-block="tool_use"]')!;
+      expect(detailsChild).not.toBeNull();
+      expect(detailsChild.className).toMatch(/\bpt-4\b/);
+    },
+  );
+
+  it.each([
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const)(
     'keeps a terminal group open through the %s streaming completion path',
     async (_name, loadComponent) => {
       vi.useFakeTimers();
@@ -897,6 +1278,29 @@ describe('MessageContent - top-level response rows', () => {
           .querySelector('[data-testid="response-group-disclosure"]')
           ?.getAttribute('aria-expanded'),
       ).toBe('false');
+    },
+  );
+
+  it.each([
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const)(
+    'mounts the terminal group expanded on a completed %s conversation-final mount',
+    async (_name, loadComponent) => {
+      const Component = (await loadComponent()).default;
+      const content = [
+        { type: 'text', text: '<group:Final>' },
+        { type: 'text', text: 'Final detail' },
+      ] as ContentBlock[];
+      const { container } = render(Component, {
+        props: { content, isStreaming: false, isLastConversationMessage: true },
+      });
+
+      expect(
+        container
+          .querySelector('[data-testid="response-group-disclosure"]')
+          ?.getAttribute('aria-expanded'),
+      ).toBe('true');
     },
   );
 

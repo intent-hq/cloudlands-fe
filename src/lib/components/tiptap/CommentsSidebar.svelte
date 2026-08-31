@@ -100,7 +100,13 @@
         }
       };
 
-      updateRect();
+      // Defer the initial measurement out of the mount flush: a synchronous
+      // getBoundingClientRect() here forces layout mid-flush. rAF still runs
+      // pre-paint, and the ResizeObserver's initial delivery covers sizing too.
+      let initialRectFrame: number | null = requestAnimationFrame(() => {
+        initialRectFrame = null;
+        updateRect();
+      });
 
       const resizeObserver = new ResizeObserver(updateRect);
       resizeObserver.observe(targetElement);
@@ -111,6 +117,7 @@
       }
 
       return () => {
+        if (initialRectFrame !== null) cancelAnimationFrame(initialRectFrame);
         resizeObserver.disconnect();
         const editorWrapper = targetElement.closest('.tiptap-editor-wrapper');
         if (editorWrapper && editorWrapper instanceof HTMLElement) {

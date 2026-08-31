@@ -20,11 +20,3 @@ export const selectSentryError = store.createSelector(
   (state) => state.sentryAuth.error,
 );
 
-export const selectSentryIssues = store.createSelector(
-  (state) => state.sentryAuth.issues,
-);
-
-export const selectSentryIsLoadingIssues = store.createSelector(
-  (state) => state.sentryAuth.isLoadingIssues,
-);
-

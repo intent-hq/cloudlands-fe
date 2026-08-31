@@ -1449,7 +1449,7 @@
             {/if}
           </span>
           <!-- Branch status indicators -->
-          {#if showUncommittedIndicator && selectedBranch && repoType === 'local' && !branchStatusIsLoading && branchStatusHasUncommittedChanges && isCurrentBranch}
+          {#if showUncommittedIndicator && !skipIsolation && selectedBranch && repoType === 'local' && !branchStatusIsLoading && branchStatusHasUncommittedChanges && isCurrentBranch}
             <div class="flex-0 flex flex-col" transition:slide={{ axis: 'x', duration: 150 }}>
               <Tooltip
                 content={m.workspace_branchSelector_uncommittedChanges_tooltip()}
@@ -1525,7 +1525,7 @@
         </div>
 
         <!-- Branch status info -->
-        {#if selectedBranch && repoType === 'local' && (branchStatusBehind > 0 || (showUncommittedIndicator && branchStatusHasUncommittedChanges && isCurrentBranch))}
+        {#if selectedBranch && repoType === 'local' && (branchStatusBehind > 0 || (showUncommittedIndicator && !skipIsolation && branchStatusHasUncommittedChanges && isCurrentBranch))}
           <div
             class="mx-2 mb-1 px-3 py-2 text-sm text-subtle"
             transition:slide={{ axis: 'y', duration: 150 }}
@@ -1533,7 +1533,7 @@
             {#if branchStatusBehind > 0}
               <p>{m.workspace_branchSelector_pullLatest_description()}</p>
             {/if}
-            {#if showUncommittedIndicator && branchStatusHasUncommittedChanges && isCurrentBranch}
+            {#if showUncommittedIndicator && !skipIsolation && branchStatusHasUncommittedChanges && isCurrentBranch}
               <p class={branchStatusBehind > 0 ? 'mt-1.5' : ''}>
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 align-middle"
                 ></span>
