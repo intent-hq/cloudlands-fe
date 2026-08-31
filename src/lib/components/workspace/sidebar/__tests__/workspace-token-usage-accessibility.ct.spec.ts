@@ -431,7 +431,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
     ),
   });
   const initialGeometry = await geometry();
-  await expect(animatedNumbers).toHaveCount(12);
+  await expect(animatedNumbers).toHaveCount(13);
   expect(
     await animatedNumbers.evaluateAll((numbers) =>
       numbers.every(
@@ -652,6 +652,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     breakdownAlignment,
     compositionBar,
     visibleTextWeights,
+    typeHierarchy,
   ] = await Promise.all([
     details.boundingBox(),
     sidebar.boundingBox(),
@@ -718,6 +719,9 @@ test('renders the full reference table as a wide overlay from the real workspace
           segmentCount: segments.length,
           controls,
           segmentWidth: segments.reduce((sum, segment) => sum + segment.width, 0),
+          gaps: segments
+            .slice(1)
+            .map((segment, index) => segment.x - (segments[index].x + segments[index].width)),
           overflowX: getComputedStyle(stack).overflowX,
           borderRadius: getComputedStyle(stack).borderRadius,
           firstRadius: firstStyle.borderTopLeftRadius,
@@ -729,10 +733,26 @@ test('renders the full reference table as a wide overlay from the real workspace
     details.locator('.breakdown-grid').evaluate((grid) => {
       const divider = getComputedStyle(grid, '::after');
       const secondSection = grid.querySelector('.breakdown-section + .breakdown-section')!;
+      const compositionHeader = grid.parentElement!.querySelector('.composition-header')!;
+      const rows = Array.from(grid.parentElement!.querySelectorAll('.composition-row'));
+      const neutralProbe = document.createElement('span');
+      neutralProbe.style.color = 'hsl(var(--border))';
+      document.body.append(neutralProbe);
+      const neutralColor = getComputedStyle(neutralProbe).color;
+      neutralProbe.remove();
       return {
         content: divider.content,
         backgroundColor: divider.backgroundColor,
+        neutralColor,
+        gridBorderBottomWidth: getComputedStyle(grid).borderBottomWidth,
+        gridBorderBottomColor: getComputedStyle(grid).borderBottomColor,
         secondSectionBorderLeftWidth: getComputedStyle(secondSection).borderLeftWidth,
+        secondSectionBorderLeftColor: getComputedStyle(secondSection).borderLeftColor,
+        headerBorderBottomWidth: getComputedStyle(compositionHeader).borderBottomWidth,
+        headerBorderBottomColor: getComputedStyle(compositionHeader).borderBottomColor,
+        rowBorderTopWidths: rows.map((row) => getComputedStyle(row).borderTopWidth),
+        rowBorderTopColors: rows.map((row) => getComputedStyle(row).borderTopColor),
+        lastRowBorderBottomWidth: getComputedStyle(rows.at(-1)!).borderBottomWidth,
       };
     }),
     composition.evaluate((section) => {
@@ -767,6 +787,10 @@ test('renders the full reference table as a wide overlay from the real workspace
         box: box.toJSON(),
         borderRadius: getComputedStyle(strip).borderRadius,
         overflowX: getComputedStyle(strip).overflowX,
+        gaps: segments.slice(1).map((segment, index) => {
+          const previous = segments[index].getBoundingClientRect();
+          return segment.getBoundingClientRect().left - previous.right;
+        }),
         segments: segments.map((segment) => ({
           metric: segment.dataset.metric,
           box: segment.getBoundingClientRect().toJSON(),
@@ -789,6 +813,29 @@ test('renders the full reference table as a wide overlay from the real workspace
           weight: getComputedStyle(candidate).fontWeight,
         })),
     ),
+    details.evaluate((element) => {
+      const style = (selector: string) => {
+        const computed = getComputedStyle(element.querySelector(selector)!);
+        return {
+          fontSize: computed.fontSize,
+          fontWeight: computed.fontWeight,
+          textTransform: computed.textTransform,
+          letterSpacing: computed.letterSpacing,
+          color: computed.color,
+          textAlign: computed.textAlign,
+        };
+      };
+      return {
+        navigatorLabel: style('.navigator-selection > :first-child'),
+        navigatorShare: style('.navigator-selection > :last-child'),
+        summaryLabel: style('.token-summary > :first-child'),
+        summaryTotal: style('.token-summary > :last-child'),
+        tableHeader: style('.composition-header'),
+        metricLabel: style('.composition-metric'),
+        metricValue: style('.composition-value'),
+        metricShare: style('.composition-context'),
+      };
+    }),
   ]);
 
   expect(detailsBox).not.toBeNull();
@@ -805,12 +852,24 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
   expect(detailsBox!.height).toBeGreaterThanOrEqual(220);
-  expect(detailsBox!.height).toBeLessThanOrEqual(300);
+  expect(detailsBox!.height).toBeLessThanOrEqual(360);
   expect(agentBox!.height).toBeGreaterThanOrEqual(40);
   expect(modelBox!.height).toBeGreaterThanOrEqual(40);
   expect(breakdownDivider.content).toBe('none');
   expect(breakdownDivider.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-  expect(breakdownDivider.secondSectionBorderLeftWidth).toBe('0px');
+  expect(breakdownDivider).toMatchObject({
+    gridBorderBottomWidth: '1px',
+    secondSectionBorderLeftWidth: '1px',
+    headerBorderBottomWidth: '1px',
+    rowBorderTopWidths: ['0px', '1px', '1px', '1px', '1px', '1px'],
+    lastRowBorderBottomWidth: '0px',
+  });
+  expect([
+    breakdownDivider.gridBorderBottomColor,
+    breakdownDivider.secondSectionBorderLeftColor,
+    breakdownDivider.headerBorderBottomColor,
+    ...breakdownDivider.rowBorderTopColors.slice(1),
+  ]).toEqual(Array(8).fill(breakdownDivider.neutralColor));
   expect(
     Math.abs(breakdownAlignment[0].selection.left - compositionAlignment.rowLeft),
   ).toBeLessThanOrEqual(1);
@@ -827,7 +886,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   ).toBe(true);
   expect(breakdownAlignment[0].percentColor).toBe(breakdownAlignment[1].percentColor);
   expect(breakdownAlignment[1].selection.left).toBeCloseTo(
-    detailsBox!.x + detailsBox!.width / 2 + 16,
+    detailsBox!.x + detailsBox!.width / 2 + 17,
     0,
   );
   expect(
@@ -837,6 +896,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         segmentCount,
         controls,
         segmentWidth,
+        gaps,
         overflowX,
         borderRadius,
         firstRadius,
@@ -854,32 +914,36 @@ test('renders the full reference table as a wide overlay from the real workspace
             control.borderTopWidth === '0px' &&
             control.borderBottomWidth === '0px',
         ) &&
-        Math.abs(segmentWidth - box.width) <= 1 &&
+        Math.abs(segmentWidth - (box.width - (segmentCount - 1))) <= 0.04 &&
+        gaps.every((gap) => Math.abs(gap - 1) <= 0.01) &&
         overflowX === 'hidden' &&
         borderRadius === '2px' &&
         firstRadius === '2px' &&
         lastRadius === '2px' &&
-        lastRight <= box.x + box.width + 1,
+        Math.abs(lastRight - (box.x + box.width)) <= 0.04,
     ),
   ).toBe(true);
   expect(compositionBar.box.height).toBe(10);
   expect(compositionBar.borderRadius).toBe('2px');
   expect(compositionBar.overflowX).toBe('hidden');
+  expect(compositionBar.gaps.every((gap) => Math.abs(gap - 1) <= 0.02)).toBe(true);
   expect(compositionBar.segments.map(({ metric }) => metric)).toEqual([
     'cached',
     'input',
     'output',
   ]);
   expect(new Set(compositionBar.segments.map(({ color }) => color)).size).toBe(3);
-  expect(compositionBar.segments[0].box.width / compositionBar.box.width).toBeCloseTo(550 / 750, 2);
-  expect(compositionBar.segments[1].box.width / compositionBar.box.width).toBeCloseTo(50 / 750, 2);
-  expect(compositionBar.segments[2].box.width / compositionBar.box.width).toBeCloseTo(150 / 750, 2);
+  const compositionUsableWidth = compositionBar.box.width - compositionBar.gaps.length;
+  expect(compositionBar.segments[0].box.width / compositionUsableWidth).toBeCloseTo(550 / 750, 2);
+  expect(compositionBar.segments[1].box.width / compositionUsableWidth).toBeCloseTo(50 / 750, 2);
+  expect(compositionBar.segments[2].box.width / compositionUsableWidth).toBeCloseTo(150 / 750, 2);
   expect(
     compositionBar.segments.every((segment, index, segments) =>
       index === 0
         ? Math.abs(segment.box.x - compositionBar.box.x) <= 0.01
-        : Math.abs(segment.box.x - (segments[index - 1].box.x + segments[index - 1].box.width)) <=
-          0.01,
+        : Math.abs(
+            segment.box.x - (segments[index - 1].box.x + segments[index - 1].box.width + 1),
+          ) <= 0.01,
     ),
   ).toBe(true);
   expect(
@@ -890,7 +954,21 @@ test('renders the full reference table as a wide overlay from the real workspace
     ),
   ).toBeLessThanOrEqual(1);
   expect(visibleTextWeights.length).toBeGreaterThan(0);
-  expect(visibleTextWeights.every(({ weight }) => weight === '400')).toBe(true);
+  expect(new Set(visibleTextWeights.map(({ weight }) => weight))).toEqual(new Set(['400', '500']));
+  expect(typeHierarchy).toMatchObject({
+    navigatorLabel: { fontSize: '14px', fontWeight: '500' },
+    navigatorShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
+    summaryLabel: { fontSize: '13px', fontWeight: '500', textTransform: 'uppercase' },
+    summaryTotal: { fontSize: '14px', fontWeight: '500', textAlign: 'right' },
+    tableHeader: { fontSize: '13px', fontWeight: '500', textTransform: 'uppercase' },
+    metricLabel: { fontSize: '14px', fontWeight: '400' },
+    metricValue: { fontSize: '14px', fontWeight: '500', textAlign: 'right' },
+    metricShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
+  });
+  expect(Number.parseFloat(typeHierarchy.summaryLabel.letterSpacing)).toBeGreaterThan(0);
+  expect(Number.parseFloat(typeHierarchy.tableHeader.letterSpacing)).toBeGreaterThan(0);
+  expect(typeHierarchy.navigatorShare.color).toBe(typeHierarchy.metricShare.color);
+  expect(typeHierarchy.metricValue.color).not.toBe(typeHierarchy.metricShare.color);
   expect(compositionHeaderAlignment).toHaveLength(3);
   expect(compositionHeaderAlignment[0].x).toBeCloseTo(desktopRows[0].metric.x, 0);
   expect(compositionHeaderAlignment[1].right).toBeCloseTo(
@@ -964,8 +1042,8 @@ test('renders the full reference table as a wide overlay from the real workspace
         contextDisplay !== 'none' &&
         valueAlign === 'right' &&
         contextAlign === 'right' &&
-        valueColor === contextColor &&
-        valueFontWeight === '400' &&
+        valueColor !== contextColor &&
+        valueFontWeight === '500' &&
         contextFontWeight === '400' &&
         metric.x < value.x &&
         value.x < context.x &&
