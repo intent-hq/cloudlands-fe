@@ -23,7 +23,7 @@ export type { TrackedChange, CommitInfo };
 
 export type PendingCommitAction = 'commit' | 'add-to-pr' | 'merge' | 'squash-merge' | null;
 
-export interface PendingPRContext {
+interface PendingPRContext {
   includeStagedFiles: boolean;
   includeCommitHashes: string[];
   targetBranch: string;

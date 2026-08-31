@@ -15,7 +15,6 @@ import type {
   MainPanelViewState,
   PendingAutoAction,
   PendingCommitAction,
-  PendingPRContext,
   TrackedChange,
   CommitInfo,
   LineChangeStats,
@@ -196,26 +195,16 @@ export const agentLineStatsRequestFailed = createAction(
 export const setCommitMessage = createAction<[workspaceId: string, message: string]>(
   'changes/setCommitMessage',
 );
-export const setPRTitle = createAction<[workspaceId: string, title: string]>('changes/setPRTitle');
-export const setPRDescription = createAction<[workspaceId: string, description: string]>(
-  'changes/setPRDescription',
-);
 export const setTargetBranch =
   createAction<[workspaceId: string, branch: string]>('changes/setTargetBranch');
 export const setPendingCommitAction = createAction<
   [workspaceId: string, action: PendingCommitAction]
 >('changes/setPendingCommitAction');
-export const setPendingPRContext = createAction<
-  [workspaceId: string, context: PendingPRContext | null]
->('changes/setPendingPRContext');
 export const setIsAutofillAndCommitting = createAction<[workspaceId: string, value: boolean]>(
   'changes/setIsAutofillAndCommitting',
 );
 export const setIsAutofillAndCreatingPR = createAction<[workspaceId: string, value: boolean]>(
   'changes/setIsAutofillAndCreatingPR',
-);
-export const clearAcceptChangesForm = createAction<[workspaceId: string]>(
-  'changes/clearAcceptChangesForm',
 );
 
 /** Saga trigger: fetch AcceptChangesClient.getStatus and update post-merge state */
@@ -377,20 +366,6 @@ fileTrackingReducer.with(setCommitMessage, (state, { payload: [wsId, message] })
     acceptChanges: { ...ws.acceptChanges, commitMessage: message },
   });
 });
-fileTrackingReducer.with(setPRTitle, (state, { payload: [wsId, title] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, prTitle: title },
-  });
-});
-fileTrackingReducer.with(setPRDescription, (state, { payload: [wsId, description] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, prDescription: description },
-  });
-});
 fileTrackingReducer.with(setTargetBranch, (state, { payload: [wsId, branch] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, {
@@ -405,13 +380,6 @@ fileTrackingReducer.with(setPendingCommitAction, (state, { payload: [wsId, actio
     acceptChanges: { ...ws.acceptChanges, pendingCommitAction: action },
   });
 });
-fileTrackingReducer.with(setPendingPRContext, (state, { payload: [wsId, context] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: { ...ws.acceptChanges, pendingPRContext: context },
-  });
-});
 fileTrackingReducer.with(setIsAutofillAndCommitting, (state, { payload: [wsId, value] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, {
@@ -424,18 +392,6 @@ fileTrackingReducer.with(setIsAutofillAndCreatingPR, (state, { payload: [wsId, v
   return setWorkspaceState(state, wsId, {
     ...ws,
     acceptChanges: { ...ws.acceptChanges, isAutofillAndCreatingPR: value },
-  });
-});
-fileTrackingReducer.with(clearAcceptChangesForm, (state, { payload: [wsId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    acceptChanges: {
-      ...ws.acceptChanges,
-      commitMessage: '',
-      prTitle: '',
-      prDescription: '',
-    },
   });
 });
 // Sidebar auto-action state (moved from transient-ui slice)

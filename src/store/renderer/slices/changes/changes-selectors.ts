@@ -113,12 +113,6 @@ export const selectCurrentCommits: AppSelector<CommitInfo[], [wsId: string | nul
     return getWs(state, wsId).commits;
   });
 
-export const selectCurrentLoading: AppSelector<boolean, [wsId: string | null | undefined]> =
-  store.createSelector((state, wsId: string | null | undefined): boolean => {
-    if (!wsId) return false;
-    return getWs(state, wsId).loading;
-  });
-
 // ---------------------------------------------------------------------------
 // Derived line-stats selectors (replaces lineChanges workspace-level state)
 // ---------------------------------------------------------------------------
