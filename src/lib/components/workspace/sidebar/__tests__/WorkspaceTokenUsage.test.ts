@@ -262,15 +262,21 @@ describe('WorkspaceTokenUsage', () => {
     const compositionHeader = composition.querySelector('.composition-header')!;
     const compositionStrip = screen.getByRole('img', { name: /Token composition/ });
     expect(visibleText(tokenSummary)).toBe('Token usage 9M');
-    expect(tokenSummary.classList).toContain('uppercase');
-    expect(tokenSummary.classList).toContain('font-medium');
-    expect(tokenSummary.lastElementChild?.classList).toContain('font-medium');
+    expect(tokenSummary.classList).not.toContain('uppercase');
+    expect(tokenSummary.classList).not.toContain('tracking-[0.08em]');
+    expect(tokenSummary.classList).toContain('tracking-normal');
+    expect(tokenSummary.classList).toContain('font-normal');
+    expect(tokenSummary.classList).toContain('text-muted-foreground');
+    expect(tokenSummary.lastElementChild?.classList).toContain('font-normal');
     expect(breakdownGrid.classList).toContain('border-b');
     expect(modelSection.classList).toContain('breakdown-section');
     expect(visibleText(compositionHeader)).toBe('Metric Value Share');
     expect(compositionHeader.classList).toContain('border-b');
-    expect(compositionHeader.classList).toContain('uppercase');
-    expect(compositionHeader.classList).toContain('font-medium');
+    expect(compositionHeader.classList).not.toContain('uppercase');
+    expect(compositionHeader.classList).not.toContain('tracking-[0.08em]');
+    expect(compositionHeader.classList).toContain('tracking-normal');
+    expect(compositionHeader.classList).toContain('font-normal');
+    expect(compositionHeader.classList).toContain('text-muted-foreground');
     expect(composition.querySelector('.preview-status')?.classList).toContain('sr-only');
     expect(compositionStrip.nextElementSibling).toBe(compositionHeader);
     expect(compositionStrip.getAttribute('aria-label')).toContain(
@@ -321,7 +327,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(
       [...composition.querySelectorAll('.composition-value')].every(
         (cell) =>
-          cell.classList.contains('font-medium') && cell.classList.contains('text-foreground'),
+          cell.classList.contains('font-normal') && cell.classList.contains('text-foreground'),
       ),
     ).toBe(true);
     expect(
@@ -408,14 +414,20 @@ describe('WorkspaceTokenUsage', () => {
         controls.every((control) => !control.classList.contains('focus-visible:ring-inset')),
       ).toBe(true);
       expect(percentage.classList).toContain('font-normal');
-      expect(percentage.classList).toContain('ml-auto');
+      expect(percentage.classList).not.toContain('ml-auto');
+      expect(percentage.classList).not.toContain('w-14');
+      expect(percentage.classList).toContain('shrink-0');
       expect(percentage.classList).toContain('text-right');
       expect(percentage.classList).toContain('text-muted-foreground');
       expect(percentage.classList).not.toContain('font-medium');
       expect(percentage.classList).not.toContain('text-success');
       expect(label.classList).toContain('font-medium');
+      expect(label.classList).toContain('flex-1');
+      expect(label.classList).toContain('min-w-0');
+      expect(section.classList).toContain('pb-4');
+      expect(section.classList).toContain('pt-3');
     }
-    expect(details.querySelectorAll('.font-medium').length).toBeGreaterThan(0);
+    expect(details.querySelectorAll('.font-medium')).toHaveLength(2);
     expect(details.querySelectorAll('.breakdown-section + .breakdown-section')).toHaveLength(1);
     expect(composition.querySelectorAll('.composition-row + .composition-row')).toHaveLength(3);
     expect(details.querySelector('.breakdown-share-bar')).toBeNull();
@@ -718,6 +730,21 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 7']);
+    const messageRows = Array.from(details.querySelectorAll('.message-composition-row'));
+    expect(
+      messageRows.every((row) =>
+        row.querySelector('.composition-metric')?.classList.contains('message-composition-metric'),
+      ),
+    ).toBe(true);
+    expect(messageRows.every((row) => row.querySelector('.message-composition-label'))).toBe(true);
+    expect(
+      messageRows.every((row) =>
+        row.querySelector('.composition-value')?.classList.contains('font-normal'),
+      ),
+    ).toBe(true);
+    expect(
+      messageRows.every((row) => visibleText(row.querySelector('.composition-context')!) === ''),
+    ).toBe(true);
     expect(screen.queryByTestId('token-usage-message-counts')).toBeNull();
     expect(
       Array.from(details.querySelectorAll('.composition-row')).map((row) =>
@@ -1079,7 +1106,8 @@ describe('WorkspaceTokenUsage', () => {
     const totalCost = screen.getByTestId('token-usage-total-cost');
     expect(visibleText(totalCost)).toBe('Total cost $2');
     expect(totalCost.classList).toContain('border-t');
-    expect(totalCost.lastElementChild?.classList).toContain('font-medium');
+    expect(totalCost.lastElementChild?.classList).toContain('font-normal');
+    expect(totalCost.lastElementChild?.classList).toContain('text-right');
   });
 
   it('does not surface per-model costs when no workspace total is reported', async () => {
