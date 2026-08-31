@@ -22,7 +22,7 @@ triggers:
 ---
 # File Structure & Registration
 
-> Source: `@augmentcode/themis/docs/ARCHITECTURE.md` → Slice File Structure + Store Initialization; `../SKILL.md` §9.
+> Source: @augmentcode/themis/docs/ARCHITECTURE.md → Slice File Structure + Store Initialization; ../SKILL.md §9.
 
 ## Setup — slice directory layout
 
@@ -58,10 +58,7 @@ export type AppState = StoreState<typeof store>;
 
 Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation. Register only app-owned reducers. `Store` manages package-owned internals automatically under reserved `@internal_` names: internal reducers such as `@internal_storeUtility` are always package-managed, and the internal saga manager starts during `Store` initialization. Do not add app reducers/sagas with that prefix or couple selectors/tests to the internal state shape.
 
-Then in the application's selected Store family root lifecycle, initialize the
-store and start each app saga explicitly by function. Use the selected Store
-family skill for component/runtime lifecycle details; core owns the file layout,
-saga registration, and reducer ownership rules.
+Then in the application's selected Store family root lifecycle, initialize the store and start each app saga explicitly by function. Use the selected Store family skill for component/runtime lifecycle details; core owns the file layout, saga registration, and reducer ownership rules.
 
 `store.init()` combines the registered reducers, creates the Redux store with middleware, lets the concrete Store variant create its selector state resources, and starts the package saga manager. It does **not** start app sagas — start each one with `store.runSaga(sagaFn)` from the family-appropriate root lifecycle, or imperatively and keep the returned cancel function. It derives the manager name from the saga function and rejects direct `@internal_sagaManager` usage. Register the `store.init()` disposer with the selected Store family lifecycle cleanup; that disposer delegates to `store.dispose()`, which tears down the initialized Store runtime and stops Store-owned saga tasks when the whole Store lifetime ends.
 
@@ -111,7 +108,7 @@ Empty reducers add state-tree noise and run on every action; saga-only slices de
 
 ```typescript
 // WRONG
-export const noopReducer = createReducer({}).build();
+export const noopReducer = createReducer({});
 export const store = new Store({ triggers: noopReducer });
 ```
 

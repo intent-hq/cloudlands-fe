@@ -17,7 +17,7 @@ triggers:
 ---
 # Migration — `$effect` / `fetch` / Subscriptions → Saga
 
-> Every side effect (localStorage, fetch, event listeners, timers, IPC)currently living inside a component, store, or reducer moves into a saga.Reducers remain pure.
+> Every side effect (localStorage, fetch, event listeners, timers, IPC) currently living inside a component, store, or reducer moves into a saga. Reducers remain pure.
 
 ## Examples
 
@@ -165,7 +165,7 @@ reducerWith(saveSettings, (state, { payload: [settings] }) => {
 | Source pattern | Saga equivalent |
 | --- | --- |
 | $effect(() => { localStorage.setItem(...) }) | takeEvery(action, function* () { yield* call(appLocalSetLocalStorageItem, key, value) }) |
-| store.subscribe((v) => ...) that reacts to state | takeEveryFromSelector(selectFoo, args, function* (v) { ... }) (see core/selector-channels) |
+| store.subscribe((v) => ...) that reacts to state | takeEveryFromSelector(selectFoo, args, function* ({ payload, prevPayload }) { ... }) (see core/selector-channels) |
 | fetch(url).then(r => r.json()).then(setX) | const res = yield* call(fetch, url); const data = yield* call([res, "json"]); yield* put(setX(data)) |
 | component debounce with setTimeout | takeLatest(action, function* () { yield* delay(ms); ... }) |
 | setTimeout(..., ms) | yield* delay(ms) |
@@ -175,14 +175,14 @@ reducerWith(saveSettings, (state, { payload: [settings] }) => {
 
 ## Common Pitfalls
 
-- Do not keep a component `$effect` and add a saga for the same trigger; thatcreates duplicate ownership and double writes.
-- Use `takeLatest` for user-triggered fetch/search flows so stale responses arecancelled before they overwrite newer state.
-- Close manually-created channels in `finally`; prefer selector-channel helperswhen simple `takeEvery`/`takeLatest`/`takeLeading` semantics are enough.
-- Keep reducers pure: no `fetch`, no direct `localStorage`, no clocks, no randomIDs, and no logging side effects.
+- Do not keep a component `$effect` and add a saga for the same trigger; that creates duplicate ownership and double writes.
+- Use `takeLatest` for user-triggered fetch/search flows so stale responses are cancelled before they overwrite newer state.
+- Close manually-created channels in `finally`; prefer selector-channel helpers when simple `takeEvery`/`takeLatest`/`takeLeading` semantics are enough.
+- Keep reducers pure: no `fetch`, no direct `localStorage`, no clocks, no random IDs, and no logging side effects.
 
 ## Cross-References
 
-- `../../../core/sagas/SKILL.md` — full saga surface (takeEvery /takeLatest / takeLeading, Store-first saga startup, debounce with delay)
-- `../../../core/local-storage/SKILL.md` — safe localStoragehelpers and persistence-saga pattern
-- `../../../core/channel-effects/SKILL.md` — generic EventChannelconsumers for DOM / IPC / websocket listeners
-- `../../../core/selector-channels/SKILL.md` — reacting toselector value changes from sagas
+- `../../../core/sagas/SKILL.md` — full saga surface (takeEvery / takeLatest / takeLeading, Store-first saga startup, debounce with delay)
+- `../../../core/local-storage/SKILL.md` — safe localStorage helpers and persistence-saga pattern
+- `../../../core/channel-effects/SKILL.md` — generic EventChannel consumers for DOM / IPC / websocket listeners
+- `../../../core/selector-channels/SKILL.md` — reacting to selector value changes from sagas

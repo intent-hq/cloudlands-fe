@@ -210,7 +210,7 @@ export type AppState = StoreState<typeof store>;
 
 The `Store` class accepts app reducer maps in the constructor. Start app sagas explicitly with `store.runSaga(sagaFn)` after `store.init()` — no separate saga registry files are needed. Constructor reducer maps preserve `StoreState<typeof store>` without an explicit `: Store` annotation. Optional selector scheduling and diagnostics configuration belongs in the third constructor argument, for example `new Store(reducers, undefined, { throttledSelectorFrequency: 64, sagaMonitor: true, traceSelectors: true })`; omit `sagaMonitor` and `traceSelectors` (or pass `false`) to keep both diagnostics disabled, and do not replace Store-owned saga middleware for monitoring. Package-owned slices are mounted by default under reserved `@internal_` domains such as `@internal_storeUtility`; those domains can appear in the inferred type, but application code should not register reducers with that prefix or depend on those internal state shapes directly.
 
-This setup chooses `Store` readable selector behavior for the app.Do not switch examples or app wiring to `StreamingStore` or Kefir selectors here.
+This setup chooses `Store` readable selector behavior for the app. Do not switch examples or app wiring to `StreamingStore` or Kefir selectors here.
 
 ## Step 3 — Wire the Store into Root Layout
 

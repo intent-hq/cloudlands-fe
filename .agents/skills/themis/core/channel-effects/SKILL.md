@@ -135,7 +135,7 @@ Source: redux-saga channel watcher effects. Priority: **HIGH**.
 
 ```typescript
 // WRONG
-const ch = yield* createChannelFromSelector(selectItem, [id]);
+const ch = yield* createChannelFromSelector(selectItem, id);
 yield* takeLatest(ch, worker);
 ```
 
