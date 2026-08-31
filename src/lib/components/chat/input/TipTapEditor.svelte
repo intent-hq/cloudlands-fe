@@ -220,26 +220,41 @@
       isEditable,
   );
 
-  function textBeforeCursor(activeEditor: Editor): string {
+  // Slash detection reads the doc through a dedicated serialization that
+  // renders the paste chip as a single-space token boundary, so pasted chip
+  // content can never form a slash token. Submit serialization
+  // (serializeEditorText) is unaffected and still carries the full content.
+  function slashDetectionSerializers(activeEditor: Editor) {
+    return {
+      ...getTextSerializersFromSchema(activeEditor.schema),
+      hardBreak: () => '\n',
+      pasteChip: () => ' ',
+    };
+  }
+
+  function slashDetectionText(activeEditor: Editor, to: number): string {
     const text = getTextBetween(
       activeEditor.state.doc,
-      { from: 0, to: activeEditor.state.selection.from },
-      {
-        blockSeparator: '\n\n',
-        textSerializers: {
-          ...getTextSerializersFromSchema(activeEditor.schema),
-          hardBreak: () => '\n',
-        },
-      },
+      { from: 0, to },
+      { blockSeparator: '\n\n', textSerializers: slashDetectionSerializers(activeEditor) },
     );
     return text.replace(/\u00A0/g, ' ');
   }
 
-  function refreshSlashContext(activeEditor: Editor) {
-    const prompt = serializeEditorText(activeEditor);
-    const nextContext = findSlashCommandContext(prompt, textBeforeCursor(activeEditor).length);
+  function slashPrompt(activeEditor: Editor): string {
+    return slashDetectionText(activeEditor, activeEditor.state.doc.content.size);
+  }
+
+  function slashTextBeforeCursor(activeEditor: Editor): string {
+    return slashDetectionText(activeEditor, activeEditor.state.selection.from);
+  }
+
+  function refreshSlashContext(activeEditor: Editor, options?: { dismissNewContext?: boolean }) {
+    const prompt = slashPrompt(activeEditor);
+    const nextContext = findSlashCommandContext(prompt, slashTextBeforeCursor(activeEditor).length);
     if (!nextContext) dismissedSlashContext = null;
     slashContext = nextContext;
+    if (nextContext && options?.dismissNewContext) dismissSlashMenu();
   }
 
   function dismissSlashMenu() {
@@ -252,8 +267,9 @@
 
   function selectSlashSkill(skill: SkillInfo) {
     if (!editor || !slashContext) return;
-    const prompt = serializeEditorText(editor);
-    const cursorOffset = textBeforeCursor(editor).length;
+    // Same serialization as refreshSlashContext so the offsets line up.
+    const prompt = slashPrompt(editor);
+    const cursorOffset = slashTextBeforeCursor(editor).length;
     const range = {
       from: editor.state.selection.from - slashContext.query.length - 1,
       to: editor.state.selection.from + slashContext.to - cursorOffset,
@@ -843,11 +859,18 @@
             return;
           }
           const text = serializeEditorText(editor);
-          refreshSlashContext(editor);
+          // A paste must not pop the slash menu even when it leaves the cursor
+          // in a "/"-leading token; typing afterwards changes the context key
+          // and re-enables it.
+          refreshSlashContext(editor, {
+            dismissNewContext: transaction.getMeta('uiEvent') === 'paste',
+          });
           onUpdate?.(text);
         },
-        onSelectionUpdate: ({ editor }) => {
-          refreshSlashContext(editor);
+        onSelectionUpdate: ({ editor, transaction }) => {
+          refreshSlashContext(editor, {
+            dismissNewContext: transaction.getMeta('uiEvent') === 'paste',
+          });
           // Get the selected text from the editor
           const { from, to, empty } = editor.state.selection;
           if (empty) {
@@ -883,7 +906,9 @@
                   content: text,
                   lineCount: lines.length,
                 });
-                const tr = state.tr.replaceSelectionWith(node);
+                // Mirror ProseMirror's own paste meta so slash detection can
+                // tell this transaction came from a paste.
+                const tr = state.tr.replaceSelectionWith(node).setMeta('uiEvent', 'paste');
                 dispatch(tr);
                 return true;
               }
@@ -896,7 +921,9 @@
                 const paragraphs = pastedTextToParagraphNodes(state.schema, text);
                 if (paragraphs.length > 0) {
                   const slice = new Slice(Fragment.from(paragraphs), 1, 1);
-                  dispatch(state.tr.replaceSelection(slice).scrollIntoView());
+                  dispatch(
+                    state.tr.replaceSelection(slice).scrollIntoView().setMeta('uiEvent', 'paste'),
+                  );
                   return true;
                 }
               }

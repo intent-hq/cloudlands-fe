@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import TipTapEditor from '../TipTapEditor.svelte';
@@ -15,6 +15,29 @@ const skills: SkillInfo[] = [
   { name: 'research', description: 'Research a topic', location: '/skills/research' },
   { name: 'review', description: 'Review a change', location: '/skills/review' },
 ];
+
+beforeAll(() => {
+  // jsdom lacks the layout APIs ProseMirror's paste scrollIntoView path needs.
+  const zeroRect = {
+    x: 0,
+    y: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: 0,
+    height: 0,
+    toJSON: () => ({}),
+  } as DOMRect;
+  const emptyRects = () => [] as unknown as DOMRectList;
+  for (const proto of [Element.prototype, Range.prototype] as {
+    getClientRects?: () => DOMRectList;
+    getBoundingClientRect?: () => DOMRect;
+  }[]) {
+    proto.getClientRects ??= emptyRects;
+    proto.getBoundingClientRect ??= () => zeroRect;
+  }
+});
 
 afterEach(cleanup);
 
@@ -27,6 +50,12 @@ async function mountEditor(props: Record<string, unknown> = {}) {
   });
   editor.focus();
   return { ...view, editor };
+}
+
+function firePaste(target: HTMLElement, text: string) {
+  return fireEvent.paste(target, {
+    clipboardData: { getData: (type: string) => (type === 'text/plain' ? text : '') },
+  });
 }
 
 describe('TipTapEditor slash skills', () => {
@@ -262,5 +291,52 @@ describe('TipTapEditor slash skills', () => {
     expect(component.getMentions()).toEqual([mention]);
     expect(editor.querySelector('[data-mention]')?.textContent).toBe('review.ts');
     expect(editor.querySelector('[data-type="skill-command"]')?.textContent).toBe('/review');
+  });
+
+  describe('paste handling', () => {
+    it('treats a paste chip as an opaque token boundary for slash detection', async () => {
+      const { component, editor } = await mountEditor();
+      const pasted = 'ps aux\nline two\nline three\nline four\n/sbin/launchd';
+      await firePaste(editor, pasted);
+
+      await waitFor(() => expect(editor.querySelector('.paste-chip-pill')).toBeTruthy());
+      // Submit serialization still carries the full pasted content.
+      expect(component.getTextContent()).toBe(pasted);
+      expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+
+      // The chip stays opaque later: typing right after it must not form a
+      // slash token from the chip content (a new context key would bypass a
+      // one-shot dismissal).
+      component.insertText('x');
+      expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+
+      // A fresh typed slash after the chip still opens the menu.
+      component.insertText(' /res');
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+        expect.stringContaining('research'),
+      ]);
+    });
+
+    it('does not open the menu for a single-line raw paste ending in a slash token', async () => {
+      const { component, editor } = await mountEditor();
+      await firePaste(editor, 'run /re');
+      await waitFor(() => expect(component.getTextContent()).toBe('run /re'));
+      expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+
+      // Typing afterwards changes the context key and re-enables the menu.
+      component.insertText('s');
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+        expect.stringContaining('research'),
+      ]);
+    });
+
+    it('does not open the menu for a short multi-line raw paste ending in a slash token', async () => {
+      const { component, editor } = await mountEditor();
+      await firePaste(editor, 'cd /var\nls /tmp');
+      await waitFor(() => expect(component.getTextContent()).toBe('cd /var\nls /tmp'));
+      expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+    });
   });
 });
