@@ -391,22 +391,28 @@ function* toggleForWorkspace(
       serverId,
       enabled,
     );
-  if (result.success) {
-    yield* put(setWorkspaceMcpServerDisabled(
-      workspaceId,
-      serverName,
-      result.workspaceDisabled ?? !enabled,
-    ));
+  // Per §5.22 the scoped toggle result always carries `workspaceDisabled`;
+  // a success without it (possible on the typed seam — the mock client
+  // returns bare OK) is treated as unconfirmed rather than inferred from the
+  // request, so state stays daemon-confirmed-only: re-hydrate instead.
+  if (result.success && typeof result.workspaceDisabled === 'boolean') {
+    yield* put(setWorkspaceMcpServerDisabled(workspaceId, serverName, result.workspaceDisabled));
     return;
   }
-  logger.warn('Workspace-scoped MCP toggle failed', { serverName, error: result.error });
+  if (!result.success) {
+    logger.warn('Workspace-scoped MCP toggle failed', { serverName, error: result.error });
+  }
   yield* call(hydrateWorkspaceDisabled, workspaceId);
 }
 
 /**
  * Hydrate one workspace's disabled-server map from the daemon's scoped
  * `mcp.servers.list` (§5.22 — every entry carries `workspaceDisabled`). A
- * failed read keeps the current state rather than clearing it.
+ * failed read keeps the current state rather than clearing it. The snapshot
+ * is a point-in-time read: an `mcpServerToggled` delta landing between the
+ * list request and the `put` below is overwritten by the older snapshot —
+ * a narrow, self-correcting window (the next toggle/hydrate converges), so
+ * no versioning is layered on top.
  */
 function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   if (!workspaceId) return;

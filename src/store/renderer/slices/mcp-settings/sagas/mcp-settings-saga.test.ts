@@ -658,6 +658,22 @@ describe('mcpSettingsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('workspace-toggle success without workspaceDisabled re-hydrates instead of inferring from the request', async () => {
+    const remote = { id: 'srv-remote', name: 'remote', type: 'http' as const, url: 'https://remote.test' };
+    mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true });
+    mocks.getWorkspaceDisabledMcpServerNames.mockResolvedValue(['remote']);
+    const run = harness(mcpSettingsReducer(initialState, setServers([remote])));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', false));
+    await settle();
+
+    expect(mocks.getWorkspaceDisabledMcpServerNames.mock.calls).toEqual([['ws-1']]);
+    expect(run.dispatched).toEqual([
+      { type: 'mcpSettings/setWorkspaceDisabledMcpServers', payload: ['ws-1', { remote: true }] },
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('workspace-toggle without a daemon id makes no wire call and writes no state', async () => {
     const noId = { name: 'no-id', type: 'stdio' as const, command: 'node' };
     const run = harness(mcpSettingsReducer(initialState, setServers([noId])));
