@@ -21,10 +21,14 @@
     filePath: string,
     workspacePath?: string,
   ): boolean {
-    if (filePath in lockedFilePaths) return true;
+    // Lock keys always use forward slashes; normalize Windows-style separators
+    // on the change/workspace paths so they can match.
+    const posixFilePath = filePath.replaceAll('\\', '/');
+    if (posixFilePath in lockedFilePaths) return true;
     if (!workspacePath) return false;
-    const relative = _stripWorkspacePrefix(filePath, workspacePath);
-    return relative !== filePath && relative in lockedFilePaths;
+    const posixWorkspacePath = workspacePath.replaceAll('\\', '/');
+    const relative = _stripWorkspacePrefix(posixFilePath, posixWorkspacePath);
+    return relative !== posixFilePath && relative in lockedFilePaths;
   }
 
   /**

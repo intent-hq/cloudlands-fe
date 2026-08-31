@@ -230,4 +230,11 @@ describe('isPathLocked', () => {
     expect(isPathLocked(locked, 'src/bar.ts', '/home/user/ws')).toBe(false);
     expect(isPathLocked({}, 'src/foo.ts', '/home/user/ws')).toBe(false);
   });
+
+  it('matches Windows-style paths against forward-slash lock keys', () => {
+    expect(isPathLocked(locked, 'C:\\ws\\src\\foo.ts', 'C:\\ws')).toBe(true);
+    expect(isPathLocked(locked, 'C:\\ws\\src\\foo.ts', 'C:/ws')).toBe(true);
+    expect(isPathLocked(locked, 'src\\foo.ts')).toBe(true);
+    expect(isPathLocked(locked, 'C:\\ws\\src\\bar.ts', 'C:\\ws')).toBe(false);
+  });
 });
