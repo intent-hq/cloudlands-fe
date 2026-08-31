@@ -212,6 +212,7 @@ import {
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
+import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
   chatReset,
@@ -3749,6 +3750,113 @@ describe('daemonEventsBridge (context wire contract — workspace:context-change
     ]);
   });
 });
+
+describe('daemonEventsBridge (agent-locks wire contract — changes:agent-locks → agent-lock slice)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('folds the §6.5 snapshot arrays into lockedAgentIds/lockedFilePaths (gating engages)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-a', 'agent-b'],
+        lockedFilePaths: ['src/a.ts', 'src/b.ts'],
+      }),
+    );
+
+    // The FileChangesSection gates on `agentId in $lockedAgentIds$` — assert
+    // through the same selector the component uses.
+    expect(selectLockedAgentIds.select(appStore.state, WS)).toEqual({
+      'agent-a': true,
+      'agent-b': true,
+    });
+    const lockState = (appStore.state as { agentLock: { byWorkspaceId: Record<string, unknown> } })
+      .agentLock.byWorkspaceId[WS];
+    expect(lockState).toEqual({
+      lockedAgentIds: { 'agent-a': true, 'agent-b': true },
+      lockedFilePaths: { 'src/a.ts': true, 'src/b.ts': true },
+    });
+  });
+
+  it('clears the snapshot on empty arrays (auto-commit off / no active agents)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-a'],
+        lockedFilePaths: ['src/a.ts'],
+      }),
+    );
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: WS,
+        autoCommitEnabled: false,
+        lockedAgentIds: [],
+        lockedFilePaths: [],
+      }),
+    );
+
+    expect(selectLockedAgentIds.select(appStore.state, WS)).toEqual({});
+  });
+
+  it('prefers the payload workspaceId over the envelope id', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    // The notification helper stamps the envelope with WS; the payload names
+    // a different workspace, which must win (same convention as the
+    // tokenUsage/context handlers).
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: 'ws-locks-other',
+        autoCommitEnabled: true,
+        lockedAgentIds: ['agent-x'],
+        lockedFilePaths: [],
+      }),
+    );
+
+    expect(selectLockedAgentIds.select(appStore.state, 'ws-locks-other')).toEqual({
+      'agent-x': true,
+    });
+  });
+
+  it('ignores a malformed payload (missing arrays)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('changes:agent-locks', {
+        workspaceId: 'ws-locks-malformed',
+        autoCommitEnabled: true,
+      }),
+    );
+
+    const state = appStore.state as { agentLock: { byWorkspaceId: Record<string, unknown> } };
+    expect(state.agentLock.byWorkspaceId['ws-locks-malformed']).toBeUndefined();
+  });
+
+  it('subscribes to changes:agent-locks on the firehose', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('changes:agent-locks');
+  });
+});
+
 
 describe('daemonEventsBridge (linkage wire contract — task:agent-linked / task:agent-unlinked)', () => {
   beforeAll(() => {

@@ -341,12 +341,11 @@ vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
     },
   }),
 }));
-vi.mock('$store/renderer/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
+// The panel hydrates the daemon-computed agent-lock snapshot on workspace
+// switch (PROTOCOL §5.19); fake the client so no wire read is attempted.
+vi.mock('$features/file-tracking/file-tracking.client', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  recomputeAgentLocks: vi.fn((wsId: string) => ({
-    type: 'agentLock/recomputeAgentLocks',
-    payload: [wsId],
-  })),
+  hydrateAgentLocks: vi.fn(() => Promise.resolve()),
 }));
 
 const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));

@@ -31,12 +31,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // Actions
 // ---------------------------------------------------------------------------
 
-/** Trigger recomputation of agent locks for a workspace */
-export const recomputeAgentLocks = createAction<[workspaceId: string]>(
-  'agentLock/recomputeAgentLocks',
-);
-
-/** Set the computed lock state for a workspace */
+/** Set the daemon-computed lock state for a workspace (PROTOCOL §5.19 / §6.5) */
 export const setAgentLockState = createAction(
   'agentLock/setAgentLockState',
   (
