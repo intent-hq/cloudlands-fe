@@ -1,11 +1,12 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentSession, Workspace } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { warmImport } from '../../../../test/warm-import';
 import workspaceCardSource from '../WorkspaceCard.svelte?raw';
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => {
   const tasksByWorkspace: Record<string, { id: string; title: string; status: string }[]> = {};
   const diffSummaryByWorkspace: Record<string, unknown> = {};
   const gitSummaryByWorkspace: Record<string, unknown> = {};
+  const agentPreviewsById: Record<string, { kind: string; text?: string }> = {};
   const monitors: PrMonitorRow[] = [];
   const readable = <T>(value: T) => ({
     subscribe(run: (value: T) => void) {
@@ -46,6 +48,7 @@ const mocks = vi.hoisted(() => {
     tasksByWorkspace,
     diffSummaryByWorkspace,
     gitSummaryByWorkspace,
+    agentPreviewsById,
     monitors,
     readable,
     createWorkspaceValueReadable,
@@ -82,6 +85,12 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: vi.fn(mocks.createWorkspaceSessionReadable),
+}));
+
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentPreview: {
+    select: (_state: unknown, agentId: string) => mocks.agentPreviewsById[agentId] ?? null,
+  },
 }));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
@@ -196,6 +205,53 @@ function normalizedText(element: Element) {
   return element.textContent?.replace(/\s+/g, ' ').trim();
 }
 
+function makeAgent(
+  id: string,
+  name: string,
+  status: AgentSession['status'],
+  overrides: Partial<AgentSession> = {},
+): AgentSession {
+  return {
+    id,
+    name,
+    status,
+    workspaceId: 'ws-1',
+    createdAt: '2026-03-19T09:00:00.000Z',
+    updatedAt: '2026-03-19T10:00:00.000Z',
+    lastActivity: '2026-03-19T10:00:00.000Z',
+    messages: [],
+    ...overrides,
+  } as AgentSession;
+}
+
+function pendingQuestionMessage(id: string, question: string | string[]): AgentMessage {
+  const questions = Array.isArray(question) ? question : [question];
+  const blocks = questions.map(
+    (prompt, index) =>
+      ({
+        type: 'resource',
+        resource: {
+          uri: `intent-question://fixture-${id}-${index}`,
+          name: `Implementation choice ${index + 1}`,
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: `fixture-${id}-${index}`,
+            header: `Implementation choice ${index + 1}`,
+            question: prompt,
+            options: [{ label: 'Continue' }, { label: 'Pause' }],
+            multiSelect: false,
+          }),
+        },
+      }) as unknown as ContentBlock,
+  );
+  return {
+    id,
+    role: 'assistant',
+    contentBlocks: blocks,
+    timestamp: '2026-03-19T10:00:00.000Z',
+  };
+}
+
 function expectVisibleChangesRow(expected: string) {
   const row = screen.getByLabelText('Workspace changes');
   expect(normalizedText(row)).toBe(expected);
@@ -241,6 +297,7 @@ describe('WorkspaceHoverCard', () => {
       mocks.tasksByWorkspace,
       mocks.diffSummaryByWorkspace,
       mocks.gitSummaryByWorkspace,
+      mocks.agentPreviewsById,
     ]) {
       for (const workspaceId of Object.keys(record)) {
         delete record[workspaceId];
@@ -585,6 +642,170 @@ describe('WorkspaceHoverCard', () => {
         ?.querySelector('[data-agent-avatar-stack-item]')
         ?.getAttribute('data-agent-avatar-stack-agent-id'),
     ).toBe('agent-unread');
+  });
+
+  it('shows at most two top-level attention rows in priority order and de-duplicates them', async () => {
+    const blockerQuestion = pendingQuestionMessage(
+      'msg-blocker-question',
+      'Should I switch to the slower fallback?',
+    );
+    const question = pendingQuestionMessage(
+      'msg-question',
+      'Should the migration preserve the existing cache keys?',
+    );
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      makeAgent('agent-blocker', 'Maya', 'running', {
+        hasUnread: true,
+        messages: [blockerQuestion],
+        metadata: {
+          pendingQuestionsMessageId: blockerQuestion.id,
+        },
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'The staging database rejects the migration user.',
+      }),
+      makeAgent('agent-question', 'Jules', 'waiting', {
+        messages: [question],
+        metadata: { pendingQuestionsMessageId: question.id },
+      }),
+      makeAgent('agent-unread', 'Rowan', 'completed', { hasUnread: true }),
+    ];
+    mocks.agentPreviewsById['agent-unread'] = {
+      kind: 'last-agent',
+      text: 'The accessibility audit is ready for review.',
+    };
+
+    const { container } = await renderHoverCard({
+      attention: 'unread',
+      agentSummary: {
+        agentIds: ['agent-blocker', 'agent-question', 'agent-unread'],
+        agents: [
+          { id: 'agent-blocker', name: 'Maya', status: 'running', parentAgentId: null },
+          { id: 'agent-question', name: 'Jules', status: 'waiting', parentAgentId: null },
+          { id: 'agent-unread', name: 'Rowan', status: 'completed', parentAgentId: null },
+        ],
+      } as Workspace['agentSummary'],
+    });
+    const attentionList = screen.getByRole('region', { name: 'Needs attention' });
+    const rows = within(attentionList).getAllByRole('listitem');
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0].getAttribute('data-attention-kind')).toBe('blocker');
+    expect(normalizedText(rows[0])).toContain('Maya');
+    expect(normalizedText(rows[0])).toContain('The staging database rejects the migration user.');
+    expect(normalizedText(rows[0])).not.toContain('Should I switch');
+    expect(rows[1].getAttribute('data-attention-kind')).toBe('question');
+    expect(normalizedText(rows[1])).toContain('Jules');
+    expect(normalizedText(rows[1])).toContain(
+      'Should the migration preserve the existing cache keys?',
+    );
+    expect(rows[1].querySelector('[data-workspace-hover-card-question-meta]')).toBeNull();
+    expect(normalizedText(rows[2])).toContain('Rowan');
+    expect(container.querySelectorAll('[data-workspace-hover-card-agent-row]')).toHaveLength(3);
+  });
+
+  it('shows the first of four unresolved prompts with a localized question count', async () => {
+    const question = pendingQuestionMessage('msg-four-questions', [
+      'Which deployment region should receive the migration first?',
+      'Should the old cache keys remain readable?',
+      'How long should the compatibility window remain open?',
+      'Who should approve the final rollout?',
+    ]);
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      makeAgent('agent-four-questions', 'Leah', 'waiting', {
+        messages: [question],
+        metadata: { pendingQuestionsMessageId: question.id },
+      }),
+    ];
+
+    const { container } = await renderHoverCard({
+      agentSummary: { agentIds: ['agent-four-questions'] },
+    });
+    const row = screen.getByRole('listitem', { name: /Leah\. Which deployment region/ });
+    const detail = row.querySelector('[data-workspace-hover-card-agent-context]');
+
+    expect(normalizedText(row)).toContain('1 of 4');
+    expect(normalizedText(detail!)).toBe(
+      'Which deployment region should receive the migration first?',
+    );
+    expect(normalizedText(row)).not.toContain('Should the old cache keys remain readable?');
+    expect(detail?.className).toContain('truncate');
+    expect(container.textContent).not.toContain('agent-four-questions');
+  });
+
+  it('uses awaiting-answer copy only after the marked question body is unavailable', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      makeAgent('agent-missing-question', 'Ari', 'waiting', {
+        metadata: { pendingQuestionsMessageId: 'msg-not-loaded' },
+      }),
+    ];
+
+    await renderHoverCard({ agentSummary: { agentIds: ['agent-missing-question'] } });
+    await waitForEnsureSessionLoads([['ws-1', 'agent-missing-question']]);
+    const row = screen.getByRole('listitem', { name: /Ari\. Q: awaiting your answer/ });
+
+    expect(normalizedText(row)).toContain('Q: awaiting your answer');
+    expect(row.querySelector('[data-workspace-hover-card-question-meta]')).toBeNull();
+  });
+
+  it('uses localized discussion and unread labels with existing preview text', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      makeAgent('agent-discussion', 'Nora', 'waiting', {
+        attentionRequestKind: 'discussion',
+        attentionRequestReason: 'The empty state needs a product decision before implementation.',
+      }),
+      makeAgent('agent-unread', 'Owen', 'completed', { hasUnread: true }),
+    ];
+    mocks.agentPreviewsById['agent-unread'] = {
+      kind: 'last-agent',
+      text: 'Keyboard and screen-reader checks now pass.',
+    };
+
+    await renderHoverCard();
+    const rows = within(screen.getByRole('region', { name: 'Needs attention' })).getAllByRole(
+      'listitem',
+    );
+
+    expect(normalizedText(rows[0])).toContain('Nora');
+    expect(normalizedText(rows[0])).toContain(
+      'The empty state needs a product decision before implementation.',
+    );
+    expect(normalizedText(rows[1])).toContain('Owen');
+    expect(normalizedText(rows[1])).toContain('Keyboard and screen-reader checks now pass.');
+  });
+
+  it('excludes delegated, background, and retired agents and never exposes raw IDs', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      makeAgent('agent-visible-raw-id', '', 'waiting', {
+        metadata: { pendingQuestionsMessageId: 'msg-not-loaded' },
+      }),
+      makeAgent('agent-background-raw-id', 'Background worker', 'waiting', {
+        isBackground: true,
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Background blocker',
+      }),
+      makeAgent('agent-delegated-raw-id', 'Delegated worker', 'waiting', {
+        metadata: { createdByAgentId: 'agent-parent' },
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Delegated blocker',
+      }),
+      makeAgent('agent-retired-raw-id', 'Retired worker', 'completed', {
+        hasUnread: true,
+        retiredAt: '2026-03-19T10:00:00.000Z',
+      }),
+    ];
+
+    const { container } = await renderHoverCard();
+    const rows = within(screen.getByRole('list', { name: 'ATTENTION' })).getAllByRole('listitem');
+
+    expect(rows).toHaveLength(1);
+    expect(normalizedText(rows[0])).toContain('Agent');
+    expect(normalizedText(rows[0])).toContain('Q: awaiting your answer');
+    const attentionList = screen.getByRole('list', { name: 'ATTENTION' });
+    expect(within(attentionList).queryByText('Background worker')).toBeNull();
+    expect(within(attentionList).queryByText('Delegated worker')).toBeNull();
+    expect(within(attentionList).queryByText('Retired worker')).toBeNull();
+    expect(container.textContent).not.toContain('agent-visible-raw-id');
+    expect(rows[0].getAttribute('aria-label')).not.toContain('agent-visible-raw-id');
   });
 
   it('does not render status placeholder text when the workspace status message is empty', async () => {

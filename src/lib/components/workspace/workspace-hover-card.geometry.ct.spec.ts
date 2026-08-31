@@ -288,3 +288,33 @@ test('keeps short descriptions at one line and stacks responsively when narrow',
       .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderTopWidth)),
   ).toEqual(['0px', '0px']);
 });
+
+test('dashboard header keeps title and status while trailing metadata reduces', async ({
+  mount,
+  page,
+}) => {
+  const state = workspaceHoverCardPreview.states.attention;
+  const card = state.props.cards.find(({ key }) => key === 'attention-priority')!;
+  await page.setViewportSize({ width: 560, height: 700 });
+  const component = await mount(WorkspaceHoverCard, {
+    props: { workspace: card.workspace!, loadAgentSessions: false, loadWorkspaceData: false },
+  });
+  const identity = component.locator('[data-workspace-hover-card-header]');
+
+  await expect(component.locator('[data-workspace-hover-card-title]')).toBeVisible();
+  await expect(component.locator('[data-workspace-hover-card-status]')).toBeVisible();
+  const wideMetrics = await identity.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    clientWidth: element.clientWidth,
+    scrollHeight: element.scrollHeight,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(wideMetrics.clientWidth).toBeGreaterThanOrEqual(240);
+  expect(wideMetrics.scrollWidth).toBeLessThanOrEqual(wideMetrics.clientWidth + 1);
+  expect(wideMetrics.scrollHeight).toBeLessThanOrEqual(wideMetrics.clientHeight + 1);
+
+  await page.setViewportSize({ width: 420, height: 700 });
+  await expect(component.locator('[data-workspace-hover-card-timestamp]')).toBeHidden();
+  await expect(component.locator('[data-workspace-hover-card-title]')).toBeVisible();
+  await expect(component.locator('[data-workspace-hover-card-status]')).toBeVisible();
+});

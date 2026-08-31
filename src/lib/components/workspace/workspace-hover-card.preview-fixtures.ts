@@ -1,5 +1,7 @@
 import type {
+  AgentMessage,
   AgentSession,
+  ContentBlock,
   PullRequestInfo,
   Workspace,
   WorkspaceDiffSummary,
@@ -8,6 +10,7 @@ import type {
   WorkspaceTaskStats,
 } from '$shared/types';
 import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { definePreview, type PreviewDefinition } from '$lib/component-catalog/preview-definition';
 import {
   definePreviewFixture,
@@ -122,10 +125,10 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   {
     family: 'Agents',
     states:
-      'none; unloaded; active statuses; three; overflow; unread; streaming dedupe; delegated/background suppression',
+      'none; unloaded; active statuses; three; overflow; blocker; question; discussion; unread; streaming dedupe; delegated/background suppression',
     expected:
-      'Only active agents get rows, capped at three plus overflow; unloaded members stay hidden; unread stack excludes live-streaming IDs and keeps only top-level foreground members.',
-    coverage: 'agents preview; component streaming/unread test',
+      'Wide cards show at most two top-level attention rows ordered by blocker, question or discussion, then unread; generic rows are de-duplicated and narrow cards hide the detail.',
+    coverage: 'attention and agents previews; component, accessibility, and container tests',
     conflicts:
       'The same live-streaming agent must not also appear as unread; delegated children and background agents never show the unread dot.',
   },
@@ -234,6 +237,34 @@ function agent(
   };
 }
 
+function questionMessage(id: string, question: string | string[]): AgentMessage {
+  const questions = Array.isArray(question) ? question : [question];
+  const blocks = questions.map(
+    (prompt, index) =>
+      ({
+        type: 'resource',
+        resource: {
+          uri: `intent-question://hover-card-${id}-${index}`,
+          name: `Implementation choice ${index + 1}`,
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: `hover-card-${id}-${index}`,
+            header: `Implementation choice ${index + 1}`,
+            question: prompt,
+            options: [{ label: 'Keep current behavior' }, { label: 'Use the new behavior' }],
+            multiSelect: false,
+          }),
+        },
+      }) as unknown as ContentBlock,
+  );
+  return {
+    id,
+    role: 'assistant',
+    contentBlocks: blocks,
+    timestamp: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
+  };
+}
+
 function scenario(
   key: string,
   label: string,
@@ -241,6 +272,41 @@ function scenario(
   overrides: Partial<HoverCardScenario> = {},
 ): HoverCardScenario {
   return { key, label, expected, workspace: workspace(key), ...overrides };
+}
+
+function questionAttentionScenario(
+  key: string,
+  label: string,
+  prompts: string[] | null,
+): HoverCardScenario {
+  const agentId = `${key}-agent`;
+  const messageId = `${key}-message`;
+  const message = prompts ? questionMessage(messageId, prompts) : null;
+  const ws = workspace(key, {
+    displayStatus: 'needs_attention',
+    statusMessage: 'A teammate needs an answer before implementation can continue.',
+    agentSummary: {
+      agentIds: [agentId],
+      agents: [{ id: agentId, name: 'Leah', status: 'waiting', parentAgentId: null }],
+    } as Workspace['agentSummary'],
+  });
+  return scenario(
+    key,
+    label,
+    prompts
+      ? 'The first unresolved prompt is visible with bounded detail and a count for multiple questions.'
+      : 'The localized awaiting-answer fallback appears because the marked message body is unavailable.',
+    {
+      workspace: ws,
+      agents: [
+        agent(ws.id, agentId, AgentStatus.Waiting, {
+          name: 'Leah',
+          messages: message ? [message] : [],
+          metadata: { pendingQuestionsMessageId: message?.id ?? messageId },
+        }),
+      ],
+    },
+  );
 }
 
 const statuses = [
@@ -289,6 +355,121 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           ],
         });
       })(),
+    ],
+  },
+  attention: {
+    family: 'Agent attention',
+    expected:
+      'The wide activity column shows real agent names, localized state labels, and concise existing context without exposing internal IDs.',
+    cards: [
+      questionAttentionScenario('attention-one-question', 'One pending question', [
+        'Should the migration preserve the existing cache keys?',
+      ]),
+      questionAttentionScenario('attention-four-questions', 'Four pending questions', [
+        'Which deployment region should receive the migration first?',
+        'Should the old cache keys remain readable?',
+        'How long should the compatibility window remain open?',
+        'Who should approve the final rollout?',
+      ]),
+      questionAttentionScenario(
+        'attention-missing-body',
+        'Pending question body unavailable',
+        null,
+      ),
+      (() => {
+        const blockerId = 'attention-maya';
+        const questionId = 'attention-jules';
+        const unreadId = 'attention-rowan';
+        const pendingQuestion = questionMessage(
+          'attention-question',
+          'Should the migration preserve the existing cache keys?',
+        );
+        const ws = workspace('attention-priority', {
+          displayStatus: 'needs_attention',
+          attention: 'unread',
+          statusMessage: 'Two teammates need a decision before the migration can continue.',
+          agentSummary: {
+            agentIds: [blockerId, questionId, unreadId],
+            agents: [
+              { id: blockerId, name: 'Maya', status: 'waiting', parentAgentId: null },
+              { id: questionId, name: 'Jules', status: 'waiting', parentAgentId: null },
+              { id: unreadId, name: 'Rowan', status: 'completed', parentAgentId: null },
+            ],
+          } as Workspace['agentSummary'],
+        });
+        return scenario(
+          'attention-priority',
+          'Blocker and question',
+          'Blocker wins; question follows; the third unread agent remains in the compact stack.',
+          {
+            workspace: ws,
+            agents: [
+              agent(ws.id, blockerId, AgentStatus.Waiting, {
+                name: 'Maya',
+                attentionRequestKind: 'blocker',
+                attentionRequestReason: 'The staging database rejects the migration user.',
+              }),
+              agent(ws.id, questionId, AgentStatus.Waiting, {
+                name: 'Jules',
+                messages: [pendingQuestion],
+                metadata: { pendingQuestionsMessageId: pendingQuestion.id },
+              }),
+              agent(ws.id, unreadId, AgentStatus.Completed, {
+                name: 'Rowan',
+                hasUnread: true,
+                lastAgentResponse: 'The accessibility audit is ready for review.',
+              }),
+            ],
+          },
+        );
+      })(),
+      (() => {
+        const discussionId = 'attention-nora';
+        const unreadId = 'attention-owen';
+        const ws = workspace('attention-secondary', {
+          displayStatus: 'needs_attention',
+          statusMessage: 'The team has a product decision and a completed review to inspect.',
+          agentSummary: {
+            agentIds: [discussionId, unreadId],
+            agents: [
+              { id: discussionId, name: 'Nora', status: 'waiting', parentAgentId: null },
+              { id: unreadId, name: 'Owen', status: 'completed', parentAgentId: null },
+            ],
+          } as Workspace['agentSummary'],
+        });
+        return scenario(
+          'attention-secondary',
+          'Discussion and unread',
+          'Both rows use existing reason and response previews with localized labels.',
+          {
+            workspace: ws,
+            agents: [
+              agent(ws.id, discussionId, AgentStatus.Waiting, {
+                name: 'Nora',
+                attentionRequestKind: 'discussion',
+                attentionRequestReason:
+                  'The empty state needs a product decision before implementation.',
+              }),
+              agent(ws.id, unreadId, AgentStatus.Completed, {
+                name: 'Owen',
+                hasUnread: true,
+                lastAgentResponse: 'Keyboard and screen-reader checks now pass.',
+              }),
+            ],
+          },
+        );
+      })(),
+    ],
+  },
+  'attention-narrow': {
+    family: 'Agent attention',
+    expected:
+      'The existing single-column container layout stays compact and hides the new attention detail.',
+    layout: 'narrow',
+    cards: [
+      questionAttentionScenario('attention-narrow-question', 'Narrow pending question', [
+        'Should the migration preserve the existing cache keys?',
+      ]),
     ],
   },
   'stopped-blocked': {

@@ -10,6 +10,8 @@ describe('workspace hover-card preview audit', () => {
     expect(workspaceHoverCardPreview.defaultState).toBe('working');
     expect(Object.keys(workspaceHoverCardPreview.states)).toEqual([
       'working',
+      'attention',
+      'attention-narrow',
       'stopped-blocked',
       'idle-complete',
       'dense',
@@ -40,6 +42,16 @@ describe('workspace hover-card preview audit', () => {
       states['idle-complete'].props.cards.map(({ workspace }) => workspace?.displayStatus),
     ).toEqual(['idle', 'complete']);
     expect(states.dense.props.cards[0]?.agents).toHaveLength(5);
+    expect(states.attention.props.cards).toHaveLength(5);
+    const mixedAttention = states.attention.props.cards.find(
+      ({ key }) => key === 'attention-priority',
+    );
+    expect(mixedAttention?.agents?.map(({ name }) => name)).toEqual(['Maya', 'Jules', 'Rowan']);
+    expect(states.attention.props.cards.map(({ key }) => key)).toContain(
+      'attention-four-questions',
+    );
+    expect(states.attention.props.cards.map(({ key }) => key)).toContain('attention-missing-body');
+    expect(states['attention-narrow'].props.layout).toBe('narrow');
     expect(states.narrow.props.layout).toBe('narrow');
     expect(states['semantic-status'].props.expected).toContain('right column');
     expect(states['idle-complete'].props.expected).toContain('without a numeric header count');
