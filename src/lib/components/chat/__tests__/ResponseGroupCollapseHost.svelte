@@ -14,6 +14,7 @@
     terminalPosition,
     afterGroupsVisible = true,
     livePreview = true,
+    lastConversationMessage = false,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -24,6 +25,7 @@
     terminalPosition?: Position | null;
     afterGroupsVisible?: boolean;
     livePreview?: boolean;
+    lastConversationMessage?: boolean;
   } = $props();
 
   const positions = ['first', 'middle', 'last'] as const satisfies readonly Position[];
@@ -57,6 +59,7 @@
           name={`${position} group`}
           isStreaming={activePosition === undefined ? streaming : activePosition === position}
           isTerminal={terminalPosition === position}
+          isLastConversationMessage={lastConversationMessage}
           {blocks}
           currentChild={livePreview && activePosition === undefined ? currentChild : undefined}
         >

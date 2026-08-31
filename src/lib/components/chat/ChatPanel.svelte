@@ -5366,6 +5366,7 @@
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
+                        isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
                       />
                     </div>
@@ -5475,6 +5476,7 @@
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
+                        isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
                       />
                     </div>
@@ -5936,6 +5938,7 @@
                               ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
+                              isLastConversationMessage={isLastMessage}
                               onEditSubmit={isRetiredSession
                                 ? undefined
                                 : (newText, model, blocks) =>

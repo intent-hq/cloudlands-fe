@@ -32,6 +32,8 @@
     name: string;
     isStreaming?: boolean;
     isTerminal?: boolean;
+    /** True when the owning message is the conversation's final assistant message. */
+    isLastConversationMessage?: boolean;
     children: Snippet;
     currentChild?: Snippet;
     currentChildKey?: string;
@@ -46,6 +48,7 @@
     name,
     isStreaming = false,
     isTerminal = false,
+    isLastConversationMessage = false,
     children,
     currentChild,
     currentChildKey,
@@ -57,12 +60,15 @@
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
-  let isExpanded = $state(isStreaming && !currentChild);
+  let isExpanded = $state(
+    (isStreaming && !currentChild) || (!isStreaming && isTerminal && isLastConversationMessage),
+  );
   let isClosing = $state(false);
   let isInitialized = false;
   let desiredExpanded = false;
   let prevStreaming = false;
   let prevTerminal = false;
+  let prevLastConversationMessage = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
@@ -106,16 +112,21 @@
   $effect(() => {
     const currentlyStreaming = isStreaming;
     const currentlyTerminal = isTerminal;
+    const currentlyLastMessage = isLastConversationMessage;
     const hasCurrentChild = Boolean(currentChild);
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
+      prevLastConversationMessage = currentlyLastMessage;
       if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
-        setExpanded(false);
+        // A terminal group of the conversation's final assistant message keeps
+        // its completed expansion across remounts (message finalization,
+        // reload); everything else in history mounts collapsed.
+        setExpanded(currentlyTerminal && currentlyLastMessage);
       }
       return;
     }
@@ -138,6 +149,10 @@
       scheduleCollapse();
     } else if (!prevTerminal && currentlyTerminal) {
       clearCollapseTimer();
+    } else if (prevLastConversationMessage && !currentlyLastMessage && currentlyTerminal) {
+      // The owning message stopped being the conversation's last (a new turn
+      // started): the completed expansion loses its claim.
+      scheduleCollapse();
     } else if (
       !searchOwnsExpansion &&
       disclosureOverride !== 'expanded-completed' &&
@@ -147,6 +162,7 @@
     }
     prevStreaming = currentlyStreaming;
     prevTerminal = currentlyTerminal;
+    prevLastConversationMessage = currentlyLastMessage;
   });
 
   onDestroy(() => {

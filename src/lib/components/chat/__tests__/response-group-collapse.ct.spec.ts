@@ -83,6 +83,73 @@ test('keeps only the terminal completed group open until later visible content f
   );
 });
 
+test('mounts the conversation-final terminal group expanded and collapses it on demotion', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ResponseGroupCollapseHost, {
+    props: {
+      width: 320,
+      zoom: 1,
+      streaming: false,
+      livePreview: false,
+      terminalPosition: 'last',
+      lastConversationMessage: true,
+      afterGroupsVisible: false,
+    },
+  });
+
+  await expect(component.getByTestId('response-group-disclosure').nth(0)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await expect(component.getByTestId('response-group-disclosure').nth(1)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  const finalTrigger = component.getByTestId('response-group-disclosure').nth(2);
+  await expect(finalTrigger).toHaveAttribute('aria-expanded', 'true');
+
+  await component.update({
+    props: {
+      width: 320,
+      zoom: 1,
+      streaming: false,
+      livePreview: false,
+      terminalPosition: 'last',
+      lastConversationMessage: false,
+      afterGroupsVisible: false,
+    },
+  });
+  await expect(finalTrigger).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('mounts every group collapsed when the completed message is not conversation-final', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ResponseGroupCollapseHost, {
+    props: {
+      width: 320,
+      zoom: 1,
+      streaming: false,
+      livePreview: false,
+      terminalPosition: 'last',
+      lastConversationMessage: false,
+      afterGroupsVisible: false,
+    },
+  });
+
+  for (const index of [0, 1, 2]) {
+    await expect(component.getByTestId('response-group-disclosure').nth(index)).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  }
+});
+
 function channel(value: number): number {
   const normalized = value / 255;
   return normalized <= 0.04045 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);

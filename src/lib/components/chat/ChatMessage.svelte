@@ -225,6 +225,8 @@
      * batched-delivery gap already owns the seam.
      */
     suppressAutomatedWakeTopSpacing?: boolean;
+    /** True when this message is the conversation's final assistant message. */
+    isLastConversationMessage?: boolean;
   }
 
   let {
@@ -252,6 +254,7 @@
     readOnly = false,
     ownsMessageIdentity = true,
     suppressAutomatedWakeTopSpacing = false,
+    isLastConversationMessage = false,
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
@@ -1696,6 +1699,7 @@
           workspaceId={workspace?.id ? String(workspace.id) : undefined}
           {agentId}
           messageId={message?.id ?? messageId}
+          {isLastConversationMessage}
         />
 
         <!-- Stopped indicator for interrupted messages -->
