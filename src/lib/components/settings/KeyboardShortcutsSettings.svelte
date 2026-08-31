@@ -17,6 +17,16 @@
   import { store as appStore } from '$store/renderer/store';
 
   const shortcutOverrides = selectShortcutOverrides();
+  const hiddenShortcutIds = new Set<ShortcutId>([
+    'chat.focus-input',
+    'chat.mention-context',
+    'editor.copy',
+    'editor.select-all',
+    'editor.undo',
+    'editor.redo',
+    'leader.resize-panels',
+  ]);
+  const fixedShortcutIds = new Set<ShortcutId>(['navigation.go-to-tab', 'leader.navigate-panels']);
   const categories = Object.entries(SHORTCUT_CATEGORIES).filter(
     ([, category]) => category.shortcuts.length > 0,
   );
@@ -88,11 +98,9 @@
             {@const definition = SHORTCUT_REGISTRY.filter((entry) => entry.category === categoryId)[
               index
             ]}
-            {#if definition}
-              <div
-                class="flex justify-between gap-4"
-                data-shortcut-entry
-              >
+            {#if definition && !hiddenShortcutIds.has(definition.id)}
+              {@const isFixed = fixedShortcutIds.has(definition.id)}
+              <div class="flex justify-between gap-4" data-shortcut-entry>
                 <dt class="min-w-0 pt-1.5 text-sm text-foreground">
                   <label for={`shortcut-${definition.id}`}>{shortcut.label}</label>
                 </dt>
@@ -109,12 +117,12 @@
                     placeholder={capturing === definition.id
                       ? m.settings_keyboardShortcuts_capture_placeholder()
                       : undefined}
-                    onfocus={() => startCapture(definition.id)}
-                    onclick={() => startCapture(definition.id)}
-                    onblur={() => cancelCapture(definition.id)}
-                    onkeydown={(event) => handleKeydown(event, definition.id)}
+                    onfocus={isFixed ? undefined : () => startCapture(definition.id)}
+                    onclick={isFixed ? undefined : () => startCapture(definition.id)}
+                    onblur={isFixed ? undefined : () => cancelCapture(definition.id)}
+                    onkeydown={isFixed ? undefined : (event) => handleKeydown(event, definition.id)}
                   />
-                  {#if definition.id in $shortcutOverrides}
+                  {#if !isFixed && definition.id in $shortcutOverrides}
                     <Button
                       variant="ghost-light"
                       size="icon-xs"

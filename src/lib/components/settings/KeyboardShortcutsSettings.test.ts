@@ -29,6 +29,17 @@ vi.mock('$store/renderer/store', async () => {
 
 import KeyboardShortcutsSettings from './KeyboardShortcutsSettings.svelte';
 
+const hiddenShortcutIds = new Set([
+  'chat.focus-input',
+  'chat.mention-context',
+  'editor.copy',
+  'editor.select-all',
+  'editor.undo',
+  'editor.redo',
+  'leader.resize-panels',
+]);
+const visibleShortcuts = SHORTCUT_REGISTRY.filter(({ id }) => !hiddenShortcutIds.has(id));
+
 beforeEach(() => {
   mocks.dispatch.mockClear();
   mocks.state.userPreferences.shortcutOverrides = {};
@@ -37,13 +48,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('KeyboardShortcutsSettings', () => {
-  it('renders every registry row with its formatted, platform-aware binding', () => {
+  it('renders every visible row with its formatted, platform-aware binding', () => {
     render(KeyboardShortcutsSettings);
 
     const inputs = screen.getAllByRole('textbox') as HTMLInputElement[];
-    expect(inputs).toHaveLength(SHORTCUT_REGISTRY.length);
+    expect(inputs).toHaveLength(visibleShortcuts.length);
     expect(inputs.map((input) => input.value)).toEqual(
-      SHORTCUT_REGISTRY.map(({ defaultKey }) => formatShortcut(defaultKey)),
+      visibleShortcuts.map(({ defaultKey }) => formatShortcut(defaultKey)),
     );
     expect(inputs.every((input) => input.hasAttribute('data-shortcut-input'))).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Settings' })).toBeTruthy();
@@ -74,22 +85,43 @@ describe('KeyboardShortcutsSettings', () => {
     expect(document.activeElement).not.toBe(input);
   });
 
-  it('retains every key in range and directional rows when captured', async () => {
+  it('keeps range and directional rows visible but prevents capture and row reset', async () => {
+    mocks.state.userPreferences.shortcutOverrides = {
+      'navigation.go-to-tab': 'alt+1-9',
+      'leader.navigate-panels': 'mod+h/j/k/l',
+    };
     render(KeyboardShortcutsSettings);
-    const tabs = screen.getByRole('textbox', { name: 'Go to Tab' });
-    const panels = screen.getByRole('textbox', { name: 'Navigate Panels' });
+    const tabs = screen.getByRole('textbox', { name: 'Go to Tab' }) as HTMLInputElement;
+    const panels = screen.getByRole('textbox', { name: 'Navigate Panels' }) as HTMLInputElement;
 
     await fireEvent.focus(tabs);
     await fireEvent.keyDown(tabs, { key: '4', code: 'Digit4', altKey: true });
     await fireEvent.focus(panels);
     await fireEvent.keyDown(panels, { key: 'X', code: 'KeyX', ctrlKey: true });
 
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      setShortcutOverride('navigation.go-to-tab', 'alt+1-9'),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      setShortcutOverride('leader.navigate-panels', 'mod+h/j/k/l'),
-    );
+    expect(tabs.value).toBe(formatShortcut('alt+1-9'));
+    expect(panels.value).toBe(formatShortcut('mod+h/j/k/l'));
+    expect(tabs.placeholder).toBe('');
+    expect(panels.placeholder).toBe('');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Reset Go to Tab to default' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reset Navigate Panels to default' })).toBeNull();
+  });
+
+  it('omits shortcuts hidden from Settings', () => {
+    render(KeyboardShortcutsSettings);
+
+    for (const label of [
+      'Focus input',
+      'Mention Context',
+      'Copy',
+      'Select All',
+      'Undo',
+      'Redo',
+      'Resize Panels',
+    ]) {
+      expect(screen.queryByRole('textbox', { name: label })).toBeNull();
+    }
   });
 
   it('preserves the last effective binding when capture is cancelled', async () => {
