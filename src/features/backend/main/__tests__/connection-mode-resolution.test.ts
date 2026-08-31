@@ -49,6 +49,13 @@ vi.mock('../intentd-version-pin', async () => {
   return { ...actual, readPinnedVersion: vi.fn(() => '0.1.0') };
 });
 
+// Intercept the sidecar manager's dynamic import of backend.ipc (the
+// updateSupported recapture after mode resolution) so the heavy module never
+// loads and the call is observable.
+vi.mock('../backend.ipc', () => ({
+  refreshLocalUpdateSupported: vi.fn(async () => {}),
+}));
+
 import { spawn } from 'node:child_process';
 import * as net from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -154,6 +161,64 @@ describe('startIntentdSidecar connection-mode resolution', () => {
       ['serve'],
       expect.objectContaining({ detached: false }),
     );
+  });
+});
+
+describe('startIntentdSidecar updateSupported recapture after mode resolution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetConnectionModeForTesting();
+    __resetIntentdSidecarForTesting();
+  });
+
+  afterEach(() => {
+    __setSidecarProcessForTesting(null);
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+  });
+
+  it('re-runs the local updateSupported capture after adopting an external daemon', async () => {
+    // The pooled local client can connect (and run its hello-time capture)
+    // BEFORE startIntentdSidecar resolves the mode — the capture then saw
+    // `unknown` and skipped, so adoption must re-run it.
+    mockProbeSocket(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { running: true, version: '0.1.0', protocolVersion: '1' },
+      }),
+    );
+    const { refreshLocalUpdateSupported } = await import('../backend.ipc');
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+    expect(getConnectionMode()).toBe('external');
+    await vi.waitFor(() => {
+      expect(vi.mocked(refreshLocalUpdateSupported)).toHaveBeenCalled();
+    });
+  });
+
+  it('re-runs the capture when the spawn policy disables spawning (env override)', async () => {
+    const { refreshLocalUpdateSupported } = await import('../backend.ipc');
+    await startIntentdSidecar({ INTENTD_SOCKET: '/tmp/x.sock' }, true, '/resources', '/cwd');
+    expect(getConnectionMode()).toBe('external');
+    await vi.waitFor(() => {
+      expect(vi.mocked(refreshLocalUpdateSupported)).toHaveBeenCalled();
+    });
+  });
+
+  it('does not re-run the capture when spawning the sidecar', async () => {
+    mockProbeSocket(null);
+    mockSpawnedProcess();
+    const { refreshLocalUpdateSupported } = await import('../backend.ipc');
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    expect(getConnectionMode()).toBe('sidecar');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vi.mocked(refreshLocalUpdateSupported)).not.toHaveBeenCalled();
   });
 });
 
