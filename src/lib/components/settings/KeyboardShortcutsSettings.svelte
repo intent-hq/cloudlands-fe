@@ -90,13 +90,13 @@
             ]}
             {#if definition}
               <div
-                class="grid grid-cols-[minmax(0,1fr)_9rem] items-start gap-4"
+                class="flex justify-between gap-4"
                 data-shortcut-entry
               >
                 <dt class="min-w-0 pt-1.5 text-sm text-foreground">
                   <label for={`shortcut-${definition.id}`}>{shortcut.label}</label>
                 </dt>
-                <dd class="relative min-w-0">
+                <dd class="relative min-w-0 mr-4">
                   <Input
                     id={`shortcut-${definition.id}`}
                     class="h-7 w-28 bg-transparent px-2 text-xs read-only:bg-transparent read-only:text-foreground read-only:hover:border-input focus-visible:ring-2 focus-visible:ring-ring/40"
