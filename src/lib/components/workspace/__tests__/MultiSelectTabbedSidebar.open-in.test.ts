@@ -920,12 +920,12 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const agent = container.querySelector<HTMLElement>('[data-expanded-agent="agent-1"]');
 
     expect(overlay).toBeTruthy();
-    // The title region stays interactive while a card is expanded; only the kebab menu hides.
+    // The title region and its actions stay interactive while a card is expanded.
     expect(
       (container.querySelector('[data-workspace-title-region]') as HTMLElement & { inert: boolean })
         .inert,
     ).toBeFalsy();
-    expect(container.querySelector('[data-workspace-actions-kebab]')).toBeNull();
+    expect(container.querySelector('[data-workspace-actions-kebab]')).toBeTruthy();
     mocks.dispatch.mockClear();
 
     await fireEvent.click(agent!);

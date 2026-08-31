@@ -55,9 +55,6 @@
   import { deleteNote, createNote, updateNoteTitle } from '$features/notes/notes-write-service';
   import { toast } from 'svelte-sonner';
   import { store as appStore } from '$store/renderer/store';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import OpenPanelIndicator from './OpenPanelIndicator.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
@@ -75,8 +72,6 @@
     class?: string;
     indentSize?: number; // Size of each indent level in px (default: 22)
     flush?: boolean;
-    openPanelTabs?: PanelTab[];
-    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -91,8 +86,6 @@
     class: className,
     indentSize = 22,
     flush = false,
-    openPanelTabs = [],
-    activePanelTab,
   }: Props = $props();
 
   const workspaceIdStore = writable('');
@@ -426,14 +419,6 @@
     event.stopPropagation();
     open(event);
   }
-
-  function getNotePanelState(noteId: string) {
-    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
-      type: 'note',
-      noteId,
-      workspaceId,
-    });
-  }
 </script>
 
 <div class={cn('w-full flex flex-col', className)}>
@@ -485,7 +470,6 @@
               ? 'not_started'
               : undefined}
         {@const isUnread = $unreadNoteIds.includes(note.id as string)}
-        {@const panelState = getNotePanelState(note.id as string)}
         {#if !isHidden}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
@@ -591,7 +575,6 @@
                       title={m.workspace_notesPanel_unreadChanges_tooltip()}
                     ></span>
                   {/if}
-                  <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                 </ListItem>
 
                 <!-- Show active agents working on this note -->
@@ -708,7 +691,6 @@
                       title={m.workspace_notesPanel_unreadChanges_tooltip()}
                     ></span>
                   {/if}
-                  <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                 </ListItem>
               </div>
             {:else}
@@ -735,7 +717,6 @@
                       title={m.workspace_notesPanel_unreadChanges_tooltip()}
                     ></span>
                   {/if}
-                  <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                 </ListItem>
 
                 <!-- Show active agents working on this note -->

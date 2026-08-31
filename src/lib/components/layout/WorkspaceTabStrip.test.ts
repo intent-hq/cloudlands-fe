@@ -193,6 +193,15 @@ describe('WorkspaceTabStrip', () => {
     HTMLElement.prototype.releasePointerCapture = vi.fn();
   });
 
+  it('scrolls only on the horizontal axis', () => {
+    const { container } = render(WorkspaceTabStrip);
+    const scroller = container.querySelector('[data-workspace-tab-scroller]')!;
+
+    expect(scroller.className).toContain('overflow-x-auto');
+    expect(scroller.className).toContain('overflow-y-hidden');
+    expect(scroller.className).toContain('scrollbar-none');
+  });
+
   it('affirms tab status and full-surface activation in every required visual state', async () => {
     const observed = await exerciseVisualStates(() => {
       const view = render(WorkspaceTabStrip);
@@ -531,6 +540,48 @@ describe('WorkspaceTabStrip', () => {
       payload: ['ws-3', expect.any(Number)],
     });
     expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
+  it('opens context actions for hydrated and loading workspace tabs', async () => {
+    mocks.loadedWorkspaceIds.delete('ws-3');
+    render(WorkspaceTabStrip);
+
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Beta/ }));
+    expect(screen.getByRole('menuitem', { name: 'Close' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Close all others' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Close tabs to the right' })).toBeTruthy();
+
+    await fireEvent.mouseDown(document.body);
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: 'Loading workspace ws-3' }));
+    expect(
+      (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('closes other workspace tabs in order and focuses the context target', async () => {
+    render(WorkspaceTabStrip);
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Beta/ }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Close all others' }));
+
+    expect(mocks.dispatch.mock.calls).toEqual([
+      [{ type: 'tabState/openWorkspaceTab', payload: ['ws-2'] }],
+      [{ type: 'tabState/closeWorkspaceTab', payload: ['ws-1', expect.any(Number)] }],
+      [{ type: 'tabState/closeWorkspaceTab', payload: ['ws-3', expect.any(Number)] }],
+    ]);
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-2');
+  });
+
+  it('closes only tabs to the right and routes to the surviving current tab', async () => {
+    render(WorkspaceTabStrip);
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Close tabs to the right' }));
+
+    expect(mocks.dispatch.mock.calls).toEqual([
+      [{ type: 'tabState/closeWorkspaceTab', payload: ['ws-2', expect.any(Number)] }],
+      [{ type: 'tabState/closeWorkspaceTab', payload: ['ws-3', expect.any(Number)] }],
+    ]);
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-2');
   });
 
   it('keeps open workspace tabs visually inactive outside a workspace route', () => {

@@ -107,6 +107,7 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
   const previousIsOperational = isOperationalClusterBlock(previous);
   const currentIsOperational = isOperationalClusterBlock(block);
   if (previousIsOperational && currentIsOperational) return '';
+  if (previous.type === 'thinking' && !currentIsOperational) return 'pt-6';
   if (previousIsOperational || currentIsOperational) return 'pt-4';
   return 'pt-1';
 }

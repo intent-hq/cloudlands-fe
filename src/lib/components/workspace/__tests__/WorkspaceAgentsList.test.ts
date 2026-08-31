@@ -110,7 +110,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(longRow?.className).not.toContain('hover:bg-muted');
     expect(longRow?.getAttribute('aria-current')).toBe('true');
     expect(longRow?.querySelector('[data-agent-row-name]')?.className).toContain('flex-1');
-    expect(longRow?.querySelector('[data-panel-open-state="active"]')).toBeTruthy();
+    expect(longRow?.querySelector('[data-panel-open-state]')).toBeNull();
     expect(longRow?.querySelector('[data-agent-row-time]')).toBeTruthy();
     const backgroundRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${background.id}"]`,

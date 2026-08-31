@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -41,6 +41,9 @@
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
 
   interface Props {
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
@@ -111,6 +114,36 @@
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
   let dragTracking = false;
+  let tabContextMenu = $state<{ workspaceId: string; x: number; y: number } | null>(null);
+  const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
+    if (!tabContextMenu) return [];
+    const { workspaceId } = tabContextMenu;
+    const closeOthers = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'others');
+    const closeRight = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'right');
+    return [
+      {
+        id: 'close',
+        label: m.layout_panelTabBar_close_label(),
+        icon: faXmark,
+        onClick: () => closeWorkspace(workspaceId),
+      },
+      { type: 'separator' },
+      {
+        id: 'close-others',
+        label: m.layout_panelTabBar_closeAllOthers_label(),
+        icon: faLayerGroup,
+        disabled: closeOthers.length === 0,
+        onClick: () => closeWorkspaceTabs(closeOthers, workspaceId),
+      },
+      {
+        id: 'close-right',
+        label: m.layout_panelTabBar_closeTabsToRight_label(),
+        icon: faArrowRight,
+        disabled: closeRight.length === 0,
+        onClick: () => closeWorkspaceTabs(closeRight),
+      },
+    ];
+  });
 
   function reportActiveTabTracking() {
     onActiveTabTrackingChange?.(layoutTracking || dragTracking);
@@ -323,6 +356,25 @@
         ? `/workspace/${nextWorkspaceId}`
         : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
     );
+  }
+
+  function closeWorkspaceTabs(workspaceIds: string[], focusWorkspaceId?: string) {
+    if (workspaceIds.length === 0) return;
+    if (focusWorkspaceId) appStore.dispatch(openWorkspaceTab(focusWorkspaceId));
+    workspaceIds.forEach((workspaceId) => appStore.dispatch(closeWorkspaceTab(workspaceId)));
+    const nextWorkspaceId = focusWorkspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state);
+    void goto(
+      nextWorkspaceId
+        ? `/workspace/${nextWorkspaceId}`
+        : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
+    );
+  }
+
+  function handleWorkspaceTabContextMenu(event: MouseEvent, workspaceId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelPointerDrag();
+    tabContextMenu = { workspaceId, x: event.clientX, y: event.clientY };
   }
 
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
@@ -599,8 +651,9 @@
        intent-hq/monorepo#2400; rules in app.css). -->
   <div
     bind:this={stripElement}
+    data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-7 pr-3 -ml-1 scrollbar-none',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pl-7 pr-3 -ml-1 scrollbar-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
@@ -664,6 +717,7 @@
             use:registerTabSurface={workspaceId}
             role="presentation"
             onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
+            oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
             {#if isCurrent}
               <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
@@ -780,6 +834,7 @@
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
+            oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
             {#if isCurrent}
               <svg
@@ -846,6 +901,15 @@
     {/each}
     <span class="sr-only" aria-live="polite">{reorderAnnouncement}</span>
   </div>
+{/if}
+
+{#if tabContextMenu}
+  <SidebarContextMenu
+    x={tabContextMenu.x}
+    y={tabContextMenu.y}
+    items={tabContextMenuItems}
+    onClickOutside={() => (tabContextMenu = null)}
+  />
 {/if}
 
 <style>

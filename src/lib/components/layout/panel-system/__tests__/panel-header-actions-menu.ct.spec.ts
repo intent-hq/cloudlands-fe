@@ -148,6 +148,17 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
 
+    await header.evaluate((node) =>
+      node.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 20 }),
+      ),
+    );
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-panel-actions-section="display"]')).toHaveCount(1);
+    await expect(menu.locator('[data-panel-actions-section="actions"]')).toHaveCount(1);
+    await expect(menu.locator('[data-panel-actions-section="open-in"]')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+
     await trigger.click();
     await page.mouse.click(1100, 700);
     await expect(menu).toBeHidden();

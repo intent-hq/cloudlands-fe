@@ -38,6 +38,18 @@ test('caps and follows a tall current row as a streaming cylinder', async ({ mou
   });
   const trigger = component.getByTestId('response-group-disclosure');
   const scroller = component.locator('.cylinder-scroller');
+  const currentLine = component.getByTestId('live-stream-line').first();
+  const summary = component.getByTestId('response-group-name');
+  const groupContent = component.locator('[data-response-group-content]');
+
+  for (const width of [800, 320]) {
+    await page.setViewportSize({ width, height: 480 });
+    const [lineBox, summaryBox] = await Promise.all([
+      currentLine.boundingBox(),
+      summary.boundingBox(),
+    ]);
+    expect(lineBox!.x).toBeCloseTo(summaryBox!.x, 0);
+  }
 
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(scroller).toHaveCSS('max-height', '100px');
@@ -66,6 +78,11 @@ test('caps and follows a tall current row as a streaming cylinder', async ({ mou
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(scroller).not.toHaveCSS('max-height', '100px');
   await expect(component.getByTestId('live-history-child')).toHaveCount(2);
+  const [contentBox, guideBox] = await Promise.all([
+    groupContent.boundingBox(),
+    component.locator('.pointer-events-none.absolute.inset-y-0').boundingBox(),
+  ]);
+  expect(guideBox!.x + guideBox!.width / 2 - contentBox!.x).toBeCloseTo(18, 0);
 });
 
 test('reconciles a tag-first streaming group through explicit close and completion', async ({

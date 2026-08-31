@@ -16,7 +16,6 @@
     selectActiveTab,
     selectAllTabs,
     selectFocusedPanelId,
-    getPanelTabOpenState,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
@@ -126,7 +125,6 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import OpenPanelIndicator from './sidebar/OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -519,13 +517,6 @@
     return null;
   });
   const effectiveIsAllChangesViewActive = $derived(focusedContentType === 'local-changes');
-  function getNotePanelState(noteId: string) {
-    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
-      type: 'note',
-      noteId,
-      workspaceId,
-    });
-  }
 
   type PaneOpenEvent = MouseEvent | KeyboardEvent;
 
@@ -899,11 +890,7 @@
 >
   <!-- Fixed Top Section: Progress Card -->
   <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
-    <WorkspaceProgressCard
-      {workspaceId}
-      onOpenNote={handleOpenNoteInPanel}
-      hideActionsMenu={!isLauncherOverview}
-    />
+    <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
   </div>
 
   {#if !isNewWorkspaceSession}
@@ -1079,9 +1066,6 @@
                             searchQuery={agentSearchQuery}
                             runningAgentIds={runningLauncherAgents.map((agent) => agent.id)}
                             selectedAgentId={effectiveSelectedAgentId}
-                            {workspaceId}
-                            openPanelTabs={$allPanelTabs$}
-                            activePanelTab={$activeTab$}
                             retiredCount={$retiredCount$}
                             retiredAgentsLoaded={$retiredAgentsLoaded$}
                             loadingRetired={$loadingRetired$}
@@ -1205,8 +1189,6 @@
                             onSelectAgent={handleOpenAgentInPanel}
                             showOnlyChanged={showOnlyChangedFiles}
                             searchQuery={fileSearchQuery}
-                            openPanelTabs={$allPanelTabs$}
-                            activePanelTab={$activeTab$}
                           />
                         </div>
                       {:else if tabId === 'browser'}
@@ -1286,7 +1268,6 @@
                       />
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
-                        {@const panelState = getNotePanelState(note.id as string)}
                         <SidebarLauncherHoverCard
                           title={note.title || m.chat_mentions_untitledNote_label()}
                           rows={[{ text: getNoteLauncherPreview(note) }]}
@@ -1310,11 +1291,6 @@
                               <ResourceIconTile
                                 kind="note"
                                 class="transition-colors group-hover/preview:bg-background/70! group-focus-visible/preview:bg-background/80!"
-                              />
-                              <OpenPanelIndicator
-                                count={panelState.count}
-                                active={panelState.isActive}
-                                overlay
                               />
                             </span>
                           </Button>

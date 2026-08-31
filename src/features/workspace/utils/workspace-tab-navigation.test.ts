@@ -22,6 +22,7 @@ import {
   closeActivePanelTab,
   closeActiveWorkspaceTab,
   cycleWorkspaceTab,
+  moveActiveWorkspaceTab,
   openNewPanel,
   registerWorkspaceTabShortcuts,
   reopenPanelOrWorkspaceTab,
@@ -157,6 +158,30 @@ describe('global workspace tab navigation', () => {
     navigate.mockClear();
     expect(selectWorkspaceTabByPosition(store, 'last', '/workspace/ws-1', navigate)).toBe('ws-2');
     expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+  });
+
+  it('moves the active workspace one ordered position without changing selection', () => {
+    const store = makeStore('ws-2');
+
+    expect(moveActiveWorkspaceTab(store, 'left')).toBe('ws-2');
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    expect(store.state.tabState.currentTabId).toBe('ws-2');
+    expect(moveActiveWorkspaceTab(store, 'left')).toBeNull();
+
+    expect(moveActiveWorkspaceTab(store, 'right')).toBe('ws-2');
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+    expect(store.state.tabState.currentTabId).toBe('ws-2');
+  });
+
+  it('does not move a missing, sole, or boundary workspace tab', () => {
+    expect(moveActiveWorkspaceTab(makeStore(undefined), 'left')).toBeNull();
+    const sole = makeStore('ws-1');
+    sole.state.tabState.openTabs = { 'ws-1': true };
+    sole.state.tabState.workspaceStacks = [['ws-1']];
+    expect(moveActiveWorkspaceTab(sole, 'left')).toBeNull();
+    expect(moveActiveWorkspaceTab(sole, 'right')).toBeNull();
+    expect(moveActiveWorkspaceTab(makeStore('ws-1'), 'left')).toBeNull();
+    expect(moveActiveWorkspaceTab(makeStore('ws-3'), 'right')).toBeNull();
   });
 
   const makePanel = (id: string, tabIds: string[] = []): PanelState => ({
@@ -719,6 +744,8 @@ describe('global workspace tab navigation', () => {
       'meta+w',
       'meta+shift+w',
       'meta+shift+t',
+      'meta+shift+alt+arrowleft',
+      'meta+shift+alt+arrowright',
       'ctrl+tab',
       'ctrl+shift+tab',
       'meta+1',
@@ -742,5 +769,36 @@ describe('global workspace tab navigation', () => {
     });
     sidebarShortcut.action();
     expect(store.actions.at(-1)?.type).toBe('uiLayout/toggleSidebar');
+  });
+
+  it('registers global non-macOS workspace movement chords', () => {
+    const shortcuts: KeyboardShortcut[] = [];
+    registerWorkspaceTabShortcuts({
+      isMac: false,
+      register: (shortcut) => shortcuts.push(shortcut),
+      store: makeStore('ws-2'),
+      getCurrentPath: () => '/workspace/ws-2',
+      navigate: vi.fn(),
+      openNewWorkspace: vi.fn(),
+    });
+
+    expect(
+      shortcuts.filter((shortcut) => shortcut.description.startsWith('Move Space Tab')),
+    ).toEqual([
+      expect.objectContaining({
+        key: 'ArrowLeft',
+        ctrl: true,
+        alt: true,
+        shift: true,
+        global: true,
+      }),
+      expect.objectContaining({
+        key: 'ArrowRight',
+        ctrl: true,
+        alt: true,
+        shift: true,
+        global: true,
+      }),
+    ]);
   });
 });

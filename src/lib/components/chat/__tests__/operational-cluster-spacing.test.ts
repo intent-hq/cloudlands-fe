@@ -109,7 +109,7 @@ describe('operational cluster spacing', () => {
 
     expect(
       content.map((_, index) => getOperationalClusterSpacingClass(content, index, visible)),
-    ).toEqual(['', 'pt-4', '', '', 'pt-4']);
+    ).toEqual(['', 'pt-4', '', '', 'pt-6']);
     expect(
       content.map((_, index) => isAdjacentOperationalClusterRow(content, index, visible)),
     ).toEqual([false, false, false, true, false]);

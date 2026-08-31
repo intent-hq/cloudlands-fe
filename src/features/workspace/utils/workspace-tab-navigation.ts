@@ -1,6 +1,7 @@
 import type { StoreState } from '$store/renderer/types';
 import {
   closeWorkspaceTab,
+  moveWorkspace,
   reopenLastClosedWorkspaceTab,
   switchToWorkspaceTabByIndex,
   switchToNextWorkspaceTab,
@@ -42,6 +43,7 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof switchToPreviousWorkspaceTab>
       | ReturnType<typeof switchToWorkspaceTabByIndex>
       | ReturnType<typeof closeWorkspaceTab>
+      | ReturnType<typeof moveWorkspace>
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
       | ReturnType<typeof closeFocusedPanelTab>
       | ReturnType<typeof openBlankWorkingPanel>
@@ -52,6 +54,25 @@ interface WorkspaceTabNavigationStore {
 }
 
 type RegisterShortcut = (shortcut: KeyboardShortcut) => void;
+
+export type WorkspaceTabMoveDirection = 'left' | 'right';
+
+export function moveActiveWorkspaceTab(
+  store: WorkspaceTabNavigationStore,
+  direction: WorkspaceTabMoveDirection,
+): string | null {
+  const order = selectWorkspaceTabOrder.select(store.state);
+  const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
+  if (!workspaceId) return null;
+  const currentIndex = order.indexOf(workspaceId);
+  const targetIndex = currentIndex + (direction === 'left' ? -1 : 1);
+  const targetWorkspaceId = order[targetIndex];
+  if (currentIndex < 0 || !targetWorkspaceId) return null;
+  store.dispatch(
+    moveWorkspace(workspaceId, targetWorkspaceId, direction === 'left' ? 'before' : 'after'),
+  );
+  return workspaceId;
+}
 
 interface RegisterWorkspaceTabShortcutsOptions {
   isMac: boolean;
@@ -290,6 +311,25 @@ export function registerWorkspaceTabShortcuts({
     global: true,
     description: m.workspace_shortcuts_reopenClosedTabOrSpace_description(),
     action: withRoute((path) => reopenPanelOrWorkspaceTab(store, path, navigate)),
+  });
+
+  register({
+    ...mod,
+    key: 'ArrowLeft',
+    alt: true,
+    shift: true,
+    global: true,
+    description: SHORTCUTS.MOVE_SPACE_TAB_LEFT.label,
+    action: () => moveActiveWorkspaceTab(store, 'left'),
+  });
+  register({
+    ...mod,
+    key: 'ArrowRight',
+    alt: true,
+    shift: true,
+    global: true,
+    description: SHORTCUTS.MOVE_SPACE_TAB_RIGHT.label,
+    action: () => moveActiveWorkspaceTab(store, 'right'),
   });
 
   for (const [direction, shift] of [

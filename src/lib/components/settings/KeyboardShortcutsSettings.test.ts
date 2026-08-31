@@ -21,7 +21,7 @@ describe('KeyboardShortcutsSettings', () => {
       'leader',
     ]);
     expect(keyboardShortcutsSettingsFixture.map(({ shortcuts }) => shortcuts.length)).toEqual([
-      9, 5, 6, 8, 10, 10,
+      9, 7, 6, 8, 10, 10,
     ]);
     expect(categories.map((category) => category.dataset.shortcutCategory)).toEqual(
       keyboardShortcutsSettingsFixture.map(({ id }) => id),

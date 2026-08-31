@@ -92,6 +92,7 @@
   import type { PanelHeaderActions } from './panel-header-context.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
+  import { getPanelExternalOpenTarget } from './panel-external-open-target';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -370,9 +371,15 @@
     contextMenuTab = { source: 'tab', tabId, x: e.clientX, y: e.clientY };
   }
 
-  function handlePanelContextMenu(e: MouseEvent, tabId: string) {
+  function handlePanelContextMenu(e: MouseEvent) {
+    const target = e.target;
+    if (target instanceof Element && target.closest(PANEL_HEADER_INTERACTIVE_SELECTOR)) return;
     e.preventDefault();
-    contextMenuTab = { source: 'panel', tabId, x: e.clientX, y: e.clientY };
+    contextMenuTab = null;
+    const header = e.currentTarget as HTMLElement;
+    queueMicrotask(() =>
+      header.querySelector<HTMLButtonElement>('[data-testid="panel-actions-trigger"]')?.click(),
+    );
   }
 
   function getContextMenuPosition() {
@@ -1240,6 +1247,53 @@
           }}
         />
       </div>
+
+      <Menu.Separator />
+
+      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
+        {m.settings_section_openIn()}
+      </div>
+      <div data-panel-actions-section="open-in">
+        {#if activeTab}
+          {@const externalTarget = getPanelExternalOpenTarget(
+            activeTab,
+            workspaceId,
+            $isWorkspaceHostLocal$,
+          )}
+          {#if externalTarget.kind === 'browser'}
+            <Menu.CommandItem
+              icon={faArrowUpRightFromSquare}
+              label={m.layout_panelTabBar_openInBrowser_label()}
+              onclick={() => {
+                openInExternalBrowser(activeTab);
+                close();
+              }}
+            />
+          {:else if externalTarget.kind === 'path'}
+            {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
+              {@const WorkspaceActionsMenu = module.default}
+              <WorkspaceActionsMenu
+                filePath={externalTarget.filePath}
+                workspaceId={externalTarget.workspaceId}
+                isDirectory={externalTarget.isDirectory}
+                isDiff={externalTarget.isDiff ?? false}
+                isWorkspaceRoot={externalTarget.isWorkspaceRoot ?? false}
+                workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
+                showDeleteOption={false}
+                showArchiveOption={false}
+                showFileNameCopy={false}
+                onClose={close}
+              />
+            {/await}
+          {:else}
+            <Menu.CommandItem
+              icon={faArrowUpRightFromSquare}
+              label={m.ui_fileActions_noRepoPath_tooltip()}
+              disabled
+            />
+          {/if}
+        {/if}
+      </div>
     {/snippet}
   </DropdownMenu>
 {/snippet}
@@ -1810,7 +1864,7 @@
         isFocused && 'focused',
       )}
       data-column-focused={isFocused ? '' : undefined}
-      oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
+      oncontextmenu={handlePanelContextMenu}
       ondblclick={handlePanelHeaderDoubleClick}
       draggable="true"
       ondragstart={handlePaneDragStart}
