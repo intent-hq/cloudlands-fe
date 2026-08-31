@@ -281,9 +281,8 @@
   let summary = $derived(workspace?.statusMessage?.trim() || status.label);
   let updated = $derived(
     workspace
-      ? formatDistanceToNow(
-          workspace.lastActivity || workspace.updatedAt || workspace.createdAt,
-        ) || m.workspace_hoverCard_noRecentActivity_label()
+      ? formatDistanceToNow(workspace.lastActivity || workspace.updatedAt || workspace.createdAt) ||
+          m.workspace_hoverCard_noRecentActivity_label()
       : '',
   );
   let taskStatuses = $derived($workspaceTaskDisplayList$.map((task) => task.status));
@@ -291,137 +290,170 @@
 </script>
 
 <section
-  class="workspace-hover-card overflow-hidden rounded-md bg-background text-left shadow-(--elevation-overlay) ring-1 ring-border/70"
+  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-background text-left shadow-(--elevation-overlay) ring-1 ring-border/70"
   data-workspace-hover-card
+  data-workspace-hover-card-layout="landscape"
 >
-  {#if isLoading || !workspace}<div class="grid gap-2 px-3.5 py-3">
-      <Skeleton class="h-5 w-44" /><Skeleton class="h-4 w-64" /><Skeleton class="h-10 w-full" />
+  {#if isLoading || !workspace}<div class="grid gap-3 px-3.5 py-3">
+      <div class="flex items-center justify-between gap-4">
+        <Skeleton class="h-5 w-44" /><Skeleton class="h-4 w-36" />
+      </div>
+      <div class="body-grid grid min-w-0 grid-cols-[minmax(0,42fr)_minmax(0,58fr)] gap-0">
+        <div class="grid gap-2 pr-3.5">
+          <Skeleton class="h-4 w-40" /><Skeleton class="h-9 w-full" />
+        </div>
+        <div class="border-l border-border/70 pl-3.5"><Skeleton class="h-14 w-full" /></div>
+      </div>
     </div>
   {:else}
-    <header class="grid gap-2.5 px-3.5 pb-3 pt-3" data-workspace-hover-card-header>
-      <div class="flex min-w-0 items-center gap-3">
-        <h2
-          class="type-title min-w-0 flex-1 truncate text-base font-semibold text-foreground"
-          data-workspace-hover-card-title
+    <header
+      class="flex min-w-0 items-center gap-3 border-b border-border/70 px-3.5 py-3"
+      data-workspace-hover-card-header
+    >
+      <h2
+        class="type-title min-w-0 flex-1 truncate text-base font-semibold text-foreground"
+        data-workspace-hover-card-title
+      >
+        {workspace.title || m.workspace_links_untitled_label()}
+      </h2>
+      <div class="header-meta flex shrink-0 items-center gap-2.5">
+        <span
+          class="flex min-w-0 items-center gap-1 text-xs font-medium text-foreground"
+          data-workspace-hover-card-status
+          ><WorkspaceStatusIcon status={statusState} size={11} decorative /><span class="truncate"
+            >{status.label}</span
+          ></span
+        >{#if hasTasks}<span class="task-progress w-20" data-workspace-hover-card-progress
+            ><TaskStatusProgress
+              statuses={taskStatuses}
+              progress={$workspaceTaskProgress$.total > 0
+                ? $workspaceTaskProgress$.completed / $workspaceTaskProgress$.total
+                : 0}
+              loading={!$workspaceTasksInitialized$}
+              motion={false}
+              ariaLabel={m.workspace_hoverCard_taskProgress_ariaLabel()}
+              size="compact"
+              fallback={$workspaceTaskProgress$}
+            /></span
+          >{/if}<time
+          class="updated whitespace-nowrap text-xs text-subtle"
+          data-workspace-hover-card-timestamp>{updated}</time
         >
-          {workspace.title || m.workspace_links_untitled_label()}
-        </h2>
-        <div class="header-meta flex shrink-0 items-center gap-2.5">
-          <span
-            class="flex min-w-0 items-center gap-1 text-xs font-medium text-foreground"
-            data-workspace-hover-card-status
-            ><WorkspaceStatusIcon status={statusState} size={11} decorative /><span class="truncate"
-              >{status.label}</span
-            ></span
-          >{#if hasTasks}<span class="task-progress w-20" data-workspace-hover-card-progress
-              ><TaskStatusProgress
-                statuses={taskStatuses}
-                progress={$workspaceTaskProgress$.total > 0
-                  ? $workspaceTaskProgress$.completed / $workspaceTaskProgress$.total
-                  : 0}
-                loading={!$workspaceTasksInitialized$}
-                motion={false}
-                ariaLabel={m.workspace_hoverCard_taskProgress_ariaLabel()}
-                size="compact"
-                fallback={$workspaceTaskProgress$}
-              /></span
-            >{/if}<time
-            class="updated whitespace-nowrap text-xs text-subtle"
-            data-workspace-hover-card-timestamp>{updated}</time
+      </div>
+    </header>
+    <div
+      class="body-grid grid min-w-0 grid-cols-[minmax(0,42fr)_minmax(0,58fr)]"
+      data-workspace-hover-card-columns
+    >
+      <section
+        class="identity grid min-w-0 content-start gap-2.5 px-3.5 py-3"
+        data-workspace-hover-card-identity
+      >
+        <div class="grid min-w-0 gap-1.5 text-xs text-muted-foreground">
+          <span class="type-body min-w-0 truncate font-mono" data-workspace-hover-card-repo
+            >{repo}</span
+          >
+          {#if workspace.branch}<span
+              class="min-w-0 truncate font-mono text-[11px] text-subtle"
+              data-workspace-hover-card-branch>{workspace.branch}</span
+            >{/if}
+        </div>
+        <p
+          class="type-body min-w-0 line-clamp-3 text-sm leading-snug text-subtle"
+          title={summary}
+          data-workspace-hover-card-summary
+        >
+          {summary}
+        </p>
+        <div class="flex min-w-0 items-center gap-2 pt-0.5">
+          {#if headerAvatars.length}<span class="shrink-0" data-workspace-hover-card-agent-stack
+              ><AgentAvatarStack items={headerAvatars} /></span
+            >{/if}<span class="truncate text-xs text-subtle" data-workspace-hover-card-agent-count
+            >{agentCount}</span
           >
         </div>
-      </div>
-      <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-        <span class="min-w-0 truncate font-mono" data-workspace-hover-card-repo>{repo}</span
-        >{#if workspace.branch}<span
-            class="max-w-36 shrink truncate rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-subtle"
-            data-workspace-hover-card-branch>{workspace.branch}</span
-          >{/if}{#if headerAvatars.length}<span
-            class="ml-auto shrink-0 pl-1"
-            data-workspace-hover-card-agent-stack><AgentAvatarStack items={headerAvatars} /></span
-          >{/if}<span class="shrink-0 text-subtle" data-workspace-hover-card-agent-count
-          >{agentCount}</span
-        >
-      </div>
-      <p
-        class="type-body min-w-0 truncate text-sm text-subtle"
-        title={summary}
-        data-workspace-hover-card-summary
-      >
-        {summary}
-      </p>
-    </header>
-    {#if visibleRows.length}<div
-        class="border-t border-border/70"
+      </section>
+      <section
+        class="activity min-w-0 border-l border-solid border-border/70"
+        data-workspace-hover-card-activity
         data-workspace-hover-card-agent-table
       >
-        {#each groups as group (group.key)}{#if group.rows.length}<section
-              aria-labelledby={`hover-${workspace.id}-${group.key}`}
-              data-agent-group={group.key}
-            >
-              <h3
-                id={`hover-${workspace.id}-${group.key}`}
-                class="bg-muted/45 px-3.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-subtle"
+        {#if visibleRows.length}
+          {#each groups as group (group.key)}{#if group.rows.length}<section
+                aria-labelledby={`hover-${workspace.id}-${group.key}`}
+                data-agent-group={group.key}
               >
-                {group.label}
-              </h3>
-              <div role="list">
-                {#each group.rows as row (row.id)}<div
-                    class="agent-row grid min-w-0 grid-cols-[1.75rem_minmax(4rem,7rem)_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 px-3.5"
-                    role="listitem"
-                    aria-label={`${row.name}. ${row.context}. ${row.updated}`}
-                    data-workspace-hover-card-agent-row
-                    data-agent-group-row={group.key}
-                    data-attention-kind={row.attentionKind}
-                  >
-                    <span class="grid h-6 w-6 place-items-center" aria-hidden="true"
-                      ><AgentAvatarWithState
-                        agentId={row.id}
-                        variant="standard"
-                        state={row.avatarState}
-                        specialist={row.specialist ?? null}
-                      /></span
-                    ><span
-                      class="truncate text-sm font-medium text-foreground"
-                      data-workspace-hover-card-agent-name>{row.name}</span
-                    ><span class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
-                      ><span class="min-w-0 truncate" data-workspace-hover-card-agent-context
-                        >{row.context}</span
-                      >{#if row.questionMeta}<span
-                          class="shrink-0 text-subtle"
-                          data-workspace-hover-card-question-meta>{row.questionMeta}</span
-                        >{/if}</span
-                    ><time
-                      class="whitespace-nowrap text-[11px] text-subtle"
-                      data-workspace-hover-card-agent-time>{row.updated}</time
+                <h3
+                  id={`hover-${workspace.id}-${group.key}`}
+                  class="bg-muted/45 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-subtle"
+                >
+                  {group.label}
+                </h3>
+                <div role="list">
+                  {#each group.rows as row (row.id)}<div
+                      class="agent-row grid min-w-0 grid-cols-[1.5rem_minmax(3.5rem,5.75rem)_minmax(0,1fr)_auto] items-center gap-1.5 border-t border-border/50 px-3"
+                      role="listitem"
+                      aria-label={`${row.name}. ${row.context}. ${row.updated}`}
+                      data-workspace-hover-card-agent-row
+                      data-agent-group-row={group.key}
+                      data-attention-kind={row.attentionKind}
                     >
-                  </div>{/each}
-              </div>
-            </section>{/if}{/each}{#if hiddenCount}<div
-            class="border-t border-border/50 px-3.5 py-1.5 text-xs font-medium text-subtle"
-            data-workspace-hover-card-overflow
-          >
-            {m.workspace_hoverCard_moreAgents_label({ count: formatInteger(hiddenCount) })}
-          </div>{/if}
-      </div>{/if}
+                      <span class="grid h-5 w-5 place-items-center" aria-hidden="true"
+                        ><AgentAvatarWithState
+                          agentId={row.id}
+                          variant="standard"
+                          state={row.avatarState}
+                          specialist={row.specialist ?? null}
+                        /></span
+                      ><span
+                        class="truncate text-sm font-medium text-foreground"
+                        data-workspace-hover-card-agent-name>{row.name}</span
+                      ><span class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                        ><span class="min-w-0 truncate" data-workspace-hover-card-agent-context
+                          >{row.context}</span
+                        >{#if row.questionMeta}<span
+                            class="shrink-0 text-subtle"
+                            data-workspace-hover-card-question-meta>{row.questionMeta}</span
+                          >{/if}</span
+                      ><time
+                        class="whitespace-nowrap text-[11px] text-subtle"
+                        data-workspace-hover-card-agent-time>{row.updated}</time
+                      >
+                    </div>{/each}
+                </div>
+              </section>{/if}{/each}{#if hiddenCount}<div
+              class="border-t border-border/50 px-3 py-1 text-xs font-medium text-subtle"
+              data-workspace-hover-card-overflow
+            >
+              {m.workspace_hoverCard_moreAgents_label({ count: formatInteger(hiddenCount) })}
+            </div>{/if}{/if}
+      </section>
+    </div>
   {/if}
 </section>
 
 <style>
   .workspace-hover-card {
-    width: clamp(22rem, 46vw, 40rem);
-    max-width: calc(100vw - 1rem);
+    width: 36rem;
+    max-width: min(100%, calc(100vw - 3.625rem));
     container-type: inline-size;
   }
   .agent-row {
-    height: 42px;
+    height: 34px;
   }
-  @container (max-width:34rem) {
+  @container (max-width:30rem) {
+    .body-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .activity {
+      border-left-width: 0;
+      border-top-width: 1px;
+    }
     .task-progress {
       display: none;
     }
     .agent-row {
-      grid-template-columns: 1.75rem minmax(3.5rem, 6rem) minmax(0, 1fr) auto;
+      grid-template-columns: 1.5rem minmax(3.5rem, 5.75rem) minmax(0, 1fr) auto;
     }
   }
   @container (max-width:28rem) {

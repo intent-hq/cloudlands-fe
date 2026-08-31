@@ -28,6 +28,11 @@ describe('workspace hover-card preview audit', () => {
       'media',
       'long-content',
       'placement',
+      'landscape-light',
+      'landscape-dark',
+      'landscape-narrow',
+      'landscape-loading',
+      'landscape-question',
     ]);
   });
 
@@ -65,6 +70,16 @@ describe('workspace hover-card preview audit', () => {
     expect(wideDescription?.length).toBeGreaterThan(80);
     expect(narrowDescription?.length).toBeGreaterThan(80);
     expect(states.narrow.props.layout).toBe('narrow');
+  });
+
+  it('provides explicit landscape theme, narrow, loading, and question fixtures', () => {
+    const states = workspaceHoverCardPreview.states;
+
+    expect(states['landscape-light'].props.theme).toBe('light');
+    expect(states['landscape-dark'].props.theme).toBe('dark');
+    expect(states['landscape-narrow'].props.layout).toBe('narrow');
+    expect(states['landscape-loading'].props.cards[0]?.isLoading).toBe(true);
+    expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.messages).toHaveLength(1);
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

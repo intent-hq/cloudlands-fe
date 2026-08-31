@@ -11,7 +11,11 @@
 <script lang="ts">
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
-  import type { WorkspaceHoverCardPreviewProps } from './workspace-hover-card.preview-fixtures';
+  import {
+    setupWorkspaceHoverCardPreviewCards,
+    type WorkspaceHoverCardPreviewProps,
+  } from './workspace-hover-card.preview-fixtures';
+  import { onMount } from 'svelte';
 
   let {
     family,
@@ -19,11 +23,18 @@
     cards,
     placement,
     layout = 'standard',
+    theme,
+    setupData = false,
   }: WorkspaceHoverCardPreviewProps = $props();
   let placementTrigger: HTMLDivElement | null = $state(null);
+  onMount(() => (setupData ? setupWorkspaceHoverCardPreviewCards(cards) : undefined));
 </script>
 
-<section class="grid gap-4" data-workspace-hover-card-preview data-preview-family={family}>
+<section
+  class="grid gap-4 {theme ?? ''}"
+  data-workspace-hover-card-preview
+  data-preview-family={family}
+>
   <header>
     <h2 class="text-lg font-semibold">{family}</h2>
     <p class="mt-1 text-sm text-muted-foreground">{expected}</p>

@@ -55,6 +55,8 @@ export interface WorkspaceHoverCardPreviewProps {
   cards: HoverCardScenario[];
   placement?: 'right-edge' | 'bottom-edge';
   layout?: 'standard' | 'narrow';
+  theme?: 'light' | 'dark';
+  setupData?: boolean;
 }
 
 export interface StateMatrixEntry {
@@ -991,6 +993,40 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
 };
 
+function firstSceneCard(name: string) {
+  const card = scenes[name]?.cards[0];
+  if (!card) throw new Error(`Missing workspace hover-card scene: ${name}`);
+  return card;
+}
+
+scenes['landscape-light'] = {
+  ...scenes.working,
+  family: 'Landscape light',
+  theme: 'light',
+};
+scenes['landscape-dark'] = {
+  ...scenes.working,
+  family: 'Landscape dark',
+  theme: 'dark',
+};
+scenes['landscape-narrow'] = {
+  ...scenes.narrow,
+  family: 'Landscape narrow',
+  theme: 'light',
+};
+scenes['landscape-loading'] = {
+  family: 'Landscape loading',
+  expected: 'The loading shell keeps the landscape footprint without exposing loaded content.',
+  theme: 'light',
+  cards: [firstSceneCard('readiness')],
+};
+scenes['landscape-question'] = {
+  family: 'Landscape question',
+  expected: 'The first real question and its count remain readable in the activity column.',
+  theme: 'light',
+  cards: [scenes.attention?.cards[1] ?? firstSceneCard('attention')],
+};
+
 function clearCards(cards: readonly HoverCardScenario[]) {
   for (const card of cards) {
     const workspaceId = card.workspace?.id;
@@ -1002,7 +1038,7 @@ function clearCards(cards: readonly HoverCardScenario[]) {
   }
 }
 
-function setupCards(cards: readonly HoverCardScenario[]) {
+export function setupWorkspaceHoverCardPreviewCards(cards: readonly HoverCardScenario[]) {
   clearCards(cards);
   for (const card of cards) {
     const workspaceId = card.workspace?.id;
@@ -1036,7 +1072,7 @@ export const workspaceHoverCardPreview: PreviewDefinition<WorkspaceHoverCardPrev
     states: Object.fromEntries(
       Object.entries(scenes).map(([name, props]) => [
         name,
-        { props, setup: () => setupCards(props.cards) },
+        { props, setup: () => setupWorkspaceHoverCardPreviewCards(props.cards) },
       ]),
     ),
   });
