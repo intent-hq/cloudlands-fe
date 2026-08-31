@@ -219,3 +219,71 @@ describe('global panel-tab close shortcut handling', () => {
     expect(action).toHaveBeenCalledOnce();
   });
 });
+
+describe('effective shortcut bindings', () => {
+  it('resolves a changed binding for every keydown without re-registering', () => {
+    const action = vi.fn();
+    let binding = 'ctrl+k';
+    const manager = new KeyboardShortcutManager();
+    managers.push(manager);
+    manager.register({
+      key: 'k',
+      ctrl: true,
+      binding: () => binding,
+      description: 'Dynamic action',
+      action,
+    });
+    manager.attach();
+
+    dispatchShortcut(window, { key: 'k', code: 'KeyK', ctrlKey: true });
+    binding = 'ctrl+j';
+    dispatchShortcut(window, { key: 'k', code: 'KeyK', ctrlKey: true });
+    dispatchShortcut(window, { key: 'j', code: 'KeyJ', ctrlKey: true });
+
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
+  it('never handles app shortcuts from a shortcut settings input', () => {
+    const action = vi.fn();
+    const manager = new KeyboardShortcutManager();
+    managers.push(manager);
+    manager.register({
+      key: 'w',
+      ctrl: true,
+      binding: () => 'ctrl+w',
+      global: true,
+      description: 'Dynamic action',
+      action,
+    });
+    manager.attach();
+    const input = document.createElement('input');
+    input.dataset.shortcutInput = '';
+    document.body.append(input);
+
+    const event = dispatchShortcut(input, { key: 'w', code: 'KeyW', ctrlKey: true });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a plain dynamic rebinding as globally modified inside an input', () => {
+    const action = vi.fn();
+    const manager = new KeyboardShortcutManager();
+    managers.push(manager);
+    manager.register({
+      key: 'k',
+      meta: true,
+      binding: () => 'k',
+      description: 'Dynamically rebound action',
+      action,
+    });
+    manager.attach();
+    const input = document.createElement('input');
+    document.body.append(input);
+
+    const event = dispatchShortcut(input, { key: 'k', code: 'KeyK' });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(action).not.toHaveBeenCalled();
+  });
+});

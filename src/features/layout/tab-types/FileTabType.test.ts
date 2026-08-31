@@ -776,7 +776,7 @@ describe('FileTabType Redux integration', () => {
     expect(saveStatus.getAttribute('aria-disabled')).toBe('true');
 
     dispatchMock.mockClear();
-    await fireEvent.keyDown(window, { key: 's', metaKey: true });
+    await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
 
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'files/saveFileContentRequested',

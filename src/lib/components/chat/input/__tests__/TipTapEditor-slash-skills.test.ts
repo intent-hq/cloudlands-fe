@@ -200,7 +200,7 @@ describe('TipTapEditor slash skills', () => {
     await fireEvent.keyDown(editor, { key: 'ArrowUp' });
     expect(onHistoryPrev).not.toHaveBeenCalled();
 
-    await fireEvent.keyDown(editor, { key: 'Enter', metaKey: true });
+    await fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
     expect(onForceSubmit).toHaveBeenCalledOnce();
     expect(screen.getByRole('listbox')).toBeTruthy();
 

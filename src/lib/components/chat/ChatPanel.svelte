@@ -238,7 +238,7 @@
   import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
   import { faLock, faPaperclip, faSpinner, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
@@ -363,6 +363,8 @@
   } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
+  import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   const logger = createLogger('ChatPanel');
 
@@ -5033,6 +5035,25 @@
 <svelte:window
   onkeydown={(e) => {
     if (!isActive) return;
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (
+      isPanelFocused &&
+      !isFocusInEditableElement(e.target as Element | null) &&
+      matchesShortcut(e, getEffectiveShortcut('chat.focus-input'), isMac)
+    ) {
+      e.preventDefault();
+      focusPrompt();
+      return;
+    }
+    if (
+      isPanelFocused &&
+      $agentSessionIsStreaming$ &&
+      matchesShortcut(e, getEffectiveShortcut('chat.stop'), isMac)
+    ) {
+      e.preventDefault();
+      handleStop();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (

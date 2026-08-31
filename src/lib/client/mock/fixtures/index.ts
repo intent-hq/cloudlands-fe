@@ -254,6 +254,7 @@ export const mockUserPreferences: UserPreferencesState = {
   activityLogPresets: [],
   languagePreference: 'system',
   githubLinkDefaultAction: 'show-choices',
+  shortcutOverrides: {},
 };
 
 /** Configured MCP servers for the MCP settings panel. */

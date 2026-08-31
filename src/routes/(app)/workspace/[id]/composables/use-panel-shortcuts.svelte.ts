@@ -23,6 +23,8 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
+import { matchesShortcut, resolveShortcut } from '$lib/utils/shortcut-bindings';
+import { store as appStore } from '$store/renderer/store';
 const logger = createLogger('PanelShortcuts');
 
 export interface UsePanelShortcutsOptions {
@@ -54,6 +56,25 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
     const handleKeydown = (event: KeyboardEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-shortcut-input], [data-shortcut-entry]')) return;
+
+      if (
+        matchesShortcut(
+          event,
+          resolveShortcut(
+            'panel.maximize',
+            appStore.state.userPreferences?.shortcutOverrides ?? {},
+          ),
+          isMac,
+        )
+      ) {
+        event.preventDefault();
+        logger.debug('Maximizing panel');
+        options.onMaximizePanel?.();
+        return;
+      }
+
       const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
 
       // Only handle if cmd/ctrl is pressed
@@ -97,14 +118,6 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
         event.preventDefault();
         logger.debug('Focusing activity tab');
         options.onFocusActivity?.();
-        return;
-      }
-
-      // Cmd+Shift+M: Maximize panel
-      if ((event.key === 'm' || event.key === 'M') && event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        logger.debug('Maximizing panel');
-        options.onMaximizePanel?.();
         return;
       }
 

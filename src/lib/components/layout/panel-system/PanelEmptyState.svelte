@@ -26,7 +26,7 @@
   } from '$lib/components/shared/resource-icon';
 
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
+  import { formatShortcut } from '$lib/utils/shortcuts';
   import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
@@ -37,6 +37,7 @@
   import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import { store as appStore } from '$store/renderer/store';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
 
   interface Props {
     workspaceId: string;
@@ -186,33 +187,38 @@
         ]
       : []),
   ]);
-  const utilityActions = [
+  const newTabShortcut$ = effectiveShortcutReadable('navigation.new-tab');
+  const commandPaletteShortcut$ = effectiveShortcutReadable('global.command-palette-alt');
+  const reopenTabShortcut$ = effectiveShortcutReadable('navigation.reopen-tab');
+  const toggleSidebarShortcut$ = effectiveShortcutReadable('panel.toggle-sidebar');
+  const keyboardShortcutsShortcut$ = effectiveShortcutReadable('global.keyboard-shortcuts');
+  const utilityActions = $derived([
     {
-      key: SHORTCUTS.NEW_TAB.key,
+      key: $newTabShortcut$,
       label: m.layout_panelEmptyState_newPanel_label(),
       action: handleCreatePanel,
     },
     {
-      key: 'mod+k',
+      key: $commandPaletteShortcut$,
       label: m.layout_panelEmptyState_commandPalette_label(),
       action: () => appStore.dispatch(openPalette()),
     },
     {
-      key: SHORTCUTS.REOPEN_TAB.key,
+      key: $reopenTabShortcut$,
       label: m.layout_panelEmptyState_reopenClosed_label(),
       action: handleReopenItem,
     },
     {
-      key: 'mod+b',
+      key: $toggleSidebarShortcut$,
       label: m.layout_panelEmptyState_toggleSidebar_label(),
       action: () => appStore.dispatch(toggleSidebar()),
     },
     {
-      key: 'mod+?',
+      key: $keyboardShortcutsShortcut$,
       label: m.layout_panelEmptyState_allShortcuts_label(),
       action: () => appStore.dispatch(openCheatSheet('global')),
     },
-  ];
+  ]);
 </script>
 
 <div

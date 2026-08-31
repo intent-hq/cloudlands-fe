@@ -63,6 +63,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
+  import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
@@ -122,7 +124,14 @@
         : m.ui_saveIndicator_saved_tooltip(),
   );
 
-  let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
+  type EditorShortcutAction = 'undo' | 'redo' | 'copy' | 'select-all' | 'toggle-task-list';
+  let codeEditorRef = $state<{
+    focus: () => boolean;
+    runShortcut: (action: Exclude<EditorShortcutAction, 'toggle-task-list'>) => boolean;
+  } | null>(null);
+  let markdownEditorRef = $state<{
+    runShortcut: (action: EditorShortcutAction) => boolean;
+  } | null>(null);
   let isMounted = $state(true);
   let fileLineChanges = $state<LineChange[]>([]);
   let resolvedWorkspaceMediaPath = $state<string | null>(null);
@@ -409,10 +418,29 @@
   });
 
   function handleKeyDown(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+    const matches = (id: ShortcutId) => matchesShortcut(e, getEffectiveShortcut(id), isMac);
+    if (matches('editor.save')) {
       e.preventDefault();
       if (isFileDirty && !fileSaving) saveFileContent();
+      return;
     }
+    const action = matches('editor.undo')
+      ? 'undo'
+      : matches('editor.redo')
+        ? 'redo'
+        : matches('editor.toggle-task-list')
+          ? 'toggle-task-list'
+          : matches('editor.copy')
+            ? 'copy'
+            : matches('editor.select-all')
+              ? 'select-all'
+              : null;
+    if (!action) return;
+    const handled =
+      markdownEditorRef?.runShortcut(action) ||
+      (action !== 'toggle-task-list' && codeEditorRef?.runShortcut(action));
+    if (handled) e.preventDefault();
   }
 
   function handleGoToChanges(e?: MouseEvent) {
@@ -584,6 +612,7 @@
         />
       {:else if isMarkdownFile && markdownPreview}
         <MarkdownFileEditor
+          bind:this={markdownEditorRef}
           bind:value={getFileContentForEditor, setFileContentFromEditor}
           externalContentVersion={fileLastUpdated}
         />

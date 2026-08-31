@@ -50,8 +50,11 @@
   import Input from '../ui/input/input.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { matchesShortcut } from '$lib/utils/shortcut-bindings';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
 
   const logger = createLogger('EmbeddedBrowser');
+  const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
 
   // Use shared protocol constants — single source of truth in src/shared/constants.ts
   const ALLOWED_PROTOCOLS = BROWSER_PROTOCOLS.NAVIGATION_ALLOWED;
@@ -417,16 +420,10 @@
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       const isMod = e.metaKey || e.ctrlKey;
+      const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
       // Cmd+Shift+C / Ctrl+Shift+C - Copy current browser URL when this panel is focused.
-      if (
-        focusRef.current &&
-        !isInInput &&
-        isMod &&
-        e.shiftKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === 'c'
-      ) {
+      if (focusRef.current && !isInInput && matchesShortcut(e, $copyBrowserUrlShortcut$, isMac)) {
         e.preventDefault();
         e.stopPropagation();
         void copyCurrentUrl();

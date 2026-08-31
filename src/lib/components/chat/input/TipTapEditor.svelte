@@ -44,6 +44,8 @@
     type SlashCommandContext,
   } from './slash-skill-command';
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
+  import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
 
   /** Represents an inline image in the editor content */
   export interface InlineImage {
@@ -961,6 +963,16 @@
 
             const isMac =
               typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+            const matches = (id: ShortcutId) =>
+              matchesShortcut(event, getEffectiveShortcut(id), isMac);
+            if (
+              matches('chat.mention-context') &&
+              getEffectiveShortcut('chat.mention-context') !== '@'
+            ) {
+              event.preventDefault();
+              editor?.chain().focus().insertContent('@').run();
+              return true;
+            }
 
             // Emacs-style shortcuts (Ctrl+key on macOS)
             // Only intercept if Ctrl is pressed without Meta (Cmd), and only on macOS.
@@ -1110,14 +1122,14 @@
             }
 
             // Handle ⌘Enter / Ctrl+Enter for force submit (interrupt + send)
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+            if (matches('chat.force-send')) {
               event.preventDefault();
               onForceSubmit?.();
               return true;
             }
 
             // Handle Shift+Enter for new line (plaintext mode - no list continuation)
-            if (event.key === 'Enter' && event.shiftKey) {
+            if (matches('chat.new-line')) {
               // Insert a hard break and scroll to keep cursor visible
               event.preventDefault();
               editor?.chain().setHardBreak().scrollIntoView().run();
@@ -1196,7 +1208,7 @@
             }
 
             // Handle Enter key for submit (queues if streaming)
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (matches('chat.send')) {
               // Check if the mention suggestion is active
               // The mention plugin uses a PluginKey to track its state
               const mentionState = mentionSuggestion.pluginKey.getState(view.state);
