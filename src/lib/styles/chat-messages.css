@@ -244,7 +244,7 @@
 }
 
 /* Ensure proper spacing between different content types */
-.message-content>div+div {
+.message-content > div + div {
   /* @apply mt-2; */
 }
 
@@ -256,7 +256,7 @@
 /* Tool call display - Subtle Vercel/shadcn style */
 .tool-call {
   @apply my-2 text-xs;
-  @apply transition-all duration-150;
+  @apply transition-opacity duration-150;
 }
 
 .tool-call-header {
@@ -295,7 +295,7 @@
   @apply mr-2;
 }
 
-.thinking-block>div {
+.thinking-block > div {
   @apply mt-1.5 text-xs text-muted-foreground;
 }
 
@@ -327,7 +327,9 @@
 /* Diagram nodes */
 .agent-font-monospace .diagram-node-html .node-label,
 .agent-font-monospace .diagram-node-html .node-kind-label {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
   font-size: 0.92rem;
   /* slightly smaller than default */
 }

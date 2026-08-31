@@ -1375,7 +1375,7 @@
             display: flex;
             align-items: center;
             gap: 0.25rem;
-            transition: all 0.15s;
+            transition: background-color 0.15s;
             white-space: nowrap;
           }
           .hunk-action-btn .icon {
