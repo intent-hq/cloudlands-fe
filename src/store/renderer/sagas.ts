@@ -55,6 +55,7 @@ import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
 import { modelReloadSaga } from './slices/model/sagas/model-reload-saga';
 import { modelSelectionSaga } from './slices/model/sagas/model-selection-saga';
+import { noteReadTrackingSaga } from './slices/note-read-tracking/sagas/note-read-tracking-saga';
 import {
   notificationIpcSaga,
   webNotificationSaga,
@@ -144,6 +145,7 @@ export const sagas = [
   filesReadSaga,
   filesWriteSaga,
   workspaceNotesSaga,
+  noteReadTrackingSaga,
   contextSaga,
   taskAgentAssociationsSaga,
   appLayoutNavigationSaga,
