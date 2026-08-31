@@ -4476,6 +4476,7 @@
   "layout_sidebarNav_openChief_label": "Chief を開いて会話を続けてください。",
   "settings_fonts_systemDefault_label": "システムデフォルト",
   "layout_commandPalette_recent_group": "最近",
+  "layout_commandPalette_commands_group": "コマンド",
   "layout_commandPalette_agents_group": "エージェント",
   "layout_commandPalette_context_group": "コンテキスト",
   "layout_commandPalette_changes_group": "変更",

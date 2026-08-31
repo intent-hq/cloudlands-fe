@@ -478,6 +478,7 @@
             : undefined,
           _workspace: true as const,
           _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
+          _activityTime: activityTime,
         };
       });
 

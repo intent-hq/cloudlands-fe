@@ -4476,6 +4476,7 @@
   "layout_sidebarNav_openChief_label": "打开幕僚长以继续对话。",
   "settings_fonts_systemDefault_label": "系统默认",
   "layout_commandPalette_recent_group": "最近",
+  "layout_commandPalette_commands_group": "命令",
   "layout_commandPalette_agents_group": "智能体",
   "layout_commandPalette_context_group": "上下文",
   "layout_commandPalette_changes_group": "更改",
