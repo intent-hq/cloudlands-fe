@@ -142,15 +142,15 @@ describe('editorial conversation presentation contract', () => {
     // (the bottom-of-chat snap-back; behavioral coverage in
     // lazy-turn-scroll-ledger.test.ts).
     expect(lazyTurn).toContain('const preSwap = snapshotScroller(scrollRoot);');
-    expect(lazyTurn).toMatch(/void tick\(\)\.then\(\(\) => ledger\.account\(preSwap\)\);/);
+    expect(lazyTurn).toContain('void tick().then(() => ledger.request(preSwap));');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
     // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire
     // (before the shouldRenderContent early-return) so post-swap settles are
     // caught in the same frame.
-    expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.account\(\);/);
+    expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.request\(\);/);
     expect(lazyTurn).toMatch(
-      /ledger\.account\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/,
+      /ledger\.request\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/,
     );
     // Cached heights are panel-scoped and wrap-width-dependent. ChatPanel
     // owns the bounded cache, while each LazyTurn validates reads and writes.
