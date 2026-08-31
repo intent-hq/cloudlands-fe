@@ -104,7 +104,7 @@ const NAMED_KEYS = new Set([
   'up',
 ]);
 
-export interface ParsedShortcut {
+interface ParsedShortcut {
   key: string;
   mod: boolean;
   ctrl: boolean;
@@ -148,7 +148,7 @@ export function isShortcutId(value: string): value is ShortcutId {
   return Object.prototype.hasOwnProperty.call(SHORTCUT_DEFAULTS, value);
 }
 
-export function parseShortcut(value: string): ParsedShortcut | null {
+function parseShortcut(value: string): ParsedShortcut | null {
   const input = value.trim();
   if (!input || input.includes('/')) return null;
   const parts = input
@@ -198,7 +198,7 @@ export function normalizeShortcut(value: string): string | null {
 }
 
 /** Expand a displayed alternative/range binding into the concrete keys it represents. */
-export function expandShortcutPattern(shortcut: string): string[] {
+function expandShortcutPattern(shortcut: string): string[] {
   const rangeMatch = shortcut.match(/^(.*\+)?([1-8])-9$/);
   if (rangeMatch) {
     const prefix = rangeMatch[1] ?? '';

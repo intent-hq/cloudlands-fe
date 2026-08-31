@@ -6,7 +6,7 @@
  * Labels/titles use property getters so they re-resolve on locale change.
  */
 import { m } from '$shared/paraglide/messages.js';
-import { SHORTCUT_DEFAULTS, type ShortcutId, type ShortcutOverrides } from './shortcut-bindings';
+import { SHORTCUT_DEFAULTS, type ShortcutId } from './shortcut-bindings';
 
 // Detect platform once
 const isMac =
@@ -1010,13 +1010,6 @@ export const SHORTCUT_REGISTRY: readonly ShortcutDefinition[] = (
     };
   }),
 );
-
-export function getShortcutDefinitions(overrides: ShortcutOverrides = {}): ShortcutDefinition[] {
-  return SHORTCUT_REGISTRY.map((entry) => ({
-    ...entry,
-    key: overrides[entry.id] ?? entry.defaultKey,
-  }));
-}
 
 /**
  * Get shortcuts for a specific context
