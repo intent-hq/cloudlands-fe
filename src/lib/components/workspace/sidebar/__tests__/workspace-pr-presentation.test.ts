@@ -186,6 +186,27 @@ describe('buildWorkspacePRPresentationModel', () => {
     expect(cross?.status).toBe('open');
   });
 
+  it('keeps source-backed details when the workspace repo is unknown', () => {
+    const rows = buildWorkspacePRPresentationModel({
+      workspacePRs: [
+        makePR({
+          number: 3,
+          isDraft: true,
+          reviewDecision: 'CHANGES_REQUESTED',
+        }),
+      ],
+      activePR: null,
+      monitors: [],
+      workspaceRepo: undefined,
+      buildPrUrl,
+      getDisplayTitle,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ identity: '3', status: 'draft' });
+    expect(rows[0].details).toContain('Changes requested');
+  });
+
   it('presents a snapshotless monitor without inventing merge state', () => {
     const [row] = build([], null, [makeMonitor({ prNumber: 8, lastSnapshot: undefined })]);
     expect(row).toMatchObject({ status: 'open', accessibleStateLabel: 'Open', details: 'Open' });

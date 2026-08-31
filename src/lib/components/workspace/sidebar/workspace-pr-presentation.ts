@@ -115,10 +115,15 @@ export function buildWorkspacePRPresentationModel({
   // The daemon-merged `pullRequests` pool can contain cross-repo entries whose
   // `url` is authoritative for their repo (intent-hq/intentd#1330) — key each
   // source by its own repo so a cross-repo entry never collides with a
-  // same-numbered workspace-repo PR (intent-hq/intent#3964).
+  // same-numbered workspace-repo PR (intent-hq/intent#3964). Without a
+  // workspace repo, mapWorkspacePRs leaves every row unqualified and lookups
+  // key by bare number, so the sources must too.
   const sourceByIdentity = new Map(
     branchSources.map((pr) => [
-      normalizedPrIdentity(prRepoFromUrl(pr.url) ?? workspaceRepo, pr.number),
+      normalizedPrIdentity(
+        workspaceRepo === undefined ? undefined : (prRepoFromUrl(pr.url) ?? workspaceRepo),
+        pr.number,
+      ),
       pr,
     ]),
   );
