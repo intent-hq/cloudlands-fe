@@ -1337,7 +1337,7 @@
                           </SidebarLauncherHoverCard>
                           {#if isSpec}
                             <span
-                              class="pointer-events-none whitespace-nowrap text-[11px] leading-none font-medium text-muted-foreground"
+                              class="pointer-events-none whitespace-nowrap text-[11px] leading-none font-medium text-muted-foreground /* a11y-ignore: product requires an 11px compact Context summary */"
                               data-context-capability-summary
                               >{m.workspace_multiSelectSidebar_contextSummary_label()}</span
                             >
