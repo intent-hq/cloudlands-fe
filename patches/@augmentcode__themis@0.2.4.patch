@@ -1,11 +1,15 @@
 diff --git a/dist/utils/selector-core/create-cached-selector.js b/dist/utils/selector-core/create-cached-selector.js
-index 765cfed5373c132365acfb89a80172f52c72e56e..cd36e313dc37936c972d77a1548cde8cd4dd6728 100644
+index 765cfed5373c132365acfb89a80172f52c72e56e..8da3d06b1cf9c13270e248e43d9d256a4e88a079 100644
 --- a/dist/utils/selector-core/create-cached-selector.js
 +++ b/dist/utils/selector-core/create-cached-selector.js
-@@ -69,6 +69,42 @@ var createTrackingProxy = (target, accessedPaths, parsedPaths, currentPath = [])
+@@ -69,6 +69,47 @@ var createTrackingProxy = (target, accessedPaths, parsedPaths, currentPath = [])
  	proxyValuesWeakMap.set(proxy, rawTarget);
  	return proxy;
  };
++// Patched (pnpm patchedDependencies): cache tracking proxies per (raw object, path)
++// and build path keys incrementally to remove per-property-access allocations on
++// selector recompute. Retire this patch once fixed upstream:
++// https://github.com/augmentcode/themis/issues/15
 +var pathKeySeparator = "\u0001";
 +var createTrackingContext = (parsedPaths) => ({
 +	accessedPaths: void 0,
@@ -28,7 +32,8 @@ index 765cfed5373c132365acfb89a80172f52c72e56e..cd36e313dc37936c972d77a1548cde8c
 +		if (!prop) return value;
 +		if (typeof prop === "string" && collectionFieldsSet.has(prop) && isCollectionLike(obj)) return value;
 +		const segment = typeof prop === "symbol" ? String(prop) : prop;
-+		const pathString = pathKey === "" ? segment : pathKey + pathKeySeparator + segment;
++		const encodedSegment = segment.length + ":" + segment;
++		const pathString = pathKey === "" ? encodedSegment : pathKey + pathKeySeparator + encodedSegment;
 +		let newPath = context.parsedPaths.get(pathString);
 +		if (!newPath) {
 +			newPath = [...currentPath, prop];
@@ -45,7 +50,7 @@ index 765cfed5373c132365acfb89a80172f52c72e56e..cd36e313dc37936c972d77a1548cde8c
  var isValueChangedAtPath = (prevState, nextState, path) => {
  	let currentPrev = prevState;
  	let currentNext = nextState;
-@@ -125,6 +161,7 @@ var createCachedSelector = (selectorFunc, options) => {
+@@ -125,6 +166,7 @@ var createCachedSelector = (selectorFunc, options) => {
  	let previousState = void 0;
  	let accessedPaths = /* @__PURE__ */ new Set();
  	const parsedPaths = /* @__PURE__ */ new Map();
@@ -53,7 +58,7 @@ index 765cfed5373c132365acfb89a80172f52c72e56e..cd36e313dc37936c972d77a1548cde8c
  	return (state, ...args) => {
  		const rawValue = getRawValue(state);
  		if (options?.lockUpdatesPredicate?.(rawValue) && previousSelectResult !== void 0) return previousSelectResult;
-@@ -143,7 +180,8 @@ var createCachedSelector = (selectorFunc, options) => {
+@@ -143,7 +185,8 @@ var createCachedSelector = (selectorFunc, options) => {
  			return result;
  		}
  		const newAccessedPaths = /* @__PURE__ */ new Set();
