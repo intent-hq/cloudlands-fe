@@ -116,6 +116,11 @@
     return total > 0 ? value / total : 0;
   }
 
+  function segmentWidth(valueShare: number, segmentCount: number): string {
+    const totalGapWidth = Math.max(0, segmentCount - 1);
+    return `calc((100% - ${totalGapWidth}px) * ${valueShare})`;
+  }
+
   function shareLabel(value: number): string {
     return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
   }
@@ -552,7 +557,7 @@
         data-testid="token-usage-details"
       >
         {#if agentRows.length > 0 || modelRows.length > 0}
-          <div class="breakdown-grid grid grid-cols-2">
+          <div class="breakdown-grid grid grid-cols-2 border-b border-border">
             {#if agentRows.length > 0}
               <section
                 class="breakdown-section min-w-0 px-4 py-3"
@@ -566,11 +571,11 @@
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
-                        class="min-w-0 truncate text-sm font-normal text-foreground"
+                        class="min-w-0 truncate text-sm font-medium text-foreground"
                         title={selectedAgentRow.title}>{selectedAgentRow.label}</span
                       >
                       <span
-                        class="ml-auto w-14 shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
+                        class="ml-auto w-14 shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
                       >
                         <AnimatedNumber
                           value={share(selectedAgentRow.tokens, agentTokenTotal)}
@@ -589,7 +594,7 @@
                         <li
                           class="breakdown-stack-item h-full"
                           role="presentation"
-                          style={`width: ${share(row.tokens, agentTokenTotal) * 100}%`}
+                          style={`width: ${segmentWidth(share(row.tokens, agentTokenTotal), agentSegmentRows.length)}`}
                         >
                           <button
                             type="button"
@@ -641,11 +646,11 @@
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
-                        class="min-w-0 truncate text-sm font-normal text-foreground"
+                        class="min-w-0 truncate text-sm font-medium text-foreground"
                         title={selectedModelRow.title}>{selectedModelRow.label}</span
                       >
                       <span
-                        class="ml-auto w-14 shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
+                        class="ml-auto w-14 shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
                       >
                         <AnimatedNumber
                           value={share(selectedModelRow.tokens, modelTokenTotal)}
@@ -664,7 +669,7 @@
                         <li
                           class="breakdown-stack-item h-full"
                           role="presentation"
-                          style={`width: ${share(row.tokens, modelTokenTotal) * 100}%`}
+                          style={`width: ${segmentWidth(share(row.tokens, modelTokenTotal), modelSegmentRows.length)}`}
                         >
                           <button
                             type="button"
@@ -705,7 +710,7 @@
           </div>
         {/if}
 
-        <section class="px-4 pb-3 pt-1" aria-labelledby={`${detailsId}-composition`}>
+        <section class="px-4 pb-3 pt-3" aria-labelledby={`${detailsId}-composition`}>
           <h4 id={`${detailsId}-composition`} class="sr-only">
             {m.workspace_tokenUsage_composition_label()}
           </h4>
@@ -725,6 +730,21 @@
               {m.workspace_tokenUsage_processed_label()}
             </span>
           </span>
+          <div
+            class="token-summary mb-2 flex min-w-0 items-center justify-between gap-3 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+          >
+            <span>{m.workspace_tokenUsage_title()}</span>
+            <span
+              class="shrink-0 text-right text-sm font-medium normal-case tracking-normal tabular-nums text-foreground"
+            >
+              <AnimatedNumber
+                value={previewProcessedTokens}
+                format={compactWholeNumber}
+                pulse={false}
+                class="block text-right"
+              />
+            </span>
+          </div>
           {#if visibleCompositionRows.length > 0}
             <div
               class="composition-strip mb-3 flex h-2.5 w-full min-w-0 overflow-hidden"
@@ -735,13 +755,15 @@
                 <span
                   class="composition-strip-segment block h-full shrink-0"
                   data-metric={row.id}
-                  style={`width: ${row.share * 100}%`}
+                  style={`width: ${segmentWidth(row.share, visibleCompositionRows.length)}`}
                   aria-hidden="true"
                 ></span>
               {/each}
             </div>
           {/if}
-          <div class="composition-header min-w-0 pb-1 text-xs text-muted-foreground">
+          <div
+            class="composition-header min-w-0 border-b border-border pb-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+          >
             <span>{m.workspace_tokenUsage_metric_label()}</span>
             <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
             <span class="text-right">{m.workspace_tokenUsage_share_label()}</span>
@@ -760,7 +782,7 @@
                   <span class="min-w-0 truncate">{row.label}</span>
                 </dt>
                 <dd
-                  class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
+                  class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
                 >
                   <AnimatedNumber
                     value={row.tokens}
@@ -770,7 +792,7 @@
                   />
                 </dd>
                 <dd
-                  class="composition-context text-right text-sm font-normal tabular-nums text-muted-foreground"
+                  class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
                 >
                   <AnimatedNumber
                     value={row.share}
@@ -788,7 +810,7 @@
                     {m.workspace_tokenUsage_humanMessages_label()}
                   </dt>
                   <dd
-                    class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
+                    class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
                   >
                     <AnimatedNumber
                       value={previewHumanMessages ?? 0}
@@ -806,7 +828,7 @@
                     {m.workspace_tokenUsage_agentMessages_label()}
                   </dt>
                   <dd
-                    class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
+                    class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
                   >
                     <AnimatedNumber
                       value={previewAgentMessages ?? 0}
@@ -824,11 +846,11 @@
 
         {#if previewCost !== null}
           <div
-            class="flex justify-between gap-3 px-4 pb-4 text-sm"
+            class="flex justify-between gap-3 border-t border-border px-4 py-3 text-sm"
             data-testid="token-usage-total-cost"
           >
             <span class="text-muted-foreground">{m.workspace_tokenUsage_totalCost_label()}</span>
-            <span class="font-normal tabular-nums text-foreground">{previewCost}</span>
+            <span class="font-medium tabular-nums text-foreground">{previewCost}</span>
           </div>
         {/if}
       </section>
@@ -867,21 +889,20 @@
     grid-area: context;
   }
 
-  .breakdown-section + .breakdown-section {
-    border-top: 1px solid hsl(var(--border));
-  }
-
   .breakdown-stack-item {
-    min-width: 3px;
+    min-width: 0;
   }
 
   .breakdown-stack {
     border-radius: 2px;
+    gap: 1px;
+    background: hsl(var(--border));
   }
 
   .composition-strip {
     border-radius: 2px;
-    background: hsl(var(--muted) / 60%);
+    gap: 1px;
+    background: hsl(var(--border));
   }
 
   .composition-strip-segment {
@@ -939,10 +960,6 @@
     background: hsl(var(--foreground));
   }
 
-  .breakdown-stack-item + .breakdown-stack-item {
-    box-shadow: inset 1px 0 hsl(var(--card) / 88%);
-  }
-
   .breakdown-stack:focus-within {
     outline: 2px solid hsl(var(--foreground));
     outline-offset: 2px;
@@ -961,6 +978,10 @@
   }
 
   .breakdown-section + .breakdown-section {
-    border-top: 0;
+    border-left: 1px solid hsl(var(--border));
+  }
+
+  .composition-row + .composition-row {
+    border-top: 1px solid hsl(var(--border));
   }
 </style>
