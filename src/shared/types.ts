@@ -339,6 +339,10 @@ export interface Workspace {
   prStatus?: PullRequestStatus;
   pullRequests?: PullRequestInfo[];
   activePullRequest?: PullRequestInfo | null;
+  /** Issue/PR context links persisted at create (PROTOCOL §5.1). Write-once —
+   *  supplied on `workspace.create`, never mutated after insert — and omitted
+   *  on the wire when there are none. */
+  contextLinks?: ContextLink[];
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;

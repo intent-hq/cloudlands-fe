@@ -46,10 +46,10 @@ function detectKind(mention: ContextLinkMention): ContextLink['kind'] {
  * wire (older daemons ignore the field entirely).
  */
 export function buildContextLinks(mentions: ContextLinkMention[]): ContextLink[] | undefined {
-  const links: ContextLink[] = [];
-  const seen = new Set<string>();
+  // Dedupe on owner/repo#number alone — the same object mentioned via both an
+  // issue-style and a /pull/ URL is one link; a 'pr' detection wins over 'issue'.
+  const byKey = new Map<string, ContextLink>();
   for (const mention of mentions) {
-    if (links.length >= MAX_CONTEXT_LINKS) break;
     if (mention.itemType !== 'github-issue' && mention.itemType !== 'github-pr') continue;
     if (mention.provider !== 'github') continue;
     if (!mention.url) continue;
@@ -59,10 +59,16 @@ export function buildContextLinks(mentions: ContextLinkMention[]): ContextLink[]
     const number = parseInt(numberStr, 10);
     if (!Number.isInteger(number) || number <= 0) continue;
     const kind = detectKind(mention);
-    const key = `${kind}:${owner}/${repo}#${number}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    links.push({ kind, url: mention.url, owner, repo, number });
+    const key = `${owner}/${repo}#${number}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      if (existing.kind === 'issue' && kind === 'pr') {
+        byKey.set(key, { kind, url: mention.url, owner, repo, number });
+      }
+      continue;
+    }
+    if (byKey.size >= MAX_CONTEXT_LINKS) continue;
+    byKey.set(key, { kind, url: mention.url, owner, repo, number });
   }
-  return links.length > 0 ? links : undefined;
+  return byKey.size > 0 ? [...byKey.values()] : undefined;
 }

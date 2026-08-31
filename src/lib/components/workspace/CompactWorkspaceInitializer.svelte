@@ -1143,6 +1143,10 @@
             // where handleContentChange sets selectedPRBranch but not selectedPRNumber
             if (!selectedPRBranch) {
               selectedPRBranch = metadata.sourceBranch;
+            }
+            if (selectedPRBranch === metadata.sourceBranch) {
+              // Re-sync the target even when the source matched an existing
+              // selection — same head, different merge target must not go stale.
               selectedPRTargetBranch = metadata.targetBranch ?? '';
             }
             const prNumMatch = prWithBranch.identifier?.match(/#(\d+)$/);
@@ -2695,8 +2699,12 @@
       // Found a PR with a source branch - extract and set it
       try {
         const metadata = prWithBranch.metadata ? JSON.parse(prWithBranch.metadata) : null;
-        if (metadata?.sourceBranch && metadata.sourceBranch !== selectedPRBranch) {
-          selectedPRBranch = metadata.sourceBranch;
+        if (metadata?.sourceBranch) {
+          if (metadata.sourceBranch !== selectedPRBranch) {
+            selectedPRBranch = metadata.sourceBranch;
+          }
+          // Re-sync the target branch unconditionally: a remaining PR can share
+          // the removed PR's source branch while targeting a different base.
           selectedPRTargetBranch = metadata.targetBranch ?? '';
         }
         // Always extract PR number so workspace creation can store it for PR discovery
@@ -2708,22 +2716,29 @@
       return;
     }
 
-    // Check if we still have any GitHub PRs in the content
-    const hasAnyGitHubPR = contextMentions.some(
+    const githubMentions = contextMentions.filter(
       (mention: any) =>
         (mention.itemType === 'github-issue' || mention.itemType === 'github-pr') &&
         mention.provider === 'github',
     );
 
-    if (!hasAnyGitHubPR) {
-      // No GitHub PRs found, clear the selection
+    // Clear the selection when the mention that provided it is gone: a leftover
+    // issue mention must not keep sending the removed PR's head/target branches.
+    const selectionStillPresent =
+      selectedPRNumber !== null
+        ? githubMentions.some((mention: any) =>
+            mention.identifier?.endsWith(`#${selectedPRNumber}`),
+          )
+        : githubMentions.length > 0;
+
+    if (!selectionStillPresent) {
       if (selectedPRBranch) {
         selectedPRBranch = '';
       }
       selectedPRTargetBranch = '';
       selectedPRNumber = null;
       lastFetchedPRIdentifier = null;
-      return;
+      if (githubMentions.length === 0) return;
     }
 
     // Look for GitHub PRs without sourceBranch and fetch it

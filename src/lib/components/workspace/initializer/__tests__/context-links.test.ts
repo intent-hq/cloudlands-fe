@@ -74,6 +74,28 @@ describe('buildContextLinks', () => {
     const dupes = buildContextLinks([issueMention(), issueMention()]);
     expect(dupes).toHaveLength(1);
 
+    // Same owner/repo#number via an issue-style and a /pull/ URL is ONE link,
+    // and the pr-detected entry wins regardless of mention order.
+    const mixed = buildContextLinks([
+      issueMention({
+        identifier: 'acme/widgets#42',
+        url: 'https://github.com/acme/widgets/issues/42',
+      }),
+      issueMention({
+        identifier: 'acme/widgets#42',
+        url: 'https://github.com/acme/widgets/pull/42',
+      }),
+    ]);
+    expect(mixed).toEqual([
+      {
+        kind: 'pr',
+        url: 'https://github.com/acme/widgets/pull/42',
+        owner: 'acme',
+        repo: 'widgets',
+        number: 42,
+      },
+    ]);
+
     const many = Array.from({ length: MAX_CONTEXT_LINKS + 5 }, (_, i) =>
       issueMention({
         identifier: `acme/widgets#${i + 1}`,
