@@ -24,6 +24,7 @@
   } from '$store/renderer/slices/model/model-slice';
   import {
     checkAllProvidersRequested,
+    checkSingleProviderRequested,
     ensureProvidersChecked,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
@@ -43,6 +44,7 @@
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
+    faArrowsRotate,
     faBan,
     faCheck,
     faCircleNotch,
@@ -57,6 +59,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import GrokLogo from '../ui/GrokLogo.svelte';
+  import CopyButton from '../ui/CopyButton.svelte';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
@@ -164,6 +167,7 @@
         requiresAuth: PROVIDER_METADATA[provider.id]?.requiresAuth ?? false,
         docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
         loginDocsUrl: provider.loginDocsUrl,
+        loginCommandHint: provider.loginCommandHint,
         hasNpxFallback: status?.hasNpxFallback ?? false,
         warning: status?.warning,
       };
@@ -480,8 +484,8 @@
             {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
             {@const canDisable = canManageEnablement && !isActive && isEnabled}
             {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
-            {@const canLogIn =
-              provider.available && provider.authenticated === false && provider.loginDocsUrl}
+            {@const needsLogin = provider.available && provider.authenticated === false}
+            {@const canLogIn = needsLogin && provider.loginDocsUrl}
             {@const canSetDefault = provider.available && !isActive && isReady}
             {@const canInstall = !provider.available}
             {@const hasPiAdapterWarning =
@@ -614,7 +618,7 @@
                       {/snippet}
 
                       {#snippet content({ close }: { close: () => void })}
-                        <div class={hasWarning ? 'w-64 py-1' : 'w-44 py-1'}>
+                        <div class={hasWarning || needsLogin ? 'w-64 py-1' : 'w-44 py-1'}>
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
@@ -741,6 +745,53 @@
                             >
                               <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
                               {m.settings_providers_disable()}
+                            </button>
+                          {/if}
+
+                          {#if needsLogin}
+                            {#if provider.loginCommandHint}
+                              <!-- Actionable login guidance: the catalog's login
+                                   command with copy-to-clipboard; docs link stays
+                                   as the secondary action below. -->
+                              <div data-testid="provider-login-hint" class="px-3 py-1.5">
+                                <p class="text-xs text-muted-foreground">
+                                  {m.settings_providers_runToLogIn_label()}
+                                </p>
+                                <div class="mt-1 flex items-center gap-1">
+                                  <code
+                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                                    >{provider.loginCommandHint}</code
+                                  >
+                                  <CopyButton
+                                    text={provider.loginCommandHint}
+                                    class="hover:bg-muted/50"
+                                  />
+                                </div>
+                              </div>
+                            {/if}
+                            {#if provider.id === 'claude-code'}
+                              <p class="px-3 py-1.5 text-xs text-muted-foreground">
+                                {m.settings_providers_claudeDesktopNote_label()}
+                              </p>
+                            {/if}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={$providerLoadingMap$[provider.id]}
+                              onclick={() => {
+                                appStore.dispatch(checkSingleProviderRequested(provider.id));
+                                close();
+                              }}
+                            >
+                              <span
+                                class="inline-block {$providerLoadingMap$[provider.id]
+                                  ? 'animate-spin'
+                                  : ''}"
+                              >
+                                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providers_recheck_label()}
                             </button>
                           {/if}
 
