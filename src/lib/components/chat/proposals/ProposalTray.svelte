@@ -23,14 +23,18 @@
   /**
    * Cap for the scrollable tray body, derived from the host chat panel's
    * measured height: reserve room for the panel chrome around the tray
-   * (transcript sliver, tray header, composer input — ~240px), keep at
-   * least 160px so the card stays usable in very short panels (the body
-   * scrolls internally), and never exceed 480px so tall panels keep the
-   * transcript dominant. 0 (unmeasured host) falls back to the cap.
+   * (transcript sliver, tray header, composer input — ~240px) and never
+   * exceed 480px so tall panels keep the transcript dominant. In panels too
+   * short for the full reserve the chrome compresses instead (the transcript
+   * sliver flexes away, leaving ~140px of fixed chrome — tray header +
+   * composer), so the body target becomes panelHeight - 140 up to a 160px
+   * comfort ceiling, with a hard 96px floor so the card stays a usable
+   * scroll region. 0 (unmeasured host) falls back to the cap.
    */
   export function trayBodyMaxHeight(panelHeight: number): number {
     if (panelHeight <= 0) return 480;
-    return Math.max(160, Math.min(panelHeight - 240, 480));
+    const shortPanelBody = Math.min(160, panelHeight - 140);
+    return Math.max(96, Math.min(Math.max(panelHeight - 240, shortPanelBody), 480));
   }
 </script>
 

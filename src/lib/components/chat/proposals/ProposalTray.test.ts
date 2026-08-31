@@ -289,8 +289,12 @@ describe('ProposalTray', () => {
 
 describe('trayBodyMaxHeight', () => {
   it('reserves panel chrome, floors short panels, and caps tall ones', () => {
-    // Short Chief sidebar: the 160px floor keeps the card usable.
+    // Short Chief sidebar: compressed chrome (~140px) still fits the body.
     expect(trayBodyMaxHeight(300)).toBe(160);
+    // Shorter panels shrink the body with the panel instead of overflowing.
+    expect(trayBodyMaxHeight(250)).toBe(110);
+    // Hard 96px floor keeps the body a usable scroll region.
+    expect(trayBodyMaxHeight(200)).toBe(96);
     // Mid-size panel: panel height minus the reserved chrome.
     expect(trayBodyMaxHeight(600)).toBe(360);
     // Tall panel: capped so the transcript stays dominant.
