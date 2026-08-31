@@ -25,22 +25,27 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-// Method-aware daemon-client stub: routes `settings.get` to a configurable
-// per-path `notifications.*` fixture, `agent.list` to a configurable
-// PROTOCOL.md §5.5-shaped AgentLite[] fixture (defaults to empty), and
-// `events.subscribe` / `events.unsubscribe` to §6.1/§6.2-shaped responses.
-// `clientOn` captures the `notification` listener the service attaches so
-// tests can push PROTOCOL.md §6.3-shaped `events.event` notifications.
+// Method-aware multi-backend daemon-client stub: per-backend request mocks
+// (keyed by backend id) route `settings.get` to a configurable per-path
+// `notifications.*` fixture, `agent.list` to a configurable PROTOCOL.md
+// §5.5-shaped AgentLite[] fixture (defaults to empty), and
+// `events.subscribe` / `events.unsubscribe` to §6.1/§6.2-shaped responses
+// (subscription ids are per-backend: `<backendId>-sub-N`). The any-backend
+// forwarder hooks are captured so tests can push §6.3-shaped `events.event`
+// notifications, status transitions, and reconnects tagged with a backend id.
 const {
+  LOCAL_ID,
+  requestMockFor,
   requestMock,
+  liveBackendIds,
+  resetBackendMocks,
   agentListResponse,
   settingsValues,
-  clientOn,
-  clientOff,
   notificationListeners,
   statusListeners,
   reconnectHandlers,
 } = vi.hoisted(() => {
+  const LOCAL_ID = 'local';
   const agentListResponse: {
     agents: Array<{
       id?: string;
@@ -51,51 +56,65 @@ const {
     }>;
   } = { agents: [] };
   const settingsValues: Record<string, unknown> = {};
-  const requestMock = vi.fn(async (method: string, params?: unknown) => {
-    if (method === 'settings.get') {
-      const path = (params as { path?: string } | undefined)?.path ?? '';
-      return { path, value: settingsValues[path] ?? true };
+  const subCounters = new Map<string, number>();
+  const makeRequestMock = (backendId: string) =>
+    vi.fn(async (method: string, params?: unknown) => {
+      if (method === 'settings.get') {
+        const path = (params as { path?: string } | undefined)?.path ?? '';
+        return { path, value: settingsValues[path] ?? true };
+      }
+      if (method === 'agent.list') {
+        return agentListResponse;
+      }
+      if (method === 'events.subscribe') {
+        const n = (subCounters.get(backendId) ?? 0) + 1;
+        subCounters.set(backendId, n);
+        return { subscriptionId: `${backendId}-sub-${n}` };
+      }
+      if (method === 'events.unsubscribe') {
+        return { success: true };
+      }
+      return {};
+    });
+  // Per-backend request mocks; the pool of "live" backend ids drives
+  // getLiveBackendIds / getBackendClientForConnection.
+  const backendRequestMocks = new Map<string, ReturnType<typeof makeRequestMock>>();
+  const requestMockFor = (backendId: string) => {
+    let mock = backendRequestMocks.get(backendId);
+    if (!mock) {
+      mock = makeRequestMock(backendId);
+      backendRequestMocks.set(backendId, mock);
     }
-    if (method === 'agent.list') {
-      return agentListResponse;
+    return mock;
+  };
+  const liveBackendIds: string[] = [LOCAL_ID];
+  const notificationListeners: Array<
+    (backendId: string, n: { method: string; params?: unknown }) => void
+  > = [];
+  const statusListeners: Array<(backendId: string, status: string) => void> = [];
+  const reconnectHandlers: Array<(backendId: string) => void> = [];
+  const localRequestMock = requestMockFor(LOCAL_ID);
+  /** Per-test reset: only the local backend is live, sub counters restart at 1. */
+  const resetBackendMocks = (): void => {
+    subCounters.clear();
+    liveBackendIds.length = 0;
+    liveBackendIds.push(LOCAL_ID);
+    for (const key of [...backendRequestMocks.keys()]) {
+      if (key !== LOCAL_ID) backendRequestMocks.delete(key);
     }
-    if (method === 'events.subscribe') {
-      return { subscriptionId: 'ws-sub-1' };
-    }
-    if (method === 'events.unsubscribe') {
-      return { success: true };
-    }
-    return {};
-  });
-  const notificationListeners: Array<(n: { method: string; params?: unknown }) => void> = [];
-  const statusListeners: Array<(status: string) => void> = [];
-  const reconnectHandlers: Array<() => void> = [];
-  const clientOn = vi.fn((event: string, listener: (n: never) => void) => {
-    if (event === 'notification') {
-      notificationListeners.push(listener as (n: { method: string; params?: unknown }) => void);
-    }
-    if (event === 'status') {
-      statusListeners.push(listener as (status: string) => void);
-    }
-  });
-  const clientOff = vi.fn((event: string, listener: (n: never) => void) => {
-    if (event === 'notification') {
-      const idx = notificationListeners.indexOf(
-        listener as (n: { method: string; params?: unknown }) => void,
-      );
-      if (idx !== -1) notificationListeners.splice(idx, 1);
-    }
-    if (event === 'status') {
-      const idx = statusListeners.indexOf(listener as (status: string) => void);
-      if (idx !== -1) statusListeners.splice(idx, 1);
-    }
-  });
+    notificationListeners.length = 0;
+    statusListeners.length = 0;
+    reconnectHandlers.length = 0;
+  };
   return {
-    requestMock,
+    LOCAL_ID,
+    requestMockFor,
+    // Legacy alias used by most tests: the LOCAL backend's request mock.
+    requestMock: localRequestMock,
+    liveBackendIds,
+    resetBackendMocks,
     agentListResponse,
     settingsValues,
-    clientOn,
-    clientOff,
     notificationListeners,
     statusListeners,
     reconnectHandlers,
@@ -103,22 +122,28 @@ const {
 });
 
 vi.mock('../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: requestMock, on: clientOn, off: clientOff }),
-  onBackendReconnected: (handler: () => void) => {
+  BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
+  getBackendClient: () => ({ request: requestMock }),
+  getBackendClientForConnection: (id: string) =>
+    liveBackendIds.includes(id) ? { request: requestMockFor(id) } : undefined,
+  getLiveBackendIds: () => [...liveBackendIds],
+  onAnyBackendReconnected: (handler: (backendId: string) => void) => {
     reconnectHandlers.push(handler);
-    return vi.fn();
+    return () => {
+      const idx = reconnectHandlers.indexOf(handler);
+      if (idx !== -1) reconnectHandlers.splice(idx, 1);
+    };
   },
-  // T9: notification/status listeners register on the stable forwarders now.
-  // Capture them in the same arrays the tests drive so delivery still works,
-  // with disposers that detach on stop()/clearStatusRetry().
-  onBackendNotification: (handler: (n: { method: string; params?: unknown }) => void) => {
+  onAnyBackendNotification: (
+    handler: (backendId: string, n: { method: string; params?: unknown }) => void,
+  ) => {
     notificationListeners.push(handler);
     return () => {
       const idx = notificationListeners.indexOf(handler);
       if (idx !== -1) notificationListeners.splice(idx, 1);
     };
   },
-  onBackendStatus: (handler: (status: string) => void) => {
+  onAnyBackendStatus: (handler: (backendId: string, status: string) => void) => {
     statusListeners.push(handler);
     return () => {
       const idx = statusListeners.indexOf(handler);
@@ -232,7 +257,7 @@ function buildEventsEventNotification(
   return {
     method: 'events.event',
     params: {
-      subscriptionId: overrides.subscriptionId ?? 'ws-sub-1',
+      subscriptionId: overrides.subscriptionId ?? `${LOCAL_ID}-sub-1`,
       event: {
         id: 'evt-1',
         type: 'agent:idle',
@@ -248,6 +273,11 @@ function buildEventsEventNotification(
   };
 }
 
+/** The local backend's tracked subscription id inside the service. */
+function localSubscriptionId(service: NotificationService): string | undefined {
+  return (service as any).backendStates.get(LOCAL_ID)?.subscriptionId;
+}
+
 describe('NotificationService daemon agent:idle subscription', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -255,9 +285,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     mockNotificationIsSupported.value = true;
     mockNotificationInstances.length = 0;
     agentListResponse.agents = [];
-    notificationListeners.length = 0;
-    statusListeners.length = 0;
-    reconnectHandlers.length = 0;
+    resetBackendMocks();
     for (const key of Object.keys(settingsValues)) delete settingsValues[key];
   });
 
@@ -266,7 +294,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     agentListResponse.agents = [];
   });
 
-  it('start() issues ONE events.subscribe for agent:idle with workspaceId omitted (PROTOCOL.md §6.1, all workspaces)', async () => {
+  it('start() issues ONE events.subscribe per backend for agent:idle with workspaceId omitted (PROTOCOL.md §6.1, all workspaces)', async () => {
     const service = new NotificationService();
     service.start();
     await flush();
@@ -287,7 +315,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     await flush();
 
     expect(notificationListeners.length).toBe(1);
-    notificationListeners[0](buildEventsEventNotification());
+    notificationListeners[0](LOCAL_ID, buildEventsEventNotification());
     await flush();
 
     expect(mockNotificationInstances.length).toBe(1);
@@ -299,19 +327,39 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    notificationListeners[0](buildEventsEventNotification({ subscriptionId: 'renderer-sub-99' }));
+    notificationListeners[0](
+      LOCAL_ID,
+      buildEventsEventNotification({ subscriptionId: 'renderer-sub-99' }),
+    );
     await flush();
 
     expect(mockNotificationInstances.length).toBe(0);
     service.stop();
   });
 
-  it('handles agent:idle events from ANY workspace via the single global subscription', async () => {
+  it("ignores events.event pushes carrying another backend's subscription id (per-backend strict match)", async () => {
+    liveBackendIds.push('remote-1');
     const service = new NotificationService();
     service.start();
     await flush();
 
-    notificationListeners[0](buildEventsEventNotification({ workspaceId: 'workspace-2' }));
+    // remote-1's own id arriving tagged as a LOCAL notification must not match.
+    notificationListeners[0](
+      LOCAL_ID,
+      buildEventsEventNotification({ subscriptionId: 'remote-1-sub-1' }),
+    );
+    await flush();
+
+    expect(mockNotificationInstances.length).toBe(0);
+    service.stop();
+  });
+
+  it('handles agent:idle events from ANY workspace via the per-backend global subscription', async () => {
+    const service = new NotificationService();
+    service.start();
+    await flush();
+
+    notificationListeners[0](LOCAL_ID, buildEventsEventNotification({ workspaceId: 'workspace-2' }));
     await flush();
 
     // Per-event routing: agent.list targets the EVENT's workspace.
@@ -325,10 +373,10 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    notificationListeners[0]({
+    notificationListeners[0](LOCAL_ID, {
       method: 'events.event',
       params: {
-        subscriptionId: 'ws-sub-1',
+        subscriptionId: `${LOCAL_ID}-sub-1`,
         event: {
           id: 'evt-x',
           type: 'agent:idle',
@@ -352,33 +400,42 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    notificationListeners[0](buildEventsEventNotification());
+    notificationListeners[0](LOCAL_ID, buildEventsEventNotification());
     await flush();
 
     expect(mockNotificationInstances.length).toBe(0);
     service.stop();
   });
 
-  it('re-issues events.subscribe after backend reconnect', async () => {
+  it("re-issues only the reconnecting backend's events.subscribe after its reconnect", async () => {
+    liveBackendIds.push('remote-1');
+    const remoteMock = requestMockFor('remote-1');
     const service = new NotificationService();
     service.start();
     await flush();
 
     expect(reconnectHandlers.length).toBe(1);
-    const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
-    expect(subscribeCalls()).toHaveLength(1);
+    const subscribeCalls = (mock: typeof requestMock) =>
+      mock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls(requestMock)).toHaveLength(1);
+    expect(subscribeCalls(remoteMock)).toHaveLength(1);
 
-    reconnectHandlers[0]();
+    reconnectHandlers[0](LOCAL_ID);
     await flush();
 
-    expect(subscribeCalls()).toHaveLength(2);
-    expect(subscribeCalls()[1][1]).toEqual({
+    expect(subscribeCalls(requestMock)).toHaveLength(2);
+    expect(subscribeCalls(requestMock)[1][1]).toEqual({
       eventTypes: ['agent:idle'],
     });
+    // The remote backend did not reconnect — its subscription is untouched.
+    expect(subscribeCalls(remoteMock)).toHaveLength(1);
+    expect(localSubscriptionId(service)).toBe(`${LOCAL_ID}-sub-2`);
     service.stop();
   });
 
-  it('stop() detaches the listener and unsubscribes (PROTOCOL.md §6.2)', async () => {
+  it('stop() detaches the listener and unsubscribes every backend (PROTOCOL.md §6.2)', async () => {
+    liveBackendIds.push('remote-1');
+    const remoteMock = requestMockFor('remote-1');
     const service = new NotificationService();
     service.start();
     await flush();
@@ -388,7 +445,10 @@ describe('NotificationService daemon agent:idle subscription', () => {
 
     expect(notificationListeners).toHaveLength(0);
     expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
-      subscriptionId: 'ws-sub-1',
+      subscriptionId: `${LOCAL_ID}-sub-1`,
+    });
+    expect(remoteMock).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'remote-1-sub-1',
     });
   });
 
@@ -455,7 +515,8 @@ describe('NotificationService daemon agent:idle subscription', () => {
     const service = new NotificationService();
     service.start();
     await flush();
-    (service as any).subscribeToIdleEvents();
+    const state = (service as any).backendStates.get(LOCAL_ID);
+    (service as any).subscribeBackend(LOCAL_ID, state);
     await flush();
     expect(pendingSubscribes).toHaveLength(2);
 
@@ -464,7 +525,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     pendingSubscribes[1]({ subscriptionId: 'sub-second' });
     await flush();
 
-    expect(service['subscriptionId']).toBe('sub-second');
+    expect(localSubscriptionId(service)).toBe('sub-second');
     expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
       subscriptionId: 'sub-first',
     });
@@ -494,25 +555,25 @@ describe('NotificationService daemon agent:idle subscription', () => {
 
     const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
     expect(subscribeCalls()).toHaveLength(1);
-    expect(service['subscriptionId']).toBeUndefined();
-    // A status listener was armed for the retry.
+    expect(localSubscriptionId(service)).toBeUndefined();
+    // The failed subscribe armed the retry on the persistent status listener.
     expect(statusListeners.length).toBe(1);
+    expect((service as any).backendStates.get(LOCAL_ID)?.retryArmed).toBe(true);
 
     // Daemon connects for the first time → retry fires and succeeds.
     failSubscribe = false;
-    statusListeners[0]('connected');
+    statusListeners[0](LOCAL_ID, 'connected');
     await flush();
 
     expect(subscribeCalls()).toHaveLength(2);
     expect(subscribeCalls()[1][1]).toEqual({
       eventTypes: ['agent:idle'],
     });
-    expect(service['subscriptionId']).toBe('ws-sub-1');
-    // The retry listener detached itself after the connected transition.
-    expect(statusListeners.length).toBe(0);
+    expect(localSubscriptionId(service)).toBe('ws-sub-1');
+    expect((service as any).backendStates.get(LOCAL_ID)?.retryArmed).toBe(false);
 
     // Idle events now produce notifications end-to-end.
-    notificationListeners[0](buildEventsEventNotification());
+    notificationListeners[0](LOCAL_ID, buildEventsEventNotification({ subscriptionId: 'ws-sub-1' }));
     await flush();
     expect(mockNotificationInstances.length).toBe(1);
 
@@ -527,13 +588,16 @@ describe('NotificationService daemon agent:idle subscription', () => {
 
     const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
     expect(subscribeCalls()).toHaveLength(1);
-    // Successful subscribe → no retry listener armed.
-    expect(statusListeners.length).toBe(0);
+    // Successful subscribe → retry not armed; a later connected transition
+    // on the already-tracked backend must not re-subscribe.
+    statusListeners[0](LOCAL_ID, 'connected');
+    await flush();
+    expect(subscribeCalls()).toHaveLength(1);
 
     service.stop();
   });
 
-  it('ignores non-connected status transitions and detaches the retry listener on stop()', async () => {
+  it('ignores non-connected status transitions and detaches the status listener on stop()', async () => {
     const defaultImpl = requestMock.getMockImplementation();
     requestMock.mockImplementation(async (method: string, params?: unknown) => {
       if (method === 'events.subscribe') throw new Error('Connection closed');
@@ -548,16 +612,106 @@ describe('NotificationService daemon agent:idle subscription', () => {
     const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
 
     // connecting / disconnected must not trigger a retry.
-    statusListeners[0]('connecting');
-    statusListeners[0]('disconnected');
+    statusListeners[0](LOCAL_ID, 'connecting');
+    statusListeners[0](LOCAL_ID, 'disconnected');
     await flush();
     expect(subscribeCalls()).toHaveLength(1);
 
-    // stop() detaches the armed retry listener.
+    // stop() detaches the status listener.
     service.stop();
     expect(statusListeners.length).toBe(0);
 
     requestMock.mockImplementation(defaultImpl!);
+  });
+
+  it('subscribes a late-connecting backend on its first connected transition', async () => {
+    const service = new NotificationService();
+    service.start();
+    await flush();
+
+    // A remote backend is pooled after the service started; its first
+    // `connected` status transition is the "new backend appeared" signal.
+    liveBackendIds.push('remote-1');
+    const remoteMock = requestMockFor('remote-1');
+    statusListeners[0]('remote-1', 'connected');
+    await flush();
+
+    expect(remoteMock).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:idle'],
+    });
+
+    // Its idle events now notify, tagged with its own subscription id.
+    notificationListeners[0](
+      'remote-1',
+      buildEventsEventNotification({ subscriptionId: 'remote-1-sub-1' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(1);
+    // Follow-up agent.list went to the remote backend, not the local one.
+    expect(remoteMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    service.stop();
+  });
+
+  it("drops a disposed backend's state on BACKEND_CLIENT_DISCONNECTED_EVENT so a later reopen resubscribes (no daemon-side unsubscribe)", async () => {
+    liveBackendIds.push('remote-1');
+    const remoteMock = requestMockFor('remote-1');
+    const service = new NotificationService();
+    service.start();
+    await flush();
+
+    const subscribeCalls = (mock: typeof requestMock) =>
+      mock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls(remoteMock)).toHaveLength(1);
+
+    // The service registered a disposal listener on the app emitter.
+    const disposalCall = vi
+      .mocked(app.on)
+      .mock.calls.find(([evt]) => evt === 'backend-client-disconnected');
+    expect(disposalCall).toBeDefined();
+    const disposalListener = disposalCall![1] as () => void;
+
+    // disconnectBackendClient removes the client from the pool BEFORE
+    // emitting, and the payload is the client instance (not its id) — the
+    // listener infers the dropped backend by scanning tracked ids without a
+    // live pooled client.
+    liveBackendIds.splice(liveBackendIds.indexOf('remote-1'), 1);
+    disposalListener();
+    await flush();
+
+    // No daemon-side unsubscribe on the dead connection.
+    expect(remoteMock).not.toHaveBeenCalledWith('events.unsubscribe', expect.anything());
+    // Stale state is gone: the disposed backend's old subscription id no
+    // longer matches anything.
+    notificationListeners[0](
+      'remote-1',
+      buildEventsEventNotification({ subscriptionId: 'remote-1-sub-1' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(0);
+
+    // The local backend's subscription is untouched.
+    notificationListeners[0](LOCAL_ID, buildEventsEventNotification());
+    await flush();
+    expect(mockNotificationInstances.length).toBe(1);
+
+    // Reopen: the backend is pooled again and its first `connected`
+    // transition subscribes it fresh — a stale entry with the dead
+    // subscription id would have swallowed this (the regression this path
+    // guards against).
+    liveBackendIds.push('remote-1');
+    statusListeners[0]('remote-1', 'connected');
+    await flush();
+    expect(subscribeCalls(remoteMock)).toHaveLength(2);
+
+    // Events on the NEW subscription id notify again.
+    notificationListeners[0](
+      'remote-1',
+      buildEventsEventNotification({ subscriptionId: 'remote-1-sub-2' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(2);
+    service.stop();
   });
 });
 

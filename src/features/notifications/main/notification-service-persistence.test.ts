@@ -19,12 +19,16 @@ const requestMock = vi.hoisted(() =>
 );
 
 vi.mock('../../backend/main/backend.ipc', () => ({
+  BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
   getBackendClient: () => ({ request: requestMock, on: vi.fn(), off: vi.fn() }),
-  onBackendReconnected: () => vi.fn(),
-  // T9: the service registers its listeners on the stable forwarders; these
-  // tests don't drive events, so no-op disposers suffice.
-  onBackendNotification: () => vi.fn(),
-  onBackendStatus: () => vi.fn(),
+  getBackendClientForConnection: (id: string) =>
+    id === 'local' ? { request: requestMock } : undefined,
+  getLiveBackendIds: () => ['local'],
+  // The service registers its listeners on the stable any-backend forwarders;
+  // these tests don't drive events, so no-op disposers suffice.
+  onAnyBackendReconnected: () => vi.fn(),
+  onAnyBackendNotification: () => vi.fn(),
+  onAnyBackendStatus: () => vi.fn(),
 }));
 
 vi.mock('../../../shared/logger', () => ({

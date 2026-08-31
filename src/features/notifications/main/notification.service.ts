@@ -2,15 +2,20 @@
  * Notification Service
  *
  * Main process service that shows desktop notifications when agents complete.
- * Holds ONE app-wide long-lived daemon `events.subscribe` subscription for
- * `agent:idle` events (PROTOCOL.md §6.1–§6.3) with `workspaceId` omitted so
- * events are delivered across ALL workspaces, and displays native OS
- * notifications routed per-event by `event.workspaceId`.
+ * Holds one long-lived daemon `events.subscribe` subscription for `agent:idle`
+ * events (PROTOCOL.md §6.1–§6.3) PER connected backend (the local sidecar AND
+ * every remote intentd connection), each with `workspaceId` omitted so events
+ * are delivered across ALL of that backend's workspaces. Native OS
+ * notifications are routed per-event by `event.workspaceId`, and follow-up
+ * RPCs (`agent.list`, workspace title) go to the EMITTING backend's client.
  *
  * Persisted notification preferences live on the daemon under `notifications.*`
  * (PROTOCOL.md §5.12); the legacy `notificationSettings` electron-store bag is
- * retired. Preferences are re-fetched on each idle event so settings toggles
- * take effect without a relaunch; the last-known values are kept as a fallback
+ * retired. Preference reads stay pinned to the LOCAL daemon — they are an
+ * app-level preference of the machine the user is sitting at, matching the
+ * app-settings service convention — and gate notifications from every backend.
+ * Preferences are re-fetched on each idle event so settings toggles take
+ * effect without a relaunch; the last-known values are kept as a fallback
  * when the daemon is unreachable.
  */
 
@@ -19,13 +24,17 @@ import { isHudWindow } from '../../../main/hud-window';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
+import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type { AgentIdleEvent } from '../../events/types';
-import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import type { JsonRpcClient, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import {
+  BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClient,
-  onBackendNotification,
-  onBackendReconnected,
-  onBackendStatus,
+  getBackendClientForConnection,
+  getLiveBackendIds,
+  onAnyBackendNotification,
+  onAnyBackendReconnected,
+  onAnyBackendStatus,
 } from '../../backend/main/backend.ipc';
 import {
   getFocusedWindowWorkspaceId,
@@ -57,6 +66,9 @@ const DEFAULT_PREFS: NotificationPrefs = {
 let cachedPrefs: NotificationPrefs | null = null;
 
 async function fetchBoolSetting(path: string, defaultValue: boolean): Promise<boolean> {
+  // Deliberately LOCAL-pinned: `notifications.*` is an app-level preference of
+  // the machine the user is sitting at (same convention as app-settings), so
+  // it gates idle events from every backend, local and remote alike.
   const result = (await getBackendClient().request('settings.get', {
     path,
   })) as { value?: unknown } | null;
@@ -162,16 +174,33 @@ interface NotificationNavigateTarget {
   agentId?: string;
 }
 
+/**
+ * Per-backend subscription state. One entry per live pooled backend client,
+ * keyed by backend id in {@link NotificationService.backendStates}.
+ */
+interface BackendSubscriptionState {
+  /** Live daemon-side subscription id, once `events.subscribe` resolved. */
+  subscriptionId?: string;
+  /** Guards against stale in-flight subscribes (bumped on stop/reconnect/disposal). */
+  epoch: number;
+  /**
+   * Set when this backend's subscribe failed (initial-connect gap): the next
+   * `connected` status transition for this backend re-issues the subscribe.
+   */
+  retryArmed: boolean;
+}
+
 export class NotificationService {
   private started = false;
-  private subscriptionId?: string;
-  /** Guards against stale in-flight `events.subscribe` calls (bumped on stop/reconnect). */
-  private subscribeEpoch = 0;
+  /** Per-backend `agent:idle` subscription state, keyed by backend id. */
+  private backendStates = new Map<string, BackendSubscriptionState>();
   /** Disposer for the stable-forwarder notification listener, once attached. */
   private notificationDisposer?: () => void;
   private reconnectDisposer?: () => void;
-  /** Detaches the pending connect-retry `status` listener, when armed. */
-  private statusRetryDisposer?: () => void;
+  /** Disposer for the any-backend `status` listener (late connects + retry). */
+  private statusDisposer?: () => void;
+  /** Detaches the pooled-client disposal listener on the Electron app emitter. */
+  private clientDisconnectedListener?: (instance: JsonRpcClient) => void;
   private activeNotifications = new Set<Notification>();
   /**
    * Latest notification per stable id. When a same-id notification replaces a
@@ -187,176 +216,255 @@ export class NotificationService {
   }
 
   /**
-   * Start the notification service: attach ONE long-lived daemon `agent:idle`
-   * subscription covering all workspaces (PROTOCOL.md §6.1, `workspaceId`
-   * omitted) and re-issue it on backend reconnect (RESUB-1).
+   * Start the notification service: attach one long-lived daemon `agent:idle`
+   * subscription PER live backend, covering all workspaces (PROTOCOL.md §6.1,
+   * `workspaceId` omitted), subscribe late-connecting backends as they appear,
+   * and re-issue each backend's subscription on its reconnect (RESUB-1).
    */
   start(): void {
     if (this.started) return;
     this.started = true;
     logger.info('NotificationService started');
-    void this.attachIdleSubscription();
+    void this.attachIdleSubscriptions();
   }
 
   /**
-   * Stop the notification service: detach the daemon notification listener
-   * and best-effort unsubscribe the `agent:idle` subscription.
+   * Stop the notification service: detach the forwarder listeners and
+   * best-effort unsubscribe every backend's `agent:idle` subscription.
    */
   stop(): void {
     this.started = false;
-    // Invalidate any in-flight subscribe so it can't resurrect a stale id.
-    this.subscribeEpoch++;
     this.reconnectDisposer?.();
     this.reconnectDisposer = undefined;
-    this.clearStatusRetry();
+    this.statusDisposer?.();
+    this.statusDisposer = undefined;
     this.notificationDisposer?.();
     this.notificationDisposer = undefined;
-    const subscriptionId = this.subscriptionId;
-    this.subscriptionId = undefined;
-    void (async () => {
-      try {
-        const client = getBackendClient();
-        if (subscriptionId) {
-          await client.request('events.unsubscribe', { subscriptionId });
-        }
-      } catch (error) {
-        logger.debug('Failed to tear down agent:idle subscription', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    })();
+    if (this.clientDisconnectedListener) {
+      (app as NodeJS.EventEmitter).off(
+        BACKEND_CLIENT_DISCONNECTED_EVENT,
+        this.clientDisconnectedListener,
+      );
+      this.clientDisconnectedListener = undefined;
+    }
+    for (const [backendId, state] of this.backendStates) {
+      // Invalidate any in-flight subscribe so it can't resurrect a stale id.
+      state.epoch++;
+      const { subscriptionId } = state;
+      state.subscriptionId = undefined;
+      if (subscriptionId) this.releaseSubscription(backendId, subscriptionId);
+    }
+    this.backendStates.clear();
     logger.info('NotificationService stopped');
   }
 
   /**
-   * Attach the daemon notification listener and issue the initial
-   * `events.subscribe`. Mirrors the terminal-registry / script-manager
-   * long-lived subscription pattern: the listener persists across reconnects
-   * AND client swaps (stable forwarder); only the subscription id is re-issued.
+   * Attach the per-backend daemon notification/reconnect/status listeners and
+   * issue the initial `events.subscribe` for every live pooled backend.
+   * Mirrors the terminal-registry / script-manager long-lived subscription
+   * pattern: the listeners persist across reconnects AND client swaps (stable
+   * forwarders); only the per-backend subscription ids are re-issued.
    *
-   * The notification listener and reconnect disposer are attached
-   * synchronously (before the first `await`), so a later `stop()` always
-   * observes and detaches them — it can never interleave with a
-   * half-attached state.
+   * All listeners are attached synchronously (before the first `await`), so a
+   * later `stop()` always observes and detaches them — it can never
+   * interleave with a half-attached state.
    */
-  private async attachIdleSubscription(): Promise<void> {
+  private async attachIdleSubscriptions(): Promise<void> {
     try {
-      const listener = (n: JsonRpcNotification): void => {
+      const listener = (backendId: string, n: JsonRpcNotification): void => {
         if (n.method !== 'events.event') return;
         const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
         const subId =
           typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
-        // Strict match: the shared client also carries notifications for
-        // renderer-proxied subscriptions; only our own subscription's events
-        // may trigger a desktop notification.
-        if (!this.subscriptionId || subId !== this.subscriptionId) return;
+        // Strict match against the EMITTING backend's own subscription id:
+        // the pooled clients also carry notifications for renderer-proxied
+        // subscriptions; only our own subscriptions' events may trigger a
+        // desktop notification.
+        const state = this.backendStates.get(backendId);
+        if (!state?.subscriptionId || subId !== state.subscriptionId) return;
         const event = params?.event as { type?: unknown; workspaceId?: unknown } | undefined;
         if (!event || event.type !== 'agent:idle') return;
         // Per-event routing (suppression, prefs, focus gating, sound/click
         // delivery) keys off the event's workspaceId; an event without one
         // cannot be routed.
         if (typeof event.workspaceId !== 'string') return;
-        void this.handleAgentIdle(event as unknown as AgentIdleEvent);
+        void this.handleAgentIdle(event as unknown as AgentIdleEvent, backendId);
       };
-      this.notificationDisposer = onBackendNotification(listener);
-      this.reconnectDisposer = onBackendReconnected(() => {
+      this.notificationDisposer = onAnyBackendNotification(listener);
+      this.reconnectDisposer = onAnyBackendReconnected((backendId) => {
+        if (!this.started) return;
+        const state = this.backendStates.get(backendId);
+        if (!state) {
+          // A backend we never managed to track (e.g. `connections:add`
+          // replays `reconnected` for a freshly pooled client) — treat as a
+          // late connect.
+          void this.ensureBackendSubscribed(backendId);
+          return;
+        }
         // The daemon dropped every in-memory subscription on reconnect; the
         // stale id belonged to the previous connection. Invalidate any
         // in-flight subscribe from before the reconnect and re-issue.
-        this.subscribeEpoch++;
-        this.subscriptionId = undefined;
-        if (!this.started) return;
-        void this.subscribeToIdleEvents();
+        state.epoch++;
+        state.subscriptionId = undefined;
+        void this.subscribeBackend(backendId, state);
       });
-      await this.subscribeToIdleEvents();
+      // Any-backend status listener, doing double duty: a first `connected`
+      // transition from an untracked id is the "new backend appeared" signal
+      // (subscribe it), and a `connected` transition on a tracked backend
+      // whose subscribe failed re-issues it (initial-connect gap — RESUB-1
+      // covers reconnects only: when the subscribe ran before that backend's
+      // FIRST successful connect, `reconnected` never fires).
+      this.statusDisposer = onAnyBackendStatus((backendId, status) => {
+        if (!this.started || status !== 'connected') return;
+        const state = this.backendStates.get(backendId);
+        if (!state) {
+          void this.ensureBackendSubscribed(backendId);
+          return;
+        }
+        if (!state.retryArmed) return;
+        state.retryArmed = false;
+        // Guard against double-subscribe: the reconnect handler (or a late
+        // in-flight subscribe) may have already produced a live id.
+        if (state.subscriptionId) return;
+        void this.subscribeBackend(backendId, state);
+      });
+      // Drop per-backend state when a pooled client is disposed
+      // (`disconnectBackendClient`). The event payload is the client
+      // instance, not its id; the client was already removed from the pool
+      // before the emit, so every tracked id without a live pooled client is
+      // the disposed one. No daemon-side unsubscribe: the connection is gone.
+      this.clientDisconnectedListener = (): void => {
+        for (const [backendId, state] of this.backendStates) {
+          if (getBackendClientForConnection(backendId)) continue;
+          state.epoch++;
+          state.subscriptionId = undefined;
+          this.backendStates.delete(backendId);
+          logger.debug('Dropped agent:idle subscription state for disposed backend', {
+            backendId,
+          });
+        }
+      };
+      (app as NodeJS.EventEmitter).on(
+        BACKEND_CLIENT_DISCONNECTED_EVENT,
+        this.clientDisconnectedListener,
+      );
+      // Seed: subscribe every backend already pooled when the service starts
+      // (always includes the local sidecar). Per-backend fail-soft — one dead
+      // remote must not break the others.
+      await Promise.all(
+        getLiveBackendIds().map((backendId) => this.ensureBackendSubscribed(backendId)),
+      );
     } catch (error) {
-      logger.warn('Failed to attach agent:idle subscription', {
+      logger.warn('Failed to attach agent:idle subscriptions', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Track a backend and issue its `agent:idle` subscribe if none is live. */
+  private async ensureBackendSubscribed(backendId: string): Promise<void> {
+    if (!this.started) return;
+    let state = this.backendStates.get(backendId);
+    if (!state) {
+      state = { epoch: 0, retryArmed: false };
+      this.backendStates.set(backendId, state);
+    }
+    if (state.subscriptionId) return;
+    await this.subscribeBackend(backendId, state);
+  }
+
+  /**
+   * Issue `events.subscribe` for `agent:idle` across ALL of one backend's
+   * workspaces — `workspaceId` is deliberately omitted (§6.1) so completions
+   * in workspaces without an open window/tab still notify.
+   */
+  private async subscribeBackend(backendId: string, state: BackendSubscriptionState): Promise<void> {
+    const epoch = state.epoch;
+    try {
+      const client = this.clientFor(backendId);
+      if (!client) return;
+      const result = (await client.request('events.subscribe', {
+        eventTypes: ['agent:idle'],
+      })) as { subscriptionId?: string } | undefined;
+      const subscriptionId = result?.subscriptionId;
+      if (epoch !== state.epoch || !this.started || this.backendStates.get(backendId) !== state) {
+        // stop(), a reconnect, or a disposal ran while subscribe was in
+        // flight; this id belongs to a torn-down generation. Best-effort
+        // release it instead of overwriting the current one.
+        if (subscriptionId) this.releaseSubscription(backendId, subscriptionId);
+        return;
+      }
+      // Concurrent same-epoch subscribes (reconnect handler racing an armed
+      // status-retry) can both land here; release the superseded id so it
+      // doesn't leak daemon-side for the connection lifetime.
+      const previousId = state.subscriptionId;
+      state.subscriptionId = subscriptionId;
+      if (previousId && previousId !== subscriptionId) {
+        this.releaseSubscription(backendId, previousId);
+      }
+      state.retryArmed = false;
+    } catch (error) {
+      logger.warn(
+        'events.subscribe for agent:idle failed; will retry on the next connected transition',
+        {
+          backendId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      // Arm the retry: the any-backend status listener re-issues this
+      // backend's subscribe on its next `connected` transition.
+      if (epoch === state.epoch && this.started && this.backendStates.get(backendId) === state) {
+        state.retryArmed = true;
+      }
+    }
+  }
+
+  /**
+   * Resolve a backend id to its live pooled client. The local id falls back
+   * to the lazily-created shared client (startup boot order); a missing
+   * remote resolves to undefined — fail-soft, never retarget another backend.
+   */
+  private clientFor(backendId: string): JsonRpcClient | undefined {
+    const client = getBackendClientForConnection(backendId);
+    if (client) return client;
+    if (backendId === LOCAL_CONNECTION_ID) return getBackendClient();
+    return undefined;
+  }
+
+  /** Best-effort daemon-side release of a subscription id on one backend. */
+  private releaseSubscription(backendId: string, subscriptionId: string): void {
+    try {
+      const client = this.clientFor(backendId);
+      if (!client) return;
+      void client.request('events.unsubscribe', { subscriptionId }).catch((error: unknown) => {
+        logger.debug('Failed to tear down agent:idle subscription', {
+          backendId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    } catch (error) {
+      logger.debug('Failed to tear down agent:idle subscription', {
+        backendId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
   }
 
   /**
-   * Issue `events.subscribe` for `agent:idle` across ALL workspaces —
-   * `workspaceId` is deliberately omitted (§6.1) so completions in
-   * workspaces without an open window/tab still notify.
+   * Handle an agent:idle event delivered by a per-backend daemon
+   * subscription. All per-workspace behavior (suppression, focus gating,
+   * sound and click routing) keys off `event.workspaceId`; follow-up RPCs
+   * (`agent.list`, workspace title) go to the EMITTING backend's client
+   * (`backendId`, defaulting to local for direct callers/tests).
    */
-  private async subscribeToIdleEvents(): Promise<void> {
-    const epoch = this.subscribeEpoch;
-    try {
-      const result = (await getBackendClient().request('events.subscribe', {
-        eventTypes: ['agent:idle'],
-      })) as { subscriptionId?: string } | undefined;
-      const subscriptionId = result?.subscriptionId;
-      if (epoch !== this.subscribeEpoch || !this.started) {
-        // stop() or a reconnect ran while subscribe was in flight; this id
-        // belongs to a torn-down generation. Best-effort release it instead
-        // of overwriting the current one.
-        if (subscriptionId) {
-          void getBackendClient()
-            .request('events.unsubscribe', { subscriptionId })
-            .catch(() => {});
-        }
-        return;
-      }
-      // Concurrent same-epoch subscribes (reconnect handler racing an armed
-      // status-retry) can both land here; release the superseded id so it
-      // doesn't leak daemon-side for the connection lifetime.
-      const previousId = this.subscriptionId;
-      this.subscriptionId = subscriptionId;
-      if (previousId && previousId !== subscriptionId) {
-        void getBackendClient()
-          .request('events.unsubscribe', { subscriptionId: previousId })
-          .catch(() => {});
-      }
-      this.clearStatusRetry();
-    } catch (error) {
-      logger.warn(
-        'events.subscribe for agent:idle failed; will retry on the next connected transition',
-        {
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
-      // Initial-connect gap (RESUB-1 covers reconnects only): when start()
-      // runs before the daemon client's FIRST successful connect, this
-      // subscribe fails and `reconnected` never fires (it requires an
-      // earlier connected state). Arm a `status` listener so the next
-      // `connected` transition re-issues the subscribe.
-      if (epoch === this.subscribeEpoch && this.started) {
-        this.armStatusRetry();
-      }
-    }
-  }
-
-  /** Re-issue `events.subscribe` on the client's next `connected` transition. */
-  private armStatusRetry(): void {
-    if (this.statusRetryDisposer) return;
-    const listener = (status: ConnectionStatus): void => {
-      if (status !== 'connected') return;
-      this.clearStatusRetry();
-      // Guard against double-subscribe: the reconnect handler (or a late
-      // in-flight subscribe) may have already produced a live id.
-      if (!this.started || this.subscriptionId) return;
-      void this.subscribeToIdleEvents();
-    };
-    // Register on the stable status forwarder so the retry survives a backend
-    // switch instead of stranding on the disposed client.
-    this.statusRetryDisposer = onBackendStatus(listener);
-  }
-
-  private clearStatusRetry(): void {
-    this.statusRetryDisposer?.();
-    this.statusRetryDisposer = undefined;
-  }
-
-  /**
-   * Handle an agent:idle event delivered by the daemon subscription. All
-   * per-workspace behavior (suppression, focus gating, sound and click
-   * routing) keys off `event.workspaceId`.
-   */
-  async handleAgentIdle(event: AgentIdleEvent): Promise<void> {
+  async handleAgentIdle(event: AgentIdleEvent, backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
     try {
       const workspaceId = event.workspaceId;
+      const client = this.clientFor(backendId);
+      if (!client) {
+        logger.debug('Dropping agent:idle event from disposed backend', { backendId, workspaceId });
+        return;
+      }
       // Fresh read so settings toggles take effect without a relaunch.
       const prefs = await refreshPrefs();
 
@@ -419,8 +527,9 @@ export class NotificationService {
       // `agent.list` (PROTOCOL.md §5.5) serves two purposes: AgentLite
       // `metadata` carries `isBackground`/`specialist` (absent from the
       // daemon idle payload), and `isStreaming`/`isResponding` feed the
-      // other-agents-active suppression gate below.
-      const agentList = (await getBackendClient().request('agent.list', {
+      // other-agents-active suppression gate below. Routed to the EMITTING
+      // backend — the workspace only exists there.
+      const agentList = (await client.request('agent.list', {
         workspaceId,
       })) as
         | {
@@ -473,6 +582,7 @@ export class NotificationService {
           },
         } as AgentIdleEvent,
         idleAgent?.provider,
+        backendId,
       );
 
       // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
@@ -543,6 +653,7 @@ export class NotificationService {
   private async buildNotificationContent(
     event: AgentIdleEvent,
     provider?: string,
+    backendId: string = LOCAL_CONNECTION_ID,
   ): Promise<NotificationContent> {
     const { specialist, taskTitle } = event.data;
 
@@ -564,13 +675,30 @@ export class NotificationService {
     // Get display name for the agent type
     const displayName = getSpecialistDisplayName(specialist);
 
-    // Get workspace title for context
+    // Get workspace title for context. Local events keep the workspaceService
+    // path (validation + chief synthesis); remote-backend workspaces only
+    // exist on the emitting daemon, so fetch `workspace.get` (PROTOCOL.md
+    // §5.1) over that backend's client directly.
     let workspaceTitle: string | undefined;
     try {
-      const { workspaceService } = await import('../../workspace/main/workspace.service');
-      const workspaceResult = await workspaceService.getWorkspace(WorkspaceId(event.workspaceId));
-      if (workspaceResult.ok && workspaceResult.data?.title) {
-        workspaceTitle = workspaceResult.data.title;
+      if (backendId === LOCAL_CONNECTION_ID) {
+        const { workspaceService } = await import('../../workspace/main/workspace.service');
+        const workspaceResult = await workspaceService.getWorkspace(WorkspaceId(event.workspaceId));
+        if (workspaceResult.ok && workspaceResult.data?.title) {
+          workspaceTitle = workspaceResult.data.title;
+        }
+      } else {
+        const client = this.clientFor(backendId);
+        const response = (await client?.request('workspace.get', {
+          workspaceId: event.workspaceId,
+        })) as { workspace?: { title?: unknown } } | { title?: unknown } | undefined;
+        const raw =
+          response && typeof response === 'object' && 'workspace' in response
+            ? (response as { workspace?: { title?: unknown } }).workspace
+            : response;
+        if (raw && typeof (raw as { title?: unknown }).title === 'string') {
+          workspaceTitle = (raw as { title: string }).title;
+        }
       }
     } catch {
       // Ignore - use default without workspace title
@@ -653,6 +781,11 @@ export class NotificationService {
    * agent natively REPLACES the delivered notification — at most one per
    * agent at any time. Test notifications omit `id` (Electron falls back to
    * a random UUID) so they never replace or get replaced.
+   *
+   * The backend id is deliberately NOT folded into the stable id: workspace
+   * ids are daemon-generated UUIDs, so two backends only share one when they
+   * point at the SAME daemon — and there, native replacement coalescing the
+   * duplicate banners is the desired behavior.
    */
   private showNotification(
     content: NotificationContent,
