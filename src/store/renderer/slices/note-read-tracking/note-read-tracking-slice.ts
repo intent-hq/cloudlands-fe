@@ -58,6 +58,14 @@ export const refreshUnreadNotes = createAction<
   [workspaceId: string, notes: Array<{ id: string; updatedAt: string; createdAt?: string }>]
 >('noteReadTracking/refreshUnreadNotes');
 
+/** Replace unread note IDs with a freshly computed set (saga result) */
+export const computeUnreadNotesSuccess = createAction<[unreadIds: string[]]>(
+  'noteReadTracking/computeUnreadNotesSuccess',
+);
+
+/** Set loading state for compute operations */
+export const setLoading = createAction<[isLoading: boolean]>('noteReadTracking/setLoading');
+
 /** Clear all cached state (e.g., workspace switch) */
 export const clearCache = createAction('noteReadTracking/clearCache');
 
@@ -90,4 +98,13 @@ noteReadTrackingReducer.with(markNoteRead, (state, { payload }) => {
     unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
   };
 });
+noteReadTrackingReducer.with(computeUnreadNotesSuccess, (state, { payload: [unreadIds] }) => ({
+  ...state,
+  unreadNoteIds: Object.fromEntries(unreadIds.map((noteId) => [noteId, true])),
+  isLoading: false,
+}));
+noteReadTrackingReducer.with(setLoading, (state, { payload: [isLoading] }) => ({
+  ...state,
+  isLoading,
+}));
 noteReadTrackingReducer.with(clearCache, () => ({ ...initialState }));
