@@ -17,8 +17,8 @@ import type {
 } from '../specialist-proposal-history-types';
 
 export const SPECIALIST_PROPOSAL_HISTORY_STORAGE_KEY = 'intent.specialistProposalHistory.v1';
-export const SPECIALIST_PROPOSAL_HISTORY_PERSIST_DEBOUNCE_MS = 500;
-export const SPECIALIST_PROPOSAL_HISTORY_MAX_PERSISTED_ENTRIES = 200;
+const SPECIALIST_PROPOSAL_HISTORY_PERSIST_DEBOUNCE_MS = 500;
+const SPECIALIST_PROPOSAL_HISTORY_MAX_PERSISTED_ENTRIES = 200;
 
 function isSpecialistFileScope(value: unknown): value is 'project' | 'user' {
   return value === 'project' || value === 'user';
@@ -103,7 +103,7 @@ export function* persistSpecialistProposalHistorySaga(): SagaGenerator<void> {
   });
 }
 
-export function* watchSpecialistProposalHistoryPersistenceSaga(): SagaGenerator<void> {
+function* watchSpecialistProposalHistoryPersistenceSaga(): SagaGenerator<void> {
   yield* debounce(
     SPECIALIST_PROPOSAL_HISTORY_PERSIST_DEBOUNCE_MS,
     [recordSpecialistApplied.type, clearSpecialistApplied.type],

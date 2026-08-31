@@ -50,8 +50,8 @@ import {
 } from '$lib/components/chat/proposals/specialist-proposal-actions';
 
 export const PROPOSAL_LIFECYCLE_STORAGE_KEY = 'intent:proposal-lifecycle:v1';
-export const PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES = 300;
-export const PROPOSAL_LIFECYCLE_PERSIST_DEBOUNCE_MS = 300;
+const PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES = 300;
+const PROPOSAL_LIFECYCLE_PERSIST_DEBOUNCE_MS = 300;
 
 function isProposalApplyResult(value: unknown): value is ProposalApplyResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -236,7 +236,7 @@ function* debouncedPersistProposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(persistProposalLifecycleSaga);
 }
 
-export function* watchProposalLifecyclePersistenceSaga(): SagaGenerator<void> {
+function* watchProposalLifecyclePersistenceSaga(): SagaGenerator<void> {
   yield* takeLatest(
     [
       proposalApplySucceeded,

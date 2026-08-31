@@ -16,8 +16,8 @@ import type {
 } from '../settings-proposal-history-types';
 
 export const SETTINGS_PROPOSAL_HISTORY_STORAGE_KEY = 'intent:settings-proposal-history:v1';
-export const SETTINGS_PROPOSAL_HISTORY_PERSIST_DEBOUNCE_MS = 500;
-export const SETTINGS_PROPOSAL_HISTORY_MAX_PERSISTED_ENTRIES = 200;
+const SETTINGS_PROPOSAL_HISTORY_PERSIST_DEBOUNCE_MS = 500;
+const SETTINGS_PROPOSAL_HISTORY_MAX_PERSISTED_ENTRIES = 200;
 
 function isApplyPlan(value: unknown): boolean {
   return (
@@ -73,7 +73,7 @@ export function* persistSettingsProposalHistorySaga(): SagaGenerator<void> {
   });
 }
 
-export function* watchSettingsProposalHistoryPersistenceSaga(): SagaGenerator<void> {
+function* watchSettingsProposalHistoryPersistenceSaga(): SagaGenerator<void> {
   yield* debounce(
     SETTINGS_PROPOSAL_HISTORY_PERSIST_DEBOUNCE_MS,
     [recordProposalApplied.type, clearProposalApplied.type],
