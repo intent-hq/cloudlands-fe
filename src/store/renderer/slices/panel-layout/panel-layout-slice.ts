@@ -1817,7 +1817,7 @@ function buildContextLinkBrowserSeed(
   const browserTabs: PanelTab[] = contextLinkTabs.map(({ link, tabId }) => ({
     id: tabId,
     type: 'browser',
-    title: `${link.repo}#${link.number}`, // i18n-ignore (identifier: repo#number; replaced by page title on load)
+    title: `${link.owner}/${link.repo}#${link.number}`, // i18n-ignore (identifier: owner/repo#number; replaced by page title on load)
     browserUrl: link.url,
     workspaceId: wsId,
     closable: true,
@@ -1893,6 +1893,12 @@ function applyCanonicalDefaultPairGeometry(
     workspace.root.children[1]?.type !== 'panel' ||
     workspace.root.children[1].panelId !== specPanelId
   ) {
+    return workspace;
+  }
+  // A context-link-seeded panel still carrying browser tabs keeps its wider
+  // browser tier — narrowing to the canonical chat+medium pair would degrade
+  // those tabs once the user switches back from the revealed Spec.
+  if (workspace.panels[specPanelId]?.tabs.some((tab) => tab.type === 'browser')) {
     return workspace;
   }
   const panelWidth = DEFAULT_MEDIUM_PANEL_WIDTH + DEFAULT_CHAT_PANEL_WIDTH;

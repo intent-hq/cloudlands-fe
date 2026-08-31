@@ -808,6 +808,36 @@ describe('panelLayoutReducer', () => {
         expect.objectContaining({ type: 'note', noteId: 'spec' }),
       ]);
       expect(revealed.newWorkspaceLifecycle?.spec.state).toBe('revealed');
+      // The right panel still carries browser tabs, so the reveal must keep
+      // the seeded browser-tier geometry instead of the canonical chat+medium
+      // pair.
+      expect(revealed.canvasWidth).toBe(
+        DEFAULT_CHAT_PANEL_WIDTH + DEFAULT_BROWSER_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
+      );
+    });
+
+    it('seeds owner/repo#number tab titles so fork pairs stay distinct', () => {
+      const forkLink: ContextLink = {
+        kind: 'issue',
+        url: 'https://github.com/fork/widgets/issues/7',
+        owner: 'fork',
+        repo: 'widgets',
+        number: 7,
+      };
+      const seeded = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Initial agent', false, 1, [
+          issueLink(7),
+          forkLink,
+        ]),
+      ).byWorkspaceId[WS];
+      const order = seeded.root.type === 'split' ? seeded.root.children : [];
+      const browserPanelId = order[1]?.type === 'panel' ? order[1].panelId : '';
+
+      expect(seeded.panels[browserPanelId].tabs.map((tab) => tab.title)).toEqual([
+        'acme/widgets#7',
+        'fork/widgets#7',
+      ]);
     });
   });
 
