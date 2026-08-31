@@ -1,15 +1,10 @@
 /**
  * Agent Lock Utilities
  *
- * Shared utilities for determining if agent changes are "locked" and shouldn't be
- * manually staged/unstaged/reverted. This prevents users from accidentally interfering
- * with auto-commit when agents are working or have pending commits.
- *
- * A change is locked when:
- * 1. Auto-commit is globally enabled AND
- * 2. The change belongs to an agent that is either:
- *    - Actively working (streaming or task not in terminal status), OR
- *    - Has uncommitted changes that will be auto-committed
+ * Presentation helpers for daemon-computed agent/file locks (PROTOCOL §5.19 /
+ * §6.5). The lock computation itself lives in the daemon; the FE only renders
+ * the published state. Locked changes shouldn't be manually staged/unstaged/
+ * reverted, to prevent users from interfering with auto-commit.
  */
 
 import { m } from '$shared/paraglide/messages.js';

@@ -195,6 +195,8 @@ import {
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
+import { toLockRecord } from '$features/file-tracking/file-tracking.client';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
@@ -2143,6 +2145,36 @@ function handlePrEvent(
 }
 
 /**
+ * `changes:agent-locks` (§6.5, protocol v8.8) carries the self-sufficient
+ * daemon-computed agent-lock snapshot `{ workspaceId, autoCommitEnabled,
+ * lockedAgentIds: string[], lockedFilePaths: string[] }` — which agents' files
+ * must not be manually staged/reverted (agent actively working + auto-commit
+ * enabled). The wire arrays fold into the slice's `Record<string, true>`
+ * lookup shape and dispatch straight into the agent-lock slice; the payload's
+ * own `data.workspaceId` wins over the envelope id when present (same
+ * convention as the tokenUsage/context handlers). Hydration on workspace
+ * switch goes through the same-shaped `file-tracking.getAgentLocks` read
+ * (§5.19, `hydrateAgentLocks` in file-tracking.client).
+ */
+function handleAgentLocksEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  if (!Array.isArray(data.lockedAgentIds) || !Array.isArray(data.lockedFilePaths)) return;
+  appStore.dispatch(
+    setAgentLockState(
+      workspaceId,
+      toLockRecord(data.lockedAgentIds),
+      toLockRecord(data.lockedFilePaths),
+    ),
+  );
+}
+
+/**
  * `workspace:activity-changed` (PROTOCOL §6.5 / §10.1) carries the
  * self-sufficient payload `{ workspaceId, activity }` — the daemon emits this
  * only on the `Idle ↔ AgentRunning` edge (count `0 ↔ 1` transitions), so the
@@ -3721,6 +3753,14 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // agent-lock snapshot. Self-sufficient payload, folded straight into the
+  // agent-lock slice; no timeline value, so no eventReceived dispatch.
+  if (type === 'changes:agent-locks') {
+    handleAgentLocksEvent(event, workspaceId);
+    return;
+  }
+
   // Git/changes events should
   // refresh the changes slice so daemon-originated commits appear live in the
   // sidebar Changes panel. Debounce per workspace (~1s) because
@@ -3969,6 +4009,10 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'git:*',
   'changes:git-status',
   'changes:tracked',
+  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // agent-lock snapshot folded into the agent-lock slice; without the
+  // subscribe filter the gating in FileChangesSection never engages live.
+  'changes:agent-locks',
   'line-attribution:updated',
   'pr:*',
   'mcp.servers:status-changed',
