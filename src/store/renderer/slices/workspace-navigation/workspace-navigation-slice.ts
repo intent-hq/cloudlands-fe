@@ -394,6 +394,8 @@ export const openWorkspaceDiff = createAction<
       sourcePanelId?: string;
       branchBaseRef?: string;
       branchBaseCommitSha?: string;
+      gitRootId?: string;
+      gitRootPath?: string;
     },
   ]
 >('workspaceNavigation/openWorkspaceDiff');

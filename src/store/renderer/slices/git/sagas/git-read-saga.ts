@@ -5,7 +5,7 @@ import { gitClient } from '$features/git/git.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { CommitFile } from '$features/file-tracking/types';
-import type { CommitInfo, GitStatus, WorkspaceId } from '$shared/types';
+import { LineType, type CommitInfo, type GitStatus, type WorkspaceId } from '$shared/types';
 import {
   takeLatestInContext,
   takeSingleFlightInContext,
@@ -65,7 +65,8 @@ async function readSecondaryRoot(
   let nextToken = firstPage.data.nextToken;
   while (
     nextToken &&
-    (!registeredCommitSha || !commits.some((commit) => commit.hash === registeredCommitSha))
+    registeredCommitSha &&
+    !commits.some((commit) => commit.hash === registeredCommitSha)
   ) {
     const page = await gitClient.getHistory(workspaceId as WorkspaceId, limit, {
       gitRootId,
@@ -77,11 +78,49 @@ async function readSecondaryRoot(
     nextToken = page.data.nextToken;
   }
 
-  const details = await Promise.all(
-    commits.map((commit) =>
-      appClient.git.commitDetails(workspaceId, commit.hash, { gitRootId }),
+  const statusPaths = statusResult.data.files.map((file) => file.path);
+  const [details, unstagedDiffs, stagedDiffs] = await Promise.all([
+    Promise.all(
+      commits.map((commit) =>
+        appClient.git.commitDetails(workspaceId, commit.hash, { gitRootId }),
+      ),
     ),
-  );
+    statusPaths.length
+      ? appClient.git.diffs(workspaceId, { paths: statusPaths, gitRootId }).catch((error) => {
+          logger.warn('Failed to load secondary-root unstaged line counts', error);
+          return [];
+        })
+      : Promise.resolve([]),
+    statusPaths.length
+      ? appClient.git
+          .diffs(workspaceId, { paths: statusPaths, staged: true, gitRootId })
+          .catch((error) => {
+            logger.warn('Failed to load secondary-root staged line counts', error);
+            return [];
+          })
+      : Promise.resolve([]),
+  ]);
+  const statsByStage = new Map<string, { additions: number; deletions: number }>();
+  for (const [staged, diffs] of [[false, unstagedDiffs], [true, stagedDiffs]] as const) {
+    for (const diff of diffs) {
+      let additions = 0;
+      let deletions = 0;
+      for (const hunk of diff.chunks) {
+        for (const line of hunk.lines) {
+          if (line.type === LineType.Addition) additions++;
+          if (line.type === LineType.Deletion) deletions++;
+        }
+      }
+      statsByStage.set(`${staged}:${diff.file}`, { additions, deletions });
+    }
+  }
+  const status = {
+    ...statusResult.data,
+    files: statusResult.data.files.map((file) => ({
+      ...file,
+      ...(statsByStage.get(`${file.staged}:${file.path}`) ?? { additions: 0, deletions: 0 }),
+    })),
+  };
   const commitFiles: Record<string, CommitFile[] | null> = {};
   commits.forEach((commit, index) => {
     const detail = details[index];
@@ -91,7 +130,7 @@ async function readSecondaryRoot(
         : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }))
       : null;
   });
-  return { status: statusResult.data, commits, nextToken, commitFiles };
+  return { status, commits, nextToken, commitFiles };
 }
 
 function* loadSecondaryRootWorker(

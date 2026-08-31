@@ -140,6 +140,8 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
         ...(options?.branchBaseCommitSha
           ? { branchBaseCommitSha: options.branchBaseCommitSha }
           : {}),
+        ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
+        ...(options?.gitRootPath ? { gitRootPath: options.gitRootPath } : {}),
       },
     },
     options?.openInAdjacentPanel ?? false,
@@ -175,7 +177,7 @@ function* openLocalChanges(
       title: m.layout_presetExecutor_allChanges_title(),
       workspaceId,
       closable: true,
-      ...(options?.gitRootId ? { data: { gitRootId: options.gitRootId } } : {}),
+      data: { gitRootId: options?.gitRootId },
     },
     false,
   );

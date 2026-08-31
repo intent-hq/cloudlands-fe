@@ -1,5 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
 import { gitClient } from '$features/git/git.client';
@@ -26,8 +26,65 @@ const settle = async () => {
 };
 
 describe('gitReadSaga', () => {
+  beforeEach(() => {
+    vi.spyOn(appClient.git, 'diffs').mockResolvedValue([]);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('does not paginate history when the registration boundary is unknown', async () => {
+    vi.spyOn(gitClient, 'getStatus').mockResolvedValue({
+      ok: true,
+      data: {
+        branch: 'feature', ahead: 0, behind: 0, diverged: false, files: [],
+        hasUncommittedChanges: false, hasUntrackedFiles: false,
+      },
+    });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({
+      ok: true,
+      data: { items: [{ hash: 'new', message: 'new' } as CommitInfo], nextToken: 'page-2' },
+    });
+    vi.spyOn(appClient.git, 'commitDetails').mockResolvedValue({ files: [], fileDetails: [] });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1', undefined, 30));
+    await vi.waitFor(() => expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })));
+    expect(gitClient.getHistory).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('derives secondary-root working-tree line counts from scoped diffs', async () => {
+    vi.spyOn(gitClient, 'getStatus').mockResolvedValue({
+      ok: true,
+      data: {
+        branch: 'feature', ahead: 0, behind: 0, diverged: false,
+        files: [{ path: 'working.ts', status: 'M', staged: false }],
+        hasUncommittedChanges: true, hasUntrackedFiles: false,
+      },
+    });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    vi.mocked(appClient.git.diffs)
+      .mockResolvedValueOnce([{
+        file: 'working.ts', content: '', chunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2,
+          lines: [{ type: 'Addition', content: 'a' }, { type: 'Addition', content: 'b' }, { type: 'Deletion', content: 'c' }] }],
+      }] as never)
+      .mockResolvedValueOnce([]);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    await vi.waitFor(() => expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })));
+    const completed = actions.find((action) => (action as { type?: string }).type === setSecondaryRootGit.type) as ReturnType<typeof setSecondaryRootGit>;
+    expect(completed.payload.data.status?.files[0]).toMatchObject({ path: 'working.ts', additions: 2, deletions: 1 });
+    expect(appClient.git.diffs).toHaveBeenCalledWith('ws-1', { paths: ['working.ts'], gitRootId: 'root-1' });
+    task.cancel();
+    await task.toPromise();
   });
 
   it('loads a secondary root through the saga with exact boundary pagination', async () => {

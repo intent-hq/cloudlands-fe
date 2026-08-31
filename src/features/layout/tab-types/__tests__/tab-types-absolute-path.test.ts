@@ -384,6 +384,32 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       expect(openButton.getAttribute('data-file-path')).toBe('C:/repo/src/x.ts');
     });
 
+    it('forwards secondary-root scope and keeps hunk mutations disabled', async () => {
+      render(MockTabTypeHeaderHarness, {
+        props: {
+          component: DiffTabType,
+          tab: {
+            id: 'tab-diff-root',
+            type: 'diff',
+            title: 'root.ts',
+            closable: true,
+            diffPath: 'src/root.ts',
+            data: {
+              gitRootId: 'root-9',
+              gitRootPath: '/repo/packages/sub',
+              change: makeTrackedChange('src/root.ts', 'unstaged'),
+            },
+          },
+          workspaceId: 'ws-1',
+        },
+      });
+      const viewer = await screen.findByTestId('tracked-change-diff-viewer');
+      expect(viewer.getAttribute('data-git-root-id')).toBe('root-9');
+      expect(viewer.getAttribute('data-git-root-path')).toBe('/repo/packages/sub');
+      expect(screen.queryByTestId('stage-hunk')).toBeNull();
+      expect(screen.queryByTestId('unstage-hunk')).toBeNull();
+    });
+
     it('still joins relative paths under the workspace root', async () => {
       renderDiff('src/x.ts');
       const openButton = await findOpenComboButton();
@@ -539,6 +565,34 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       expect(panel.getAttribute('data-git-root-id')).toBe('root-9');
       expect(panel.getAttribute('data-git-root-path')).toBe('/repo/packages/sub');
       expect(panel.getAttribute('data-show-staging-controls')).toBe('false');
+    });
+
+    it('renders secondary-root working-tree line counts without mutation controls', async () => {
+      mockReduxState.gitRoots = [{ id: 'root-9', path: '/repo/packages/sub' }];
+      mockReduxState.secondaryRootGit.status.files = [
+        { path: 'src/root.ts', status: 'M', staged: false, additions: 7, deletions: 3 } as never,
+      ];
+      render(LocalChangesTabType, {
+        props: {
+          tab: {
+            id: 'tab-local-root',
+            type: 'local-changes',
+            title: 'Local',
+            closable: true,
+            data: { gitRootId: 'root-9' },
+          },
+          workspaceId: 'ws-1',
+          isActive: true,
+        },
+      });
+      const row = await screen.findByTestId('chat-change');
+      expect(row.getAttribute('data-additions')).toBe('7');
+      expect(row.getAttribute('data-deletions')).toBe('3');
+      expect(
+        (await screen.findByTestId('chat-changes-panel')).getAttribute(
+          'data-show-staging-controls',
+        ),
+      ).toBe('false');
     });
   });
 

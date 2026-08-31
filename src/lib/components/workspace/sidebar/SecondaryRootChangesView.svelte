@@ -121,7 +121,7 @@
   // The workspace summary counts each root-relative path once across the
   // working tree and commits made after this root was registered.
   const summaryReady = $derived(
-    !loading && recentCommits.every((commit) => Array.isArray(commitFileCache[commit.hash])),
+    !loading && recentCommits.every((commit) => commit.hash in commitFileCache),
   );
   const changedFileCount = $derived.by(() => {
     const paths = new Set(status?.files.map((file) => file.path) ?? []);

@@ -103,8 +103,8 @@
         ...(rootStatus?.files ?? []).map((file) => ({
           filePath: `${effectiveRootPath}/${file.path}`,
           action: 'modify' as const,
-          additions: 0,
-          deletions: 0,
+          additions: (file as typeof file & { additions?: number }).additions ?? 0,
+          deletions: (file as typeof file & { deletions?: number }).deletions ?? 0,
           toolName: 'local',
           toolCallId: `root-${gitRootId}-${file.staged}-${file.path}`,
           staged: file.staged,

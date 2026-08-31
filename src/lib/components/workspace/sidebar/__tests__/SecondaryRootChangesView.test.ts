@@ -424,6 +424,24 @@ describe('SecondaryRootChangesView', () => {
     expect(summary.textContent).toContain('2 files changed in Workspace');
   });
 
+  it('treats a transient null commit detail as settled while keeping its retry path', async () => {
+    const status = makeStatus('main');
+    status.files = [{ path: 'working.ts', status: 'M', staged: false }];
+    mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: transient detail miss'), makeCommit('bound111', 'boundary')] },
+    });
+    mocks.commitDetails.mockImplementation(async (_wsId, hash) =>
+      hash === 'aaaa111' ? null : { files: [], fileDetails: [] },
+    );
+
+    const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+    await waitFor(() =>
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain('1 file changed in Workspace'),
+    );
+  });
+
   it('keeps an empty root in the no-changes state without a summary affordance', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
 

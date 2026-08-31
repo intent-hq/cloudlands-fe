@@ -8,7 +8,7 @@
     gitRootPath,
     showStagingControls = false,
   }: {
-    changes?: Array<{ filePath: string; toolCallId: string }>;
+    changes?: Array<{ filePath: string; toolCallId: string; additions?: number; deletions?: number }>;
     onStage?: (path: string) => void;
     onUnstage?: (path: string) => void;
     onRevert?: (path: string) => void;
@@ -25,7 +25,12 @@
   data-show-staging-controls={showStagingControls}
 >
   {#each changes as change (change.toolCallId)}
-    <div data-testid="chat-change" data-file-path={change.filePath}>
+    <div
+      data-testid="chat-change"
+      data-file-path={change.filePath}
+      data-additions={change.additions}
+      data-deletions={change.deletions}
+    >
       <!-- i18n-ignore (test mock) -->
       <button data-testid="stage-button" aria-label="stage" onclick={() => onStage?.(change.filePath)}></button>
       <!-- i18n-ignore (test mock) -->
