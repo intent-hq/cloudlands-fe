@@ -59,8 +59,6 @@
     openAgentTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
-  import { selectMcpServers } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
-  import { selectSkills } from '$store/renderer/slices/skills/skills-selectors';
   import {
     faArrowUpRightFromSquare,
     faCompressAlt,
@@ -186,8 +184,6 @@
   const workspace = selectWorkspaceById(workspaceIdStore);
   const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
   const notes = selectAllNotes(workspaceIdStore);
-  const mcpServers$ = selectMcpServers();
-  const skills$ = selectSkills(workspaceIdStore);
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
       $notes,
@@ -197,16 +193,6 @@
   );
   const launcherNotes = $derived(launcherNoteState.launcherNotes);
   const launcherHasSpecNote = $derived(launcherNotes.some((note) => isSpecNote(note.id as string)));
-  const contextCapabilitySummary = $derived.by(() => {
-    const hasMcpServers = $mcpServers$.length > 0;
-    const hasSkills = $skills$.length > 0;
-    if (hasMcpServers && hasSkills) {
-      return m.workspace_multiSelectSidebar_contextSummarySpecMcpSkills_label();
-    }
-    if (hasMcpServers) return m.workspace_multiSelectSidebar_contextSummarySpecMcp_label();
-    if (hasSkills) return m.workspace_multiSelectSidebar_contextSummarySpecSkills_label();
-    return m.workspace_multiSelectSidebar_contextSummarySpec_label();
-  });
   const launcherNoteOverflowCount = $derived(launcherNoteState.overflowCount);
   const launcherNoteOverflowLabel = $derived(
     m.lib_commandPalette_showMoreNotes_label({
@@ -282,7 +268,11 @@
 
   function launcherItemCount(tabId: string): number {
     if (tabId === 'context') {
-      return launcherNotes.length + (launcherNoteOverflowCount > 0 ? 1 : 0);
+      return (
+        launcherNotes.length +
+        (launcherHasSpecNote ? 1 : 0) +
+        (launcherNoteOverflowCount > 0 ? 1 : 0)
+      );
     }
     return 1;
   }
@@ -291,14 +281,16 @@
     const itemCount = launcherItemCount(tabId);
     const hasOverflow = tabId === 'context' && launcherNoteOverflowCount > 0;
     if (tabId === 'context' && launcherHasSpecNote) {
-      if (hasOverflow) {
-        return itemCount > 2
-          ? `max-content repeat(${itemCount - 3}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px max-content`
-          : 'max-content max-content';
+      const additionalNoteCount = launcherNotes.length - 1;
+      const columns = [`${LAUNCHER_TARGET_SIZE}px`, 'max-content'];
+      if (additionalNoteCount > 0) {
+        if (additionalNoteCount > 1) {
+          columns.push(`repeat(${additionalNoteCount - 1}, ${LAUNCHER_STEP_SIZE}px)`);
+        }
+        columns.push(`${hasOverflow ? LAUNCHER_TARGET_SIZE : LAUNCHER_VISIBLE_SIZE}px`);
       }
-      return itemCount > 1
-        ? `max-content repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
-        : 'max-content';
+      if (hasOverflow) columns.push('max-content');
+      return columns.join(' ');
     }
     if (hasOverflow) {
       return itemCount > 2
@@ -1325,10 +1317,7 @@
                         >
                           <Button
                             variant="plain"
-                            class={cn(
-                              LAUNCHER_ICON_BUTTON_CLASS,
-                              isSpec && 'w-auto justify-start gap-1 pe-1',
-                            )}
+                            class={LAUNCHER_ICON_BUTTON_CLASS}
                             onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}
                             aria-label={note.title || m.chat_mentions_untitledNote_label()}
                             data-sidebar-context={note.id}
@@ -1348,14 +1337,15 @@
                                 />
                               {/if}
                             </span>
-                            {#if isSpec}
-                              <span
-                                class="whitespace-nowrap text-[11px] leading-none font-medium text-muted-foreground"
-                                data-context-capability-summary>{contextCapabilitySummary}</span
-                              >
-                            {/if}
                           </Button>
                         </SidebarLauncherHoverCard>
+                        {#if isSpec}
+                          <span
+                            class="pointer-events-none whitespace-nowrap text-[11px] leading-none font-medium text-muted-foreground"
+                            data-context-capability-summary
+                            >{m.workspace_multiSelectSidebar_contextSummary_label()}</span
+                          >
+                        {/if}
                       {/each}
                       {#if launcherNoteOverflowCount > 0}
                         <Button

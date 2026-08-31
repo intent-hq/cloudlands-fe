@@ -13,7 +13,7 @@ describe('sidebar open-panel marker contract', () => {
     expect(sidebar).toContain('<OpenPanelIndicator');
   });
 
-  it('excludes the compact Spec affordance from the shared marker', () => {
+  it('separates the compact Spec action from the fixed marker-free summary', () => {
     const sidebar = source('../../MultiSelectTabbedSidebar.svelte');
     const compactContext = sidebar.slice(
       sidebar.indexOf("{:else if tab.id === 'context'}"),
@@ -22,6 +22,9 @@ describe('sidebar open-panel marker contract', () => {
     expect(compactContext).toContain('{#if !isSpec}');
     expect(compactContext.match(/<OpenPanelIndicator/g)).toHaveLength(1);
     expect(compactContext).toContain('data-context-capability-summary');
+    expect(compactContext.indexOf('</Button>')).toBeLessThan(
+      compactContext.indexOf('data-context-capability-summary'),
+    );
   });
 
   it.each([
