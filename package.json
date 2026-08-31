@@ -342,7 +342,8 @@
     ],
     "patchedDependencies": {
       "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
-      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
+      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch",
+      "@augmentcode/themis@0.2.4": "patches/@augmentcode__themis@0.2.4.patch"
     }
   }
 }

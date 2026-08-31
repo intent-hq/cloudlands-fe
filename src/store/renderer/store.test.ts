@@ -130,6 +130,72 @@ describe('configured app Store', () => {
     }
   });
 
+  // Regression coverage for the patched @augmentcode/themis tracking-proxy cache
+  // (patches/@augmentcode__themis@0.2.4.patch): cached proxies must keep recording
+  // accessed paths on every recompute, and path keys must not collide.
+  describe('patched selector-core tracking proxy cache', () => {
+    it('memoizes and recomputes correctly across repeated selects through cached tracking proxies', async () => {
+      const { createCachedSelector } =
+        await import('../../../node_modules/@augmentcode/themis/dist/utils/selector-core/create-cached-selector.js');
+      const selectorFn = vi.fn((state: any) => state.tracked.value);
+      const cached = createCachedSelector(selectorFn);
+
+      const state1 = { tracked: { value: 1 }, untracked: { value: 10 } };
+      expect(cached(state1)).toBe(1);
+      expect(cached(state1)).toBe(1);
+      expect(selectorFn).toHaveBeenCalledTimes(1);
+
+      // Untracked change: accessed paths unchanged, no recompute.
+      const state2 = { ...state1, untracked: { value: 20 } };
+      expect(cached(state2)).toBe(1);
+      expect(selectorFn).toHaveBeenCalledTimes(1);
+
+      // Tracked change: recompute through (potentially cached) proxies.
+      const state3 = { ...state2, tracked: { value: 2 } };
+      expect(cached(state3)).toBe(2);
+      expect(selectorFn).toHaveBeenCalledTimes(2);
+
+      // A second tracked change must still be detected — proves the cached
+      // proxies re-recorded accessed paths during the previous recompute.
+      const state4 = { ...state3, tracked: { value: 3 } };
+      expect(cached(state4)).toBe(3);
+      expect(selectorFn).toHaveBeenCalledTimes(3);
+
+      // And a later untracked change is still ignored.
+      const state5 = { ...state4, untracked: { value: 30 } };
+      expect(cached(state5)).toBe(3);
+      expect(selectorFn).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not collide path keys when a property name embeds another path', async () => {
+      const { createCachedSelector } =
+        await import('../../../node_modules/@augmentcode/themis/dist/utils/selector-core/create-cached-selector.js');
+      // 'a\u0001b'-style keys would collide with nested a.b under naive separator
+      // concatenation; the patch length-prefixes segments to prevent this.
+      const flatKey = 'a\u0001b';
+      const selectNested = vi.fn((state: any) => state.a.b);
+      const selectFlat = vi.fn((state: any) => state[flatKey]);
+      const cachedNested = createCachedSelector(selectNested);
+      const cachedFlat = createCachedSelector(selectFlat);
+
+      const base = { a: { b: 'nested-1' }, [flatKey]: 'flat-1' };
+      expect(cachedNested(base)).toBe('nested-1');
+      expect(cachedFlat(base)).toBe('flat-1');
+
+      // Changing only the flat key must not be mistaken for the nested path…
+      const flatChanged = { ...base, [flatKey]: 'flat-2' };
+      expect(cachedNested(flatChanged)).toBe('nested-1');
+      expect(selectNested).toHaveBeenCalledTimes(1);
+      expect(cachedFlat(flatChanged)).toBe('flat-2');
+
+      // …and changing only the nested path must still recompute the nested selector.
+      const nestedChanged = { ...flatChanged, a: { b: 'nested-2' } };
+      expect(cachedNested(nestedChanged)).toBe('nested-2');
+      expect(cachedFlat(nestedChanged)).toBe('flat-2');
+      expect(selectFlat).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('keeps app reducers on the configured package Store', () => {
     const registeredReducers = appStore.getReducers();
 
