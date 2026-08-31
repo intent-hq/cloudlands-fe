@@ -4,11 +4,16 @@ import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-n
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import LinkActionMenu from './LinkActionMenu.svelte';
-import { showLinkActionMenu, hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
+import {
+  showLinkActionMenu,
+  hideLinkActionMenu,
+  linkActionMenuState,
+} from './link-action-menu-state.svelte';
 
 const reduxDispatchMock = vi.hoisted(() => vi.fn());
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: reduxDispatchMock,
@@ -154,5 +159,81 @@ describe('LinkActionMenu', () => {
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
     expect(screen.getAllByRole('menuitem')[0].textContent).toContain('PR #7');
+  });
+
+  describe('batched positioning', () => {
+    let rafCallbacks: FrameRequestCallback[];
+    let rafSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      rafCallbacks = [];
+      rafSpy = vi
+        .spyOn(globalThis, 'requestAnimationFrame')
+        .mockImplementation((cb: FrameRequestCallback) => {
+          rafCallbacks.push(cb);
+          return rafCallbacks.length;
+        });
+    });
+
+    afterEach(() => {
+      // Drain the shared layout-phases queue so state does not leak.
+      flushFrames();
+      rafSpy.mockRestore();
+    });
+
+    function flushFrames() {
+      let guard = 0;
+      while (rafCallbacks.length > 0 && guard < 10) {
+        const batch = rafCallbacks;
+        rafCallbacks = [];
+        for (const cb of batch) cb(performance.now());
+        guard += 1;
+      }
+    }
+
+    it('measures the menu through the layout-read phase and focuses the first item', async () => {
+      render(LinkActionMenu);
+      showIssueMenu(TEST_WORKSPACE_ID);
+      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+      const menu = screen.getByRole('menu');
+      const rectSpy = vi.spyOn(menu, 'getBoundingClientRect');
+
+      // Nothing measured synchronously; the adjustment waits for the frame.
+      expect(rectSpy).not.toHaveBeenCalled();
+      flushFrames();
+
+      expect(rectSpy).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
+    });
+
+    it('coalesces rapid coordinate updates into one measurement', async () => {
+      render(LinkActionMenu);
+      showIssueMenu(TEST_WORKSPACE_ID);
+      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+      const menu = screen.getByRole('menu');
+      const rectSpy = vi.spyOn(menu, 'getBoundingClientRect');
+
+      // Re-show at new coordinates before the first frame flushes: the
+      // pending task is cancelled and replaced, not stacked.
+      showIssueMenu(TEST_WORKSPACE_ID);
+      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+      flushFrames();
+
+      expect(rectSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels the pending measurement when the menu is hidden before the frame', async () => {
+      render(LinkActionMenu);
+      showIssueMenu(TEST_WORKSPACE_ID);
+      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+      const menu = screen.getByRole('menu');
+      const rectSpy = vi.spyOn(menu, 'getBoundingClientRect');
+
+      hideLinkActionMenu();
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      flushFrames();
+
+      expect(rectSpy).not.toHaveBeenCalled();
+    });
   });
 });
