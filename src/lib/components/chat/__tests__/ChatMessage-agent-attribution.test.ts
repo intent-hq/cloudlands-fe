@@ -833,6 +833,24 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.queryByText(/\[Background hook/)).toBeNull();
   });
 
+  it('yields the wake card top gap to the batched-delivery seam when suppressed', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({ rowMetadata: true }),
+        suppressAutomatedWakeTopSpacing: true,
+      },
+    });
+
+    const surface = screen.getByTestId('user-message-surface');
+    for (const token of SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(false);
+    }
+    expect(surface.classList.contains('mt-0')).toBe(true);
+    // The preceding gap owns the seam, so the card no longer claims it.
+    expect(surface.hasAttribute('data-external-spacing-owner')).toBe(false);
+    expect(surface.hasAttribute('data-automated-wake-card')).toBe(true);
+  });
+
   it('detects hook wake from block-level messageMetadata', async () => {
     render(ChatMessage, { props: { message: hookWakeMessage({ blockMetadata: true }) } });
 

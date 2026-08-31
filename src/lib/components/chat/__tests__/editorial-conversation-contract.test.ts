@@ -332,8 +332,25 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeupWrapper).toContain('use:attachPinnedPromptMessage={message}');
     expect(wakeupWrapper).toContain('eventCardAssistantMarginClass(');
     expect(wakeupWrapper).toContain('turn.assistantMessages.length > 0');
-    expect(panel).toContain('class:mb-5={isAutomatedMessage(message)}');
-    expect(panel).toContain('class:mb-7={!isAutomatedMessage(message)}');
+    expect(panel).toContain('class:mb-0={batchedDeliveryTurnSeam}');
+    expect(panel).toContain('class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}');
+    expect(panel).toContain(
+      'class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}',
+    );
+    expect(panel).toContain(
+      '{@const prevTurn =\n' +
+        '                    turns[turnIndex - 1] ??\n' +
+        '                    conversationTurnIndex.groups[groupIndex - 1]?.turns.at(-1)}',
+    );
+    expect(panel).toContain(
+      '{@const batchedSeamBefore = Boolean(\n' +
+        '                    prevTurn &&\n' +
+        '                    !isAttentionQuestionAnswerSeam(prevTurn, turn) &&\n' +
+        '                    isBatchedDeliverySeam(prevTurn, turn),\n' +
+        '                  )}',
+    );
+    expect(panel).toContain('suppressTopGap={batchedSeamBefore}');
+    expect(panel).toContain('suppressAutomatedWakeTopSpacing={batchedSeamBefore}');
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');

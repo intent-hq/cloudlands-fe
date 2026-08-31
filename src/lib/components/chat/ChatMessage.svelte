@@ -220,6 +220,11 @@
     readOnly?: boolean;
     /** False when an outer transcript row owns the canonical message identity attributes. */
     ownsMessageIdentity?: boolean;
+    /**
+     * Drop the automated wake card's external top margin when the preceding
+     * batched-delivery gap already owns the seam.
+     */
+    suppressAutomatedWakeTopSpacing?: boolean;
   }
 
   let {
@@ -246,6 +251,7 @@
     suppressCoordinationStoppedIndicator = false,
     readOnly = false,
     ownsMessageIdentity = true,
+    suppressAutomatedWakeTopSpacing = false,
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
@@ -1375,13 +1381,13 @@
           data-testid="user-message-surface"
           data-conversation-role="user"
           data-automated-wake-card={automatedWakePresentation ? '' : undefined}
-          data-external-spacing-owner={automatedWakePresentation
+          data-external-spacing-owner={automatedWakePresentation && !suppressAutomatedWakeTopSpacing
             ? 'automated-wake-card'
             : undefined}
           class="{agentAttribution
             ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
-              ? `relative ${SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+              ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !hookWakeAttribution &&
