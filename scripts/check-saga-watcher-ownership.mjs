@@ -66,6 +66,10 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
     rationale: 'layout persistence and specialized panel effects are independent',
   },
   {
+    pattern: /workspace-slice\.ts#(?:setWorkspaceEntity|setWorkspaceHasLoaded)$/,
+    rationale: 'key-pin persistence and deferred first-open layout seeding are independent',
+  },
+  {
     pattern: /user-preferences-slice\.ts#setPanelColumnCount$/,
     rationale: 'preference persistence and fixed-column reconciliation are independent',
   },
