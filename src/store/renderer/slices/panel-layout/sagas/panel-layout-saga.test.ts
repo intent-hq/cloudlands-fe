@@ -1,5 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   clearAdapter: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-import type { AgentSession, Note } from '$shared/types';
+import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import {
@@ -178,6 +179,7 @@ function storeState(
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId, windowBackendId: activeBackendId },
     workspaceAgents: { byWorkspaceId: {} },
+    workspace: { workspaces: createCollection('id') },
   };
 }
 
@@ -244,6 +246,7 @@ function startRestoreSaga(
   stored: unknown,
   agents: AgentSession[],
   initialLayout = emptyWorkspaceState,
+  contextLinks?: ContextLink[],
 ) {
   mocks.getJSON.mockReturnValue(stored);
   let backendId = LOCAL_CONNECTION_ID;
@@ -262,6 +265,12 @@ function startRestoreSaga(
       byAgentId: Object.fromEntries(agents.map((agent) => [String(agent.id), agent])),
     },
     workspaceNotes: workspaceNotesReducer(undefined, { type: '@@test/init' }),
+    workspace: {
+      workspaces: createCollection(
+        'id',
+        contextLinks ? [{ id: WS_1, contextLinks } as unknown as Workspace] : [],
+      ),
+    },
   };
   const channel = stdChannel();
   const dispatch = vi.fn((action) => {
@@ -1137,6 +1146,116 @@ describe('panelLayoutSaga', () => {
       ).toBe(false);
       await cancelSaga(run.task);
     });
+
+    describe('first-open context-link seeding (workspaces created elsewhere)', () => {
+      const contextLinks: ContextLink[] = [
+        {
+          kind: 'issue',
+          url: 'https://github.com/acme/widgets/issues/7',
+          owner: 'acme',
+          repo: 'widgets',
+          number: 7,
+        },
+        {
+          kind: 'pr',
+          url: 'https://github.com/acme/widgets/pull/9',
+          owner: 'acme',
+          repo: 'widgets',
+          number: 9,
+        },
+      ];
+
+      function expectSeededSplit(workspace: any, agentId: string) {
+        expect(workspace.root.type).toBe('split');
+        const order = workspace.root.type === 'split' ? workspace.root.children : [];
+        const agentPanelId = order[0]?.type === 'panel' ? order[0].panelId : '';
+        const browserPanelId = order[1]?.type === 'panel' ? order[1].panelId : '';
+        expect(workspace.panels[agentPanelId].tabs).toEqual([
+          expect.objectContaining({ type: 'agent', agentId }),
+        ]);
+        expect(workspace.panels[browserPanelId].tabs).toEqual(
+          contextLinks.map((link) =>
+            expect.objectContaining({ type: 'browser', browserUrl: link.url }),
+          ),
+        );
+        expect(workspace.columnCount).toBe(2);
+      }
+
+      it('seeds the split on a missing restore when the workspace has context links', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, contextLinks);
+        await settle();
+
+        expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
+        expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
+          panels: run.getState().panelLayout.byWorkspaceId[WS_1].panels,
+        });
+        await cancelSaga(run.task);
+      });
+
+      it('seeds once when the agent snapshot arrives after the missing restore', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        const run = startRestoreSaga(undefined, [], emptyWorkspaceState, contextLinks);
+        await settle();
+
+        expect(
+          Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+            (panel: any) => panel.tabs,
+          ),
+        ).toEqual([]);
+
+        run.dispatch(setAgents(WS_1, [initial]));
+        run.dispatch(setAgents(WS_1, [initial]));
+        await settle();
+
+        expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
+        expect(
+          run.dispatch.mock.calls.filter(
+            ([action]) => action.type === openTabInAdjacentOrSplit.type,
+          ),
+        ).toHaveLength(1);
+        await cancelSaga(run.task);
+      });
+
+      it.each([
+        ['a stored empty layout (user closed all tabs)', emptyStoredLayout],
+        ['an invalid stored layout', { bad: true }],
+      ])('does not seed after %s', async (_name, stored) => {
+        const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
+        const run = startRestoreSaga(stored, [recent], emptyWorkspaceState, contextLinks);
+        await settle();
+
+        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+        expect(workspace.root.type).toBe('panel');
+        const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+        expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-recent' })]);
+        await cancelSaga(run.task);
+      });
+
+      it('does not seed when no agent is resolvable yet', async () => {
+        const run = startRestoreSaga(undefined, [], emptyWorkspaceState, contextLinks);
+        await settle();
+
+        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+        expect(workspace.root.type).toBe('panel');
+        expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+        await cancelSaga(run.task);
+      });
+
+      it('keeps the plain single-agent reconciliation without context links', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, []);
+        await settle();
+
+        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+        expect(workspace.root.type).toBe('panel');
+        const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+        expect(tabs).toEqual([
+          expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
+        ]);
+        await cancelSaga(run.task);
+      });
+    });
   });
 
   it('restores and cleans up a rendered canonical panel-layout scope', async () => {
@@ -1294,7 +1413,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
@@ -1382,7 +1507,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       let waited = false;
@@ -1956,7 +2087,13 @@ describe('panelLayoutSaga', () => {
       );
       run.setBackendId(REMOTE_ID);
 
-      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -2018,12 +2155,24 @@ describe('panelLayoutSaga', () => {
         key === REMOTE_STORAGE_KEY_1 ? layout : localLayout,
       );
       run.setBackendId(REMOTE_ID);
-      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
       expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(1);
 
       run.setBackendId(LOCAL_CONNECTION_ID);
-      run.send(connectionsListReceived({ connections: [], activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID }));
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
+      );
       await settle();
       expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(2);
       await cancelSaga(run.task);
@@ -2075,7 +2224,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -2106,7 +2261,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       // WS_1-before-WS_2 relies on Set insertion order (retroactiveRestore
@@ -2148,7 +2309,13 @@ describe('panelLayoutSaga', () => {
         key === REMOTE_STORAGE_KEY_1 ? storedPromise : undefined,
       );
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       let waited = false;
@@ -2192,7 +2359,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -2218,7 +2391,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       const dispatched = dispatch.mock.calls.map(([action]) => action);
@@ -2258,7 +2437,13 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -2278,7 +2463,13 @@ describe('panelLayoutSaga', () => {
       mocks.getJSON.mockReturnValue(undefined);
       run.setBackendId(REMOTE_ID);
 
-      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -2317,7 +2508,13 @@ describe('panelLayoutSaga', () => {
       channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
       await settle();
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
       await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
       await settle();
@@ -2338,7 +2535,13 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
       mocks.saveHistory.mockClear();
       await cancelSaga(task);

@@ -44,6 +44,7 @@ import {
   selectAllWorkspaceAgents,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
+import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
 import {
   applyNoteCreated,
@@ -106,6 +107,7 @@ import {
   resetLayout,
   restoreHiddenTab,
   resolveNewWorkspaceInitialAgent,
+  seedContextLinkEmptyLayout,
   revealDeferredSpecTab,
   revealHiddenTabAvoidingPanel,
   resizePanelLayoutAtRootDivider,
@@ -180,6 +182,7 @@ const PERSIST_ACTIONS = [
   revealDeferredSpecTab,
   resolveNewWorkspaceInitialAgent,
   reconcileStaleAgentTabs,
+  seedContextLinkEmptyLayout,
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
@@ -414,8 +417,25 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
   const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
-  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, layout.restoreStatus === 'empty');
+  const firstOpen = layout.restoreStatus === 'empty';
+  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, firstOpen);
   if (!agent) return;
+  // First open on this device of a workspace created elsewhere (iOS,
+  // chief-of-staff proposal, sibling workspace): nothing was ever stored
+  // ('empty', not 'invalid' or a restored-but-tabless layout the user
+  // emptied), so a workspace carrying context links gets the same
+  // agent-left / browser-right seed as a local create. Seeding and the
+  // agent-tab open happen together so a pre-agent-snapshot run leaves the
+  // layout untouched and the setAgents retrigger seeds the whole shape.
+  let focusedPanelId = layout.focusedPanelId;
+  if (firstOpen) {
+    const contextLinks = (yield* selectWorkspaceById.effect(wsId))?.contextLinks ?? [];
+    if (contextLinks.length > 0) {
+      yield* put(seedContextLinkEmptyLayout(wsId, contextLinks));
+      const seeded = yield* selectPanelLayoutWorkspace.effect(wsId);
+      focusedPanelId = seeded.focusedPanelId;
+    }
+  }
   yield* put(
     openTabInAdjacentOrSplit(
       wsId,
@@ -426,7 +446,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
         workspaceId: wsId,
         closable: true,
       },
-      layout.focusedPanelId ?? undefined,
+      focusedPanelId ?? undefined,
       { force: true },
     ),
   );
