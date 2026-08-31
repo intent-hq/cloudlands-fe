@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.118.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.3...v2.118.0) (2026-08-31)
+
+
+### 🚀 Features
+
+* **chat:** keep terminal response group of the final assistant message expanded when not streaming ([#1946](https://github.com/intent-hq/cloudlands-fe/issues/1946)) ([ac81b8e](https://github.com/intent-hq/cloudlands-fe/commit/ac81b8e3277b91369959a536472f1c33048c7626))
+
 ## [2.117.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.2...v2.117.3) (2026-08-31)
 
 
