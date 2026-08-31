@@ -62,13 +62,6 @@
      * host can route discard through its own confirm dialog + resolve flow.
      */
     suppressLocalDiscard?: boolean;
-    /**
-     * Daemon-persisted resolution outcome (PROTOCOL §5.5
-     * `proposalResolutions`): 'applied' renders the applied state with
-     * actions disabled, 'dismissed' the discarded tombstone — correct across
-     * reloads and clients. Null/absent keeps the card interactive.
-     */
-    resolvedOutcome?: 'applied' | 'dismissed' | null;
   }
 
   type EditorHandle = {
@@ -90,7 +83,6 @@
     initialDraft = null,
     onDraftChange,
     suppressLocalDiscard = false,
-    resolvedOutcome = null,
   }: Props = $props();
 
   // Captured once at init (tray remounts per proposal via {#key}), so a
@@ -153,10 +145,8 @@
   const isApplying = $derived($lifecycleStatus === 'applying');
   const isUndoing = $derived($lifecycleStatus === 'undoing');
   const isFailed = $derived($lifecycleStatus === 'failed');
-  // Daemon-persisted resolution (resolvedOutcome) folds into the local
-  // lifecycle states so a resolved card renders identically after reload.
-  const isApplied = $derived($lifecycleStatus === 'applied' || resolvedOutcome === 'applied');
-  const showDismissed = $derived(isDismissed || resolvedOutcome === 'dismissed');
+  const isApplied = $derived($lifecycleStatus === 'applied');
+  const showDismissed = $derived(isDismissed);
   const createdWorkspaceId = $derived($lifecycleResult?.workspaceId);
   const isWorkspaceCreated = $derived(isWorkspaceCreate && isApplied);
   const workspaceHeading = $derived(
@@ -802,7 +792,6 @@
     {onDiscard}
     {onUndo}
     {suppressLocalDiscard}
-    {resolvedOutcome}
     initialEditedFields={restoredDraft?.fieldValues ?? null}
     onEditedFieldsChange={(fields) => (settingsEditedFields = fields)}
   />
@@ -814,7 +803,6 @@
     {onDiscard}
     {onUndo}
     {suppressLocalDiscard}
-    {resolvedOutcome}
   />
 {:else}
   <section

@@ -160,22 +160,4 @@ describe('SpecialistChangeCard', () => {
     });
   });
 
-  it('renders the applied state without actions when resolvedOutcome is applied', () => {
-    render(SpecialistChangeCard, {
-      props: { proposal: makeProposal(), resolvedOutcome: 'applied' },
-    });
-
-    expect(screen.queryByRole('button', { name: 'Save specialist' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
-  });
-
-  it('renders the discarded tombstone when resolvedOutcome is dismissed', () => {
-    render(SpecialistChangeCard, {
-      props: { proposal: makeProposal(), resolvedOutcome: 'dismissed' },
-    });
-
-    expect(screen.getByText(/Discarded/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Save specialist' })).toBeNull();
-  });
 });
