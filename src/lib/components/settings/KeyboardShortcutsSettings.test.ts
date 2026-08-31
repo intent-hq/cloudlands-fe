@@ -52,6 +52,22 @@ describe('KeyboardShortcutsSettings', () => {
     );
   });
 
+  it('keeps resting borders quiet while preserving interactive state styles', () => {
+    render(KeyboardShortcutsSettings);
+    const input = screen.getByRole('textbox', { name: 'Settings' });
+    const classes = input.className.split(/\s+/);
+
+    expect(classes).toContain('border-border');
+    expect(classes).not.toContain('border-input');
+    expect(classes).toContain('hover:border-input');
+    expect(classes).toContain('focus-visible:border-ring');
+    expect(classes).toContain('focus-visible:ring-ring/40');
+    expect(classes).toContain('aria-invalid:border-destructive-foreground');
+    expect(classes).toContain('aria-invalid:ring-destructive-foreground/25');
+    expect(classes).toContain('disabled:opacity-60');
+    expect(classes).toContain('disabled:hover:border-border');
+  });
+
   it('enters empty capture mode on focus and captures modifier combinations', async () => {
     render(KeyboardShortcutsSettings);
     const input = screen.getByRole('textbox', { name: 'Settings' }) as HTMLInputElement;

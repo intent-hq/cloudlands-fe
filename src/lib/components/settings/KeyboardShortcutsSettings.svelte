@@ -93,7 +93,7 @@
                 <dd class="relative min-w-0">
                   <input
                     id={`shortcut-${definition.id}`}
-                    class="h-7 w-36 rounded-md border border-input bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    class="h-7 w-36 rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none transition-[border-color,box-shadow] duration-(--motion-fast) hover:border-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25 motion-reduce:transition-none"
                     type="text"
                     readonly
                     data-shortcut-input
