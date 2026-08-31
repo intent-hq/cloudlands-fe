@@ -235,9 +235,6 @@ async function showUpdateBackendRequestErrorToast(): Promise<void> {
   toast.error(m.layout_daemonStatus_updateRequestError_toast());
 }
 
-/** Long enough to act on the Update action, short enough not to nag. */
-const DAEMON_BEHIND_TOAST_DURATION_MS = 10000;
-
 type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
 
 /**
@@ -260,27 +257,39 @@ async function showDaemonBehindPinToast(
     m.layout_daemonStatus_daemonBehind_toast({
       // The local entry's persisted label is an English fallback — use the
       // localized label, same as DeviceRow and the daemon-status menu.
-      name: conn.isLocal ? m.layout_daemonStatus_localConnection_label() : formatConnectionLabel(conn),
+      name: conn.isLocal
+        ? m.layout_daemonStatus_localConnection_label()
+        : formatConnectionLabel(conn),
       // The message template prepends "v" — strip any reported prefix (same as DeviceRow).
       daemonVersion: daemonVersion.replace(/^v/, ''),
       pinnedVersion: pinnedVersion.replace(/^v/, ''),
     }),
     {
       id: `connections-daemon-behind-${conn.id}`,
-      duration: DAEMON_BEHIND_TOAST_DURATION_MS,
+      // Sticky: never auto-dismisses — announceDaemonsBehindPin dismisses it
+      // programmatically once the backend stops qualifying.
+      duration: Number.POSITIVE_INFINITY,
       action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
     },
   );
 }
 
+/** Dismiss a behind-pin toast previously raised for `connectionId`. */
+async function dismissDaemonBehindPinToast(connectionId: string): Promise<void> {
+  const { toast } = await import('svelte-sonner');
+  toast.dismiss(`connections-daemon-behind-${connectionId}`);
+}
+
 /**
  * The behind-pin announcements already evaluated: connected backend id → the
- * `daemonVersion` that was evaluated. Saga-local mutable state shared between
- * the hydration path (startup seeding + announcement) and the
- * `connections:changed` consumer.
+ * `daemonVersion` that was evaluated, plus the ids whose sticky toast is
+ * currently shown (so dismissal only fires for toasts actually raised).
+ * Saga-local mutable state shared between the hydration path (startup seeding
+ * + announcement) and the `connections:changed` consumer.
  */
 interface DaemonBehindTracker {
   evaluatedById: ReadonlyMap<string, string>;
+  toastedIds: ReadonlySet<string>;
 }
 
 /**
@@ -305,6 +314,12 @@ interface DaemonBehindTracker {
  * announces again. Daemons that report `updateSupported: false` are evaluated
  * but never toasted (the Update affordance is gated on explicit support —
  * the Devices-page behind-pin badge stays as the informational surface).
+ * The toast is sticky (no auto-dismiss), so this saga also dismisses it once
+ * the backend stops qualifying: it disconnects, or a re-evaluation finds it no
+ * longer behind the pin (e.g. back at/above the pinned version). An
+ * inconclusive re-broadcast (version/flag capture in flight) keeps a shown
+ * toast — it is no verdict either way. Dismissal only fires for toasts
+ * actually raised, tracked via `tracker.toastedIds`.
  * The Update action feeds `updateActions` (pumped back into the store as an
  * `updateBackendRequested` dispatch); the outcome then surfaces via the
  * existing per-result update toasts.
@@ -318,22 +333,35 @@ function* announceDaemonsBehindPin(
   // Older main process without connected info: nothing to evaluate.
   if (!connectedIds) return;
   const previous = tracker.evaluatedById;
+  const previousToasted = tracker.toastedIds;
   const evaluated = new Map<string, string>();
+  const toasted = new Set<string>();
   for (const conn of connections) {
     if (conn.id !== windowBackendId) continue;
     if (!connectedIds.includes(conn.id)) continue;
     const { daemonVersion } = conn;
-    if (!daemonVersion || !pinnedVersion) continue;
+    // Inconclusive while connected: keep a shown toast (no dismissal verdict).
+    if (!daemonVersion || !pinnedVersion) {
+      if (previousToasted.has(conn.id)) toasted.add(conn.id);
+      continue;
+    }
     // The updateSupported capture is fire-and-forget like the version
     // capture: unknown (absent/null) is inconclusive, so the flag-bearing
     // follow-up broadcast still counts as the transition. An explicit
     // `false` IS conclusive — evaluated but suppressed below. The flag is
     // part of the evaluated value so a false→true refresh at an unchanged
     // daemonVersion re-evaluates (and toasts) like a version refresh.
-    if (conn.updateSupported == null) continue;
+    if (conn.updateSupported == null) {
+      if (previousToasted.has(conn.id)) toasted.add(conn.id);
+      continue;
+    }
     const evaluatedValue = `${daemonVersion}|${conn.updateSupported}`;
     evaluated.set(conn.id, evaluatedValue);
-    if (previous.get(conn.id) === evaluatedValue) continue;
+    if (previous.get(conn.id) === evaluatedValue) {
+      // Unchanged re-broadcast: the sticky toast (if raised) is still valid.
+      if (previousToasted.has(conn.id)) toasted.add(conn.id);
+      continue;
+    }
     if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
     yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
       const action = updateBackendRequested(conn.id);
@@ -342,8 +370,15 @@ function* announceDaemonsBehindPin(
       action.promise.catch(() => {});
       updateActions.put(action);
     });
+    toasted.add(conn.id);
+  }
+  // A previously raised toast whose backend stopped qualifying (disconnected,
+  // or re-evaluated as no longer behind the pin) no longer applies.
+  for (const id of previousToasted) {
+    if (!toasted.has(id)) yield* call(dismissDaemonBehindPinToast, id);
   }
   tracker.evaluatedById = evaluated;
+  tracker.toastedIds = toasted;
 }
 
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
@@ -639,7 +674,7 @@ export function* connectionsSaga(): SagaGenerator<void> {
 
   const events = createConnectionsEventChannel();
   const updateActions = sagaChannel<UpdateBackendAction>();
-  const tracker: DaemonBehindTracker = { evaluatedById: new Map() };
+  const tracker: DaemonBehindTracker = { evaluatedById: new Map(), toastedIds: new Set() };
   const eventTask = yield* fork(consumeConnectionsEvents, events, tracker, updateActions);
   const pumpTask = yield* fork(pumpUpdateActions, updateActions);
   const actionsTask = yield* fork(watchConnectionsActions, tracker, updateActions);
