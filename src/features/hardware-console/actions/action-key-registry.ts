@@ -41,6 +41,7 @@ import type { StoredAgentSession } from '$store/renderer/slices/agent-session/ag
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { actionHudShown } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   setMultiSelectSidebarSelectedTabs,
   setShowCreateModal,
@@ -103,6 +104,22 @@ export interface ActionKeyState {
   };
   agentSessions: { byAgentId: Record<string, StoredAgentSession> };
   hardwareConsole: { cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope> };
+  /** Structural view of the panel layout for the see-spec toggle. */
+  panelLayout: {
+    byWorkspaceId: Record<
+      string,
+      {
+        panels: Record<
+          string,
+          {
+            id: string;
+            tabs: readonly { id: string; type: string; noteId?: string }[];
+            activeTabId: string | null;
+          }
+        >;
+      }
+    >;
+  };
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
@@ -527,9 +544,31 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return activeWorkspaceId(context) !== null;
     },
     execute(context) {
-      const { dispatch } = context;
+      const { state, dispatch } = context;
       const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
+      const panels = Object.values(state.panelLayout.byWorkspaceId[wsId]?.panels ?? {});
+      for (const panel of panels) {
+        const specTab = panel.tabs.find(
+          (tab) => tab.type === 'note' && tab.noteId === SPEC_NOTE_ID,
+        );
+        if (specTab && panel.activeTabId === specTab.id) {
+          // The spec is currently visible → toggle it off.
+          dispatch(closeTab(wsId, specTab.id, panel.id));
+          return;
+        }
+      }
+      // Not open (or a background tab): open/reveal it. With a single open
+      // panel, split it so the spec lands beside the current content.
+      if (panels.length === 1) {
+        dispatch(
+          openWorkspaceNote(wsId, SPEC_NOTE_ID, {
+            openInAdjacentPanel: true,
+            sourcePanelId: panels[0].id,
+          }),
+        );
+        return;
+      }
       dispatch(openWorkspaceNote(wsId, SPEC_NOTE_ID));
     },
   },

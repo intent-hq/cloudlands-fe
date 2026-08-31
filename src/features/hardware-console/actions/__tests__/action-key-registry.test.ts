@@ -88,6 +88,7 @@ interface StateOptions {
   showCreateModal?: boolean;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
   voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
+  panelLayout?: ActionKeyState['panelLayout']['byWorkspaceId'];
 }
 
 type TestActionKeyState = ActionKeyState & { currentWorkspaceId: string | null };
@@ -140,6 +141,7 @@ function makeState(options: StateOptions = {}): TestActionKeyState {
       keyConfigured: { elevenlabs: true, openai: false },
       ...options.voiceSettings,
     },
+    panelLayout: { byWorkspaceId: options.panelLayout ?? {} },
   };
 }
 
@@ -1394,8 +1396,127 @@ describe('execute dispatch', () => {
     expect(focusComposer).toHaveBeenCalledWith('a-1');
   });
 
-  it('see-spec opens the workspace spec note', () => {
+  it('see-spec opens the workspace spec note when no panel layout exists', () => {
     const { context, dispatch } = makeContext(makeState());
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec'],
+      }),
+    );
+  });
+
+  it('see-spec splits the single open panel when opening the spec', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              default: {
+                id: 'default',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec', { openInAdjacentPanel: true, sourcePanelId: 'default' }],
+      }),
+    );
+  });
+
+  it('see-spec opens in the default placement when multiple panels exist', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+              'p-2': {
+                id: 'p-2',
+                tabs: [{ id: 'tab-2', type: 'note', noteId: 'other-note' }],
+                activeTabId: 'tab-2',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec'],
+      }),
+    );
+  });
+
+  it('see-spec closes the spec tab when it is the active tab of its panel', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+              'p-2': {
+                id: 'p-2',
+                tabs: [{ id: 'tab-spec', type: 'note', noteId: 'spec' }],
+                activeTabId: 'tab-spec',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/closeTab',
+        payload: expect.objectContaining({ wsId: 'ws-1', tabId: 'tab-spec', panelId: 'p-2' }),
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('see-spec reveals a background spec tab instead of closing it', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [{ id: 'tab-1', type: 'conversation' }],
+                activeTabId: 'tab-1',
+              },
+              'p-2': {
+                id: 'p-2',
+                tabs: [
+                  { id: 'tab-spec', type: 'note', noteId: 'spec' },
+                  { id: 'tab-2', type: 'note', noteId: 'other-note' },
+                ],
+                activeTabId: 'tab-2',
+              },
+            },
+          },
+        },
+      }),
+    );
     getActionKeyDefinition('see-spec').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
