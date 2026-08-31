@@ -216,10 +216,12 @@ test('preserves hover, focus, click, and note open-marker behavior', async ({ mo
   );
 
   await agents.first().hover({ position: { x: 2, y: 18 } });
-  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible({ timeout: 250 });
+  // Launcher hover cards require a deliberate 300ms dwell before opening
+  // (perf: a mouse pass-over during a workspace switch must not open them).
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible({ timeout: 1000 });
   await notes.first().focus();
   await expect(notes.first()).toBeFocused();
-  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible({ timeout: 250 });
+  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible({ timeout: 1000 });
   await agents.first().focus();
   await page.keyboard.press('Tab');
   await expect(agents.nth(1)).toBeFocused();
