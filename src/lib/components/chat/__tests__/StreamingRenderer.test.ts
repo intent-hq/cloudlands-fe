@@ -2,10 +2,13 @@
  * @vitest-environment jsdom
  */
 import { cleanup, render } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import StreamingRenderer from '../StreamingRenderer.svelte';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -53,5 +56,79 @@ describe('StreamingRenderer whitelisted inline tags (br/sub/sup)', () => {
     const html = await renderStreaming('a <div> b <br class="x"> c');
     expect(html).toContain('&lt;div&gt;');
     expect(html).toContain('&lt;br class="x"&gt;');
+  });
+});
+
+describe('StreamingRenderer streaming lifecycle', () => {
+  it('does not write DOM for unchanged empty active content', async () => {
+    const setInnerHTML = vi.spyOn(Element.prototype, 'innerHTML', 'set');
+    const view = render(StreamingRenderer, { props: { content: '', isActive: true } });
+    await nextFrame();
+    await nextFrame();
+
+    await view.rerender({ content: '', isActive: true });
+    await nextFrame();
+    await nextFrame();
+
+    expect(setInnerHTML).not.toHaveBeenCalled();
+    expect(view.container.querySelector('.streaming-content')).toBeNull();
+    expect(view.container.querySelector('.streaming-cursor')).toBeNull();
+  });
+
+  it('updates active content and skips duplicate rendered HTML writes', async () => {
+    const view = render(StreamingRenderer, { props: { content: 'first', isActive: true } });
+    await nextFrame();
+    await nextFrame();
+
+    const contentEl = view.container.querySelector('.streaming-content');
+    expect(contentEl).not.toBeNull();
+    const initialHtml = contentEl?.innerHTML;
+    const setInnerHTML = vi.spyOn(Element.prototype, 'innerHTML', 'set');
+
+    await view.rerender({ content: 'first', isActive: true });
+    await nextFrame();
+    await nextFrame();
+    await view.rerender({ content: 'first<agent_digest>hidden</agent_digest>', isActive: true });
+    await nextFrame();
+    await nextFrame();
+
+    expect(setInnerHTML).not.toHaveBeenCalled();
+    expect(contentEl?.innerHTML).toBe(initialHtml);
+
+    await view.rerender({ content: 'second', isActive: true });
+    await nextFrame();
+    await nextFrame();
+
+    expect(setInnerHTML).toHaveBeenCalledTimes(1);
+    expect(contentEl?.innerHTML).toContain('second');
+    expect(view.container.querySelectorAll('.streaming-cursor')).toHaveLength(1);
+  });
+
+  it('clears final content and recreates the cursor after reactivation', async () => {
+    const view = render(StreamingRenderer, { props: { content: 'streaming', isActive: true } });
+    await nextFrame();
+    await nextFrame();
+
+    const container = view.container.querySelector('.streaming-renderer');
+    expect(container?.querySelector('.streaming-cursor')).not.toBeNull();
+
+    await view.rerender({ content: 'streaming', isActive: false });
+    expect(container?.childElementCount).toBe(0);
+
+    await view.rerender({ content: 'finalized', isActive: true });
+    await nextFrame();
+    await nextFrame();
+
+    expect(container?.querySelector('.streaming-content')?.innerHTML).toContain('finalized');
+    expect(container?.querySelectorAll('.streaming-cursor')).toHaveLength(1);
+  });
+
+  it('cancels a pending frame when unmounted', () => {
+    const cancelAnimationFrame = vi.spyOn(globalThis, 'cancelAnimationFrame');
+    const view = render(StreamingRenderer, { props: { content: 'pending', isActive: true } });
+
+    view.unmount();
+
+    expect(cancelAnimationFrame).toHaveBeenCalledTimes(1);
   });
 });
