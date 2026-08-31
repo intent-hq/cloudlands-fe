@@ -116,6 +116,34 @@ describe('Tooltip', () => {
     ).not.toBeNull();
   });
 
+  it('mounts no tooltip content and performs no layout reads while closed', async () => {
+    // Perf invariant (Trace-20260831T161502): floating-ui measurement
+    // (isOverflowElement/getCssDimensions) must only run when a tooltip
+    // actually opens — closed triggers, including their per-instance
+    // Providers, must cost zero style/layout reads.
+    const originalGetComputedStyle = window.getComputedStyle.bind(window);
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    let layoutReads = 0;
+    window.getComputedStyle = ((...args: Parameters<typeof window.getComputedStyle>) => {
+      layoutReads += 1;
+      return originalGetComputedStyle(...args);
+    }) as typeof window.getComputedStyle;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      layoutReads += 1;
+      return originalGetBoundingClientRect.call(this);
+    };
+    try {
+      render(TooltipHarness);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+      expect(document.querySelector('[data-tooltip-content]')).toBeNull();
+      expect(layoutReads).toBe(0);
+    } finally {
+      window.getComputedStyle = originalGetComputedStyle;
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+
   it('publishes parseable metadata and the complete production public barrel', () => {
     expect(() => parseUiComponentMetadata(tooltipApi.tooltipMetadata)).not.toThrow();
     expect(tooltipFixtures[0].states).toEqual(
