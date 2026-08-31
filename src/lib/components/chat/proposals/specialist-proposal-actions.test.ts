@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
-import { createCollection } from '$lib/store/utils/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   deleteFileSpecialist,
   initialState as specialistsInitialState,
   saveFileSpecialist,
   type FileSpecialist,
-} from '$lib/store/slices/specialists/specialists-slice';
+} from '$store/renderer/slices/specialists/specialists-slice';
 import {
   applyProposalRequested,
   undoProposalRequested,
-} from '$lib/store/slices/proposal-lifecycle/proposal-lifecycle-slice';
-import { initialState as modelInitialState } from '$lib/store/slices/model/model-slice';
-import { initialState as providerSettingsInitialState } from '$lib/store/slices/provider-settings/provider-settings-slice';
-import type { StoreState } from '$lib/store/types';
+} from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
+import { initialState as providerSettingsInitialState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import type { StoreState } from '$store/renderer/types';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -21,8 +21,14 @@ const mocks = vi.hoisted(() => ({
   navigateToSettings: vi.fn(),
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ dispatch: mocks.dispatch, getState: mocks.getState }),
+vi.mock('$store/renderer/store', () => ({
+  store: {
+    dispatch: mocks.dispatch,
+    get state() {
+      return mocks.getState();
+    },
+    createSelector: vi.fn((fn) => ({ select: fn })),
+  },
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
@@ -41,10 +47,8 @@ function makeState(overrides: Partial<StoreState> = {}): StoreState {
     specialists: specialistsInitialState,
     model: { ...modelInitialState, providerModels: { auggie: 'auggie:sonnet4.5' } },
     providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
-    workspace: { workspaces: createCollection('id') },
     specialistProposalHistory: { entries: {} },
-    githubAuth: { status: 'unauthenticated' },
-    agentSessions: { byAgentId: {} },
+    githubAuth: { isAuthenticated: false },
     ...overrides,
   } as StoreState;
 }
@@ -82,6 +86,15 @@ function existingFileSpecialist(): FileSpecialist {
     filePath: '/tmp/review-buddy.md',
     source: 'user',
   };
+}
+
+function stateWithExistingSpecialist(): StoreState {
+  return makeState({
+    specialists: {
+      ...specialistsInitialState,
+      fileSpecialists: createCollection<FileSpecialist, 'id'>('id', [existingFileSpecialist()]),
+    },
+  });
 }
 
 function makeEditProposal(): Proposal {
@@ -127,13 +140,20 @@ describe('specialist-proposal-actions', () => {
     );
   });
 
-  it('applies create proposals with a delete reverse action and focuses the new specialist', async () => {
-    const proposal = makeCreateProposal();
+  it('returns false for non-specialist proposals without dispatching', () => {
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings',
+      payload: { changes: [] },
+      preview: { title: 'Change setting' },
+    };
 
-    const result = await applySpecialistProposalWork(makeDetail(proposal), {
-      dispatch: mocks.dispatch,
-      readState: mocks.getState,
-    });
+    expect(applySpecialistProposal(makeDetail(proposal))).toBe(false);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('applies create proposals with a delete reverse action and focuses the new specialist', async () => {
+    const result = await applySpecialistProposalWork(makeDetail(makeCreateProposal()));
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       saveFileSpecialist({
@@ -142,7 +162,6 @@ describe('specialist-proposal-actions', () => {
         description: 'Reviews changes',
         codingAgent: 'auggie',
         model: 'auggie:opus4.5',
-        modelTier: undefined,
         roleReminder: undefined,
         behaviorPrompt: 'Review carefully.',
         scope: 'user',
@@ -162,20 +181,9 @@ describe('specialist-proposal-actions', () => {
   });
 
   it('returns edit proposal reverse action from current specialist values', async () => {
-    const fileSpecialist = existingFileSpecialist();
-    mocks.getState.mockReturnValue(
-      makeState({
-        specialists: {
-          ...specialistsInitialState,
-          fileSpecialists: createCollection<FileSpecialist, 'id'>('id', [fileSpecialist]),
-        },
-      }),
-    );
+    mocks.getState.mockReturnValue(stateWithExistingSpecialist());
 
-    const result = await applySpecialistProposalWork(makeDetail(makeEditProposal()), {
-      dispatch: mocks.dispatch,
-      readState: mocks.getState,
-    });
+    const result = await applySpecialistProposalWork(makeDetail(makeEditProposal()));
 
     expect(result.reverse).toEqual({
       kind: 'save',
@@ -185,30 +193,19 @@ describe('specialist-proposal-actions', () => {
         description: 'Old description',
         codingAgent: 'auggie',
         model: 'auggie:sonnet4.5',
-        modelTier: undefined,
         roleReminder: 'Stay focused.',
         behaviorPrompt: 'Old prompt',
         scope: 'user',
         workspacePath: undefined,
       },
     });
+    expect(mocks.navigateToSettings).not.toHaveBeenCalled();
   });
 
   it('applies delete proposals with a save reverse action from current specialist values', async () => {
-    const fileSpecialist = existingFileSpecialist();
-    mocks.getState.mockReturnValue(
-      makeState({
-        specialists: {
-          ...specialistsInitialState,
-          fileSpecialists: createCollection<FileSpecialist, 'id'>('id', [fileSpecialist]),
-        },
-      }),
-    );
+    mocks.getState.mockReturnValue(stateWithExistingSpecialist());
 
-    const result = await applySpecialistProposalWork(makeDetail(makeDeleteProposal()), {
-      dispatch: mocks.dispatch,
-      readState: mocks.getState,
-    });
+    const result = await applySpecialistProposalWork(makeDetail(makeDeleteProposal()));
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       deleteFileSpecialist({
@@ -221,10 +218,7 @@ describe('specialist-proposal-actions', () => {
   });
 
   it('undo work dispatches delete reverse actions', async () => {
-    await undoSpecialistProposalWork(
-      { kind: 'delete', id: 'review-buddy', scope: 'user' },
-      { dispatch: mocks.dispatch, readState: mocks.getState },
-    );
+    await undoSpecialistProposalWork({ kind: 'delete', id: 'review-buddy', scope: 'user' });
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       deleteFileSpecialist({
@@ -245,10 +239,7 @@ describe('specialist-proposal-actions', () => {
       scope: 'user' as const,
     };
 
-    await undoSpecialistProposalWork(
-      { kind: 'save', specialist },
-      { dispatch: mocks.dispatch, readState: mocks.getState },
-    );
+    await undoSpecialistProposalWork({ kind: 'save', specialist });
 
     expect(mocks.dispatch).toHaveBeenCalledWith(saveFileSpecialist(specialist));
   });

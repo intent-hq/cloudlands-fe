@@ -195,7 +195,10 @@
     type PendingProposalEntry,
   } from './proposals/pending-proposals';
   import { getProposalId } from './proposals/proposal-id';
-  import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
+  import {
+    applySpecialistProposal,
+    undoSpecialistProposal,
+  } from './proposals/specialist-proposal-actions';
   import {
     applySettingsProposal,
     undoSettingsProposal,
@@ -1159,6 +1162,7 @@
   }
 
   function handleProposalTrayUndo(proposalId: string) {
+    if (undoSpecialistProposal(proposalId)) return;
     undoSettingsProposal(proposalId);
   }
 
