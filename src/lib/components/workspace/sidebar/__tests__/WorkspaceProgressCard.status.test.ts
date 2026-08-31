@@ -332,18 +332,22 @@ describe('WorkspaceProgressCard status message', () => {
     });
   });
 
-  it('places the transfer action immediately before archive with the established icon', async () => {
+  it('places a divider between the move and transfer actions while keeping transfer before archive', async () => {
     const { container } = await renderProgressCard();
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
+    const moveSidebar = screen.getByRole('button', { name: 'Move sidebar to right' });
     const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
     const archive = screen.getByRole('button', { name: 'Archive Workspace' });
-    const menuActions = Array.from(transfer.parentElement!.querySelectorAll('button'));
-    const transferIndex = menuActions.indexOf(transfer);
-    const archiveIndex = menuActions.indexOf(archive);
+    const menuItems = Array.from(transfer.parentElement!.children);
+    const moveSidebarIndex = menuItems.indexOf(moveSidebar);
+    const dividerIndex = moveSidebarIndex + 1;
+    const transferIndex = menuItems.indexOf(transfer);
+    const archiveIndex = menuItems.indexOf(archive);
 
     expect(transfer.dataset.iconName).toBe('right-left');
-    expect(transferIndex).toBeGreaterThanOrEqual(0);
+    expect(menuItems[dividerIndex]?.getAttribute('data-testid')).toBe('menu-divider');
+    expect(transferIndex).toBe(dividerIndex + 1);
     expect(archiveIndex).toBe(transferIndex + 1);
   });
 

@@ -545,6 +545,7 @@
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
+          dividerBefore: true,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(

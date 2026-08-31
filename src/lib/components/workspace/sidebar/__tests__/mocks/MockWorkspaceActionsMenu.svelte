@@ -4,6 +4,7 @@
   interface Action {
     label: string;
     icon?: IconDefinition;
+    dividerBefore?: boolean;
     onClick: () => void;
   }
 
@@ -22,6 +23,9 @@
 </script>
 
 {#each additionalActions as action (action.label)}
+  {#if action.dividerBefore}
+    <div data-testid="menu-divider"></div>
+  {/if}
   <button
     type="button"
     data-icon-name={action.icon?.iconName ?? ''}
