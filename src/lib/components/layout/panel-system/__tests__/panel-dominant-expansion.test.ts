@@ -117,6 +117,9 @@ async function mount(workspaceId: string, contained = false) {
   await waitFor(() =>
     expect(document.querySelectorAll('[data-mounted-panel]').length).toBeGreaterThan(1),
   );
+  // The initial viewport measurement runs in the batched layout read phase
+  // (one rAF after mount), so flush a frame before tests assert widths.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   return result;
 }
 

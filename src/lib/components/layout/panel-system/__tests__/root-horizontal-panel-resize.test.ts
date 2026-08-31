@@ -116,6 +116,10 @@ async function renderLayout(contained: boolean, expectedCanvasWidth = INITIAL_CA
   await waitFor(() => {
     expect(canvasWidth()).toBe(expectedCanvasWidth);
   });
+  // The initial viewport measurement runs in the batched layout read phase
+  // (one rAF after mount), so flush a frame before tests measure or drag.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await tick();
   return result;
 }
 
