@@ -495,6 +495,7 @@ describe('followBottom policy', () => {
       follow: true,
       onScrollStateChange: (state) => states.push(state),
     });
+    runSettleTail();
     const initialReports = states.length;
 
     container.dispatchEvent(new Event('scroll'));
@@ -720,8 +721,8 @@ describe('followBottom policy', () => {
       {
         phase: 'edit-grow-first-frame',
         maximum: 613,
-        scrollTop: 600,
-        distance: 13,
+        scrollTop: 613,
+        distance: 0,
         settleFrames: 0,
       },
     ]);
@@ -1049,8 +1050,9 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('coalesces same-frame observer bursts into one geometry read and scroll write', () => {
+  it('coalesces same-frame mutation bursts into one geometry read and scroll write', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
     const clientReads = vi.spyOn(container, 'clientHeight', 'get');
     const topReads = vi.spyOn(container, 'scrollTop', 'get');
@@ -1058,8 +1060,8 @@ describe('followBottom policy', () => {
     scrollHeight += 40;
 
     fireMutation();
-    fireResize();
-    fireResize();
+    fireMutation();
+    fireMutation();
 
     expect(animationFrames).toHaveLength(1);
     expect(heightReads).not.toHaveBeenCalled();
@@ -1074,12 +1076,13 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('does not restart settling or write scrollTop for unchanged observer geometry', () => {
+  it('does not restart settling or write scrollTop for unchanged mutation geometry', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     const topWrites = vi.spyOn(container, 'scrollTop', 'set');
 
     fireMutation();
-    fireResize();
+    fireMutation();
     runFrame();
 
     expect(topWrites).not.toHaveBeenCalled();

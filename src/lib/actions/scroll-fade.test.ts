@@ -49,19 +49,22 @@ describe('scrollFade', () => {
     const action = scrollFade(element);
 
     expect(maskSetter).toHaveBeenCalledTimes(1);
-    element.dispatchEvent(new Event('scroll'));
-    element.dispatchEvent(new Event('scroll'));
-    element.dispatchEvent(new Event('scroll'));
-    expect(frames).toHaveLength(1);
-
-    frames.shift()?.(performance.now());
-    expect(maskSetter).toHaveBeenCalledTimes(1);
-
-    action.update({ fadeSize: 16 });
-    action.update({ fadeSize: 16 });
     expect(frames).toHaveLength(1);
     frames.shift()?.(performance.now());
     expect(maskSetter).toHaveBeenCalledTimes(2);
+    element.dispatchEvent(new Event('scroll'));
+    element.dispatchEvent(new Event('scroll'));
+    element.dispatchEvent(new Event('scroll'));
+    expect(frames).toHaveLength(1);
+
+    frames.shift()?.(performance.now());
+    expect(maskSetter).toHaveBeenCalledTimes(2);
+
+    action.update({ fadeSize: 16 });
+    action.update({ fadeSize: 16 });
+    expect(frames).toHaveLength(1);
+    frames.shift()?.(performance.now());
+    expect(maskSetter).toHaveBeenCalledTimes(3);
 
     action.destroy();
   });

@@ -90,6 +90,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let settleFrame: number | null = null;
   let reactivationFrame: number | null = null;
   let layoutReportFrame: number | null = null;
+  let layoutFrame: number | null = null;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
@@ -161,7 +162,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function cancelSettle() {
     if (settleFrame !== null) cancelAnimationFrame(settleFrame);
+    if (layoutFrame !== null) cancelAnimationFrame(layoutFrame);
     settleFrame = null;
+    layoutFrame = null;
     stableFrames = 0;
     previousMaximum = null;
   }
@@ -247,14 +250,14 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     settleFrame = requestAnimationFrame(runSettleFrame);
   }
 
-  function requestBottomSettle() {
+  function requestBottomSettle(scheduleTail = true) {
     if (destroyed || !enabled || !isFollowing) return;
     const geometry = setExactBottom();
     const { maximum } = geometry;
     reportState(geometry);
     stableFrames = 0;
     previousMaximum = maximum;
-    scheduleBottomSettle();
+    if (scheduleTail) scheduleBottomSettle();
   }
 
   function scheduleLayoutReport() {
@@ -266,6 +269,20 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     });
   }
 
+  function reconcileLayoutChange() {
+    layoutFrame = null;
+    if (destroyed || !enabled) return;
+    let geometry = readScrollGeometry();
+    const correctedBottom = geometry.scrollTop !== geometry.maximum;
+    geometry = setExactBottom(geometry);
+    if (correctedBottom || geometry.maximum !== previousMaximum || activeMutationLocks > 0) {
+      stableFrames = 0;
+      previousMaximum = geometry.maximum;
+      scheduleBottomSettle();
+    }
+    reportState(geometry);
+  }
+
   function handleLayoutChange() {
     // Mutation callbacks fire as microtasks on a dirty tree — e.g. when a
     // retained surface is revealed — where a synchronous
@@ -275,9 +292,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     // snaps exactly.
     if (destroyed || !enabled) return;
     if (isFollowing) {
-      stableFrames = 0;
-      previousMaximum = null;
-      scheduleBottomSettle();
+      if (settleFrame !== null || layoutFrame !== null) return;
+      layoutFrame = requestAnimationFrame(reconcileLayoutChange);
       return;
     }
     scheduleLayoutReport();
@@ -294,7 +310,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     // residue.)
     if (destroyed || !enabled) return;
     if (isFollowing) {
-      requestBottomSettle();
+      requestBottomSettle(layoutFrame === null);
       return;
     }
     scheduleLayoutReport();
@@ -527,6 +543,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     reactivationFrame = null;
     if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
     layoutReportFrame = null;
+    lastReportedState = null;
     if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
     teardownObservers();
     teardownNativeBottomAnchor();

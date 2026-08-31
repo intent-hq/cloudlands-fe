@@ -108,10 +108,13 @@ export const scrollFade: Action<HTMLElement, ScrollFadeOptions | undefined> = (
 
   return {
     update(newOptions: ScrollFadeOptions | undefined) {
+      const wasEnabled = enabled;
       fadeSize = newOptions?.fadeSize ?? 24;
       axis = newOptions?.axis ?? 'y';
       enabled = newOptions?.enabled ?? true;
-      start();
+      if (!enabled) stop();
+      else if (!wasEnabled) start();
+      else scheduleUpdate();
     },
     destroy: stop,
   };
