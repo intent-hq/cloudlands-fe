@@ -3,6 +3,7 @@ import {
   actionChannel,
   all,
   call,
+  cancelled,
   delay,
   flush,
   fork,
@@ -176,13 +177,31 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function mutationError(error: unknown, fallback: string): Error {
+  return error instanceof Error ? error : new Error(errorMessage(error, fallback));
+}
+
 function* showMutationError(error: unknown, fallback: string) {
   const { toast } = yield* call(() => import('svelte-sonner'));
   yield* call([toast, toast.error], errorMessage(error, fallback));
 }
 
+/**
+ * Reject the per-dispatch promise with `error`. The promise is marked handled
+ * first so fire-and-forget dispatchers (e.g. the settings editor) don't
+ * surface unhandled-rejection noise; awaiting callers still get the rejection.
+ */
+function* rejectAction(
+  action: ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>,
+  error: Error,
+) {
+  action.promise.catch(() => {});
+  yield* put(action.failure(error));
+}
+
 function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpecialist>) {
   const [payload] = action.payload;
+  let settled = false;
   try {
     const existing = yield* selectGetFileSpecialist.effect(payload.id);
     const bundledSpecialists = yield* selectBundledSpecialists.effect();
@@ -223,15 +242,30 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
         payload.workspacePath,
       );
     }
+    // The daemon write succeeded: settle the promise before the list refetch
+    // (which handles its own failures) so awaiting callers aren't blocked on it.
+    yield* put(action.success(undefined as never));
+    settled = true;
     yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to save file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_saveFailed_error());
+    yield* call(
+      rejectAction,
+      action,
+      mutationError(error, m.specialists_mutation_saveFailed_error()),
+    );
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* call(rejectAction, action, new Error(m.specialists_mutation_saveFailed_error()));
+    }
   }
 }
 
 function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFileSpecialist>) {
   const [ref] = action.payload;
+  let settled = false;
   try {
     yield* call(
       [appClient.specialists, appClient.specialists.delete],
@@ -239,10 +273,22 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
       ref.scope ?? 'user',
       ref.workspacePath,
     );
+    yield* put(action.success(undefined as never));
+    settled = true;
     yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to delete file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_deleteFailed_error());
+    yield* call(
+      rejectAction,
+      action,
+      mutationError(error, m.specialists_mutation_deleteFailed_error()),
+    );
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* call(rejectAction, action, new Error(m.specialists_mutation_deleteFailed_error()));
+    }
   }
 }
 

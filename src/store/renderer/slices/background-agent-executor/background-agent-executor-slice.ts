@@ -12,7 +12,6 @@ import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import type {
   BackgroundAgentExecutorState,
   ExecutorInstanceState,
-  ExecutorStatus,
   AgentExecutorContext,
   BackgroundAgentExecutorWorkspaceState,
 } from './background-agent-executor-types';
@@ -58,16 +57,6 @@ export const executeBackgroundAgent =
 
 export const cancelExecution =
   createAction<[workspaceId: string, executorType: string]>('bgExecutor/cancel');
-
-export const reconnectAgent =
-  createAction<
-    [
-      workspaceId: string,
-      executorType: string,
-      agentId: string,
-      savedState?: { status: ExecutorStatus; result: string | null },
-    ]
-  >('bgExecutor/reconnect');
 
 // ============================================================================
 // Reducer actions (pure state updates, dispatched by sagas)
@@ -132,7 +121,6 @@ backgroundAgentExecutorReducer.with(
 
 // Re-export types for convenience
 export type {
-  ExecutorStatus,
   AgentExecutorContext,
   ExecutorInstanceState,
 } from './background-agent-executor-types';

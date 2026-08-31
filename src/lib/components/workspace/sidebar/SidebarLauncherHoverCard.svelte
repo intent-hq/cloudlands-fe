@@ -81,7 +81,7 @@
   side="top"
   align="start"
   sideOffset={8}
-  delayDuration={0}
+  delayDuration={300}
   maxWidth="20rem"
   showArrow={false}
   class={gridPosition === 'start'

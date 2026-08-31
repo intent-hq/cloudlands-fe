@@ -25,6 +25,17 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     expect(source).not.toContain("$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'");
   });
 
+  it('delays workflow-action tooltips so a mouse pass-over never opens them', () => {
+    // Perf invariant (Trace-20260831T161502): opening a tooltip triggers
+    // floating-ui measurement, so switch-path sidebar action rows must not
+    // use the plain Tooltip default of delayDuration 0.
+    const actionTooltips = source.match(/<Tooltip\s+content=\{action\?\.tooltip\}[\s\S]*?>/g);
+    expect(actionTooltips).toHaveLength(2);
+    for (const tooltip of actionTooltips!) {
+      expect(tooltip).toContain('delayDuration={300}');
+    }
+  });
+
   it('renders the hover-card path as a link-styled copy button', () => {
     expect(source).toContain('data-sidebar-repository-path-copy');
     expect(source).toContain('{#if workspacePath}');

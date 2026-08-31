@@ -233,10 +233,6 @@ export const hydrateCollapsiblePanelCollapsed = createAction<[key: string, colla
 export const setCollapsiblePanelCollapsed = createAction<[key: string, collapsed: boolean]>(
   'uiLayout/setCollapsiblePanelCollapsed',
 );
-export const setWorkspaceSidebarPanelLayout = createAction<
-  [layout: WorkspaceSidebarPanelLayoutState]
->('uiLayout/setWorkspaceSidebarPanelLayout');
-
 export const uiLayoutReducer = createReducer<UiLayoutState>(initialState);
 lineWrappingPreference.register(uiLayoutReducer);
 foldUnchangedPreference.register(uiLayoutReducer);
@@ -330,10 +326,6 @@ uiLayoutReducer.with(hydrateCollapsiblePanelCollapsed, (state, { payload: [key, 
 uiLayoutReducer.with(setCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
   ...state,
   collapsiblePanelCollapsed: { ...state.collapsiblePanelCollapsed, [key]: collapsed },
-}));
-uiLayoutReducer.with(setWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
-  ...state,
-  workspaceSidebarPanelLayout: layout,
 }));
 uiLayoutReducer.with(setSpacesSidebarWidth, (state, { payload: [pixels] }) => {
   if (pixels === state.spacesSidebarWidth) return state;

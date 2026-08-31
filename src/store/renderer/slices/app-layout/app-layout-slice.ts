@@ -2,9 +2,7 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AppLayoutState,
-  CreateWorkspaceForRepoDetail,
   OpenAgentTabDetail,
-  OpenNewSpaceModalDetail,
   SidebarLocateTarget,
 } from './app-layout-types';
 
@@ -19,14 +17,6 @@ export const createFileRequested = createAction<
 
 export const openAgentTabRequested = createAction<[wsId: string, detail: OpenAgentTabDetail]>(
   'appLayout/openAgentTabRequested',
-);
-
-export const createWorkspaceForRepoRequested = createAction<[detail: CreateWorkspaceForRepoDetail]>(
-  'appLayout/createWorkspaceForRepoRequested',
-);
-
-export const openNewSpaceModalRequested = createAction<[detail: OpenNewSpaceModalDetail]>(
-  'appLayout/openNewSpaceModalRequested',
 );
 
 // `agentDriven` marks focuses originating from agent browser ops

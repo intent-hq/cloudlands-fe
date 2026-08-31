@@ -89,6 +89,8 @@
     agentId?: string;
     /** Persisted message id owning `content` (hydration fetch/merge key). */
     messageId?: string;
+    /** True when this message is the conversation's final assistant message. */
+    isLastConversationMessage?: boolean;
   }
 
   let {
@@ -98,6 +100,7 @@
     role = 'assistant',
     agentId,
     messageId,
+    isLastConversationMessage = false,
   }: Props = $props();
 
   // Lazy full-block hydration (§5.5 slim projection → v7.2
@@ -729,6 +732,7 @@
             name={group.name}
             isStreaming={group.isStreaming}
             isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            {isLastConversationMessage}
             blocks={group.children}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}

@@ -31,12 +31,3 @@ export type OpenAgentTabDetail = {
   adaptiveFirstChat?: boolean;
 };
 
-export type CreateWorkspaceForRepoDetail = {
-  repositoryPath: string;
-  workspaceId?: string;
-  workspaceTitle?: string;
-};
-
-export type OpenNewSpaceModalDetail = {
-  initialRepo?: { repoPath?: string };
-};
