@@ -564,7 +564,7 @@
               {#if pr.url}
                 <Button
                   variant="plain"
-                  class="type-caption h-5 min-w-5 shrink-0 gap-1 rounded-sm !px-1 font-normal tabular-nums {pr.backgroundClass} {pr.foregroundClass}"
+                  class="size-5 shrink-0 rounded-sm !p-0 {pr.backgroundClass} {pr.foregroundClass}"
                   aria-label={getWorkspacePrLabel(pr)}
                   data-workspace-card-pr-item
                   data-pr-identity={pr.identity}
@@ -578,18 +578,16 @@
                   }}
                 >
                   <Fa icon={pr.statusIcon} size="xs" />
-                  <span class="wc-pr-number" data-workspace-card-pr-number>#{pr.number}</span>
                 </Button>
               {:else}
                 <span
-                  class="type-caption inline-flex h-5 min-w-5 shrink-0 items-center gap-1 rounded-sm px-1 font-normal tabular-nums {pr.backgroundClass} {pr.foregroundClass}"
+                  class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm {pr.backgroundClass} {pr.foregroundClass}"
                   aria-label={getWorkspacePrLabel(pr)}
                   data-workspace-card-pr-item
                   data-pr-identity={pr.identity}
                   data-pr-status={pr.status}
                 >
                   <Fa icon={pr.statusIcon} size="xs" />
-                  <span class="wc-pr-number" data-workspace-card-pr-number>#{pr.number}</span>
                 </span>
               {/if}
             </Tooltip>
@@ -883,10 +881,6 @@
 
   @container (max-width: 220px) {
     .wc-secondary {
-      display: none;
-    }
-
-    .wc-pr-number {
       display: none;
     }
   }
