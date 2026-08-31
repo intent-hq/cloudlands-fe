@@ -258,7 +258,7 @@ describe('editorial conversation presentation contract', () => {
     );
   });
 
-  it('uses quieter Chief message surfaces and neutral proposal borders', () => {
+  it('uses quieter Chief message surfaces and keeps proposals out of the transcript', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const streaming = source('src/lib/components/chat/StreamingMessageContent.svelte');
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
@@ -266,10 +266,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
     expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
-    expect(streaming).toContain('neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}');
-    expect(
-      messageContent.match(/neutralBorder=\{workspaceId === CHIEF_WORKSPACE_ID\}/g),
-    ).toHaveLength(2);
+    // Proposals are tray-only: neither transcript renderer mounts ProposalCard.
+    expect(streaming).not.toContain('ProposalCard');
+    expect(messageContent).not.toContain('ProposalCard');
   });
 
   it('keeps user rows transparent with the opaque surface on the bubble itself', () => {

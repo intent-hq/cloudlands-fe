@@ -4,12 +4,10 @@ import type { Proposal } from '$shared/types/proposal';
 import { createProposalResource } from '$shared/types/proposal-resource';
 import {
   classifyPendingProposalRefs,
-  classifyProposalResolutions,
   derivePendingProposals,
   missingPendingProposalMessageIds,
   pendingProposalKeyOf,
   proposalsOf,
-  proposalTranscriptDisposition,
 } from './pending-proposals';
 
 function makeProposal(applyToolCallId: string, title = `Proposal ${applyToolCallId}`): Proposal {
@@ -177,64 +175,3 @@ describe('missingPendingProposalMessageIds', () => {
   });
 });
 
-describe('classifyProposalResolutions', () => {
-  it('returns {} for absent/malformed metadata (old daemon graceful degrade)', () => {
-    expect(classifyProposalResolutions(undefined)).toEqual({});
-    expect(classifyProposalResolutions(null)).toEqual({});
-    expect(classifyProposalResolutions('nope')).toEqual({});
-    expect(classifyProposalResolutions([{ 'toolu-1': 'applied' }])).toEqual({});
-  });
-
-  it('keeps only applied/dismissed entries with non-empty keys', () => {
-    expect(
-      classifyProposalResolutions({
-        'toolu-1': 'applied',
-        'toolu-2': 'dismissed',
-        'toolu-3': 'undone',
-        'toolu-4': 7,
-        '': 'applied',
-      }),
-    ).toEqual({ 'toolu-1': 'applied', 'toolu-2': 'dismissed' });
-  });
-});
-
-describe('proposalTranscriptDisposition', () => {
-  const applied = makeProposal('toolu-a');
-  const dismissed = makeProposal('toolu-d');
-  const pending = makeProposal('toolu-p');
-  const unknown = makeProposal('toolu-u');
-  const resolutions = { 'toolu-a': 'applied', 'toolu-d': 'dismissed' } as const;
-  const pendingIds = new Set(['toolu-p']);
-
-  it('hides a proposal while its identity pends in metadata', () => {
-    expect(proposalTranscriptDisposition(pending, pendingIds, resolutions)).toBe('hidden');
-  });
-
-  it('returns the persisted outcome once resolved', () => {
-    expect(proposalTranscriptDisposition(applied, pendingIds, resolutions)).toBe('applied');
-    expect(proposalTranscriptDisposition(dismissed, pendingIds, resolutions)).toBe('dismissed');
-  });
-
-  it('lets a resolution outrank a stale pending ref for the same identity', () => {
-    expect(
-      proposalTranscriptDisposition(applied, new Set(['toolu-a']), resolutions),
-    ).toBe('applied');
-  });
-
-  it('falls back to interactive when the metadata knows nothing (legacy daemon)', () => {
-    expect(proposalTranscriptDisposition(unknown, pendingIds, resolutions)).toBe('interactive');
-    expect(proposalTranscriptDisposition(unknown, new Set(), {})).toBe('interactive');
-  });
-
-  it('keys id-less (proposeSibling-style) proposals by raw preview.title', () => {
-    const idless = makeIdlessProposal('Investigate slow startup');
-    expect(
-      proposalTranscriptDisposition(idless, new Set(['Investigate slow startup']), {}),
-    ).toBe('hidden');
-    expect(
-      proposalTranscriptDisposition(idless, new Set(), {
-        'Investigate slow startup': 'dismissed',
-      }),
-    ).toBe('dismissed');
-  });
-});

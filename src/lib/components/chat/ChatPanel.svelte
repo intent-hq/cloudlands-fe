@@ -179,7 +179,7 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import ProposalTray from './proposals/ProposalTray.svelte';
+  import ProposalTray, { trayBodyMaxHeight } from './proposals/ProposalTray.svelte';
   import {
     derivePendingProposalRecoveryState,
     deriveTrayPendingProposals,
@@ -1122,6 +1122,11 @@
     }
   });
 
+  // Measured panel height driving the tray body's scroll cap, so a tall
+  // proposal card in a short/narrow panel (the Chief sidebar) scrolls
+  // internally instead of pushing the composer out of reach.
+  let panelClientHeight = $state(0);
+
   // Hide state is host-owned and persisted per agent, like the wizard's
   // collapse flag; the initial value restores from storage (untracked so the
   // load never re-runs on unrelated state flips).
@@ -1133,11 +1138,10 @@
     return untrack(() => loadTrayCollapsed(agentId)) ?? false;
   });
 
-  // Apply mirrors the transcript cards (MessageContent.handleProposalApply):
-  // workspace-create/bulk-op route through the workspace-operations saga,
-  // specialist edits through the specialist actions, everything else through
-  // the settings actions. Lifecycle success is bridged to the daemon
-  // resolution below.
+  // Apply routing: workspace-create/bulk-op go through the
+  // workspace-operations saga, specialist edits through the specialist
+  // actions, everything else through the settings actions. Lifecycle success
+  // is bridged to the daemon resolution below.
   function handleProposalTrayApply(detail: ProposalActionDetail) {
     const { proposal } = detail;
     if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
@@ -1179,10 +1183,10 @@
     }
   }
 
-  // Apply→resolve bridge. Transcript-style applies key lifecycle under
+  // Apply→resolve bridge. Applies key lifecycle under
   // `getProposalId(proposal)` — which can differ from the daemon's metadata
   // ref key — and the gate retires an entry the instant its lifecycle turns
-  // 'applied', so the bridge works off a captured ref→transcript identity
+  // 'applied', so the bridge works off a captured ref→local identity
   // map rather than the filtered entries. Any still-pending metadata ref
   // whose lifecycle shows 'applied' under either identity gets ONE
   // resolve(applied) (daemon resolution is idempotent; first outcome wins).
@@ -4098,6 +4102,8 @@
             }
           } else if (entry.target === composerElement) {
             composerHeight = entry.contentRect.height;
+          } else if (entry.target === panelElement) {
+            panelClientHeight = entry.contentRect.height;
           }
         }
         if (scrollContainer) {
@@ -4109,6 +4115,9 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
+      // The panel root's height is layout-fixed (h-full), so observing it
+      // creates no feedback loop with the tray's capped body height.
+      if (panelElement) observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -6222,6 +6231,7 @@
                   <ProposalTray
                     {agentId}
                     entries={trayPendingProposals}
+                    maxBodyHeight={trayBodyMaxHeight(panelClientHeight)}
                     collapsed={proposalTrayCollapsed}
                     onToggleCollapsed={(collapsed) => {
                       proposalTrayCollapsedOverride = { agentId, collapsed };
