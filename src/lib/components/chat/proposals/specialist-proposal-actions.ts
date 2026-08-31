@@ -157,7 +157,9 @@ export async function applySpecialistProposalWork(
         : { kind: 'delete', id, scope, workspacePath };
 
   if (operation === 'delete') {
-    appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));
+    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
+    appStore.dispatch(deleteAction);
+    await deleteAction.promise;
     return { reverse };
   }
 
@@ -180,21 +182,21 @@ export async function applySpecialistProposalWork(
     current ? selectEffectiveBehaviorPrompt.select(state, current.id) : '',
   );
 
-  appStore.dispatch(
-    saveFileSpecialist({
-      id,
-      name,
-      description: description || m.settings_aiBehavior_customSpecialistFallback(),
-      codingAgent:
-        payload.codingAgent ??
-        (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),
-      model,
-      roleReminder: payload.roleReminder ?? current?.roleReminder,
-      behaviorPrompt: prompt,
-      scope,
-      workspacePath,
-    }),
-  );
+  const saveAction = saveFileSpecialist({
+    id,
+    name,
+    description: description || m.settings_aiBehavior_customSpecialistFallback(),
+    codingAgent:
+      payload.codingAgent ??
+      (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),
+    model,
+    roleReminder: payload.roleReminder ?? current?.roleReminder,
+    behaviorPrompt: prompt,
+    scope,
+    workspacePath,
+  });
+  appStore.dispatch(saveAction);
+  await saveAction.promise;
   if (operation === 'create') await navigateToCreatedSpecialist(id);
 
   return { reverse };
@@ -203,11 +205,15 @@ export async function applySpecialistProposalWork(
 export async function undoSpecialistProposalWork(reverse: SpecialistReverseAction): Promise<void> {
   if (reverse.kind === 'delete') {
     const { id, scope, workspacePath } = reverse;
-    appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));
+    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
+    appStore.dispatch(deleteAction);
+    await deleteAction.promise;
     return;
   }
 
-  appStore.dispatch(saveFileSpecialist(reverse.specialist));
+  const saveAction = saveFileSpecialist(reverse.specialist);
+  appStore.dispatch(saveAction);
+  await saveAction.promise;
 }
 
 export function undoSpecialistProposal(proposalId: string): boolean {

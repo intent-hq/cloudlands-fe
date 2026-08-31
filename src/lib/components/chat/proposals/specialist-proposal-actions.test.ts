@@ -120,9 +120,29 @@ function makeDeleteProposal(): Proposal {
   };
 }
 
+// Async write actions (saveFileSpecialist/deleteFileSpecialist) carry a
+// per-dispatch promise the saga settles with the daemon write outcome; the
+// mocked dispatch resolves it so awaited work functions complete.
+function settleAsyncActions() {
+  mocks.dispatch.mockImplementation((action: { success?: (response: unknown) => unknown }) => {
+    action.success?.(undefined);
+    return action;
+  });
+}
+
+function expectDispatchedWrite(
+  creator: typeof saveFileSpecialist | typeof deleteFileSpecialist,
+  payload: unknown,
+) {
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ type: creator.type, payload: [payload] }),
+  );
+}
+
 describe('specialist-proposal-actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    settleAsyncActions();
     mocks.getState.mockReturnValue(makeState());
   });
 
@@ -155,19 +175,17 @@ describe('specialist-proposal-actions', () => {
   it('applies create proposals with a delete reverse action and focuses the new specialist', async () => {
     const result = await applySpecialistProposalWork(makeDetail(makeCreateProposal()));
 
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      saveFileSpecialist({
-        id: 'review-buddy',
-        name: 'Review Buddy',
-        description: 'Reviews changes',
-        codingAgent: 'auggie',
-        model: 'auggie:opus4.5',
-        roleReminder: undefined,
-        behaviorPrompt: 'Review carefully.',
-        scope: 'user',
-        workspacePath: undefined,
-      }),
-    );
+    expectDispatchedWrite(saveFileSpecialist, {
+      id: 'review-buddy',
+      name: 'Review Buddy',
+      description: 'Reviews changes',
+      codingAgent: 'auggie',
+      model: 'auggie:opus4.5',
+      roleReminder: undefined,
+      behaviorPrompt: 'Review carefully.',
+      scope: 'user',
+      workspacePath: undefined,
+    });
     expect(result.reverse).toEqual({
       kind: 'delete',
       id: 'review-buddy',
@@ -207,26 +225,37 @@ describe('specialist-proposal-actions', () => {
 
     const result = await applySpecialistProposalWork(makeDetail(makeDeleteProposal()));
 
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      deleteFileSpecialist({
-        id: 'review-buddy',
-        scope: 'user',
-        workspacePath: undefined,
-      }),
-    );
+    expectDispatchedWrite(deleteFileSpecialist, {
+      id: 'review-buddy',
+      scope: 'user',
+      workspacePath: undefined,
+    });
     expect(result.reverse).toEqual(expect.objectContaining({ kind: 'save' }));
+  });
+
+  it('apply work rejects when the daemon write fails (monorepo review PR#1947)', async () => {
+    mocks.dispatch.mockImplementation(
+      (action: { failure?: (error: Error) => unknown; promise?: Promise<unknown> }) => {
+        action.promise?.catch(() => {});
+        action.failure?.(new Error('daemon write failed'));
+        return action;
+      },
+    );
+
+    await expect(applySpecialistProposalWork(makeDetail(makeCreateProposal()))).rejects.toThrow(
+      'daemon write failed',
+    );
+    expect(mocks.navigateToSettings).not.toHaveBeenCalled();
   });
 
   it('undo work dispatches delete reverse actions', async () => {
     await undoSpecialistProposalWork({ kind: 'delete', id: 'review-buddy', scope: 'user' });
 
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      deleteFileSpecialist({
-        id: 'review-buddy',
-        scope: 'user',
-        workspacePath: undefined,
-      }),
-    );
+    expectDispatchedWrite(deleteFileSpecialist, {
+      id: 'review-buddy',
+      scope: 'user',
+      workspacePath: undefined,
+    });
   });
 
   it('undo work dispatches save reverse actions', async () => {
@@ -241,7 +270,21 @@ describe('specialist-proposal-actions', () => {
 
     await undoSpecialistProposalWork({ kind: 'save', specialist });
 
-    expect(mocks.dispatch).toHaveBeenCalledWith(saveFileSpecialist(specialist));
+    expectDispatchedWrite(saveFileSpecialist, specialist);
+  });
+
+  it('undo work rejects when the daemon write fails (monorepo review PR#1947)', async () => {
+    mocks.dispatch.mockImplementation(
+      (action: { failure?: (error: Error) => unknown; promise?: Promise<unknown> }) => {
+        action.promise?.catch(() => {});
+        action.failure?.(new Error('undo write failed'));
+        return action;
+      },
+    );
+
+    await expect(
+      undoSpecialistProposalWork({ kind: 'delete', id: 'review-buddy', scope: 'user' }),
+    ).rejects.toThrow('undo write failed');
   });
 
   it('undo dispatches lifecycle requests when history exists', () => {
