@@ -247,6 +247,81 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await run.task.toPromise();
   });
 
+  it('honors the persisted token when the previous page merged to an empty segment (all rows tail-resident)', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ messages: [message('m-10', 10), message('m-11', 11)] })]),
+    );
+
+    // Anchored seek at the tail's oldest returns a page whose rows are ALL
+    // already tail-resident (e.g. the row above the tail exceeds the slim
+    // page budget): the prepend merges to an EMPTY segment, but the daemon
+    // minted a backward cursor — the walk's only way to make progress.
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-10', 10), message('m-11', 11)], { nextToken: 'older-1' }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+
+    // The segment record exists with zero rows; the cursor survives the
+    // settle (post-settle hygiene only drops it when the RECORD is gone).
+    expect(run.history()?.messages).toEqual([]);
+    expect(run.chat()?.scrollbackOlderToken).toBe('older-1');
+    expect(run.history()?.oldestReached).toBe(false);
+
+    // The NEXT older request continues from the token — no re-seek at the
+    // same anchor (which would refetch the identical page forever).
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-08', 8)], { nextToken: 'older-2' }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-08']);
+    expect(run.chat()?.scrollbackOlderToken).toBe('older-2');
+
+    // The token chain exhausts: oldestReached, no repeated identical requests.
+    mocks.getConversation.mockResolvedValueOnce(page([message('m-07', 7)], { nextToken: null }));
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, 200, undefined, 'm-10'],
+      [AGENT, 200, 'older-1'],
+      [AGENT, 200, 'older-2'],
+    ]);
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-07', 'm-08']);
+    expect(run.history()?.oldestReached).toBe(true);
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('still drops the cursor when the session (and segment record) is removed mid-flight', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    let resolvePage!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolvePage = done;
+      }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(true);
+
+    // Session removal clears the segment RECORD; the settle re-persists the
+    // stale cursor, and post-settle hygiene must still drop it.
+    run.dispatch(removeSession(AGENT));
+    resolvePage(page([message('m-05', 5)], { nextToken: 'stale-older-1' }));
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    expect(run.chat()?.fetchingOlderHistory).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('dedupes concurrent older requests per agent (takeLeading semantics)', async () => {
     const run = harness();
     run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
