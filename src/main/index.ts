@@ -1569,7 +1569,7 @@ app.whenReady().then(async () => {
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
-  registerAcceptChangesHandlers(); // Needed for AcceptChangesPanel on workspace open
+  registerAcceptChangesHandlers(); // Needed for the Changes sidebar on workspace open
 
   setupTerminalIPC(); // Needed for CLI blocks in notes (includes get-buffer handler)
   registerChatExportHandlers(); // Needed for chat export functionality

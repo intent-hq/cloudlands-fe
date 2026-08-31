@@ -51,7 +51,6 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/input/ContextPickerButton.svelte',
     'src/lib/components/chat/input/SimpleRichInput.svelte',
     'src/lib/components/file-explorer/VSCodeFileExplorer.svelte',
-    'src/lib/components/file-tracking/CodeChangesPanel.svelte',
     'src/lib/components/layout/DaemonStatusIndicator.svelte',
     'src/lib/components/layout/WindowTitleBar.svelte',
     'src/lib/components/layout/panel-system/PanelLayoutHeader.svelte',
