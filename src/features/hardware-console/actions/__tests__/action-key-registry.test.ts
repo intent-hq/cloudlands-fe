@@ -1526,6 +1526,67 @@ describe('execute dispatch', () => {
     );
   });
 
+  it('see-spec closes the active duplicate spec tab even when it is not the first', () => {
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [
+                  { id: 'tab-spec-a', type: 'note', noteId: 'spec' },
+                  { id: 'tab-spec-b', type: 'note', noteId: 'spec' },
+                ],
+                activeTabId: 'tab-spec-b',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/closeTab',
+        payload: expect.objectContaining({ wsId: 'ws-1', tabId: 'tab-spec-b', panelId: 'p-1' }),
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('see-spec reveals a background spec tab in a single panel via the adjacent-split path', () => {
+    // The reducer's openTabInAdjacentOrSplit finds the equivalent tab across
+    // all panels before splitting, so this dispatch reveals the existing tab
+    // rather than duplicating it.
+    const { context, dispatch } = makeContext(
+      makeState({
+        panelLayout: {
+          'ws-1': {
+            panels: {
+              'p-1': {
+                id: 'p-1',
+                tabs: [
+                  { id: 'tab-spec', type: 'note', noteId: 'spec' },
+                  { id: 'tab-1', type: 'conversation' },
+                ],
+                activeTabId: 'tab-1',
+              },
+            },
+          },
+        },
+      }),
+    );
+    getActionKeyDefinition('see-spec').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'spec', { openInAdjacentPanel: true, sourcePanelId: 'p-1' }],
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
   it('toggle-sidebar-tabs cycles to the next single-selected tab', () => {
     const { context, dispatch } = makeContext(makeState({ selectedTabs: { 'ws-1': ['agents'] } }));
     getActionKeyDefinition('toggle-sidebar-tabs').execute(context);

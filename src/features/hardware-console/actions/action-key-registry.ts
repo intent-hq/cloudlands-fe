@@ -549,17 +549,18 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       if (wsId === null) return;
       const panels = Object.values(state.panelLayout.byWorkspaceId[wsId]?.panels ?? {});
       for (const panel of panels) {
-        const specTab = panel.tabs.find(
-          (tab) => tab.type === 'note' && tab.noteId === SPEC_NOTE_ID,
-        );
-        if (specTab && panel.activeTabId === specTab.id) {
+        const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
+        if (activeTab?.type === 'note' && activeTab.noteId === SPEC_NOTE_ID) {
           // The spec is currently visible → toggle it off.
-          dispatch(closeTab(wsId, specTab.id, panel.id));
+          dispatch(closeTab(wsId, activeTab.id, panel.id));
           return;
         }
       }
       // Not open (or a background tab): open/reveal it. With a single open
-      // panel, split it so the spec lands beside the current content.
+      // panel, split it so the spec lands beside the current content. A
+      // backgrounded spec tab also takes this branch: openTabInAdjacentOrSplit
+      // finds the equivalent tab across all panels and activates it in place
+      // instead of splitting, so this reveals rather than duplicates.
       if (panels.length === 1) {
         dispatch(
           openWorkspaceNote(wsId, SPEC_NOTE_ID, {
