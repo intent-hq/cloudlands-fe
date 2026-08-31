@@ -1717,7 +1717,10 @@
 
       <!-- Results list -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="max-h-64 overflow-y-auto flex flex-col" onscroll={handleResultsScroll}>
+      <div
+        class="max-h-[min(16rem,35dvh)] overflow-y-auto flex flex-col"
+        onscroll={handleResultsScroll}
+      >
         <!-- Provider issues -->
         {#if isLoading}
           <div class="space-y-1 p-2">
