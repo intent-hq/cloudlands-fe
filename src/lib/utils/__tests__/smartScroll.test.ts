@@ -720,8 +720,8 @@ describe('followBottom policy', () => {
       {
         phase: 'edit-grow-first-frame',
         maximum: 613,
-        scrollTop: 613,
-        distance: 0,
+        scrollTop: 600,
+        distance: 13,
         settleFrames: 0,
       },
     ]);
@@ -1018,6 +1018,7 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(scrollHeight - clientHeight);
     runSettleTail();
+    expect(scrollTop).toBe(scrollHeight - clientHeight);
     expect(animationFrames).toHaveLength(0);
     expect(followChanges).toEqual([]);
     action.destroy();
@@ -1034,6 +1035,7 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(611);
     runSettleTail();
+    expect(scrollTop).toBe(611);
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 13;
@@ -1042,6 +1044,45 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(624);
     runSettleTail();
+    expect(scrollTop).toBe(624);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces same-frame observer bursts into one geometry read and scroll write', () => {
+    const action = followBottom(container, { follow: true });
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    const clientReads = vi.spyOn(container, 'clientHeight', 'get');
+    const topReads = vi.spyOn(container, 'scrollTop', 'get');
+    const topWrites = vi.spyOn(container, 'scrollTop', 'set');
+    scrollHeight += 40;
+
+    fireMutation();
+    fireResize();
+    fireResize();
+
+    expect(animationFrames).toHaveLength(1);
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(clientReads).not.toHaveBeenCalled();
+    expect(topReads).not.toHaveBeenCalled();
+    runFrame();
+    expect(heightReads).toHaveBeenCalledOnce();
+    expect(clientReads).toHaveBeenCalledOnce();
+    expect(topReads).toHaveBeenCalledOnce();
+    expect(topWrites).toHaveBeenCalledOnce();
+    expect(scrollTop).toBe(640);
+    action.destroy();
+  });
+
+  it('does not restart settling or write scrollTop for unchanged observer geometry', () => {
+    const action = followBottom(container, { follow: true });
+    const topWrites = vi.spyOn(container, 'scrollTop', 'set');
+
+    fireMutation();
+    fireResize();
+    runFrame();
+
+    expect(topWrites).not.toHaveBeenCalled();
     expect(animationFrames).toHaveLength(0);
     action.destroy();
   });

@@ -20,6 +20,7 @@ vi.mock('$lib/utils/smartScroll', () => ({
 afterEach(() => {
   vi.mocked(isFollowingBottom).mockReturnValue(false);
   vi.mocked(isNativeScrollAnchoringActive).mockReturnValue(false);
+  vi.unstubAllGlobals();
 });
 
 interface FakeTurn {
@@ -276,6 +277,100 @@ describe('LazyTurn height ledger', () => {
       () => null,
     );
     expect(() => nullLedger.account()).not.toThrow();
+  });
+});
+
+describe('LazyTurn height ledger frame batching', () => {
+  it('coalesces repeated requests, measures every turn before one composed scroll write', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const order: string[] = [];
+    let scrollTop = 1000;
+    const scroller = {
+      get scrollTop() {
+        order.push('read-scrollTop');
+        return scrollTop;
+      },
+      set scrollTop(value: number) {
+        order.push('write-scrollTop');
+        scrollTop = value;
+      },
+      get scrollHeight() {
+        order.push('read-scrollHeight');
+        return 100000;
+      },
+      get clientHeight() {
+        order.push('read-clientHeight');
+        return 600;
+      },
+      getBoundingClientRect() {
+        order.push('read-scrollerRect');
+        return { top: 0 } as DOMRect;
+      },
+    } as unknown as HTMLElement;
+    const heights = { first: 500, second: 400 };
+    const makeElement = (key: keyof typeof heights, contentTop: number) =>
+      ({
+        isConnected: true,
+        get offsetHeight() {
+          order.push(`read-${key}-height`);
+          return heights[key];
+        },
+        getBoundingClientRect() {
+          order.push(`read-${key}-rect`);
+          return { bottom: contentTop + heights[key] - scrollTop } as DOMRect;
+        },
+      }) as unknown as HTMLElement;
+    const first = createHeightLedger(
+      () => scroller,
+      () => makeElement('first', 0),
+    );
+    const secondElement = makeElement('second', 500);
+    const second = createHeightLedger(
+      () => scroller,
+      () => secondElement,
+    );
+    first.account();
+    second.account();
+    order.length = 0;
+    heights.first += 20;
+    heights.second += 10;
+
+    first.request();
+    first.request();
+    second.request();
+
+    expect(frames).toHaveLength(1);
+    expect(order).toEqual([]);
+    frames.shift()?.(performance.now());
+    expect(scrollTop).toBe(1030);
+    expect(order.filter((step) => step === 'read-first-height')).toHaveLength(1);
+    expect(order.filter((step) => step === 'write-scrollTop')).toHaveLength(1);
+    const writeIndex = order.indexOf('write-scrollTop');
+    expect(order.slice(writeIndex + 1).some((step) => step.startsWith('read-'))).toBe(false);
+  });
+
+  it('does not read viewport geometry or write scrollTop when height is unchanged', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const h = makeHarness({ height: 500, contentTop: 200, connected: true });
+    h.ledger.account();
+    const rect = vi.spyOn(h.scroller, 'getBoundingClientRect');
+    const scrollWrite = vi.spyOn(h.scroller, 'scrollTop', 'set');
+
+    h.ledger.request();
+    h.ledger.request();
+    frames.shift()?.(performance.now());
+
+    expect(rect).not.toHaveBeenCalled();
+    expect(scrollWrite).not.toHaveBeenCalled();
   });
 });
 

@@ -47,6 +47,11 @@ interface BottomFollower {
   beforeMutation: (element: HTMLElement) => FollowBottomMutation;
 }
 
+interface ScrollGeometry {
+  maximum: number;
+  scrollTop: number;
+}
+
 export interface FollowBottomMutation {
   request: () => void;
   settle: () => void;
@@ -165,18 +170,21 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     return Math.max(0, container.scrollHeight - container.clientHeight);
   }
 
-  function setExactBottom(): number {
-    const maximum = maximumScrollTop();
-    if (container.scrollTop !== maximum) container.scrollTop = maximum;
-    return maximum;
+  function readScrollGeometry(): ScrollGeometry {
+    return { maximum: maximumScrollTop(), scrollTop: container.scrollTop };
   }
 
-  function checkIfAtBottom(): boolean {
-    return maximumScrollTop() - container.scrollTop <= threshold;
+  function setExactBottom(geometry = readScrollGeometry()): ScrollGeometry {
+    if (geometry.scrollTop !== geometry.maximum) container.scrollTop = geometry.maximum;
+    return { maximum: geometry.maximum, scrollTop: geometry.maximum };
   }
 
-  function reportState() {
-    const distance = Math.max(0, maximumScrollTop() - container.scrollTop);
+  function checkIfAtBottom(geometry = readScrollGeometry()): boolean {
+    return geometry.maximum - geometry.scrollTop <= threshold;
+  }
+
+  function reportState(geometry = readScrollGeometry()) {
+    const distance = Math.max(0, geometry.maximum - geometry.scrollTop);
     const isAtBottom = distance <= threshold;
     if (
       lastReportedState?.distanceFromBottom === distance &&
@@ -221,8 +229,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function runSettleFrame() {
     settleFrame = null;
     if (destroyed || !enabled || !isFollowing) return;
-    const maximum = setExactBottom();
-    reportState();
+    const geometry = setExactBottom();
+    const { maximum } = geometry;
+    reportState(geometry);
     if (maximum === previousMaximum) stableFrames += 1;
     else {
       stableFrames = 0;
@@ -240,8 +249,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function requestBottomSettle() {
     if (destroyed || !enabled || !isFollowing) return;
-    const maximum = setExactBottom();
-    reportState();
+    const geometry = setExactBottom();
+    const { maximum } = geometry;
+    reportState(geometry);
     stableFrames = 0;
     previousMaximum = maximum;
     scheduleBottomSettle();
@@ -381,8 +391,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function handleScroll() {
     if (!pointerScrolling) {
-      if (isFollowing) setExactBottom();
-      reportState();
+      let geometry = readScrollGeometry();
+      if (isFollowing) geometry = setExactBottom(geometry);
+      reportState(geometry);
       return;
     }
 
@@ -497,8 +508,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       });
       return;
     }
-    if (isFollowing) setExactBottom();
-    reportState();
+    let initialGeometry = readScrollGeometry();
+    if (isFollowing) {
+      initialGeometry = setExactBottom(initialGeometry);
+      previousMaximum = initialGeometry.maximum;
+    }
+    reportState(initialGeometry);
   }
 
   function detachLifecycle() {
