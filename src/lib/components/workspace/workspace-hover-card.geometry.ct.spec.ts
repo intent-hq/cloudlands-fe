@@ -60,6 +60,7 @@ for (const scene of landscapeRows) {
         return overflow !== 'auto' && overflow !== 'scroll';
       }),
     ).toBe(true);
+    await expect(card.locator('[data-workspace-hover-card-agent-time]')).toHaveCount(scene.count);
   });
 }
 
@@ -84,6 +85,8 @@ test('stacks only in the explicit narrow fixture without horizontal clipping', a
   ).toBe(1);
   expect(await activity.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
   expect(await activity.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('1px');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]')).toBeVisible();
+  await expect(card.locator('[data-workspace-hover-card-agent-context]')).toBeHidden();
   expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
 });
 
@@ -126,5 +129,24 @@ test('shows the real first question and its total count in the landscape activit
   const question = preview.locator('[data-workspace-hover-card-agent-context]');
 
   await expect(question).toHaveText('Which deployment region should receive the migration first?');
-  await expect(preview.locator('[data-workspace-hover-card-question-meta]')).toHaveText('1 of 4');
+  await expect(preview.locator('[data-workspace-hover-card-question-meta]')).toHaveText(
+    'Question 1 of 4',
+  );
+  await expect(preview.locator('[data-workspace-hover-card-agent-preview]')).toHaveText(
+    'The deployment plan is ready after these decisions.',
+  );
+});
+
+test('uses plain activity group labels with restrained separators', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 640, height: 520 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('landscape-wide'),
+  });
+  const heading = preview.locator('[data-agent-group] h3').first();
+
+  await expect(heading).toBeVisible();
+  expect(await heading.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+    'rgba(0, 0, 0, 0)',
+  );
+  expect(await heading.evaluate((node) => getComputedStyle(node).borderBottomWidth)).toBe('1px');
 });

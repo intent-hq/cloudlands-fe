@@ -28,6 +28,7 @@ describe('workspace hover-card preview audit', () => {
       'media',
       'long-content',
       'placement',
+      'landscape-wide',
       'landscape-light',
       'landscape-dark',
       'landscape-narrow',
@@ -56,6 +57,17 @@ describe('workspace hover-card preview audit', () => {
       'attention-four-questions',
     );
     expect(states.attention.props.cards.map(({ key }) => key)).toContain('attention-missing-body');
+    const multiQuestion = states.attention.props.cards.find(
+      ({ key }) => key === 'attention-four-questions',
+    );
+    expect(multiQuestion?.agents?.[0]?.lastAgentResponse).toBe(
+      'The deployment plan is ready after these decisions.',
+    );
+    const fallback = states.attention.props.cards.find(
+      ({ key }) => key === 'attention-missing-body',
+    );
+    expect(fallback?.agents?.[0]?.messages).toEqual([]);
+    expect(fallback?.agents?.[0]?.metadata?.pendingQuestionsMessageId).toBeTruthy();
     expect(states['attention-narrow'].props.layout).toBe('narrow');
     expect(states.narrow.props.layout).toBe('narrow');
     expect(states['semantic-status'].props.expected).toContain('right column');
@@ -77,9 +89,13 @@ describe('workspace hover-card preview audit', () => {
 
     expect(states['landscape-light'].props.theme).toBe('light');
     expect(states['landscape-dark'].props.theme).toBe('dark');
+    expect(states['landscape-wide'].props.layout).not.toBe('narrow');
     expect(states['landscape-narrow'].props.layout).toBe('narrow');
     expect(states['landscape-loading'].props.cards[0]?.isLoading).toBe(true);
     expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.messages).toHaveLength(1);
+    expect(
+      states['landscape-question'].props.cards[0]?.agents?.[0]?.lastAgentResponse,
+    ).toBeTruthy();
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

@@ -1,7 +1,4 @@
 <script lang="ts">
-  import AgentAvatarStack, {
-    type AgentAvatarStackItem,
-  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -10,7 +7,7 @@
   import TaskStatusProgress from '$lib/components/workspace/TaskStatusProgress.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatDistanceToNow, formatInteger } from '$lib/i18n/format';
+  import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { onMount } from 'svelte';
@@ -30,6 +27,7 @@
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
+  import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -105,8 +103,18 @@
     specialist?: BuiltinSpecialistId;
     context: string;
     questionMeta?: string;
-    updated: string;
+    secondaryContext?: string;
+    updated: {
+      compact: string;
+      accessible: string;
+      dateTime?: string;
+    };
     priority: number;
+  }
+  function rowAccessibleLabel(row: AgentRow) {
+    return [row.name, row.context, row.secondaryContext, row.updated.accessible]
+      .filter(Boolean)
+      .join('. ');
   }
   function previewText(preview: AgentPreview | null) {
     if (!preview) return null;
@@ -115,8 +123,12 @@
   }
   function relativeTime(session: AgentSession) {
     return (
-      formatDistanceToNow(session.lastActivity || session.updatedAt || session.createdAt) ||
-      m.workspace_hoverCard_noRecentActivity_label()
+      formatWorkspaceHoverCardTimestamp(
+        session.lastActivity || session.updatedAt || session.createdAt,
+      ) ?? {
+        compact: '—',
+        accessible: m.workspace_hoverCard_noRecentActivity_label(),
+      }
     );
   }
   function rowFor(session: AgentSession): AgentRow | null {
@@ -137,6 +149,7 @@
     let avatarState: AvatarState;
     let priority: number;
     let questionMeta: string | undefined;
+    let secondaryContext: string | undefined;
     if (attention?.kind === 'blocker' || status === 'blocked') {
       group = 'attention';
       attentionKind = 'blocker';
@@ -146,7 +159,9 @@
     } else if (hasQuestion) {
       group = 'attention';
       attentionKind = 'question';
-      context = pending?.questions[0]?.question.trim() || m.hud_card_attnPending_label();
+      const fallback = m.hud_card_attnPending_label();
+      context = pending?.questions[0]?.question.trim() || fallback;
+      if (preview && preview !== context && preview !== fallback) secondaryContext = preview;
       avatarState = 'question';
       priority = 1;
       const count = pending?.questions.length ?? 0;
@@ -199,6 +214,7 @@
       specialist: metadata?.specialist as BuiltinSpecialistId | undefined,
       context,
       questionMeta,
+      secondaryContext,
       updated: relativeTime(session),
       priority,
     };
@@ -252,23 +268,6 @@
       rows: visibleRows.filter((r) => r.group === 'waiting'),
     },
   ]);
-  let headerAvatars = $derived(
-    eligibleSessions.slice(0, 3).map((session): AgentAvatarStackItem => {
-      const row = allRows.find((r) => r.id === String(session.id));
-      return {
-        key: String(session.id),
-        agentId: String(session.id),
-        state: row?.avatarState ?? 'idle',
-        specialist: (session.agentMetadata ?? session.metadata)?.specialist as
-          BuiltinSpecialistId | undefined,
-      };
-    }),
-  );
-  let agentCount = $derived(
-    eligibleSessions.length === 1
-      ? m.chat_toolDetails_agentCount_one({ count: formatInteger(1) })
-      : m.chat_toolDetails_agentCount_many({ count: formatInteger(eligibleSessions.length) }),
-  );
   let repo = $derived(
     workspace?.repositoryName
       ? workspace.repositoryOwner
@@ -279,12 +278,6 @@
   let statusState = $derived(resolveWorkspaceStatusState(workspace ?? {}));
   let status = $derived(getWorkspaceStatusPresentation(statusState));
   let summary = $derived(workspace?.statusMessage?.trim() || status.label);
-  let updated = $derived(
-    workspace
-      ? formatDistanceToNow(workspace.lastActivity || workspace.updatedAt || workspace.createdAt) ||
-          m.workspace_hoverCard_noRecentActivity_label()
-      : '',
-  );
   let taskStatuses = $derived($workspaceTaskDisplayList$.map((task) => task.status));
   let hasTasks = $derived(taskStatuses.length > 0 || $workspaceTaskProgress$.total > 0);
 </script>
@@ -317,13 +310,7 @@
         {workspace.title || m.workspace_links_untitled_label()}
       </h2>
       <div class="header-meta flex shrink-0 items-center gap-2.5">
-        <span
-          class="flex min-w-0 items-center gap-1 text-xs font-medium text-foreground"
-          data-workspace-hover-card-status
-          ><WorkspaceStatusIcon status={statusState} size={11} decorative /><span class="truncate"
-            >{status.label}</span
-          ></span
-        >{#if hasTasks}<span class="task-progress w-20" data-workspace-hover-card-progress
+        {#if hasTasks}<span class="task-progress w-20" data-workspace-hover-card-progress
             ><TaskStatusProgress
               statuses={taskStatuses}
               progress={$workspaceTaskProgress$.total > 0
@@ -335,9 +322,12 @@
               size="compact"
               fallback={$workspaceTaskProgress$}
             /></span
-          >{/if}<time
-          class="updated whitespace-nowrap text-xs text-subtle"
-          data-workspace-hover-card-timestamp>{updated}</time
+          >{/if}<span
+          class="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground"
+          data-workspace-hover-card-status
+          ><WorkspaceStatusIcon status={statusState} size={16} decorative /><span class="truncate"
+            >{status.label}</span
+          ></span
         >
       </div>
     </header>
@@ -350,13 +340,7 @@
         data-workspace-hover-card-identity
       >
         <div class="grid min-w-0 gap-1.5 text-xs text-muted-foreground">
-          <span class="type-body min-w-0 truncate font-mono" data-workspace-hover-card-repo
-            >{repo}</span
-          >
-          {#if workspace.branch}<span
-              class="min-w-0 truncate font-mono text-[11px] text-subtle"
-              data-workspace-hover-card-branch>{workspace.branch}</span
-            >{/if}
+          <span class="type-body min-w-0 truncate" data-workspace-hover-card-repo>{repo}</span>
         </div>
         <p
           class="type-body min-w-0 line-clamp-3 text-sm leading-snug text-subtle"
@@ -365,13 +349,6 @@
         >
           {summary}
         </p>
-        <div class="flex min-w-0 items-center gap-2 pt-0.5">
-          {#if headerAvatars.length}<span class="shrink-0" data-workspace-hover-card-agent-stack
-              ><AgentAvatarStack items={headerAvatars} /></span
-            >{/if}<span class="truncate text-xs text-subtle" data-workspace-hover-card-agent-count
-            >{agentCount}</span
-          >
-        </div>
       </section>
       <section
         class="activity min-w-0 border-l border-solid border-border/70"
@@ -385,15 +362,15 @@
               >
                 <h3
                   id={`hover-${workspace.id}-${group.key}`}
-                  class="bg-muted/45 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-subtle"
+                  class="border-b border-border/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-subtle"
                 >
                   {group.label}
                 </h3>
                 <div role="list">
                   {#each group.rows as row (row.id)}<div
-                      class="agent-row grid min-w-0 grid-cols-[1.5rem_minmax(3.5rem,5.75rem)_minmax(0,1fr)_auto] items-center gap-1.5 border-t border-border/50 px-3"
+                      class="agent-row grid min-w-0 grid-cols-[1.5rem_minmax(3.5rem,5.75rem)_minmax(0,1fr)_auto] items-center gap-1.5 border-b border-border/50 px-3"
                       role="listitem"
-                      aria-label={`${row.name}. ${row.context}. ${row.updated}`}
+                      aria-label={rowAccessibleLabel(row)}
                       data-workspace-hover-card-agent-row
                       data-agent-group-row={group.key}
                       data-attention-kind={row.attentionKind}
@@ -408,16 +385,27 @@
                       ><span
                         class="truncate text-sm font-medium text-foreground"
                         data-workspace-hover-card-agent-name>{row.name}</span
-                      ><span class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
-                        ><span class="min-w-0 truncate" data-workspace-hover-card-agent-context
-                          >{row.context}</span
-                        >{#if row.questionMeta}<span
-                            class="shrink-0 text-subtle"
-                            data-workspace-hover-card-question-meta>{row.questionMeta}</span
+                      ><span class="agent-context grid min-w-0 gap-px text-xs text-muted-foreground"
+                        ><span class="flex min-w-0 items-center gap-1.5"
+                          ><span
+                            class="min-w-0 truncate"
+                            title={row.context}
+                            data-workspace-hover-card-agent-context>{row.context}</span
+                          >{#if row.questionMeta}<span
+                              class="shrink-0 text-subtle"
+                              data-workspace-hover-card-question-meta
+                              >{m.dock_badge_question_label()} {row.questionMeta}</span
+                            >{/if}</span
+                        >{#if row.secondaryContext}<span
+                            class="min-w-0 truncate text-[11px] text-subtle"
+                            title={row.secondaryContext}
+                            data-workspace-hover-card-agent-preview>{row.secondaryContext}</span
                           >{/if}</span
                       ><time
                         class="whitespace-nowrap text-[11px] text-subtle"
-                        data-workspace-hover-card-agent-time>{row.updated}</time
+                        datetime={row.updated.dateTime}
+                        aria-label={row.updated.accessible}
+                        data-workspace-hover-card-agent-time>{row.updated.compact}</time
                       >
                     </div>{/each}
                 </div>
@@ -439,7 +427,8 @@
     container-type: inline-size;
   }
   .agent-row {
-    height: 34px;
+    min-height: 34px;
+    padding-block: 0.25rem;
   }
   @container (max-width:30rem) {
     .body-grid {
@@ -457,12 +446,11 @@
     }
   }
   @container (max-width:28rem) {
-    .updated,
-    .agent-row time {
+    .agent-context {
       display: none;
     }
     .agent-row {
-      grid-template-columns: 1.75rem minmax(3.5rem, 5.5rem) minmax(0, 1fr);
+      grid-template-columns: 1.5rem minmax(0, 1fr) auto;
     }
     .header-meta {
       gap: 0.5rem;

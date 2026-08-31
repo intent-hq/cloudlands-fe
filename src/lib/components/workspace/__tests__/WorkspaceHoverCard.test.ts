@@ -254,20 +254,22 @@ describe('WorkspaceHoverCard', () => {
     expect(columns.children[0]).toBe(identity);
     expect(columns.children[1]).toBe(activity);
     expect(header.querySelector('[data-workspace-hover-card-title]')).toBeTruthy();
-    expect(header.querySelector('[data-workspace-hover-card-status]')).toBeTruthy();
-    expect(header.querySelector('[data-workspace-hover-card-timestamp]')).toBeTruthy();
+    const status = header.querySelector('[data-workspace-hover-card-status]')!;
+    expect(status).toBeTruthy();
+    expect(status.querySelector('[data-workspace-status]')?.getAttribute('style')).toContain(
+      'width: 16px',
+    );
+    expect(header.querySelector('[data-workspace-hover-card-timestamp]')).toBeNull();
     expect(text(identity.querySelector('[data-workspace-hover-card-repo]')!)).toBe(
       'augment/intent',
     );
-    expect(text(identity.querySelector('[data-workspace-hover-card-branch]')!)).toBe(
-      'feature/hover-card',
-    );
+    expect(identity.querySelector('[data-workspace-hover-card-branch]')).toBeNull();
     expect(text(identity.querySelector('[data-workspace-hover-card-summary]')!)).toBe(
       'Preparing the landscape hover card for review.',
     );
-    expect(text(identity.querySelector('[data-workspace-hover-card-agent-count]')!)).toBe(
-      '0 agents',
-    );
+    expect(identity.querySelector('[data-workspace-hover-card-agent-stack]')).toBeNull();
+    expect(identity.querySelector('[data-workspace-hover-card-agent-count]')).toBeNull();
+    expect(container.querySelector('.font-mono')).toBeNull();
   });
 
   it('shows real zero and partial task progress in the header', async () => {
@@ -282,8 +284,12 @@ describe('WorkspaceHoverCard', () => {
     ];
     const partial = await renderHoverCard();
     const progress = screen.getByRole('progressbar', { name: 'Workspace task progress' });
+    const status = partial.container.querySelector('[data-workspace-hover-card-status]')!;
     expect(progress.getAttribute('aria-valuenow')).toBe('33');
     expect(progress.getAttribute('data-task-status-motion')).toBe('static');
+    expect(
+      progress.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     partial.unmount();
   });
 
@@ -306,6 +312,10 @@ describe('WorkspaceHoverCard', () => {
       agent('active', 'Noah', 'running'),
       agent('waiting', 'Ari', 'waiting'),
     ];
+    mocks.agentPreviewsById.question = {
+      kind: 'last-agent',
+      text: 'I reviewed the rollout options and need one decision.',
+    };
     const summary = {
       agentIds: ['blocker', 'question', 'active', 'waiting'],
       agents: ['blocker', 'question', 'active', 'waiting'].map((id) => ({
@@ -325,9 +335,38 @@ describe('WorkspaceHoverCard', () => {
     expect(text(attentionRows[1])).toContain(
       'Which deployment region should receive the migration first?',
     );
-    expect(text(attentionRows[1])).toContain('1 of 4');
+    expect(text(attentionRows[1])).not.toContain('Q: awaiting your answer');
+    expect(text(attentionRows[1])).toContain('Question 1 of 4');
+    expect(text(attentionRows[1])).toContain(
+      'I reviewed the rollout options and need one decision.',
+    );
+    const question = attentionRows[1].querySelector('[data-workspace-hover-card-agent-context]')!;
+    const preview = attentionRows[1].querySelector('[data-workspace-hover-card-agent-preview]')!;
+    expect(question.parentElement).not.toBe(preview.parentElement);
+    expect(text(question)).not.toContain(text(preview)!);
     expect(within(screen.getByRole('region', { name: 'Active' })).getByText('Noah')).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Waiting' })).getByText('Ari')).toBeTruthy();
+    const rows = screen.getAllByRole('listitem');
+    const times = rows.map((row) => row.querySelector('[data-workspace-hover-card-agent-time]'));
+    expect(times.every((time) => time instanceof HTMLTimeElement)).toBe(true);
+    expect(times.every((time) => Boolean(time?.getAttribute('aria-label')))).toBe(true);
+  });
+
+  it('uses generic pending-question copy only when the marked content is unavailable', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      agent('question', 'Leah', 'waiting', {
+        metadata: { pendingQuestionsMessageId: 'missing-message' },
+      }),
+    ];
+    await renderHoverCard({ agentSummary: { agentIds: ['question'] } });
+
+    const row = screen.getByRole('listitem');
+    expect(text(row.querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
+      'Q: awaiting your answer',
+    );
+    expect(row.querySelector('[data-workspace-hover-card-question-meta]')).toBeNull();
+    expect(row.querySelector('[data-workspace-hover-card-agent-preview]')).toBeNull();
+    expect(row.querySelector('[data-workspace-hover-card-agent-time]')).toBeTruthy();
   });
 
   it('uses unread preview text and excludes delegated, background, and retired sessions', async () => {
