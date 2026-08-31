@@ -8,15 +8,33 @@ describe('panel resize rendering', () => {
   it('updates panel flex styles imperatively without reactive resize state', () => {
     const container = source('PanelContainer.svelte');
 
-    expect(container).toContain('panelElement.style.flex = getPanelChildFlex');
+    expect(container).toContain('const flex = getPanelChildFlex');
+    expect(container).toContain(
+      'if (panelElement.style.flex !== flex) panelElement.style.flex = flex;',
+    );
     expect(container).not.toContain('localSizes = $state');
   });
 
   it('coalesces pointer deltas to one resize write per animation frame', () => {
     const handle = source('PanelSplitHandle.svelte');
+    const container = source('PanelContainer.svelte');
 
     expect(handle).toContain('requestAnimationFrame(flushPendingResize)');
     expect(handle).toContain('pendingResizeDelta += delta');
+    expect(handle).not.toContain('immediateResize');
+    expect(container).not.toContain('immediateResize={resizesRootDivider}');
+    expect(container).toContain('if (panelElement.style.flex !== flex)');
+  });
+
+  it('finishes root resize commits from computed widths without a post-write measurement', () => {
+    const container = source('PanelContainer.svelte');
+    const resizeEnd = container.slice(
+      container.indexOf('function handleResizeEnd()'),
+      container.indexOf('// Corner resize handling'),
+    );
+
+    expect(resizeEnd).toContain('const nextPanelWidths = rootResizeNextChildWidths;');
+    expect(resizeEnd).not.toContain('measureRootResizeChildWidths()');
   });
 
   it('provides a persisted outer right-edge handle for regular panel layouts', () => {
@@ -76,7 +94,7 @@ describe('panel resize rendering', () => {
     expect(container).toContain('rootResizeStartChildWidths');
     expect(container).toContain('rootResizeNextChildWidths');
     expect(container).toContain('applyLiveRootResizeChildWidths');
-    expect(container).toMatch(/style\.flex = `0 0 \$\{widths\[index\] \?\? 0\}px`/);
+    expect(container).toContain('const flex = `0 0 ${widths[index] ?? 0}px`;');
     expect(container).toContain('return `0 0 ${pinnedWidth}px`;');
     expect(container).toContain('onResizeStart={handleResizeStart}');
   });

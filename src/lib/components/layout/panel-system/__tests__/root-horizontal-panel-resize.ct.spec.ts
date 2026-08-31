@@ -143,12 +143,14 @@ async function dragDividerBeforeNextFrame(
       window.dispatchEvent(
         new MouseEvent('mouseup', { bubbles: true, clientX: startX + visualDelta, clientY: 1 }),
       );
-      return { preview, pointerUp: snapshot() };
+      return { preview };
     },
     { dividerIndex, visualDelta: cssDelta * zoomFactor },
   );
-  await nextFrames(page, 3);
-  return { ...immediate, settled: await readGeometry(component) };
+  await nextFrames(page, 1);
+  const pointerUp = await readGeometry(component);
+  await nextFrames(page, 2);
+  return { ...immediate, pointerUp, settled: await readGeometry(component) };
 }
 
 function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) {
@@ -242,13 +244,13 @@ for (const mode of ['contained', 'uncontained'] as const) {
           .toBeCloseTo(expectedCanvasWidth, 0);
         expectGeometry(await readGeometry(component), widths, zoomFactor);
 
+        const beforeFastRelease = [...widths];
         widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 47).panelWidths);
         const fastRelease = await dragDividerBeforeNextFrame(page, component, 0, 47, zoomFactor);
-        expectGeometry(fastRelease.preview, widths, zoomFactor);
+        expectGeometry(fastRelease.preview, beforeFastRelease, zoomFactor);
         expectGeometry(fastRelease.pointerUp, widths, zoomFactor);
         expectGeometry(fastRelease.settled, widths, zoomFactor);
-        expectStableGeometry(fastRelease.preview, fastRelease.pointerUp);
-        expectStableGeometry(fastRelease.preview, fastRelease.settled);
+        expectStableGeometry(fastRelease.pointerUp, fastRelease.settled);
 
         for (const dividerIndex of [0, 1]) {
           for (const delta of [80, -120, 60, -40]) {
@@ -302,13 +304,13 @@ for (const zoomFactor of [1, 2]) {
     const widths = [500, 500];
     expectGeometry(await readGeometry(component), widths, zoomFactor);
 
+    const beforeFastRelease = [...widths];
     widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 53).panelWidths);
     const fastRelease = await dragDividerBeforeNextFrame(page, component, 0, 53, zoomFactor);
-    expectGeometry(fastRelease.preview, widths, zoomFactor);
+    expectGeometry(fastRelease.preview, beforeFastRelease, zoomFactor);
     expectGeometry(fastRelease.pointerUp, widths, zoomFactor);
     expectGeometry(fastRelease.settled, widths, zoomFactor);
-    expectStableGeometry(fastRelease.preview, fastRelease.pointerUp);
-    expectStableGeometry(fastRelease.preview, fastRelease.settled);
+    expectStableGeometry(fastRelease.pointerUp, fastRelease.settled);
 
     widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, -220).panelWidths);
     const shrunk = await dragDivider(page, component, handle, -220, zoomFactor);
