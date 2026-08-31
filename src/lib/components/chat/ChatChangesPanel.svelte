@@ -1624,8 +1624,8 @@
         sourcePanelId,
         branchBaseRef: branchBaseRef ?? undefined,
         branchBaseCommitSha: branchBaseCommitSha ?? undefined,
-        gitRootId: currentGitRootId,
-        gitRootPath: currentGitRootPath,
+        gitRootId,
+        gitRootPath,
       }),
     );
   }
