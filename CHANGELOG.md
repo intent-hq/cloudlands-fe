@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.120.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.119.0...v2.120.0) (2026-08-31)
+
+
+### 🚀 Features
+
+* make keyboard shortcuts editable ([#1922](https://github.com/intent-hq/cloudlands-fe/issues/1922)) ([1fdc246](https://github.com/intent-hq/cloudlands-fe/commit/1fdc246437038ab94f656cc75b12a505e740a18a))
+
 ## [2.119.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.118.0...v2.119.0) (2026-08-31)
 
 
