@@ -4636,6 +4636,8 @@
   "ui_shortcuts_toggleSpaces_label": "Alternar espacios",
   "ui_shortcuts_nextSpace_label": "Espacio siguiente",
   "ui_shortcuts_prevSpace_label": "Espacio anterior",
+  "ui_shortcuts_moveSpaceTabLeft_label": "Mover pestaña de espacio a la izquierda",
+  "ui_shortcuts_moveSpaceTabRight_label": "Mover pestaña de espacio a la derecha",
   "ui_shortcuts_mentionContext_label": "Mencionar contexto",
   "ui_shortcuts_nextPanel_label": "Enfocar columna siguiente",
   "ui_shortcuts_prevPanel_label": "Enfocar columna anterior",

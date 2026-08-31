@@ -4636,6 +4636,8 @@
   "ui_shortcuts_toggleSpaces_label": "Afficher/masquer les espaces",
   "ui_shortcuts_nextSpace_label": "Espace suivant",
   "ui_shortcuts_prevSpace_label": "Espace précédent",
+  "ui_shortcuts_moveSpaceTabLeft_label": "Déplacer l’onglet d’espace vers la gauche",
+  "ui_shortcuts_moveSpaceTabRight_label": "Déplacer l’onglet d’espace vers la droite",
   "ui_shortcuts_mentionContext_label": "Mentionner le contexte",
   "ui_shortcuts_nextPanel_label": "Activer la colonne suivante",
   "ui_shortcuts_prevPanel_label": "Activer la colonne précédente",

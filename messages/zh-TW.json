@@ -4636,6 +4636,8 @@
   "ui_shortcuts_toggleSpaces_label": "切換空間",
   "ui_shortcuts_nextSpace_label": "下一個空間",
   "ui_shortcuts_prevSpace_label": "上一個空間",
+  "ui_shortcuts_moveSpaceTabLeft_label": "將空間分頁向左移動",
+  "ui_shortcuts_moveSpaceTabRight_label": "將空間分頁向右移動",
   "ui_shortcuts_mentionContext_label": "提及上下文",
   "ui_shortcuts_nextPanel_label": "聚焦下一欄",
   "ui_shortcuts_prevPanel_label": "聚焦上一欄",

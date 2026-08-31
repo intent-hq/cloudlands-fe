@@ -4637,6 +4637,8 @@
   "ui_shortcuts_toggleSpaces_label": "Toggle Workspace",
   "ui_shortcuts_nextSpace_label": "Next Workspace",
   "ui_shortcuts_prevSpace_label": "Previous Workspace",
+  "ui_shortcuts_moveSpaceTabLeft_label": "Move Space Tab Left",
+  "ui_shortcuts_moveSpaceTabRight_label": "Move Space Tab Right",
   "ui_shortcuts_mentionContext_label": "Mention Context",
   "ui_shortcuts_nextPanel_label": "Focus Next Column",
   "ui_shortcuts_prevPanel_label": "Focus Previous Column",

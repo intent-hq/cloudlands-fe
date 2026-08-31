@@ -1047,7 +1047,7 @@
   let treeContainer: HTMLDivElement | undefined = $state();
 
   // Handle item click
-  function handleItemClick(flatNode: FlattenedFileNode, index: number, event: MouseEvent) {
+  function handleItemClick(flatNode: FlattenedFileNode, _index: number, event: MouseEvent) {
     // Update focused path on click (use path directly for stability)
     focusedPath = flatNode.node.path;
     if (flatNode.node.type === 'file') {

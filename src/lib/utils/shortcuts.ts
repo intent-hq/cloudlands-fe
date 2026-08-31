@@ -165,8 +165,18 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_prevSpace_label();
     },
   },
-  MOVE_SPACE_TAB_LEFT: { key: 'mod+alt+shift+left', label: 'Move Space Tab Left' },
-  MOVE_SPACE_TAB_RIGHT: { key: 'mod+alt+shift+right', label: 'Move Space Tab Right' },
+  MOVE_SPACE_TAB_LEFT: {
+    key: 'mod+alt+shift+left',
+    get label() {
+      return m.ui_shortcuts_moveSpaceTabLeft_label();
+    },
+  },
+  MOVE_SPACE_TAB_RIGHT: {
+    key: 'mod+alt+shift+right',
+    get label() {
+      return m.ui_shortcuts_moveSpaceTabRight_label();
+    },
+  },
   SEARCH: {
     key: 'mod+f',
     get label() {
