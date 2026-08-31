@@ -2124,7 +2124,7 @@
       );
       const initialState: WorkspaceNavigationWorkspaceState = {
         version: 2,
-        workspace: { id: workspace.id, status: 'loading' },
+        workspace: { id: workspace.id },
         mainPanel: { type: 'empty' },
         drawer: { open: false, type: null, itemId: null },
         navigation: { history: [], currentIndex: -1 },

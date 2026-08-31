@@ -5,7 +5,6 @@
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListEmpty, ListItem } from '../ui/list';
 
-  import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { createNote as createNoteWrite } from '$features/notes/notes-write-service';
   import {
     selectNotesLoading,
@@ -19,7 +18,6 @@
     getNoteDepth,
     parseTaskStats,
   } from '../workspace/sidebar/utils';
-  import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
   // Props
@@ -36,16 +34,6 @@
     collapsed?: boolean;
     onCollapse?: () => void;
   } = $props();
-
-  // Initialize notes state when workspace changes
-  let lastInitializedWorkspaceId: string | null = null;
-  $effect(() => {
-    if (workspaceId && lastInitializedWorkspaceId !== workspaceId) {
-      lastInitializedWorkspaceId = workspaceId;
-      // Initialize with the current selected note to preserve selection
-      appStore.dispatch(initializeNotes(workspaceId, selectedNoteId ? selectedNoteId : undefined));
-    }
-  });
 
   // Get notes from Redux store
   const loading$ = selectNotesLoading(workspaceId);
