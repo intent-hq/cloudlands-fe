@@ -830,4 +830,27 @@ describe('backend.ipc local external updateSupported capture on hello', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(getLocalUpdateSupported()).toBeNull();
   });
+
+  it('recaptures via refreshLocalUpdateSupported when the hello raced the startup mode resolution', async () => {
+    // Field scenario (adopted sitter-supervised daemon): the pooled local
+    // client is constructed during setupConfigIPC and its hello resolves
+    // BEFORE startIntentdSidecar resolves the connection mode, so the
+    // hello-time capture sees `unknown` and skips — and no later hello re-runs
+    // it while the socket stays connected. The daemon's version still renders
+    // (the adoption probe sets it), so the Devices row showed the behind-pin
+    // dot without the Update menu.
+    const onHelloResult = await freshLocalOnHelloResult();
+    systemStatus.value = { updateSupported: true };
+
+    onHelloResult({}); // hello fires while the mode is still 'unknown'
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    // startIntentdSidecar then adopts the daemon and re-runs the capture.
+    setConnectionMode('external');
+    const { refreshLocalUpdateSupported } = await import('../backend.ipc');
+    await refreshLocalUpdateSupported();
+    expect(getLocalUpdateSupported()).toBe(true);
+  });
 });

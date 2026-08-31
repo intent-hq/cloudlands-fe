@@ -920,6 +920,21 @@ async function spawnSidecarProcess(
 }
 
 /**
+ * Re-run backend.ipc's local updateSupported capture after resolving an
+ * `external` connection mode. The pooled local client can connect (and run
+ * its hello-time capture) BEFORE `startIntentdSidecar` resolves the mode —
+ * `setupConfigIPC` constructs it earlier in startup — so that capture saw
+ * `unknown` and skipped; without this recapture the Devices row never gets
+ * the flag until a reconnect. Fire-and-forget/fail-soft; dynamic import
+ * because backend.ipc statically imports this module.
+ */
+function refreshLocalUpdateSupportedAfterModeResolution(): void {
+  void import('./backend.ipc')
+    .then(({ refreshLocalUpdateSupported }) => refreshLocalUpdateSupported())
+    .catch(() => {});
+}
+
+/**
  * Start the intentd sidecar if the spawn policy allows it.
  *
  * Before spawning, probes the target socket (version handshake) to adopt an
@@ -942,6 +957,7 @@ export async function startIntentdSidecar(
     // an already-running daemon on the default socket, or the two-terminal
     // dev-daemon flow) is not managed by us.
     setConnectionMode('external');
+    refreshLocalUpdateSupportedAfterModeResolution();
     logger.info('Sidecar spawn disabled', { reason: decision.reason });
     return;
   }
@@ -1003,6 +1019,9 @@ export async function startIntentdSidecar(
     } else {
       logger.info('Adopted external intentd (no sidecar spawned)', details);
     }
+    // The local client's hello may have raced this mode resolution — re-run
+    // the updateSupported capture now that the adopted `external` mode is set.
+    refreshLocalUpdateSupportedAfterModeResolution();
     return;
   }
 
@@ -1170,6 +1189,10 @@ async function doSpawnSidecarOnDemand(
   const socketPath = resolveSocketPath(env);
   if (await healthCheckProbe(socketPath)) {
     setConnectionMode('external');
+    // The client hello that reconnected to this revived socket may have fired
+    // while the mode was still 'sidecar' (clearing the flag) — re-run the
+    // capture now that the adopted `external` mode is set.
+    refreshLocalUpdateSupportedAfterModeResolution();
     logger.info('Spawn-on-demand skipped: a live daemon answers on the socket', { socketPath });
     return { ok: true, spawned: false, reason: 'live daemon already serving the socket' };
   }

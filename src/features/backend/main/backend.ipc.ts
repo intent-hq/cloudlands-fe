@@ -1193,6 +1193,21 @@ async function captureLocalUpdateSupported(): Promise<void> {
 }
 
 /**
+ * Re-run the local updateSupported capture after the startup connection-mode
+ * resolution (see {@link captureLocalUpdateSupported}). The pooled local
+ * client is constructed — and its hello can resolve — during `setupConfigIPC`,
+ * BEFORE `startIntentdSidecar` resolves the mode, so an adopted external
+ * daemon's hello-time capture sees `unknown` and skips, and nothing re-runs it
+ * while the socket stays connected (the Devices row then shows the behind-pin
+ * dot without the Update menu). Called by the sidecar manager whenever it
+ * resolves an `external` mode; a no-op when no local client exists yet (the
+ * eventual hello captures with the mode already resolved).
+ */
+export function refreshLocalUpdateSupported(): Promise<void> {
+  return captureLocalUpdateSupported();
+}
+
+/**
  * Pull the local-IP list out of a `server.pairingInfo` result (PROTOCOL §2 —
  * returns `{ token, certFingerprint, port, path, localIps, hostname }`).
  * Returns the non-empty string entries, else `null` when the shape is absent
