@@ -98,7 +98,7 @@ jobs:
           github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
           script: |
             const tinybox = ["self-hosted", "Linux", "X64"];
-            // All three heavy jobs burst to the 8-core / 32 GB runner:
+            // All the routed heavy jobs burst to the 8-core / 32 GB runner:
             // build-web needs well over 8 GB of heap with sourcemaps on
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
