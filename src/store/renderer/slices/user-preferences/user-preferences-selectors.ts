@@ -2,7 +2,6 @@ import { store } from '../../store';
 import { SYSTEM_DEFAULT_FONT, type FontOption } from './user-preferences-slice';
 import { resolvePreferenceToLocale } from '$lib/i18n/locale';
 import { m } from '$shared/paraglide/messages.js';
-import { resolveShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
 
 export const selectAgentFontStyle = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle;
@@ -149,10 +148,6 @@ export const selectGithubLinkDefaultAction = store.createSelector((state) => {
 
 export const selectShortcutOverrides = store.createSelector((state) => {
   return state.userPreferences.shortcutOverrides;
-});
-
-export const selectEffectiveShortcut = store.createSelector((state, id: ShortcutId) => {
-  return resolveShortcut(id, state.userPreferences.shortcutOverrides);
 });
 
 /** The concrete catalog locale the preference resolves to (explicit → system → en). */

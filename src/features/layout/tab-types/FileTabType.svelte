@@ -63,7 +63,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
 
   const lineWrapping = selectLineWrapping();
@@ -419,8 +419,7 @@
 
   function handleKeyDown(e: KeyboardEvent) {
     const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-    const matches = (id: ShortcutId) =>
-      matchesShortcut(e, selectEffectiveShortcut.select(appStore.state, id), isMac);
+    const matches = (id: ShortcutId) => matchesShortcut(e, getEffectiveShortcut(id), isMac);
     if (matches('editor.save')) {
       e.preventDefault();
       if (isFileDirty && !fileSaving) saveFileContent();

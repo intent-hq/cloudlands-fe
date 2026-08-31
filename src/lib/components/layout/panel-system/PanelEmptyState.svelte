@@ -37,7 +37,7 @@
   import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
 
   interface Props {
     workspaceId: string;
@@ -187,11 +187,11 @@
         ]
       : []),
   ]);
-  const newTabShortcut$ = selectEffectiveShortcut('navigation.new-tab');
-  const commandPaletteShortcut$ = selectEffectiveShortcut('global.command-palette-alt');
-  const reopenTabShortcut$ = selectEffectiveShortcut('navigation.reopen-tab');
-  const toggleSidebarShortcut$ = selectEffectiveShortcut('panel.toggle-sidebar');
-  const keyboardShortcutsShortcut$ = selectEffectiveShortcut('global.keyboard-shortcuts');
+  const newTabShortcut$ = effectiveShortcutReadable('navigation.new-tab');
+  const commandPaletteShortcut$ = effectiveShortcutReadable('global.command-palette-alt');
+  const reopenTabShortcut$ = effectiveShortcutReadable('navigation.reopen-tab');
+  const toggleSidebarShortcut$ = effectiveShortcutReadable('panel.toggle-sidebar');
+  const keyboardShortcutsShortcut$ = effectiveShortcutReadable('global.keyboard-shortcuts');
   const utilityActions = $derived([
     {
       key: $newTabShortcut$,

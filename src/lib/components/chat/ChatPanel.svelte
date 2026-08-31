@@ -359,7 +359,7 @@
   } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   const logger = createLogger('ChatPanel');
@@ -5015,7 +5015,7 @@
     if (
       isPanelFocused &&
       !isFocusInEditableElement(e.target as Element | null) &&
-      matchesShortcut(e, selectEffectiveShortcut.select(appStore.state, 'chat.focus-input'), isMac)
+      matchesShortcut(e, getEffectiveShortcut('chat.focus-input'), isMac)
     ) {
       e.preventDefault();
       focusPrompt();
@@ -5024,7 +5024,7 @@
     if (
       isPanelFocused &&
       $agentSessionIsStreaming$ &&
-      matchesShortcut(e, selectEffectiveShortcut.select(appStore.state, 'chat.stop'), isMac)
+      matchesShortcut(e, getEffectiveShortcut('chat.stop'), isMac)
     ) {
       e.preventDefault();
       handleStop();

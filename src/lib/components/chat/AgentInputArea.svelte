@@ -8,8 +8,7 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { m } from '$shared/paraglide/messages.js';
-  import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   interface Props {
@@ -119,7 +118,7 @@
     if (!enableShortcuts) return;
     const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
     const matches = (id: 'chat.force-send' | 'chat.stop') =>
-      matchesShortcut(event, selectEffectiveShortcut.select(appStore.state, id), isMac);
+      matchesShortcut(event, getEffectiveShortcut(id), isMac);
 
     // Cmd/Ctrl + Enter to send
     if (matches('chat.force-send')) {

@@ -120,7 +120,7 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import type { ShortcutId } from '$lib/utils/shortcut-bindings';
   // Installs production bridge handlers before the app sagas and route startup use them.
   import '$store/renderer/seeders';
@@ -486,9 +486,7 @@
         action: opts.action,
         binding:
           opts.binding ??
-          (opts.shortcutId
-            ? () => selectEffectiveShortcut.select(appStore.state, opts.shortcutId!)
-            : undefined),
+          (opts.shortcutId ? () => getEffectiveShortcut(opts.shortcutId!) : undefined),
       });
     };
     const openCmd = () => appStore.dispatch(openPalette());
@@ -502,7 +500,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
-      resolveBinding: (id) => selectEffectiveShortcut.select(appStore.state, id),
+      resolveBinding: getEffectiveShortcut,
     });
 
     // Optionally register config-driven shortcut for opening the command palette

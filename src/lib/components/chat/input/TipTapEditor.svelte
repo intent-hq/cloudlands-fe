@@ -44,8 +44,7 @@
     type SlashCommandContext,
   } from './slash-skill-command';
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
-  import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
 
   /** Represents an inline image in the editor content */
@@ -929,10 +928,10 @@
             const isMac =
               typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
             const matches = (id: ShortcutId) =>
-              matchesShortcut(event, selectEffectiveShortcut.select(appStore.state, id), isMac);
+              matchesShortcut(event, getEffectiveShortcut(id), isMac);
             if (
               matches('chat.mention-context') &&
-              selectEffectiveShortcut.select(appStore.state, 'chat.mention-context') !== '@'
+              getEffectiveShortcut('chat.mention-context') !== '@'
             ) {
               event.preventDefault();
               editor?.chain().focus().insertContent('@').run();

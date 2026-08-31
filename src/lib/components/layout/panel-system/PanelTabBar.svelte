@@ -89,7 +89,7 @@
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import type { PanelHeaderActions } from './panel-header-context.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
@@ -107,13 +107,13 @@
       ? m.layout_panelTabBar_fileManagerFinder_label()
       : m.layout_panelTabBar_fileManagerGeneric_label();
   const logger = createLogger('PanelTabBar');
-  const copyBrowserUrlShortcut$ = selectEffectiveShortcut('panel.copy-browser-url');
-  const closePaneShortcut$ = selectEffectiveShortcut('navigation.close-tab');
-  const createColumnRightShortcut$ = selectEffectiveShortcut('panel.create-column-right');
-  const movePaneLeftShortcut$ = selectEffectiveShortcut('panel.move-pane-previous-column');
-  const movePaneRightShortcut$ = selectEffectiveShortcut('panel.move-pane-next-column');
-  const previousPaneShortcut$ = selectEffectiveShortcut('panel.previous-pane');
-  const nextPaneShortcut$ = selectEffectiveShortcut('panel.next-pane');
+  const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
+  const closePaneShortcut$ = effectiveShortcutReadable('navigation.close-tab');
+  const createColumnRightShortcut$ = effectiveShortcutReadable('panel.create-column-right');
+  const movePaneLeftShortcut$ = effectiveShortcutReadable('panel.move-pane-previous-column');
+  const movePaneRightShortcut$ = effectiveShortcutReadable('panel.move-pane-next-column');
+  const previousPaneShortcut$ = effectiveShortcutReadable('panel.previous-pane');
+  const nextPaneShortcut$ = effectiveShortcutReadable('panel.next-pane');
   const copyBrowserUrlShortcutHint = $derived(formatShortcut($copyBrowserUrlShortcut$));
   const closePaneShortcutHint = $derived(formatShortcut($closePaneShortcut$));
   const createColumnRightShortcutHint = $derived(formatShortcut($createColumnRightShortcut$));

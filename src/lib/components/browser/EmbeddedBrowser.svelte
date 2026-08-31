@@ -51,10 +51,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
-  import { selectEffectiveShortcut } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
 
   const logger = createLogger('EmbeddedBrowser');
-  const copyBrowserUrlShortcut$ = selectEffectiveShortcut('panel.copy-browser-url');
+  const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
 
   // Use shared protocol constants — single source of truth in src/shared/constants.ts
   const ALLOWED_PROTOCOLS = BROWSER_PROTOCOLS.NAVIGATION_ALLOWED;
