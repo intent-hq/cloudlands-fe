@@ -16,6 +16,9 @@ overrides:
   isbinaryfile@<5.0.0: ^5.0.7
 
 patchedDependencies:
+  '@augmentcode/themis@0.2.4':
+    hash: ba2082d4cdad29bbd0d843a850abaa7a6055f16d0562d618d24f23cd76120d0b
+    path: patches/@augmentcode__themis@0.2.4.patch
   bits-ui@2.18.1:
     hash: 4c671283c76931ad159f44b54c02e98b32c9ed4fc2b18df1a7b3f81842511bd2
     path: patches/bits-ui@2.18.1.patch
@@ -29,7 +32,7 @@ importers:
     dependencies:
       '@augmentcode/themis':
         specifier: 0.2.4
-        version: 0.2.4(react@19.2.6)(svelte@5.56.9(@typescript-eslint/types@8.67.0))
+        version: 0.2.4(patch_hash=ba2082d4cdad29bbd0d843a850abaa7a6055f16d0562d618d24f23cd76120d0b)(react@19.2.6)(svelte@5.56.9(@typescript-eslint/types@8.67.0))
       body-parser:
         specifier: ^2.3.0
         version: 2.3.0
@@ -5577,7 +5580,7 @@ snapshots:
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.5.2
 
-  '@augmentcode/themis@0.2.4(react@19.2.6)(svelte@5.56.9(@typescript-eslint/types@8.67.0))':
+  '@augmentcode/themis@0.2.4(patch_hash=ba2082d4cdad29bbd0d843a850abaa7a6055f16d0562d618d24f23cd76120d0b)(react@19.2.6)(svelte@5.56.9(@typescript-eslint/types@8.67.0))':
     dependencies:
       fast-equals: 6.0.2
       kefir: 3.8.8
