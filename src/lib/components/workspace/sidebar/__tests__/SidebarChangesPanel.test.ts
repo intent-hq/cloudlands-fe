@@ -379,10 +379,6 @@ vi.mock(
       type: 'backgroundAgentExecutor/cancel',
       payload: args,
     })),
-    reconnectAgent: vi.fn((...args: any[]) => ({
-      type: 'backgroundAgentExecutor/reconnect',
-      payload: args,
-    })),
     resetExecutor: vi.fn((...args: any[]) => ({
       type: 'backgroundAgentExecutor/reset',
       payload: args,

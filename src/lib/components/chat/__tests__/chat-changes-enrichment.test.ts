@@ -9,6 +9,7 @@ import {
   computeMergedDestinedPaths,
   getChangeCategory,
   applyNumstatStats,
+  isPathLocked,
 } from '../ChatChangesPanel.svelte';
 import type { LocalFileChange } from '../types';
 
@@ -207,5 +208,26 @@ describe('applyNumstatStats', () => {
       [8, 2],
       [0, 0],
     ]);
+  });
+});
+
+describe('isPathLocked', () => {
+  const locked: Record<string, true> = { 'src/foo.ts': true };
+
+  it('matches a repo-relative path directly', () => {
+    expect(isPathLocked(locked, 'src/foo.ts')).toBe(true);
+  });
+
+  it('matches an absolute path via the workspace prefix', () => {
+    expect(isPathLocked(locked, '/home/user/ws/src/foo.ts', '/home/user/ws')).toBe(true);
+  });
+
+  it('does not match an absolute path without a workspace path', () => {
+    expect(isPathLocked(locked, '/home/user/ws/src/foo.ts')).toBe(false);
+  });
+
+  it('does not match unlocked paths', () => {
+    expect(isPathLocked(locked, 'src/bar.ts', '/home/user/ws')).toBe(false);
+    expect(isPathLocked({}, 'src/foo.ts', '/home/user/ws')).toBe(false);
   });
 });
