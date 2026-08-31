@@ -505,7 +505,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
   });
 
-  it('renders the fixed compact Context summary outside the accessible Spec action', async () => {
+  it('renders the Spec action and fixed Context summary in one horizontal grid item', async () => {
     mocks.notes = [
       { id: 'spec', title: 'Spec', content: '' },
       { id: 'reference', title: 'Reference', content: '' },
@@ -520,8 +520,14 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       '[data-sidebar-context="reference"]',
     )!;
     const summaryElement = getByText('Spec, MCP, Skills');
+    const summaryRow = summaryElement.closest<HTMLElement>('[data-context-spec-summary-row]')!;
 
     expect(summaryElement.matches('[data-context-capability-summary]')).toBe(true);
+    expect(summaryRow.className).toContain('flex');
+    expect(summaryRow.className).toContain('items-center');
+    expect(summaryRow.parentElement?.matches('[data-sidebar-launcher-icons]')).toBe(true);
+    expect(summaryRow.contains(specButton)).toBe(true);
+    expect(summaryRow.lastElementChild).toBe(summaryElement);
     expect(summaryElement.className).toContain('text-[11px]');
     expect(summaryElement.className).toContain('pointer-events-none');
     expect(specButton.contains(summaryElement)).toBe(false);
@@ -611,7 +617,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(agentOverflow.textContent).toBe('+2');
     expect(getComputedStyle(agentOverflow).backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(contextStack.style.gridTemplateColumns).toBe(
-      '36px max-content repeat(4, 15px) 36px max-content',
+      'max-content repeat(4, 15px) 36px max-content',
     );
     expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
@@ -907,6 +913,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const contextAction = contextCard.querySelector<HTMLElement>('.launcher-tile-action')!;
     const specButton = contextCard.querySelector<HTMLElement>('[data-sidebar-context="spec"]')!;
     const summary = contextCard.querySelector<HTMLElement>('[data-context-capability-summary]')!;
+    const summaryRow = contextCard.querySelector<HTMLElement>('[data-context-spec-summary-row]')!;
     const contextSelections = () =>
       mocks.dispatch.mock.calls.filter(
         ([action]) =>
@@ -927,6 +934,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
 
     expect(summary.className).toContain('pointer-events-none');
     expect(specButton.contains(summary)).toBe(false);
+    expect(summaryRow.contains(specButton)).toBe(true);
+    expect(summaryRow.lastElementChild).toBe(summary);
   });
 
   it('keeps Changes while omitting Activity Log and Local Changes previews', async () => {

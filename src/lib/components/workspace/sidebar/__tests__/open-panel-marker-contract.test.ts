@@ -21,6 +21,7 @@ describe('sidebar open-panel marker contract', () => {
     );
     expect(compactContext).toContain('{#if !isSpec}');
     expect(compactContext.match(/<OpenPanelIndicator/g)).toHaveLength(1);
+    expect(compactContext).toContain('data-context-spec-summary-row');
     expect(compactContext).toContain('data-context-capability-summary');
     expect(compactContext.indexOf('</Button>')).toBeLessThan(
       compactContext.indexOf('data-context-capability-summary'),
