@@ -38,11 +38,11 @@
  * history's newest side and an append its oldest side, so the other walk's
  * position may no longer border the segment — its next request re-seeks.
  * Continuation state resets when the history segment is cleared out from
- * under the walk (session removal, explicit segment clear, and the §7.1
- * `resumed: false` rehydration — whose retained rows are unanchored, so the
- * segment itself is discarded here too). Errors are logged and swallowed
- * (the transcript already rendered); the finally settle always clears the
- * fetching flag.
+ * under the walk (session removal — single, per-workspace bulk, or global
+ * clear — explicit segment clear, and the §7.1 `resumed: false` rehydration
+ * — whose retained rows are unanchored, so the segment itself is discarded
+ * here too). Errors are logged and swallowed (the transcript already
+ * rendered); the finally settle always clears the fetching flag.
  */
 import { all, call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
@@ -60,9 +60,11 @@ import type { Proposal } from '$shared/types/proposal';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
   appendHistoryMessages,
+  clearAllSessions,
   clearHistorySegment,
   prependHistoryMessages,
   removeSession,
+  removeWorkspaceSessions,
   seedHistoryAround,
   setHistoryOldestReached,
 } from '../../agent-session/agent-session-slice';
@@ -91,7 +93,7 @@ import {
   scrollbackOlderPageSettled,
   scrollbackSeekSettled,
 } from '../chat-state-slice';
-import { selectChatAgentState } from '../chat-state-selectors';
+import { selectChatAgentIds, selectChatAgentState } from '../chat-state-selectors';
 
 const logger = createLogger('ChatScrollbackSaga');
 const PAGE_LIMIT = 200;
@@ -219,6 +221,7 @@ function* fetchOlderPageWorker(
   const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
   // A held cursor is honored unconditionally — even when the segment holds
   // no rows. It is never stale: every segment-clearing path (removeSession,
+  // the removeWorkspaceSessions / clearAllSessions bulk removals,
   // clearHistorySegment, the §7.1 `resumed: false` snapshot discard) nulls
   // it via scrollbackContinuationReset / the snapshot reducer's atomic
   // reset. And it can be the walk's only way to make progress: a page whose
@@ -647,6 +650,24 @@ function* continuationResetWorker(
 }
 
 /**
+ * Bulk session removal (`removeWorkspaceSessions` / `clearAllSessions`)
+ * dropped every affected agent's session AND history segment in one reducer
+ * pass, without touching chat-state — so persisted cursors would go stale
+ * and get honored unconditionally if the same agent were hydrated again.
+ * The removal reducer runs before this watcher, so the affected set is
+ * exactly the chat-state entries whose agent session no longer exists;
+ * unaffected agents (other workspaces) keep their session and are skipped,
+ * and the reset reducer no-ops on entries with nothing to clear.
+ */
+function* bulkContinuationResetWorker(): SagaGenerator<void> {
+  const agentIds = yield* selectChatAgentIds.effect();
+  for (const agentId of agentIds) {
+    const session = yield* selectAgentSession.effect(agentId);
+    if (!session) yield* put(scrollbackContinuationReset(agentId));
+  }
+}
+
+/**
  * §7.1 `resumed: false` fallback snapshot: the daemon declined the resume
  * anchor, so retained rows — the history segment included — are unanchored
  * and must be discarded (the tail is replaced by the subscribe saga). The
@@ -680,6 +701,8 @@ export function* chatScrollbackSaga(): SagaGenerator<void> {
       ),
       takeEvery(removeSession, continuationResetWorker),
       takeEvery(clearHistorySegment, continuationResetWorker),
+      takeEvery(removeWorkspaceSessions, bulkContinuationResetWorker),
+      takeEvery(clearAllSessions, bulkContinuationResetWorker),
       takeEvery(chatTranscriptSnapshotApplied, snapshotResetWorker),
     ]);
   } finally {

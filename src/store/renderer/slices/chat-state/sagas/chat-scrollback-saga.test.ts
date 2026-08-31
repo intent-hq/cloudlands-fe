@@ -33,9 +33,11 @@ import {
   agentSessionReducer,
   appendHistoryMessages,
   bulkUpsertSessions,
+  clearAllSessions,
   initialState as agentSessionInitialState,
   prependHistoryMessages,
   removeSession,
+  removeWorkspaceSessions,
   updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
@@ -318,6 +320,67 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     expect(run.history()).toBeUndefined();
     expect(run.chat()?.scrollbackOlderToken).toBeNull();
     expect(run.chat()?.fetchingOlderHistory).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops the cursor on removeWorkspaceSessions for the removed workspace only', async () => {
+    const OTHER_WS = 'ws-other';
+    const OTHER_AGENT = 'agent-other';
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({ messages: [message('m-10', 10)] }),
+        session({ id: OTHER_AGENT, workspaceId: OTHER_WS, messages: [message('n-10', 10)] }),
+      ]),
+    );
+
+    // Persist a backward cursor for each agent.
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-09', 9), message('m-10', 10)], { nextToken: 'older-1' }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('n-09', 9), message('n-10', 10)], { nextToken: 'other-older-1' }),
+    );
+    run.channel.put(olderHistoryPageRequested(OTHER_WS, OTHER_AGENT));
+    await settle();
+    expect(run.chat()?.scrollbackOlderToken).toBe('older-1');
+    expect(run.state().chatState.byAgentId[OTHER_AGENT]?.scrollbackOlderToken).toBe(
+      'other-older-1',
+    );
+
+    // The bulk removal drops the segment RECORD; the cursor must go with it —
+    // a re-hydrated agent would otherwise continue from a stale continuation.
+    run.dispatch(removeWorkspaceSessions(WS));
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    // The other workspace's agent keeps its session, segment, and cursor.
+    expect(run.state().chatState.byAgentId[OTHER_AGENT]?.scrollbackOlderToken).toBe(
+      'other-older-1',
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops every cursor on clearAllSessions', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-09', 9), message('m-10', 10)], { nextToken: 'older-1' }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.scrollbackOlderToken).toBe('older-1');
+
+    run.dispatch(clearAllSessions());
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
     run.task.cancel();
     await run.task.toPromise();
   });
