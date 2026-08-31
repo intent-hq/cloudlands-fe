@@ -1,6 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
-  import { onMount, onDestroy, mount, unmount } from 'svelte';
+  import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
   import { Popover } from 'bits-ui';
 
   import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
@@ -857,12 +857,21 @@
             onSelectionChange?.(selectedText.trim() || null);
           }
         },
+        // TipTap emits focus/blur synchronously from native DOM events, which
+        // can fire mid-flush inside a Svelte reaction (e.g. an ancestor
+        // flipping `inert` in a template expression blurs the focused editor).
+        // untrack() the $state writes so the state_unsafe_mutation guard does
+        // not reject that reentry.
         onFocus: ({ editor }) => {
-          editorFocused = true;
-          refreshSlashContext(editor);
+          untrack(() => {
+            editorFocused = true;
+            refreshSlashContext(editor);
+          });
         },
         onBlur: () => {
-          editorFocused = false;
+          untrack(() => {
+            editorFocused = false;
+          });
         },
         editorProps: {
           attributes: {
