@@ -1189,6 +1189,10 @@ async function doSpawnSidecarOnDemand(
   const socketPath = resolveSocketPath(env);
   if (await healthCheckProbe(socketPath)) {
     setConnectionMode('external');
+    // The client hello that reconnected to this revived socket may have fired
+    // while the mode was still 'sidecar' (clearing the flag) — re-run the
+    // capture now that the adopted `external` mode is set.
+    refreshLocalUpdateSupportedAfterModeResolution();
     logger.info('Spawn-on-demand skipped: a live daemon answers on the socket', { socketPath });
     return { ok: true, spawned: false, reason: 'live daemon already serving the socket' };
   }

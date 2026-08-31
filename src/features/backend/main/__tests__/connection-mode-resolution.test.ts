@@ -220,6 +220,21 @@ describe('startIntentdSidecar updateSupported recapture after mode resolution', 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(vi.mocked(refreshLocalUpdateSupported)).not.toHaveBeenCalled();
   });
+
+  it('re-runs the capture when spawn-on-demand adopts a live daemon on the socket', async () => {
+    // Third external call site: sidecar died → an external daemon revived the
+    // socket → the client hello fired while the mode was still 'sidecar'
+    // (clearing the flag) → the user's spawn-on-demand fallback probes, finds
+    // the live daemon, and flips to 'external' — the capture must re-run.
+    mockProbeSocket(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { running: true } }));
+    const { refreshLocalUpdateSupported } = await import('../backend.ipc');
+    const result = await spawnSidecarOnDemand({}, false, '/resources', '/cwd');
+    expect(result.spawned).toBe(false);
+    expect(getConnectionMode()).toBe('external');
+    await vi.waitFor(() => {
+      expect(vi.mocked(refreshLocalUpdateSupported)).toHaveBeenCalled();
+    });
+  });
 });
 
 describe('startIntentdSidecar version-mismatch matrix (daemon-present × version-match)', () => {
