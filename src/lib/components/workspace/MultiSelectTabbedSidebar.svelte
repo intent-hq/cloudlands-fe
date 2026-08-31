@@ -1021,7 +1021,7 @@
                             >.
                           {:else if tabId === 'context' && $workspace?.path}
                             {tab.description}
-                            {m.workspace_multiSelectSidebar_notesLiveIn_before()}
+                            {m.workspace_multiSelectSidebar_contextAndMetadataLiveIn_before()}
                             <span class="inline-flex items-baseline gap-1">
                               <OpenComboButton
                                 filePath={$workspace.path + '/.workspace'}
