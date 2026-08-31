@@ -263,6 +263,7 @@ import {
   clearServerErrorMessage,
   setServerErrorMessage,
   setServerStatus,
+  setWorkspaceMcpServerDisabled,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -2509,6 +2510,14 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   const wireChanges = (data as { changes?: unknown }).changes;
   if (!wireChanges || typeof wireChanges !== 'object') return;
   const raw = wireChanges as Record<string, unknown>;
+  // `mcpServerToggled` (§5.22 per-workspace disable) is a non-column delta —
+  // a self-sufficient notification of a workspace-scoped `mcp.servers.toggle`,
+  // never a `Workspace` field — so it routes to the mcp-settings slice and is
+  // excluded from the entity whitelist below. Resolve serverId → name via the
+  // current server list (same pattern as `mcp.servers:status-changed`); when
+  // the list has not loaded the id yet, drop the update — the sidebar's
+  // hydrate on mount converges the state.
+  handleWorkspaceMcpServerToggled(raw, workspaceId);
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
   if (typeof raw.statusMessage === 'string') changes.statusMessage = raw.statusMessage;
@@ -2618,6 +2627,31 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
       });
     }
   }
+}
+
+/**
+ * `mcpServerToggled` on a `workspace:updated` delta (PROTOCOL §5.22
+ * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
+ * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
+ * agent-driven toggles) mirror the per-workspace state without a follow-up
+ * `mcp.servers.list` read. The slice keys the map by server *name*, so the
+ * daemon id resolves via the current server list; an unresolvable id is
+ * dropped (the sidebar's mount hydrate converges the state later).
+ */
+function handleWorkspaceMcpServerToggled(
+  raw: Record<string, unknown>,
+  workspaceId: string,
+): void {
+  const toggled = raw.mcpServerToggled;
+  if (!toggled || typeof toggled !== 'object') return;
+  const { serverId, workspaceDisabled } = toggled as Record<string, unknown>;
+  if (typeof serverId !== 'string' || !serverId || typeof workspaceDisabled !== 'boolean') {
+    return;
+  }
+  const servers = appStore.state.mcpSettings.servers;
+  const match = servers.find((s) => s.id === serverId);
+  if (!match) return;
+  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, match.name, workspaceDisabled));
 }
 
 /**

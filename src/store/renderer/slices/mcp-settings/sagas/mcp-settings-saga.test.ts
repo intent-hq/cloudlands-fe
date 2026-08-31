@@ -6,12 +6,16 @@ const mocks = vi.hoisted(() => ({
   getMcpServers: vi.fn(),
   setMcpServers: vi.fn(),
   getMcpServerStatuses: vi.fn(),
+  getWorkspaceDisabledMcpServerNames: vi.fn(),
+  toggleWorkspaceMcpServer: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: { settings: {
     getMcpServers: mocks.getMcpServers,
     setMcpServers: mocks.setMcpServers,
     getMcpServerStatuses: mocks.getMcpServerStatuses,
+    getWorkspaceDisabledMcpServerNames: mocks.getWorkspaceDisabledMcpServerNames,
+    toggleWorkspaceMcpServer: mocks.toggleWorkspaceMcpServer,
   } },
 }));
 vi.mock('$lib/utils/client-logger', () => ({
@@ -20,6 +24,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 import {
   addServer,
+  hydrateWorkspaceMcpDisabled,
   importFromJson,
   initialState,
   loadServers,
@@ -29,7 +34,9 @@ import {
   saveAdvancedJson,
   setServerErrorMessage,
   setServers,
+  setWorkspaceMcpServerDisabled,
   toggleServer,
+  toggleWorkspaceMcpServer,
   updateServer,
 } from '../mcp-settings-slice';
 import { ADVANCED_SAVED_RESET_MS, mcpSettingsSaga } from './mcp-settings-saga';
@@ -594,5 +601,97 @@ describe('mcpSettingsSaga', () => {
     ]);
     advancedRun.task.cancel();
     await advancedRun.task.toPromise();
+  });
+
+  it('workspace-toggles a server via the daemon and stores the confirmed disabled state', async () => {
+    const remote = { id: 'srv-remote', name: 'remote', type: 'http' as const, url: 'https://remote.test' };
+    mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: true });
+    const run = harness(mcpSettingsReducer(initialState, setServers([remote])));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', false));
+    await settle();
+
+    expect(mocks.toggleWorkspaceMcpServer.mock.calls).toEqual([[
+      'ws-1', 'srv-remote', false,
+    ]]);
+    expect(run.dispatched).toEqual([
+      { type: 'mcpSettings/setWorkspaceMcpServerDisabled', payload: ['ws-1', 'remote', true] },
+    ]);
+    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({ remote: true });
+    expect(run.state().disabledServers).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('workspace-toggle re-enable clears the disabled marker from the confirmed result', async () => {
+    const remote = { id: 'srv-remote', name: 'remote', type: 'http' as const, url: 'https://remote.test' };
+    mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: false });
+    const seed = mcpSettingsReducer(
+      mcpSettingsReducer(initialState, setServers([remote])),
+      setWorkspaceMcpServerDisabled('ws-1', 'remote', true),
+    );
+    const run = harness(seed);
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', true));
+    await settle();
+
+    expect(mocks.toggleWorkspaceMcpServer.mock.calls).toEqual([[
+      'ws-1', 'srv-remote', true,
+    ]]);
+    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('workspace-toggle failure re-hydrates the scoped list instead of writing optimistically', async () => {
+    const remote = { id: 'srv-remote', name: 'remote', type: 'http' as const, url: 'https://remote.test' };
+    mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: false, error: 'not-found' });
+    mocks.getWorkspaceDisabledMcpServerNames.mockResolvedValue([]);
+    const run = harness(mcpSettingsReducer(initialState, setServers([remote])));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', false));
+    await settle();
+
+    expect(mocks.getWorkspaceDisabledMcpServerNames.mock.calls).toEqual([['ws-1']]);
+    expect(run.dispatched).toEqual([
+      { type: 'mcpSettings/setWorkspaceDisabledMcpServers', payload: ['ws-1', {}] },
+    ]);
+    expect(run.state().byWorkspaceId['ws-1']?.disabledServers ?? {}).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('workspace-toggle without a daemon id makes no wire call and writes no state', async () => {
+    const noId = { name: 'no-id', type: 'stdio' as const, command: 'node' };
+    const run = harness(mcpSettingsReducer(initialState, setServers([noId])));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'no-id', false));
+    await settle();
+
+    expect(mocks.toggleWorkspaceMcpServer.mock.calls).toEqual([]);
+    expect(run.dispatched).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('hydrates a workspace disabled map from the scoped list and keeps state on a failed read', async () => {
+    mocks.getWorkspaceDisabledMcpServerNames
+      .mockResolvedValueOnce(['linear', 'filesystem'])
+      .mockResolvedValueOnce(null);
+    const run = harness();
+    run.channel.put(hydrateWorkspaceMcpDisabled('ws-1'));
+    await settle();
+
+    expect(mocks.getWorkspaceDisabledMcpServerNames.mock.calls).toEqual([['ws-1']]);
+    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({
+      linear: true,
+      filesystem: true,
+    });
+
+    run.channel.put(hydrateWorkspaceMcpDisabled('ws-1'));
+    await settle();
+
+    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({
+      linear: true,
+      filesystem: true,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
   });
 });
