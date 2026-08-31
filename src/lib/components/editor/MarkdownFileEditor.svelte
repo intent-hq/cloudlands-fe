@@ -141,6 +141,18 @@
     }
   });
 
+  export function runShortcut(
+    action: 'undo' | 'redo' | 'copy' | 'select-all' | 'toggle-task-list',
+  ): boolean {
+    if (!editor?.isFocused) return false;
+    if (action === 'copy') return document.execCommand('copy');
+    const commands = editor.chain().focus();
+    if (action === 'undo') return commands.undo().run();
+    if (action === 'redo') return commands.redo().run();
+    if (action === 'select-all') return commands.selectAll().run();
+    return commands.toggleTaskList().run();
+  }
+
   // When parent changes value (e.g., external file reload), update editor
   $effect(() => {
     const currentValue = value;

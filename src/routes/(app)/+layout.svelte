@@ -601,11 +601,11 @@
     });
     // Cmd+G (Mac) / Ctrl+G (Win/Linux) -> Go to Line
     const openGoToLineAction = () => appStore.dispatch(openGoToLine());
-    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({
       key: 'g',
       meta: true,
       shortcutId: 'editor.go-to-line',
+      // i18n-ignore (shortcut registry metadata, not rendered in UI)
       description: 'Go to Line (Mac)',
       action: openGoToLineAction,
     });

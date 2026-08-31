@@ -323,6 +323,14 @@ export function registerWorkspaceTabShortcuts({
 
   for (let digit = 1; digit <= 9; digit++) {
     register({
+      ...(resolveBinding
+        ? {
+            binding: () => {
+              const pattern = resolveBinding('navigation.go-to-tab');
+              return pattern.replace(/([1-8])-9$/, String(digit));
+            },
+          }
+        : {}),
       ...mod,
       key: String(digit),
       global: true,

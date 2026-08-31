@@ -33,7 +33,12 @@ import {
 import type { PanelLayoutManager } from './panel-layout-adapter';
 import type { PanelCycleDirection } from './panel-cycle-navigation';
 import { store as appStore } from '$store/renderer/store';
-import { matchesShortcut, resolveShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
+import {
+  matchesShortcut,
+  matchesShortcutPattern,
+  resolveShortcut,
+  type ShortcutId,
+} from '$lib/utils/shortcut-bindings';
 
 const logger = createLogger('PanelKeyboardShortcuts');
 
@@ -48,6 +53,7 @@ export type LeaderAction =
   | 'navigate-next'
   | 'navigate-prev'
   | 'split-right'
+  | 'split-down'
   | 'resize-left'
   | 'resize-right'
   | 'resize-up'
@@ -157,6 +163,13 @@ export function createPanelKeyboardShortcuts(
         if (focusedId && panelIds.length < 4) {
           layoutManager.splitPanel(focusedId, 'horizontal');
         }
+        break;
+      }
+
+      case 'split-down': {
+        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+        const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
+        if (focusedId && panelIds.length < 4) layoutManager.splitPanel(focusedId, 'vertical');
         break;
       }
 
@@ -455,54 +468,27 @@ export function createPanelKeyboardShortcuts(
   }
 
   function getLeaderAction(e: KeyboardEvent): LeaderAction | null {
-    const isShift = e.shiftKey;
-
-    switch (e.key.toLowerCase()) {
-      // Navigation (vim-style)
-      case 'h':
-        return isShift ? 'resize-left' : 'navigate-left';
-      case 'j':
-        return isShift ? 'resize-down' : 'navigate-down';
-      case 'k':
-        return isShift ? 'resize-up' : 'navigate-up';
-      case 'l':
-        return isShift ? 'resize-right' : 'navigate-right';
-
-      // Navigation (tmux-style)
-      case 'o':
-        return 'navigate-next';
-      case 'p':
-        return 'navigate-prev';
-
-      // Splitting (tmux-style)
-      case '%':
-      case '5': // Shift+5 = % on US keyboard
-        if (isShift) return 'split-right';
-        break;
-      // Zoom
-      case 'z':
-        return 'zoom-toggle';
-
-      // Close
-      case 'x':
-        return 'close-panel';
-
-      // Resize equal
-      case '=':
-        return 'resize-equal';
-
-      // Show panel numbers for quick jump
-      case 'q':
-        return 'show-panel-numbers';
-
-      // Move tab
-      case 'm':
-        return 'move-tab-to-next-panel';
-
-      // Cycle layout presets (tmux-style Space)
-      case ' ':
-        return 'cycle-layout-presets';
-    }
+    const binding = (id: ShortcutId) =>
+      resolveShortcut(id, appStore.state.userPreferences?.shortcutOverrides ?? {});
+    const match = (id: ShortcutId) => matchesShortcutPattern(e, binding(id), isMac);
+    const navigation = match('leader.navigate-panels');
+    if (navigation >= 0)
+      return ['navigate-left', 'navigate-down', 'navigate-up', 'navigate-right'][
+        navigation
+      ] as LeaderAction;
+    const resize = match('leader.resize-panels');
+    if (resize >= 0)
+      return ['resize-left', 'resize-down', 'resize-up', 'resize-right'][resize] as LeaderAction;
+    const cycle = match('leader.next-previous-panel');
+    if (cycle >= 0) return cycle === 0 ? 'navigate-next' : 'navigate-prev';
+    if (match('leader.split-right') >= 0) return 'split-right';
+    if (match('leader.split-down') >= 0) return 'split-down';
+    if (match('leader.toggle-zoom') >= 0) return 'zoom-toggle';
+    if (match('leader.close-panel') >= 0) return 'close-panel';
+    if (match('leader.equalize-sizes') >= 0) return 'resize-equal';
+    const jumpBinding = binding('leader.jump-to-panel').split('+')[0]?.trim();
+    if (jumpBinding && matchesShortcut(e, jumpBinding, isMac)) return 'show-panel-numbers';
+    if (match('leader.cycle-layout') >= 0) return 'cycle-layout-presets';
 
     return null;
   }

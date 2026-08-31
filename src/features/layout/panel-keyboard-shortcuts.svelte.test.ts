@@ -313,13 +313,13 @@ describe('fixed-column panel keyboard shortcuts', () => {
     shortcuts.cleanup();
   });
 
-  it('does not map the former split-down leader key', () => {
+  it('maps the configurable split-down leader key', () => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager);
     shortcuts.activateLeader();
     const event = new KeyboardEvent('keydown', { key: '"', shiftKey: true });
 
     expect(shortcuts.handleKeyDown(event)).toBe(true);
-    expect(splitPanel).not.toHaveBeenCalled();
+    expect(splitPanel).toHaveBeenCalledWith('p1', 'vertical');
     expect(shortcuts.leaderActive).toBe(false);
     shortcuts.cleanup();
   });

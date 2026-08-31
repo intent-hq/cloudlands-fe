@@ -154,10 +154,53 @@ export function parseShortcut(value: string): ParsedShortcut | null {
 }
 
 export function normalizeShortcut(value: string): string | null {
+  const input = value.trim();
+  if (input.includes('/')) {
+    const alternatives = input.split('/').map((part) => part.trim());
+    if (alternatives.some((part) => !/^[A-Za-z0-9%=" ]$/.test(part))) return null;
+    return alternatives.join('/');
+  }
+  const rangeMatch = input.match(/^(?:(mod|ctrl|alt|shift)\+)?([1-8])-9$/i);
+  if (rangeMatch) {
+    const modifier = rangeMatch[1]?.toLowerCase();
+    return `${modifier ? `${modifier}+` : ''}${rangeMatch[2]}-9`;
+  }
+  const sequenceMatch = input.match(/^([A-Za-z])\s*\+\s*([1-8]-9)$/);
+  if (sequenceMatch) return `${sequenceMatch[1].toLowerCase()} + ${sequenceMatch[2]}`;
   const parsed = parseShortcut(value);
   if (!parsed) return null;
   const modifiers = MODIFIER_ORDER.filter((modifier) => parsed[modifier]);
   return [...modifiers, parsed.key].join('+');
+}
+
+/** Expand a displayed alternative/range binding into the concrete keys it represents. */
+export function expandShortcutPattern(shortcut: string): string[] {
+  const rangeMatch = shortcut.match(/^(.*\+)?([1-8])-9$/);
+  if (rangeMatch) {
+    const prefix = rangeMatch[1] ?? '';
+    return Array.from(
+      { length: 10 - Number(rangeMatch[2]) },
+      (_, index) => `${prefix}${Number(rangeMatch[2]) + index}`,
+    );
+  }
+  return shortcut.split('/').map((part) => {
+    const token = part.trim();
+    return /^[A-Z]$/.test(token)
+      ? `shift+${token.toLowerCase()}`
+      : token === 'space'
+        ? 'space'
+        : token;
+  });
+}
+
+export function matchesShortcutPattern(
+  event: ShortcutKeyboardEvent,
+  shortcut: string,
+  mac: boolean,
+): number {
+  return expandShortcutPattern(shortcut).findIndex((binding) =>
+    matchesShortcut(event, binding, mac),
+  );
 }
 
 export function matchesShortcut(
