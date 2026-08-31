@@ -46,7 +46,9 @@ describe('KeyboardShortcutsSettings', () => {
       SHORTCUT_REGISTRY.map(({ defaultKey }) => formatShortcut(defaultKey)),
     );
     expect(inputs.every((input) => input.hasAttribute('data-shortcut-input'))).toBe(true);
+    expect(inputs.every((input) => input.classList.contains('w-28'))).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Settings' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reset Settings to default' })).toBeNull();
     expect((screen.getByRole('button', { name: 'Reset all' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
@@ -135,6 +137,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(input.closest('[data-shortcut-entry]')?.className).toContain(
       'grid-cols-[minmax(0,1fr)_9rem]',
     );
+    expect(input.classList.contains('w-28')).toBe(true);
     expect(reset.className).toContain('absolute');
     expect(reset.className).toContain('left-full');
   });

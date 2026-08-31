@@ -99,7 +99,7 @@
                 <dd class="relative min-w-0">
                   <Input
                     id={`shortcut-${definition.id}`}
-                    class="h-7 w-36 bg-transparent px-2 text-xs read-only:bg-transparent read-only:text-foreground read-only:hover:border-input focus-visible:ring-2 focus-visible:ring-ring/40"
+                    class="h-7 w-28 bg-transparent px-2 text-xs read-only:bg-transparent read-only:text-foreground read-only:hover:border-input focus-visible:ring-2 focus-visible:ring-ring/40"
                     type="text"
                     readonly
                     data-shortcut-input
