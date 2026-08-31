@@ -35,8 +35,10 @@ export default defineConfig({
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
 
-    /* Port to use for Playwright component endpoint. */
-    ctPort: 3100,
+    /* Port to use for Playwright component endpoint. CT_PORT overrides the
+       default for CI shards on the shared self-hosted host, where a fixed
+       port would collide across co-tenant runner slots. */
+    ctPort: process.env.CT_PORT ? Number(process.env.CT_PORT) : 3100,
 
     /* Vite configuration for component testing */
     ctViteConfig: {
