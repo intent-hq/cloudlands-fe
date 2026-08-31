@@ -780,7 +780,8 @@ describe('WorkspaceTokenUsage', () => {
     ]);
     expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
     expect(modelSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
-    expect(screen.getByTestId('token-usage-total-cost').textContent).toContain('$1');
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+    expect(visibleText(details)).not.toMatch(/cost|\$/i);
 
     await fireEvent.pointerLeave(alphaControl, { pointerType: 'mouse' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
@@ -1057,7 +1058,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByTestId('token-usage-by-agent').textContent).toContain('Alpha');
   });
 
-  it('renders the supported workspace total cost without repeating per-row costs', async () => {
+  it('does not expose provider-reported cost in visible or accessible output', async () => {
     mocks.state.usage = makeUsage({
       byAgentId: {
         'agent-a': {
@@ -1100,17 +1101,19 @@ describe('WorkspaceTokenUsage', () => {
     const agentSection = screen.getByTestId('token-usage-by-agent');
     expect(visibleText(modelSection)).toBe('By model Model Big 100%');
     expect(visibleText(agentSection)).toBe('By agent Alpha 100%');
-    expect(modelSection.textContent).not.toContain('$1.50');
-    expect(agentSection.textContent).not.toContain('$1.50');
-
-    const totalCost = screen.getByTestId('token-usage-total-cost');
-    expect(visibleText(totalCost)).toBe('Total cost $2');
-    expect(totalCost.classList).toContain('border-t');
-    expect(totalCost.lastElementChild?.classList).toContain('font-normal');
-    expect(totalCost.lastElementChild?.classList).toContain('text-right');
+    const details = screen.getByTestId('token-usage-details');
+    expect(visibleText(details)).not.toMatch(/cost|\$/i);
+    expect(screen.queryByText(/total cost/i)).toBeNull();
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+    expect(
+      Array.from(details.querySelectorAll('[aria-label], [aria-description], [title]')).every(
+        (element) =>
+          !Array.from(element.attributes).some((attribute) => /cost|\$/i.test(attribute.value)),
+      ),
+    ).toBe(true);
   });
 
-  it('does not surface per-model costs when no workspace total is reported', async () => {
+  it('does not expose model cost when no workspace total cost is reported', async () => {
     mocks.state.usage = makeUsage({
       totals: {
         inputTokens: 1000,
@@ -1139,13 +1142,12 @@ describe('WorkspaceTokenUsage', () => {
 
     await renderExpandedTokenUsage();
 
-    const modelSection = screen.getByTestId('token-usage-by-model');
-    expect(modelSection.textContent).not.toContain('$2.00');
-    expect(modelSection.textContent).not.toContain('—');
+    const details = screen.getByTestId('token-usage-details');
+    expect(visibleText(details)).not.toMatch(/cost|\$|—/i);
     expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
   });
 
-  it('omits cost values when no cost is reported', async () => {
+  it('does not add cost output when no provider cost is reported', async () => {
     mocks.state.usage = makeUsage({
       totals: {
         inputTokens: 10,
@@ -1167,37 +1169,8 @@ describe('WorkspaceTokenUsage', () => {
 
     await renderExpandedTokenUsage();
 
-    const modelSection = screen.getByTestId('token-usage-by-model');
-    expect(modelSection.textContent).not.toContain('Cost');
-    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
-  });
-
-  it('omits non-finite reported cost values', async () => {
-    mocks.state.usage = makeUsage({
-      totals: {
-        inputTokens: 10,
-        outputTokens: 20,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-        cost: { amount: Number.NaN, currency: 'USD' },
-      },
-      byModel: {
-        'model-live': {
-          inputTokens: 10,
-          outputTokens: 20,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          cost: { amount: Number.POSITIVE_INFINITY, currency: 'USD' },
-        },
-      },
-      lastScanAt: 5000,
-      isStale: false,
-    });
-
-    await renderExpandedTokenUsage();
-
-    const modelSection = screen.getByTestId('token-usage-by-model');
-    expect(modelSection.textContent).not.toContain('Cost');
+    const details = screen.getByTestId('token-usage-details');
+    expect(visibleText(details)).not.toMatch(/cost|\$/i);
     expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
   });
 
