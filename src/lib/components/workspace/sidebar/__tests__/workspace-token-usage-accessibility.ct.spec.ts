@@ -620,6 +620,17 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
   await expect(messageCompositionRows.locator('.composition-key')).toHaveCount(0);
   await expect(composition.locator('.composition-description')).toHaveCount(0);
+  await expect(details).not.toContainText(/cost|\$/i);
+  await expect(details.locator('[data-testid="token-usage-total-cost"]')).toHaveCount(0);
+  expect(
+    await details
+      .locator('[aria-label], [aria-description], [title]')
+      .evaluateAll((elements) =>
+        elements.every((element) =>
+          Array.from(element.attributes).every((attribute) => !/cost|\$/i.test(attribute.value)),
+        ),
+      ),
+  ).toBe(true);
   await expect(agentSection).toBeVisible();
   await expect(modelSection).toBeVisible();
   await expect(agentRows).toHaveCount(4);
@@ -752,8 +763,8 @@ test('renders the full reference table as a wide overlay from the real workspace
         headerBorderBottomWidth: getComputedStyle(compositionHeader).borderBottomWidth,
         headerBorderBottomColor: getComputedStyle(compositionHeader).borderBottomColor,
         rowBorderTopWidths: rows.map((row) => getComputedStyle(row).borderTopWidth),
-        rowBorderTopColors: rows.map((row) => getComputedStyle(row).borderTopColor),
         lastRowBorderBottomWidth: getComputedStyle(rows.at(-1)!).borderBottomWidth,
+        compositionPaddingBottom: getComputedStyle(compositionHeader.parentElement!).paddingBottom,
       };
     }),
     composition.evaluate((section) => {
@@ -858,7 +869,6 @@ test('renders the full reference table as a wide overlay from the real workspace
         metricLabel: style('.composition-metric'),
         metricValue: style('.composition-value'),
         metricShare: style('.composition-context'),
-        totalCost: style('[data-testid="token-usage-total-cost"] > :last-child'),
       };
     }),
   ]);
@@ -886,15 +896,15 @@ test('renders the full reference table as a wide overlay from the real workspace
     gridBorderBottomWidth: '1px',
     secondSectionBorderLeftWidth: '1px',
     headerBorderBottomWidth: '1px',
-    rowBorderTopWidths: ['0px', '1px', '1px', '1px', '1px', '1px'],
+    rowBorderTopWidths: ['0px', '0px', '0px', '0px', '0px', '0px'],
     lastRowBorderBottomWidth: '0px',
+    compositionPaddingBottom: '12px',
   });
   expect([
     breakdownDivider.gridBorderBottomColor,
     breakdownDivider.secondSectionBorderLeftColor,
     breakdownDivider.headerBorderBottomColor,
-    ...breakdownDivider.rowBorderTopColors.slice(1),
-  ]).toEqual(Array(8).fill(breakdownDivider.neutralColor));
+  ]).toEqual(Array(3).fill(breakdownDivider.neutralColor));
   expect(
     Math.abs(breakdownAlignment[0].selection.left - compositionAlignment.rowLeft),
   ).toBeLessThanOrEqual(1);
@@ -1006,7 +1016,6 @@ test('renders the full reference table as a wide overlay from the real workspace
     metricLabel: { fontSize: '14px', fontWeight: '400' },
     metricValue: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
     metricShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
-    totalCost: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
   });
   expect(typeHierarchy.summaryLabel.letterSpacing).toBe('normal');
   expect(typeHierarchy.tableHeader.letterSpacing).toBe('normal');
