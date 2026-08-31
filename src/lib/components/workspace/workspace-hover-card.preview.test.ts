@@ -61,7 +61,7 @@ describe('workspace hover-card preview audit', () => {
       ({ key }) => key === 'attention-four-questions',
     );
     expect(multiQuestion?.agents?.[0]?.lastAgentResponse).toBe(
-      'The deployment plan is ready after these decisions.',
+      'The deployment plan is ready after these decisions, with rollout safeguards queued for the selected region and compatibility window.',
     );
     const fallback = states.attention.props.cards.find(
       ({ key }) => key === 'attention-missing-body',
@@ -89,13 +89,23 @@ describe('workspace hover-card preview audit', () => {
 
     expect(states['landscape-light'].props.theme).toBe('light');
     expect(states['landscape-dark'].props.theme).toBe('dark');
+    expect(states['landscape-light'].props.cards.map(({ key }) => key)).toEqual([
+      'surface-third-last',
+      'surface-second-last',
+      'surface-last',
+    ]);
+    expect(states['landscape-dark'].props.cards.map(({ key }) => key)).toEqual([
+      'surface-third-last',
+      'surface-second-last',
+      'surface-last',
+    ]);
     expect(states['landscape-wide'].props.layout).not.toBe('narrow');
     expect(states['landscape-narrow'].props.layout).toBe('narrow');
     expect(states['landscape-loading'].props.cards[0]?.isLoading).toBe(true);
     expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.messages).toHaveLength(1);
-    expect(
-      states['landscape-question'].props.cards[0]?.agents?.[0]?.lastAgentResponse,
-    ).toBeTruthy();
+    expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.lastAgentResponse).toContain(
+      'rollout safeguards',
+    );
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

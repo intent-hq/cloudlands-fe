@@ -102,8 +102,11 @@
     avatarState: AvatarState;
     specialist?: BuiltinSpecialistId;
     context: string;
-    questionMeta?: string;
-    secondaryContext?: string;
+    questionMeta?: {
+      compact: string;
+      accessible: string;
+    };
+    contextIsPreview: boolean;
     updated: {
       compact: string;
       accessible: string;
@@ -112,7 +115,7 @@
     priority: number;
   }
   function rowAccessibleLabel(row: AgentRow) {
-    return [row.name, row.context, row.secondaryContext, row.updated.accessible]
+    return [row.name, row.context, row.questionMeta?.accessible, row.updated.accessible]
       .filter(Boolean)
       .join('. ');
   }
@@ -148,8 +151,8 @@
     let context: string;
     let avatarState: AvatarState;
     let priority: number;
-    let questionMeta: string | undefined;
-    let secondaryContext: string | undefined;
+    let questionMeta: AgentRow['questionMeta'];
+    let contextIsPreview = false;
     if (attention?.kind === 'blocker' || status === 'blocked') {
       group = 'attention';
       attentionKind = 'blocker';
@@ -159,14 +162,16 @@
     } else if (hasQuestion) {
       group = 'attention';
       attentionKind = 'question';
-      const fallback = m.hud_card_attnPending_label();
-      context = pending?.questions[0]?.question.trim() || fallback;
-      if (preview && preview !== context && preview !== fallback) secondaryContext = preview;
+      context = pending?.questions[0]?.question.trim() || preview || m.dock_badge_question_label();
       avatarState = 'question';
       priority = 1;
       const count = pending?.questions.length ?? 0;
-      if (count > 1)
-        questionMeta = m.chat_questionWizard_stepCounter_label({ current: 1, total: count });
+      if (count > 1) {
+        questionMeta = {
+          compact: `${formatInteger(1)}/${formatInteger(count)}`,
+          accessible: `${m.dock_badge_question_label()} ${m.chat_questionWizard_stepCounter_label({ current: 1, total: count })}`,
+        };
+      }
     } else if (attention?.kind === 'discussion') {
       group = 'attention';
       attentionKind = 'discussion';
@@ -177,6 +182,7 @@
       group = 'attention';
       attentionKind = 'unread';
       context = preview || m.chat_newMessagesDivider_label();
+      contextIsPreview = Boolean(preview);
       avatarState = 'unread';
       priority = 2;
     } else if (
@@ -196,11 +202,13 @@
     ) {
       group = 'active';
       context = preview || m.workspace_devScripts_running_label();
+      contextIsPreview = Boolean(preview);
       avatarState = session.isProcessing ? 'responding' : 'running';
       priority = 3;
     } else if (['waiting', 'pending', 'queued', 'starting'].includes(status)) {
       group = 'waiting';
       context = preview || m.workspace_taskStatus_waiting_label();
+      contextIsPreview = Boolean(preview);
       avatarState = 'waiting';
       priority = 4;
     } else return null;
@@ -214,7 +222,7 @@
       specialist: metadata?.specialist as BuiltinSpecialistId | undefined,
       context,
       questionMeta,
-      secondaryContext,
+      contextIsPreview,
       updated: relativeTime(session),
       priority,
     };
@@ -283,7 +291,7 @@
 </script>
 
 <section
-  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-background text-left shadow-(--elevation-overlay) ring-1 ring-border/70"
+  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-popover text-left text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border/70"
   data-workspace-hover-card
   data-workspace-hover-card-layout="landscape"
 >
@@ -291,7 +299,7 @@
       <div class="flex items-center justify-between gap-4">
         <Skeleton class="h-5 w-44" /><Skeleton class="h-4 w-36" />
       </div>
-      <div class="body-grid grid min-w-0 grid-cols-[minmax(0,42fr)_minmax(0,58fr)] gap-0">
+      <div class="body-grid grid min-w-0 grid-cols-2 gap-0">
         <div class="grid gap-2 pr-3.5">
           <Skeleton class="h-4 w-40" /><Skeleton class="h-9 w-full" />
         </div>
@@ -331,10 +339,7 @@
         >
       </div>
     </header>
-    <div
-      class="body-grid grid min-w-0 grid-cols-[minmax(0,42fr)_minmax(0,58fr)]"
-      data-workspace-hover-card-columns
-    >
+    <div class="body-grid grid min-w-0 grid-cols-2" data-workspace-hover-card-columns>
       <section
         class="identity grid min-w-0 content-start gap-2.5 px-3.5 py-3"
         data-workspace-hover-card-identity
@@ -362,13 +367,13 @@
               >
                 <h3
                   id={`hover-${workspace.id}-${group.key}`}
-                  class="border-b border-border/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-subtle"
+                  class="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-subtle"
                 >
                   {group.label}
                 </h3>
                 <div role="list">
                   {#each group.rows as row (row.id)}<div
-                      class="agent-row grid min-w-0 grid-cols-[1.5rem_minmax(3.5rem,5.75rem)_minmax(0,1fr)_auto] items-center gap-1.5 border-b border-border/50 px-3"
+                      class="agent-row grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-3"
                       role="listitem"
                       aria-label={rowAccessibleLabel(row)}
                       data-workspace-hover-card-agent-row
@@ -383,34 +388,33 @@
                           specialist={row.specialist ?? null}
                         /></span
                       ><span
-                        class="truncate text-sm font-medium text-foreground"
+                        class="max-w-[5.75rem] truncate text-sm font-medium text-foreground"
                         data-workspace-hover-card-agent-name>{row.name}</span
-                      ><span class="agent-context grid min-w-0 gap-px text-xs text-muted-foreground"
-                        ><span class="flex min-w-0 items-center gap-1.5"
-                          ><span
-                            class="min-w-0 truncate"
-                            title={row.context}
-                            data-workspace-hover-card-agent-context>{row.context}</span
-                          >{#if row.questionMeta}<span
-                              class="shrink-0 text-subtle"
-                              data-workspace-hover-card-question-meta
-                              >{m.dock_badge_question_label()} {row.questionMeta}</span
-                            >{/if}</span
-                        >{#if row.secondaryContext}<span
-                            class="min-w-0 truncate text-[11px] text-subtle"
-                            title={row.secondaryContext}
-                            data-workspace-hover-card-agent-preview>{row.secondaryContext}</span
-                          >{/if}</span
                       ><time
                         class="whitespace-nowrap text-[11px] text-subtle"
                         datetime={row.updated.dateTime}
                         aria-label={row.updated.accessible}
                         data-workspace-hover-card-agent-time>{row.updated.compact}</time
                       >
+                      <span
+                        class="agent-detail flex min-w-0 items-start gap-1.5 text-[11px] leading-snug text-muted-foreground"
+                        title={row.context}
+                        data-workspace-hover-card-agent-detail
+                        data-workspace-hover-card-agent-preview={row.contextIsPreview || undefined}
+                        ><span
+                          class="line-clamp-2 min-w-0 break-words"
+                          data-workspace-hover-card-agent-context>{row.context}</span
+                        >{#if row.questionMeta}<span
+                            class="shrink-0 text-subtle"
+                            aria-label={row.questionMeta.accessible}
+                            data-workspace-hover-card-question-meta
+                            ><span aria-hidden="true">{row.questionMeta.compact}</span></span
+                          >{/if}</span
+                      >
                     </div>{/each}
                 </div>
               </section>{/if}{/each}{#if hiddenCount}<div
-              class="border-t border-border/50 px-3 py-1 text-xs font-medium text-subtle"
+              class="px-3 pb-2 pt-1 text-xs font-medium text-subtle"
               data-workspace-hover-card-overflow
             >
               {m.workspace_hoverCard_moreAgents_label({ count: formatInteger(hiddenCount) })}
@@ -430,6 +434,12 @@
     min-height: 34px;
     padding-block: 0.25rem;
   }
+  .agent-detail {
+    grid-column: 2 / -1;
+  }
+  [data-agent-group] + [data-agent-group] {
+    margin-top: 0.125rem;
+  }
   @container (max-width:30rem) {
     .body-grid {
       grid-template-columns: minmax(0, 1fr);
@@ -441,14 +451,8 @@
     .task-progress {
       display: none;
     }
-    .agent-row {
-      grid-template-columns: 1.5rem minmax(3.5rem, 5.75rem) minmax(0, 1fr) auto;
-    }
   }
   @container (max-width:28rem) {
-    .agent-context {
-      display: none;
-    }
     .agent-row {
       grid-template-columns: 1.5rem minmax(0, 1fr) auto;
     }

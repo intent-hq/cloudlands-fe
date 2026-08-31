@@ -316,6 +316,10 @@ describe('WorkspaceHoverCard', () => {
       kind: 'last-agent',
       text: 'I reviewed the rollout options and need one decision.',
     };
+    mocks.agentPreviewsById.active = {
+      kind: 'last-agent',
+      text: 'Implementing the approved migration plan.',
+    };
     const summary = {
       agentIds: ['blocker', 'question', 'active', 'waiting'],
       agents: ['blocker', 'question', 'active', 'waiting'].map((id) => ({
@@ -336,15 +340,21 @@ describe('WorkspaceHoverCard', () => {
       'Which deployment region should receive the migration first?',
     );
     expect(text(attentionRows[1])).not.toContain('Q: awaiting your answer');
-    expect(text(attentionRows[1])).toContain('Question 1 of 4');
-    expect(text(attentionRows[1])).toContain(
-      'I reviewed the rollout options and need one decision.',
-    );
+    const questionMeta = attentionRows[1].querySelector(
+      '[data-workspace-hover-card-question-meta]',
+    )!;
+    expect(text(questionMeta.querySelector('[aria-hidden="true"]')!)).toBe('1/4');
+    expect(questionMeta.getAttribute('aria-label')).toBe('Question 1 of 4');
+    expect(attentionRows[1].getAttribute('aria-label')).toContain('Question 1 of 4');
     const question = attentionRows[1].querySelector('[data-workspace-hover-card-agent-context]')!;
-    const preview = attentionRows[1].querySelector('[data-workspace-hover-card-agent-preview]')!;
-    expect(question.parentElement).not.toBe(preview.parentElement);
-    expect(text(question)).not.toContain(text(preview)!);
-    expect(within(screen.getByRole('region', { name: 'Active' })).getByText('Noah')).toBeTruthy();
+    expect(text(question)).toBe('Which deployment region should receive the migration first?');
+    expect(attentionRows[1].querySelector('[data-workspace-hover-card-agent-preview]')).toBeNull();
+    const active = within(screen.getByRole('region', { name: 'Active' })).getByRole('listitem');
+    expect(within(active).getByText('Noah')).toBeTruthy();
+    expect(text(active.querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
+      'Implementing the approved migration plan.',
+    );
+    expect(active.querySelector('[data-workspace-hover-card-agent-preview]')).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Waiting' })).getByText('Ari')).toBeTruthy();
     const rows = screen.getAllByRole('listitem');
     const times = rows.map((row) => row.querySelector('[data-workspace-hover-card-agent-time]'));
@@ -352,7 +362,7 @@ describe('WorkspaceHoverCard', () => {
     expect(times.every((time) => Boolean(time?.getAttribute('aria-label')))).toBe(true);
   });
 
-  it('uses generic pending-question copy only when the marked content is unavailable', async () => {
+  it('does not use generic awaiting-answer copy when marked question content is unavailable', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
       agent('question', 'Leah', 'waiting', {
         metadata: { pendingQuestionsMessageId: 'missing-message' },
@@ -361,9 +371,8 @@ describe('WorkspaceHoverCard', () => {
     await renderHoverCard({ agentSummary: { agentIds: ['question'] } });
 
     const row = screen.getByRole('listitem');
-    expect(text(row.querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
-      'Q: awaiting your answer',
-    );
+    expect(text(row.querySelector('[data-workspace-hover-card-agent-context]')!)).toBe('Question');
+    expect(text(row)).not.toContain('awaiting your answer');
     expect(row.querySelector('[data-workspace-hover-card-question-meta]')).toBeNull();
     expect(row.querySelector('[data-workspace-hover-card-agent-preview]')).toBeNull();
     expect(row.querySelector('[data-workspace-hover-card-agent-time]')).toBeTruthy();

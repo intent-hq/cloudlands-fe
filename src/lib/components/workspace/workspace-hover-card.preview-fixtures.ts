@@ -302,8 +302,8 @@ function questionAttentionScenario(
     key,
     label,
     prompts
-      ? 'The first unresolved prompt is primary, the question count is explicit, and recent agent text has its own truncated second line.'
-      : 'The localized awaiting-answer fallback appears because the marked message body is unavailable.',
+      ? 'The first unresolved prompt and compact question count share the descriptive second row.'
+      : 'The question label appears without generic awaiting-answer copy when the marked message body is unavailable.',
     {
       workspace: ws,
       agents: [
@@ -392,7 +392,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           'How long should the compatibility window remain open?',
           'Who should approve the final rollout?',
         ],
-        'The deployment plan is ready after these decisions.',
+        'The deployment plan is ready after these decisions, with rollout safeguards queued for the selected region and compatibility window.',
       ),
       questionAttentionScenario(
         'attention-missing-body',
@@ -1033,6 +1033,24 @@ function firstSceneCard(name: string) {
   return card;
 }
 
+function dockTailSurfaceCards(): HoverCardScenario[] {
+  const sourceCards = [
+    firstSceneCard('working'),
+    scenes.attention?.cards.find(({ key }) => key === 'attention-four-questions'),
+    firstSceneCard('idle-complete'),
+  ];
+  return sourceCards.map((card, index) => {
+    if (!card) throw new Error('Missing workspace hover-card dock-tail surface scene');
+    const position = index === 0 ? 'third-last' : index === 1 ? 'second-last' : 'last';
+    return {
+      ...card,
+      key: `surface-${position}`,
+      label: `${position.replace('-', ' ')} dock item`,
+      expected: 'The opaque elevated surface remains distinct from the dock plate.',
+    };
+  });
+}
+
 scenes['landscape-wide'] = {
   ...scenes.working,
   family: 'Landscape wide',
@@ -1041,11 +1059,13 @@ scenes['landscape-light'] = {
   ...scenes.working,
   family: 'Landscape light',
   theme: 'light',
+  cards: dockTailSurfaceCards(),
 };
 scenes['landscape-dark'] = {
   ...scenes.working,
   family: 'Landscape dark',
   theme: 'dark',
+  cards: dockTailSurfaceCards(),
 };
 scenes['landscape-narrow'] = {
   ...scenes.narrow,
