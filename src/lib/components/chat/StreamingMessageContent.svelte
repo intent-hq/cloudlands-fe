@@ -99,6 +99,8 @@
     agentId?: string;
     /** Persisted message id owning `content` (hydration fetch/merge key). */
     messageId?: string;
+    /** True when this message is the conversation's final assistant message. */
+    isLastConversationMessage?: boolean;
     onSetupScriptGenerated?: (script: {
       name: string;
       description: string;
@@ -115,6 +117,7 @@
     role = 'assistant',
     agentId,
     messageId,
+    isLastConversationMessage = false,
     onSetupScriptGenerated,
   }: Props = $props();
 
@@ -949,6 +952,7 @@
             name={group.name}
             isStreaming={group.isStreaming}
             isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            {isLastConversationMessage}
             blocks={group.children}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
