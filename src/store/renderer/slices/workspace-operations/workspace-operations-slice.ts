@@ -1,16 +1,23 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  createCollection,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
+import type { OpenPrWarningItem } from './workspace-operations-types';
 
 export type WorkspaceOperationsState = {
   showDeleteWarning: boolean;
   pendingDeleteWorkspaceId: string | null;
   runningAgentNamesForDelete: string[];
   activeHookNamesForDelete: string[];
+  openPrsForDelete: Collection<OpenPrWarningItem, 'number'>;
   showArchiveWarning: boolean;
   pendingArchiveWorkspaceId: string | null;
   runningAgentNamesForArchive: string[];
   activeHookNamesForArchive: string[];
+  openPrsForArchive: Collection<OpenPrWarningItem, 'number'>;
   showBulkArchiveConfirm: boolean;
   bulkArchiveActiveAgentCount: number;
   bulkArchiveActiveHookCount: number;
@@ -27,15 +34,19 @@ export type WorkspaceOperationsState = {
   pendingRemoveRepoPath: string | null;
 };
 
+const emptyOpenPrs = () => createCollection<OpenPrWarningItem, 'number'>('number');
+
 export const initialState: WorkspaceOperationsState = {
   showDeleteWarning: false,
   pendingDeleteWorkspaceId: null,
   runningAgentNamesForDelete: [],
   activeHookNamesForDelete: [],
+  openPrsForDelete: emptyOpenPrs(),
   showArchiveWarning: false,
   pendingArchiveWorkspaceId: null,
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
+  openPrsForArchive: emptyOpenPrs(),
   showBulkArchiveConfirm: false,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
@@ -70,13 +81,27 @@ export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalAp
 );
 
 export const openDeleteWarning = createAction<
-  [payload: { workspaceId: string; agentNames: string[]; hookNames: string[] }]
+  [
+    payload: {
+      workspaceId: string;
+      agentNames: string[];
+      hookNames: string[];
+      openPrs: OpenPrWarningItem[];
+    },
+  ]
 >('workspaceOperations/openDeleteWarning');
 
 export const closeDeleteWarning = createAction('workspaceOperations/closeDeleteWarning');
 
 export const openArchiveWarning = createAction<
-  [payload: { workspaceId: string; agentNames: string[]; hookNames: string[] }]
+  [
+    payload: {
+      workspaceId: string;
+      agentNames: string[];
+      hookNames: string[];
+      openPrs: OpenPrWarningItem[];
+    },
+  ]
 >('workspaceOperations/openArchiveWarning');
 
 export const closeArchiveWarning = createAction('workspaceOperations/closeArchiveWarning');
@@ -130,12 +155,13 @@ export const confirmRemoveRepo = createAction('workspaceOperations/confirmRemove
 export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState>(initialState);
 workspaceOperationsReducer.with(
   openDeleteWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
+  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs }] }) => ({
     ...state,
     showDeleteWarning: true,
     pendingDeleteWorkspaceId: workspaceId,
     runningAgentNamesForDelete: agentNames,
     activeHookNamesForDelete: hookNames,
+    openPrsForDelete: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
   }),
 );
 workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
@@ -144,15 +170,17 @@ workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
   pendingDeleteWorkspaceId: null,
   runningAgentNamesForDelete: [],
   activeHookNamesForDelete: [],
+  openPrsForDelete: emptyOpenPrs(),
 }));
 workspaceOperationsReducer.with(
   openArchiveWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
+  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs }] }) => ({
     ...state,
     showArchiveWarning: true,
     pendingArchiveWorkspaceId: workspaceId,
     runningAgentNamesForArchive: agentNames,
     activeHookNamesForArchive: hookNames,
+    openPrsForArchive: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
   }),
 );
 workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
@@ -161,6 +189,7 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   pendingArchiveWorkspaceId: null,
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
+  openPrsForArchive: emptyOpenPrs(),
 }));
 workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
   ...state,

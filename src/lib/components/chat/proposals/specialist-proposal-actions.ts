@@ -1,17 +1,108 @@
-import type { ProposalActionDetail } from '$shared/types/proposal';
-
-
+import type { ProposalActionDetail, SpecialistEditProposal } from '$shared/types/proposal';
+import { m } from '$shared/paraglide/messages.js';
+import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+import {
+  generateUniqueSpecialistId,
+  type SpecialistFileScope,
+} from '$shared/specialist-file-types';
 import { store as appStore } from '$store/renderer/store';
-
-
+import type { StoreState } from '$store/renderer/types';
+import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { selectSpecialistProposalAppliedState } from '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors';
+import type {
+  FileSpecialistWritePayload,
+  SpecialistReverseAction,
+} from '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-types';
 import {
   applyProposalRequested,
+  undoProposalRequested,
 } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
-
-
-
-
+import {
+  selectEffectiveBehaviorPrompt,
+  selectEffectiveCodingAgent,
+  selectEffectiveModel,
+  selectGetFileSpecialist,
+  selectSpecialists,
+} from '$store/renderer/slices/specialists/specialists-selectors';
+import {
+  deleteFileSpecialist as deleteFileSpecialistAction,
+  saveFileSpecialist,
+  type FileSpecialist,
+} from '$store/renderer/slices/specialists/specialists-slice';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { getProposalId } from './proposal-id';
+
+type SpecialistProposalOperation = 'create' | 'edit' | 'delete';
+
+type SpecialistProposalPayload = {
+  operation?: SpecialistProposalOperation;
+  action?: SpecialistProposalOperation;
+  id?: string;
+  name?: string;
+  description?: string;
+  model?: string;
+  prompt?: string;
+  behaviorPrompt?: string;
+  codingAgent?: string;
+  roleReminder?: string;
+  scope?: SpecialistFileScope;
+};
+
+function getPayload(proposal: SpecialistEditProposal): SpecialistProposalPayload {
+  return proposal.payload;
+}
+
+function stringField(
+  proposal: SpecialistEditProposal,
+  detail: ProposalActionDetail,
+  key: keyof SpecialistProposalPayload,
+  fallback = '',
+): string {
+  const edited = detail.editedFields[key];
+  if (edited !== undefined) return typeof edited === 'string' ? edited : String(edited ?? '');
+  const value = getPayload(proposal)[key];
+  return typeof value === 'string' ? value : fallback;
+}
+
+function getCurrentWorkspacePath(state: StoreState): string | undefined {
+  const workspaceId = selectCurrentWorkspaceTabId.select(state);
+  if (!workspaceId) return undefined;
+  const workspace = selectWorkspaceById.select(state, workspaceId);
+  return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
+}
+
+function getScope(scope: unknown, fallback?: SpecialistFileScope): SpecialistFileScope {
+  return scope === 'project' || scope === 'user' ? scope : (fallback ?? 'user');
+}
+
+function buildCurrentSpecialistPayload(
+  state: StoreState,
+  id: string,
+  current: ReturnType<typeof selectSpecialists.select>[number],
+  fileSpec: FileSpecialist | undefined,
+  scope: SpecialistFileScope,
+  workspacePath: string | undefined,
+): FileSpecialistWritePayload {
+  return {
+    id,
+    name: current.name,
+    description: current.description,
+    codingAgent:
+      fileSpec?.codingAgent ?? current.codingAgent ?? selectEffectiveCodingAgent.select(state, id),
+    model: fileSpec?.model ?? current.defaultModel ?? selectEffectiveModel.select(state, id),
+    roleReminder: fileSpec?.roleReminder ?? current.roleReminder,
+    behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
+    scope,
+    workspacePath,
+  };
+}
+
+async function navigateToCreatedSpecialist(id: string): Promise<void> {
+  const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+  await navigateToSettings({ tab: 'agents', specialist: id });
+}
 
 export function applySpecialistProposal(detail: ProposalActionDetail): boolean {
   const { proposal } = detail;
@@ -19,5 +110,115 @@ export function applySpecialistProposal(detail: ProposalActionDetail): boolean {
 
   const proposalId = getProposalId(proposal);
   appStore.dispatch(applyProposalRequested({ proposalId, kind: 'specialist-edit', detail }));
+  return true;
+}
+
+export async function applySpecialistProposalWork(
+  detail: ProposalActionDetail,
+): Promise<{ reverse: SpecialistReverseAction }> {
+  const { proposal } = detail;
+  if (proposal.kind !== 'specialist-edit') {
+    throw new Error('applySpecialistProposalWork requires a specialist-edit proposal');
+  }
+
+  const state = appStore.state;
+  const payload = getPayload(proposal);
+  const operation = payload.operation ?? payload.action ?? 'edit';
+  const existingSpecialists = selectSpecialists.select(state);
+  const requestedId = typeof payload.id === 'string' ? payload.id : '';
+  const current = requestedId
+    ? existingSpecialists.find((specialist) => specialist.id === requestedId)
+    : undefined;
+  const name = stringField(proposal, detail, 'name', current?.name ?? '').trim();
+  const id =
+    requestedId ||
+    generateUniqueSpecialistId(
+      name || 'specialist',
+      existingSpecialists.map((specialist) => specialist.id),
+    );
+  const fileSpec = selectGetFileSpecialist.select(state, id);
+  const scope = getScope(payload.scope, fileSpec?.source);
+  const workspacePath = scope === 'project' ? getCurrentWorkspacePath(state) : undefined;
+  const reverse: SpecialistReverseAction =
+    operation === 'create'
+      ? { kind: 'delete', id, scope, workspacePath }
+      : current
+        ? {
+            kind: 'save',
+            specialist: buildCurrentSpecialistPayload(
+              state,
+              id,
+              current,
+              fileSpec,
+              scope,
+              workspacePath,
+            ),
+          }
+        : { kind: 'delete', id, scope, workspacePath };
+
+  if (operation === 'delete') {
+    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
+    appStore.dispatch(deleteAction);
+    await deleteAction.promise;
+    return { reverse };
+  }
+
+  const fallbackModel = current
+    ? selectEffectiveModel.select(state, current.id)
+    : selectSelectedModel.select(state);
+  const model = stringField(proposal, detail, 'model', fallbackModel).trim();
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
+  const { providerId } = parseCompoundModelId(model, defaultProviderId);
+  const description = stringField(
+    proposal,
+    detail,
+    'description',
+    current?.description ?? m.settings_aiBehavior_customSpecialistFallback(),
+  ).trim();
+  const prompt = stringField(
+    proposal,
+    detail,
+    'prompt',
+    current ? selectEffectiveBehaviorPrompt.select(state, current.id) : '',
+  );
+
+  const saveAction = saveFileSpecialist({
+    id,
+    name,
+    description: description || m.settings_aiBehavior_customSpecialistFallback(),
+    codingAgent:
+      payload.codingAgent ??
+      (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),
+    model,
+    roleReminder: payload.roleReminder ?? current?.roleReminder,
+    behaviorPrompt: prompt,
+    scope,
+    workspacePath,
+  });
+  appStore.dispatch(saveAction);
+  await saveAction.promise;
+  if (operation === 'create') await navigateToCreatedSpecialist(id);
+
+  return { reverse };
+}
+
+export async function undoSpecialistProposalWork(reverse: SpecialistReverseAction): Promise<void> {
+  if (reverse.kind === 'delete') {
+    const { id, scope, workspacePath } = reverse;
+    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
+    appStore.dispatch(deleteAction);
+    await deleteAction.promise;
+    return;
+  }
+
+  const saveAction = saveFileSpecialist(reverse.specialist);
+  appStore.dispatch(saveAction);
+  await saveAction.promise;
+}
+
+export function undoSpecialistProposal(proposalId: string): boolean {
+  const appliedState = selectSpecialistProposalAppliedState.select(appStore.state, proposalId);
+  if (!appliedState) return false;
+  appStore.dispatch(undoProposalRequested({ proposalId, kind: 'specialist-edit' }));
   return true;
 }

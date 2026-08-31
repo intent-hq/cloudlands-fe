@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -262,7 +263,7 @@ describe('AllWorkspacesCard repository disclosure', () => {
   it('reveals matching search results without changing collapsed state', async () => {
     renderRepositoryView(() => seedRepository('alpha', 4));
 
-    const search = await screen.findByPlaceholderText('Search spaces...');
+    const search = await screen.findByPlaceholderText(m.layout_activeCard_search_placeholder());
     await fireEvent.input(search, { target: { value: 'alpha space 4' } });
     await waitFor(() => expect(rowIds(repositoryGroup('alpha'))).toEqual(['alpha-4']));
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
@@ -309,7 +310,7 @@ describe('AllWorkspacesCard repository disclosure', () => {
   it('keeps keyboard navigation and focus order aligned to collapsed rows', async () => {
     renderRepositoryView(() => seedRepository('alpha', 4));
 
-    const search = await screen.findByPlaceholderText('Search spaces...');
+    const search = await screen.findByPlaceholderText(m.layout_activeCard_search_placeholder());
     const group = repositoryGroup('alpha');
     const triggers = group.querySelectorAll('[data-workspace-card-trigger]');
     const toggle = within(group).getByRole('button', { name: 'Show more' });

@@ -32,6 +32,7 @@ import {
   pttRecordingStopped,
   pttSendRequested,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import { clearComposerDictationTarget } from './composer-dictation-target';
 import { VoiceGestureDecoder, type VoiceGestureStopReason } from './gesture-decoder';
 import { clearPromptDictationTarget } from './prompt-dictation-target';
 import { VoiceRecorder, type VoiceRecordingResult } from './voice-recorder';
@@ -134,6 +135,10 @@ export function startPttRecording(context: PttContext): void {
   // stopped audio was discarded as too short, so no transcription consumed
   // it — must never route a LATER session's transcript into the prompt.
   clearPromptDictationTarget();
+  // Same hygiene for the composer mic's captured agentId (registered at
+  // session start): a capture dangling from a cancelled/too-short session
+  // must never route a later session's transcript.
+  clearComposerDictationTarget();
   const recorder = new VoiceRecorder({
     // Selected mic: the in-session selection when one was made this session
     // (kept even when the localStorage persist failed, mirroring the

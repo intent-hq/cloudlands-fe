@@ -36,7 +36,7 @@ describe('Tiptap Task List Extension for Marked', () => {
     // Should produce Tiptap task list format
     expect(result).toContain('<ul class="task-list not-prose pl-0" data-type="taskList">');
     expect(result).toContain('data-type="taskItem" data-checked="false"');
-    expect(result).toContain('<input type="checkbox">'); // unchecked
+    expect(result).toContain('<input type="checkbox" disabled>'); // unchecked
     expect(result).toContain('Unchecked task 1');
     expect(result).toContain('Unchecked task 2');
     expect(result).not.toContain(' checked'); // should not have checked attribute on input
@@ -53,7 +53,7 @@ describe('Tiptap Task List Extension for Marked', () => {
     // Should produce Tiptap task list format with checked items
     expect(result).toContain('<ul class="task-list not-prose pl-0" data-type="taskList">');
     expect(result).toContain('data-type="taskItem" data-checked="true"');
-    expect(result).toContain('<input type="checkbox" checked>'); // checked
+    expect(result).toContain('<input type="checkbox" disabled checked>'); // checked
     expect(result).toContain('Checked task 1');
     expect(result).toContain('Checked task 2');
   });

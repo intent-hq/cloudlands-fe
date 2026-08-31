@@ -236,18 +236,13 @@ describe('connections selectors', () => {
 });
 
 describe('connection accent presentation', () => {
-  it('offers six new choices while retaining indigo as a valid legacy accent', () => {
-    expect(SELECTABLE_CONNECTION_ACCENTS).toEqual([
-      'blue',
-      'violet',
-      'rose',
-      'orange',
-      'emerald',
-      'teal',
-    ]);
-    expect(isConnectionAccent('indigo')).toBe(true);
-    expect(connectionAccentOptions()).not.toContain('indigo');
-    expect(connectionAccentOptions('indigo')).toContain('indigo');
+  it('excludes legacy and warm status colors from new choices while accepting saved values', () => {
+    expect(SELECTABLE_CONNECTION_ACCENTS).toEqual(['blue', 'violet', 'emerald', 'teal']);
+    for (const legacyAccent of ['indigo', 'rose', 'orange'] as const) {
+      expect(isConnectionAccent(legacyAccent)).toBe(true);
+      expect(connectionAccentOptions()).not.toContain(legacyAccent);
+      expect(connectionAccentOptions(legacyAccent)).toContain(legacyAccent);
+    }
   });
 
   it('distinguishes legacy missing accents from an explicit blank', () => {
@@ -262,5 +257,7 @@ describe('connection accent presentation', () => {
     expect(connectionShellTint(null, false)).toBeUndefined();
     expect(connectionShellTint('teal', true)).toBeUndefined();
     expect(connectionShellTint(undefined, false)).toContain('var(--color-blue-500)');
+    expect(connectionShellTint('rose', false)).toContain('var(--color-rose-500)');
+    expect(connectionShellTint('orange', false)).toContain('var(--color-orange-500)');
   });
 });

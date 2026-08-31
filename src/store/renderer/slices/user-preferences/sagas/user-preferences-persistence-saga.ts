@@ -24,6 +24,7 @@ import {
   selectNoteFontStyle,
   selectShowArchived,
   selectShowReasoningBlocks,
+  selectShortcutOverrides,
   selectSpellcheckEnabled,
 } from '../user-preferences-selectors';
 import {
@@ -31,6 +32,9 @@ import {
   deleteActivityLogPreset,
   FONT_STYLES,
   hydrateActivityLogPresets,
+  hydrateShortcutOverrides,
+  resetAllShortcutOverrides,
+  resetShortcutOverride,
   saveActivityLogPreset,
   setAgentFontStyle,
   setCodeFontFamily,
@@ -41,6 +45,7 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setShowReasoningBlocks,
+  setShortcutOverride,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
@@ -63,6 +68,7 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
+const SHORTCUT_OVERRIDES_STORAGE_KEY = 'keyboard-shortcut-overrides';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -172,6 +178,9 @@ export function* hydrateUserPreferencesWorker() {
   if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
     yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
   }
+
+  const shortcutOverrides = yield* getLocalStorageJSON<unknown>(SHORTCUT_OVERRIDES_STORAGE_KEY);
+  if (shortcutOverrides !== undefined) yield* put(hydrateShortcutOverrides(shortcutOverrides));
 }
 
 function* persistSpellcheckWorker() {
@@ -271,6 +280,13 @@ function* persistGithubLinkDefaultActionWorker() {
   );
 }
 
+function* persistShortcutOverridesWorker() {
+  yield* setLocalStorageJSON(
+    SHORTCUT_OVERRIDES_STORAGE_KEY,
+    yield* selectShortcutOverrides.effect(),
+  );
+}
+
 function* watchUserPreferenceWrites() {
   yield* takeEvery([setSpellcheckEnabled, toggleSpellcheck], persistSpellcheckWorker);
   yield* takeEvery([setShowArchived, toggleShowArchived], persistShowArchivedWorker);
@@ -292,6 +308,10 @@ function* watchUserPreferenceWrites() {
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
+  yield* takeEvery(
+    [setShortcutOverride, resetShortcutOverride, resetAllShortcutOverrides],
+    persistShortcutOverridesWorker,
+  );
 }
 
 /** Unregistered until the S20 middleware cutover. */

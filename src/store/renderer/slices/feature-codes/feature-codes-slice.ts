@@ -28,12 +28,9 @@ export const initialState: FeatureCodesState = {
 // Actions
 // ============================================================================
 
-/** Trigger fetch of active features (saga handles IPC) */
-export const fetchFeatures = createAction("featureCodes/fetchFeatures");
-
-/** Request to deactivate a feature (triggers saga) */
-export const deactivateFeature = createAction<[featureId: string]>(
-  "featureCodes/deactivateFeature"
+/** Store the active feature IDs fetched from the main process */
+export const setActiveFeatures = createAction<[features: string[]]>(
+  "featureCodes/setActiveFeatures"
 );
 
 /** Toggle the feature code dialog open state */
@@ -44,6 +41,11 @@ export const toggleFeatureCodeDialog = createAction("featureCodes/toggleFeatureC
 // ============================================================================
 
 export const featureCodesReducer = createReducer<FeatureCodesState>(initialState);
+featureCodesReducer.with(setActiveFeatures, (state, { payload: [features] }) => ({
+  ...state,
+  activeFeatures: features,
+  initialized: true,
+}));
 featureCodesReducer.with(toggleFeatureCodeDialog, (state) => ({
   ...state,
   dialogOpen: !state.dialogOpen,

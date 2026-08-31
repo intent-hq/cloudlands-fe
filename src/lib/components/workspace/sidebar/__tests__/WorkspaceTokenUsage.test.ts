@@ -378,6 +378,50 @@ describe('WorkspaceTokenUsage', () => {
     expect(agentText).not.toContain('IdleAgent');
   });
 
+  it('keeps rows and the summary visible when only thoughtTokens are non-zero (§5.23)', async () => {
+    mocks.state.usage = makeUsage({
+      byAgentId: {
+        'agent-a': {
+          agentId: 'agent-a',
+          sessionId: 'sess-a',
+          lastMessageId: 'msg-1',
+          computedAt: 1000,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thoughtTokens: 4200,
+          byModel: {},
+        },
+      },
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        thoughtTokens: 4200,
+      },
+      byModel: {
+        'model-big': {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thoughtTokens: 4200,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+    mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
+
+    await renderTokenUsage();
+
+    expect(screen.getByTestId('workspace-token-usage')).not.toBeNull();
+    expect(screen.getByTestId('token-usage-by-model').textContent).toContain('Model Big');
+    expect(screen.getByTestId('token-usage-by-agent').textContent).toContain('Alpha');
+  });
+
   it('renders a cost column and total when the daemon reports cost', async () => {
     mocks.state.usage = makeUsage({
       byAgentId: {

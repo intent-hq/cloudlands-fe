@@ -149,6 +149,37 @@ for (const zoom of [1, 2]) {
   });
 }
 
+test('layout-neutral bottom anchor is a real anchor candidate with zero net scroll height', async ({
+  mount,
+}) => {
+  const component = await mount(BottomAnchoringHost);
+  const scroll = component.getByTestId('transcript');
+  await scroll.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+
+  const result = await scroll.evaluate((node) => {
+    const anchor = node.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
+    // Eligibility: Chromium/Gecko reject zero-sized boxes as scroll-anchor
+    // candidates, so the rendered box must be non-zero-sized.
+    const anchorHeight = anchor.getBoundingClientRect().height;
+    // Neutrality: removing the anchor must not change the scrollable extent.
+    const withAnchor = node.scrollHeight;
+    anchor.remove();
+    const withoutAnchor = node.scrollHeight;
+    node.append(anchor);
+    return {
+      anchorHeight,
+      withAnchor,
+      withoutAnchor,
+      distance: node.scrollHeight - node.clientHeight - node.scrollTop,
+    };
+  });
+
+  expect(result.anchorHeight).toBeGreaterThan(0);
+  expect(result.withAnchor).toBe(result.withoutAnchor);
+  expect(result.distance).toBe(0);
+  await component.unmount();
+});
+
 test('preserves an unlocked viewport through send, stream, queue, subscription, and composer changes', async ({
   mount,
 }) => {

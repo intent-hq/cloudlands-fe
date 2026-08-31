@@ -22,6 +22,7 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -84,16 +85,9 @@
     workspaceId?: string;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
-    /** Hides the kebab actions menu (e.g. while a sidebar card is expanded). */
-    hideActionsMenu?: boolean;
   }
 
-  let {
-    workspaceId,
-    onOpenNote: _onOpenNote,
-    onAcceptChanges,
-    hideActionsMenu = false,
-  }: Props = $props();
+  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -277,11 +271,6 @@
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
-  // Reset the menu when it hides (e.g. a sidebar card expands) so it never remounts open.
-  $effect(() => {
-    if (hideActionsMenu) dropdownOpen = false;
-  });
-
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const repositoryLabel = $derived(
@@ -388,18 +377,24 @@
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
-        duration: 15000,
-        action: {
-          label: m.workspace_multiSelectSidebar_undo_label(),
-          onClick: async () => {
-            const undoResult = await workspaceClient.unarchive($workspace.id);
-            if (undoResult.ok) {
-              appStore.dispatch(loadWorkspacesRequested());
-            }
+      toast.warning(
+        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
+        withToastCountdown(
+          {
+            duration: 15000,
+            action: {
+              label: m.workspace_multiSelectSidebar_undo_label(),
+              onClick: async () => {
+                const undoResult = await workspaceClient.unarchive($workspace.id);
+                if (undoResult.ok) {
+                  appStore.dispatch(loadWorkspacesRequested());
+                }
+              },
+            },
           },
-        },
-      });
+          { pauseOnHover: false },
+        ),
+      );
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
@@ -929,54 +924,52 @@
       </div>
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
-        {#if !hideActionsMenu}
-          <DropdownMenu bind:open={dropdownOpen}>
-            {#snippet trigger({ props })}
-              <Button
-                {...props}
-                variant="ghost-light"
-                size="icon-sm"
-                data-workspace-actions-kebab
-                data-workspace-actions-trigger
-                aria-label={m.workspace_progressCard_actions_ariaLabel()}
-                class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-                disabled={isDeleting}
-              >
-                {#if isDeleting}
-                  <div
-                    class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                  ></div>
-                {:else}
-                  <KebabIcon class="size-4" />
-                {/if}
-              </Button>
-            {/snippet}
+        <DropdownMenu bind:open={dropdownOpen}>
+          {#snippet trigger({ props })}
+            <Button
+              {...props}
+              variant="ghost-light"
+              size="icon-sm"
+              data-workspace-actions-kebab
+              data-workspace-actions-trigger
+              aria-label={m.workspace_progressCard_actions_ariaLabel()}
+              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+              disabled={isDeleting}
+            >
+              {#if isDeleting}
+                <div
+                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
+                ></div>
+              {:else}
+                <KebabIcon class="size-4" />
+              {/if}
+            </Button>
+          {/snippet}
 
-            {#snippet content()}
-              <div class="w-48">
-                <WorkspaceActionsMenu
-                  filePath={$workspace?.worktreePath ||
-                    $workspace?.repositoryPath ||
-                    $workspace?.path ||
-                    ''}
-                  workspaceId={$workspace?.id || workspaceId || ''}
-                  isDirectory={true}
-                  isWorkspaceRoot={true}
-                  onDelete={handleDelete}
-                  onArchive={handleArchive}
-                  onUnarchive={handleUnarchive}
-                  {isArchived}
-                  onClose={handleDropdownClose}
-                  showDeleteOption={true}
-                  showArchiveOption={true}
-                  showFileNameCopy={false}
-                  showFileActions={true}
-                  additionalActions={[sidebarToggleAction, sidebarSideAction]}
-                />
-              </div>
-            {/snippet}
-          </DropdownMenu>
-        {/if}
+          {#snippet content()}
+            <div class="w-48">
+              <WorkspaceActionsMenu
+                filePath={$workspace?.worktreePath ||
+                  $workspace?.repositoryPath ||
+                  $workspace?.path ||
+                  ''}
+                workspaceId={$workspace?.id || workspaceId || ''}
+                isDirectory={true}
+                isWorkspaceRoot={true}
+                onDelete={handleDelete}
+                onArchive={handleArchive}
+                onUnarchive={handleUnarchive}
+                {isArchived}
+                onClose={handleDropdownClose}
+                showDeleteOption={true}
+                showArchiveOption={true}
+                showFileNameCopy={false}
+                showFileActions={true}
+                additionalActions={[sidebarToggleAction, sidebarSideAction]}
+              />
+            </div>
+          {/snippet}
+        </DropdownMenu>
       </div>
     </div>
     <!-- repository and branch metadata -->
@@ -1125,6 +1118,7 @@
               content={action?.tooltip}
               side="bottom"
               align="start"
+              delayDuration={300}
               disabled={!action?.tooltip}
             >
               <Button
@@ -1245,6 +1239,7 @@
             content={action?.tooltip}
             side="bottom"
             align="start"
+            delayDuration={300}
             disabled={!action?.tooltip}
           >
             <Button

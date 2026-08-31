@@ -4,7 +4,6 @@
     ToolUseBlock,
     ToolResultBlock,
     Proposal,
-    ProposalActionDetail,
     MessageRole,
   } from '$shared/types';
   import {
@@ -25,7 +24,6 @@
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
-  import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -46,12 +44,6 @@
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
-  import ProposalCard from './proposals/ProposalCard.svelte';
-  import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
-  import {
-    applySettingsProposal,
-    undoSettingsProposal,
-  } from './proposals/settings-proposal-actions';
   import NavLink from './NavLink.svelte';
   import {
     parseAgentMessage,
@@ -92,9 +84,7 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
   const logger = createLogger('StreamingMessageContent');
 
@@ -109,6 +99,8 @@
     agentId?: string;
     /** Persisted message id owning `content` (hydration fetch/merge key). */
     messageId?: string;
+    /** True when this message is the conversation's final assistant message. */
+    isLastConversationMessage?: boolean;
     onSetupScriptGenerated?: (script: {
       name: string;
       description: string;
@@ -125,6 +117,7 @@
     role = 'assistant',
     agentId,
     messageId,
+    isLastConversationMessage = false,
     onSetupScriptGenerated,
   }: Props = $props();
 
@@ -198,8 +191,9 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    // Agent Q&A questions are wizard-only: they never render in the
-    // transcript (pending or resolved), so strip them up front.
+    // Agent Q&A questions are wizard-only and proposals are tray-only
+    // (PROTOCOL §5.5): neither ever renders in the transcript, in any
+    // state, so strip both up front.
     const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
       isStreaming,
     });
@@ -209,7 +203,7 @@
         role,
         workspaceId,
       ),
-    ).filter((block) => !isQuestionResourceBlock(block));
+    ).filter((block) => !isQuestionResourceBlock(block) && getProposalFromBlock(block) === null);
 
     // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
@@ -445,36 +439,12 @@
     return ids;
   }
 
-  let bulkProposalWorkspaceIds = $derived.by(() => collectBulkProposalWorkspaceIds(groupedBlocks));
-
-  function handleProposalApply(detail: ProposalActionDetail) {
-    const { proposal } = detail;
-    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
-      appStore.dispatch(
-        applyWorkspaceProposal({
-          proposal,
-          editedFields: detail.editedFields,
-          selectedBulkItemIds: detail.selectedBulkItemIds,
-        }),
-      );
-      return;
-    }
-
-    if (applySpecialistProposal(detail)) return;
-    applySettingsProposal(detail);
-  }
-
-  function handleProposalUndo(proposalId: string) {
-    undoSettingsProposal(proposalId);
-  }
-
-  // Handlers handed to the MIME-keyed card registry when resolving a §7.1
-  // resource block to its card component (ProposalCard et al.).
-  const cardHandlers = {
-    onProposalApply: handleProposalApply,
-    onProposalUndo: handleProposalUndo,
-  };
-
+  // Collected from the pre-strip content: proposal blocks never render in
+  // the transcript, but a bulk-op proposal's covered workspace cards stay
+  // suppressed so the prose does not duplicate the tray's list.
+  let bulkProposalWorkspaceIds = $derived.by(() =>
+    collectBulkProposalWorkspaceIds(hydratedContent),
+  );
   // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
   // PERFORMANCE: Memoize results to avoid re-parsing on every render
   type ParsedTextResult = {
@@ -584,11 +554,6 @@
       return `nav-link-${index}-${contentBlock.target}`;
     }
 
-    const proposal = getProposalFromBlock(contentBlock);
-    if (proposal) {
-      return `proposal-${index}-${proposal.kind}-${proposal.applyToolCallId ?? proposal.preview.title}`;
-    }
-
     // If block has an explicit ID, use it (tool_use blocks typically have IDs)
     if (contentBlock.id) {
       return contentBlock.id;
@@ -621,11 +586,7 @@
   function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
     if (block.type === 'content_group') return true;
     const contentBlock = block as ContentBlock;
-    if (
-      isNavLinkBlock(contentBlock) ||
-      resolveCard(contentBlock, cardHandlers) ||
-      getProposalFromBlock(contentBlock)
-    ) {
+    if (isNavLinkBlock(contentBlock)) {
       return true;
     }
     if (contentBlock.type === 'text') {
@@ -757,6 +718,7 @@
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
+        chatImageThumbnails
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -767,15 +729,11 @@
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
+        chatImageThumbnails
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
   {/if}
-{/snippet}
-
-{#snippet renderCard(card: ResolvedCard)}
-  {@const Card = card.component}
-  <Card {...card.props} />
 {/snippet}
 
 {#snippet renderContentBlock(
@@ -790,27 +748,6 @@
     <div class="w-full">
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
-  {:else if resolveCard(block, cardHandlers)}
-    <!-- §7.1 standalone resource block with a registered card (MIME-keyed
-           card registry): ProposalCard under the proposal MIME today. -->
-    {@const card = resolveCard(block, cardHandlers)}
-    {#if card}
-      <div class="w-full">
-        {@render renderCard(card)}
-      </div>
-    {/if}
-  {:else if getProposalFromBlock(block)}
-    {@const proposal = getProposalFromBlock(block)}
-    {#if proposal}
-      <div class="w-full">
-        <ProposalCard
-          {proposal}
-          neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}
-          onApply={handleProposalApply}
-          onUndo={handleProposalUndo}
-        />
-      </div>
-    {/if}
   {:else if block.type === 'text' && (block.text || (block as any).content)}
     {@const textContent = block.text || (block as any).content || ''}
     {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
@@ -849,6 +786,7 @@
               isStreaming={isStreaming && isLastBlock}
               {workspaceId}
               taskBlockRenderMode="content"
+              chatImageThumbnails
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -934,14 +872,17 @@
   groupIndex: number,
   childBlock: ContentBlock,
   childIndex: number,
+  suppressSpacing: boolean = false,
 )}
   <div
-    class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
-      group.children,
-      childIndex,
-      (candidate) => candidate.type !== 'tool_result',
-      group.isReasoningPhase,
-    )} {isOperationalClusterBlock(childBlock)
+    class="content-block content-block--{childBlock.type} {suppressSpacing
+      ? ''
+      : getOperationalClusterSpacingClass(
+          group.children,
+          childIndex,
+          (candidate) => candidate.type !== 'tool_result',
+          group.isReasoningPhase,
+        )} {isOperationalClusterBlock(childBlock)
       ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
       : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
     style:padding-left={isOperationalClusterBlock(childBlock)
@@ -978,8 +919,8 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
+      {@const childKeys = getResponseGroupBlockKeys(group.children)}
       {#if shouldRenderResponseGroupInline(group)}
-        {@const childKeys = getResponseGroupBlockKeys(group.children)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if childBlock.type !== 'tool_result'}
             {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
@@ -987,12 +928,14 @@
         {/each}
       {:else}
         {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {@const currentChildKey = currentChildIndex >= 0 ? childKeys[currentChildIndex] : undefined}
         {#snippet currentChild()}
           {@render renderResponseGroupChild(
             group,
             blockIndex,
             group.children[currentChildIndex],
             currentChildIndex,
+            true,
           )}
         {/snippet}
         <div
@@ -1008,10 +951,12 @@
             name={group.name}
             isStreaming={group.isStreaming}
             isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            {isLastConversationMessage}
             blocks={group.children}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
             currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,
@@ -1019,7 +964,6 @@
             )}
           >
             {#snippet children()}
-              {@const childKeys = getResponseGroupBlockKeys(group.children)}
               {#each group.children as childBlock, childIndex (childKeys[childIndex])}
                 {#if childBlock.type !== 'tool_result'}
                   {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
@@ -1029,15 +973,11 @@
           </ResponseGroup>
         </div>
       {/if}
-    {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
+    {:else if isNavLinkBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
           ? 'nav-link'
-          : resolveCard(block, cardHandlers)
-            ? 'card'
-            : getProposalFromBlock(block as ContentBlock)
-              ? 'proposal'
-              : block.type} {getOperationalClusterSpacingClass(
+          : block.type} {getOperationalClusterSpacingClass(
           groupedBlocks,
           blockIndex,
           isVisibleTopLevelBlock,

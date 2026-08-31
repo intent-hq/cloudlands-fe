@@ -33,6 +33,7 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -87,7 +88,7 @@
   );
   $effect(() => {
     const noteId = tab.noteId;
-    if (!noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
+    if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
     void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
       if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
     });
@@ -100,7 +101,7 @@
   // Get actual workspace root for file path
   let actualWorkspaceRoot = $state<string | null>(null);
   $effect(() => {
-    if (workspaceId) {
+    if (isActive && workspaceId) {
       invoke<string>('workspace:get-root', { workspaceId }).then((rootPath) => {
         if (rootPath) actualWorkspaceRoot = rootPath;
       });
@@ -203,30 +204,36 @@
 
       // Show undo toast
       const { toast } = await import('svelte-sonner');
-      const toastId = toast.warning(m.layout_noteTab_deletedNote_toast({ title: noteTitle }), {
-        duration: 15000,
-        action: savedNote
-          ? {
-              label: m.ui_workspaceActions_undo_label(),
-              onClick: () => {
-                try {
-                  void createNote(savedNote.workspaceId, {
-                    title: savedNote.title,
-                    content: savedNote.content,
-                    contentType: savedNote.contentType,
-                    tags: savedNote.tags,
-                    parentId: savedNote.parentId,
-                    visibility: savedNote.visibility,
-                  });
-                  toast.dismiss(toastId);
-                } catch (err) {
-                  logger.error('Failed to restore note', err);
-                  toast.error(m.layout_noteTab_restoreFailed_error());
+      const toastId = toast.warning(
+        m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
+        withToastCountdown(
+          {
+            duration: 15000,
+            action: savedNote
+              ? {
+                  label: m.ui_workspaceActions_undo_label(),
+                  onClick: () => {
+                    try {
+                      void createNote(savedNote.workspaceId, {
+                        title: savedNote.title,
+                        content: savedNote.content,
+                        contentType: savedNote.contentType,
+                        tags: savedNote.tags,
+                        parentId: savedNote.parentId,
+                        visibility: savedNote.visibility,
+                      });
+                      toast.dismiss(toastId);
+                    } catch (err) {
+                      logger.error('Failed to restore note', err);
+                      toast.error(m.layout_noteTab_restoreFailed_error());
+                    }
+                  },
                 }
-              },
-            }
-          : undefined,
-      });
+              : undefined,
+          },
+          { pauseOnHover: false },
+        ),
+      );
     } catch (error) {
       logger.error('Failed to delete note', error);
       const { toast } = await import('svelte-sonner');
@@ -255,19 +262,6 @@
     label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
     onclick={handleCopyNote}
   />
-  <!-- Version history toggle hidden for now -->
-  <!-- <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => (showVersionHistory = !showVersionHistory)}
-    tooltip={showVersionHistory
-      ? m.layout_noteTab_hideVersionHistory_tooltip()
-      : m.layout_noteTab_showVersionHistory_tooltip()}
-    tooltipSide="bottom"
-    class={showVersionHistory ? 'text-foreground' : 'text-muted-foreground'}
-  >
-    <Fa icon={faClockRotateLeft} size="xs" />
-  </Button> -->
   {#if noteFilePath}
     <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
   {/if}

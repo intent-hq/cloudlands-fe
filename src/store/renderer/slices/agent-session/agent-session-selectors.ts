@@ -147,6 +147,17 @@ export const selectAgentSession = store.createSelector(
   },
 );
 
+/**
+ * FE-owned `tailCapPruned` latch (see StoredAgentSession): true once the
+ * client-side message cap dropped rows from the live tail. Scrollback
+ * triggers OR it into their `tailTruncated` input because the chat-init
+ * snapshot meta goes stale as the conversation grows past the cap.
+ */
+export const selectAgentTailCapPruned = store.createSelector((state, agentId?: string): boolean => {
+  if (!agentId) return false;
+  return state.agentSessions?.byAgentId[agentId]?.tailCapPruned === true;
+});
+
 /** Select the resolved provider for a given agent without materializing messages. */
 export const selectAgentProvider = store.createSelector(
   (state, agentId?: string): string | undefined => {
@@ -191,6 +202,17 @@ export const selectAgentHistoryMessages = store.createSelector(
     const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
     return segment ? segment.messages : EMPTY_HISTORY_MESSAGES;
   },
+);
+
+/**
+ * True when a scrollback history segment RECORD exists for the agent — even
+ * with zero hydrated rows (a page whose rows were all tail-resident merges to
+ * an empty segment but keeps the record). Segment-clearing paths remove the
+ * record entirely.
+ */
+export const selectHasHistorySegment = store.createSelector(
+  (state, agentId: string): boolean =>
+    state.agentSessions?.historySegmentsByAgentId?.[agentId] !== undefined,
 );
 
 export interface HistorySegmentMeta {

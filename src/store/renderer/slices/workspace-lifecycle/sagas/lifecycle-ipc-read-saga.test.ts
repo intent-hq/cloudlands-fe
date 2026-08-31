@@ -28,8 +28,12 @@ import { CACHE_TTL_MS, fetchEditors } from '../../external-editors/external-edit
 import { loadGithubRepos } from '../../github-repos/github-repos-slice';
 import { loadKnownRepos } from '../../known-repos/known-repos-slice';
 import {
+  initialState as initialWorkspaceLifecycleState,
   workspaceHydrationRequested,
+  workspaceLifecycleReducer,
   workspaceMounted,
+  workspaceOpenFailed,
+  workspaceOpenSucceeded,
   workspaceUnmounted,
 } from '../workspace-lifecycle-slice';
 import { lifecycleIpcReadSaga } from './lifecycle-ipc-read-saga';
@@ -63,6 +67,7 @@ function state() {
       lastFetched: 0,
     },
     git: { byWorkspaceId: {} },
+    workspaceLifecycle: initialWorkspaceLifecycleState,
   };
 }
 
@@ -92,10 +97,17 @@ function start(
 ) {
   const channel = stdChannel();
   const actions: ObservedAction[] = [];
+  const reduceLifecycle = (action: ObservedAction) => {
+    current.workspaceLifecycle = workspaceLifecycleReducer(
+      current.workspaceLifecycle,
+      action as never,
+    );
+  };
   const task = runSaga(
     {
       channel,
       dispatch: (action: ObservedAction) => {
+        reduceLifecycle(action);
         actions.push(action);
         onDispatch?.(action, channel);
       },
@@ -103,7 +115,15 @@ function start(
     },
     lifecycleIpcReadSaga,
   );
-  return { channel, actions, task };
+  return {
+    channel,
+    actions,
+    task,
+    send(action: ObservedAction) {
+      reduceLifecycle(action);
+      channel.put(action);
+    },
+  };
 }
 
 function startHydrationHarness() {
@@ -366,9 +386,9 @@ describe('lifecycleIpcReadSaga', () => {
 
   it('hydrates the first workspace visit and coalesces a revisit in the same session', async () => {
     const run = startHydrationHarness();
-    run.channel.put(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(WS));
     await settle();
-    run.channel.put(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(WS));
     await settle();
 
     expect(run.actions).toEqual([workspaceMounted(WS), ...workspaceMountFanOut(WS)]);
@@ -377,11 +397,11 @@ describe('lifecycleIpcReadSaga', () => {
 
   it('permits fresh hydration after the workspace session is closed and reopened', async () => {
     const run = startHydrationHarness();
-    run.channel.put(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(WS));
     await settle();
-    run.channel.put(workspaceUnmounted(WS));
+    run.send(workspaceUnmounted(WS));
     await settle();
-    run.channel.put(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(WS));
     await settle();
 
     expect(run.actions).toEqual([
@@ -396,10 +416,10 @@ describe('lifecycleIpcReadSaga', () => {
   it('coalesces rapid repeated hydration triggers per workspace', async () => {
     const secondWorkspaceId = 'ws-ipc-lifecycle-rapid-second';
     const run = startHydrationHarness();
-    run.channel.put(workspaceHydrationRequested(WS));
-    run.channel.put(workspaceHydrationRequested(WS));
-    run.channel.put(workspaceHydrationRequested(secondWorkspaceId));
-    run.channel.put(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(WS));
+    run.send(workspaceHydrationRequested(secondWorkspaceId));
+    run.send(workspaceHydrationRequested(WS));
     await settle();
 
     expect(run.actions.filter((action) => action.type === workspaceMounted.type)).toEqual([
@@ -414,6 +434,35 @@ describe('lifecycleIpcReadSaga', () => {
       workspaceMounted(secondWorkspaceId),
       ...workspaceMountFanOut(secondWorkspaceId),
     ]);
+    await stop(run.task);
+  });
+
+  it('suppresses hydration for an authoritative live session', async () => {
+    const run = startHydrationHarness();
+    run.send(workspaceHydrationRequested(WS));
+    await settle();
+    run.send(workspaceOpenSucceeded(WS));
+    run.actions.length = 0;
+
+    run.send(workspaceHydrationRequested(WS));
+    await settle();
+
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('rehydrates after a live session is invalidated by open failure', async () => {
+    const run = startHydrationHarness();
+    run.send(workspaceHydrationRequested(WS));
+    await settle();
+    run.send(workspaceOpenSucceeded(WS));
+    run.send(workspaceOpenFailed(WS));
+    run.actions.length = 0;
+
+    run.send(workspaceHydrationRequested(WS));
+    await settle();
+
+    expect(run.actions).toEqual([workspaceMounted(WS), ...workspaceMountFanOut(WS)]);
     await stop(run.task);
   });
 

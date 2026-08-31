@@ -6,3 +6,8 @@ export const selectSpecialistProposalAppliedState = store.createSelector(
     return state.specialistProposalHistory.entries[proposalId] ?? null;
   },
 );
+
+export const selectSpecialistProposalHistoryEntries = store.createSelector(
+  (state): Record<string, SpecialistProposalHistoryEntry> =>
+    state.specialistProposalHistory.entries,
+);

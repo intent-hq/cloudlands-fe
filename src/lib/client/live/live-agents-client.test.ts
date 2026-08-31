@@ -778,6 +778,80 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('not found: agent session');
   });
 
+  it('resolveProposal forwards agent.resolveProposal with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.resolveProposal takes `{ workspaceId, agentId,
+    // proposalId, outcome }` plus optional `detail`, removes the id from the
+    // session-metadata `pendingProposals` set, persists the resolution, and
+    // emits `agent:updated`. `detail` must be ABSENT when unset — never an
+    // explicit `undefined` on the wire.
+    backend.onRequest('agent.resolveProposal', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.resolveProposal({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      proposalId: 'toolu-apply-1',
+      outcome: 'dismissed',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.resolveProposal',
+      params: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        proposalId: 'toolu-apply-1',
+        outcome: 'dismissed',
+      },
+    });
+    expect('detail' in (backend.requests[0]!.params as Record<string, unknown>)).toBe(false);
+  });
+
+  it('resolveProposal forwards the applied outcome with detail on the wire', async () => {
+    backend.onRequest('agent.resolveProposal', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.resolveProposal({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      proposalId: 'toolu-apply-2',
+      outcome: 'applied',
+      detail: 'created workspace ws-new',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.resolveProposal',
+      params: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        proposalId: 'toolu-apply-2',
+        outcome: 'applied',
+        detail: 'created workspace ws-new',
+      },
+    });
+  });
+
+  it('resolveProposal folds a daemon NotFound rejection into {success:false,error} (no throw)', async () => {
+    // Workspace mismatch / unknown agent rejects with NotFound (-32004) per
+    // the §5.5 contract — the mutation seam never throws.
+    backend.onRequest('agent.resolveProposal', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session agent-x', {
+          rpcCode: -32004,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.resolveProposal({
+      agentId: 'agent-x',
+      workspaceId: 'ws-1',
+      proposalId: 'toolu-apply-1',
+      outcome: 'dismissed',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('markSeen forwards agent.markSeen with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.markSeen takes `{ workspaceId, agentId,
     // messageId }` (all required) and returns `{ success: true,
@@ -1732,7 +1806,11 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
 
     it('forwards previewChars when supplied', async () => {
-      backend.onRequest('agent.listUserMessages', () => ({ agentId: 'agent-1', items: [], total: 0 }));
+      backend.onRequest('agent.listUserMessages', () => ({
+        agentId: 'agent-1',
+        items: [],
+        total: 0,
+      }));
       const client = new LiveAgentsClient();
 
       const result = await client.listUserMessages('agent-1', 120);

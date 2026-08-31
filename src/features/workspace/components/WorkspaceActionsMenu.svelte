@@ -58,6 +58,7 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { Button } from '$lib/components/ui/button';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
@@ -595,30 +596,33 @@
         onFileDeleted?.();
         onClose?.();
 
-        const toastId = toast.warning(m.ui_workspaceActions_deletedFile_label({ name: fileName }), {
-          duration: 15000,
-          action: {
-            label: m.ui_workspaceActions_undo_label(),
-            onClick: async () => {
-              try {
-                await invoke('file:write', {
-                  path: pathToDelete,
-                  content: savedContent,
-                  workspaceId,
-                });
-                dispatchWindowEvent('file:changed', {
-                  workspaceId,
-                  type: 'create',
-                  filePath: pathToDelete,
-                });
-                toast.dismiss(toastId);
-              } catch (err) {
-                logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                toast.error(m.ui_workspaceActions_restoreFileFailed_error());
-              }
+        const toastId = toast.warning(
+          m.ui_workspaceActions_deletedFile_label({ name: fileName }),
+          withToastCountdown({
+            duration: 15000,
+            action: {
+              label: m.ui_workspaceActions_undo_label(),
+              onClick: async () => {
+                try {
+                  await invoke('file:write', {
+                    path: pathToDelete,
+                    content: savedContent,
+                    workspaceId,
+                  });
+                  dispatchWindowEvent('file:changed', {
+                    workspaceId,
+                    type: 'create',
+                    filePath: pathToDelete,
+                  });
+                  toast.dismiss(toastId);
+                } catch (err) {
+                  logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
+                  toast.error(m.ui_workspaceActions_restoreFileFailed_error());
+                }
+              },
             },
-          },
-        });
+          }),
+        );
       } else {
         toast.error(
           m.ui_workspaceActions_deleteFileFailedDetail_error({

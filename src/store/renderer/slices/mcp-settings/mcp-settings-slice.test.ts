@@ -3,7 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { initialState, mcpSettingsReducer, setAdvancedSaveStatus, setServerErrorMessage, setServerStatus, setServers, toggleWorkspaceMcpServer } from "./mcp-settings-slice";
+import { initialState, mcpSettingsReducer, setAdvancedSaveStatus, setServerErrorMessage, setServerStatus, setServers, setWorkspaceDisabledMcpServers, setWorkspaceMcpServerDisabled } from "./mcp-settings-slice";
 import type { McpServerConfig } from "./mcp-settings-types";
 
 const servers: McpServerConfig[] = [
@@ -38,29 +38,50 @@ describe("mcpSettingsReducer", () => {
     expect(state.advancedSaveError).toBeNull();
   });
 
-  it("toggles workspace server enabled state by adding and removing disabled names", () => {
+  it("stores the daemon-confirmed per-workspace disabled state by adding and removing names", () => {
     let state = mcpSettingsReducer(
       initialState,
-      toggleWorkspaceMcpServer("ws-1", "linear", false)
+      setWorkspaceMcpServerDisabled("ws-1", "linear", true)
     );
 
     expect(state.byWorkspaceId["ws-1"].disabledServers).toEqual({ linear: true });
 
-    state = mcpSettingsReducer(state, toggleWorkspaceMcpServer("ws-1", "linear", true));
+    state = mcpSettingsReducer(state, setWorkspaceMcpServerDisabled("ws-1", "linear", false));
 
     expect(state.byWorkspaceId["ws-1"].disabledServers).toEqual({});
   });
 
-  it("returns the same reference when a workspace toggle does not change state", () => {
+  it("returns the same reference when a workspace disabled write does not change state", () => {
     const state = mcpSettingsReducer(
       initialState,
-      toggleWorkspaceMcpServer("ws-1", "linear", false)
+      setWorkspaceMcpServerDisabled("ws-1", "linear", true)
     );
     const nextState = mcpSettingsReducer(
       state,
-      toggleWorkspaceMcpServer("ws-1", "linear", false)
+      setWorkspaceMcpServerDisabled("ws-1", "linear", true)
     );
 
     expect(nextState).toBe(state);
+  });
+
+  it("replaces a workspace's disabled map from the daemon's scoped list", () => {
+    let state = mcpSettingsReducer(
+      initialState,
+      setWorkspaceMcpServerDisabled("ws-1", "stale", true)
+    );
+
+    state = mcpSettingsReducer(
+      state,
+      setWorkspaceDisabledMcpServers("ws-1", { linear: true, filesystem: true })
+    );
+
+    expect(state.byWorkspaceId["ws-1"].disabledServers).toEqual({
+      linear: true,
+      filesystem: true,
+    });
+
+    state = mcpSettingsReducer(state, setWorkspaceDisabledMcpServers("ws-1", {}));
+
+    expect(state.byWorkspaceId["ws-1"].disabledServers).toEqual({});
   });
 });

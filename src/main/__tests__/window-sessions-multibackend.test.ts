@@ -135,7 +135,9 @@ import {
   getFocusedWindowBackendId,
   listSavedSessionBackendIds,
   loadWindowSessions,
+  markWindowSessionTeardown,
   openOrFocusWindowsForBackend,
+  unmarkWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   restoreWindowsForBackend,
   saveAllWindowSessions,
@@ -335,6 +337,88 @@ describe('multi-backend window sessions', () => {
       expect(readMap()).toEqual({
         local: [{ route: '/work/local', bounds: local.bounds }],
       });
+    });
+  });
+
+  describe('quit/update-install teardown (markWindowSessionTeardown)', () => {
+    it('does not tombstone or prune a backend closed during app-quit teardown', async () => {
+      // Two backends, one window each — the app-quit scenario where
+      // gracefulShutdown()'s mainWindow.close() fires the close listener while
+      // the other backend's window is still live.
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      await saveAllWindowSessions();
+      expect(readMap()['remote-1']).toBeDefined();
+
+      markWindowSessionTeardown();
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      // No tombstone: the bucket saved before quit survives on disk and stays
+      // loadable, and the pooled client is not disposed mid-shutdown.
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+        'remote-1': [{ route: '/work/remote', bounds: remote.bounds }],
+      });
+      expect(loadWindowSessions('remote-1')).toEqual([
+        { route: '/work/remote', bounds: remote.bounds },
+      ]);
+      expect(disposer).not.toHaveBeenCalled();
+    });
+
+    it('teardown closes still refresh the snapshot so a final save persists every bucket', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      markWindowSessionTeardown();
+      captureWindowSessionsSnapshot.call(local as never);
+      local.destroy();
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      // All windows are gone; the aggregate save must fall back to the
+      // snapshots captured by the teardown-time close listeners.
+      await saveAllWindowSessions();
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+        'remote-1': [{ route: '/work/remote', bounds: remote.bounds }],
+      });
+    });
+
+    it('unmark (aborted update install) restores tombstoning for later deliberate closes', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      // quitAndInstall() failed: the teardown mark is reverted and the app
+      // keeps running — a later deliberate last-window close must behave
+      // exactly as if teardown was never marked.
+      markWindowSessionTeardown();
+      unmarkWindowSessionTeardown();
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+      expect(loadWindowSessions('remote-1')).toBeNull();
+    });
+
+    it('a deliberate last-window close before teardown still tombstones + prunes', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      // No teardown mark: this is the mid-session deliberate close path.
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+      expect(loadWindowSessions('remote-1')).toBeNull();
     });
   });
 

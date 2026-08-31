@@ -8,6 +8,7 @@ import {
   LEGACY_CM2_DEFAULT_ACTION_MAPPING,
   PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
   PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING,
+  PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING,
   PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
   actionKeyToSlot,
   getDefaultActionMapping,
@@ -43,7 +44,7 @@ describe('per-model default mappings', () => {
       'see-spec',
       'switch-window-layouts',
       'push-to-talk',
-      'cycle-in-progress-agents',
+      'cycle-open-windows',
       'cycle-unread-agents',
     ]);
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).toHaveLength(ACTION_KEY_COUNT);
@@ -51,13 +52,14 @@ describe('per-model default mappings', () => {
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('toggle-sidebar-tabs');
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-workspace-agents');
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-attention-agents');
+    expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-in-progress-agents');
   });
 
-  it('CM2 row 4 (ACT10–ACT12) defaults to push-to-talk / in-progress / unread', () => {
+  it('CM2 row 4 (ACT10–ACT12) defaults to push-to-talk / open windows / unread', () => {
     expect(ACTION_KEY_IDS.slice(4)).toEqual(['ACT10', 'ACT11', 'ACT12']);
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2'].slice(4)).toEqual([
       'push-to-talk',
-      'cycle-in-progress-agents',
+      'cycle-open-windows',
       'cycle-unread-agents',
     ]);
   });
@@ -206,6 +208,7 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
     ['oldest (pre-attention)', LEGACY_CM2_DEFAULT_ACTION_MAPPING],
     ['previous (cycle-workspace)', PREVIOUS_CM2_DEFAULT_ACTION_MAPPING],
     ['pre-PTT (row-4 cycling)', PRE_PTT_CM2_DEFAULT_ACTION_MAPPING],
+    ['pre-window-cycle (ACT11 in-progress)', PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING],
   ])('upgrades a CM2 mapping still equal to the %s defaults', (_label, priorDefaults) => {
     const mappings = normalizeActionMappingsByModel({
       'creator-micro-2': [...priorDefaults],
@@ -221,6 +224,7 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
       LEGACY_CM2_DEFAULT_ACTION_MAPPING,
       PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
       PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
+      PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING,
     ]) {
       const customized = [...priorDefaults];
       customized[0] = 'stop-agent';
@@ -264,6 +268,7 @@ describe('migrateLegacyCodexDefaultActionMapping', () => {
 describe('isActionKeyActionId', () => {
   it('accepts catalog ids and rejects everything else', () => {
     expect(isActionKeyActionId('stop-agent')).toBe(true);
+    expect(isActionKeyActionId('cycle-open-windows')).toBe(true);
     expect(isActionKeyActionId('none')).toBe(true);
     expect(isActionKeyActionId('bogus')).toBe(false);
     expect(isActionKeyActionId(3)).toBe(false);

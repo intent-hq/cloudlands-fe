@@ -203,6 +203,48 @@ describe('BackgroundHooksRow', () => {
     expect(details.textContent).toContain('6');
   });
 
+  it('cron hooks show the cron expression under a Schedule label', async () => {
+    hooksState.hooks = [makeHook({ delayMs: 0, cron: '0 9 * * *' })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const details = screen.getByTestId('background-hook-details');
+    expect(details.textContent).toContain('Schedule');
+    expect(details.textContent).toContain('0 9 * * *');
+    expect(details.textContent).not.toContain('Interval');
+    expect(details.textContent).not.toContain('NaN');
+    expect(details.textContent).not.toContain('undefined');
+  });
+
+  it('runAt hooks show a "once at" schedule instead of an interval', async () => {
+    hooksState.hooks = [
+      makeHook({
+        delayMs: 0,
+        runAt: '2026-07-31T12:00:00Z',
+        nextRunAt: '2026-07-31T12:00:00Z',
+      }),
+    ];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const details = screen.getByTestId('background-hook-details');
+    expect(details.textContent).toContain('Schedule');
+    expect(details.textContent).toContain('once at');
+    expect(details.textContent).not.toContain('Interval');
+    expect(details.textContent).not.toContain('NaN');
+    expect(details.textContent).not.toContain('undefined');
+  });
+
+  it('falls back to an em dash when delayMs is absent on an unknown schedule kind', async () => {
+    hooksState.hooks = [makeHook({ delayMs: undefined })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const details = screen.getByTestId('background-hook-details');
+    expect(details.textContent).toContain('Interval —');
+    expect(details.textContent).not.toContain('NaN');
+  });
+
   it('shows the singular run-count copy', async () => {
     hooksState.hooks = [makeHook({ runCount: 1 })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });

@@ -1,4 +1,5 @@
 import type { AgentMessage } from '$shared/types';
+import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
 
 export interface PinnedPromptState {
   id: string;
@@ -87,52 +88,81 @@ export function trackPinnedPrompt(
   const controller = createPinnedPromptController();
   let options = initialOptions;
   let current: PinnedPromptState | null = null;
-  let frame: number | null = null;
+  let readPending = false;
+  let cancelRead: CancelLayoutTask | null = null;
   let destroyed = false;
-  const observedElements = new WeakSet<Element>();
+  const observedElements = new Set<Element>();
+  let resizeObserver: ResizeObserver | null = null;
+  let mutationObserver: MutationObserver | null = null;
 
   const measure = () => {
-    frame = null;
-    if (destroyed) return;
+    readPending = false;
+    if (destroyed || !options.enabled) return;
     const next = controller.update(container, options.enabled);
     if (next?.id === current?.id && next?.message === current?.message) return;
     current = next;
     options.onChange(next);
   };
+  // Batched into the shared read phase so the getBoundingClientRect sweep
+  // shares one layout pass with the other workspace-switch measurers. The
+  // pending flag (not the cancel handle) gates re-scheduling: a
+  // synchronously-invoking rAF stub runs measure before the handle lands.
   const schedule = () => {
-    if (destroyed || frame !== null) return;
-    frame = requestAnimationFrame(measure);
+    if (destroyed || !options.enabled || readPending) return;
+    readPending = true;
+    cancelRead = scheduleLayoutRead(measure);
   };
-  const resizeObserver = new ResizeObserver(schedule);
   const observeGeometry = () => {
     for (const element of [container, container.firstElementChild]) {
       if (!element || observedElements.has(element)) continue;
       observedElements.add(element);
-      resizeObserver.observe(element);
+      resizeObserver?.observe(element);
     }
   };
-  observeGeometry();
-  const mutationObserver = new MutationObserver(() => {
+
+  function stop() {
+    container.removeEventListener('scroll', schedule);
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    mutationObserver?.disconnect();
+    mutationObserver = null;
+    observedElements.clear();
+    cancelRead?.();
+    cancelRead = null;
+    readPending = false;
+    controller.reset();
+    if (current) {
+      current = null;
+      options.onChange(null);
+    }
+  }
+
+  function start() {
+    if (destroyed || !options.enabled) return;
+    resizeObserver = new ResizeObserver(schedule);
     observeGeometry();
+    mutationObserver = new MutationObserver(() => {
+      observeGeometry();
+      schedule();
+    });
+    mutationObserver.observe(container, { childList: true, subtree: true, characterData: true });
+    container.addEventListener('scroll', schedule, { passive: true });
     schedule();
-  });
-  mutationObserver.observe(container, { childList: true, subtree: true, characterData: true });
-  container.addEventListener('scroll', schedule, { passive: true });
-  schedule();
+  }
+
+  start();
 
   return {
     update(nextOptions: PinnedPromptTrackerOptions) {
+      const wasEnabled = options.enabled;
       options = nextOptions;
-      schedule();
+      if (wasEnabled && !options.enabled) stop();
+      else if (!wasEnabled && options.enabled) start();
+      else schedule();
     },
     destroy() {
       destroyed = true;
-      container.removeEventListener('scroll', schedule);
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-      if (frame !== null) cancelAnimationFrame(frame);
-      frame = null;
-      controller.reset();
+      stop();
     },
   };
 }

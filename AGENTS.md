@@ -164,8 +164,8 @@ For focused browser validation, run:
 corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
 ```
 
-The CT harness uses fixed port 3100 and has no override. Stop the process on that port
-before retrying if it is occupied. The full workflow is in
+The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
+process on that port before retrying if it is occupied. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against the production daemon (UDS→WS bridge)

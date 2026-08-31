@@ -62,8 +62,7 @@
 </div>
 
 <style>
-  .reasoning-history-body :global(.markdown-viewer > *),
-  .reasoning-history-body :global(.markdown-viewer > .ProseMirror > *) {
+  .reasoning-history-body :global(.markdown-viewer > *) {
     margin-block: 0 !important;
   }
 </style>

@@ -107,6 +107,16 @@ export type StoredAgentSession = Omit<AgentSession, 'messages'> & {
    * terminal event missed across a disconnect) still applies.
    */
   liveTurnOpenedAt?: string;
+  /**
+   * FE-owned latch: true once the client-side `MAX_MESSAGES_PER_AGENT` cap
+   * actually dropped rows from the live tail (live growth past the cap).
+   * The chat-init transcript snapshot meta (`truncated`/`totalMessages`) is
+   * captured once per init and goes stale as the conversation grows, so the
+   * scrollback triggers OR this latch into their "older rows exist" inputs.
+   * Wire sessions never carry it (preserved across upserts); cleared only by
+   * a full transcript reset (chatReset / a §7.1 `resumed: false` snapshot).
+   */
+  tailCapPruned?: boolean;
 };
 
 /**
@@ -149,7 +159,9 @@ export interface AgentHistorySegment {
    * used to be attributed all-above, overestimating the virtual extent by up
    * to 2x mid-walk). Absent on seek-seeded segments (`startOrdinalEstimate`
    * anchors their split) and while the segment is contiguous with the tail.
-   * An estimate: rows the TAIL prunes into the hole are not observed here.
+   * Rows the TAIL cap-prunes into the hole (live appends past
+   * `MAX_MESSAGES_PER_AGENT` while a contiguous segment is loaded) are also
+   * counted here — the tail prune opens the gap and adds the dropped count.
    */
   holeRowsEstimate?: number;
 }

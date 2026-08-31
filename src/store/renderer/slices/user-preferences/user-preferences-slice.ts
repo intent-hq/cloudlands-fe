@@ -4,6 +4,14 @@ import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import type { UpdateChannel } from '$features/auto-update/types';
+import {
+  SHORTCUT_DEFAULTS,
+  isShortcutId,
+  normalizeShortcut,
+  sanitizeShortcutOverrides,
+  type ShortcutId,
+  type ShortcutOverrides,
+} from '$lib/utils/shortcut-bindings';
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -57,6 +65,7 @@ export type UserPreferencesState = {
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
   githubLinkDefaultAction: GithubLinkDefaultAction;
+  shortcutOverrides: ShortcutOverrides;
 };
 
 type FontSettingsState = Pick<
@@ -96,6 +105,7 @@ export const initialState: UserPreferencesState = {
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
+  shortcutOverrides: {},
 };
 
 export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
@@ -168,6 +178,20 @@ export const setLanguagePreference = createAction<[preference: string]>(
 export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
   'userPreferences/setGithubLinkDefaultAction',
 );
+
+export const hydrateShortcutOverrides = createAction<[overrides: unknown]>(
+  'userPreferences/hydrateShortcutOverrides',
+);
+
+export const setShortcutOverride = createAction<[id: ShortcutId, shortcut: string]>(
+  'userPreferences/setShortcutOverride',
+);
+
+export const resetShortcutOverride = createAction<[id: ShortcutId]>(
+  'userPreferences/resetShortcutOverride',
+);
+
+export const resetAllShortcutOverrides = createAction('userPreferences/resetAllShortcutOverrides');
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: 'userPreferences',
@@ -289,3 +313,26 @@ userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [acti
   ...state,
   githubLinkDefaultAction: action,
 }));
+userPreferencesReducer.with(hydrateShortcutOverrides, (state, { payload: [overrides] }) => ({
+  ...state,
+  shortcutOverrides: sanitizeShortcutOverrides(overrides),
+}));
+userPreferencesReducer.with(setShortcutOverride, (state, { payload: [id, shortcut] }) => {
+  if (!isShortcutId(id)) return state;
+  const normalized = normalizeShortcut(shortcut);
+  if (!normalized) return state;
+  const shortcutOverrides = { ...state.shortcutOverrides };
+  if (normalized === SHORTCUT_DEFAULTS[id]) delete shortcutOverrides[id];
+  else shortcutOverrides[id] = normalized;
+  return { ...state, shortcutOverrides };
+});
+userPreferencesReducer.with(resetShortcutOverride, (state, { payload: [id] }) => {
+  if (!(id in state.shortcutOverrides)) return state;
+  const shortcutOverrides = { ...state.shortcutOverrides };
+  delete shortcutOverrides[id];
+  return { ...state, shortcutOverrides };
+});
+userPreferencesReducer.with(resetAllShortcutOverrides, (state) => {
+  if (Object.keys(state.shortcutOverrides).length === 0) return state;
+  return { ...state, shortcutOverrides: {} };
+});

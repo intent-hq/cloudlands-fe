@@ -20,7 +20,12 @@ export interface BackgroundHook {
   agentId: string;
   name: string;
   code?: string;
-  delayMs: number;
+  /** Fixed cadence in ms. `0` (or absent) for cron/runAt schedule kinds. */
+  delayMs?: number;
+  /** 5-field UTC cron expression — present only on cron-scheduled hooks. */
+  cron?: string;
+  /** RFC3339 UTC one-shot fire time — present only on runAt-scheduled hooks. */
+  runAt?: string;
   state: 'scheduled' | 'running' | 'dispatched' | 'evicted' | 'cancelled' | 'expired';
   createdAt: string;
   /** TTL deadline (v3.1): `createdAt` + clamped `ttlMs` (≤ 24 hours).

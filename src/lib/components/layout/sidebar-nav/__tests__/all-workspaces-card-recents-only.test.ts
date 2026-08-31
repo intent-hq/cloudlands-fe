@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -6,7 +7,10 @@ import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { hydrateSidebarNav, togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  hydrateSidebarNav,
+  togglePinWorkspace,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
@@ -71,7 +75,7 @@ describe('AllWorkspacesCard recents-only presentation', () => {
     ]);
     expect(rows.every((row) => row.querySelector('[data-workspace-card-row]'))).toBe(true);
     expect(rows.every((row) => row.querySelector('[data-workspace-card-time]'))).toBe(true);
-    expect(screen.queryByPlaceholderText('Search spaces...')).toBeNull();
+    expect(screen.queryByPlaceholderText(m.layout_activeCard_search_placeholder())).toBeNull();
     expect(screen.queryByText('Recent')).toBeNull();
     expect(screen.queryByText('Repo')).toBeNull();
     expect(screen.queryByText('Status')).toBeNull();
@@ -121,7 +125,7 @@ describe('AllWorkspacesCard recents-only presentation', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
     expect(document.querySelectorAll('[data-recent-space-row]')).toHaveLength(3);
 
-    await fireEvent.input(screen.getByPlaceholderText('Search spaces...'), {
+    await fireEvent.input(screen.getByPlaceholderText(m.layout_activeCard_search_placeholder()), {
       target: { value: 'Fourth' },
     });
     await waitFor(() => {

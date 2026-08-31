@@ -3,7 +3,6 @@ import {
   defaultPanelVisibility,
   type PanelVisibilityState,
   type ResizablePanelGroupLayoutState,
-  type WorkspaceSidebarPanelLayoutState,
 } from './ui-layout-slice';
 
 export const selectLineWrapping = store.createSelector((state) => {
@@ -83,9 +82,3 @@ export const selectCollapsiblePanelCollapsed = store.createSelector<
   return state.uiLayout.collapsiblePanelCollapsed[key];
 });
 
-export const selectWorkspaceSidebarPanelLayout = store.createSelector<
-  [],
-  WorkspaceSidebarPanelLayoutState
->((state) => {
-  return state.uiLayout.workspaceSidebarPanelLayout;
-});

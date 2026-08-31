@@ -20,7 +20,6 @@
   import {
   addTerminal,
   openTerminalOverlay,
-  terminalCreated,
 } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -90,7 +89,6 @@
       }
       const termId = result.id;
       appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()));
-      appStore.dispatch(terminalCreated(ROOT_WORKSPACE_ID));
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command

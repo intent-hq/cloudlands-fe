@@ -35,6 +35,43 @@ describe('MarkdownViewer panel navigation', () => {
     expect(handleLink.mock.calls[0]?.[1]).not.toHaveProperty('openInNewAdjacentPanel');
   });
 
+  it('forwards forceExternal for http(s) links when forceExternalLinks is set', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: {
+        content: '[PR #1](https://github.com/intent-hq/cloudlands-fe/pull/1)',
+        workspaceId: 'owning-workspace',
+        forceExternalLinks: true,
+      },
+    });
+
+    const link = await screen.findByRole('link', { name: 'PR #1' });
+    await fireEvent.click(link);
+
+    await waitFor(() =>
+      expect(handleLink).toHaveBeenCalledWith(
+        'https://github.com/intent-hq/cloudlands-fe/pull/1',
+        expect.objectContaining({ forceExternal: true }),
+      ),
+    );
+  });
+
+  it('does not forward forceExternal by default', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: {
+        content: '[PR #1](https://github.com/intent-hq/cloudlands-fe/pull/1)',
+        workspaceId: 'owning-workspace',
+      },
+    });
+
+    const link = await screen.findByRole('link', { name: 'PR #1' });
+    await fireEvent.click(link);
+
+    await waitFor(() => expect(handleLink).toHaveBeenCalled());
+    expect(handleLink.mock.calls[0]?.[1]).not.toHaveProperty('forceExternal');
+  });
+
   it('forwards modified Enter for a focused markdown link', async () => {
     const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
     render(MarkdownViewer, {

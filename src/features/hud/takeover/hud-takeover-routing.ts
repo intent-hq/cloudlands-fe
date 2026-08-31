@@ -3,9 +3,11 @@
  * graph edges (`dep` / `spec` / `conflict` from `dependencyGraphLayout`)
  * into Manhattan polyline routes in lattice space. Long runs travel through
  * gutter channels (the cell-free strips at half-integer lattice coords
- * between columns/rows); short exit/entry stubs and straight neighbor links
- * lie in border corridors (the integer row/column through the cell
- * centers). Every segment gets a lane index within its channel; edges in the
+ * between columns/rows); short exit/entry stubs and aligned links whose
+ * intermediate cells are all empty run straight in border corridors (the
+ * integer row/column through the cell centers) — the gutter detour is only
+ * taken when an occupied cell blocks the direct path. Every segment gets a
+ * lane index within its channel; edges in the
  * same bundle (same `kind` + same `from`) may share a lane over overlapping
  * spans so a fan-out renders as one trunk that branches, while edges of
  * different bundles never overlap or touch on the same lane (90° crossings
@@ -70,16 +72,35 @@ export interface HudTakeoverEdgeRouting {
 
 const HALF = HUD_TAKEOVER_CELL_HALF_LATTICE;
 
+/** Occupancy predicate over lattice cells (integer coords). */
+type HudTakeoverCellOccupied = (x: number, y: number) => boolean;
+
+/** True when every cell strictly between the bounds along one axis is free. */
+function corridorClear(
+  from: number,
+  to: number,
+  cellAt: (i: number) => [number, number],
+  isOccupied: HudTakeoverCellOccupied,
+): boolean {
+  for (let i = from + 1; i < to; i++) {
+    if (isOccupied(...cellAt(i))) return false;
+  }
+  return true;
+}
+
 /**
  * Left→right route: exit the source's right border, enter the target's left
  * border. Adjacent columns link directly (straight or one Z-bend through the
- * shared gutter); farther targets travel a vertical gutter, a horizontal
- * gutter beside the target row (above it when rows match, so intermediate
- * cells are never crossed), and the target's entry gutter.
+ * shared gutter), and same-row targets whose intermediate cells are all
+ * empty link straight along the row corridor; otherwise the route travels a
+ * vertical gutter, a horizontal gutter beside the target row (above it when
+ * rows match, so occupied cells are never crossed), and the target's entry
+ * gutter.
  */
 function routeLeftToRight(
   a: HudTakeoverCellCoord,
   b: HudTakeoverCellCoord,
+  isOccupied: HudTakeoverCellOccupied,
 ): HudTakeoverRoutePoint[] {
   const exit = { x: a.x + HALF, y: a.y };
   const enter = { x: b.x - HALF, y: b.y };
@@ -87,6 +108,9 @@ function routeLeftToRight(
     if (a.y === b.y) return [exit, enter];
     const gx = a.x + 0.5;
     return [exit, { x: gx, y: a.y }, { x: gx, y: b.y }, enter];
+  }
+  if (a.y === b.y && corridorClear(a.x, b.x, (x) => [x, a.y], isOccupied)) {
+    return [exit, enter];
   }
   const gxA = a.x + 0.5;
   const gxB = b.x - 0.5;
@@ -103,17 +127,20 @@ function routeLeftToRight(
 
 /**
  * Same-column top→bottom route (conflict pairs): exit the upper cell's
- * bottom border, enter the lower cell's top border. Adjacent rows link
- * straight; farther pairs detour through the right-hand vertical gutter so
- * intermediate cells are never crossed.
+ * bottom border, enter the lower cell's top border. Adjacent rows and pairs
+ * whose intermediate cells are all empty link straight along the column
+ * corridor; other pairs detour through the right-hand vertical gutter so
+ * occupied cells are never crossed.
  */
 function routeTopToBottom(
   a: HudTakeoverCellCoord,
   b: HudTakeoverCellCoord,
+  isOccupied: HudTakeoverCellOccupied,
 ): HudTakeoverRoutePoint[] {
   const exit = { x: a.x, y: a.y + HALF };
   const enter = { x: b.x, y: b.y - HALF };
   if (b.y === a.y + 1) return [exit, enter];
+  if (corridorClear(a.y, b.y, (y) => [a.x, y], isOccupied)) return [exit, enter];
   const gyA = a.y + 0.5;
   const gyB = b.y - 0.5;
   const gx = a.x + 0.5;
@@ -131,11 +158,16 @@ function routeTopToBottom(
 function routePoints(
   from: HudTakeoverCellCoord,
   to: HudTakeoverCellCoord,
+  isOccupied: HudTakeoverCellOccupied,
 ): HudTakeoverRoutePoint[] | null {
   if (from.x === to.x && from.y === to.y) return null;
   if (from.x === to.x)
-    return from.y < to.y ? routeTopToBottom(from, to) : routeTopToBottom(to, from).reverse();
-  return from.x < to.x ? routeLeftToRight(from, to) : routeLeftToRight(to, from).reverse();
+    return from.y < to.y
+      ? routeTopToBottom(from, to, isOccupied)
+      : routeTopToBottom(to, from, isOccupied).reverse();
+  return from.x < to.x
+    ? routeLeftToRight(from, to, isOccupied)
+    : routeLeftToRight(to, from, isOccupied).reverse();
 }
 
 /**
@@ -160,6 +192,9 @@ function routePoints(
 export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEdgeRouting {
   const coordOf = (id: string): HudTakeoverCellCoord | undefined =>
     id === HUD_TAKEOVER_SPEC_NODE_ID ? { x: 0, y: 0 } : graph.coords.get(id);
+  const occupiedCells = new Set<string>(['0,0']);
+  for (const coord of graph.coords.values()) occupiedCells.add(`${coord.x},${coord.y}`);
+  const isOccupied: HudTakeoverCellOccupied = (x, y) => occupiedCells.has(`${x},${y}`);
   const occupied = new Map<string, { lane: number; lo: number; hi: number; bundle: string }[]>();
   /** First lane each bundle landed on per channel, keyed `bundle\u0000axis:channel`. */
   const stickyLanes = new Map<string, number>();
@@ -169,7 +204,7 @@ export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEd
     const from = coordOf(edge.from);
     const to = coordOf(edge.to);
     if (!from || !to) continue;
-    const points = routePoints(from, to);
+    const points = routePoints(from, to, isOccupied);
     if (!points) continue;
     const bundle = `${edge.kind}\u0000${edge.from}`;
     const segments = points.slice(0, -1).map((p, i): HudTakeoverRouteSegment => {

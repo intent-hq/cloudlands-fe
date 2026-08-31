@@ -112,6 +112,17 @@ describe('foldHookEvent (§6.5 hook:* lifecycle)', () => {
       expect(hooks[0].lastLogs).toBe('checking CI\nall green');
     },
   );
+
+  it('retains cron/runAt schedule fields across folds (events never carry them)', () => {
+    const cronHook = makeHook({ delayMs: 0, cron: '0 9 * * *' });
+    const runAtHook = makeHook({ hookId: 'hook-2', delayMs: 0, runAt: '2026-08-01T09:00:00Z' });
+    const { hooks } = foldHookEvent([cronHook, runAtHook], 'hook:run-completed', {
+      hookId: 'hook-1',
+      nextRunAt: '2026-07-31T10:07:00Z',
+    });
+    expect(hooks[0].cron).toBe('0 9 * * *');
+    expect(hooks[1].runAt).toBe('2026-08-01T09:00:00Z');
+  });
 });
 
 describe('wire requests (§5.40, fake transport)', () => {
@@ -122,6 +133,14 @@ describe('wire requests (§5.40, fake transport)', () => {
     const hooks = await listHooks('ws-1');
     expect(mockedRequest).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
     expect(hooks).toEqual([makeHook()]);
+  });
+
+  it('listHooks passes cron/runAt schedule kinds through unmodified', async () => {
+    const cronHook = makeHook({ hookId: 'hook-cron', delayMs: 0, cron: '0 9 * * *' });
+    const runAtHook = makeHook({ hookId: 'hook-once', delayMs: 0, runAt: '2026-08-01T09:00:00Z' });
+    mockedRequest.mockResolvedValueOnce({ hooks: [cronHook, runAtHook] });
+    const hooks = await listHooks('ws-1');
+    expect(hooks).toEqual([cronHook, runAtHook]);
   });
 
   it('runHookNow forwards hook.runNow { workspaceId, hookId }', async () => {

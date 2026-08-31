@@ -4,12 +4,15 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import * as Menu from '$lib/components/ui/menu';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
+  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import {
     DEFAULT_CONNECTION_ACCENT,
@@ -21,12 +24,23 @@
   } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import {
+    selectConnectedIds,
+    selectPinnedDaemonVersion,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import {
     openConnectionRequested,
     rotateConnectionSecretRequested,
     testConnectionRequested,
+    updateBackendRequested,
     updateConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
-  import { faEllipsisVertical, faPen, faPlug, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faArrowsRotate,
+    faEllipsisVertical,
+    faPen,
+    faPlug,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   export type DevicePanelMode = 'edit' | null;
@@ -40,6 +54,8 @@
   }
 
   let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
+  const pinnedVersion$ = selectPinnedDaemonVersion();
+  const connectedIds$ = selectConnectedIds();
   let name = $state('');
   let host = $state('');
   let port = $state('');
@@ -65,8 +81,12 @@
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
-  const displayName = $derived(device.label.trim() || address);
+  // Shared with the daemon-status menu: the local entry gets the fixed
+  // "This machine (local)" label; for remotes the Name wins outright, with
+  // hostname → address fallbacks for unmigrated records.
+  const displayName = $derived(
+    device.isLocal ? m.layout_daemonStatus_localConnection_label() : formatConnectionLabel(device),
+  );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -83,6 +103,19 @@
       portNumber !== device.port ||
       accent !== savedAccent,
   );
+  // Behind-pin marker: reflects the last captured daemonVersion, so it shows
+  // even while disconnected. The i18n message prepends "v" — strip any
+  // daemon-reported prefix so a valid v-prefixed version never renders "vv".
+  const daemonBehindTooltip = $derived.by(() => {
+    const pinnedVersion = $pinnedVersion$;
+    if (!isDaemonBehindPin(device, pinnedVersion) || !device.daemonVersion || !pinnedVersion)
+      return null;
+    return m.settings_devices_daemonBehind_tooltip({
+      daemonVersion: device.daemonVersion.replace(/^v/, ''),
+      pinnedVersion: pinnedVersion.replace(/^v/, ''),
+    });
+  });
+  const canUpdateDaemon = $derived(canRequestDeviceUpdate(device, $connectedIds$, $pinnedVersion$));
 
   function resetPanel() {
     name = device.label;
@@ -138,6 +171,17 @@
       if (result.status === 'secret-unavailable') openEditForSecretRecovery();
     } catch {
       connectionError = true;
+    }
+  }
+
+  async function requestDaemonUpdate() {
+    try {
+      const action = updateBackendRequested(device.id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // Outcomes (success and every failure mode) surface as saga-owned
+      // toasts; nothing more to do here.
     }
   }
 
@@ -324,55 +368,85 @@
             {device.intentdVersion}
           </p>
         {/if}
+        {#if daemonBehindTooltip}
+          <!-- The Tooltip trigger wrapper gives this non-interactive dot a tab
+               stop, so the explanation is reachable by keyboard focus too. -->
+          <Tooltip content={daemonBehindTooltip} class="shrink-0 self-center">
+            <span
+              class="block size-2 rounded-full bg-yellow-500"
+              role="img"
+              aria-label={daemonBehindTooltip}
+            ></span>
+          </Tooltip>
+        {/if}
       </div>
     </div>
-    <Menu.Root bind:open={actionsMenuOpen}>
-      <Menu.Trigger>
-        {#snippet child({ props })}
-          <Button
-            {...props}
-            bind:ref={actionsButton}
-            variant="ghost-light"
-            size="icon-xs"
-            aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-          >
-            <Fa icon={faEllipsisVertical} />
-          </Button>
-        {/snippet}
-      </Menu.Trigger>
-      <Menu.Content align="end" class="p-0!">
-        <div class="w-44 py-1">
-          <Menu.Item
-            onclick={() => {
-              actionsMenuOpen = false;
-              void connectDevice();
-            }}
-          >
-            <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_connect_label()}
-          </Menu.Item>
-          <Menu.Item
-            onclick={() => {
-              actionsMenuOpen = false;
-              onOpenPanel('edit');
-            }}
-          >
-            <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_edit_label()}
-          </Menu.Item>
-          <Menu.Item
-            destructive
-            onclick={() => {
-              actionsMenuOpen = false;
-              onRequestRemove(device);
-            }}
-          >
-            <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_remove_label()}
-          </Menu.Item>
-        </div>
-      </Menu.Content>
-    </Menu.Root>
+    <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
+         menu only exists while the Update action is offered. -->
+    {#if !device.isLocal || canUpdateDaemon}
+      <Menu.Root bind:open={actionsMenuOpen}>
+        <Menu.Trigger>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              bind:ref={actionsButton}
+              variant="ghost-light"
+              size="icon-xs"
+              aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+            >
+              <Fa icon={faEllipsisVertical} />
+            </Button>
+          {/snippet}
+        </Menu.Trigger>
+        <Menu.Content align="end" class="p-0!">
+          <div class="w-44 py-1">
+            {#if !device.isLocal}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  void connectDevice();
+                }}
+              >
+                <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_connect_label()}
+              </Menu.Item>
+            {/if}
+            {#if canUpdateDaemon}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  void requestDaemonUpdate();
+                }}
+              >
+                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                {m.layout_daemonStatus_update_action()}
+              </Menu.Item>
+            {/if}
+            {#if !device.isLocal}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  onOpenPanel('edit');
+                }}
+              >
+                <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_edit_label()}
+              </Menu.Item>
+              <Menu.Item
+                destructive
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  onRequestRemove(device);
+                }}
+              >
+                <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_remove_label()}
+              </Menu.Item>
+            {/if}
+          </div>
+        </Menu.Content>
+      </Menu.Root>
+    {/if}
   </div>
 
   {#if connectionError}

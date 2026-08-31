@@ -1,8 +1,15 @@
 <script lang="ts">
+  import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+
   export let value = '';
   export let placeholder = '';
   export let disabled = false;
   export let onUpdate: ((value: string) => void) | undefined;
+  export let onSubmit: (() => void) | undefined;
+  export let onForceSubmit: (() => void) | undefined;
+  export let skills: readonly SkillInfo[] = [];
+  export let skillsLoading = false;
+  export let skillsError: string | null = null;
   export let onEscape: (() => void) | undefined;
   export let trailingHint:
     | {
@@ -34,8 +41,20 @@
   {value}
   {placeholder}
   {disabled}
+  data-skills={skills.map(({ name }) => name).join(',')}
+  data-skills-loading={skillsLoading}
+  data-skills-error={skillsError ?? ''}
   oninput={(event) => onUpdate?.((event.currentTarget as HTMLTextAreaElement).value)}
-  onkeydown={(event) => event.key === 'Escape' && onEscape?.()}></textarea>
+  onkeydown={(event) => {
+    if (event.key === 'Escape') onEscape?.();
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+      event.preventDefault();
+      onForceSubmit?.();
+    } else if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      onSubmit?.();
+    }
+  }}></textarea>
 
 {#if trailingHint?.icon}
   <span data-testid="prompt-trailing-hint" data-state={trailingHint.kind}>

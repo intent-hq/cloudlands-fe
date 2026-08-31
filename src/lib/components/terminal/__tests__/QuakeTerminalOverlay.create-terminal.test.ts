@@ -208,18 +208,20 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
     (appStore as any).__setCurrentTab(WS_B);
     await rerender({ workspaceId: WS_B });
 
+    // The probe click below issues a fresh create; keep it pending so it can
+    // never dispatch anything itself.
+    clientMocks.mockTerminalsCreate.mockReturnValue(new Promise(() => {}));
     resolveCreate({ success: true, id: 'pty-1' });
-    await waitFor(() => {
-      // The PTY is real: terminalCreated still fires (for WS_A's refetch)...
-      expect(dispatchedTypes()).toContain('terminals/terminalCreated');
+    // Positive completion signal: the in-flight guard is only released in the
+    // continuation's `finally`, so a probe click issuing a second create proves
+    // the stale-workspace continuation ran to the end (not a vacuous pass on
+    // a too-early tick).
+    await waitFor(async () => {
+      await fireEvent.click(newTerminalButton(container));
+      expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledTimes(2);
     });
-    const dispatched = (appStore as any).__dispatched as Array<{
-      type: string;
-      payload?: unknown[];
-    }>;
-    const created = dispatched.find((action) => action.type === 'terminals/terminalCreated');
-    expect(created?.payload?.[0]).toBe(WS_A);
-    // ...but no tab/open mutation lands in either workspace's live state.
+    // No tab/open mutation landed from the stale WS_A create in either
+    // workspace's live state.
     expect(dispatchedTypes()).not.toContain('terminals/addTerminal');
     expect(dispatchedTypes()).not.toContain('terminals/open');
   });

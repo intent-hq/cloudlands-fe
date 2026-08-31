@@ -363,18 +363,22 @@ function sinceMs(item: HudAttentionItem): number {
 }
 
 /**
- * ATTENTION panel rows, newest first: agents in the needs-attention/failed
- * buckets (from `agentSummary.agents`, PROTOCOL §5.1, via the attention-aware
- * `agentBucketOf`) plus workspaces whose live `workspace:attention-changed`
- * flag is raised (the hud slice mirrors the event stream; the wire attention
- * enum is only `none | unread | review_required` (§9.9) —
- * question/blocker/discussion attention never travels on it, so the
- * `review_required` allowlist stays exact and `unread` stays excluded). An
- * attention card state (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no
- * other row already covers raises a generic workspace row — the same
- * authoritative-rollup fallback the ATTN counter applies, so a question hold
- * the FE never captured still gets a panel row. Rows for workspaces no longer
- * in the list are dropped.
+ * ATTENTION panel rows, newest first: TOP-LEVEL NON-BACKGROUND agents in the
+ * needs-attention/failed buckets (via `cardAgentsOf`, so the rows derive
+ * from the exact inputs the ATTN counter uses — the daemon's step-0
+ * `needs_attention` gating, intentd#825, mirrored per-agent for ALL signals
+ * including `failed` per the spec decision: delegated (`parentAgentId`,
+ * §5.1 v2.9) and background agents never raise rows) plus workspaces whose
+ * live `workspace:attention-changed` flag is raised (the hud slice mirrors
+ * the event stream; the wire attention enum is only
+ * `none | unread | review_required` (§9.9) — question/blocker/discussion
+ * attention never travels on it, so the `review_required` allowlist stays
+ * exact and `unread` stays excluded). An attention card state
+ * (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no other row already
+ * covers raises a generic workspace row — the same authoritative-rollup
+ * fallback the ATTN counter applies, so a question hold the FE never
+ * captured still gets a panel row. Rows for workspaces no longer in the
+ * list are dropped.
  */
 export const selectHudAttentionItems = store.createSelector((state): HudAttentionItem[] => {
   const flags = state.hud.attentionByWorkspaceId;
@@ -383,9 +387,13 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
   for (const workspace of selectHudWorkspaces.select(state)) {
     const workspaceId = String(workspace.id);
     let covered = false;
-    for (const agent of agentInfosOf(workspace)) {
-      const { bucket, attentionKind, hasQuestion } = agentBucketOf(state, agent);
+    for (const agent of cardAgentsOf(workspace, state)) {
+      const { bucket, attentionKind, hasQuestion } = agent;
       if (bucket !== 'needs-attention' && bucket !== 'failed') continue;
+      // Same per-agent gating as `selectHudAttnCount`: only a top-level
+      // non-background agent raises a row — sub-agent/background signals are
+      // the coordinator's business, never the user's call to action.
+      if (!agent.topLevel || agent.isBackground) continue;
       // Raising signal + detail text: the agent's outstanding §7.1 question
       // block (most actionable — the user can answer it verbatim), else the
       // §5.5 attention-request kind/reason from the tracked session; attention
@@ -405,7 +413,7 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
         ...(bucket === 'needs-attention' && signal ? { signal } : {}),
         agentName: agent.name,
         message: question?.question ?? attentionReason ?? null,
-        sinceTs: agent.lastActivity ?? null,
+        sinceTs: agent.lastActivityTs,
       });
       covered = true;
     }
@@ -491,7 +499,15 @@ export interface HudCardAgent {
    * workspace-level NEEDS INPUT / BLOCKED derivation.
    */
   topLevel: boolean;
-  /** Background agent (session `isBackground` / `metadata.isBackground`, §5.5). */
+  /**
+   * Background agent (session `isBackground` / `metadata.isBackground`, §5.5).
+   * KNOWN LIMITATION: background-ness comes only from the tracked session —
+   * the §5.1 summary row carries no `isBackground` field — so a summary-only
+   * failed background agent transiently passes the top-level gating in
+   * `selectHudAttentionItems` / `selectHudAttnCount` (raising an
+   * `agent_failed` row + ATTN count) until session hydration; tracked in
+   * intent-hq/intent#3789 (additive daemon summary field is the fix-site).
+   */
   isBackground: boolean;
   /**
    * Pending attention request kind (PROTOCOL §5.5 `attentionRequestKind`,
@@ -574,7 +590,7 @@ export interface HudWorkspaceCard {
   keySlot: number | null;
   /** BE-owned task rollup (`task.list` stats; zeros until loaded). */
   tasks: { total: number; completed: number; inProgress: number };
-  /** Sum of the four token counters from the workspace usage rollup. */
+  /** Five-counter token sum from the workspace usage rollup (§5.23). */
   tokens: number;
   /** Live agents only (running / needs-attention / failed buckets), wire order. */
   agents: HudCardAgent[];
@@ -871,10 +887,7 @@ function previewLineText(preview: AgentPreview | null): string | null {
         (preview.toolUse.input as Record<string, unknown>) || {},
       );
       if (display.hidden) return null;
-      const label = [display.verb, display.subject, display.path]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
+      const label = [display.verb, display.subject, display.path].filter(Boolean).join(' ').trim();
       return label || null;
     }
     default: {
@@ -1021,12 +1034,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       tasks: stats
         ? { total: stats.total, completed: stats.completed, inProgress: stats.inProgress }
         : ZERO_TASKS,
-      tokens: usageTotals
-        ? usageTotals.inputTokens +
-          usageTotals.outputTokens +
-          usageTotals.cacheReadTokens +
-          usageTotals.cacheCreationTokens
-        : 0,
+      tokens: usageTotals ? sumHudUsageTotals(usageTotals) : 0,
       agents: keepLiveWithAncestors(agents),
     };
   });
@@ -1123,29 +1131,29 @@ export const selectWorkspaceTabStatuses = store.createSelector(
 );
 
 /**
- * Header ATTN counter (mock `stats.attn` — per-agent wait + fail): counts
- * exactly what renders an attention state on the grid, so the blinking
- * counter always agrees with the cards. An agent counts when it would raise
- * its card's banner — `failed` bucket (ungated, like `cardStateKey`), or a
- * TOP-LEVEL NON-BACKGROUND agent with a pending attention request /
- * outstanding question (the daemon's step-0 `needs_attention` gating,
- * intentd#825, mirrored per-agent; delegated (`parentAgentId`, §5.1 v2.9 —
- * the parentage signal main's #573 uses to skip toasts) and background
- * agents never count). Each raised workspace-level attention flag adds one
- * (it renders NEEDS ATTENTION with no raising agent), as does an attention
- * card state (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no per-agent
- * signal already covered (the daemon rollup is authoritative — e.g. a
- * question hold the FE never captured must still blink). Pending requests
- * clear only on user-origin deliveries (`attentionRequestCleared`, §5.5), so
- * a cleared request drops out live — no stale entries linger.
+ * Header ATTN counter (mock `stats.attn` — per-agent wait + fail). An agent
+ * counts when it is a TOP-LEVEL NON-BACKGROUND agent in the `failed` bucket
+ * or with a pending attention request / outstanding question (the daemon's
+ * step-0 `needs_attention` gating, intentd#825, mirrored per-agent for ALL
+ * signals — failed included, per the spec decision; delegated
+ * (`parentAgentId`, §5.1 v2.9 — the parentage signal main's #573 uses to
+ * skip toasts) and background agents never count, so a failed sub-agent is
+ * the coordinator's business, not a user call to action). Each raised
+ * workspace-level attention flag adds one (it renders NEEDS ATTENTION with
+ * no raising agent), as does an attention card state
+ * (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no per-agent signal
+ * already covered (the daemon rollup is authoritative — e.g. a question
+ * hold the FE never captured must still blink). Pending requests clear only
+ * on user-origin deliveries (`attentionRequestCleared`, §5.5), so a cleared
+ * request drops out live — no stale entries linger. The ATTENTION panel
+ * (`selectHudAttentionItems`) applies this exact per-agent rule, so the
+ * counter and the panel rows always agree.
  *
- * The ungated `failed` bucket is a DELIBERATE per-agent axis, not a leftover
- * of the removed card-state synthesis: the BE rollup deliberately ignores
- * child/background sessions, so a failed delegated agent leaves every card
- * `in_progress` while still being actionable. The counter and the ATTENTION
- * panel share this rule (they stay mutually consistent), and the card keeps
- * rendering the daemon value verbatim — the per-agent counter is a separate
- * axis over the agent roster, not a second opinion on the workspace status.
+ * The per-agent axis is a SEPARATE axis over the agent roster, not a second
+ * opinion on the workspace card state: a failed top-level agent counts even
+ * while the BE rollup leaves the card `in_progress` (the card keeps
+ * rendering the daemon value verbatim), so the counter and the cards can
+ * legitimately disagree.
  */
 export const selectHudAttnCount = store.createSelector((state): number => {
   const flags = state.hud.attentionByWorkspaceId;
@@ -1154,10 +1162,9 @@ export const selectHudAttnCount = store.createSelector((state): number => {
     let agentCounted = false;
     for (const agent of cardAgentsOf(workspace, state)) {
       if (
-        agent.bucket === 'failed' ||
-        (agent.topLevel &&
-          !agent.isBackground &&
-          (agent.attentionKind !== null || agent.hasQuestion))
+        agent.topLevel &&
+        !agent.isBackground &&
+        (agent.bucket === 'failed' || agent.attentionKind !== null || agent.hasQuestion)
       ) {
         count += 1;
         agentCounted = true;

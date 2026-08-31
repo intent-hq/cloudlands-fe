@@ -6,7 +6,6 @@
  * Re-exports domain types from the feature module for convenience.
  */
 
-import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type {
   TrackedChange,
   StageTransition,
@@ -23,17 +22,8 @@ export type { TrackedChange, CommitInfo };
 // ---------------------------------------------------------------------------
 
 export type PendingCommitAction = 'commit' | 'add-to-pr' | 'merge' | 'squash-merge' | null;
-export type BackgroundOperationType = 'commit' | 'add-to-pr' | 'create-pr';
-export type BackgroundOperationPhase = 'generating' | 'executing';
 
-interface BackgroundOperationState {
-  type: BackgroundOperationType;
-  startedAt: number;
-  phase: BackgroundOperationPhase;
-  label?: string;
-}
-
-export interface PendingPRContext {
+interface PendingPRContext {
   includeStagedFiles: boolean;
   includeCommitHashes: string[];
   targetBranch: string;
@@ -55,9 +45,6 @@ export interface AcceptChangesState {
   pendingPRContext: PendingPRContext | null;
   isAutofillAndCommitting: boolean;
   isAutofillAndCreatingPR: boolean;
-  backgroundOperation: BackgroundOperationState | null;
-  cachedGitStatus: WorkspaceGitStatus | null;
-  cachedGitStatusTimestamp: number | null;
   commitWhenReady: boolean;
   createPRWhenReady: boolean;
   mergeWhenReady: boolean;

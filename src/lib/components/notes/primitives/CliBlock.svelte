@@ -18,10 +18,8 @@
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
-  import {
-    openAgentTabRequested,
-    openTerminalTabRequested,
-  } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -164,7 +162,14 @@
     if (!tid) return;
     if (!workspaceId) return;
 
-    appStore.dispatch(openTerminalTabRequested(workspaceId, { terminalId: tid }));
+    appStore.dispatch(
+      openTab(workspaceId, {
+        type: 'terminal',
+        title: m.layout_tabTypes_terminal_title(),
+        terminalId: tid,
+        closable: true,
+      }),
+    );
   }
 </script>
 

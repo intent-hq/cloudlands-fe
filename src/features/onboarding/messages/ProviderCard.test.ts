@@ -166,6 +166,74 @@ describe('ProviderCard needsLogin derivation', () => {
   });
 });
 
+describe('ProviderCard login guidance', () => {
+  const loginHint = (root: HTMLElement) =>
+    root.querySelector('[data-testid="provider-card-login-hint"]');
+  const desktopNote = (root: HTMLElement) =>
+    root.querySelector('[data-testid="provider-card-claude-desktop-note"]');
+
+  const needsLoginProvider = (overrides: Partial<ProviderCardData> = {}): ProviderCardData => ({
+    ...readyProvider(),
+    authenticated: false,
+    authDetails: undefined,
+    loginCommandHint: 'claude auth login',
+    ...overrides,
+  });
+
+  it('shows the catalog login command with a copy control when login is needed', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const { container } = render(ProviderCard, {
+      props: { ...baseProps(), provider: needsLoginProvider() },
+    });
+
+    const hint = loginHint(container);
+    expect(hint).not.toBeNull();
+    expect(hint?.textContent).toContain('claude auth login');
+
+    await fireEvent.click(hint!.querySelector('button')!);
+    expect(writeText).toHaveBeenCalledWith('claude auth login');
+  });
+
+  it('falls back to no command hint when the catalog carries none', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: needsLoginProvider({ loginCommandHint: undefined }),
+      },
+    });
+    expect(loginHint(container)).toBeNull();
+  });
+
+  it('hides the login command when the provider does not need login', () => {
+    const { container } = render(ProviderCard, {
+      props: { ...baseProps(), provider: { ...readyProvider(), loginCommandHint: 'x login' } },
+    });
+    expect(loginHint(container)).toBeNull();
+  });
+
+  it('shows the desktop-app note for claude-code needing login, even without a hint', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: needsLoginProvider({ loginCommandHint: undefined }),
+      },
+    });
+    expect(desktopNote(container)).not.toBeNull();
+  });
+
+  it('does not show the desktop-app note for other providers needing login', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: needsLoginProvider({ id: 'codex', name: 'Codex' }),
+      },
+    });
+    expect(desktopNote(container)).toBeNull();
+  });
+});
+
 describe('ProviderCard click affordance', () => {
   const card = (root: HTMLElement) => root.querySelector('.group\\/card') as HTMLElement;
 

@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
+  import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
@@ -22,6 +23,8 @@
     onClose?: () => void;
     /** Element that opened the lightbox, to return focus on close */
     openerElement?: HTMLElement | null;
+    /** Show the image actions (download / copy / info) ellipsis menu. */
+    showActionsMenu?: boolean;
   }
 
   let {
@@ -30,6 +33,7 @@
     imageName = m.ui_imageLightbox_image_alt(),
     onClose,
     openerElement = null,
+    showActionsMenu = false,
   }: Props = $props();
 
   let closeButtonElement: HTMLButtonElement | null = $state(null);
@@ -136,6 +140,15 @@
       >
         <Fa icon={faXmark} size="lg" />
       </Button>
+
+      {#if showActionsMenu}
+        <ImageActionsMenu
+          {imageUrl}
+          {imageName}
+          triggerClass="absolute top-4 right-16 z-[1002] h-9 w-9 bg-white/0 hover:bg-white/20"
+          contentClass="z-[1003]"
+        />
+      {/if}
 
       <!-- Zoomable image viewport (keyed so zoom state resets on URL change) -->
       {#key imageUrl}

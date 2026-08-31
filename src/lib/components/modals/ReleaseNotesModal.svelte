@@ -74,7 +74,7 @@
       {#if loading}
         <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_loading_message()}</p>
       {:else if displayNotes}
-        <MarkdownViewer content={displayNotes} />
+        <MarkdownViewer content={displayNotes} forceExternalLinks />
       {:else}
         <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_unavailable_message()}</p>
       {/if}

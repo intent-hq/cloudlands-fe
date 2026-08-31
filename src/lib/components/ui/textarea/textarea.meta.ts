@@ -12,7 +12,6 @@ export const textareaMetadata = parseUiComponentMetadata({
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/chat/proposals/ProposalCard.svelte',
-    'src/lib/components/file-tracking/accept-changes/ChangeTimeline.svelte',
     'src/lib/components/modals/ReplaceAgentModal.svelte',
     'src/lib/components/settings/AgentRulesEditor.svelte',
     'src/lib/components/settings/AutoSaveTextarea.svelte',

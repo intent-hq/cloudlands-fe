@@ -3,6 +3,7 @@ import { all, call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-
 import { agentFactory } from '$features/agent/services/agent-factory';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
 import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
@@ -40,6 +41,7 @@ import {
   createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
+  delegateExistingTaskRequested,
   markAgentRecentlyCreated,
   runAgentForNoteRequested,
   setActiveAgentId,
@@ -302,6 +304,35 @@ function* runAgentForNote(
   }
 }
 
+function* delegateExistingTask(
+  action: ReturnType<typeof delegateExistingTaskRequested>,
+): SagaGenerator<void> {
+  const [wsId, noteId, , openAgent] = action.payload;
+  const workspace = yield* call(validateWorkspace, wsId);
+  if (!workspace) return;
+  try {
+    // The daemon owns delegation: `agent.delegate` resolves the specialist,
+    // model, and initial message from the task note, creates the child agent,
+    // and assigns it to the task — the FE only names the task.
+    const result = yield* call(
+      backendRequest<{ ok: boolean; agentId: string; name?: string }>,
+      'agent.delegate',
+      { workspaceId: wsId, taskNoteId: noteId },
+    );
+    if (!result?.ok || !result.agentId) {
+      logger.error('Failed to delegate existing task', { workspaceId: wsId, noteId });
+      yield* call(showCreationError, undefined);
+      return;
+    }
+    if (openAgent) {
+      yield* put(openAgentTabRequested(wsId, { agentId: result.agentId }));
+    }
+  } catch (error) {
+    logger.error('Failed to delegate existing task', { workspaceId: wsId, noteId, error });
+    yield* call(showCreationError, error);
+  }
+}
+
 function* createFromConfig(
   action: ReturnType<typeof createAgentFromConfigRequested>,
 ): SagaGenerator<void> {
@@ -373,6 +404,7 @@ export function* agentCreationSaga(): SagaGenerator<void> {
     takeEvery(createAgentRequested, createBasicAgent),
     takeEvery(createAgentWithSpecialistRequested, createSpecialistAgent),
     takeEvery(runAgentForNoteRequested, runAgentForNote),
+    takeEvery(delegateExistingTaskRequested, delegateExistingTask),
     takeEvery(createAgentFromConfigRequested, createFromConfig),
     takeEvery(agentSessionLaunchAgentRequested, launchAgent),
   ]);

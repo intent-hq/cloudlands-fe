@@ -118,11 +118,6 @@ export const removeOptimisticNote = createAction<[workspaceId: string, noteId: s
   'workspaceNotes/removeOptimisticNote',
 );
 
-/** Saga trigger: initialize notes for a workspace */
-export const initializeNotes = createAction<
-  [workspaceId: string, initialSelectedNoteId?: string | null]
->('workspaceNotes/initializeNotes');
-
 /** Saga trigger: update note content (from user input, will debounce) */
 export const updateNoteContent = createAction<
   [workspaceId: string, noteId: string, content: string, immediate?: boolean]

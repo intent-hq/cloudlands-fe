@@ -160,6 +160,10 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
     type: 'terminals/createTerminalRequested',
     payload: args,
   })),
+  removeTerminal: vi.fn((...args: any[]) => ({
+    type: 'terminals/removeTerminal',
+    payload: args,
+  })),
 }));
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: vi.fn((...args: any[]) => ({
@@ -219,6 +223,8 @@ import { createTerminalRequested } from '$store/renderer/slices/terminals/termin
 import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
 import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
 const reduxActions = [
@@ -260,6 +266,37 @@ describe('CommandPalette new actions', () => {
       await fireEvent.keyDown(input, { key: 'Enter' });
       expect(reduxDispatchMock).toHaveBeenCalledWith(action.actionCreator('ws-1'));
     }
+  });
+
+  it('opens an existing terminal search result as a panel-layout terminal tab', async () => {
+    vi.mocked(terminalManager.loadTerminalMetadata).mockReturnValue([
+      { terminalId: 'term-1', title: 'My Terminal', createdAt: new Date().toISOString() },
+    ] as any);
+    const onClose = vi.fn();
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'My Terminal' } });
+
+    const item = await screen.findByRole('button', { name: /My Terminal/ });
+    reduxDispatchMock.mockClear();
+    await fireEvent.click(item);
+
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: openTab.type,
+        payload: expect.objectContaining({
+          wsId: 'ws-1',
+          tab: expect.objectContaining({
+            type: 'terminal',
+            terminalId: 'term-1',
+            closable: true,
+          }),
+        }),
+      }),
+    );
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('dispatches Redux actions for agent, terminal, note, and file from clicks', async () => {

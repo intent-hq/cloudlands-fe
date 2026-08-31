@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import {
   chatStateReducer,
@@ -38,6 +34,9 @@ import {
   pendingQuestionRecoveryRequested,
   pendingQuestionRecoverySettled,
   pendingQuestionRecoveryCleared,
+  pendingProposalRecoveryRequested,
+  pendingProposalRecoverySettled,
+  pendingProposalRecoveryPruned,
   chatSwitchBackRevealTimedOut,
   chatUtilityFooterReady,
   messageBlockHydrationRequested,
@@ -63,14 +62,12 @@ import {
   selectHydratedBlock,
   selectTranscriptHydratedOnce,
   selectPendingQuestionRecovery,
+  selectPendingProposalRecovery,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
-import type {
-  AgentIdleEvent,
-  AgentStatusChangedEvent,
-} from '$features/events/types';
+import type { AgentIdleEvent, AgentStatusChangedEvent } from '$features/events/types';
 
 const AGENT = 'agent-1';
 
@@ -93,11 +90,7 @@ const streamFailed = (agentId: string) =>
     eventType: 'error',
   });
 
-const streamActivityReceived = (
-  agentId: string,
-  isTextChunk: boolean,
-  timestamp = Date.now(),
-) =>
+const streamActivityReceived = (agentId: string, isTextChunk: boolean, timestamp = Date.now()) =>
   agentStreamUpdateReceived({
     agentId,
     workspaceId: 'ws-1',
@@ -125,8 +118,6 @@ function stateWithModelUnavailable() {
     },
   };
 }
-
-
 
 describe('chatStateReducer', () => {
   it('returns initial state', () => {
@@ -169,7 +160,9 @@ describe('chatStateReducer', () => {
     expect(agent.error).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
     expect(agent.lastMessageTime).toBe(action.payload.timestamp);
-    expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(action.payload.timestamp);
+    expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(
+      action.payload.timestamp,
+    );
   });
 
   it('chatSendStarted clears stale model-unavailable recovery state', () => {
@@ -193,7 +186,10 @@ describe('chatStateReducer', () => {
   });
 
   it('chatSendFailed clears stale model-unavailable state so send errors are visible', () => {
-    const state = chatStateReducer(stateWithModelUnavailable(), chatSendFailed(AGENT, 'network error'));
+    const state = chatStateReducer(
+      stateWithModelUnavailable(),
+      chatSendFailed(AGENT, 'network error'),
+    );
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBe('network error');
     expect(agent.modelUnavailable).toBeNull();
@@ -338,7 +334,10 @@ describe('chatStateReducer', () => {
     });
 
     it('drain-start promotion clears stale modelUnavailable state', () => {
-      let s = chatStateReducer(stateWithModelUnavailable(), chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'retry' }, 'qm-1'));
+      let s = chatStateReducer(
+        stateWithModelUnavailable(),
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'retry' }, 'qm-1'),
+      );
       expect(s.byAgentId[AGENT].modelUnavailable).not.toBeNull();
       s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1'));
       expect(s.byAgentId[AGENT].modelUnavailable).toBeNull();
@@ -347,7 +346,10 @@ describe('chatStateReducer', () => {
     it('the text-sync path does NOT clear the error (no drain happened)', () => {
       let s = chatStateReducer(initialState, chatSendFailed(AGENT, 'boom'));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'before' }, 'qm-1'));
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-1'), content: 'after' }]));
+      s = chatStateReducer(
+        s,
+        replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-1'), content: 'after' }]),
+      );
       expect(s.byAgentId[AGENT].error).toBe('boom');
       expect(s.byAgentId[AGENT].queuedRetryRecords['qm-1'].record.text).toBe('after');
     });
@@ -379,7 +381,15 @@ describe('chatStateReducer', () => {
       // Simulate the direct-send path: the caller overwrote the slot with the
       // attempt payload, then the daemon auto-queued the send.
       let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempt));
-      s = chatStateReducer(s, chatQueuedRetryRecordParked(AGENT, 'qm-1', { ...attempt, options: { noteIds: ['n-1'] } }, 'qm-1'));
+      s = chatStateReducer(
+        s,
+        chatQueuedRetryRecordParked(
+          AGENT,
+          'qm-1',
+          { ...attempt, options: { noteIds: ['n-1'] } },
+          'qm-1',
+        ),
+      );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-1': { seq: 1, record: attempt, turnId: 'qm-1' },
@@ -387,8 +397,14 @@ describe('chatStateReducer', () => {
     });
 
     it('chatQueuedRetryRecordParked preserves a DIFFERENT lastAttemptedMessage (concurrent attempt)', () => {
-      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'other turn' }));
-      s = chatStateReducer(s, chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'auto-queued' }, 'qm-1'));
+      let s = chatStateReducer(
+        initialState,
+        chatLastAttemptedMessageSet(AGENT, { text: 'other turn' }),
+      );
+      s = chatStateReducer(
+        s,
+        chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'auto-queued' }, 'qm-1'),
+      );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'other turn' });
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-1': { seq: 1, record: { text: 'auto-queued' }, turnId: 'qm-1' },
@@ -396,7 +412,10 @@ describe('chatStateReducer', () => {
     });
 
     it('a record parked via chatQueuedRetryRecordParked promotes on drain start like a queue-on-send park', () => {
-      let s = chatStateReducer(initialState, chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'B' }, 'qm-1'));
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'B' }, 'qm-1'),
+      );
       s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1'));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
@@ -405,12 +424,21 @@ describe('chatStateReducer', () => {
     it('chatQueuedRetryRecordUpdated rewrites the parked text, preserving seq, turnId, and options (#1011)', () => {
       let s = chatStateReducer(
         initialState,
-        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'before', options: { noteIds: ['n-1'] } }, 'qm-1'),
+        chatQueuedRetryRecordSet(
+          AGENT,
+          'qm-1',
+          { text: 'before', options: { noteIds: ['n-1'] } },
+          'qm-1',
+        ),
       );
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }, 'qm-2'));
       s = chatStateReducer(s, chatQueuedRetryRecordUpdated(AGENT, 'qm-1', 'after'));
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
-        'qm-1': { seq: 1, record: { text: 'after', options: { noteIds: ['n-1'] } }, turnId: 'qm-1' },
+        'qm-1': {
+          seq: 1,
+          record: { text: 'after', options: { noteIds: ['n-1'] } },
+          turnId: 'qm-1',
+        },
         'qm-2': { seq: 2, record: { text: 'C' }, turnId: 'qm-2' },
       });
       // Post-drain-start "Try again" now resends the edited text.
@@ -427,11 +455,26 @@ describe('chatStateReducer', () => {
       // the drain-start event both arrive before ChatPanel can dispatch
       // chatQueuedRetryRecordUpdated. The content sync must therefore pick up
       // the daemon-authoritative content for still-present ids.
-      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'before', options: { noteIds: ['n-1'] } }, 'qm-1'));
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(
+          AGENT,
+          'qm-1',
+          { text: 'before', options: { noteIds: ['n-1'] } },
+          'qm-1',
+        ),
+      );
       // Post-edit snapshot: qm-1 still queued, content edited daemon-side.
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-1'), content: 'after' }]));
+      s = chatStateReducer(
+        s,
+        replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-1'), content: 'after' }]),
+      );
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
-        'qm-1': { seq: 1, record: { text: 'after', options: { noteIds: ['n-1'] } }, turnId: 'qm-1' },
+        'qm-1': {
+          seq: 1,
+          record: { text: 'after', options: { noteIds: ['n-1'] } },
+          turnId: 'qm-1',
+        },
       });
       // Drain start: the promotion carries the edited text.
       s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1'));
@@ -442,23 +485,38 @@ describe('chatStateReducer', () => {
     });
 
     it('a snapshot with unchanged content leaves parked records untouched (state identity preserved)', () => {
-      const s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'content of qm-1' }, 'qm-1'));
+      const s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'content of qm-1' }, 'qm-1'),
+      );
       const s2 = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
       expect(s2).toBe(s);
     });
 
     it('chatQueuedRetryRecordUpdated is a no-op when nothing is parked under the id', () => {
-      const s1 = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'qm-1'));
+      const s1 = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'qm-1'),
+      );
       const s2 = chatStateReducer(s1, chatQueuedRetryRecordUpdated(AGENT, 'qm-other', 'edited'));
       expect(s2).toBe(s1);
       // Nor does it materialize state for an unopened chat.
-      const s3 = chatStateReducer(initialState, chatQueuedRetryRecordUpdated(AGENT, 'qm-1', 'edited'));
+      const s3 = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordUpdated(AGENT, 'qm-1', 'edited'),
+      );
       expect(s3.byAgentId[AGENT]).toBeUndefined();
     });
 
     it('chatQueuedRetryRecordsCleared drops ALL parked records without promotion (#999 discard)', () => {
-      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'edited' }));
-      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'discarded' }, 'qm-1'));
+      let s = chatStateReducer(
+        initialState,
+        chatLastAttemptedMessageSet(AGENT, { text: 'edited' }),
+      );
+      s = chatStateReducer(
+        s,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'discarded' }, 'qm-1'),
+      );
       s = chatStateReducer(s, chatQueuedRetryRecordsCleared(AGENT));
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'edited' });
@@ -483,13 +541,20 @@ describe('chatStateReducer', () => {
       // the oldest (lowest-seq) parked records first.
       let s = chatStateReducer(initialState, chatSendStarted(AGENT));
       for (let i = 1; i <= 25; i += 1) {
-        s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, `qm-${i}`, { text: `message ${i}` }, `qm-${i}`));
+        s = chatStateReducer(
+          s,
+          chatQueuedRetryRecordSet(AGENT, `qm-${i}`, { text: `message ${i}` }, `qm-${i}`),
+        );
       }
       const records = s.byAgentId[AGENT].queuedRetryRecords;
       expect(Object.keys(records)).toHaveLength(20);
       expect(records['qm-5']).toBeUndefined();
       expect(records['qm-6']).toEqual({ seq: 6, record: { text: 'message 6' }, turnId: 'qm-6' });
-      expect(records['qm-25']).toEqual({ seq: 25, record: { text: 'message 25' }, turnId: 'qm-25' });
+      expect(records['qm-25']).toEqual({
+        seq: 25,
+        record: { text: 'message 25' },
+        turnId: 'qm-25',
+      });
     });
 
     it('agent:idle success-clear does not disturb parked records', () => {
@@ -608,7 +673,10 @@ describe('chatStateReducer', () => {
       const s2 = chatStateReducer(s1, chatQueueProcessingReceived(AGENT, 'turn-x'));
       expect(s2).toBe(s1);
       // Never materializes state for an unopened chat either.
-      const s3 = chatStateReducer(initialState, chatQueueProcessingReceived('agent-unopened', 'turn-x'));
+      const s3 = chatStateReducer(
+        initialState,
+        chatQueueProcessingReceived('agent-unopened', 'turn-x'),
+      );
       expect(s3.byAgentId['agent-unopened']).toBeUndefined();
     });
 
@@ -665,9 +733,12 @@ describe('chatStateReducer', () => {
         initialState,
         chatQueuedRetryRecordSet(AGENT, 'qm-orig', { text: 'original' }, 'turn-1'),
       );
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, [
-        { ...queuedEntry('qm-requeued', 'turn-1'), content: 'original' },
-      ]));
+      s = chatStateReducer(
+        s,
+        replaceAgentQueue(AGENT, [
+          { ...queuedEntry('qm-requeued', 'turn-1'), content: 'original' },
+        ]),
+      );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-orig': { seq: 1, record: { text: 'original' }, turnId: 'turn-1' },
@@ -679,9 +750,12 @@ describe('chatStateReducer', () => {
         initialState,
         chatQueuedRetryRecordSet(AGENT, 'qm-orig', { text: 'original' }, 'turn-1'),
       );
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, [
-        { ...queuedEntry('qm-requeued', 'turn-1'), content: 'edited elsewhere' },
-      ]));
+      s = chatStateReducer(
+        s,
+        replaceAgentQueue(AGENT, [
+          { ...queuedEntry('qm-requeued', 'turn-1'), content: 'edited elsewhere' },
+        ]),
+      );
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-orig': { seq: 1, record: { text: 'edited elsewhere' }, turnId: 'turn-1' },
       });
@@ -702,7 +776,10 @@ describe('chatStateReducer', () => {
     });
 
     it('chatSendFailed with an unknown or absent turnId leaves records and the slot untouched', () => {
-      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'active' }));
+      let s = chatStateReducer(
+        initialState,
+        chatLastAttemptedMessageSet(AGENT, { text: 'active' }),
+      );
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
       const withUnknown = chatStateReducer(s, chatSendFailed(AGENT, 'boom', 'turn-unknown'));
       expect(withUnknown.byAgentId[AGENT].error).toBe('boom');
@@ -716,7 +793,6 @@ describe('chatStateReducer', () => {
         'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
       });
     });
-
   });
 
   it('streamEnded (no interrupt) preserves lastAttemptedMessage until the disposition is known (#984)', () => {
@@ -870,7 +946,12 @@ describe('chatStateReducer', () => {
     let s = chatStateReducer(initialState, chatSendStarted(AGENT));
     s = chatStateReducer(s, streamActivityReceived(AGENT, true));
     expect(s.byAgentId[AGENT].receivedFirstChunk).toBe(true);
-    const event = { phase: 'tool_use', message: 'running', level: 'info' as const, timestamp: 2000 };
+    const event = {
+      phase: 'tool_use',
+      message: 'running',
+      level: 'info' as const,
+      timestamp: 2000,
+    };
     s = chatStateReducer(s, streamStatusReceived(AGENT, event, true));
     expect(s.byAgentId[AGENT].receivedFirstChunk).toBe(false);
   });
@@ -1041,7 +1122,10 @@ describe('chatStateReducer', () => {
       // timestamp postdates it, so the reconcile finalize is preserved.
       let s = chatStateReducer(
         initialState,
-        chatInitialized(AGENT, { isStreaming: false, lastAttemptedMessage: { text: 'pre-reload' } }),
+        chatInitialized(AGENT, {
+          isStreaming: false,
+          lastAttemptedMessage: { text: 'pre-reload' },
+        }),
       );
       s = chatStateReducer(s, agentIdleEvent(AGENT));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
@@ -1104,7 +1188,6 @@ describe('chatStateReducer', () => {
       expect(next).toBe(state);
     });
   });
-
 });
 
 describe('chatState selectors', () => {
@@ -1119,7 +1202,9 @@ describe('chatState selectors', () => {
   });
 
   it('selectChatAgentState returns empty state for unknown', () => {
-    expect(selectChatAgentState.select(asStoreState(initialState), 'x')).toEqual(emptyChatAgentState);
+    expect(selectChatAgentState.select(asStoreState(initialState), 'x')).toEqual(
+      emptyChatAgentState,
+    );
   });
 
   it('selectChatLastMessageTime returns 0 by default', () => {
@@ -1373,10 +1458,7 @@ describe('chatState selectors', () => {
         pendingQuestionRecoveryRequested(AGENT, 'question-old'),
       );
       expect(duplicate).toBe(state);
-      state = chatStateReducer(
-        state,
-        pendingQuestionRecoveryRequested(AGENT, 'question-new'),
-      );
+      state = chatStateReducer(state, pendingQuestionRecoveryRequested(AGENT, 'question-new'));
       state = chatStateReducer(
         state,
         pendingQuestionRecoverySettled(AGENT, 'question-old', 'found'),
@@ -1427,6 +1509,60 @@ describe('chatState selectors', () => {
       });
       state = chatStateReducer(state, pendingQuestionRecoveryCleared(AGENT));
       expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toBeUndefined();
+    });
+  });
+
+  describe('pending proposal recovery state', () => {
+    const proposal = {
+      kind: 'workspace-create',
+      applyToolCallId: 'toolu-1',
+      payload: { params: {} },
+      preview: { title: 'Create workspace' },
+    };
+
+    it('tracks independent per-messageId lookups and dedupes re-requests', () => {
+      let state = chatStateReducer(initialState, pendingProposalRecoveryRequested(AGENT, 'm1'));
+      const duplicate = chatStateReducer(state, pendingProposalRecoveryRequested(AGENT, 'm1'));
+      expect(duplicate).toBe(state);
+      state = chatStateReducer(state, pendingProposalRecoveryRequested(AGENT, 'm2'));
+      expect(selectPendingProposalRecovery.select(asStoreState(state), AGENT)).toEqual({
+        m1: { status: 'loading' },
+        m2: { status: 'loading' },
+      });
+    });
+
+    it('retains a found projection, drops cancelled entries, and ignores unknown settles', () => {
+      let state = chatStateReducer(initialState, pendingProposalRecoveryRequested(AGENT, 'm1'));
+      state = chatStateReducer(state, pendingProposalRecoveryRequested(AGENT, 'm2'));
+      state = chatStateReducer(
+        state,
+        pendingProposalRecoverySettled(AGENT, 'm1', 'found', [
+          { proposalId: 'toolu-1', proposal: proposal as never },
+        ]),
+      );
+      state = chatStateReducer(state, pendingProposalRecoverySettled(AGENT, 'm2', 'cancelled'));
+      const unknown = chatStateReducer(
+        state,
+        pendingProposalRecoverySettled(AGENT, 'm-unknown', 'found', []),
+      );
+      expect(unknown).toBe(state);
+      expect(selectPendingProposalRecovery.select(asStoreState(state), AGENT)).toEqual({
+        m1: { status: 'found', proposals: [{ proposalId: 'toolu-1', proposal }] },
+      });
+    });
+
+    it('latches not-found and prunes entries the metadata refs no longer name', () => {
+      let state = chatStateReducer(initialState, pendingProposalRecoveryRequested(AGENT, 'm1'));
+      state = chatStateReducer(state, pendingProposalRecoveryRequested(AGENT, 'm2'));
+      state = chatStateReducer(state, pendingProposalRecoverySettled(AGENT, 'm1', 'not-found'));
+      state = chatStateReducer(state, pendingProposalRecoveryPruned(AGENT, ['m2']));
+      expect(selectPendingProposalRecovery.select(asStoreState(state), AGENT)).toEqual({
+        m2: { status: 'loading' },
+      });
+      const noop = chatStateReducer(state, pendingProposalRecoveryPruned(AGENT, ['m2']));
+      expect(noop).toBe(state);
+      state = chatStateReducer(state, pendingProposalRecoveryPruned(AGENT, []));
+      expect(selectPendingProposalRecovery.select(asStoreState(state), AGENT)).toBeUndefined();
     });
   });
 
@@ -1674,6 +1810,4 @@ describe('chatState selectors', () => {
       expect(cached['msg-y|msg-y:last']).toMatchObject({ status: 'loading' });
     });
   });
-
 });
-

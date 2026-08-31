@@ -30,13 +30,29 @@ export default defineConfig({
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
 
+  expect: {
+    /* Screenshot baselines are generated on the GH-hosted runner image, but
+       the CI shards can also route to the self-hosted tinybox runners, which
+       rasterize the odd pixel differently (a 1-pixel diff at 200% zoom
+       failed a shard deterministically). Tolerate sub-percent rasterization
+       drift so baselines stay portable across runner environments — do NOT
+       regenerate baselines on tinybox instead, that just flips the failure
+       onto the GH-hosted burst path. Ratio-based rather than maxDiffPixels:
+       config- and assertion-level options merge per key and ALL set bounds
+       must hold, so a pixel-count default here would tighten (not loosen)
+       assertions that only set maxDiffPixelRatio. */
+    toHaveScreenshot: { maxDiffPixelRatio: 0.01 },
+  },
+
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
 
-    /* Port to use for Playwright component endpoint. */
-    ctPort: 3100,
+    /* Port to use for Playwright component endpoint. CT_PORT overrides the
+       default for CI shards on the shared self-hosted host, where a fixed
+       port would collide across co-tenant runner slots. */
+    ctPort: process.env.CT_PORT ? Number(process.env.CT_PORT) : 3100,
 
     /* Vite configuration for component testing */
     ctViteConfig: {

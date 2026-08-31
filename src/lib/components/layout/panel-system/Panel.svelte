@@ -49,6 +49,7 @@
     showFocusBorder?: boolean;
     workspaceId: string;
     layoutId: string;
+    active?: boolean;
     availableCanvasWidth?: number;
     isRightmostPanel?: boolean;
     canCreateColumn?: boolean;
@@ -96,6 +97,7 @@
     showFocusBorder = false,
     workspaceId,
     layoutId,
+    active = true,
     availableCanvasWidth,
     isRightmostPanel = false,
     canCreateColumn = true,
@@ -220,23 +222,30 @@
 
   // Update cache when active tab or tab membership changes.
   $effect(() => {
-    applyTabCacheUpdate(panel.tabs, panel.activeTabId);
+    if (active) applyTabCacheUpdate(panel.tabs, panel.activeTabId);
   });
 
-  // Clear focus before a content-triggered tab switch hides its cached wrapper.
+  // Clear focus before a tab switch or panel deactivation flips `inert` on a
+  // cached wrapper. Flipping `inert` while a descendant holds focus makes the
+  // browser blur it synchronously inside the template effect, where widgets
+  // that write $state on blur (e.g. TipTap) throw state_unsafe_mutation.
   // Header controls are outside these wrappers and keep their focus normally.
   $effect.pre(() => {
     const activeTabId = panel.activeTabId;
+    const panelActive = active;
     if (typeof document === 'undefined' || !panelRef) return;
     const focusedElement = document.activeElement;
     if (!(focusedElement instanceof HTMLElement) || !panelRef.contains(focusedElement)) return;
     const focusedWrapper = focusedElement.closest<HTMLElement>('.tab-content-wrapper');
-    if (focusedWrapper && focusedWrapper.dataset.tabId !== activeTabId) focusedElement.blur();
+    if (focusedWrapper && (!panelActive || focusedWrapper.dataset.tabId !== activeTabId)) {
+      focusedElement.blur();
+    }
   });
 
   // Enforce the TTL even when the active tab does not change again. Without
   // this timer, inactive browser/editor/diff tabs can stay mounted forever.
   $effect(() => {
+    if (!active) return;
     const delay = getNextPanelTabCacheExpiryDelay(
       cachedTabIds,
       panel.activeTabId,
@@ -519,7 +528,7 @@
       {#if panel.tabs.length > 0 && activeTab}
         <!-- Render all cached tabs, showing only the active one -->
         {#each tabsToRender as tab (tab.id)}
-          {@const isActive = tab.id === panel.activeTabId}
+          {@const isActive = active && tab.id === panel.activeTabId}
           <div
             class="tab-content-wrapper h-full w-full"
             class:hidden={!isActive}

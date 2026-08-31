@@ -841,6 +841,18 @@
     return false;
   }
 
+  export function runShortcut(action: 'undo' | 'redo' | 'copy' | 'select-all'): boolean {
+    if (!editor || !editor.hasTextFocus()) return false;
+    const command = {
+      undo: 'undo',
+      redo: 'redo',
+      copy: 'editor.action.clipboardCopyAction',
+      'select-all': 'editor.action.selectAll',
+    }[action];
+    editor.trigger('shortcut-preferences', command, null);
+    return true;
+  }
+
   onDestroy(() => {
     scrollCleanup?.();
     disposeEditorInstance();

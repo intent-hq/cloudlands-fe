@@ -57,6 +57,8 @@ vi.mock('../../../../main/quit-confirmation', () => ({
 
 vi.mock('../../../../main/window', () => ({
   saveAllWindowSessions: vi.fn(async () => {}),
+  markWindowSessionTeardown: vi.fn(),
+  unmarkWindowSessionTeardown: vi.fn(),
 }));
 
 let testUserDataPath: string;
@@ -65,7 +67,8 @@ let testUserDataPath: string;
 async function setupDownloadedService() {
   const svc = await import('../auto-update.service');
   const { confirmQuitWithRunningAgents } = await import('../../../../main/quit-confirmation');
-  const { saveAllWindowSessions } = await import('../../../../main/window');
+  const { saveAllWindowSessions, markWindowSessionTeardown, unmarkWindowSessionTeardown } =
+    await import('../../../../main/window');
   const { default: electronUpdater } = await import('electron-updater');
 
   const mockWindow = {
@@ -85,6 +88,8 @@ async function setupDownloadedService() {
     svc,
     confirmMock: confirmQuitWithRunningAgents as Mock,
     saveMock: saveAllWindowSessions as Mock,
+    teardownMock: markWindowSessionTeardown as Mock,
+    unmarkTeardownMock: unmarkWindowSessionTeardown as Mock,
     quitAndInstallMock: electronUpdater.autoUpdater.quitAndInstall as Mock,
   };
 }
@@ -106,13 +111,15 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
   });
 
   it('cancel is a clean no-op: no session save, no install flag, no quitAndInstall, state stays downloaded', async () => {
-    const { svc, confirmMock, saveMock, quitAndInstallMock } = await setupDownloadedService();
+    const { svc, confirmMock, saveMock, teardownMock, quitAndInstallMock } =
+      await setupDownloadedService();
     confirmMock.mockResolvedValue(false);
 
     await svc.autoUpdateService.installUpdate();
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(saveMock).not.toHaveBeenCalled();
+    expect(teardownMock).not.toHaveBeenCalled();
     expect(quitAndInstallMock).not.toHaveBeenCalled();
     expect(svc.isInstallingUpdate).toBe(false);
     expect(svc.autoUpdateService.getState().status).toBe('downloaded');
@@ -124,7 +131,8 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
   });
 
   it('confirm proceeds: confirmation runs before saving all backend windows and installing', async () => {
-    const { svc, confirmMock, saveMock, quitAndInstallMock } = await setupDownloadedService();
+    const { svc, confirmMock, saveMock, teardownMock, unmarkTeardownMock, quitAndInstallMock } =
+      await setupDownloadedService();
     confirmMock.mockResolvedValue(true);
 
     await svc.autoUpdateService.installUpdate();
@@ -134,8 +142,40 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
     expect(confirmMock.mock.invocationCallOrder[0]).toBeLessThan(
       saveMock.mock.invocationCallOrder[0],
     );
+    // Teardown must be marked after the session save (so the saved buckets are
+    // final) and before quitAndInstall(), which closes windows before
+    // before-quit fires on macOS.
+    expect(teardownMock).toHaveBeenCalledTimes(1);
+    expect(saveMock.mock.invocationCallOrder[0]).toBeLessThan(
+      teardownMock.mock.invocationCallOrder[0],
+    );
+    expect(teardownMock.mock.invocationCallOrder[0]).toBeLessThan(
+      quitAndInstallMock.mock.invocationCallOrder[0],
+    );
     expect(svc.isInstallingUpdate).toBe(true);
     expect(quitAndInstallMock).toHaveBeenCalledWith(false, true);
+    expect(unmarkTeardownMock).not.toHaveBeenCalled();
+  });
+
+  it('quitAndInstall failure unmarks teardown and clears the install flag before rethrowing', async () => {
+    const { svc, confirmMock, teardownMock, unmarkTeardownMock, quitAndInstallMock } =
+      await setupDownloadedService();
+    confirmMock.mockResolvedValue(true);
+    quitAndInstallMock.mockImplementationOnce(() => {
+      throw new Error('native updater failed');
+    });
+
+    await expect(svc.autoUpdateService.installUpdate()).rejects.toThrow('native updater failed');
+
+    // The process keeps running: the teardown mark is reverted (mark → unmark)
+    // so a later deliberate last-window close still tombstones/prunes, and the
+    // install flag is cleared so a later quit prompts again.
+    expect(teardownMock).toHaveBeenCalledTimes(1);
+    expect(unmarkTeardownMock).toHaveBeenCalledTimes(1);
+    expect(teardownMock.mock.invocationCallOrder[0]).toBeLessThan(
+      unmarkTeardownMock.mock.invocationCallOrder[0],
+    );
+    expect(svc.isInstallingUpdate).toBe(false);
   });
 
   it('re-entrant install while the prompt is pending is ignored (no stacked dialogs)', async () => {

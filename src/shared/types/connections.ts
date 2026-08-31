@@ -60,9 +60,9 @@ export const CONNECTION_ACCENTS = [
 
 export type ConnectionAccentName = (typeof CONNECTION_ACCENTS)[number];
 
-/** Accents offered for new selections; legacy indigo values remain valid above. */
+/** Accents offered for new selections; legacy indigo, rose, and orange values remain valid above. */
 export const SELECTABLE_CONNECTION_ACCENTS: readonly ConnectionAccentName[] =
-  CONNECTION_ACCENTS.filter((accent) => accent !== 'indigo');
+  CONNECTION_ACCENTS.filter((accent) => !['indigo', 'rose', 'orange'].includes(accent));
 
 /** A named palette accent, or an explicit request for no accent. */
 export type ConnectionAccent = ConnectionAccentName | null;
@@ -125,10 +125,20 @@ export interface ConnectionRecord {
    * `client.hello` handshake, PROTOCOL §5.17), captured on connect and
    * refreshed on every reconnect so the UI can compare it against the app's
    * pinned intentd version. `null`/absent until captured (or for daemons that
-   * predate the field). Never set for the local entry — the existing
-   * `DaemonVersionInfo` path owns the local daemon's version.
+   * predate the field). On the synthesized local entry it is populated only
+   * in `external` connection mode from the `DaemonVersionInfo` path (absent
+   * for the spawned sidecar).
    */
   daemonVersion?: string | null;
+  /**
+   * Whether the daemon reports self-update support (`updateSupported` from
+   * `system.status`), captured after connect and refreshed on every
+   * reconnect. `null`/absent = unknown (capture pending, or a daemon too old
+   * to report the field) — the UI treats anything but `true` as "do not offer
+   * the Update action". On the synthesized local entry it is populated only
+   * for an adopted external daemon over UDS (absent for the spawned sidecar).
+   */
+  updateSupported?: boolean | null;
   /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record

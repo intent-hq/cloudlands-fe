@@ -339,6 +339,10 @@ export interface Workspace {
   prStatus?: PullRequestStatus;
   pullRequests?: PullRequestInfo[];
   activePullRequest?: PullRequestInfo | null;
+  /** Issue/PR context links persisted at create (PROTOCOL §5.1). Write-once —
+   *  supplied on `workspace.create`, never mutated after insert — and omitted
+   *  on the wire when there are none. */
+  contextLinks?: ContextLink[];
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
@@ -1072,6 +1076,16 @@ export interface AgentProgress {
   description: string;
 }
 
+// One entry of the daemon-persisted `pendingProposals` session-metadata set
+// (PROTOCOL §5.5): the proposal's stable identity (`applyToolCallId ??
+// preview.title` — same identity as the proposal resource uri and the FE
+// lifecycle slice key) plus the id of the assistant message carrying the
+// proposal resource block.
+export interface PendingProposalRef {
+  proposalId: string;
+  messageId: string;
+}
+
 // AgentMetadata definition
 // Note: Also defined in agent.types.ts but we define it here to avoid circular dependency
 export interface AgentMetadata {
@@ -1105,6 +1119,22 @@ export interface AgentMetadata {
   // sessions, the question-bearing assistant message id while pending, and an
   // empty string after the daemon has cleared the pending set.
   pendingQuestionsMessageId?: string;
+  // Ordered pending-proposal set (PROTOCOL §5.5): one entry per unresolved
+  // lifted proposal resource block, persisted by the daemon in session
+  // metadata and served on AgentLite (`agent.list` / `agent.get`), converged
+  // via `agent:updated`. Unlike the single-slot question marker this is a
+  // SET — proposals across turns stay pending together — and it does NOT
+  // clear while the agent runs later turns: entries leave only on
+  // `agent.resolveProposal`. Absent on legacy daemons (FE degrades to
+  // transcript-only cards).
+  pendingProposals?: PendingProposalRef[];
+  // Resolved-proposal outcomes (PROTOCOL §5.5, `agent.resolveProposal`):
+  // proposalId → "applied" | "dismissed", persisted by the daemon in session
+  // metadata (capped at 100 entries, oldest evicted), served on AgentLite and
+  // converged via `agent:updated`. Drives the resolved transcript-card
+  // rendering so state agrees across reloads and clients. Absent on legacy
+  // daemons and while nothing has been resolved.
+  proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via
@@ -1120,7 +1150,15 @@ export interface AgentMetadata {
   // per-agent unread suppression for delegated children.
   createdByAgentId?: string;
   // Allow additional properties for flexibility with proper typing
-  [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | any[]
+    | ContextReference[]
+    | Record<string, 'applied' | 'dismissed'>;
 }
 
 /**
@@ -1499,6 +1537,19 @@ export interface WorkspaceUIContext {
 // Request/Response Types
 // ============================================================================
 
+/**
+ * Issue/PR context link supplied at `workspace.create` and persisted on the
+ * workspace row (PROTOCOL §5.1 `contextLinks`). Write-once at create; at most
+ * 20 entries per request.
+ */
+export interface ContextLink {
+  kind: 'issue' | 'pr';
+  url: string;
+  owner: string;
+  repo: string;
+  number: number;
+}
+
 export interface CreateWorkspaceRequest {
   idempotencyKey?: string;
   title?: string;
@@ -1515,6 +1566,7 @@ export interface CreateWorkspaceRequest {
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
+  contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
   initialAgent?: {
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on

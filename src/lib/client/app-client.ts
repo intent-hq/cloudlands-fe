@@ -720,6 +720,23 @@ export interface AgentsClient {
     messageId: string;
   }): Promise<MutationResult>;
   /**
+   * Resolve one pending proposal (`agent.resolveProposal`, §5.5). The daemon
+   * removes `proposalId` from the session-metadata `pendingProposals` set,
+   * persists the resolution outcome, emits `agent:updated`, and delivers a
+   * system-origin notice to the model for BOTH outcomes (applied/dismissed;
+   * `detail` rides the applied notice, e.g. the created workspace id).
+   * Idempotent on re-resolution. The Apply itself stays FE-driven — this
+   * records the outcome and notifies. A nonexistent agent or a workspace
+   * mismatch rejects (folded into `{ success: false, error }`).
+   */
+  resolveProposal(params: {
+    agentId: string;
+    workspaceId: string;
+    proposalId: string;
+    outcome: 'applied' | 'dismissed';
+    detail?: string;
+  }): Promise<MutationResult>;
+  /**
    * Advance the per-conversation seen marker (`agent.markSeen`, §5.5). The
    * daemon persists `lastSeenMessageId` in session metadata — served on
    * `AgentLite` and converging via `agent:updated`. The wire ack carries
@@ -1092,6 +1109,23 @@ export interface SettingsClient {
    * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
    */
   getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]>;
+  /**
+   * Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable). Returns
+   * the names of servers whose entry carries `workspaceDisabled: true`; `null`
+   * when the read fails (callers keep their current state).
+   */
+  getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null>;
+  /**
+   * Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable): sets
+   * (`enabled: false`) or clears (`enabled: true`) the per-workspace disabled
+   * marker only — the global config is untouched. Success carries the daemon's
+   * resulting `workspaceDisabled`.
+   */
+  toggleWorkspaceMcpServer(
+    workspaceId: string,
+    serverId: string,
+    enabled: boolean,
+  ): Promise<MutationResult & { workspaceDisabled?: boolean }>;
   getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null>;
   setWorkspaceSettings(
     workspaceId: string,
@@ -1824,15 +1858,19 @@ export interface ProvidersClient {
 /** Wire `period` mode for `stats.getUsage`. */
 export type UsageStatsPeriod = '24h' | 'month' | 'year';
 
-/** The separate token counters for one `stats.getUsage` aggregation cell. */
+/**
+ * The separate token counters for one `stats.getUsage` aggregation cell —
+ * five disjoint buckets since intentd 0.8.20 (§5.23 / §5.36).
+ */
 export interface UsageTokenTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   /**
-   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
-   * so an absent field means no provider broke reasoning out of `outputTokens`.
+   * Reasoning ("thought") tokens — a counter disjoint from `outputTokens`,
+   * **omitted when zero or unreported** (§5.23), so an absent field means no
+   * provider reported reasoning tokens.
    */
   thoughtTokens?: number;
 }

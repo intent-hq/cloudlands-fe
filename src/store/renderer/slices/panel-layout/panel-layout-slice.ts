@@ -65,6 +65,7 @@ import {
 } from './panel-layout-tabless';
 import {
   canUseWideFirstChatLayout,
+  DEFAULT_BROWSER_PANEL_WIDTH,
   DEFAULT_CHAT_PANEL_WIDTH,
   DEFAULT_MEDIUM_PANEL_WIDTH,
   DEFAULT_PANEL_WIDTH,
@@ -80,10 +81,14 @@ import {
 } from './panel-layout-width-provenance';
 import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
 import { rebaseRequestedUrlForNavigation } from './browser-tab-rehydration';
+import type { ContextLink } from '../../../../shared/types';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
 // ============================================================================
+
+/** Cap on browser tabs seeded from workspace context links at bootstrap. */
+export const MAX_SEEDED_CONTEXT_LINK_TABS = 5;
 
 let panelIdCounter = 0;
 
@@ -182,6 +187,7 @@ export const bootstrapNewWorkspaceLayout = createAction(
     initialAgentTitle: string,
     coordinator = false,
     timestamp?: number,
+    contextLinks?: ContextLink[],
   ) => ({
     wsId,
     initialAgentId,
@@ -189,8 +195,31 @@ export const bootstrapNewWorkspaceLayout = createAction(
     coordinator,
     panelId: generatePanelId(),
     placeholderPanelId: generatePanelId(),
+    browserPanelId: generatePanelId(),
+    contextLinkTabs: (contextLinks ?? [])
+      .slice(0, MAX_SEEDED_CONTEXT_LINK_TABS)
+      .map((link) => ({ link, tabId: generateTabId() })),
     tabId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
+ * Seed the agent-left / browser-right split into an already-mounted workspace
+ * whose restore found no stored layout — a workspace created elsewhere (iOS,
+ * chief-of-staff proposal, sibling workspace) opening on this device for the
+ * first time. Mirrors the context-link seeding of bootstrapNewWorkspaceLayout
+ * without the new-workspace lifecycle.
+ */
+export const seedContextLinkEmptyLayout = createAction(
+  'panelLayout/seedContextLinkEmptyLayout',
+  (wsId: string, contextLinks: ContextLink[]) => ({
+    wsId,
+    agentPanelId: generatePanelId(),
+    browserPanelId: generatePanelId(),
+    contextLinkTabs: contextLinks
+      .slice(0, MAX_SEEDED_CONTEXT_LINK_TABS)
+      .map((link) => ({ link, tabId: generateTabId() })),
   }),
 );
 
@@ -1792,6 +1821,51 @@ function selfDispatch(
   return _reducerRef(state, action);
 }
 
+/**
+ * Build the seeded agent-left / browser-right split for a workspace created
+ * with context links (issues/PRs). Returns null when there are no links, so
+ * plain creates keep the existing single-panel bootstrap byte-for-byte.
+ */
+function buildContextLinkBrowserSeed(
+  wsId: string,
+  agentPanelId: string,
+  browserPanelId: string,
+  contextLinkTabs: { link: ContextLink; tabId: string }[],
+): { root: PanelLayoutNode; panels: Record<string, PanelState> } | null {
+  if (contextLinkTabs.length === 0) return null;
+  const browserTabs: PanelTab[] = contextLinkTabs.map(({ link, tabId }) => ({
+    id: tabId,
+    type: 'browser',
+    title: `${link.owner}/${link.repo}#${link.number}`, // i18n-ignore (identifier: owner/repo#number; replaced by page title on load)
+    browserUrl: link.url,
+    workspaceId: wsId,
+    closable: true,
+  }));
+  const totalWidth = DEFAULT_CHAT_PANEL_WIDTH + DEFAULT_BROWSER_PANEL_WIDTH;
+  return {
+    root: {
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'panel', panelId: agentPanelId },
+        { type: 'panel', panelId: browserPanelId },
+      ],
+      sizes: [
+        (DEFAULT_CHAT_PANEL_WIDTH / totalWidth) * 100,
+        (DEFAULT_BROWSER_PANEL_WIDTH / totalWidth) * 100,
+      ],
+    },
+    panels: {
+      [agentPanelId]: { id: agentPanelId, tabs: [], activeTabId: null, pristine: true },
+      [browserPanelId]: {
+        id: browserPanelId,
+        tabs: browserTabs,
+        activeTabId: browserTabs[0]?.id ?? null,
+      },
+    },
+  };
+}
+
 function openNewWorkspaceInitialAgent(
   state: PanelLayoutSliceState,
   wsId: string,
@@ -1838,6 +1912,12 @@ function applyCanonicalDefaultPairGeometry(
     workspace.root.children[1]?.type !== 'panel' ||
     workspace.root.children[1].panelId !== specPanelId
   ) {
+    return workspace;
+  }
+  // A context-link-seeded panel still carrying browser tabs keeps its wider
+  // browser tier — narrowing to the canonical chat+medium pair would degrade
+  // those tabs once the user switches back from the revealed Spec.
+  if (workspace.panels[specPanelId]?.tabs.some((tab) => tab.type === 'browser')) {
     return workspace;
   }
   const panelWidth = DEFAULT_MEDIUM_PANEL_WIDTH + DEFAULT_CHAT_PANEL_WIDTH;
@@ -1890,21 +1970,38 @@ panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
     initialAgentTitle,
     coordinator,
     placeholderPanelId,
+    browserPanelId,
+    contextLinkTabs,
     tabId,
     timestamp,
   } = payload;
+  const agentPanel: PanelState = {
+    id: placeholderPanelId,
+    tabs: [],
+    activeTabId: null,
+    pristine: true,
+  };
+  // Context links seed a two-column split: agent left, one browser panel
+  // right with a tab per link (issues/PRs stack as tabs, never sub-splits).
+  const contextLinkSeed = buildContextLinkBrowserSeed(
+    wsId,
+    placeholderPanelId,
+    browserPanelId,
+    contextLinkTabs ?? [],
+  );
   const bootstrapped = setWorkspaceState(state, wsId, {
     ...emptyWorkspaceState,
-    root: { type: 'panel', panelId: placeholderPanelId },
-    panels: {
-      [placeholderPanelId]: {
-        id: placeholderPanelId,
-        tabs: [],
-        activeTabId: null,
-        pristine: true,
-      },
-    },
+    root: contextLinkSeed?.root ?? { type: 'panel', panelId: placeholderPanelId },
+    panels: contextLinkSeed?.panels ?? { [placeholderPanelId]: agentPanel },
     focusedPanelId: placeholderPanelId,
+    ...(contextLinkSeed
+      ? {
+          columnCount: 2 as PanelColumnCount,
+          ...resolveIntrinsicPanelCanvasWidth(
+            DEFAULT_CHAT_PANEL_WIDTH + DEFAULT_BROWSER_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
+          ),
+        }
+      : {}),
     restoreStatus: 'restored',
     pendingFocusTabId: null,
     deferSpecTab: true,
@@ -1932,6 +2029,31 @@ panelLayoutReducer.with(resolveNewWorkspaceInitialAgent, (state, { payload }) =>
   const lifecycle = ws.newWorkspaceLifecycle;
   if (!lifecycle?.initialAgentPending) return state;
   return openNewWorkspaceInitialAgent(state, wsId, agentId, title, tabId, timestamp);
+});
+panelLayoutReducer.with(seedContextLinkEmptyLayout, (state, { payload }) => {
+  const { wsId, agentPanelId, browserPanelId, contextLinkTabs } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  // Only a genuinely empty workspace gets seeded: a fresh-create lifecycle,
+  // any visible tab, or any hidden tab means a layout already exists (or is
+  // being bootstrapped) and must win.
+  if (ws.newWorkspaceLifecycle) return state;
+  if (Object.values(ws.panels).some((panel) => panel.tabs.length > 0)) return state;
+  if (ws.hiddenTabs.ids.length > 0) return state;
+  const seed = buildContextLinkBrowserSeed(wsId, agentPanelId, browserPanelId, contextLinkTabs);
+  if (!seed) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    root: seed.root,
+    panels: seed.panels,
+    focusedPanelId: agentPanelId,
+    columnCount: 2 as PanelColumnCount,
+    columnCountInitialized: true,
+    ...resolveIntrinsicPanelCanvasWidth(
+      DEFAULT_CHAT_PANEL_WIDTH + DEFAULT_BROWSER_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
+    ),
+    pendingFocusTabId: null,
+    pendingPanelReveal: null,
+  });
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
   const ws = getWorkspaceState(state, wsId);

@@ -3,7 +3,12 @@ import {
   it,
   expect,
 } from "vitest";
-import { featureCodesReducer, initialState, toggleFeatureCodeDialog } from "./feature-codes-slice";
+import {
+  featureCodesReducer,
+  initialState,
+  setActiveFeatures,
+  toggleFeatureCodeDialog,
+} from "./feature-codes-slice";
 import {
   selectActiveFeatures,
   selectFeatureCodeDialogOpen,
@@ -15,6 +20,14 @@ describe("featureCodesReducer", () => {
   it("should return initial state", () => {
     const state = featureCodesReducer(undefined, { type: "@@INIT" });
     expect(state).toEqual(initialState);
+  });
+
+  describe("setActiveFeatures", () => {
+    it("stores the features and marks the store initialized", () => {
+      const state = featureCodesReducer(initialState, setActiveFeatures(["feature-a"]));
+      expect(state.activeFeatures).toEqual(["feature-a"]);
+      expect(state.initialized).toBe(true);
+    });
   });
 
   describe("toggleFeatureCodeDialog", () => {

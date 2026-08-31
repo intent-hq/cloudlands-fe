@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
@@ -88,7 +89,7 @@ describe('AllWorkspacesCard archived discovery', () => {
     expect(await screen.findByText('Active space')).toBeTruthy();
     expect(screen.queryByText('Past project')).toBeNull();
 
-    await fireEvent.input(screen.getByPlaceholderText('Search spaces...'), {
+    await fireEvent.input(screen.getByPlaceholderText(m.layout_activeCard_search_placeholder()), {
       target: { value: 'Past project' },
     });
     expect(screen.queryByText('Past project')).toBeNull();
@@ -104,7 +105,7 @@ describe('AllWorkspacesCard archived discovery', () => {
     renderCard();
     appStore.dispatch(setShowArchivedWorkspaces(true));
 
-    const search = screen.getByPlaceholderText('Search spaces...');
+    const search = screen.getByPlaceholderText(m.layout_activeCard_search_placeholder());
     await fireEvent.input(search, { target: { value: 'Active space' } });
     await waitFor(() => {
       expect(screen.getByText('Active space')).toBeTruthy();
@@ -132,7 +133,7 @@ describe('AllWorkspacesCard archived discovery', () => {
     renderCard();
 
     const controls = document.querySelector('[data-workspace-search-controls]');
-    const search = screen.getByPlaceholderText('Search spaces...');
+    const search = screen.getByPlaceholderText(m.layout_activeCard_search_placeholder());
 
     await waitFor(() => expect(document.activeElement).toBe(search));
 
@@ -194,7 +195,7 @@ describe('AllWorkspacesCard archived discovery', () => {
     });
 
     expect(await screen.findByText('No active workspaces')).toBeTruthy();
-    expect(screen.queryByPlaceholderText('Search spaces...')).toBeNull();
+    expect(screen.queryByPlaceholderText(m.layout_activeCard_search_placeholder())).toBeNull();
     appStore.dispatch(setShowArchivedWorkspaces(true));
     expect(await screen.findByText('Past project')).toBeTruthy();
 

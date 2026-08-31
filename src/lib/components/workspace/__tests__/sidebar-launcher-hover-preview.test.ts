@@ -158,4 +158,23 @@ describe('sidebar launcher hover previews', () => {
     );
     expect(sidebar).toContain('data-launcher-pack="left"');
   });
+
+  it('delays launcher hover cards so a mouse pass-over never opens them', async () => {
+    // Perf invariant (Trace-20260831T161502): opening a tooltip triggers
+    // floating-ui measurement, so switch-path sidebar rows must require a
+    // deliberate >=300ms hover before opening.
+    const { render, cleanup } = await import('@testing-library/svelte');
+    const { default: SidebarLauncherHoverCard } =
+      await import('../sidebar/SidebarLauncherHoverCard.svelte');
+    try {
+      const { container } = render(SidebarLauncherHoverCard, {
+        props: { title: 'Agents', rows: [], emptyText: 'No agents yet', kind: 'agent' as const },
+      });
+      const trigger = container.querySelector('[data-tooltip-trigger]');
+      expect(trigger).not.toBeNull();
+      expect(trigger!.getAttribute('data-delay-duration')).toBe('300');
+    } finally {
+      cleanup();
+    }
+  });
 });

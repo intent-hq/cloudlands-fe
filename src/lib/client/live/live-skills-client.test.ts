@@ -68,12 +68,10 @@ describe("LiveSkillsClient", () => {
       ]);
     });
 
-    it("returns empty array on transport error", async () => {
+    it("rejects on transport error so callers can expose the failure", async () => {
       vi.spyOn(backendTransport, "backendRequest").mockRejectedValue(new Error("Transport failure"));
 
-      const result = await client.list("ws-789");
-
-      expect(result).toEqual([]);
+      await expect(client.list("ws-789")).rejects.toThrow("Transport failure");
     });
 
     it("returns empty array when daemon returns non-array", async () => {
