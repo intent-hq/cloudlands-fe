@@ -433,7 +433,21 @@ describe('FileTabType Redux integration', () => {
     expect(preview.getAttribute('data-workspace-id')).toBe('ws-1');
     expect(screen.queryByTestId('code-editor')).toBeNull();
     expect(screen.queryByTestId('file-viewer')).toBeNull();
+
+    dispatchMock.mockClear();
+    await fireEvent.input(preview, { target: { textContent: '# Attempted preview edit' } });
+    await fireEvent.keyDown(preview, { key: 'x' });
+    await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
     expect(actionMocks.updateFileContent).not.toHaveBeenCalled();
+    expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/updateFileContent' }),
+    );
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/saveFileContentRequested' }),
+    );
+    expect((await screen.findByTestId('header-state')).getAttribute('data-dirty')).toBe('false');
   });
 
   it('updates the read-only markdown preview for repeated external content while clean', async () => {
