@@ -61,6 +61,37 @@ for (const scenario of [
   });
 }
 
+test('keeps the disclosure background transparent across pointer and keyboard states', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'light', width: 280 },
+  });
+  const disclosure = component.getByTestId('token-usage-disclosure');
+  const transparent = 'rgba(0, 0, 0, 0)';
+  const background = () =>
+    disclosure.evaluate((element) => getComputedStyle(element).backgroundColor);
+
+  await page.mouse.move(1000, 700);
+  await expect.poll(background).toBe(transparent);
+
+  await disclosure.hover();
+  await expect.poll(background).toBe(transparent);
+
+  await page.mouse.move(1000, 700);
+  await page.keyboard.press('Tab');
+  await expect(disclosure).toBeFocused();
+  await expect.poll(background).toBe(transparent);
+
+  await disclosure.press('Enter');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(background).toBe(transparent);
+
+  await disclosure.hover();
+  await expect.poll(background).toBe(transparent);
+});
+
 test('exposes compact values and keeps summary text readable on hover', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {

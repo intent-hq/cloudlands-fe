@@ -502,7 +502,7 @@
       bind:ref={disclosureElement}
       variant="plain"
       type="button"
-      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded px-1.5 !text-xs font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded px-1.5 !text-xs font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
