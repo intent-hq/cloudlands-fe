@@ -607,7 +607,7 @@
         />
       {:else if isMarkdownFile && markdownPreview}
         <div class="h-full overflow-auto p-4">
-          <MarkdownViewer content={fileContent} {workspaceId} />
+          <MarkdownViewer content={fileContent} {workspaceId} renderRichFencesAsCode />
         </div>
       {:else}
         <CodeEditor

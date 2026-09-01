@@ -30,6 +30,8 @@
     chatImageThumbnails?: boolean;
     /** Open all http(s) links directly in the external browser (e.g. release notes). */
     forceExternalLinks?: boolean;
+    /** Show rich fenced blocks as source when no TipTap node views are mounted. */
+    renderRichFencesAsCode?: boolean;
   }
 
   let {
@@ -43,6 +45,7 @@
     taskBlockRenderMode = 'placeholder',
     chatImageThumbnails = false,
     forceExternalLinks = false,
+    renderRichFencesAsCode = false,
   }: Props = $props();
 
   // PERF: Detect content complexity to choose rendering strategy
@@ -102,6 +105,7 @@
   // The rendered HTML also depends on workspaceId (short-form intent://local/file/
   // image links resolve against it), so it participates in the memoization guard
   let lastProcessedWorkspaceId: string | undefined;
+  let lastRenderRichFencesAsCode = false;
 
   // PERF: Track streaming state to throttle re-renders during streaming
   let isCurrentlyStreaming = false;
@@ -116,7 +120,11 @@
   // Process markdown to HTML for the static render path
   async function updateContentFull(markdown: string) {
     // Skip if content hasn't actually changed
-    if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
+    if (
+      markdown === lastProcessedContent &&
+      workspaceId === lastProcessedWorkspaceId &&
+      renderRichFencesAsCode === lastRenderRichFencesAsCode
+    ) {
       return;
     }
 
@@ -124,6 +132,7 @@
       processedContent = '';
       lastProcessedContent = '';
       lastProcessedWorkspaceId = workspaceId;
+      lastRenderRichFencesAsCode = renderRichFencesAsCode;
       return;
     }
 
@@ -134,10 +143,12 @@
         preserveAnchors: true,
         taskBlockRenderMode,
         workspaceId,
+        renderRichFencesAsCode,
       });
       processedContent = html;
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
+      lastRenderRichFencesAsCode = renderRichFencesAsCode;
       // Note: Scroll management is handled by the parent component via followBottom action
     } catch (error) {
       logger.error('Failed to process markdown:', error);
@@ -155,13 +166,18 @@
   // PERF: Lightweight streaming update - writes innerHTML directly
   async function updateContentStreaming(markdown: string) {
     // Skip if content hasn't actually changed
-    if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
+    if (
+      markdown === lastProcessedContent &&
+      workspaceId === lastProcessedWorkspaceId &&
+      renderRichFencesAsCode === lastRenderRichFencesAsCode
+    ) {
       return;
     }
 
     if (!markdown) {
       lastProcessedContent = '';
       lastProcessedWorkspaceId = workspaceId;
+      lastRenderRichFencesAsCode = renderRichFencesAsCode;
       if (streamingContentElement) {
         streamingContentElement.innerHTML = '';
       }
@@ -175,9 +191,11 @@
         preserveAnchors: true,
         taskBlockRenderMode,
         workspaceId,
+        renderRichFencesAsCode,
       });
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
+      lastRenderRichFencesAsCode = renderRichFencesAsCode;
       processedContent = html;
 
       // PERF: During streaming, update innerHTML directly to avoid re-rendering

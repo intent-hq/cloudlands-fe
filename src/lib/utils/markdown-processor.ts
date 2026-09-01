@@ -324,6 +324,21 @@ function getMarkedInstance() {
   return markedInstance;
 }
 
+function renderRichFencePlaceholdersAsCode(html: string): string {
+  return html.replace(
+    /<div data-type="(mermaid|diff)-block" data-(?:mermaid|diff)-code="([^"]*)"><\/div>/g,
+    (_placeholder, language: string, encodedCode: string) => {
+      const code = decodeURIComponent(escape(atob(encodedCode))).replace(
+        /[&<>"']/g,
+        (character) =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ??
+          character,
+      );
+      return `<pre><code class="language-${language}">${code}</code></pre>`;
+    },
+  );
+}
+
 /**
  * Process ws-block and diagram primitives in markdown content
  * Converts ws-block and diagram code blocks to placeholder divs that TipTap can recognize
@@ -443,6 +458,8 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode?: 'placeholder' | 'content';
     /** Workspace ID used to resolve short-form intent://local/file/... image links */
     workspaceId?: string;
+    /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
+    renderRichFencesAsCode?: boolean;
   } = {},
 ): Promise<string> {
   const {
@@ -452,6 +469,7 @@ export async function processMarkdownToHTML(
     processPrimitives = true,
     taskBlockRenderMode = 'placeholder',
     workspaceId,
+    renderRichFencesAsCode = false,
   } = options;
 
   // Handle empty content
@@ -477,7 +495,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return cached;
@@ -548,6 +566,9 @@ export async function processMarkdownToHTML(
       const markedInst = getMarkedInstance();
       const result = await markedInst.parse(normalizedContent);
       htmlOut = preserveAnchors ? convertHTMLCommentsToSpanAnchors(result) : result;
+    }
+    if (renderRichFencesAsCode) {
+      htmlOut = renderRichFencePlaceholdersAsCode(htmlOut);
     }
     const t4 = isLargeContent ? performance.now() : 0;
 
