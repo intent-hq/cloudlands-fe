@@ -693,7 +693,9 @@ export function captureFingerprint(
     let settled = false;
     const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
       rejectUnauthorized: false,
-      ...(token !== undefined ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      // Keyed off truthiness like `formatWssUrl` so both wire surfaces agree:
+      // an empty-string token sends neither `Authorization` nor `?token=`.
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
       ...(expected !== undefined
         ? {
             // ws types createConnection as `typeof net.createConnection` but
@@ -762,7 +764,7 @@ export function captureFingerprint(
       // no token was supplied, a 401/403 is the expected answer to the
       // unauthenticated probe and judges no token either.
       const statusCode = response.statusCode ?? 0;
-      const authRejected = token !== undefined && (statusCode === 401 || statusCode === 403);
+      const authRejected = Boolean(token) && (statusCode === 401 || statusCode === 403);
       readCert(response, false, authRejected ? statusCode : undefined);
     });
     ws.on('error', (err: Error) => {
