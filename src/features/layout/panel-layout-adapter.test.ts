@@ -70,7 +70,7 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('routes untargeted content right even when the focused panel is empty', () => {
+  it('keeps generic untargeted content in the rightmost panel when focus exists', () => {
     mocks.focusedPanelId = 'working';
     mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
 
@@ -78,8 +78,8 @@ describe('PanelLayoutAdapter', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTab',
-        payload: expect.objectContaining({ wsId: 'ws-1', panelId: 'working', tab }),
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: expect.objectContaining({ wsId: 'ws-1', tab }),
       }),
     );
   });

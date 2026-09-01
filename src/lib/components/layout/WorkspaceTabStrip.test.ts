@@ -13,7 +13,8 @@ import {
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goto: vi.fn(() => Promise.resolve()),
-  nextCurrentId: 'ws-2',
+  nextCurrentId: 'ws-2' as string | null,
+  tabOrder: ['ws-1', 'ws-2', 'ws-3'] as string[],
   loadedWorkspaceIds: new Set<string>(),
   tabStatuses: {} as Record<string, WorkspaceTabStatus>,
 }));
@@ -38,7 +39,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: Object.assign(() => readable('ws-1'), {
     select: () => mocks.nextCurrentId,
   }),
-  selectWorkspaceTabOrder: () => readable(['ws-1', 'ws-2', 'ws-3']),
+  selectWorkspaceTabOrder: () => readable(mocks.tabOrder),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () =>
@@ -164,6 +165,24 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
     mocks.nextCurrentId = 'ws-2';
+    mocks.tabOrder = ['ws-1', 'ws-2', 'ws-3'];
+    mocks.dispatch.mockImplementation((action: { type?: string; payload?: unknown[] }) => {
+      if (action.type === 'tabState/openWorkspaceTab') {
+        const workspaceId = String(action.payload?.[0] ?? '');
+        if (!mocks.tabOrder.includes(workspaceId)) mocks.tabOrder.push(workspaceId);
+        mocks.nextCurrentId = workspaceId;
+        return;
+      }
+      if (action.type !== 'tabState/closeWorkspaceTab') return;
+      const workspaceId = String(action.payload?.[0] ?? '');
+      const closedIndex = mocks.tabOrder.indexOf(workspaceId);
+      if (closedIndex < 0) return;
+      mocks.tabOrder = mocks.tabOrder.filter((id) => id !== workspaceId);
+      if (mocks.nextCurrentId === workspaceId) {
+        mocks.nextCurrentId =
+          mocks.tabOrder[Math.min(closedIndex, mocks.tabOrder.length - 1)] ?? null;
+      }
+    });
     mocks.loadedWorkspaceIds.clear();
     mocks.loadedWorkspaceIds.add('ws-1');
     mocks.loadedWorkspaceIds.add('ws-2');
@@ -586,7 +605,7 @@ describe('WorkspaceTabStrip', () => {
       [{ type: 'tabState/closeWorkspaceTab', payload: ['ws-2', expect.any(Number)] }],
       [{ type: 'tabState/closeWorkspaceTab', payload: ['ws-3', expect.any(Number)] }],
     ]);
-    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1');
   });
 
   it('keeps open workspace tabs visually inactive outside a workspace route', () => {

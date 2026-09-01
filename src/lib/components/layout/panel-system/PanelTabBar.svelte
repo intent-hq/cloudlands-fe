@@ -234,6 +234,7 @@
   let contextMenuElement = $state<HTMLDivElement | null>(null);
 
   let paneStackMenuOpen = $state(false);
+  let panelActionsMenuOpen = $state({ tabBar: false, compact: false });
 
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
@@ -392,10 +393,7 @@
     if (target instanceof Element && target.closest(PANEL_HEADER_INTERACTIVE_SELECTOR)) return;
     e.preventDefault();
     contextMenuTab = null;
-    const header = e.currentTarget as HTMLElement;
-    queueMicrotask(() =>
-      header.querySelector<HTMLButtonElement>('[data-testid="panel-actions-trigger"]')?.click(),
-    );
+    panelActionsMenuOpen.compact = true;
   }
 
   function getContextMenuPosition() {
@@ -1178,8 +1176,9 @@
   }
 </script>
 
-{#snippet panelActionsDropdown()}
+{#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}
   <DropdownMenu
+    bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
     contentClass="panel-actions-menu-content w-max [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
@@ -1872,7 +1871,7 @@
         class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
         data-panel-header-actions
       >
-        {@render panelActionsDropdown()}
+        {@render panelActionsDropdown('tabBar')}
         {@render contentActionsDivider()}
         {@render contentActions?.primary?.()}
         {@render panelCloseButton(activeTab)}
@@ -2032,7 +2031,7 @@
             {@render contentActions.primary()}
           </span>
         {/if}
-        {@render panelActionsDropdown()}
+        {@render panelActionsDropdown('compact')}
         {@render panelControlsDivider()}
         {#if tabs.length > 1}
           {@render paneStackSelector()}
