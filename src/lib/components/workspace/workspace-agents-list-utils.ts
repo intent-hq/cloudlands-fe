@@ -1,4 +1,6 @@
 import type { AgentSession } from '$shared/types';
+import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
 import { normalizeSidebarSearchText, sidebarSearchMatches } from './sidebar/sidebar-search';
 
 export interface FlatWorkspaceAgentRow {
@@ -52,11 +54,35 @@ function getAgentRecency(agent: AgentSession): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+/**
+ * Idle classification for sibling ordering, mirroring the HUD card's live
+ * buckets (running / needs-attention / failed): a live turn per the shared
+ * runtime-state predicates, a failed status, or a pending attention request
+ * keeps the row in the non-idle partition; everything else (waiting,
+ * completed, genuinely idle) sorts after it.
+ */
+function isIdleForOrdering(agent: AgentSession): boolean {
+  if (isAgentRunningState(toAgentRuntimeStateInput(agent))) return false;
+  const status = typeof agent.status === 'string' ? agent.status.toLowerCase() : '';
+  if (status === 'error' || status === 'failed') return false;
+  return getAgentAttentionRequest(agent) === null;
+}
+
+/**
+ * Sibling comparator: coordinator first, then non-idle agents by recency
+ * descending, idle agents last (also by recency descending), with a stable
+ * agent-id tiebreak so rows don't jump between refreshes.
+ */
 function sortAgents(a: AgentSession, b: AgentSession): number {
   const aIsCoordinator = isCoordinatorAgentSession(a);
   const bIsCoordinator = isCoordinatorAgentSession(b);
   if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
-  return getAgentRecency(b) - getAgentRecency(a);
+  const idleDelta = Number(isIdleForOrdering(a)) - Number(isIdleForOrdering(b));
+  if (idleDelta !== 0) return idleDelta;
+  const aRecency = getAgentRecency(a);
+  const bRecency = getAgentRecency(b);
+  if (aRecency !== bRecency) return bRecency - aRecency;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspaceAgentRow[] {
