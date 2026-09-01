@@ -1149,29 +1149,27 @@
     }
   }
 
-  // Set up ResizeObserver to track parent panel height
+  // Set up ResizeObserver to track parent panel height. The observer delivers
+  // an initial callback on observe() with the current size, so no synchronous
+  // clientHeight read (forced reflow) is needed here — and the effect must not
+  // read parentPanelHeight, or every resize would tear down and recreate it.
   $effect(() => {
     if (!containerRef) return;
 
     const parentPanel = containerRef.closest('.group\\/panel') as HTMLElement | null;
     if (!parentPanel) return;
 
-    const updateParentPanelHeight = (height: number) => {
-      if (height !== parentPanelHeight) {
-        parentPanelHeight = height;
-      }
-    };
-
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.target === parentPanel) {
-          updateParentPanelHeight(entry.contentRect.height);
+          const height = entry.contentRect.height;
+          if (height !== parentPanelHeight) {
+            parentPanelHeight = height;
+          }
         }
       }
     });
     resizeObserver.observe(parentPanel);
-    // Get initial height
-    updateParentPanelHeight(parentPanel.clientHeight);
 
     return () => {
       resizeObserver.disconnect();
