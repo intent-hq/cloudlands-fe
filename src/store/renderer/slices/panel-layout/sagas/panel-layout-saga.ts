@@ -33,6 +33,7 @@ import {
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { removeScript } from '../../scripts/scripts-slice';
 import {
   workspaceDeleted,
   workspaceMounted,
@@ -152,6 +153,7 @@ const PERSIST_ACTIONS = [
   closeActiveTab,
   closeTabsByType,
   closeTabsByAgentId,
+  removeScript,
   destroyTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
@@ -208,6 +210,7 @@ const HISTORY_ACTIONS = [
   closeAllOthersEverywhere,
   splitPanel,
   closePanel,
+  removeScript,
   movePanel,
   movePanelToRootEdge,
   moveTabToPanel,

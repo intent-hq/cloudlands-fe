@@ -112,6 +112,7 @@ import {
   userPreferencesReducer,
 } from '../../user-preferences/user-preferences-slice';
 import { setAgents } from '../../workspace-agents/workspace-agents-slice';
+import { removeScript } from '../../scripts/scripts-slice';
 import {
   applyLocalNoteUpdate,
   applyNoteUpdated,
@@ -353,6 +354,7 @@ const persistActionCreators = [
   closeActiveTab,
   closeTabsByType,
   closeTabsByAgentId,
+  removeScript,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
