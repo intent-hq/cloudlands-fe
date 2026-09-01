@@ -153,7 +153,6 @@ const PERSIST_ACTIONS = [
   closeActiveTab,
   closeTabsByType,
   closeTabsByAgentId,
-  removeScript,
   destroyTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
@@ -210,7 +209,6 @@ const HISTORY_ACTIONS = [
   closeAllOthersEverywhere,
   splitPanel,
   closePanel,
-  removeScript,
   movePanel,
   movePanelToRootEdge,
   moveTabToPanel,
@@ -1052,6 +1050,10 @@ export function* panelLayoutSaga(options?: {
     yield* fork(persistPanelLayout, action);
     yield* queueHistorySaveForAction(action);
   }
+  function* handleScriptRemoved(action: ReturnType<typeof removeScript>): SagaGenerator<void> {
+    yield* fork(persistPanelLayout, action);
+    yield* queueHistorySaveForAction(action);
+  }
   function* handleReopenedPanelColumn(
     action: ReturnType<typeof reopenClosedPanelColumn>,
   ): SagaGenerator<void> {
@@ -1087,6 +1089,7 @@ export function* panelLayoutSaga(options?: {
     // revert to hidden on restart (monorepo#3112).
     yield* takeEvery(revealHiddenTabAvoidingPanel, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
+    yield* takeEvery(removeScript, handleScriptRemoved);
     yield* takeEvery(reopenClosedPanelColumn, handleReopenedPanelColumn);
     yield* fork(watchRightmostColumnRequests);
     yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);
