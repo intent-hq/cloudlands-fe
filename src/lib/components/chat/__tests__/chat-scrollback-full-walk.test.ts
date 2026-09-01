@@ -18,7 +18,10 @@ import {
   selectHistorySegmentMeta,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import {
+  appendScrollSample,
   classifyScrollbackGesture,
+  classifyScrollBurst,
+  classifySettledPosition,
   estimateSeekLandingStartOrdinal,
   mapScrollTopToOrdinal,
   reconcileVirtualSpacer,
@@ -27,6 +30,7 @@ import {
   shouldRequestOlderHistory,
   splitUnloadedRows,
   VIRTUAL_ROW_HEIGHT_MIN_PX,
+  type ScrollSample,
 } from '../chat-scrollback-composition';
 
 // ============================================================================
@@ -493,8 +497,7 @@ class WalkSim {
     this.above = 0;
     this.below = 0;
     this.state = agentSessionReducer(this.state, clearHistorySegment(AGENT_ID));
-    this.fetchCursor =
-      this.tail.length > 0 ? ordinalOf(this.tail[0]) : this.conversation.length;
+    this.fetchCursor = this.tail.length > 0 ? ordinalOf(this.tail[0]) : this.conversation.length;
     this.gapFillCursor = null;
     this.restoreAnchor(anchor);
     this.scrollTop = Math.min(this.scrollTop, Math.max(0, this.scrollHeight() - VIEWPORT_PX));
@@ -896,10 +899,7 @@ describe('full-walk scrollback harness', () => {
       sim.fetchGapFillPage();
       return 'gap-fill';
     }
-    if (
-      sim.meta.gapToTail &&
-      sim.sentinelIntersectsSweep(sim.scrollTop, sim.scrollTop)
-    ) {
+    if (sim.meta.gapToTail && sim.sentinelIntersectsSweep(sim.scrollTop, sim.scrollTop)) {
       sim.fetchGapFillPage();
       return 'gap-fill';
     }
@@ -1078,9 +1078,7 @@ describe('full-walk scrollback harness', () => {
       `holeRowsEstimate=${meta.holeRowsEstimate}; rounds: ${JSON.stringify(trace)}`;
     // Phantom gap: a giant white below-spacer + Load-more affordance parked
     // between the history segment and the tail with NOTHING converging.
-    expect(meta.gapToTail, `gap never closes after the flick to the tail — ${summary}`).toBe(
-      false,
-    );
+    expect(meta.gapToTail, `gap never closes after the flick to the tail — ${summary}`).toBe(false);
     expect(sim.below, `below spacer stuck > 0 at the settled bottom — ${summary}`).toBe(0);
   });
 
@@ -1118,5 +1116,223 @@ describe('full-walk scrollback harness', () => {
     expect(sim.meta.oldestReached, 're-armed walk must reach the top again').toBe(true);
     sim.reconcile();
     expect(sim.above).toBe(0);
+  });
+
+  // ── Rapid-scroll gating + settle re-classification (ChatPanel wiring) ───
+  // Mirrors the wired ChatPanel drivers WITHOUT a DOM: the scroll listener
+  // (burst buffer + classifyScrollBurst gating), maybeDispatchSettledSeek
+  // (the settle-point re-classification), the seek-debounce fire order, and
+  // both settle chains — counting what each driver dispatched so the tests
+  // assert fetch economy directly.
+  describe('rapid-scroll gating and settle re-classification', () => {
+    class PanelDriver {
+      samples: ScrollSample[] = [];
+      debounceArmed = false;
+      fetchInFlight = false;
+      gapFetchInFlight = false;
+      serialDispatches = 0;
+      seekDispatches = 0;
+      gapFillDispatches = 0;
+      collapses = 0;
+
+      constructor(readonly sim: WalkSim) {}
+
+      /** Mirrors the wired onScroll listener. */
+      onScroll(scrollTop: number, timestamp: number): void {
+        const sim = this.sim;
+        sim.scrollTop = scrollTop;
+        this.samples = appendScrollSample(this.samples, { scrollTop, timestamp });
+        if (sim.seekTargetAt(scrollTop) !== null) {
+          this.debounceArmed = true;
+          return;
+        }
+        if (sim.viewportOverlapsBelowSpacer() || sim.viewportFullyBelowOpenHole()) {
+          this.debounceArmed = true;
+          return;
+        }
+        if (
+          classifyScrollBurst({ samples: this.samples, viewportHeight: VIEWPORT_PX }) === 'rapid'
+        ) {
+          this.debounceArmed = true;
+          return;
+        }
+        this.debounceArmed = false;
+        this.maybeRequestOlderHistory();
+      }
+
+      /** Mirrors ChatPanel maybeRequestOlderHistory (saga sets fetching sync). */
+      maybeRequestOlderHistory(): void {
+        if (this.fetchInFlight || this.gapFetchInFlight) return;
+        if (this.sim.triggerFires()) {
+          this.fetchInFlight = true;
+          this.serialDispatches += 1;
+        }
+      }
+
+      /** Mirrors ChatPanel maybeDispatchSettledSeek. */
+      maybeDispatchSettledSeek(): boolean {
+        if (this.fetchInFlight || this.gapFetchInFlight) return false;
+        const target = this.sim.seekTargetAt(this.sim.scrollTop);
+        if (target === null) return false;
+        this.debounceArmed = false;
+        this.seekDispatches += 1;
+        this.sim.performSeek(target);
+        return true;
+      }
+
+      /** Mirrors the seek-debounce timer firing after SEEK_DEBOUNCE_MS. */
+      fireSeekDebounce(): void {
+        if (!this.debounceArmed) return;
+        this.debounceArmed = false;
+        // Racing fetch: the settle chain re-classifies when it lands.
+        if (this.fetchInFlight || this.gapFetchInFlight) return;
+        if (this.maybeDispatchSettledSeek()) return;
+        if (this.sim.viewportFullyBelowOpenHole()) {
+          this.sim.collapseSegmentAtTail();
+          this.collapses += 1;
+          return;
+        }
+        if (this.sim.viewportOverlapsBelowSpacer()) {
+          this.gapFetchInFlight = true;
+          this.gapFillDispatches += 1;
+          return;
+        }
+        this.maybeRequestOlderHistory();
+      }
+
+      /** Mirrors the older-history settle chain (page lands → re-classify). */
+      settleOlderFetch(): void {
+        if (!this.fetchInFlight) return;
+        this.sim.fetchOlderPage();
+        this.fetchInFlight = false;
+        if (this.maybeDispatchSettledSeek()) return;
+        this.maybeRequestOlderHistory();
+      }
+    }
+
+    /** The classifySettledPosition serial params at the sim's position. */
+    function settledParams(sim: WalkSim) {
+      return {
+        scrollTop: sim.scrollTop,
+        spacerAboveHeight: sim.above,
+        rowHeightEstimate: sim.ema,
+        totalMessages: sim.conversation.length,
+        serial: {
+          scrollTop: sim.scrollTop,
+          threshold: TOP_THRESHOLD_PX,
+          canScroll: sim.scrollHeight() > VIEWPORT_PX,
+          fetching: false,
+          exhausted: sim.meta.oldestReached,
+          historyCount: sim.meta.historyCount,
+          tailCount: sim.meta.tailCount,
+          tailTruncated: sim.fetchCursor > 0 || sim.meta.historyCount > 0,
+          totalMessages: sim.conversation.length,
+          spacerAbove: sim.above,
+        },
+      };
+    }
+
+    it('rapid flick deep into the spacer defers to the settle debounce and issues ONE seek (no serial chase)', () => {
+      const conversation = buildConversation();
+      const sim = new WalkSim(conversation, 20);
+      sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+      sim.reconcile();
+      expect(sim.above).toBeGreaterThan(0);
+      const driver = new PanelDriver(sim);
+
+      // Wheel-flick from the tail deep into the above spacer: 16ms-apart
+      // events covering many viewports per settle window.
+      const from = sim.scrollTop;
+      const to = Math.round(0.3 * sim.above);
+      const positions = [from, 0.6 * sim.above, 0.45 * sim.above, 0.35 * sim.above, to].map(
+        Math.round,
+      );
+      positions.forEach((pos, i) => driver.onScroll(pos, i * 16));
+
+      // NO serial page was dispatched during the burst — every intermediate
+      // position deferred to the settle debounce.
+      expect(driver.serialDispatches).toBe(0);
+      expect(driver.debounceArmed).toBe(true);
+
+      // The settle helper agrees the parked position is a seek.
+      expect(classifySettledPosition(settledParams(sim))).toBe('seek');
+
+      // Debounce fires at the settled position: exactly ONE aroundIndex
+      // jump, landing the viewport on real rows.
+      driver.fireSeekDebounce();
+      expect(driver.seekDispatches).toBe(1);
+      expect(driver.serialDispatches).toBe(0);
+      expect(sim.spacerOverlapPx(), 'seek landing must show real rows').toBe(0);
+    });
+
+    it('serial page in flight + far drag: the settle chain re-classifies and jumps instead of chaining pages', () => {
+      const conversation = buildConversation();
+      const sim = new WalkSim(conversation, 20);
+      sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+      sim.reconcile();
+      const driver = new PanelDriver(sim);
+
+      // Gentle event near the resident top edge: immediate serial dispatch
+      // (today's edge-triggered walk), fetch now in flight.
+      driver.onScroll(sim.above + 100, 0);
+      expect(driver.serialDispatches).toBe(1);
+      expect(driver.fetchInFlight).toBe(true);
+
+      // While the page is in flight the user drags far into the spacer.
+      const deep = Math.round(0.3 * sim.above);
+      driver.onScroll(Math.round(0.5 * sim.above), 500);
+      driver.onScroll(deep, 516);
+      expect(driver.debounceArmed).toBe(true);
+
+      // The debounce fires against the racing fetch: no dispatch — the
+      // settle chain owns the re-classification.
+      driver.fireSeekDebounce();
+      expect(driver.seekDispatches).toBe(0);
+
+      // The in-flight page lands; the settle chain re-classifies the parked
+      // position and issues ONE jump instead of serially chaining pages.
+      driver.settleOlderFetch();
+      expect(driver.seekDispatches).toBe(1);
+      expect(driver.serialDispatches, 'no serial chaining after the jump').toBe(1);
+      expect(driver.fetchInFlight).toBe(false);
+    });
+
+    it('gentle near-top scrolling keeps the immediate edge-triggered serial dispatch', () => {
+      const conversation = buildConversation();
+      const sim = new WalkSim(conversation, 20);
+      sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+      sim.reconcile();
+      const driver = new PanelDriver(sim);
+
+      // Reading-pace events (far apart, small deltas) near the top: the
+      // burst classifies gentle and the serial dispatch fires ON the event.
+      expect(classifySettledPosition(settledParams(sim))).not.toBe('seek');
+      driver.onScroll(sim.above + 120, 0);
+      expect(driver.serialDispatches).toBe(1);
+      expect(driver.debounceArmed).toBe(false);
+      driver.onScroll(sim.above + 80, 400);
+      expect(driver.debounceArmed).toBe(false);
+      expect(driver.seekDispatches).toBe(0);
+    });
+
+    it('below-spacer drivers are unaffected: a flick back to the tail still collapses the segment', () => {
+      const conversation = buildConversation();
+      const sim = new WalkSim(conversation, 20);
+      walkToTop(sim);
+      const driver = new PanelDriver(sim);
+
+      // Rapid flick from the exhausted top straight to the tail: every
+      // event arms the same settle debounce (below-spacer checks run BEFORE
+      // the burst gate), and its fire picks the return-to-tail collapse.
+      const bottom = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+      driver.onScroll(Math.round(bottom * 0.7), 0);
+      driver.onScroll(bottom, 16);
+      expect(driver.debounceArmed).toBe(true);
+      driver.fireSeekDebounce();
+      expect(driver.collapses).toBe(1);
+      expect(driver.seekDispatches).toBe(0);
+      expect(sim.meta.gapToTail).toBe(false);
+      expect(sim.spacerOverlapPx()).toBe(0);
+    });
   });
 });
