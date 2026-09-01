@@ -11,7 +11,7 @@ import {
   setAgentLockState,
 } from "./agent-lock-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { selectLockedAgentIds } from "./agent-lock-selectors";
+import { selectLockedAgentIds, selectLockedFilePaths } from "./agent-lock-selectors";
 
 function storeWith(agentLock: AgentLockState): StoreState {
   return { agentLock } as unknown as StoreState;
@@ -72,6 +72,25 @@ describe("agent-lock-slice selectors", () => {
       byWorkspaceId: { "ws-1": { lockedAgentIds: { "a-1": true }, lockedFilePaths: {} } },
     };
     expect(selectLockedAgentIds.select(storeWith(agentLock), "ws-1")).toEqual({ "a-1": true });
+  });
+
+  it("selectLockedFilePaths returns locked file paths", () => {
+    const agentLock: AgentLockState = {
+      byWorkspaceId: {
+        "ws-1": { lockedAgentIds: {}, lockedFilePaths: { "src/foo.ts": true } },
+      },
+    };
+    expect(selectLockedFilePaths.select(storeWith(agentLock), "ws-1")).toEqual({
+      "src/foo.ts": true,
+    });
+  });
+
+  it("selectLockedFilePaths returns a stable empty record for unknown workspaces", () => {
+    const agentLock: AgentLockState = { byWorkspaceId: {} };
+    const first = selectLockedFilePaths.select(storeWith(agentLock), "ws-unknown");
+    const second = selectLockedFilePaths.select(storeWith(agentLock), "ws-other");
+    expect(first).toEqual({});
+    expect(second).toBe(first);
   });
 });
 

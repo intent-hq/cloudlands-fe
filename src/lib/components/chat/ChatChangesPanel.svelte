@@ -3,8 +3,33 @@
     ChangeCategory as _ChangeCategory,
     LocalFileChange as _LocalFileChange,
   } from './types';
+  import { stripWorkspacePrefix as _stripWorkspacePrefix } from '$lib/utils/file-utils';
 
   type _NumstatEntry = { filePath: string; additions: number; deletions: number };
+
+  /**
+   * Check whether a change's file path is locked by an agent (auto-commit
+   * pending). The daemon publishes locked paths repo-relative with forward
+   * slashes (PROTOCOL §5.19), while the panel's change paths are absolute —
+   * so match on both the raw path and its workspace-relative form.
+   *
+   * Exported from the module context so unit tests (and the instance script
+   * below) can reuse the same matching without duplication.
+   */
+  export function isPathLocked(
+    lockedFilePaths: Record<string, true>,
+    filePath: string,
+    workspacePath?: string,
+  ): boolean {
+    // Lock keys always use forward slashes; normalize Windows-style separators
+    // on the change/workspace paths so they can match.
+    const posixFilePath = filePath.replaceAll('\\', '/');
+    if (posixFilePath in lockedFilePaths) return true;
+    if (!workspacePath) return false;
+    const posixWorkspacePath = workspacePath.replaceAll('\\', '/');
+    const relative = _stripWorkspacePrefix(posixFilePath, posixWorkspacePath);
+    return relative !== posixFilePath && relative in lockedFilePaths;
+  }
 
   /**
    * Get the category for a change, with consistent fallback logic.
@@ -189,6 +214,7 @@
     faSpinner,
     faCopy,
     faCheck,
+    faLock,
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
@@ -236,12 +262,14 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { setViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { selectLockedFilePaths } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? '';
   const foldUnchanged = selectFoldUnchanged();
   const lineWrapping = selectLineWrapping();
   const workspace$ = selectWorkspaceById(routeWorkspaceId);
   const agentFileRefreshes = selectAgentFileRefreshes(routeWorkspaceId);
+  const lockedFilePaths$ = selectLockedFilePaths(routeWorkspaceId);
 
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
@@ -283,8 +311,6 @@
     showStagingControls?: boolean;
     /** Whether to show category filter toggles (unstaged/staged/committed) */
     showCategoryFilter?: boolean;
-    /** Set of file paths that are locked (agent auto-commit pending) */
-    lockedFilePaths?: Set<string>;
     /** Stage a file */
     onStage?: (path: string) => void;
     /** Unstage a file */
@@ -334,7 +360,6 @@
     onOpenAgent,
     showStagingControls = false,
     showCategoryFilter = false,
-    lockedFilePaths = new Set<string>(),
     onStage,
     onUnstage,
     onRevert,
@@ -350,6 +375,15 @@
     gitRootPath = undefined,
   }: Props = $props();
 
+  function toGitRootRelativePath(filePath: string, rootPath?: string): string {
+    if (!rootPath) return filePath;
+    const normalizedPath = filePath.replaceAll('\\', '/');
+    const normalizedRoot = rootPath.replaceAll('\\', '/').replace(/\/$/, '');
+    return normalizedPath.startsWith(`${normalizedRoot}/`)
+      ? normalizedPath.slice(normalizedRoot.length + 1)
+      : filePath;
+  }
+
   // Group-by-commit toggle state (default: combined view)
   // svelte-ignore state_referenced_locally -- initial-value prop seeds the local toggle; later changes are user-driven.
   let groupByCommit = $state(initialGroupByCommit);
@@ -357,9 +391,13 @@
   // File tracking state from Redux
   const ftCommits$ = selectCurrentCommits(routeWorkspaceId);
 
-  // Helper to check if a file is locked
+  // Helper to check if a file is locked (agent auto-commit pending). Locked
+  // paths come from the agent-lock slice (PROTOCOL §5.19 / §6.5) repo-relative,
+  // while change paths here may be absolute — isPathLocked matches both forms.
   function isFileLocked(filePath: string): boolean {
-    return lockedFilePaths.has(filePath);
+    const workspace = $workspace$;
+    const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
+    return isPathLocked($lockedFilePaths$, filePath, workspacePath);
   }
 
   // Instance ID for debugging
@@ -639,6 +677,7 @@
     const currentBranchBaseRef = branchBaseRef ?? undefined;
     const currentBranchBaseCommitSha = branchBaseCommitSha ?? undefined;
     const currentGitRootId = gitRootId;
+    const currentGitRootPath = gitRootPath;
     const workspaceId = routeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
@@ -885,12 +924,16 @@
         plan.map((item) => {
           if (item.kind === 'fetch-committed') {
             // `currentGitRootId` scopes the reads to a registered secondary
-            // root (v6.15); absolute paths under that root are made relative
-            // daemon-side, same as primary-worktree paths.
+            // root (v6.15); normalize absolute UI paths against that root
+            // before sending the root-relative Git path.
             const showOpts = currentGitRootId ? { gitRootId: currentGitRootId } : undefined;
+            const rootRelativePath = toGitRootRelativePath(
+              item.change.filePath,
+              currentGitRootPath,
+            );
             return Promise.all([
-              dedupedShowFile(workspaceId, item.commitHash, item.change.filePath, showOpts),
-              dedupedShowFile(workspaceId, `${item.commitHash}^`, item.change.filePath, showOpts),
+              dedupedShowFile(workspaceId, item.commitHash, rootRelativePath, showOpts),
+              dedupedShowFile(workspaceId, `${item.commitHash}^`, rootRelativePath, showOpts),
             ])
               .then(([newRes, oldRes]) => ({ item, newRes, oldRes }))
               .catch((error) => {
@@ -922,6 +965,8 @@
             // git.showFile/file.read calls that can only fail (#1739).
             return batchedGitDiff(workspaceId, item.staged, item.change.filePath, {
               gitlink: item.change.gitlink,
+              gitRootId: currentGitRootId,
+              gitRootPath: currentGitRootPath,
             })
               .then((chunk) => ({ item, chunk }))
               .catch((error) => {
@@ -1284,7 +1329,10 @@
       const fetchStart = performance.now();
       const chunks = await Promise.all(
         reactiveChanges.map((change) =>
-          batchedGitDiff(workspaceId, false, change.filePath).catch((error) => {
+          batchedGitDiff(workspaceId, false, change.filePath, {
+            gitRootId,
+            gitRootPath,
+          }).catch((error) => {
             logger.warn('Failed to fetch git diff', { filePath: change.filePath, error });
             return undefined;
           }),
@@ -1605,6 +1653,8 @@
         sourcePanelId,
         branchBaseRef: branchBaseRef ?? undefined,
         branchBaseCommitSha: branchBaseCommitSha ?? undefined,
+        gitRootId,
+        gitRootPath,
       }),
     );
   }
@@ -1640,8 +1690,12 @@
       // `batchedGitDiff` so concurrent refreshes for different files on the same
       // tick coalesce into one IPC per staging group.
       const [stagedChunk, unstagedChunk] = await Promise.all([
-        batchedGitDiff(workspaceId, true, filePath).catch(() => undefined),
-        batchedGitDiff(workspaceId, false, filePath).catch(() => undefined),
+        batchedGitDiff(workspaceId, true, filePath, { gitRootId, gitRootPath }).catch(
+          () => undefined,
+        ),
+        batchedGitDiff(workspaceId, false, filePath, { gitRootId, gitRootPath }).catch(
+          () => undefined,
+        ),
       ]);
 
       const hasStagedChanges =
@@ -2861,6 +2915,7 @@
   {@const displayPath = getDisplayPath(change.filePath)}
   {@const expandKey = getExpandKey(change)}
   {@const isViewed = viewedFiles.has(change.filePath)}
+  {@const locked = isFileLocked(change.filePath)}
   {@const stickyTop = inCommitGroup ? '64px' : '31.5px'}
   <div
     class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-300 {isViewed
@@ -2917,6 +2972,12 @@
           </span>
         {/if}
         <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
+        <!-- Lock indicator: an agent's auto-commit is pending for this file -->
+        {#if locked}
+          <span role="img" aria-label={getLockedTooltip()} title={getLockedTooltip()}>
+            <Fa icon={faLock} class="w-2.5 h-2.5 text-subtle shrink-0" />
+          </span>
+        {/if}
         <!-- Loading indicator when file is being refreshed -->
         {#if refreshingFiles.has(change.filePath)}
           <Fa icon={faSpinner} class="w-3 h-3 text-ghost animate-spin shrink-0" />
@@ -2929,7 +2990,6 @@
           class="flex items-center gap-px bg-background opacity-0 group-hover:opacity-100 transition-opacity"
         >
           {#if showStagingControls}
-            {@const locked = isFileLocked(change.filePath)}
             <!-- Staging controls for merged changes (both staged and unstaged) -->
             {#if change.isMerged}
               <Button
@@ -3073,8 +3133,8 @@
               foldUnchanged={$foldUnchanged}
               lineWrapping={$lineWrapping}
               {isAggregate}
-              onStageHunk={showStagingControls ? handleStageHunk : undefined}
-              onUnstageHunk={showStagingControls ? handleUnstageHunk : undefined}
+              onStageHunk={showStagingControls && !locked ? handleStageHunk : undefined}
+              onUnstageHunk={showStagingControls && !locked ? handleUnstageHunk : undefined}
               onOpenCommit={handleOpenCommit}
               {virtualizer}
             />
@@ -3089,10 +3149,10 @@
                 ? scrollTarget?.lineNumber
                 : undefined}
               {isAggregate}
-              onStageHunk={showStagingControls && category === 'unstaged'
+              onStageHunk={showStagingControls && !locked && category === 'unstaged'
                 ? handleStageHunk
                 : undefined}
-              onUnstageHunk={showStagingControls && category === 'staged'
+              onUnstageHunk={showStagingControls && !locked && category === 'staged'
                 ? handleUnstageHunk
                 : undefined}
               onOpenCommit={category === 'committed' ? handleOpenCommit : undefined}

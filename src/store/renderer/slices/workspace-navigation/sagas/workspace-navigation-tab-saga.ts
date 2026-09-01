@@ -143,6 +143,8 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
         ...(options?.branchBaseCommitSha
           ? { branchBaseCommitSha: options.branchBaseCommitSha }
           : {}),
+        ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
+        ...(options?.gitRootPath ? { gitRootPath: options.gitRootPath } : {}),
       },
     },
     options?.openInAdjacentPanel ?? false,
@@ -169,7 +171,7 @@ function* openBrowser(action: ReturnType<typeof openWorkspaceBrowser>): SagaGene
 function* openLocalChanges(
   action: ReturnType<typeof openWorkspaceLocalChanges>,
 ): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
+  const [workspaceId, options] = action.payload;
   if (!workspaceId) return;
   yield* openWorkspaceTab(
     workspaceId,
@@ -178,6 +180,7 @@ function* openLocalChanges(
       title: m.layout_presetExecutor_allChanges_title(),
       workspaceId,
       closable: true,
+      data: { gitRootId: options?.gitRootId },
     },
     false,
   );

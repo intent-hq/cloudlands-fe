@@ -110,6 +110,7 @@ interface PendingDiff {
   /** Original request path → caller-provided gitlink metadata; used by the
    * `git.diffs` batcher only (#1739). */
   gitlinks?: Map<string, GitlinkMeta>;
+  gitRootPath?: string;
 }
 
 const pendingDiffs = new Map<string, PendingDiff>();
@@ -130,8 +131,8 @@ function findChunkForPath(chunks: DiffChunk[], filePath: string): DiffChunk | un
   );
 }
 
-function diffGroupKey(workspaceId: string, staged: boolean): string {
-  return `${workspaceId}::${staged ? '1' : '0'}`;
+function diffGroupKey(workspaceId: string, staged: boolean, gitRootId?: string): string {
+  return JSON.stringify([workspaceId, staged, gitRootId ?? '']);
 }
 
 /** True when a request path cannot be worktree-relative — absolute POSIX
@@ -256,6 +257,8 @@ async function enrichChunkContents(
   staged: boolean,
   chunk: DiffChunk,
   gitlink?: GitlinkMeta,
+  gitRootId?: string,
+  gitRootPath?: string,
 ): Promise<void> {
   if (isGitlinkDiffChunk(chunk)) {
     const sides = gitlinkSidesFromHunks(chunk.chunks ?? []);
@@ -269,11 +272,15 @@ async function enrichChunkContents(
     chunk.newContent = sides.newContent;
     return;
   }
+  const showOptions = gitRootId ? { gitRootId } : undefined;
   const [oldRes, newRes] = await Promise.all([
-    dedupedShowFile(workspaceId, staged ? 'HEAD' : ':0', chunk.file),
+    dedupedShowFile(workspaceId, staged ? 'HEAD' : ':0', chunk.file, showOptions),
     staged
-      ? dedupedShowFile(workspaceId, ':0', chunk.file)
-      : readWorkingTreeContent(workspaceId, chunk.file),
+      ? dedupedShowFile(workspaceId, ':0', chunk.file, showOptions)
+      : readWorkingTreeContent(
+          workspaceId,
+          gitRootPath ? `${gitRootPath.replace(/\/$/, '')}/${chunk.file}` : chunk.file,
+        ),
   ]);
   if (oldRes.success) chunk.oldContent = oldRes.data ?? '';
   else if (oldRes.notAFile) {
@@ -312,14 +319,20 @@ const pendingFullTreeReads = new Map<string, Promise<DiffChunk[]>>();
 /** Full-tree `git.diffs` recovery read (no `paths`), single-flight per
  * `(workspaceId, staged)`: concurrent flush groups awaiting recovery share one
  * in-flight daemon read instead of issuing duplicates. */
-function sharedFullTreeDiffRead(workspaceId: string, staged: boolean): Promise<DiffChunk[]> {
-  const key = diffGroupKey(workspaceId, staged);
+function sharedFullTreeDiffRead(
+  workspaceId: string,
+  staged: boolean,
+  gitRootId?: string,
+): Promise<DiffChunk[]> {
+  const key = diffGroupKey(workspaceId, staged, gitRootId);
   const existing = pendingFullTreeReads.get(key);
   if (existing) return existing;
 
   const promise = backendRequest<unknown>(
     'git.diffs',
-    staged ? { workspaceId, staged: true } : { workspaceId },
+    staged
+      ? { workspaceId, staged: true, ...(gitRootId ? { gitRootId } : {}) }
+      : { workspaceId, ...(gitRootId ? { gitRootId } : {}) },
   )
     .then(toDaemonDiffChunks)
     .finally(() => pendingFullTreeReads.delete(key));
@@ -334,8 +347,7 @@ async function flushDiffGroup(key: string) {
   pendingDiffs.delete(key);
   if (pending.timer) clearTimeout(pending.timer);
 
-  const [wsId, stagedStr] = key.split('::');
-  const staged = stagedStr === '1';
+  const [wsId, staged, gitRootId] = JSON.parse(key) as [string, boolean, string];
 
   try {
     // One hunk read serves the whole group: the batch's collected file set is
@@ -348,7 +360,9 @@ async function flushDiffGroup(key: string) {
     const paths = Array.from(pending.paths).sort();
     const result = await backendRequest<unknown>(
       'git.diffs',
-      staged ? { workspaceId: wsId, staged: true, paths } : { workspaceId: wsId, paths },
+      staged
+        ? { workspaceId: wsId, staged: true, paths, ...(gitRootId ? { gitRootId } : {}) }
+        : { workspaceId: wsId, paths, ...(gitRootId ? { gitRootId } : {}) },
     );
     const chunks = toDaemonDiffChunks(result);
 
@@ -383,7 +397,7 @@ async function flushDiffGroup(key: string) {
         { workspaceId: wsId, staged, paths: suspiciousUnmatched },
       );
       try {
-        const recoveryChunks = await sharedFullTreeDiffRead(wsId, staged);
+        const recoveryChunks = await sharedFullTreeDiffRead(wsId, staged, gitRootId);
         for (const path of suspiciousUnmatched) {
           matches.set(path, findChunkForPath(recoveryChunks, path));
         }
@@ -411,7 +425,14 @@ async function flushDiffGroup(key: string) {
     }
     await Promise.all(
       [...matchedChunks].map((chunk) =>
-        enrichChunkContents(wsId, staged, chunk, gitlinkByChunk.get(chunk)),
+        enrichChunkContents(
+          wsId,
+          staged,
+          chunk,
+          gitlinkByChunk.get(chunk),
+          gitRootId,
+          pending.gitRootPath,
+        ),
       ),
     );
 
@@ -486,9 +507,9 @@ export function batchedGitDiff(
   workspaceId: string,
   staged: boolean,
   filePath: string,
-  options?: { gitlink?: GitlinkMeta },
+  options?: { gitlink?: GitlinkMeta; gitRootId?: string; gitRootPath?: string },
 ): Promise<DiffChunk | undefined> {
-  const key = diffGroupKey(workspaceId, staged);
+  const key = diffGroupKey(workspaceId, staged, options?.gitRootId);
   const existing = pendingDiffs.get(key);
   const pending: PendingDiff = existing ?? {
     paths: new Set(),
@@ -497,6 +518,7 @@ export function batchedGitDiff(
     timer: null,
     wirePaths: new Map(),
     gitlinks: new Map(),
+    gitRootPath: options?.gitRootPath,
   };
   if (!existing) {
     pendingDiffs.set(key, pending);
@@ -505,7 +527,10 @@ export function batchedGitDiff(
     pending.timer = setTimeout(() => flushDiffGroup(key), 0);
   }
   const wirePath = isSuspiciousDiffPath(filePath)
-    ? (toWorktreeRelative(filePath, workspaceWorktreeRoot(workspaceId)) ?? filePath)
+    ? (toWorktreeRelative(
+        filePath,
+        options?.gitRootPath || workspaceWorktreeRoot(workspaceId),
+      ) ?? filePath)
     : filePath;
   pending.paths.add(wirePath);
   pending.wirePaths?.set(filePath, wirePath);

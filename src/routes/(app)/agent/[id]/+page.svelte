@@ -21,6 +21,7 @@
   import { formatTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import { untrack } from 'svelte';
 
   let agentId: string = $state('');
   let agent: any = $state(null);
@@ -75,13 +76,20 @@
     const subscribedAgentId = agentId;
     if (!subscribedAgentId) return;
 
-    const unsubscribe = subscribeToAgent(
-      subscribedAgentId,
-      (session) => {
-        if (agentId !== subscribedAgentId || !session) return;
-        applyAgentSession(session);
-      },
-      getOwningWorkspaceId(subscribedAgentId),
+    // untrack: subscribeToAgent fires its callback synchronously, which writes
+    // the `agent` $state that getOwningWorkspaceId also reads. Without
+    // untrack the effect both reads and writes `agent`, looping until Svelte
+    // throws effect_update_depth_exceeded (intent-hq/intent#4008). The effect
+    // must only depend on `agentId`.
+    const unsubscribe = untrack(() =>
+      subscribeToAgent(
+        subscribedAgentId,
+        (session) => {
+          if (agentId !== subscribedAgentId || !session) return;
+          applyAgentSession(session);
+        },
+        getOwningWorkspaceId(subscribedAgentId),
+      ),
     );
 
     return () => {

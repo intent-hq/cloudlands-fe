@@ -495,6 +495,8 @@
           // only fail on a status-marked submodule entry (#1739).
           const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath, {
             gitlink: change.gitlink,
+            gitRootId,
+            gitRootPath,
           });
 
           if (diffChunk) {
@@ -534,11 +536,22 @@
             // Old side always comes from a git ref; new side comes from the
             // working copy for unstaged changes.
             const gitRef = stagedFlag ? 'HEAD' : ':0';
-            const oldResult = await dedupedShowFile(wsIdForDiff, gitRef, filePath);
+            const showOptions = gitRootId ? { gitRootId } : undefined;
+            const oldResult = await dedupedShowFile(
+              wsIdForDiff,
+              gitRef,
+              filePath,
+              showOptions,
+            );
             if (oldResult?.success) oldContent = oldResult.data || '';
 
             if (stagedFlag) {
-              const indexResult = await dedupedShowFile(wsIdForDiff, ':0', filePath);
+              const indexResult = await dedupedShowFile(
+                wsIdForDiff,
+                ':0',
+                filePath,
+                showOptions,
+              );
               if (indexResult?.success) newContent = indexResult.data || '';
             } else {
               const wsId = workspaceId || workspace?.id;
