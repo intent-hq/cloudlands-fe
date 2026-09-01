@@ -34,7 +34,7 @@
 
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions({ primary: surfaceAction });
+    return headerContext.registerActions({ primary: surfaceAction });
   });
 </script>
 
