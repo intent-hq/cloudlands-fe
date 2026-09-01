@@ -849,11 +849,21 @@ test('caps one through eight participants at three and computes overflow from re
     props: { mode: 'agents', agentCount: 6, width: 120, initiallyExpanded: false },
   });
   const narrowStack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
+  /* The adaptive stack applies ResizeObserver widths one animation frame later
+     (createDeferredWidthApplier), so after a width change the visible count
+     settles asynchronously. Reading count() and the badge in separate calls
+     can straddle that settling frame (#4019) — read both atomically in one
+     evaluate and assert the pair is self-consistent. */
   await expect
-    .poll(() => narrowStack.locator('[data-agent-avatar-with-state]').count())
-    .toBeLessThan(6);
-  const visible = await narrowStack.locator('[data-agent-avatar-with-state]').count();
-  await expect(narrowStack.locator('[data-agent-avatar-overflow]')).toHaveText(`+${6 - visible}`);
+    .poll(() =>
+      narrowStack.evaluate((stack) => {
+        const visible = stack.querySelectorAll('[data-agent-avatar-with-state]').length;
+        const badge =
+          stack.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim() ?? null;
+        return { capped: visible < 6, consistent: badge === `+${6 - visible}` };
+      }),
+    )
+    .toEqual({ capped: true, consistent: true });
 
   await component.update({
     props: { mode: 'agents', agentCount: 12, width: 600, initiallyExpanded: false },
@@ -864,41 +874,65 @@ test('caps one through eight participants at three and computes overflow from re
   await expect.poll(() => measuredStack.locator('[data-agent-avatar-stack-item]').count()).toBe(3);
   /* The cutout mask is applied via CSS after the stack items render; under
      load (e.g. shared CI runners) the style evaluate below can win the race
-     and read maskImage before it is applied. Wait for the masks first. */
+     and read maskImage before it is applied. Wait for the masks first. The
+     poll requires all three items plus the settled +9 badge in the same
+     frame so it cannot pass vacuously (`[].every()` is true) on a transient
+     frame where the deferred width has not yet applied (#4019). */
   await expect
     .poll(() =>
       measuredStack.evaluate((stack) => {
         const items = Array.from(
           stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
         );
-        return items
-          .slice(0, -1)
-          .every((item) => getComputedStyle(item).maskImage.includes('url('));
+        const badge = stack.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim();
+        return (
+          items.length === 3 &&
+          badge === '+9' &&
+          items.slice(0, -1).every((item) => getComputedStyle(item).maskImage.includes('url('))
+        );
       }),
     )
     .toBe(true);
-  const style = await measuredStack.evaluate((stack) => {
-    const items = Array.from(stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'));
-    const overflow = stack.querySelector('[data-agent-avatar-overflow]') as HTMLElement;
-    const stackBox = stack.getBoundingClientRect();
-    const overflowBox = overflow.getBoundingClientRect();
-    return {
-      zIndexes: items.map((item) => Number(getComputedStyle(item).zIndex)),
-      masks: items.map((item) => getComputedStyle(item).maskImage),
-      avatarPseudos: items.map((item) => {
-        const pseudo = getComputedStyle(
-          item.querySelector('[data-agent-avatar-with-state]')!,
-          '::after',
-        );
-        return { content: pseudo.content, width: pseudo.borderTopWidth };
-      }),
-      overflowFontSize: getComputedStyle(overflow).fontSize,
-      overflowBackground: getComputedStyle(overflow).backgroundColor,
-      overflowCenterY: (overflowBox.top + overflowBox.bottom) / 2,
-      stackCenterY: (stackBox.top + stackBox.bottom) / 2,
-      devicePixelRatio: window.devicePixelRatio,
-    };
-  });
+  /* Read the settled 3-item state and its styles in ONE evaluate: a separate
+     count/style read pair can straddle a deferred-width settling frame and
+     observe a transient 0-item stack (#4019). Returns null until settled so
+     the poll retries instead of failing on a transient frame. */
+  const readStyle = () =>
+    measuredStack.evaluate((stack) => {
+      const items = Array.from(
+        stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
+      );
+      const overflow = stack.querySelector('[data-agent-avatar-overflow]') as HTMLElement | null;
+      if (items.length !== 3 || overflow?.textContent?.trim() !== '+9') return null;
+      const stackBox = stack.getBoundingClientRect();
+      const overflowBox = overflow.getBoundingClientRect();
+      return {
+        zIndexes: items.map((item) => Number(getComputedStyle(item).zIndex)),
+        masks: items.map((item) => getComputedStyle(item).maskImage),
+        avatarPseudos: items.map((item) => {
+          const pseudo = getComputedStyle(
+            item.querySelector('[data-agent-avatar-with-state]')!,
+            '::after',
+          );
+          return { content: pseudo.content, width: pseudo.borderTopWidth };
+        }),
+        overflowFontSize: getComputedStyle(overflow).fontSize,
+        overflowBackground: getComputedStyle(overflow).backgroundColor,
+        overflowCenterY: (overflowBox.top + overflowBox.bottom) / 2,
+        stackCenterY: (stackBox.top + stackBox.bottom) / 2,
+        devicePixelRatio: window.devicePixelRatio,
+      };
+    });
+  /* Capture the value inside the poll: a separate re-read after the poll can
+     land back in a transient frame and observe null again. */
+  let style: Awaited<ReturnType<typeof readStyle>> = null;
+  await expect
+    .poll(async () => {
+      style = await readStyle();
+      return style;
+    })
+    .not.toBeNull();
+  if (!style) throw new Error('unreachable: poll guarantees a non-null style');
   expect(style.zIndexes).toEqual([1, 2, 3]);
   expect(style.masks.at(-1)).toBe('none');
   for (const mask of style.masks.slice(0, -1)) {
