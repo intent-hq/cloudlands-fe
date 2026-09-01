@@ -295,7 +295,7 @@
   >
     <!-- Left column -->
     <div
-      class="titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-hidden"
+      class="titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-visible"
       data-title-bar-navigation
     >
       <div

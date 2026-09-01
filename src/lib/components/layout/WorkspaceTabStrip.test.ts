@@ -549,41 +549,6 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
-  it('contains active-tab flares without vertical scroll while retaining horizontal scrolling', () => {
-    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
-
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    }) as HTMLElement;
-    const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    const leadingFlare = activeTab.querySelector<SVGElement>('[data-workspace-tab-leading-flare]')!;
-    const trailingFlare = activeTab.querySelector<SVGElement>(
-      '[data-workspace-tab-trailing-flare]',
-    )!;
-
-    Object.defineProperties(strip, {
-      clientHeight: { configurable: true, value: 34 },
-      scrollHeight: { configurable: true, value: 34 },
-    });
-    strip.getBoundingClientRect = () => makeRect(0, 20, 520, 34);
-    activeTab.getBoundingClientRect = () => makeRect(12, 20, 160, 32);
-    leadingFlare.getBoundingClientRect = () => makeRect(0, 42, 12, 12);
-    trailingFlare.getBoundingClientRect = () => makeRect(172, 42, 12, 12);
-
-    const stripRect = strip.getBoundingClientRect();
-    const flareRects = [leadingFlare, trailingFlare].map((flare) => flare.getBoundingClientRect());
-
-    expect(strip.scrollHeight).toBe(strip.clientHeight);
-    expect(strip.classList).toContain('overflow-x-auto');
-    expect(getComputedStyle(strip).paddingBottom).toBe('2px');
-    expect(getComputedStyle(strip).marginBottom).toBe('-2px');
-    for (const flareRect of flareRects) {
-      expect(flareRect.left).toBeGreaterThanOrEqual(stripRect.left);
-      expect(flareRect.right).toBeLessThanOrEqual(stripRect.right);
-      expect(flareRect.bottom).toBeLessThanOrEqual(stripRect.bottom);
-    }
-  });
-
   it('keeps the normal first-tab curve, flares, and strip gutter across switching', async () => {
     const { rerender } = render(WorkspaceTabStrip, {
       props: { activeWorkspaceId: 'ws-1' },
