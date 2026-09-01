@@ -65,7 +65,6 @@ const canonicalStackConsumers = [
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
-  'src/lib/components/workspace/WorkspaceHoverCard.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
 ] as const;
 

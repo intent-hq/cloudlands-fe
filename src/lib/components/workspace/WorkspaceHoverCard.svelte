@@ -343,7 +343,7 @@
 </script>
 
 <section
-  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-popover text-left text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border/70"
+  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-popover text-left text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border"
   data-workspace-hover-card
   data-workspace-hover-card-layout="landscape"
 >
@@ -355,12 +355,12 @@
         <div class="grid gap-2 pr-3.5">
           <Skeleton class="h-4 w-40" /><Skeleton class="h-9 w-full" />
         </div>
-        <div class="border-l border-border/70 pl-3.5"><Skeleton class="h-14 w-full" /></div>
+        <div class="border-l border-border pl-3.5"><Skeleton class="h-14 w-full" /></div>
       </div>
     </div>
   {:else}
     <header
-      class="flex min-w-0 items-center gap-3 border-b border-border/70 px-3.5 py-3"
+      class="flex min-w-0 items-center gap-3 border-b border-border px-3.5 py-3"
       data-workspace-hover-card-header
     >
       <h2
@@ -439,7 +439,7 @@
         {/if}
       </section>
       <section
-        class="activity min-w-0 border-l border-solid border-border/70"
+        class="activity min-w-0 border-l border-solid border-border"
         data-workspace-hover-card-activity
         data-workspace-hover-card-agent-table
       >
