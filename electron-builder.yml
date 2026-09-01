@@ -23,6 +23,8 @@ files:
   - node_modules/**/*
   - resources/**/*
   - '!resources/sidecar/**'
+  # tailcat ships via extraResources (tailcat/), not asar.
+  - '!resources/tailcat/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
   - '!resources/speech-helper/**'
   # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
@@ -42,6 +44,16 @@ extraResources:
   # process.resourcesPath/intentd.version (see intentd-version-pin.ts).
   - from: intentd.version
     to: intentd.version
+  # tailcat tunnel client (staged by scripts/fetch-tailcat.cjs with its
+  # BSD-3-Clause LICENSE as tailcat.LICENSE next to the binary).
+  # Runtime path: process.resourcesPath/tailcat/tailcat (tailcat.exe on Windows)
+  - from: resources/tailcat
+    to: tailcat
+    filter:
+      - '**/*'
+      # Keep the fetch stamp (build machinery with a hash+timestamp) out of
+      # packaged builds so identical pinned binaries produce identical artifacts.
+      - '!.tailcat-fetch-stamp.json'
 
 # Unpack renderer files from asar to avoid MIME type issues
 # Unpack Express and related modules for HTTP MCP Bridge
