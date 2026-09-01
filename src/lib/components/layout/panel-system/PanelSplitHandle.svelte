@@ -209,7 +209,12 @@
      panel's trailing edge, where native scrollbars live (a left panel's
      vertical scrollbar, an upper panel's horizontal scrollbar), and clicks
      there must reach the scrollbar. The trailing 4px keeps intruding into the
-     next panel's leading edge, which hosts no scrollbar. */
+     next panel's leading edge. That edge hosts no along-axis scrollbar, though
+     the intrusion still covers a 4px corner sliver of the next panel's
+     cross-axis scrollbar (e.g. the last 4px of a right panel's horizontal
+     scrollbar) — an accepted trade-off to preserve the forgiving target.
+     Note inset() sides are physical, not logical: under RTL the leading edge
+     would flip to the right, but all shipped locales are LTR. */
   .panel-split-handle.horizontal {
     width: 16px;
     margin: 0 -4px;
