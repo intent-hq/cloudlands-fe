@@ -129,6 +129,189 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('chat.unsubscribe', { subscriptionId: 'sub-1' });
   });
 
+  it('drops invalid message envelopes without discarding unrelated valid snapshot messages', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<Record<string, unknown>> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t as (typeof seen)[number]));
+    await flush();
+
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        null,
+        { ...SEEDED_SNAPSHOT.messages[0], id: '' },
+        SEEDED_SNAPSHOT.messages[0],
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'tool-message', seq: 1, role: 'tool' },
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'bad-role', role: 'operator' },
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'bad-seq', seq: '1' },
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'negative-seq', seq: -1 },
+      ],
+    });
+
+    expect(seen[0].messages).toHaveLength(2);
+    expect(seen[0].messages).toEqual([
+      expect.objectContaining({
+        id: '0190a1b2-user',
+        agentId: 'agent-1',
+        seq: 0,
+        role: 'user',
+      }),
+      expect.objectContaining({
+        id: 'tool-message',
+        agentId: 'agent-1',
+        seq: 1,
+        role: 'tool',
+      }),
+    ]);
+    off();
+  });
+
+  it('normalizes null and non-array contentBlocks without dropping their valid messages', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ id: string; contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'null-blocks', contentBlocks: null },
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          id: 'array-like-blocks',
+          seq: 1,
+          contentBlocks: { length: 1, 0: { type: 'text', text: 'unsafe' } },
+        },
+      ],
+    });
+
+    expect(seen[0].messages).toEqual([
+      expect.objectContaining({ id: 'null-blocks', contentBlocks: [] }),
+      expect.objectContaining({ id: 'array-like-blocks', contentBlocks: [] }),
+    ]);
+    off();
+  });
+
+  it('isolates malformed blocks and plan entries while preserving safe sibling content', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{
+      messages: Array<{ id: string; contentBlocks?: Array<Record<string, unknown>> }>;
+    }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    const validPlan = {
+      type: 'plan',
+      id: '0190a1b2-user:5',
+      entries: [
+        {
+          content: 'Keep the valid plan',
+          priority: 'high',
+          status: 'in_progress',
+          providerExtension: true,
+        },
+      ],
+    };
+    const resource = {
+      type: 'resource',
+      id: '0190a1b2-user:6',
+      resource: { uri: 'file:///tmp/result.txt', text: 'safe forward-compatible content' },
+    };
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          contentBlocks: [
+            { type: 'text', id: '0190a1b2-user:0', text: 'Keep me' },
+            null,
+            { type: 'plan', id: '0190a1b2-user:2', entries: { length: 1 } },
+            { type: 'thinking', id: '0190a1b2-user:3', text: 'Keep this too' },
+            { type: 'plan', id: '0190a1b2-user:4', entries: [{}] },
+            validPlan,
+            resource,
+          ],
+        },
+      ],
+    });
+
+    expect(seen[0].messages[0].contentBlocks).toEqual([
+      { type: 'text', id: '0190a1b2-user:0', text: 'Keep me' },
+      { type: 'thinking', id: '0190a1b2-user:3', text: 'Keep this too' },
+      {
+        type: 'plan',
+        id: '0190a1b2-user:5',
+        entries: [{ content: 'Keep the valid plan', priority: 'high', status: 'in_progress' }],
+      },
+      resource,
+    ]);
+    off();
+  });
+
+  it('migrates supported legacy snapshot blocks at ingress', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          contentBlocks: [
+            {
+              kind: 'nav-link',
+              id: '0190a1b2-user:0',
+              target: '/settings',
+              label: 'Settings',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(seen[0].messages[0].contentBlocks).toEqual([
+      {
+        type: 'nav-link',
+        kind: 'nav-link',
+        id: '0190a1b2-user:0',
+        target: '/settings',
+        label: 'Settings',
+        metadata: undefined,
+      },
+    ]);
+    off();
+  });
+
+  it('preserves valid empty and non-empty plan snapshots', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    const plans = [
+      { type: 'plan', id: 'empty-plan', entries: [] },
+      {
+        type: 'plan',
+        id: 'active-plan',
+        entries: [{ content: 'Run tests', priority: 'medium', status: 'pending' }],
+      },
+    ];
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [{ ...SEEDED_SNAPSHOT.messages[0], contentBlocks: plans }],
+    });
+
+    expect(seen[0].messages[0].contentBlocks).toEqual(plans);
+    off();
+  });
+
   it('stamps fromSnapshot: true on snapshot emits and omits it on delta emits', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

@@ -29,7 +29,12 @@
  * seq-0 snapshot reduced with every delta — honoring `removedIds` — equals a
  * fresh `agent.getConversation` snapshot.
  */
-import { isPlanContentBlock, type AgentMessage, type ContentBlock } from '$shared/types';
+import {
+  isPlanContentBlock,
+  migrateFromLegacy,
+  type AgentMessage,
+  type ContentBlock,
+} from '$shared/types';
 import type {
   ChatClient,
   ChatLiveStreamPhase,
@@ -106,14 +111,86 @@ const MAX_RETRY_DELAY_MS = 30_000;
  */
 const MAX_BUFFERED_PUSHES = 32;
 
+const SNAPSHOT_MESSAGE_ROLES = new Set(['user', 'assistant', 'tool', 'system', 'error']);
+
+const STRICT_SNAPSHOT_BLOCK_TYPES = new Set([
+  'text',
+  'code',
+  'tool_use',
+  'tool_result',
+  'thinking',
+  'image',
+  'audio',
+  'file',
+  'nav-link',
+  'proposal',
+  'plan',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Normalize one snapshot block without allowing one bad sibling to erase the
+ * rest of the message. Canonical and supported structural legacy blocks use
+ * the shared strict migration boundary. A malformed known block is dropped;
+ * an object with an unknown non-plan type is retained so newer block kinds
+ * keep the protocol's forward-compatible ignore behavior.
+ */
+function normalizeSnapshotBlock(raw: unknown): ContentBlock | null {
+  if (!isRecord(raw)) return null;
+  try {
+    return migrateFromLegacy(raw);
+  } catch {
+    if (
+      typeof raw.type !== 'string' ||
+      raw.type.length === 0 ||
+      STRICT_SNAPSHOT_BLOCK_TYPES.has(raw.type)
+    ) {
+      return null;
+    }
+    return { ...raw } as unknown as ContentBlock;
+  }
+}
+
+function normalizeSnapshotMessage(raw: unknown): AgentMessage | null {
+  if (!isRecord(raw)) return null;
+  if (
+    typeof raw.id !== 'string' ||
+    raw.id.length === 0 ||
+    typeof raw.agentId !== 'string' ||
+    raw.agentId.length === 0 ||
+    typeof raw.seq !== 'number' ||
+    !Number.isSafeInteger(raw.seq) ||
+    raw.seq < 0 ||
+    typeof raw.role !== 'string' ||
+    !SNAPSHOT_MESSAGE_ROLES.has(raw.role) ||
+    typeof raw.timestamp !== 'string' ||
+    raw.timestamp.length === 0
+  ) {
+    return null;
+  }
+
+  const contentBlocks = Array.isArray(raw.contentBlocks)
+    ? raw.contentBlocks
+        .map(normalizeSnapshotBlock)
+        .filter((block): block is ContentBlock => block !== null)
+    : [];
+  return { ...raw, contentBlocks } as unknown as AgentMessage;
+}
+
 function extractSnapshot(raw: unknown): ChatSnapshotResult {
-  if (!raw || typeof raw !== 'object') return EMPTY_SNAPSHOT;
-  const p = raw as ChatSnapshotPayload;
-  const messages = Array.isArray(p.messages) ? (p.messages as AgentMessage[]) : [];
+  if (!isRecord(raw)) return EMPTY_SNAPSHOT;
+  const messages = Array.isArray(raw.messages)
+    ? raw.messages
+        .map(normalizeSnapshotMessage)
+        .filter((message): message is AgentMessage => message !== null)
+    : [];
   return {
     messages,
-    truncated: Boolean(p.truncated),
-    totalMessages: typeof p.totalMessages === 'number' ? p.totalMessages : 0,
+    truncated: Boolean(raw.truncated),
+    totalMessages: typeof raw.totalMessages === 'number' ? raw.totalMessages : 0,
   };
 }
 
