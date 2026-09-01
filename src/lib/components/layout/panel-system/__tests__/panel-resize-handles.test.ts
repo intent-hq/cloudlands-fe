@@ -78,6 +78,10 @@ describe('editorial panel resize handles', () => {
     ).toContain('data-combined-panel-divider-border');
   });
 
+  // Scrollbar/hit-area interplay (the clipped leading strip must let clicks
+  // reach a neighboring panel's native scrollbar) is asserted behaviorally in
+  // panel-resize-handle-hit-area.ct.spec.ts via document.elementFromPoint.
+
   it('keeps a vertical 16px resize target while reporting horizontal drag deltas', async () => {
     const onResize = vi.fn();
     const onResizeEnd = vi.fn();
