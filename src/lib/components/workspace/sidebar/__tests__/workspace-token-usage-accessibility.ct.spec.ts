@@ -135,6 +135,14 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(agentGroup.getByRole('radio')).toHaveCount(4);
   await expect(modelGroup.getByRole('radio')).toHaveCount(4);
 
+  await agentBeta.focus();
+  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await page.keyboard.press('Shift+Tab');
+  await expect(disclosure).toBeFocused();
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await page.keyboard.press('Tab');
+  await expect(agentAlpha).toBeFocused();
+
   for (const theme of ['light', 'dark'] as const) {
     await component.update({ props: { theme, width: 304 } });
     await expect(component).toHaveAttribute('data-theme', theme);
@@ -150,18 +158,23 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     ]);
     const compositionSegments = details.locator('.composition-strip-segment');
     await expect(compositionSegments).toHaveCount(3);
-    const segmentColors = await compositionSegments.evaluateAll((segments) =>
-      segments.map((segment) => ({
-        metric: (segment as HTMLElement).dataset.metric,
-        color: getComputedStyle(segment).backgroundColor,
-      })),
-    );
+    const readSegmentColors = () =>
+      compositionSegments.evaluateAll((segments) =>
+        segments.map((segment) => ({
+          metric: (segment as HTMLElement).dataset.metric,
+          color: getComputedStyle(segment).backgroundColor,
+        })),
+      );
     const keyColors = await compositionRows.locator('.composition-key').evaluateAll((keys) =>
       keys.map((key) => ({
         metric: (key as HTMLElement).dataset.metric,
         color: getComputedStyle(key).backgroundColor,
       })),
     );
+    await expect
+      .poll(readSegmentColors)
+      .toEqual(keyColors.filter(({ metric }) => metric !== 'reasoning'));
+    const segmentColors = await readSegmentColors();
     themeCompositionColors.push(segmentColors.map(({ color }) => color));
     expect(new Set(themeCompositionColors.at(-1)).size).toBe(3);
     expect(new Set(keyColors.map(({ color }) => color)).size).toBe(4);
@@ -382,6 +395,13 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
     /Nach Agent, Agent alpha-01: 750 Token/,
   );
   await expect(agentGroup.getByRole('radio').first()).toHaveAttribute('aria-checked', 'true');
+  await agentGroup.getByRole('radio').nth(1).focus();
+  const localizedStatus = (await page.locator('.preview-status').textContent())
+    ?.replace(/\s+/g, ' ')
+    .trim();
+  expect(localizedStatus).toBe('Aktiver Bereich Nach Agent Agent beta-02 150 verarbeitet');
+  expect(localizedStatus?.match(/Nach Agent/g)).toHaveLength(1);
+  await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'true');
 });
 
 test('retargets animated values smoothly with final-only accessibility and stable geometry', async ({
@@ -663,6 +683,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     messageAlignment,
     breakdownAlignment,
     compositionBar,
+    contentOrder,
     visibleTextWeights,
     typeHierarchy,
   ] = await Promise.all([
@@ -756,8 +777,9 @@ test('renders the full reference table as a wide overlay from the real workspace
         content: divider.content,
         backgroundColor: divider.backgroundColor,
         neutralColor,
+        gridBorderTopWidth: getComputedStyle(grid).borderTopWidth,
+        gridBorderTopColor: getComputedStyle(grid).borderTopColor,
         gridBorderBottomWidth: getComputedStyle(grid).borderBottomWidth,
-        gridBorderBottomColor: getComputedStyle(grid).borderBottomColor,
         secondSectionBorderLeftWidth: getComputedStyle(secondSection).borderLeftWidth,
         secondSectionBorderLeftColor: getComputedStyle(secondSection).borderLeftColor,
         headerBorderBottomWidth: getComputedStyle(compositionHeader).borderBottomWidth,
@@ -765,6 +787,10 @@ test('renders the full reference table as a wide overlay from the real workspace
         rowBorderTopWidths: rows.map((row) => getComputedStyle(row).borderTopWidth),
         lastRowBorderBottomWidth: getComputedStyle(rows.at(-1)!).borderBottomWidth,
         compositionPaddingBottom: getComputedStyle(compositionHeader.parentElement!).paddingBottom,
+        compositionBottom: compositionHeader.parentElement!.getBoundingClientRect().bottom,
+        gridTop: grid.getBoundingClientRect().top,
+        gridBottom: grid.getBoundingClientRect().bottom,
+        detailsBottom: grid.parentElement!.getBoundingClientRect().bottom,
       };
     }),
     composition.evaluate((section) => {
@@ -822,6 +848,12 @@ test('renders the full reference table as a wide overlay from the real workspace
         box: box.toJSON(),
         borderRadius: getComputedStyle(strip).borderRadius,
         overflowX: getComputedStyle(strip).overflowX,
+        summaryGap:
+          box.top -
+          strip.parentElement!.querySelector('.token-summary')!.getBoundingClientRect().bottom,
+        headerGap:
+          strip.parentElement!.querySelector('.composition-header')!.getBoundingClientRect().top -
+          box.bottom,
         gaps: segments.slice(1).map((segment, index) => {
           const previous = segments[index].getBoundingClientRect();
           return segment.getBoundingClientRect().left - previous.right;
@@ -831,6 +863,19 @@ test('renders the full reference table as a wide overlay from the real workspace
           box: segment.getBoundingClientRect().toJSON(),
           color: getComputedStyle(segment).backgroundColor,
         })),
+      };
+    }),
+    details.evaluate((element) => {
+      const compositionSection = element.querySelector('section[aria-labelledby$="-composition"]')!;
+      const navigator = element.querySelector('.breakdown-grid')!;
+      const lastRow = element.querySelector('.composition-row:last-child')!;
+      return {
+        compositionBeforeNavigator: Boolean(
+          compositionSection.compareDocumentPosition(navigator) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+        navigatorIsLastChild: element.lastElementChild === navigator,
+        navigatorBelowRows:
+          navigator.getBoundingClientRect().top >= lastRow.getBoundingClientRect().bottom,
       };
     }),
     details.evaluate((element) =>
@@ -893,18 +938,30 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(breakdownDivider.content).toBe('none');
   expect(breakdownDivider.backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(breakdownDivider).toMatchObject({
-    gridBorderBottomWidth: '1px',
+    gridBorderTopWidth: '1px',
+    gridBorderBottomWidth: '0px',
     secondSectionBorderLeftWidth: '1px',
     headerBorderBottomWidth: '1px',
     rowBorderTopWidths: ['0px', '0px', '0px', '0px', '0px', '0px'],
     lastRowBorderBottomWidth: '0px',
-    compositionPaddingBottom: '12px',
+    compositionPaddingBottom: '0px',
   });
   expect([
-    breakdownDivider.gridBorderBottomColor,
+    breakdownDivider.gridBorderTopColor,
     breakdownDivider.secondSectionBorderLeftColor,
     breakdownDivider.headerBorderBottomColor,
   ]).toEqual(Array(3).fill(breakdownDivider.neutralColor));
+  expect(
+    Math.abs(breakdownDivider.compositionBottom - breakdownDivider.gridTop),
+  ).toBeLessThanOrEqual(0.01);
+  expect(
+    Math.abs(breakdownDivider.gridBottom - breakdownDivider.detailsBottom),
+  ).toBeLessThanOrEqual(1);
+  expect(contentOrder).toEqual({
+    compositionBeforeNavigator: true,
+    navigatorIsLastChild: true,
+    navigatorBelowRows: true,
+  });
   expect(
     Math.abs(breakdownAlignment[0].selection.left - compositionAlignment.rowLeft),
   ).toBeLessThanOrEqual(1);
@@ -977,6 +1034,8 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(compositionBar.box.height).toBe(10);
   expect(compositionBar.borderRadius).toBe('2px');
   expect(compositionBar.overflowX).toBe('hidden');
+  expect(compositionBar.summaryGap).toBeCloseTo(8, 2);
+  expect(compositionBar.headerGap).toBeCloseTo(20, 2);
   expect(compositionBar.gaps.every((gap) => Math.abs(gap - 1) <= 0.02)).toBe(true);
   expect(compositionBar.segments.map(({ metric }) => metric)).toEqual([
     'cached',
