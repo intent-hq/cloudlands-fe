@@ -306,6 +306,7 @@ describe('multi-backend connect — end-to-end journey', () => {
       protocolMismatch: null,
       authRejected: null,
       certMismatch: null,
+      certWarnings: null,
       pinnedVersion: '0.1.0',
       connectedIds: [],
     });

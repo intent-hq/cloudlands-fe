@@ -36,6 +36,7 @@ export const CONNECTION_CHANNELS = IPC_CHANNELS.CONNECTIONS;
  */
 export const CONNECTIONS_CHANGED_EVENT = 'connections:changed';
 export const CONNECTION_CERT_MISMATCH_EVENT = 'connections:cert-mismatch';
+export const CONNECTION_CERT_WARNINGS_EVENT = 'connections:cert-warnings';
 export const CONNECTION_PROTOCOL_MISMATCH_EVENT = 'connections:protocol-mismatch';
 export const CONNECTION_AUTH_REJECTED_EVENT = 'connections:auth-rejected';
 export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';
@@ -189,6 +190,14 @@ export interface ConnectionsListResult {
    * when the backend's pinned cert matches (or it is local).
    */
   certMismatch?: ConnectionCertMismatchEvent | null;
+  /**
+   * Sticky NON-FATAL per-host cert warnings for this window's backend
+   * (latest fingerprint per host, accumulated across reconnect attempts),
+   * replayed here so a renderer created after the `connections:cert-warnings`
+   * broadcast still surfaces them. `null`/absent when no per-host mismatch
+   * has been observed (or the backend is local).
+   */
+  certWarnings?: ConnectionCertWarningsEvent | null;
   /**
    * The app's pinned intentd version (the `intentd.version` file bundled with
    * the FE), or `null` when the pin is missing/malformed. Carried here so the
@@ -401,6 +410,44 @@ export interface ConnectionCertMismatchEvent {
   expectedFingerprint: string;
   /** The fingerprint actually presented on this connect. */
   actualFingerprint: string;
+  /**
+   * Every per-host mismatch the failing multi-host connection race observed
+   * (#1746), latest fingerprint per host. Absent/empty for single-host
+   * failures raised below the race layer (where the host is not known).
+   * Additive — older payloads omit it.
+   */
+  mismatches?: ConnectionHostCertWarning[];
+}
+
+/**
+ * One observed per-host certificate-pin mismatch, as surfaced to the renderer.
+ * Mirrors `HostCertMismatch` in `backend-connection.ts` (main-only module)
+ * with the fingerprint fields renamed to match the sibling connection events.
+ */
+export interface ConnectionHostCertWarning {
+  /** Candidate host that presented the mismatching certificate. */
+  host: string;
+  /** The pinned fingerprint we expected (colon-hex uppercase). */
+  expectedFingerprint: string;
+  /** The fingerprint that host actually presented (colon-hex uppercase). */
+  actualFingerprint: string;
+}
+
+/**
+ * `connections:cert-warnings` — broadcast whenever the set of NON-FATAL
+ * per-host cert mismatches observed for a connection changes. The multi-host
+ * connection race (#1746) can connect successfully through one candidate while
+ * another candidate presents a foreign pinned cert; each such observation is
+ * accumulated per host (latest fingerprint per host, across reconnect
+ * attempts) and pushed here. Unlike {@link ConnectionCertMismatchEvent}, this
+ * NEVER blocks the connection — it is informative only. An empty `warnings`
+ * array is broadcast when the set is cleared (fresh client for the id).
+ */
+export interface ConnectionCertWarningsEvent {
+  /** id of the connection the warnings belong to. */
+  id: string;
+  /** Observed per-host mismatches, latest fingerprint per host. */
+  warnings: ConnectionHostCertWarning[];
 }
 
 /**

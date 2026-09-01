@@ -457,6 +457,171 @@ describe('pinned-cert mismatch propagation', () => {
       certMismatch: null,
     });
   });
+
+  it('carries the per-host mismatch list from a raced PinMismatchError (#1746)', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+    const { PinMismatchError } = await import('../backend-connection');
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit(
+      'error',
+      new PinMismatchError('AA:BB:CC:DD', 'EE:FF:00:11', [
+        { host: '10.0.0.5', expected: 'AA:BB:CC:DD', actual: 'EE:FF:00:11' },
+        { host: '192.168.1.9', expected: 'AA:BB:CC:DD', actual: '22:33:44:55' },
+      ]),
+    );
+
+    const mismatchCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-mismatch');
+    expect(mismatchCalls).toHaveLength(1);
+    expect(mismatchCalls[0][1]).toMatchObject({
+      id: 'remote-1',
+      expectedFingerprint: 'AA:BB:CC:DD',
+      actualFingerprint: 'EE:FF:00:11',
+      mismatches: [
+        { host: '10.0.0.5', expectedFingerprint: 'AA:BB:CC:DD', actualFingerprint: 'EE:FF:00:11' },
+        {
+          host: '192.168.1.9',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: '22:33:44:55',
+        },
+      ],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-fatal per-host cert warnings (#1746)
+// ---------------------------------------------------------------------------
+
+describe('non-fatal per-host cert-warning propagation', () => {
+  it('broadcasts connections:cert-warnings when the client observes a pin-mismatch', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+
+    const warningCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-warnings');
+    expect(warningCalls).toHaveLength(1);
+    expect(warningCalls[0][1]).toEqual({
+      id: 'remote-1',
+      warnings: [
+        {
+          host: '192.168.1.9',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: '22:33:44:55',
+        },
+      ],
+    });
+
+    // The connection race re-observes the same mismatch on every reconnect
+    // attempt — an unchanged fingerprint re-broadcasts nothing.
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+    expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(1);
+  });
+
+  it('accumulates per-host warnings and keeps the latest fingerprint per host', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+    client.emit('cert-warning', {
+      host: '10.0.0.99',
+      expected: 'AA:BB:CC:DD',
+      actual: '66:77:88:99',
+    });
+    // The same host later presents a DIFFERENT cert — latest fingerprint wins.
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: 'FF:FF:FF:FF',
+    });
+
+    const warningCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-warnings');
+    expect(warningCalls).toHaveLength(3);
+    expect(warningCalls.at(-1)?.[1]).toEqual({
+      id: 'remote-1',
+      warnings: [
+        {
+          host: '192.168.1.9',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: 'FF:FF:FF:FF',
+        },
+        {
+          host: '10.0.0.99',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: '66:77:88:99',
+        },
+      ],
+    });
+  });
+
+  it('latches warnings fired with zero windows and replays them on connections:list', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const pooled = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    pooled.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+
+    const { localSender, remoteSender } = installBackendWindows();
+    const handler = findHandler('connections:list');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certWarnings: {
+        id: 'remote-1',
+        warnings: [
+          {
+            host: '192.168.1.9',
+            expectedFingerprint: 'AA:BB:CC:DD',
+            actualFingerprint: '22:33:44:55',
+          },
+        ],
+      },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      certWarnings: null,
+    });
+
+    // A fresh client (re-pair) clears the accumulated warnings: the next
+    // connect re-observes any still-mismatching host.
+    mod.disconnectBackendClient('remote-1');
+    await mod.connectBackendClient('remote-1');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certWarnings: null,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -599,6 +764,8 @@ describe('connections:* IPC handlers', () => {
       authRejected: null,
       // No pinned cert has mismatched, so there is no sticky cert failure.
       certMismatch: null,
+      // No non-fatal per-host mismatch has been observed either (#1746).
+      certWarnings: null,
       // The app's pinned intentd version rides the list payload.
       pinnedVersion: '0.1.0',
       // No client reports 'connected' (the fake pool returns 'disconnected').
