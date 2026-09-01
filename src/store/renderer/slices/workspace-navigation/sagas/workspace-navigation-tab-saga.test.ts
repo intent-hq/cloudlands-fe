@@ -97,10 +97,13 @@ describe('workspaceNavigationTabSaga', () => {
   it('threads gitRootId into a secondary-root all-changes tab', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
 
     channel.put(openWorkspaceLocalChanges('ws-1', { gitRootId: 'root-9' }));
-    await settle();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
 
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
