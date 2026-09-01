@@ -379,8 +379,16 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - Tests **MUST** cover observable logic: state transitions, inputs/outputs and wire
   payloads, validation, conditional behavior, routing, error/retry handling, persistence,
   and accessibility interactions/state.
-- Do **not** add tests whose only purpose is exact copy, static source/markup/class
-  strings, source order, or unconditional visual presence.
+- Tests **MUST** establish runtime or behavioral evidence against an independent oracle.
+  Expectations derived from the implementation under test are circular and prohibited.
+- Do **not** assert literal source, class, or markup spelling, source order, exact copy, or
+  unconditional visual presence.
+- Do **not** stub or assign dimensions, values, or state and then assert those same inputs.
+  Exercise production behavior and observe its resulting output or runtime state.
+- Do **not** duplicate production values in a fixture and test only that duplicate. A
+  fixture must drive production code or independently model the external contract.
+- Exact-value assertions are appropriate for intentional stable contracts, including wire
+  payloads, schemas, public identifiers, and accessibility state.
 - Accessible text may locate a control in a behavioral test; assert the resulting
   interaction or state, not the exact wording as the contract.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
