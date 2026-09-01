@@ -6,7 +6,7 @@
  * displayStatus: 'idle', and the FE renders the BE-sent value verbatim.
  * Verifies:
  * - Workspaces with a BE-sent 'idle' displayStatus land in the Idle section
- * - The Idle section appears above other sections
+ * - The Idle section appears directly after In Progress
  * - PR-stage workspaces group under their own section, never Idle
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -102,7 +102,7 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
     });
   });
 
-  it('places the Idle section above other sections', async () => {
+  it('places the Idle section directly after In Progress', async () => {
     const wsIdle = makeWorkspace('ws-idle-1', 'Idle WS 1', { displayStatus: 'idle' });
     const wsInProgress = makeWorkspace('ws-running-1', 'Running WS', {
       displayStatus: 'in_progress',
@@ -124,8 +124,7 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
       const headers = getGroupHeaders();
       expect(headers).toContain('Idle');
       expect(headers).toContain('In Progress');
-      // Idle should be first
-      expect(headers[0]).toBe('Idle');
+      expect(headers.indexOf('Idle')).toBe(headers.indexOf('In Progress') + 1);
     });
   });
 
