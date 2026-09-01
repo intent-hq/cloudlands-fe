@@ -52,7 +52,7 @@ on:
         type: boolean
         default: true
       intentd_ref:
-        description: 'intent-hq/intentd git ref (SHA/branch/tag) to build the sidecar from source. Empty = fetch the pinned intentd release.'
+        description: 'intent-hq/intentd git ref (full 40-char commit SHA, branch, or tag — actions/checkout cannot resolve abbreviated SHAs) to build the sidecar from source. Empty = fetch the pinned intentd release.'
         required: false
         type: string
         default: ''
@@ -140,6 +140,11 @@ jobs:
       # at resources/sidecar/intentd — the same path fetch-sidecar.cjs stages
       # to and INTENTD_BIN (below) points at, so packaging needs no change.
       # intent-hq/intentd is public: the default token covers the checkout.
+      # Trust boundary: `cargo build` executes the ref's build scripts/proc
+      # macros in this job. That matches the trust already extended to the
+      # dispatched FE ref itself (pnpm install lifecycle scripts, node
+      # scripts) — dispatching requires write access, and the checkout is
+      # pinned to the org-owned intent-hq/intentd repo, never a fork.
       - name: Checkout intentd at intentd_ref
         if: ${{ inputs.intentd_ref != '' }}
         uses: actions/checkout@v7
@@ -174,13 +179,16 @@ jobs:
 
       # Keyed per target so a cache saved by another leg's target can never be
       # restored here; scoped to the intentd-src workspace (the FE checkout has
-      # no Cargo workspace).
+      # no Cargo workspace). cache-on-failure keeps the compiled deps when a
+      # later step (packaging/notarization) fails after a completed cold
+      # ~15-min cargo build, so the next dispatch doesn't pay it again.
       - name: Cache intentd cargo build
         if: ${{ inputs.intentd_ref != '' }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: intentd-src
           key: aarch64-apple-darwin
+          cache-on-failure: true
 
       # Native build on the arm64 host (no --target), so the binary lands at
       # target/release/intentd.
@@ -371,7 +379,10 @@ jobs:
             fi
             echo ""
             if [ -n "$INTENTD_REF" ]; then
-              echo "intentd sidecar: built from source at \`$INTENTD_REF\` (${{ steps.intentd_sha.outputs.sha }})"
+              # ${INTENTD_SHA:-unresolved}: this step is always() — a run that
+              # fails before "Resolve intentd SHA" (e.g. a bad ref failing the
+              # intentd checkout) has no SHA output to report.
+              echo "intentd sidecar: built from source at \`$INTENTD_REF\` (${INTENTD_SHA:-unresolved})"
             else
               # intentd.version holds comment lines above the version; take
               # the first non-comment, non-empty line (fetch-sidecar-lib does
@@ -384,6 +395,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           INTENTD_REF: ${{ inputs.intentd_ref }}
+          INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
 
       # Always delete the temporary signing keychain, restore the pre-job
       # keychain search list, and shred the decoded certificate so no
