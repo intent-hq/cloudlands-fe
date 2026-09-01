@@ -36,6 +36,10 @@
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
   import { formatFileSize } from '$lib/utils/file-utils';
+  import {
+    imageFilesToContextItems,
+    REFERENCE_IMAGE_MAX_BYTES,
+  } from '$lib/components/chat/input/image-context-items';
 
   const COORDINATOR_SPECIALIST_ID = 'spec-writer';
 
@@ -96,6 +100,14 @@
      */
     stagedContextItems?: ContextItem[];
 
+    /**
+     * Image attachments as context items (`imageData`/`imageMimeType`),
+     * rendered as thumbnail squares below the editor — never inline in the
+     * editor. Owned by the parent so the submit path can send them as
+     * attachment-reference blocks on the first message.
+     */
+    imageContextItems?: ContextItem[];
+
     // Handlers
     onSubmit: () => void;
     onEnhancePrompt: () => void;
@@ -139,6 +151,7 @@
     visibleSuggestions,
     focusedSuggestionIndex = $bindable(),
     stagedContextItems = $bindable([]),
+    imageContextItems = $bindable([]),
     onSubmit,
     onEnhancePrompt,
     enhancePromptAvailable = true,
@@ -247,7 +260,8 @@
     onboardingFileInput?.click();
   }
 
-  /** Handle selected files — insert images into RichTextarea. */
+  /** Handle selected files — images become thumbnail context items, other
+   * files are staged path-only. */
   async function handleFileChange(e: Event) {
     const target = e.target as HTMLInputElement;
     const files = target.files;
@@ -256,23 +270,16 @@
     target.value = '';
   }
 
-  /** Process files from file input or drag-and-drop: images inline, other
-   * files staged as path-only context items placed at workspace.create
+  /** Process files from file input, drag-and-drop, or paste: images become
+   * context items rendered as thumbnails (30 MiB cap — they travel as
+   * attachment-reference blocks, monorepo#3338), other files staged as
+   * path-only context items placed at workspace.create
    * (`file.placeAttachment`, PROTOCOL §5.9) — never inlined, never dropped. */
   async function processImageFiles(files: File[]) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (images only — they cross the wire as base64)
+    const imageFiles: File[] = [];
     for (const file of files) {
       if (file.type.startsWith('image/')) {
-        if (file.size > MAX_FILE_SIZE) {
-          toast.error(m.onboarding_promptStep_fileTooLarge_error({ name: file.name }));
-          continue;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          onboardingRichTextarea?.insertImage(dataUrl, file.name);
-        };
-        reader.readAsDataURL(file);
+        imageFiles.push(file);
       } else {
         // Stage path-only; no resolvable path (e.g. clipboard bytes) is an
         // immediate failed pill that blocks create until removed.
@@ -300,10 +307,43 @@
         }
       }
     }
+
+    const newItems = await imageFilesToContextItems(imageFiles, {
+      maxBytes: REFERENCE_IMAGE_MAX_BYTES,
+    });
+    if (newItems.length > 0) {
+      imageContextItems = [...imageContextItems, ...newItems];
+    }
   }
 
   function removeStagedItem(id: string) {
     stagedContextItems = stagedContextItems.filter((item) => item.id !== id);
+  }
+
+  function removeImageItem(id: string) {
+    imageContextItems = imageContextItems.filter((item) => item.id !== id);
+  }
+
+  /** Intercept clipboard file pastes (mirrors SimpleRichInput) so pasted
+   * images become thumbnail context items instead of TipTap inline nodes. */
+  async function handlePaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const pastedFiles: File[] = [];
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          pastedFiles.push(file);
+        }
+      }
+    }
+
+    if (pastedFiles.length > 0) {
+      e.preventDefault(); // Prevent default paste behavior for files
+      await processImageFiles(pastedFiles);
+    }
   }
 
   /** Handle drag enter - track drag state with counter for nested elements */
@@ -432,6 +472,7 @@
         ondragleave={handleDragLeave}
         ondragover={handleDragOver}
         ondrop={handleDrop}
+        onpaste={handlePaste}
       >
         <!-- Drop zone overlay -->
         {#if isDragging}
@@ -519,10 +560,24 @@
           {/if}
         </div>
 
-        <!-- Staged non-image attachments: chips with placement state (failed
-             pills block create until removed) -->
-        {#if stagedContextItems.length > 0}
+        <!-- Attachments: image thumbnails (lightbox + hover-remove) plus
+             staged non-image chips with placement state (failed pills block
+             create until removed) -->
+        {#if imageContextItems.length > 0 || stagedContextItems.length > 0}
           <div class="px-2.5 pt-1 pb-1 flex flex-wrap gap-2 items-center">
+            {#each imageContextItems as item (item.id)}
+              <AttachmentPreview
+                id={item.id}
+                name={item.label}
+                type={item.file?.type || item.imageMimeType || ''}
+                size={item.file?.size}
+                file={item.file}
+                imageData={item.imageData}
+                imageMimeType={item.imageMimeType}
+                onRemove={removeImageItem}
+                variant="thumbnail"
+              />
+            {/each}
             {#each stagedContextItems as item (item.id)}
               <AttachmentPreview
                 id={item.id}

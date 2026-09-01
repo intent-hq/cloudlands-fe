@@ -362,6 +362,10 @@
   // workspace at create (`file.placeAttachment`, PROTOCOL §5.9) and
   // referenced from the first message via attachment-reference blocks.
   let onboardingStagedItems = $state<ContextItem[]>([]);
+  // Image attachments as context items (`imageData`/`imageMimeType`),
+  // rendered as a thumbnail row in the prompt step — never inline in the
+  // editor; sent as attachment-reference blocks on the first message.
+  let onboardingImageItems = $state<ContextItem[]>([]);
   // Set when the workspace was created but staged-attachment placement (or
   // the held first-message send) failed: submit resumes this flow instead of
   // creating a second workspace. The created workspace is never rolled back.
@@ -1764,6 +1768,7 @@
                           {visibleSuggestions}
                           bind:focusedSuggestionIndex
                           bind:stagedContextItems={onboardingStagedItems}
+                          bind:imageContextItems={onboardingImageItems}
                           selectedModel={onboardingSelectedModel}
                           modelWasOverridden={onboardingModelWasOverridden}
                           onModelChange={handleOnboardingModelChange}
