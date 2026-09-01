@@ -1162,10 +1162,7 @@
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.target === parentPanel) {
-          const height = entry.contentRect.height;
-          if (height !== parentPanelHeight) {
-            parentPanelHeight = height;
-          }
+          parentPanelHeight = entry.contentRect.height;
         }
       }
     });
