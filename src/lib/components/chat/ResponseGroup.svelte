@@ -233,7 +233,7 @@
 </script>
 
 {#snippet leading()}
-  <span class="flex translate-y-0.5" data-response-group-disclosure-icon>
+  <span class="flex" data-response-group-disclosure-icon>
     <Fa
       icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
       size={16}
