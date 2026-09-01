@@ -78,7 +78,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-03': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
-      'renders the compact legacy spinner and Thinking row',
+      'renders one active 16px phase mark and the localized Thinking row',
       ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
@@ -89,7 +89,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-04': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
-      'renders the compact legacy spinner and Thinking row',
+      'shows the newest daemon message and maps all lifecycle phases to mark variants',
       ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
