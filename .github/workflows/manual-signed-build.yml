@@ -23,6 +23,10 @@ name: Manual Signed Build
 #   - the Windows leg gains integrated DigiCert signing (release-alpha's
 #     Windows leg is still unsigned; the signing steps come from
 #     intent-manual-windows-build.yml)
+#   - an optional intentd_ref input: empty (default) fetches the pinned
+#     intentd release exactly like release-alpha.yml; non-empty builds the
+#     intentd sidecar from source at that intent-hq/intentd git ref
+#     (SHA/branch/tag) and stages it at the same resources/sidecar path
 
 on:
   workflow_dispatch:
@@ -47,6 +51,11 @@ on:
         required: false
         type: boolean
         default: true
+      intentd_ref:
+        description: 'intent-hq/intentd git ref (SHA/branch/tag) to build the sidecar from source. Empty = fetch the pinned intentd release.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -64,7 +73,9 @@ jobs:
   build-macos:
     if: ${{ inputs.build_macos }}
     runs-on: macos-15-xlarge
-    timeout-minutes: 90
+    # 120 min: 90 covered the packaging job alone; a from-source intentd
+    # sidecar build (intentd_ref set) adds a cold ~15-min cargo build.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout dispatched ref
@@ -116,10 +127,75 @@ jobs:
       # the pinned release or its per-target assets don't exist on intent-hq/intentd.
       # intent-hq/intentd is public: the default token covers the release reads
       # (no PAT needed) while keeping the API calls authenticated for rate limits.
+      # Skipped when intentd_ref is set — the from-source steps below stage the
+      # sidecar at the same path instead.
       - name: Fetch pinned intentd sidecar
+        if: ${{ inputs.intentd_ref == '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/fetch-sidecar.cjs
+
+      # ── From-source intentd sidecar (all steps gated on intentd_ref) ─────
+      # Builds intentd from source at the dispatched ref and stages the binary
+      # at resources/sidecar/intentd — the same path fetch-sidecar.cjs stages
+      # to and INTENTD_BIN (below) points at, so packaging needs no change.
+      # intent-hq/intentd is public: the default token covers the checkout.
+      - name: Checkout intentd at intentd_ref
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intentd
+          ref: ${{ inputs.intentd_ref }}
+          path: intentd-src
+
+      - name: Resolve intentd SHA
+        if: ${{ inputs.intentd_ref != '' }}
+        id: intentd_sha
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+        run: |
+          sha=$(git -C intentd-src rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      # Bare `rustup toolchain install` inside intentd-src reads the channel
+      # pinned by its rust-toolchain.toml, so the toolchain always matches the
+      # checked-out intentd ref (the runner's preinstalled default may drift).
+      # The aarch64-apple-darwin target is the arm64 host's default, but add
+      # it explicitly so the build is self-documenting and resilient to a
+      # runner-arch change.
+      - name: Install pinned Rust toolchain (intentd)
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        run: |
+          rustup toolchain install --no-self-update
+          rustup target add aarch64-apple-darwin
+          rustup show active-toolchain
+
+      # Keyed per target so a cache saved by another leg's target can never be
+      # restored here; scoped to the intentd-src workspace (the FE checkout has
+      # no Cargo workspace).
+      - name: Cache intentd cargo build
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: intentd-src
+          key: aarch64-apple-darwin
+
+      # Native build on the arm64 host (no --target), so the binary lands at
+      # target/release/intentd.
+      - name: Build intentd from source
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        run: cargo build --release -p intentd
+
+      - name: Stage from-source intentd sidecar
+        if: ${{ inputs.intentd_ref != '' }}
+        run: |
+          mkdir -p resources/sidecar
+          cp intentd-src/target/release/intentd resources/sidecar/intentd
+          chmod +x resources/sidecar/intentd
+          ls -l resources/sidecar/intentd
 
       # Written for the non-ephemeral m1mac runner (and equally valid on an
       # ephemeral hosted one): signing must never touch the login
@@ -294,9 +370,20 @@ jobs:
               echo "✅ Signed build completed (Developer ID + notarization)."
             fi
             echo ""
+            if [ -n "$INTENTD_REF" ]; then
+              echo "intentd sidecar: built from source at \`$INTENTD_REF\` (${{ steps.intentd_sha.outputs.sha }})"
+            else
+              # intentd.version holds comment lines above the version; take
+              # the first non-comment, non-empty line (fetch-sidecar-lib does
+              # the same when resolving the pin).
+              echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
+            fi
+            echo ""
             echo "Artifacts (manual-macos-dmg):"
             find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
 
       # Always delete the temporary signing keychain, restore the pre-job
       # keychain search list, and shred the decoded certificate so no
