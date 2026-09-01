@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.122.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.122.0...v2.122.1) (2026-09-01)
+
+
+### 🐛 Bug Fixes
+
+* prevent effect_update_depth_exceeded on dedicated-agent route ([#1970](https://github.com/intent-hq/cloudlands-fe/issues/1970)) ([97e7f6a](https://github.com/intent-hq/cloudlands-fe/commit/97e7f6a6daf66a0dce22843c99c414dc22dc00a7))
+
 ## [2.122.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.121.0...v2.122.0) (2026-08-31)
 
 
