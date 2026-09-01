@@ -69,7 +69,7 @@ export function isOperationalClusterBlock(block: OperationalClusterBlock): boole
 export function getOperationalGroupContentSpacingClass<T extends OperationalClusterBlock>(
   blocks?: readonly T[],
 ): string {
-  const firstVisibleBlock = blocks?.find((block) => block.type !== 'tool_result');
+  const firstVisibleBlock = blocks?.[0];
   if (!firstVisibleBlock || isOperationalClusterBlock(firstVisibleBlock)) return '';
   return 'pt-4';
 }
