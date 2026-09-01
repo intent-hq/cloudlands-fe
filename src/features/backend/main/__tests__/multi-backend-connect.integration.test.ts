@@ -54,6 +54,14 @@ const electronState = vi.hoisted(() => ({
   userDataDir: '',
   windows: [] as unknown[],
   handlers: new Map<string, (event: unknown, data: unknown) => unknown>(),
+  // When true, safeStorage.decryptString throws — simulates a locked keychain
+  // / undecryptable stored secret for the secret-unavailable open path.
+  decryptShouldFail: false,
+}));
+
+/** Steerable per-method RPC responder for the fake client (tests override). */
+const rpc = vi.hoisted(() => ({
+  handler: (async () => ({})) as (method: string) => Promise<unknown>,
 }));
 
 vi.mock('electron', () => ({
@@ -83,7 +91,10 @@ vi.mock('electron', () => ({
     // Reversible "encryption" so we can assert the token round-trips through
     // real encrypt-at-rest → decrypt-at-open without a keyring.
     encryptString: (s: string) => Buffer.from(`enc:${s}`, 'utf8'),
-    decryptString: (b: Buffer) => b.toString('utf8').replace(/^enc:/, ''),
+    decryptString: (b: Buffer) => {
+      if (electronState.decryptShouldFail) throw new Error('keychain locked');
+      return b.toString('utf8').replace(/^enc:/, '');
+    },
   },
 }));
 
@@ -116,7 +127,7 @@ vi.mock('../json-rpc-client', () => {
     }
     start(): void {}
     dispose(): void {}
-    request = vi.fn(async () => ({}));
+    request = vi.fn(async (method: string) => rpc.handler(method));
     registerMethod(): () => void {
       return () => {};
     }
@@ -240,6 +251,8 @@ beforeEach(async () => {
   electronState.userDataDir = tmpDir;
   electronState.windows = [];
   electronState.handlers = new Map();
+  electronState.decryptShouldFail = false;
+  rpc.handler = async () => ({});
   vi.resetModules();
   vi.clearAllMocks();
   mockCaptureFingerprint.mockResolvedValue({
@@ -472,6 +485,105 @@ describe('multi-backend connect — end-to-end journey', () => {
       expectedFingerprint: FINGERPRINT,
       actualFingerprint: 'EE:FF:00:11',
     });
+  });
+
+  it('opens the remote window even when the probe finds the remote unreachable', async () => {
+    // The saved backend is down at open time: the open must still resolve,
+    // create the window, and RETAIN the pooled client (its reconnect loop
+    // keeps retrying) so the renderer's connection-lost overlay owns recovery.
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new Error('connect ETIMEDOUT');
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    openWindow('local');
+
+    const added = await invoke<{ connection: { id: string } }>('connections:add', {
+      ...REMOTE_INPUT,
+      fingerprint: FINGERPRINT,
+    });
+    const remoteId = added.connection.id;
+
+    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({
+      status: 'opened',
+      id: remoteId,
+    });
+
+    expect(openOrFocus).toHaveBeenCalledWith(remoteId);
+    const live = (electronState.windows as FakeWindow[]).filter((window) => !window.isDestroyed());
+    expect(live.map((window) => window.backendId)).toEqual(['local', remoteId]);
+    expect(mod.getBackendClientForConnection(remoteId)).toBeDefined();
+  });
+
+  it('opens the window on a cert-mismatch probe failure and replays the latched modal to it', async () => {
+    // Pair, then the remote presents a changed cert at open time: the probe
+    // fails but the window opens; the retained client's transport raises the
+    // typed mismatch, whose latched event is replayed to the new window via
+    // its initial connections:list fetch — trust modal instead of a dead click.
+    const { PinMismatchError } = await import('../backend-connection');
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new PinMismatchError(FINGERPRINT, 'EE:FF:00:11');
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const added = await invoke<{ connection: { id: string } }>('connections:add', {
+      ...REMOTE_INPUT,
+      fingerprint: FINGERPRINT,
+    });
+    const remoteId = added.connection.id;
+
+    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({
+      status: 'opened',
+      id: remoteId,
+    });
+    expect(openOrFocus).toHaveBeenCalledWith(remoteId);
+
+    // The retained client's reconnect loop re-raises the mismatch as a
+    // transport error; the window created by the open learns it from the
+    // sticky replay on its initial list fetch.
+    const client = mod.getBackendClientForId(remoteId) as unknown as {
+      emit(e: string, arg: unknown): void;
+    };
+    client.emit('error', new PinMismatchError(FINGERPRINT, 'EE:FF:00:11'));
+    const remoteWindow = (electronState.windows as FakeWindow[]).find(
+      (window) => window.backendId === remoteId,
+    )!;
+    await expect(
+      invoke('connections:list', undefined, remoteWindow.webContents),
+    ).resolves.toMatchObject({
+      certMismatch: {
+        id: remoteId,
+        host: '10.0.0.5',
+        port: 8443,
+        expectedFingerprint: FINGERPRINT,
+        actualFingerprint: 'EE:FF:00:11',
+      },
+    });
+  });
+
+  it('keeps the no-window structured failure when the stored secret is unavailable', async () => {
+    // A locked keychain / undecryptable secret means there is nothing for a
+    // window to retry against: the open returns the structured
+    // secret-unavailable result and opens NO window.
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const added = await invoke<{ connection: { id: string } }>('connections:add', {
+      ...REMOTE_INPUT,
+      fingerprint: FINGERPRINT,
+    });
+    const remoteId = added.connection.id;
+
+    electronState.decryptShouldFail = true;
+    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({
+      status: 'secret-unavailable',
+    });
+    expect(openOrFocus).not.toHaveBeenCalled();
+    const live = (electronState.windows as FakeWindow[]).filter((window) => !window.isDestroyed());
+    expect(live).toHaveLength(0);
   });
 });
 

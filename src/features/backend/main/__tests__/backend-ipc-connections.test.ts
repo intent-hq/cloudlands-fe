@@ -3,8 +3,11 @@
  *
  * Covers the behaviours the spec calls out as must-assert:
  *   - **Validated open**: `openBackendWindow` connects a pooled client, probes
- *     it with an authenticated request, and only then opens the window; a bad
- *     target is rejected before any window opens.
+ *     it with an authenticated request, and only then opens the window; an
+ *     unknown/incomplete target or a missing secret is rejected before any
+ *     window opens, while a remote whose probe merely FAILS (unreachable, bad
+ *     token/cert) still gets its window — the retained client keeps retrying
+ *     and the renderer overlay / latched failure events own recovery.
  *   - **Cert-mismatch propagation**: a {@link PinMismatchError} from the pinned
  *     `wss` transport surfaces a single `connections:cert-mismatch` failure
  *     event to the renderer instead of silently reconnecting.
@@ -1494,8 +1497,10 @@ describe('connections:* IPC handlers', () => {
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
     expect(remote).not.toBe(local);
+    // A remote open's probe is bounded (5s) so a black-holed connect cannot
+    // sit out the 30s client default before the window appears.
     expect(remote?.request).toHaveBeenCalledWith('host.status', undefined, {
-      timeoutMs: undefined,
+      timeoutMs: 5_000,
     });
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
@@ -1503,9 +1508,13 @@ describe('connections:* IPC handlers', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('connections:open drops only a failed remote and leaves local usable', async () => {
+  it('connections:open opens the window and retains the client when the remote probe fails', async () => {
+    // An unreachable/rejecting remote must not fail the click silently: the
+    // window opens anyway, the pooled client is RETAINED (its reconnect loop
+    // keeps retrying), and the renderer's connection-lost overlay owns
+    // recovery. Local stays untouched.
     rpc.handler = async (method) => {
-      if (method === 'host.status') throw new Error('remote rejected');
+      if (method === 'host.status') throw new Error('remote unreachable');
       return {};
     };
     const { mod, openOrFocus } = await loadModule();
@@ -1513,12 +1522,51 @@ describe('connections:* IPC handlers', () => {
     mod.registerBackendHandlers();
     const handler = findHandler('connections:open');
 
-    await expect(handler!({}, { id: 'remote-1' })).rejects.toThrow('remote rejected');
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
 
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
-    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
-    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(mod.getBackendClientForConnection('remote-1')).toBeDefined();
+    expect(lifecycle.events.filter((e) => e.type === 'dispose')).toEqual([]);
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open opens the window on a probe auth/cert failure and replays the latched event', async () => {
+    // A cert-mismatch/auth-rejected probe failure also opens the window: the
+    // transport raises the typed error on the retained client, whose latched
+    // failure event is replayed to the new window via connections:list — the
+    // trust modal / re-pair overlay surfaces there instead of a failed click.
+    const { AuthRejectedError } = await import('../backend-connection');
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new AuthRejectedError(401);
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const open = findHandler('connections:open');
+
+    await expect(open!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+
+    // The retained client's transport raises the same rejection on its
+    // reconnect attempts; the window created by the open learns it from the
+    // sticky replay on its initial list fetch.
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('error', new AuthRejectedError(401));
+    const { remoteSender } = installBackendWindows();
+    const list = findHandler('connections:list');
+    await expect(list!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
   });
 
   it('returns token-free open guidance and connects after write-only secret recovery', async () => {
