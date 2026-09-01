@@ -635,6 +635,20 @@
   // svelte-ignore state_referenced_locally -- this records the identity at instance creation.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
+  let panelInterestAgentId: string | null = null;
+
+  function activePanelInterestAgentId(): string | null {
+    return isActive && agentId && !agentId.startsWith('terminal-') ? agentId : null;
+  }
+
+  function transferPanelInterestLease(nextAgentId: string | null): void {
+    if (nextAgentId === panelInterestAgentId) return;
+    if (nextAgentId) acquireChatInterestLease(nextAgentId, instanceId);
+    const previousAgentId = panelInterestAgentId;
+    panelInterestAgentId = nextAgentId;
+    if (previousAgentId) releaseChatInterestLease(previousAgentId, instanceId);
+  }
+
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
   let composerHeight = $state(0);
@@ -3464,6 +3478,10 @@
 
   // Initialize chat on mount
   onMount(() => {
+    // Establish interest before initialization can open a subscription and
+    // before any viewed-agent sweep can decide which registrations to keep.
+    transferPanelInterestLease(activePanelInterestAgentId());
+
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3563,10 +3581,7 @@
   });
 
   $effect(() => {
-    const interestedAgentId = agentId;
-    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
-    acquireChatInterestLease(interestedAgentId, instanceId);
-    return () => releaseChatInterestLease(interestedAgentId, instanceId);
+    transferPanelInterestLease(activePanelInterestAgentId());
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
@@ -4378,6 +4393,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    transferPanelInterestLease(null);
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
