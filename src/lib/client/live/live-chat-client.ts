@@ -154,20 +154,35 @@ function normalizeSnapshotBlock(raw: unknown): ContentBlock | null {
   }
 }
 
-function normalizeSnapshotMessage(raw: unknown): AgentMessage | null {
+/**
+ * Snapshot message envelope policy:
+ * - id, role, and timestamp are required by the persisted-message contract;
+ * - agentId may be inherited from the agent-scoped snapshot/subscription;
+ * - seq may be omitted, but a present value must be a non-negative safe integer.
+ * Missing sequence is never inferred from array position.
+ */
+function normalizeSnapshotMessage(raw: unknown, snapshotAgentId?: string): AgentMessage | null {
   if (!isRecord(raw)) return null;
   if (
     typeof raw.id !== 'string' ||
     raw.id.length === 0 ||
-    typeof raw.agentId !== 'string' ||
-    raw.agentId.length === 0 ||
-    typeof raw.seq !== 'number' ||
-    !Number.isSafeInteger(raw.seq) ||
-    raw.seq < 0 ||
     typeof raw.role !== 'string' ||
     !SNAPSHOT_MESSAGE_ROLES.has(raw.role) ||
     typeof raw.timestamp !== 'string' ||
     raw.timestamp.length === 0
+  ) {
+    return null;
+  }
+
+  const messageAgentId = raw.agentId === undefined ? snapshotAgentId : raw.agentId;
+  if (
+    (messageAgentId !== undefined &&
+      (typeof messageAgentId !== 'string' || messageAgentId.length === 0)) ||
+    (snapshotAgentId !== undefined &&
+      messageAgentId !== undefined &&
+      messageAgentId !== snapshotAgentId) ||
+    (raw.seq !== undefined &&
+      (typeof raw.seq !== 'number' || !Number.isSafeInteger(raw.seq) || raw.seq < 0))
   ) {
     return null;
   }
@@ -177,15 +192,27 @@ function normalizeSnapshotMessage(raw: unknown): AgentMessage | null {
         .map(normalizeSnapshotBlock)
         .filter((block): block is ContentBlock => block !== null)
     : [];
-  return { ...raw, contentBlocks } as unknown as AgentMessage;
+  return {
+    ...raw,
+    ...(messageAgentId === undefined ? {} : { agentId: messageAgentId }),
+    contentBlocks,
+  } as unknown as AgentMessage;
 }
 
-function extractSnapshot(raw: unknown): ChatSnapshotResult {
+function extractSnapshot(raw: unknown, expectedAgentId?: string): ChatSnapshotResult {
   if (!isRecord(raw)) return EMPTY_SNAPSHOT;
+  const snapshotAgentId = raw.agentId === undefined ? expectedAgentId : raw.agentId;
+  const validSnapshotAgent =
+    snapshotAgentId === undefined ||
+    (typeof snapshotAgentId === 'string' &&
+      snapshotAgentId.length > 0 &&
+      (expectedAgentId === undefined || snapshotAgentId === expectedAgentId));
   const messages = Array.isArray(raw.messages)
-    ? raw.messages
-        .map(normalizeSnapshotMessage)
-        .filter((message): message is AgentMessage => message !== null)
+    ? validSnapshotAgent
+      ? raw.messages
+          .map((message) => normalizeSnapshotMessage(message, snapshotAgentId))
+          .filter((message): message is AgentMessage => message !== null)
+      : []
     : [];
   return {
     messages,
@@ -399,6 +426,8 @@ export class ChatTranscriptReconciler {
   private snapshotFingerprint = 0;
   private incremental = false;
 
+  constructor(private readonly expectedAgentId?: string) {}
+
   /** Forget all state so the next snapshot rebuilds from scratch. */
   reset(): void {
     this.messages = [];
@@ -431,7 +460,7 @@ export class ChatTranscriptReconciler {
       return false;
     }
     this.snapshotFingerprint = fingerprint;
-    const snap = extractSnapshot(raw);
+    const snap = extractSnapshot(raw, this.expectedAgentId);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
     this.totalMessages = snap.totalMessages;
@@ -584,7 +613,7 @@ export class LiveChatClient implements ChatClient {
     onPhase?: (phase: ChatLiveStreamPhase) => void,
     options?: ChatSubscribeOptions,
   ): Unsubscribe {
-    const reconciler = new ChatTranscriptReconciler();
+    const reconciler = new ChatTranscriptReconciler(agentId);
     let disposed = false;
     let subscriptionId: string | undefined;
     // Resume anchor (§7.1 `sinceMessageId`): sent on every registration until

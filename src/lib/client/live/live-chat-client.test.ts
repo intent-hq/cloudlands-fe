@@ -129,6 +129,55 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('chat.unsubscribe', { subscriptionId: 'sub-1' });
   });
 
+  it('preserves minimal supported snapshot messages without fabricating sequence order', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<Record<string, unknown>> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t as (typeof seen)[number]));
+    await flush();
+
+    snapshotPush('sub-1', 0, {
+      agentId: 'agent-1',
+      messages: [
+        {
+          id: 'minimal-user',
+          role: 'user',
+          timestamp: '2026-06-27T01:00:00.000Z',
+          contentBlocks: [{ type: 'text', id: 'minimal-user:0', text: 'Question' }],
+        },
+        {
+          id: 'minimal-assistant',
+          role: 'assistant',
+          timestamp: '2026-06-27T01:00:01.000Z',
+          contentBlocks: [
+            { type: 'thinking', id: 'minimal-assistant:0', text: 'Reasoning' },
+            { type: 'text', id: 'minimal-assistant:1', text: 'Answer' },
+          ],
+        },
+        {
+          id: 'minimal-system',
+          role: 'system',
+          timestamp: '2026-06-27T01:00:02.000Z',
+          contentBlocks: [{ type: 'text', id: 'minimal-system:0', text: 'Notice' }],
+        },
+      ],
+      truncated: false,
+      totalMessages: 3,
+    });
+
+    expect(seen[0].messages.map(({ id, role, agentId }) => ({ id, role, agentId }))).toEqual([
+      { id: 'minimal-user', role: 'user', agentId: 'agent-1' },
+      { id: 'minimal-assistant', role: 'assistant', agentId: 'agent-1' },
+      { id: 'minimal-system', role: 'system', agentId: 'agent-1' },
+    ]);
+    expect(seen[0].messages.every((message) => !('seq' in message))).toBe(true);
+    expect(seen[0].messages[1].contentBlocks).toEqual([
+      { type: 'thinking', id: 'minimal-assistant:0', text: 'Reasoning' },
+      { type: 'text', id: 'minimal-assistant:1', text: 'Answer' },
+    ]);
+    off();
+  });
+
   it('drops invalid message envelopes without discarding unrelated valid snapshot messages', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -146,6 +195,8 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
         { ...SEEDED_SNAPSHOT.messages[0], id: 'bad-role', role: 'operator' },
         { ...SEEDED_SNAPSHOT.messages[0], id: 'bad-seq', seq: '1' },
         { ...SEEDED_SNAPSHOT.messages[0], id: 'negative-seq', seq: -1 },
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'missing-timestamp', timestamp: undefined },
+        { ...SEEDED_SNAPSHOT.messages[0], id: 'cross-agent', agentId: 'agent-2' },
       ],
     });
 
@@ -164,6 +215,31 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
         role: 'tool',
       }),
     ]);
+    off();
+  });
+
+  it('rejects a snapshot for another agent without borrowing its identity', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, {
+      agentId: 'agent-2',
+      messages: [
+        {
+          id: 'foreign-assistant',
+          role: 'assistant',
+          timestamp: '2026-06-27T01:00:00.000Z',
+          contentBlocks: [{ type: 'text', id: 'foreign-assistant:0', text: 'Foreign' }],
+        },
+      ],
+      truncated: false,
+      totalMessages: 1,
+    });
+
+    expect(seen[0].messages).toEqual([]);
     off();
   });
 
@@ -592,9 +668,28 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     );
 
     // Recovery seq-0 snapshot on the fresh registration rebuilds the transcript.
-    snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, totalMessages: 3 });
-    const last = seen[seen.length - 1] as { totalMessages?: number };
+    snapshotPush('sub-2', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          id: 'recovered-minimal',
+          role: 'assistant',
+          timestamp: '2026-06-27T01:00:03.000Z',
+          contentBlocks: [{ type: 'thinking', id: 'recovered-minimal:0', text: 'Recovered' }],
+        },
+      ],
+      totalMessages: 3,
+    });
+    const last = seen[seen.length - 1] as {
+      messages: Array<Record<string, unknown>>;
+      totalMessages?: number;
+    };
     expect(last.totalMessages).toBe(3);
+    expect(last.messages[0]).toMatchObject({
+      id: 'recovered-minimal',
+      agentId: 'agent-1',
+    });
+    expect(last.messages[0]).not.toHaveProperty('seq');
     off();
   });
 
@@ -702,9 +797,28 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     expect(mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe')).toHaveLength(2);
 
     // Pushes for the dead id no longer match; the fresh seq-0 reseeds.
-    snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, totalMessages: 5 });
-    const last = seen[seen.length - 1] as { totalMessages?: number };
+    snapshotPush('sub-2', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          id: 'reconnected-minimal',
+          role: 'user',
+          timestamp: '2026-06-27T01:00:04.000Z',
+          contentBlocks: [{ type: 'text', id: 'reconnected-minimal:0', text: 'Back' }],
+        },
+      ],
+      totalMessages: 5,
+    });
+    const last = seen[seen.length - 1] as {
+      messages: Array<Record<string, unknown>>;
+      totalMessages?: number;
+    };
     expect(last.totalMessages).toBe(5);
+    expect(last.messages[0]).toMatchObject({
+      id: 'reconnected-minimal',
+      agentId: 'agent-1',
+    });
+    expect(last.messages[0]).not.toHaveProperty('seq');
     off();
   });
 
