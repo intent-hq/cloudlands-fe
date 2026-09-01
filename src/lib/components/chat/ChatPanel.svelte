@@ -741,9 +741,10 @@
     hydratedMessageIds = new Set(messageHydrationPolicy.getHydratedIds());
   }
 
+  // Batch-end callback: one hydratedMessageIds rebuild per policy call, not
+  // one per transitioned row (a mass transition would otherwise be O(n²)).
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
-    onHydrate: syncHydratedMessageIds,
-    onDehydrate: syncHydratedMessageIds,
+    onHydrationChange: syncHydratedMessageIds,
   });
 
   $effect(() => {

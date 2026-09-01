@@ -1,15 +1,17 @@
 /**
  * Transient message-level hydration policy for long chat transcripts.
  *
- * The input order is the composed chronological order. A displayport frontier
- * is the oldest currently adjacent row; once known, hydrated rows newer than
- * it are retained even after they leave the preload band. Only older,
- * non-user, non-forced rows may dehydrate. Every row — user rows included —
- * starts as a placeholder so a workspace switch mounts only the displayport;
- * user rows differ solely in that once hydrated they never dehydrate (their
- * DOM anchors pinned-prompt tracking and prompt navigation). DOM observation
- * and geometry stay with the component; this module only reports
- * deterministic transitions.
+ * The input order is the composed chronological order. Rows hydrate only when
+ * forced, intersecting the preload band, or eagerly appended at the tail — a
+ * displayport frontier (the oldest currently adjacent row) is purely a
+ * retention barrier: once known, hydrated rows newer than it are retained
+ * even after they leave the preload band, but rows never seen are never
+ * hydrated by it. Only older, non-user, non-forced rows may dehydrate. Every
+ * row — user rows included — starts as a placeholder so a workspace switch
+ * mounts only the displayport; user rows differ solely in that once hydrated
+ * they never dehydrate (their DOM anchors pinned-prompt tracking and prompt
+ * navigation). DOM observation and geometry stay with the component; this
+ * module only reports deterministic transitions.
  */
 
 import { observeLazyTurnVisibility } from './lazy-turn-observer';
@@ -23,6 +25,14 @@ export interface HydrationMessage {
 interface MessageHydrationPolicyOptions {
   onHydrate?: (id: string) => void;
   onDehydrate?: (id: string) => void;
+  /**
+   * Fired once at the end of any policy call (updateMessages,
+   * reportVisibility via the observer, setForced) that changed at least one
+   * row's hydration. Consumers rebuilding derived state (e.g. a hydrated-id
+   * Set) should use this instead of the per-row callbacks so a mass
+   * transition costs one rebuild, not one per row.
+   */
+  onHydrationChange?: () => void;
 }
 
 export interface MessageHydrationPolicy {
@@ -119,17 +129,39 @@ export function createMessageHydrationPolicy(
     );
   }
 
+  /** True while the current policy call has transitioned at least one row. */
+  let batchChanged = false;
+
+  function hydrateRecord(record: MessageRecord): void {
+    record.hydrated = true;
+    batchChanged = true;
+    options.onHydrate?.(record.id);
+  }
+
+  function dehydrateRecord(record: MessageRecord): void {
+    record.hydrated = false;
+    batchChanged = true;
+    options.onDehydrate?.(record.id);
+  }
+
+  /** Coalesces a call's transitions into one onHydrationChange notification. */
+  function flushBatch(): void {
+    if (!batchChanged) return;
+    batchChanged = false;
+    options.onHydrationChange?.();
+  }
+
   function reconcile(): void {
-    const boundary = frontierIndex();
     for (const record of sortByIndex(records.values())) {
-      const isAtOrNewerThanFrontier = boundary !== undefined && record.index >= boundary;
-      const shouldHydrate = record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
+      // The frontier never hydrates: rows hydrate only when forced,
+      // intersecting the preload band, or eagerly appended (updateMessages).
+      // It only blocks dehydration — canDehydrate() rejects rows at or newer
+      // than it — so hydrated rows newer than the frontier are retained.
+      const shouldHydrate = record.forced || record.isIntersecting;
       if (shouldHydrate && !record.hydrated) {
-        record.hydrated = true;
-        options.onHydrate?.(record.id);
-      } else if (!shouldHydrate && record.hydrated && canDehydrate(record)) {
-        record.hydrated = false;
-        options.onDehydrate?.(record.id);
+        hydrateRecord(record);
+      } else if (record.hydrated && canDehydrate(record)) {
+        dehydrateRecord(record);
       }
     }
   }
@@ -148,6 +180,7 @@ export function createMessageHydrationPolicy(
     record.isIntersecting = isIntersecting;
     recomputeFrontier();
     reconcile();
+    flushBatch();
   }
 
   function attachRegistration(id: string, registration: Registration) {
@@ -196,6 +229,7 @@ export function createMessageHydrationPolicy(
       if (!record || record.forced === forced) return;
       record.forced = forced;
       reconcile();
+      flushBatch();
     },
     updateMessages(nextMessages) {
       if (disposed) return;
@@ -244,8 +278,7 @@ export function createMessageHydrationPolicy(
           const record = makeRecord(message, index);
           records.set(message.id, record);
           if (lastKnownIndex >= 0 && index > lastKnownIndex && index >= eagerTailStart) {
-            record.hydrated = true;
-            options.onHydrate?.(record.id);
+            hydrateRecord(record);
           }
         }
       });
@@ -258,6 +291,7 @@ export function createMessageHydrationPolicy(
       }
       recomputeFrontier();
       reconcile();
+      flushBatch();
     },
     getHydratedIds() {
       return sortByIndex(records.values())
