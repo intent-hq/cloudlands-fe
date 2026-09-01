@@ -56,6 +56,7 @@ function rec(overrides: Partial<KeychainSyncRecord> = {}): KeychainSyncRecord {
     port: 8443,
     fingerprint: 'AA:BB:CC',
     hostname: 'studio.local',
+    tcAddress: null,
     detectHosts: true,
     token: 'secret-token',
     updatedAt: NOW - 10_000,
@@ -195,7 +196,22 @@ describe('payload schema', () => {
     const parsed = parsePayload(payload);
     expect(parsed).toMatchObject({
       kind: 'record',
-      record: { accent: 'blue', hosts: ['h'], hostname: null, detectHosts: true },
+      record: { accent: 'blue', hosts: ['h'], hostname: null, tcAddress: null, detectHosts: true },
+    });
+  });
+
+  it('round-trips a tc address and defaults blank/malformed ones to null', () => {
+    const record = rec({ tcAddress: 'tc7f2a91.tailcat.net' });
+    expect(parsePayload(serializeRecord(record))).toEqual({ kind: 'record', record });
+    // Payloads from apps that predate the field (or wrote junk) parse as
+    // null — additive compatibility, never `invalid`.
+    expect(parsePayload(JSON.stringify({ ...rec(), v: 1, tcAddress: '  ' }))).toMatchObject({
+      kind: 'record',
+      record: { tcAddress: null },
+    });
+    expect(parsePayload(JSON.stringify({ ...rec(), v: 1, tcAddress: 42 }))).toMatchObject({
+      kind: 'record',
+      record: { tcAddress: null },
     });
   });
 

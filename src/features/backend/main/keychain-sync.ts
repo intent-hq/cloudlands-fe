@@ -73,6 +73,14 @@ export interface KeychainSyncRecord {
   port: number;
   fingerprint: string;
   hostname: string | null;
+  /**
+   * tc address of the backend's tailcat tunnel endpoint (PROTOCOL §12.3), or
+   * null when none is known. Additive: payloads written before the field
+   * existed parse as null, and every machine learns the same address from the
+   * same daemon — so syncing it lets a device that can ONLY reach the daemon
+   * through the tunnel inherit the address from a device that paired locally.
+   */
+  tcAddress: string | null;
   detectHosts: boolean;
   /** Bearer token; always `''` on tombstones. */
   token: string;
@@ -116,6 +124,7 @@ export function serializeRecord(record: KeychainSyncRecord): string {
     port: record.port,
     fingerprint: record.fingerprint,
     hostname: record.hostname,
+    tcAddress: record.tcAddress,
     detectHosts: record.detectHosts,
     token: record.deleted === true ? '' : record.token,
     updatedAt: record.updatedAt,
@@ -165,6 +174,8 @@ export function parsePayload(payload: string): ParsedPayload {
     port: obj.port,
     fingerprint: obj.fingerprint,
     hostname: typeof obj.hostname === 'string' ? obj.hostname : null,
+    tcAddress:
+      typeof obj.tcAddress === 'string' && obj.tcAddress.trim() !== '' ? obj.tcAddress : null,
     detectHosts: typeof obj.detectHosts === 'boolean' ? obj.detectHosts : true,
     token: typeof obj.token === 'string' ? obj.token : '',
     updatedAt: obj.updatedAt,

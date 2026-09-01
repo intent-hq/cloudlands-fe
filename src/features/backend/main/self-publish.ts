@@ -31,7 +31,8 @@ const SELF_PUBLISH_SUPPRESSED_KEY = 'selfPublishSuppressed';
 /**
  * Validated `server.pairingInfo` fields the publish flow consumes (PROTOCOL
  * §5 method catalog): bearer token, cert fingerprint, bound WSS port (null
- * when the listener is down), local IPs, and hostname(s) for the label.
+ * when the listener is down), local IPs, hostname(s) for the label, and the
+ * tailcat tunnel's tc address (when the tunnel is up).
  */
 export interface SelfPairingInfo {
   token: string;
@@ -41,6 +42,12 @@ export interface SelfPairingInfo {
   localIps: string[];
   hostname: string | null;
   prettyHostname: string | null;
+  /**
+   * The tailcat tunnel's tc address (PROTOCOL §12.3), or null when the wire
+   * field is absent/empty — the daemon omits it whenever the tunnel sidecar
+   * is not running, so null is a conclusive "no tunnel advertised".
+   */
+  tcAddress: string | null;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -70,6 +77,7 @@ export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null 
     localIps,
     hostname: nonEmptyString(r.hostname),
     prettyHostname: nonEmptyString(r.prettyHostname),
+    tcAddress: nonEmptyString(r.tcAddress),
   };
 }
 

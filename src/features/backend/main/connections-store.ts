@@ -108,12 +108,14 @@ interface StoredConnection {
   /**
    * tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3),
    * captured from the pairing URI's `tc=` at add time and refreshed from
-   * `system.status.tcAddress` after each successful connect. Absent on
-   * records written before this field existed and until the first capture;
-   * `null` after a conclusive refresh saying the daemon has no tunnel. Like
-   * `daemonVersion`, per-machine observational state: never part of the
-   * keychain-sync surface, so writes never bump the LWW clock or notify sync
-   * (each machine re-learns it from its own connects).
+   * `system.status.tcAddress` / `server.pairingInfo` after each successful
+   * connect. Absent on records written before this field existed and until
+   * the first capture; `null` after a conclusive refresh saying the daemon
+   * has no tunnel. Unlike `daemonVersion`, this IS part of the keychain-sync
+   * surface: every machine learns the same address from the same daemon, and
+   * syncing it lets a device that can only reach the daemon THROUGH the
+   * tunnel inherit the address from a device that paired locally — so writes
+   * bump the LWW clock and notify sync (see {@link setTcAddress}).
    */
   tcAddress?: string | null;
   /**
@@ -877,27 +879,36 @@ export async function setUpdateSupported(id: string, supported: boolean | null):
 
 /**
  * Persist the remote daemon's tailcat tunnel endpoint (`tcAddress` from its
- * `system.status`, PROTOCOL §12.3). `null` clears the address back to "no
- * tunnel" — used when a successful `system.status` lacks the field, so a
- * stale address never survives a conclusive tunnel-less response. Returns
- * `true` when the stored value actually changed so the caller can broadcast
- * the refreshed list. A no-op for an unknown id (fail-soft: the tunnel is one
- * extra connect candidate, never a hard requirement). Like
- * {@link setDaemonVersion}, this is per-machine observational state: it never
- * bumps the LWW clock (`updatedAt`) and never notifies keychain sync.
+ * `system.status` or `server.pairingInfo`, PROTOCOL §12.3). `null` clears the
+ * address back to "no tunnel" — used when a successful response lacks the
+ * field, so a stale address never survives a conclusive tunnel-less response.
+ * Returns `true` when the stored value actually changed so the caller can
+ * broadcast the refreshed list. A no-op for an unknown id (fail-soft: the
+ * tunnel is one extra connect candidate, never a hard requirement).
+ *
+ * Unlike the observational {@link setDaemonVersion}, the tc address is part
+ * of the keychain-sync surface (see the `tcAddress` field doc): a change
+ * bumps the LWW clock and notifies sync so tunnel rotation propagates to the
+ * user's other devices. Like {@link setHostname}, the unchanged common
+ * every-reconnect case skips the write (no artificial clock bump), and the
+ * stamp is forced strictly past the record's current clock so a capture
+ * landing in the same millisecond as `add` still out-clocks it.
  */
 export async function setTcAddress(id: string, tcAddress: string | null): Promise<boolean> {
   const normalized = tcAddress?.trim() || null;
-  return mutate(async (state) => {
+  const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to update
     // Unchanged address (the common every-reconnect case): skip the write.
     // Absent and null both mean "no tunnel" — normalize before comparing.
     if ((conn.tcAddress ?? null) === normalized) return false;
     conn.tcAddress = normalized;
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
     await writeState(state);
     return true;
   });
+  if (changed) notifyMutated();
+  return changed;
 }
 
 /**
@@ -1026,6 +1037,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
       port: conn.port,
       fingerprint: conn.fingerprint,
       hostname: conn.hostname ?? null,
+      tcAddress: conn.tcAddress ?? null,
       detectHosts: conn.detectHosts !== false,
       token,
       updatedAt: conn.updatedAt ?? 0,
@@ -1042,6 +1054,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
       port: t.port,
       fingerprint: t.fingerprint,
       hostname: t.hostname ?? null,
+      tcAddress: null,
       detectHosts: t.detectHosts !== false,
       token: '',
       updatedAt: t.updatedAt,
@@ -1059,9 +1072,9 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * record arriving under a new address collapses into the machine's existing
  * entry instead of duplicating it. The existing record keeps its `id` (so
  * open windows/pool entries stay attached) while host/port/
- * label/fingerprint/token/hosts/hostname/detectHosts and the remote's
- * `updatedAt` clock are taken verbatim (NOT re-stamped: the clock must
- * converge across machines). A tombstone removes the backend (matched by the
+ * label/fingerprint/token/hosts/hostname/tcAddress/detectHosts and the
+ * remote's `updatedAt` clock are taken verbatim (NOT re-stamped: the clock
+ * must converge across machines). A tombstone removes the backend (matched by the
  * same identity, so a delete written under an old address still lands) and
  * remembers the tombstone; if the removed backend was active, the selection
  * falls back to `local` (never touching any other machine-local selection
@@ -1149,6 +1162,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       survivor.encToken = encToken;
       survivor.hostname = record.hostname;
       survivor.hosts = extras;
+      survivor.tcAddress = record.tcAddress;
       survivor.detectHosts = record.detectHosts;
       survivor.updatedAt = record.updatedAt;
       state.connections = state.connections.filter(
@@ -1164,6 +1178,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
         fingerprint: record.fingerprint,
         hostname: record.hostname,
         hosts: extras,
+        tcAddress: record.tcAddress,
         detectHosts: record.detectHosts,
         encToken,
         updatedAt: record.updatedAt,
