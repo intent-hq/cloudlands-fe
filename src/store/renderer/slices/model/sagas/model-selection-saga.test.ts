@@ -2,8 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
-const mocks = vi.hoisted(() => ({ update: vi.fn() }));
-vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } } }));
+const mocks = vi.hoisted(() => ({ update: vi.fn(), updateSnapshot: undefined as any }));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    settings: {
+      update: mocks.update,
+      get updateSnapshot() {
+        return mocks.updateSnapshot;
+      },
+    },
+  },
+}));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
@@ -49,7 +58,10 @@ function state() {
 }
 
 describe('modelSelectionSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.updateSnapshot = undefined;
+  });
 
   it('switches a known compound provider before reload and selection', async () => {
     const dispatch = vi.fn();
@@ -60,10 +72,9 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'providerSettings/setActiveProvider', payload: ['codex'] },
       { type: 'model/reloadModelsForProvider', payload: [] },
       {
-        type: 'model/setSelectedModel',
+        type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'codex', model: 'codex:gpt-5' }],
       },
     ]);
@@ -120,10 +131,9 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'providerSettings/setActiveProvider', payload: ['claude-code'] },
       { type: 'model/reloadModelsForProvider', payload: [] },
       {
-        type: 'model/setSelectedModel',
+        type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'claude-code', model: 'claude-code:fable5' }],
       },
     ]);
@@ -148,6 +158,46 @@ describe('modelSelectionSaga', () => {
         ],
       ],
     ]);
+  });
+
+  it('persists a cross-provider default as one revision-bearing atomic batch', async () => {
+    mocks.updateSnapshot = vi.fn().mockResolvedValue({
+      applied: [
+        { path: 'providers.active', value: 'codex' },
+        { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' } },
+      ],
+      revision: 7,
+    });
+    const dispatch = vi.fn();
+
+    const landed = await runSaga(
+      { dispatch, getState: state },
+      persistSelectedModelsWorker,
+      { codex: 'codex:gpt-5' },
+      'codex',
+    ).toPromise();
+
+    expect(landed).toBe(true);
+    expect(mocks.updateSnapshot).toHaveBeenCalledWith([
+      { path: 'providers.active', value: 'codex' },
+      {
+        path: 'model.providerDefaults',
+        value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+      },
+    ]);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'settings/changesReceived',
+      payload: [
+        [
+          { path: 'providers.active', value: 'codex' },
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+          },
+        ],
+        7,
+      ],
+    });
   });
 
   it('serializes writes and retains only the latest queued snapshot', async () => {

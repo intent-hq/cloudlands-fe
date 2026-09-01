@@ -3,13 +3,22 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  listSnapshot: undefined as any,
   update: vi.fn(),
   apply: vi.fn(),
   error: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { settings: { list: mocks.list, update: mocks.update } },
+  appClient: {
+    settings: {
+      list: mocks.list,
+      update: mocks.update,
+      get listSnapshot() {
+        return mocks.listSnapshot;
+      },
+    },
+  },
 }));
 vi.mock('$features/settings/settings-hydration-service', () => ({
   applySettingsChanges: mocks.apply,
@@ -34,13 +43,21 @@ const settle = async () => {
 };
 
 describe('settingsHydrationSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listSnapshot = undefined;
+  });
 
   it('hydrates once in source order without issuing a persistence write', async () => {
     mocks.list.mockResolvedValue([
       { path: 'providers.active', value: 'auggie', label: '', description: '' },
       { path: 'quickActions.defaultModel', value: 'fast', label: '', description: '' },
-      { path: 'quickActions.typeOverrides', value: { commit: 'model' }, label: '', description: '' },
+      {
+        path: 'quickActions.typeOverrides',
+        value: { commit: 'model' },
+        label: '',
+        description: '',
+      },
     ]);
 
     await runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga).toPromise();
@@ -152,15 +169,45 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.apply.mock.calls).toEqual([
       [[{ path: 'boot', value: 0 }]],
       [[{ path: 'first', value: 1 }]],
-      [[
-        { path: 'second.a', value: 2 },
-        { path: 'second.b', value: 3 },
-      ]],
+      [
+        [
+          { path: 'second.a', value: 2 },
+          { path: 'second.b', value: 3 },
+        ],
+      ],
     ]);
     task.cancel();
     await task.toPromise();
     input.put(settingsChangesReceived([{ path: 'late', value: 4 }]));
     await settle();
     expect(mocks.apply).toHaveBeenCalledTimes(3);
+  });
+
+  it('ignores stale revisions and resets the watermark when the window backend changes', async () => {
+    mocks.listSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({ settings: [{ path: 'boot', value: 5 }], revision: 5 })
+      .mockResolvedValueOnce({ settings: [{ path: 'remote', value: 1 }], revision: 1 });
+    const input = stdChannel();
+    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    await settle();
+
+    input.put(settingsChangesReceived([{ path: 'stale', value: 4 }], 4));
+    input.put(settingsChangesReceived([{ path: 'newer', value: 6 }], 6));
+    await settle();
+    expect(mocks.apply.mock.calls).toEqual([
+      [[{ path: 'boot', value: 5 }]],
+      [[{ path: 'newer', value: 6 }]],
+    ]);
+
+    input.put({
+      type: 'connections/listReceived',
+      payload: [{ connections: [], activeId: 'remote', windowBackendId: 'remote' }],
+    });
+    await settle();
+    expect(mocks.apply).toHaveBeenLastCalledWith([{ path: 'remote', value: 1 }]);
+
+    task.cancel();
+    await task.toPromise();
   });
 });

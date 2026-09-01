@@ -2,6 +2,7 @@ import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import type { SettingsUpdateResult } from '$lib/client/app-client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { splitCompoundModelId } from '$shared/utils/compound-model-id';
@@ -10,7 +11,10 @@ import {
   selectProviderCatalogLoaded,
 } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
-import { setActiveProvider } from '../../provider-settings/provider-settings-slice';
+import {
+  activeProviderPersistRejected,
+  setAtomicDefaultModel,
+} from '../../provider-settings/provider-settings-slice';
 import { selectDefaultProviderId, selectProviderModels } from '../model-selectors';
 import { normalizeModelForProvider } from '../model-selection-utils';
 import {
@@ -20,6 +24,7 @@ import {
   setDefaultReasoningEffort,
   setSelectedModel,
 } from '../model-slice';
+import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 
 const logger = createLogger('ModelSelectionSaga');
 
@@ -43,7 +48,6 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
     // and the mirrored id is re-validated at `providerCatalogLoaded`. Once
     // the catalog is loaded, unknown prefixes are still rejected.
     if (provider || !catalogLoaded) {
-      yield* put(setActiveProvider(compoundProviderId));
       yield* put(reloadModelsForProvider());
     } else {
       logger.warn('Ignoring model selection for unknown provider', {
@@ -54,7 +58,7 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
     }
   }
 
-  yield* put(setSelectedModel({ providerId, model }));
+  yield* put(setAtomicDefaultModel({ providerId, model }));
 }
 
 /**
@@ -78,7 +82,10 @@ export const PROVIDER_DEFAULTS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const
  * a structured daemon error response is a rejection of the payload (not a
  * transient transport failure) and reports as landed so it is not retried.
  */
-export function* persistSelectedModelsWorker(sessionPicks: Record<string, string>) {
+export function* persistSelectedModelsWorker(
+  sessionPicks: Record<string, string>,
+  atomicProviderId?: string,
+) {
   const providerModels = yield* selectProviderModels.effect();
   const defaultProviderId = yield* selectDefaultProviderId.effect();
   const value = { ...providerModels };
@@ -86,15 +93,32 @@ export function* persistSelectedModelsWorker(sessionPicks: Record<string, string
     value[providerId] = normalizeModelForProvider(providerId, model, defaultProviderId);
   }
   try {
-    yield* call(
-      [appClient.settings, appClient.settings.update],
-      [{ path: 'model.providerDefaults', value }],
-    );
+    const changes = atomicProviderId
+      ? [
+          { path: 'providers.active', value: atomicProviderId },
+          { path: 'model.providerDefaults', value },
+        ]
+      : [{ path: 'model.providerDefaults', value }];
+    const updateSnapshot = appClient.settings.updateSnapshot?.bind(appClient.settings);
+    const hasRevisionClient = updateSnapshot !== undefined;
+    const result: SettingsUpdateResult = updateSnapshot
+      ? yield* call(updateSnapshot, changes)
+      : {
+          applied: yield* call([appClient.settings, appClient.settings.update], changes),
+          revision: 0,
+        };
+    if (atomicProviderId && hasRevisionClient && result.applied.length !== 2) {
+      yield* put(providerModelsPersistRejected({ ...sessionPicks }));
+      yield* put(activeProviderPersistRejected(atomicProviderId));
+      return true;
+    }
+    if (hasRevisionClient) yield* put(settingsChangesReceived(result.applied, result.revision));
     return true;
   } catch (error) {
     if (isDaemonErrorResponse(error)) {
       logger.warn('Daemon rejected model.providerDefaults write', { error });
       yield* put(providerModelsPersistRejected({ ...sessionPicks }));
+      if (atomicProviderId) yield* put(activeProviderPersistRejected(atomicProviderId));
       return true;
     }
     logger.error('Failed to persist model.providerDefaults', { error });
@@ -103,7 +127,10 @@ export function* persistSelectedModelsWorker(sessionPicks: Record<string, string
 }
 
 function* watchSelectedModelPersistence() {
-  const channel = yield* actionChannel(setSelectedModel, buffers.sliding(1));
+  const channel = yield* actionChannel(
+    [setAtomicDefaultModel, setSelectedModel],
+    buffers.sliding(1),
+  );
   // Newest pick per provider made this session. Session-scoped on purpose:
   // an entry only exists for a provider the user explicitly picked here, and
   // re-overlaying it on every write keeps the user's in-session intent from
@@ -115,7 +142,11 @@ function* watchSelectedModelPersistence() {
     while (true) {
       const { providerId, model } = action.payload[0];
       sessionPicks[providerId] = model;
-      const persisted = yield* call(persistSelectedModelsWorker, sessionPicks);
+      const persisted = yield* call(
+        persistSelectedModelsWorker,
+        sessionPicks,
+        action.type === setAtomicDefaultModel.type ? providerId : undefined,
+      );
       if (persisted) {
         action = yield* take(channel);
         attempt = 0;

@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, delay, take } from 'typed-redux-saga';
+import { actionChannel, call, delay, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { AppliedSettingChange } from '$lib/client/app-client';
@@ -7,6 +7,7 @@ import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types'
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '../settings-events-slice';
+import { connectionsListReceived } from '../../connections/connections-slice';
 
 const logger = createLogger('SettingsHydrationSaga');
 
@@ -27,11 +28,17 @@ const logger = createLogger('SettingsHydrationSaga');
  */
 export const SETTINGS_HYDRATION_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
-export function* hydrateSettingsOnceSaga() {
+export function* readSettingsSnapshotSaga() {
   let attempt = 0;
   while (true) {
     try {
-      const settings = yield* call([appClient.settings, appClient.settings.list]);
+      const snapshot = appClient.settings.listSnapshot
+        ? yield* call([appClient.settings, appClient.settings.listSnapshot])
+        : {
+            settings: yield* call([appClient.settings, appClient.settings.list]),
+            revision: 0,
+          };
+      const settings = snapshot.settings;
       if (Array.isArray(settings) && settings.length > 0) {
         const changes: AppliedSettingChange[] = settings.map(({ path, value }) => ({
           path,
@@ -39,8 +46,7 @@ export function* hydrateSettingsOnceSaga() {
         }));
         // The shared apply seam emits hydration actions only. It never calls
         // settings.update, so the boot snapshot cannot echo back into persistence.
-        yield* call(applySettingsChanges, changes);
-        return;
+        return { changes, revision: snapshot.revision };
       }
       logger.error('settings hydration returned an empty snapshot, retrying');
     } catch (error) {
@@ -59,15 +65,47 @@ export function* hydrateSettingsOnceSaga() {
   }
 }
 
+export function* hydrateSettingsOnceSaga() {
+  const snapshot = yield* call(readSettingsSnapshotSaga);
+  if (snapshot) yield* call(applySettingsChanges, snapshot.changes);
+}
+
 export function* settingsHydrationSaga() {
   const channel = yield* actionChannel(settingsChangesReceived, buffers.expanding());
   try {
     // Install the ordered event channel before the boot read so changes racing
     // settings.list are retained and applied after its older snapshot.
-    yield* call(hydrateSettingsOnceSaga);
+    let backendId: string | undefined;
+    let revision = -1;
+    const snapshot = yield* call(readSettingsSnapshotSaga);
+    if (snapshot) {
+      yield* call(applySettingsChanges, snapshot.changes);
+      revision = snapshot.revision;
+    }
     while (true) {
-      const action: ReturnType<typeof settingsChangesReceived> = yield* take(channel);
-      yield* call(applySettingsChanges, action.payload[0]);
+      const { settings, connections } = yield* race({
+        settings: take(channel),
+        connections: take(connectionsListReceived),
+      });
+      if (connections) {
+        const nextBackendId = connections.payload[0].windowBackendId;
+        if (nextBackendId === backendId) continue;
+        backendId = nextBackendId;
+        revision = -1;
+        const nextSnapshot = yield* call(readSettingsSnapshotSaga);
+        if (nextSnapshot) {
+          yield* call(applySettingsChanges, nextSnapshot.changes);
+          revision = nextSnapshot.revision;
+        }
+        continue;
+      }
+      if (!settings) continue;
+      const incomingRevision = settings.payload[1];
+      // Older daemons omit revisions. Accept those only until this backend has
+      // demonstrated revision support, preserving additive compatibility.
+      if (incomingRevision === undefined ? revision > 0 : incomingRevision < revision) continue;
+      yield* call(applySettingsChanges, settings.payload[0]);
+      if (incomingRevision !== undefined) revision = incomingRevision;
     }
   } finally {
     channel.close();

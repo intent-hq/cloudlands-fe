@@ -251,12 +251,14 @@ export function* daemonEventsSaga() {
           leases.scopedFile.subscriptionId,
         ].filter((id): id is string => typeof id === 'string');
         let settingsChanges: AppliedSettingChange[] | undefined;
+        let settingsRevision: number | undefined;
         yield* call(routeDaemonEventsNotification, method, params, expectedSubscriptionIds, {
-          onSettingsChanges: (changes: AppliedSettingChange[]) => {
+          onSettingsChanges: (changes: AppliedSettingChange[], revision?: number) => {
             settingsChanges = changes;
+            settingsRevision = revision;
           },
         });
-        if (settingsChanges) yield* put(settingsChangesReceived(settingsChanges));
+        if (settingsChanges) yield* put(settingsChangesReceived(settingsChanges, settingsRevision));
         continue;
       }
 

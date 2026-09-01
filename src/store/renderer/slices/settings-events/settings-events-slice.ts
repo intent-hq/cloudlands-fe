@@ -8,8 +8,8 @@
  * `src/store/renderer/AGENTS.md` §8 a trigger-only slice deliberately omits
  * its reducer entry to keep the state tree free of empty branches.
  */
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import type { AppliedSettingChange } from "$lib/client/app-client";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import type { AppliedSettingChange } from '$lib/client/app-client';
 
 /**
  * Typed counterpart to the wire `settings:changed` event (§6.5). The payload
@@ -18,11 +18,9 @@ import type { AppliedSettingChange } from "$lib/client/app-client";
  * hydration synthesizes the action from the full `settings.list()` snapshot so
  * panels see one consistent action regardless of source.
  */
-export const settingsChanged = createAction<[changes: AppliedSettingChange[]]>(
-  "settings/changed",
-);
+export const settingsChanged = createAction<[changes: AppliedSettingChange[]]>('settings/changed');
 
 /** Raw daemon notification routed by daemonEventsSaga and consumed in order. */
-export const settingsChangesReceived = createAction<[changes: AppliedSettingChange[]]>(
-  "settings/changesReceived",
-);
+export const settingsChangesReceived = createAction<
+  [changes: AppliedSettingChange[], revision?: number]
+>('settings/changesReceived');

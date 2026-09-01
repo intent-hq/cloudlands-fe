@@ -5,6 +5,7 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   activeProviderReconciled,
+  setAtomicDefaultModel,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
 import { normalizeModelForProvider, normalizeProviderModels } from './model-selection-utils';
@@ -204,6 +205,17 @@ modelReducer.with(activeProviderReconciled, (state, { payload: [providerId] }) =
   };
 });
 modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
+  ...state,
+  providerModels: {
+    ...state.providerModels,
+    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
+  },
+  pendingProviderModels: {
+    ...state.pendingProviderModels,
+    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
+  },
+}));
+modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model }] }) => ({
   ...state,
   providerModels: {
     ...state.providerModels,
