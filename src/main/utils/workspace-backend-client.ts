@@ -154,6 +154,12 @@ export interface WorkspaceOwnershipLookup<C> {
    * A rejection is treated as "not the owner".
    */
   confirmOwnership(client: C, workspaceId: string): Promise<boolean>;
+  /**
+   * Called when more than one live backend confirms ownership of the same
+   * workspace id (a cross-daemon collision) so the caller can log/diagnose;
+   * the probe itself fails closed and resolves no owner.
+   */
+  onAmbiguousOwnership?(workspaceId: string, confirmingBackendIds: string[]): void;
 }
 
 export interface WorkspaceOwnershipProber<C> {
@@ -161,11 +167,13 @@ export interface WorkspaceOwnershipProber<C> {
    * Find the live backend that owns `workspaceId` by positive confirmation.
    * Serves from the workspaceId → backendId cache while the cached backend
    * still has a live client (a disconnected backend self-invalidates its
-   * entries); otherwise probes every live backend concurrently and caches the
-   * first confirming one (multiple confirmations — a workspace-id collision
-   * across daemons — resolve to the first in `getLiveBackendIds` order,
-   * matching the existing "first backend wins" documentation). Returns null
-   * when no live backend confirms ownership; a null result is never cached.
+   * entries); otherwise probes every live backend concurrently. Exactly one
+   * confirmation names the owner (cached and returned); multiple
+   * confirmations — a workspace-id collision across daemons — are ambiguous
+   * and fail closed: `onAmbiguousOwnership` is notified and null is returned
+   * so no bytes are ever served from an unconfirmed-unique owner. Returns
+   * null when no live backend confirms ownership; null results (no owner or
+   * ambiguous) are never cached.
    */
   probeOwner(workspaceId: string): Promise<{ client: C; backendId: string } | null>;
   /** Drop the cached owner so the next probe re-confirms from scratch. */
@@ -199,9 +207,18 @@ export function createWorkspaceOwnershipProber<C>(
         lookup.confirmOwnership(client, workspaceId).catch(() => false),
       ),
     );
-    const ownerIndex = confirmations.indexOf(true);
-    if (ownerIndex === -1) return null;
-    const owner = candidates[ownerIndex];
+    const confirming = candidates.filter((_, index) => confirmations[index]);
+    if (confirming.length === 0) return null;
+    if (confirming.length > 1) {
+      // Ambiguous ownership (workspace-id collision across daemons): fail
+      // closed rather than serving bytes from an arbitrary backend.
+      lookup.onAmbiguousOwnership?.(
+        workspaceId,
+        confirming.map(({ backendId }) => backendId),
+      );
+      return null;
+    }
+    const owner = confirming[0];
     owners.set(workspaceId, owner.backendId);
     return owner;
   }

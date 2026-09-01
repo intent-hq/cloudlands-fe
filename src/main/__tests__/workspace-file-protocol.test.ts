@@ -396,6 +396,27 @@ describe('createWorkspaceOwnershipProber', () => {
     expect(lookup.confirmOwnership).toHaveBeenCalledTimes(2);
   });
 
+  it('fails closed when multiple backends confirm ownership, reporting the collision uncached', async () => {
+    const clients = new Map([
+      ['conn-a', 'client-a'],
+      ['conn-b', 'client-b'],
+    ]);
+    const onAmbiguousOwnership = vi.fn();
+    const lookup = {
+      ...proberLookup(clients, new Set(['client-a', 'client-b'])),
+      onAmbiguousOwnership,
+    };
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    expect(await prober.probeOwner('ws-a')).toBeNull();
+    expect(onAmbiguousOwnership).toHaveBeenCalledWith('ws-a', ['conn-a', 'conn-b']);
+
+    // Nothing cached: the next lookup re-probes (and fails closed again).
+    expect(await prober.probeOwner('ws-a')).toBeNull();
+    expect(lookup.confirmOwnership).toHaveBeenCalledTimes(4);
+    expect(onAmbiguousOwnership).toHaveBeenCalledTimes(2);
+  });
+
   it('treats a rejecting probe on one backend as not-the-owner without killing resolution', async () => {
     const clients = new Map([
       ['conn-broken', 'client-broken'],

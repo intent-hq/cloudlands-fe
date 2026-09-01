@@ -103,6 +103,12 @@ async function workspaceOwnershipProber(): Promise<WorkspaceOwnershipProber<Json
         await client.request('workspace.get', { workspaceId });
         return true;
       },
+      onAmbiguousOwnership: (workspaceId, confirmingBackendIds) => {
+        logger.warn('workspace ownership probe ambiguous — failing closed', {
+          workspaceId,
+          confirmingBackendIds,
+        });
+      },
     });
   }
   return ownershipProber;
