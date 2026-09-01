@@ -29,7 +29,7 @@ const logger = createLogger('SettingsHydrationSaga');
  */
 export const SETTINGS_HYDRATION_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
-export function* readSettingsSnapshotSaga() {
+function* readSettingsSnapshotSaga() {
   let attempt = 0;
   while (true) {
     try {
