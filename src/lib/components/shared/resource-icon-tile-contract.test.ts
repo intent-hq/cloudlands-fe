@@ -76,7 +76,7 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('{@render panelIdentity(activeTab)}');
     expect(tabBar).toContain('data-panel-header-leading-surface');
     expect(tabBar).toContain('size={16}');
-    expect(tabBar).toContain('width="16"');
+    expect(tabBar).toContain('width="14"');
     expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3.5!" />');
     expect(tabBar).toContain('<Fa icon={faXmark} size={14} class="size-3.5!" />');
     expect(navigator).toContain("import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon'");

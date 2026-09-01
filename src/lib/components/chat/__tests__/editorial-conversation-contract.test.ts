@@ -242,6 +242,10 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
+    expect(staticContent).toMatch(/nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
+    expect(streamingContent).toMatch(
+      /nested,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/,
+    );
   });
 
   it('uses quieter Chief message surfaces and keeps proposals out of the transcript', () => {

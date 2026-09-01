@@ -21,9 +21,24 @@ const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalSt
     toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
   }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { state: {}, dispatch: mockDispatch },
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { get } = await import('svelte/store');
+  const store: any = {
+    state: {},
+    dispatch: mockDispatch,
+    createSelector: (fn: (state: any, ...args: any[]) => any) =>
+      Object.assign(
+        (...args: any[]) => ({
+          subscribe: (listener: (value: any) => void) => {
+            listener(fn(store.state, ...args.map((arg) => (arg?.subscribe ? get(arg) : arg))));
+            return () => {};
+          },
+        }),
+        { select: fn },
+      ),
+  };
+  return { store };
+});
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
   const readable = <T>(read: () => T) => ({
@@ -208,7 +223,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     mockUpdate.mockImplementationOnce(() => new Promise((resolve) => (resolveUpdate = resolve)));
     render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
 
-    await fireEvent.dblClick(screen.getByRole('tab', { name: 'dev' }));
+    await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
     const input = screen.getByPlaceholderText('Name');
     await fireEvent.input(input, { target: { value: 'renamed dev' } });
     await fireEvent.blur(input);
@@ -235,7 +250,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       props: { workspaceId: 'ws-a' as any },
     });
 
-    await fireEvent.dblClick(screen.getByRole('tab', { name: 'dev' }));
+    await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
     const input = screen.getByPlaceholderText('Name');
     await fireEvent.input(input, { target: { value: 'renamed in A' } });
     await fireEvent.blur(input);
