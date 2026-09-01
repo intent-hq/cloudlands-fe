@@ -251,7 +251,9 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(actions.className).toContain('group-hover:opacity-100');
     expect(actions.className).toContain('group-focus-within:opacity-100');
     expect(prItem).toBeTruthy();
-    expect(prItem?.querySelector('[data-workspace-card-pr-number]')?.textContent).toBe('#42');
+    expect(prItem?.querySelector('[data-workspace-card-pr-number]')).toBeNull();
+    expect(prItem?.querySelector('svg')).toBeTruthy();
+    expect(prItem?.getAttribute('aria-label')).toContain('#42');
     expect(container.querySelector('[data-workspace-card-time]')).toBeTruthy();
     expect(container.querySelector('[data-workspace-status]')?.contains(marker)).toBe(false);
     expect(trigger.className).not.toMatch(/focus-visible:ring-(?:1|2|4|8)|ring-inset|ring-offset/);

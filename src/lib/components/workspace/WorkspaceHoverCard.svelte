@@ -8,15 +8,15 @@
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import type { AgentSession, Workspace } from '$shared/types';
+  import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
+  import Fa from 'svelte-fa';
   import {
     selectAgentPreview,
     type AgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
   import {
     selectWorkspaceTaskDisplayList,
     selectWorkspaceTaskProgress,
@@ -26,7 +26,14 @@
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
+  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import {
+    buildWorkspacePRPresentationModel,
+    type WorkspacePRPresentationRow,
+  } from './sidebar/workspace-pr-presentation';
   import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
   import {
     getWorkspaceStatusPresentation,
@@ -57,12 +64,12 @@
   const workspaceTaskDisplayList$ = selectWorkspaceTaskDisplayList(workspaceIdStore);
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
   const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   $effect(() => {
     if (workspace && loadWorkspaceData) {
       const id = String(workspace.id);
       appStore.dispatch(ensureWorkspaceTasksLoaded(id));
-      appStore.dispatch(loadWorkspaceSummariesRequested(id));
     }
   });
   let streamsVersion = $state(0);
@@ -162,14 +169,15 @@
     } else if (hasQuestion) {
       group = 'attention';
       attentionKind = 'question';
-      context = pending?.questions[0]?.question.trim() || preview || m.dock_badge_question_label();
+      context =
+        pending?.questions[0]?.question.trim() || preview || m.workspace_hoverCard_question_label();
       avatarState = 'question';
       priority = 1;
       const count = pending?.questions.length ?? 0;
       if (count > 1) {
         questionMeta = {
           compact: `${formatInteger(1)}/${formatInteger(count)}`,
-          accessible: `${m.dock_badge_question_label()} ${m.chat_questionWizard_stepCounter_label({ current: 1, total: count })}`,
+          accessible: `${m.workspace_hoverCard_question_label()} ${m.chat_questionWizard_stepCounter_label({ current: 1, total: count })}`,
         };
       }
     } else if (attention?.kind === 'discussion') {
@@ -288,6 +296,50 @@
   let summary = $derived(workspace?.statusMessage?.trim() || status.label);
   let taskStatuses = $derived($workspaceTaskDisplayList$.map((task) => task.status));
   let hasTasks = $derived(taskStatuses.length > 0 || $workspaceTaskProgress$.total > 0);
+  function getWorkspacePullRequest(value: Workspace | null): PullRequestInfo | null {
+    if (!value) return null;
+    const pr = value.activePullRequest ?? value.pullRequests?.[0] ?? null;
+    if (pr) return pr;
+    if (!value.prStatus) return null;
+    return {
+      id: `legacy-pr-${value.prNumber ?? 'workspace'}`,
+      number: value.prNumber ?? 0,
+      url: value.prUrl ?? '',
+      title: m.workspace_hoverCard_pullRequest_label(),
+      status: value.prStatus,
+      createdAt: value.updatedAt,
+      updatedAt: value.updatedAt,
+    };
+  }
+  let activePullRequest = $derived.by(() => {
+    if (!workspace) return null;
+    return (
+      selectWorkspaceActivePullRequest.select(appStore.state, workspace.id) ??
+      getWorkspacePullRequest(workspace)
+    );
+  });
+  let workspacePrRows = $derived.by(() => {
+    if (!workspace) return [];
+    const workspaceRepo =
+      workspace.repositoryOwner && workspace.repositoryName
+        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+        : undefined;
+    return buildWorkspacePRPresentationModel({
+      workspacePRs: workspace.pullRequests,
+      activePR: activePullRequest,
+      monitors: $prMonitors$,
+      workspaceRepo,
+      buildPrUrl: (prNumber, fallbackUrl) =>
+        constructPrUrl(prNumber, workspace.repositoryOwner, workspace.repositoryName, fallbackUrl),
+      getDisplayTitle: (pr) => pr.title,
+    });
+  });
+  function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
+    const identity = pr.repo
+      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+  }
 </script>
 
 <section
@@ -354,6 +406,37 @@
         >
           {summary}
         </p>
+        {#if workspacePrRows.length}
+          <div
+            class="grid min-w-0 gap-1 pt-0.5"
+            aria-label={m.workspace_hoverCard_pullRequest_label()}
+            role="list"
+            data-workspace-hover-card-pr-list
+          >
+            {#each workspacePrRows as pr (pr.identity)}
+              <div
+                class="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-1.5"
+                aria-label={getWorkspacePrLabel(pr)}
+                role="listitem"
+                data-workspace-hover-card-pr-row
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+              >
+                <Fa icon={pr.statusIcon} size={12} class="shrink-0 {pr.foregroundClass}" />
+                <span class="min-w-0 truncate text-xs font-medium text-foreground">
+                  {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                </span>
+                <span class="shrink-0 text-[11px] text-subtle">#{pr.number}</span>
+                <span
+                  class="col-start-2 col-end-4 min-w-0 truncate text-[11px] {pr.foregroundClass}"
+                  data-workspace-hover-card-pr-status
+                >
+                  {pr.details.replaceAll('\n', ' · ')}
+                </span>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </section>
       <section
         class="activity min-w-0 border-l border-solid border-border/70"

@@ -1144,6 +1144,7 @@
   "workspace_hoverCard_moreAgents_label": "+{count}개 더",
   "workspace_hoverCard_noRecentActivity_label": "최근 활동 없음",
   "workspace_hoverCard_pullRequest_label": "풀 리퀘스트",
+  "workspace_hoverCard_question_label": "질문",
   "workspace_hoverCard_runningAgents_ariaLabel": "실행 중인 에이전트",
   "workspace_hoverCard_taskProgress_ariaLabel": "작업 공간 작업 진행률",
   "workspace_hoverCard_unpushedCommits_label": "푸시되지 않은 로컬 커밋",

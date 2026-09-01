@@ -5,7 +5,7 @@ import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
-import { WorkspaceStatusEnum } from '$shared/types';
+import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -44,6 +44,14 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
 });
+
+vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
+  selectPrMonitors: vi.fn(mocks.createWorkspaceReadable(() => [])),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
+}));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: vi.fn(
@@ -192,6 +200,25 @@ describe('WorkspaceHoverCard', () => {
     ]) {
       for (const key of Object.keys(record)) delete record[key];
     }
+  });
+
+  it('keeps pull request numbers and details visible in the summary column', async () => {
+    await renderHoverCard({
+      activePullRequest: {
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/augment/intent/pull/42',
+        title: 'Refine hover card',
+        status: PullRequestStatus.Open,
+        createdAt: baseWorkspace.createdAt,
+        updatedAt: baseWorkspace.updatedAt,
+      },
+    });
+
+    const row = screen.getByRole('listitem', { name: /augment\/intent #42/i });
+    expect(row.textContent).toContain('Refine hover card');
+    expect(row.textContent).toContain('#42');
+    expect(row.getAttribute('data-pr-status')).toBe('open');
   });
 
   it('preserves the public loading and data-loading behavior', async () => {

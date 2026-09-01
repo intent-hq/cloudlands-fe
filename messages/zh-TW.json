@@ -1144,6 +1144,7 @@
   "workspace_hoverCard_moreAgents_label": "還有 {count} 個",
   "workspace_hoverCard_noRecentActivity_label": "暫無近期活動",
   "workspace_hoverCard_pullRequest_label": "拉取請求",
+  "workspace_hoverCard_question_label": "問題",
   "workspace_hoverCard_runningAgents_ariaLabel": "執行中的智慧體",
   "workspace_hoverCard_taskProgress_ariaLabel": "工作區任務進度",
   "workspace_hoverCard_unpushedCommits_label": "本地提交未推送",

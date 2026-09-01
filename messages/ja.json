@@ -1144,6 +1144,7 @@
   "workspace_hoverCard_moreAgents_label": "他 {count} 個",
   "workspace_hoverCard_noRecentActivity_label": "最近のアクティビティはありません",
   "workspace_hoverCard_pullRequest_label": "プルリクエスト",
+  "workspace_hoverCard_question_label": "質問",
   "workspace_hoverCard_runningAgents_ariaLabel": "実行中のエージェント",
   "workspace_hoverCard_taskProgress_ariaLabel": "ワークスペースのタスク進捗",
   "workspace_hoverCard_unpushedCommits_label": "未プッシュのローカルコミット",

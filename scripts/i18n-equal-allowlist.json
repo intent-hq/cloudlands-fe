@@ -296,6 +296,7 @@
   "workspace_digestCard_prNumber_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "workspace_fileChanges_agent_label": ["de", "fr"],
   "workspace_hoverCard_pullRequest_label": ["fr", "es"],
+  "workspace_hoverCard_question_label": ["fr"],
   "workspace_initialAgentPicker_general_label": ["es"],
   "workspace_isolationMode_worktree_label": ["ja", "ko", "fr", "es"],
   "workspace_issueSuggestions_team_label": ["de"],
