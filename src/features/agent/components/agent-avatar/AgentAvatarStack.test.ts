@@ -132,13 +132,16 @@ describe('AgentAvatarStack capping (adaptive)', () => {
     expect(visibleKeys(view.container)).toHaveLength(3);
     expectBadgeConsistent(view.container, 12);
 
-    observer.deliver(600);
+    // A collapsing width makes the pre- and post-application frames
+    // distinguishable, proving the delivery is deferred rather than
+    // applied synchronously.
+    observer.deliver(10);
     // Delivered but not yet applied: still the pre-measurement default.
     expect(visibleKeys(view.container)).toHaveLength(3);
-    flushFrames();
-    // card-stack geometry: 3 avatars (24 + 2*18 = 60) + gap + label fit in 600.
-    expect(visibleKeys(view.container)).toHaveLength(3);
     expect(overflowText(view.container)).toBe('+9');
+    flushFrames();
+    expect(visibleKeys(view.container)).toHaveLength(0);
+    expect(overflowText(view.container)).toBe('+12');
   });
 
   it('collapses to zero items with the full remainder badge when nothing fits', () => {
@@ -165,14 +168,16 @@ describe('AgentAvatarStack capping (adaptive)', () => {
 
   it('coalesces a burst of deliveries and applies only the latest width', () => {
     const { view, observer } = renderAdaptive(6);
+    // The latest width (10, collapsing) must produce a different state from
+    // both the first delivery (600 → 3 visible) and the pre-measurement
+    // default (3 visible), so retaining anything but the latest fails.
     observer.deliver(600);
-    observer.deliver(10);
     observer.deliver(200);
+    observer.deliver(10);
     expect(frameQueue.size).toBe(1);
     flushFrames();
-    // 200px fits 3 avatars (60) + gap (4) + label.
-    expect(visibleKeys(view.container)).toHaveLength(3);
-    expect(overflowText(view.container)).toBe('+3');
+    expect(visibleKeys(view.container)).toHaveLength(0);
+    expect(overflowText(view.container)).toBe('+6');
   });
 
   it('keeps the badge consistent with the slice across every transient state', () => {

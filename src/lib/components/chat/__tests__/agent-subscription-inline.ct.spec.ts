@@ -853,12 +853,14 @@ test('caps one through eight participants at three and computes overflow from re
      (createDeferredWidthApplier), so after a width change the visible count
      settles asynchronously. Reading count() and the badge in separate calls
      can straddle that settling frame (#4019) — read both atomically in one
-     evaluate and assert the pair is self-consistent. Requiring two reads
-     spanning a double rAF (the deferred-width application window) to agree
-     ensures the poll observes the settled adaptive state rather than passing
-     on the pre-measurement default frame. The exact settled count is not
-     pinned because the stack's available width depends on surrounding header
-     layout. */
+     evaluate and assert the pair is self-consistent. A leading double rAF
+     lets any ResizeObserver delivery pending at entry fire (next frame) and
+     its deferred width apply (the frame after) before the first read, and
+     agreement across a second double rAF guards against a delivery arriving
+     mid-check — so the poll observes the settled adaptive state rather than
+     passing on the pre-measurement default frame. The exact settled count is
+     not pinned because the stack's available width depends on surrounding
+     header layout. */
   await expect
     .poll(() =>
       narrowStack.evaluate(async (stack) => {
@@ -868,10 +870,11 @@ test('caps one through eight participants at three and computes overflow from re
             stack.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim() ?? null;
           return { visible, badge };
         };
+        const settleWindow = () =>
+          new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await settleWindow();
         const first = read();
-        await new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        );
+        await settleWindow();
         const second = read();
         return {
           settled: first.visible === second.visible && first.badge === second.badge,
