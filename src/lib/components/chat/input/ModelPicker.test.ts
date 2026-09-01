@@ -2738,7 +2738,8 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       },
     });
 
-    await pickModelOne();
+    await fireEvent.click(screen.getByRole('button'));
+    const pick = fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
     expect(screen.getByRole('button', { name: 'Model 1' })).toBeTruthy();
 
     await rerender({
@@ -2748,12 +2749,39 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
     expect(screen.getByRole('button', { name: 'Model 1' })).toBeTruthy();
 
+    await pick;
+
     await rerender({
       selectedModel: 'model-1',
       updateGlobalDefault: true,
       portal: false,
     });
     expect(screen.getByRole('button', { name: 'Model 1' })).toBeTruthy();
+  });
+
+  it('adopts a legitimate external settings update after its own global-default dispatch', async () => {
+    mockModelState.availableModels = [
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+      { value: 'external-model', label: 'External model', description: 'Changed elsewhere' },
+    ];
+    vi.mocked(getModelsForProvider).mockResolvedValue(mockModelState.availableModels);
+
+    const { rerender } = render(ModelPicker, {
+      props: {
+        selectedModel: 'previous-provider-model',
+        updateGlobalDefault: true,
+        portal: false,
+      },
+    });
+
+    await pickModelOne();
+    await rerender({
+      selectedModel: 'external-model',
+      updateGlobalDefault: true,
+      portal: false,
+    });
+
+    expect(screen.getByRole('button', { name: 'External model' })).toBeTruthy();
   });
 });
 

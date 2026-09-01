@@ -660,18 +660,20 @@
   let localModel = $state<string | null | undefined>(untrack(() => selectedModel));
   let userChangedModel = $state(false);
   let propModelAtLocalChange = $state<string | null | undefined>(undefined);
+  let awaitingGlobalDefaultDispatch = $state(false);
 
   // Keep a local user selection until the parent prop catches up to localModel.
   $effect(() => {
     if (selectedModel === localModel) {
       userChangedModel = false;
       propModelAtLocalChange = undefined;
+      awaitingGlobalDefaultDispatch = false;
       return;
     }
 
     if (
       userChangedModel &&
-      (updateGlobalDefault ||
+      (awaitingGlobalDefaultDispatch ||
         selectedModel === undefined ||
         selectedModel === propModelAtLocalChange)
     ) {
@@ -737,9 +739,11 @@
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
+    awaitingGlobalDefaultDispatch = updateGlobalDefault;
     localModel = model;
 
     if (model === undefined) {
+      awaitingGlobalDefaultDispatch = false;
       // "Use default" picked — notify the parent with an empty string so it
       // can clear an explicit pin (consumers with explicit-model semantics
       // guard on falsy values; no agent/global updates apply to "default").
@@ -754,7 +758,10 @@
 
     await tick();
 
-    if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+    if (updateGlobalDefault) {
+      appStore.dispatch(selectModel(model));
+      awaitingGlobalDefaultDispatch = false;
+    }
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
