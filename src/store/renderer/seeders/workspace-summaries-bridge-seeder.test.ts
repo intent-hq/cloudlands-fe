@@ -157,7 +157,14 @@ describe('workspace-summaries-bridge-seeder', () => {
           behind: 1,
           hasUncommittedChanges: false,
         },
-        'git.status': { branch: 'feat', ahead: 2, behind: 0, files: [] },
+        'git.status': {
+          branch: 'feat',
+          ahead: 2,
+          behind: 0,
+          files: [],
+          hasUpstream: true,
+          unpushedCount: 2,
+        },
         'git.commits': {
           items: [
             { hash: 'a'.repeat(40), sha: 'abcdef1', message: 'feat: one\n\nbody' },
@@ -265,7 +272,7 @@ describe('workspace-summaries-bridge-seeder', () => {
       routeRequests({
         'workspace.get': WORKSPACE,
         'git.branchStatus': { ahead: 0, behind: 3 },
-        'git.status': { ahead: 0, files: [] },
+        'git.status': { ahead: 0, files: [], hasUpstream: true, unpushedCount: 0 },
       });
 
       expect(
@@ -276,6 +283,55 @@ describe('workspace-summaries-bridge-seeder', () => {
       });
       // ahead === 0 → no git.commits call.
       expect(mockedRequest).not.toHaveBeenCalledWith('git.commits', expect.anything());
+    });
+
+    it('reads hasUnpushed:false when the upstream is even (unpushedCount 0) despite commits ahead of the base', async () => {
+      routeRequests({
+        'workspace.get': WORKSPACE,
+        'git.branchStatus': { ahead: 2, behind: 0 },
+        'git.status': { ahead: 0, files: [], hasUpstream: true, unpushedCount: 0 },
+        'git.commits': { items: [] },
+      });
+
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, { workspaceId: 'ws-1' }),
+      ).toEqual({
+        success: true,
+        data: { ahead: 2, behind: 0, hasUnpushed: false, commits: [] },
+      });
+    });
+
+    it('reads hasUnpushed:true for a never-pushed branch ahead of its base (hasUpstream:false, legacy parity)', async () => {
+      routeRequests({
+        'workspace.get': WORKSPACE,
+        'git.branchStatus': { ahead: 1, behind: 0 },
+        // No upstream: unpushedCount is omitted entirely (monorepo#4058).
+        'git.status': { ahead: 0, behind: 0, files: [], hasUpstream: false },
+        'git.commits': { items: [] },
+      });
+
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, { workspaceId: 'ws-1' }),
+      ).toEqual({
+        success: true,
+        data: { ahead: 1, behind: 0, hasUnpushed: true, commits: [] },
+      });
+    });
+
+    it('falls back to the upstream-relative ahead approximation on a pre-#4058 daemon (hasUpstream absent)', async () => {
+      routeRequests({
+        'workspace.get': WORKSPACE,
+        'git.branchStatus': { ahead: 1, behind: 0 },
+        'git.status': { ahead: 3, behind: 0, files: [] },
+        'git.commits': { items: [] },
+      });
+
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, { workspaceId: 'ws-1' }),
+      ).toEqual({
+        success: true,
+        data: { ahead: 1, behind: 0, hasUnpushed: true, commits: [] },
+      });
     });
 
     it('folds a workspace.get rejection into the error envelope', async () => {

@@ -21,12 +21,17 @@
  * `{ success: false, error }`, never a throw. Handlers are registered at
  * import time (host-bridge idiom).
  *
+ * `hasUnpushed` reads the `git.status` upstream-tracking fields (v9.0,
+ * monorepo#4058): with an upstream ref it is the exact `upstream..HEAD`
+ * count (`unpushedCount`); without one (never-pushed branch) all commits
+ * ahead of the base are unpushed — full legacy parity.
+ *
  * Documented approximations vs the legacy main-process helpers
  * (features/workspace/main/workspace-summaries.ts):
- *  - `hasUnpushed` reads `git.status.ahead` (upstream-relative); when that
- *    call fails, it falls back to the base-ref ahead count (the legacy
- *    no-upstream fallback). A never-pushed branch on a daemon reporting
- *    upstream ahead 0 reads false where legacy read true.
+ *  - On a pre-#4058 daemon (`hasUpstream` absent) `hasUnpushed` falls back to
+ *    the upstream-relative `git.status.ahead` approximation, and on a failed
+ *    status read to the base-ref ahead count — a never-pushed branch on such
+ *    a daemon reporting upstream ahead 0 reads false where legacy read true.
  *  - `commits` walks reverse-chronologically from HEAD (`git.commits`) capped
  *    at min(ahead, 6) instead of the exact `<base>..HEAD` range — identical
  *    on linear history.
@@ -43,6 +48,14 @@ interface GitStatusResult {
   /** Additive truncation markers (v8.4): `files` caps at 5000 entries. */
   filesTruncated?: boolean;
   totalFiles?: number;
+  /**
+   * Additive upstream-tracking fields (v9.0, monorepo#4058): `hasUpstream`
+   * says whether `refs/remotes/origin/<branch>` exists; `unpushedCount` is
+   * the `upstream..HEAD` count, omitted entirely when there is no upstream.
+   * Both are absent on pre-#4058 daemons.
+   */
+  hasUpstream?: boolean;
+  unpushedCount?: number;
 }
 
 /** Daemon `git.numstat` result rows (§5.6, bare array). */
@@ -170,10 +183,8 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, async (arg) => {
       return { success: true, data: null };
     }
 
-    const [statusAhead, commits] = await Promise.all([
-      backendRequest<GitStatusResult>('git.status', { workspaceId })
-        .then((status) => status?.ahead ?? 0)
-        .catch(() => null),
+    const [status, commits] = await Promise.all([
+      backendRequest<GitStatusResult>('git.status', { workspaceId }).catch(() => null),
       ahead > 0
         ? backendRequest<GitCommitsResult>('git.commits', {
             workspaceId,
@@ -189,9 +200,20 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, async (arg) => {
         : Promise.resolve([]),
     ]);
 
-    // Upstream-relative unpushed probe; a failed status read falls back to
-    // the base-ref ahead count (the legacy no-upstream fallback).
-    const hasUnpushed = statusAhead === null ? ahead > 0 : statusAhead > 0;
+    // Unpushed probe: with the v9.0 upstream-tracking fields (monorepo#4058),
+    // an upstream ref means the exact `upstream..HEAD` count and no upstream
+    // (never-pushed branch) means all commits ahead of the base are unpushed
+    // (legacy parity). A pre-#4058 daemon (`hasUpstream` absent) falls back to
+    // the upstream-relative `ahead` approximation, and a failed (or nullish)
+    // status read to the base-ref ahead count.
+    let hasUnpushed: boolean;
+    if (status == null) {
+      hasUnpushed = ahead > 0;
+    } else if (typeof status.hasUpstream === 'boolean') {
+      hasUnpushed = status.hasUpstream ? (status.unpushedCount ?? 0) > 0 : ahead > 0;
+    } else {
+      hasUnpushed = (status.ahead ?? 0) > 0;
+    }
 
     return { success: true, data: { ahead, behind, hasUnpushed, commits } };
   } catch (error) {
