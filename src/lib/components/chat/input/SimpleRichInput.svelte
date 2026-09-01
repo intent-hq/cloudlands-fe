@@ -1680,7 +1680,7 @@
         <!-- Stop button — visible whenever the agent is responding/running,
              mirroring the Thinking indicator so users can interrupt across
              the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
-        <TooltipShortcut label={m.chat_richInput_stop_label()} shortcut="Escape" side="top">
+        <TooltipShortcut label={m.chat_richInput_stop_label()} side="top">
           <Button
             variant="ghost-light"
             size="icon-sm"

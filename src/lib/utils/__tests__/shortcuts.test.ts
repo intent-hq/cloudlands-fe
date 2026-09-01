@@ -8,6 +8,16 @@ import {
 } from '../shortcuts';
 
 describe('shortcut registry', () => {
+  it('does not advertise Escape as a chat stop shortcut', () => {
+    expect(SHORTCUTS).not.toHaveProperty('STOP');
+    expect(SHORTCUT_CATEGORIES.chat.shortcuts).not.toContainEqual(
+      expect.objectContaining({ key: 'esc' }),
+    );
+    expect(getShortcutsForContext('chat').chat?.shortcuts ?? []).not.toContainEqual(
+      expect.objectContaining({ key: 'esc' }),
+    );
+  });
+
   it('lists the task list shortcut in the editor cheat sheet', () => {
     expect(SHORTCUTS.TOGGLE_TASK_LIST).toEqual({
       key: 'mod+shift+9',
