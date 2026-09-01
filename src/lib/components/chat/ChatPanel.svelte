@@ -649,7 +649,7 @@
   // any fetch failure silently leaves the tail-only fallback in place.
   let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
   let userMessageIndexUnsupported = false;
-  let userMessageIndexFetchInFlight = false;
+  let userMessageIndexFetchInFlight = $state(false);
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
@@ -661,6 +661,7 @@
     onNavigationStateChange?.({
       isAtBottom: distanceFromBottom <= SCROLL_BOTTOM_BUTTON_EPSILON,
       userMessages: userMessageNavigationItems,
+      isLoadingUserMessageIndex: userMessageIndexFetchInFlight && userMessageIndexItems === null,
     });
   });
 

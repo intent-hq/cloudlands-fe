@@ -16,6 +16,11 @@ export interface UserMessageNavigationItem {
 export interface ChatNavigationState {
   isAtBottom: boolean;
   userMessages: UserMessageNavigationItem[];
+  /**
+   * True while the first full-history index fetch (`agent.listUserMessages`)
+   * is in flight — false again once the index is cached or unsupported.
+   */
+  isLoadingUserMessageIndex: boolean;
 }
 
 export interface MessageNavigationStartGeometry {

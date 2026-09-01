@@ -2050,6 +2050,7 @@
   "chat_messageNavigator_search_placeholder": "篩選使用者訊息...",
   "chat_messageNavigator_search_ariaLabel": "篩選使用者訊息",
   "chat_messageNavigator_empty_label": "找不到使用者訊息",
+  "chat_messageNavigator_loading_label": "正在載入完整歷史記錄...",
   "chat_newMessagesDivider_label": "新訊息",
   "chat_previewToolLabel_tool_fallback": "工具",
   "chat_shared_browser_fallback": "瀏覽器",

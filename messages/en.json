@@ -2051,6 +2051,7 @@
   "chat_messageNavigator_search_placeholder": "Filter user messages...",
   "chat_messageNavigator_search_ariaLabel": "Filter user messages",
   "chat_messageNavigator_empty_label": "No user messages found",
+  "chat_messageNavigator_loading_label": "Loading full history...",
   "chat_newMessagesDivider_label": "New messages",
   "chat_previewToolLabel_tool_fallback": "Tool",
   "chat_shared_browser_fallback": "Browser",
