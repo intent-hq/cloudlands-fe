@@ -4,7 +4,13 @@
 
 import { store } from '../../store';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { ConnectionOpenStatus, ConnectionRecord } from './connections-types';
+import type {
+  ConnectionHostCertWarning,
+  ConnectionOpenStatus,
+  ConnectionRecord,
+} from './connections-types';
+
+const NO_CERT_WARNINGS: ConnectionHostCertWarning[] = [];
 
 /** Full ordered connections list (local first, then remotes). */
 export const selectConnections = store.createSelector((state) =>
@@ -67,6 +73,27 @@ export const selectConnectionError = store.createSelector((state) => state.conne
 /** Last pinned-cert mismatch push, or null. Drives the blocking failure modal. */
 export const selectConnectionCertMismatch = store.createSelector(
   (state) => state.connections.certMismatch,
+);
+
+/**
+ * NON-FATAL per-host cert warnings by connection id (latest fingerprint per
+ * host, accumulated by main across reconnect attempts). Informative only —
+ * never blocks anything. Connections without observed warnings have no entry.
+ * Drives the per-row warning icon in the daemon-status devices list.
+ */
+export const selectCertWarningsByConnectionId = store.createSelector(
+  (state) => state.connections.certWarnings,
+);
+
+/**
+ * NON-FATAL per-host cert warnings for THIS WINDOW'S backend. Same gating as
+ * the other own-backend selectors: switching backends hides another
+ * connection's warnings without an explicit clear. Drives the passive list in
+ * the reconnect overlay and the daemon-status menu.
+ */
+export const selectCurrentConnectionCertWarnings = store.createSelector(
+  (state): ConnectionHostCertWarning[] =>
+    state.connections.certWarnings[state.connections.windowBackendId] ?? NO_CERT_WARNINGS,
 );
 
 /**

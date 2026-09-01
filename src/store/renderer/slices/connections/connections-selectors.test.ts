@@ -19,6 +19,7 @@ import type {
   ConnectionsState,
   ConnectionRecord,
   ConnectionAuthRejectedEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
 import { initialState, connectionsReducer, protocolMismatchReceived } from './connections-slice';
@@ -32,6 +33,8 @@ import {
   selectIsConnecting,
   selectConnectionError,
   selectConnectionCertMismatch,
+  selectCertWarningsByConnectionId,
+  selectCurrentConnectionCertWarnings,
   selectActiveAuthRejected,
   selectActiveProtocolMismatch,
   selectProtocolMismatchModal,
@@ -231,6 +234,46 @@ describe('connections selectors', () => {
       const state = stateWith(connections);
       expect(selectActiveProtocolMismatch.select(state)).toEqual(event);
       expect(selectProtocolMismatchModal.select(state)).toEqual(event);
+    });
+  });
+
+  describe('cert-warnings selectors', () => {
+    const HOST_WARNING: ConnectionHostCertWarning = {
+      host: '10.0.0.6',
+      expectedFingerprint: 'AB:CD',
+      actualFingerprint: 'EF:01',
+    };
+
+    it('exposes the per-connection warnings map', () => {
+      const state = stateWith({ certWarnings: { 'remote-1': [HOST_WARNING] } });
+      expect(selectCertWarningsByConnectionId.select(state)).toEqual({
+        'remote-1': [HOST_WARNING],
+      });
+    });
+
+    it('surfaces only THIS WINDOW backend warnings for the current connection', () => {
+      const boundToWarned = stateWith({
+        certWarnings: { 'remote-1': [HOST_WARNING] },
+        activeId: LOCAL_CONNECTION_ID,
+        windowBackendId: 'remote-1',
+      });
+      expect(selectCurrentConnectionCertWarnings.select(boundToWarned)).toEqual([HOST_WARNING]);
+
+      const boundToLocal = stateWith({
+        certWarnings: { 'remote-1': [HOST_WARNING] },
+        activeId: 'remote-1',
+        windowBackendId: LOCAL_CONNECTION_ID,
+      });
+      expect(selectCurrentConnectionCertWarnings.select(boundToLocal)).toEqual([]);
+    });
+
+    it('returns a referentially stable empty list when none are latched', () => {
+      const a = selectCurrentConnectionCertWarnings.select(stateWith({}));
+      const b = selectCurrentConnectionCertWarnings.select(
+        stateWith({ windowBackendId: 'remote-1' }),
+      );
+      expect(a).toEqual([]);
+      expect(a).toBe(b);
     });
   });
 });

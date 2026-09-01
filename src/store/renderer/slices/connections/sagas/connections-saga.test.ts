@@ -15,6 +15,7 @@ import {
   CONNECTIONS_CHANGED_EVENT,
   CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
+  CONNECTION_CERT_WARNINGS_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
   KEYCHAIN_SYNC_STATUS_EVENT,
   LOCAL_CONNECTION_ID,
@@ -420,6 +421,7 @@ describe('connectionsSaga', () => {
     expect(Object.keys(callbacks).sort()).toEqual([
       CONNECTION_AUTH_REJECTED_EVENT,
       CONNECTION_CERT_MISMATCH_EVENT,
+      CONNECTION_CERT_WARNINGS_EVENT,
       CONNECTIONS_CHANGED_EVENT,
       CONNECTION_PROTOCOL_MISMATCH_EVENT,
       KEYCHAIN_SYNC_STATUS_EVENT,
@@ -450,6 +452,10 @@ describe('connectionsSaga', () => {
       port: REMOTE.port,
       statusCode: 401,
     });
+    callbacks[CONNECTION_CERT_WARNINGS_EVENT]!({
+      id: REMOTE.id,
+      warnings: [{ host: '10.0.0.6', expectedFingerprint: 'AB:CD', actualFingerprint: 'EF:01' }],
+    });
     await settle();
 
     expect(getItems(run.getState().connections.connections)).toEqual([LOCAL, REMOTE]);
@@ -463,12 +469,16 @@ describe('connectionsSaga', () => {
       port: REMOTE.port,
       statusCode: 401,
     });
+    expect(run.getState().connections.certWarnings[REMOTE.id]).toEqual([
+      { host: '10.0.0.6', expectedFingerprint: 'AB:CD', actualFingerprint: 'EF:01' },
+    ]);
 
     run.task.cancel();
     await run.task.toPromise();
     expect(offById.mock.calls).toEqual([
       [CONNECTIONS_CHANGED_EVENT, `listener-${CONNECTIONS_CHANGED_EVENT}`],
       [CONNECTION_CERT_MISMATCH_EVENT, `listener-${CONNECTION_CERT_MISMATCH_EVENT}`],
+      [CONNECTION_CERT_WARNINGS_EVENT, `listener-${CONNECTION_CERT_WARNINGS_EVENT}`],
       [CONNECTION_PROTOCOL_MISMATCH_EVENT, `listener-${CONNECTION_PROTOCOL_MISMATCH_EVENT}`],
       [CONNECTION_AUTH_REJECTED_EVENT, `listener-${CONNECTION_AUTH_REJECTED_EVENT}`],
       [KEYCHAIN_SYNC_STATUS_EVENT, `listener-${KEYCHAIN_SYNC_STATUS_EVENT}`],

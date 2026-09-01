@@ -13,6 +13,7 @@ import type {
   ConnectionRecord,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
 } from '$shared/types/connections';
@@ -36,6 +37,8 @@ export type {
   UpdateBackendResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionCertWarningsEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
@@ -89,6 +92,14 @@ export interface ConnectionsState {
    * (no silent re-trust). Cleared once the user dismisses it.
    */
   certMismatch: ConnectionCertMismatchEvent | null;
+  /**
+   * NON-FATAL per-host cert warnings by connection id, from the
+   * `connections:cert-warnings` push (latest fingerprint per host, accumulated
+   * across reconnect attempts by main). Informative only — never blocks a
+   * connection or a retry. An empty pushed `warnings` array clears the entry
+   * (main built a fresh client for the id).
+   */
+  certWarnings: Record<string, ConnectionHostCertWarning[]>;
   /**
    * Last auth-rejected push (`connections:auth-rejected`), or null. The remote
    * backend rejected the WebSocket upgrade with HTTP 401/403 (bad/rotated
