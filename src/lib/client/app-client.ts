@@ -1062,6 +1062,10 @@ export interface SettingDefinitionWithValue {
   /** Approximate prompt-token cost of the gated feature (e.g. "~620 tokens/session"); absent when unannotated. */
   tokenImpact?: string;
   value: unknown;
+  /** Effective source for TOML-backed settings; absent for other stores. */
+  origin?: 'default' | 'file' | 'flag';
+  /** Daemon ordering watermark, present on settings.get results. */
+  revision?: number;
 }
 
 /** Wire-level change entry for `settings.update` (PROTOCOL §5.12 `AppSettingChange`). */
@@ -1075,6 +1079,8 @@ export interface AppSettingChange {
 export interface AppliedSettingChange {
   path: string;
   value: unknown;
+  /** Effective source after the commit for TOML-backed settings. */
+  origin?: 'default' | 'file' | 'flag';
 }
 
 export interface SettingsSnapshot {

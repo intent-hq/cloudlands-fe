@@ -51,6 +51,8 @@ describe("LiveSettingsClient wire requests (fake transport)", () => {
     mockedRequest.mockResolvedValueOnce({
       path: "sourceControl.activeProvider",
       value: "github",
+      origin: "file",
+      revision: 12,
       definition: {
         path: "sourceControl.activeProvider",
         label: "Source-control provider",
@@ -77,6 +79,8 @@ describe("LiveSettingsClient wire requests (fake transport)", () => {
       enumValues: ["github"],
       defaultValue: "github",
       value: "github",
+      origin: "file",
+      revision: 12,
     });
   });
 
@@ -136,7 +140,13 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
           env: { API_KEY: "********" },
           enabled: true,
         },
-        { id: "srv-gh", name: "github", transport: "http", url: "https://mcp.github.com/mcp", enabled: false },
+        {
+          id: "srv-gh",
+          name: "github",
+          transport: "http",
+          url: "https://mcp.github.com/mcp",
+          enabled: false,
+        },
       ],
     });
     const client = new LiveSettingsClient();
@@ -152,7 +162,13 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
         args: ["-y", "@modelcontextprotocol/server-filesystem"],
         env: { API_KEY: "********" },
       },
-      { id: "srv-gh", name: "github", type: "http", url: "https://mcp.github.com/mcp", disabled: true },
+      {
+        id: "srv-gh",
+        name: "github",
+        type: "http",
+        url: "https://mcp.github.com/mcp",
+        disabled: true,
+      },
     ]);
   });
 
@@ -166,8 +182,22 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     // Workspace-scoped read: every entry adds `workspaceDisabled: boolean`.
     mockedRequest.mockResolvedValueOnce({
       servers: [
-        { id: "srv-fs", name: "filesystem", transport: "stdio", command: "npx", enabled: true, workspaceDisabled: true },
-        { id: "srv-gh", name: "github", transport: "http", url: "https://mcp.github.com/mcp", enabled: true, workspaceDisabled: false },
+        {
+          id: "srv-fs",
+          name: "filesystem",
+          transport: "stdio",
+          command: "npx",
+          enabled: true,
+          workspaceDisabled: true,
+        },
+        {
+          id: "srv-gh",
+          name: "github",
+          transport: "http",
+          url: "https://mcp.github.com/mcp",
+          enabled: true,
+          workspaceDisabled: false,
+        },
       ],
     });
     const client = new LiveSettingsClient();
@@ -186,7 +216,13 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
   it("toggleWorkspaceMcpServer sends the workspace-scoped mcp.servers.toggle (§5.22)", async () => {
     // Scoped toggle result: { status, workspaceDisabled } per the H1 contract.
     mockedRequest.mockResolvedValueOnce({
-      status: { serverId: "srv-fs", state: "running", pid: 4821, toolCount: 7, startedAt: 1750000000000 },
+      status: {
+        serverId: "srv-fs",
+        state: "running",
+        pid: 4821,
+        toolCount: 7,
+        startedAt: 1750000000000,
+      },
       workspaceDisabled: true,
     });
     const client = new LiveSettingsClient();
@@ -215,7 +251,13 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     // failed one. Point reads are issued in serverIds order.
     mockedRequest
       .mockResolvedValueOnce({
-        status: { serverId: "srv-up", state: "running", pid: 4821, toolCount: 7, startedAt: 1750000000000 },
+        status: {
+          serverId: "srv-up",
+          state: "running",
+          pid: 4821,
+          toolCount: 7,
+          startedAt: 1750000000000,
+        },
       })
       .mockResolvedValueOnce({
         status: { serverId: "srv-down", state: "error", lastError: "unreachable from daemon host" },
@@ -241,7 +283,12 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
       .mockResolvedValueOnce({ status: { serverId: "srv-ok", state: "stopped" } });
     const client = new LiveSettingsClient();
 
-    const result = await client.getMcpServerStatuses(["srv-a", "srv-odd", "srv-echoless", "srv-ok"]);
+    const result = await client.getMcpServerStatuses([
+      "srv-a",
+      "srv-odd",
+      "srv-echoless",
+      "srv-ok",
+    ]);
     expect(mockedRequest.mock.calls).toEqual([
       ["mcp.servers.getStatus", { serverId: "srv-a" }],
       ["mcp.servers.getStatus", { serverId: "srv-odd" }],
@@ -256,7 +303,9 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
 
   it("setMcpServers diffs against mcp.servers.list: creates new, deletes missing", async () => {
     mockedRequest.mockResolvedValueOnce({
-      servers: [{ id: "srv-old", name: "old-server", transport: "stdio", command: "old", enabled: true }],
+      servers: [
+        { id: "srv-old", name: "old-server", transport: "stdio", command: "old", enabled: true },
+      ],
     });
     mockedRequest.mockResolvedValue({});
     const client = new LiveSettingsClient();
@@ -290,7 +339,13 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
 
     expect(mockedRequest).toHaveBeenNthCalledWith(2, "mcp.servers.update", {
       serverId: "srv-a",
-      config: { name: "alpha", transport: "stdio", enabled: true, command: "alpha-cmd-v2", id: "srv-a" },
+      config: {
+        name: "alpha",
+        transport: "stdio",
+        enabled: true,
+        command: "alpha-cmd-v2",
+        id: "srv-a",
+      },
     });
     expect(mockedRequest).toHaveBeenNthCalledWith(3, "mcp.servers.toggle", {
       serverId: "srv-b",
@@ -332,7 +387,14 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
   it("getProviderSettings folds providers.active + providers.enabled out of settings.list", async () => {
     mockedRequest.mockResolvedValueOnce({
       settings: [
-        { path: "providers.active", label: "", description: "", category: "providers", type: "string", value: "auggie" },
+        {
+          path: "providers.active",
+          label: "",
+          description: "",
+          category: "providers",
+          type: "string",
+          value: "auggie",
+        },
         {
           path: "providers.enabled",
           label: "",
@@ -414,7 +476,6 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     });
   });
 
-
   it("getMcpServers preserves the daemon-assigned id so status events can resolve name", async () => {
     // The `mcp.servers:status-changed` bridge (§6.5) receives `{ serverId, status }`
     // and looks the config up by id in the slice. `fromWireMcpConfig` must
@@ -433,9 +494,7 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     const client = new LiveSettingsClient();
 
     const result = await client.getMcpServers();
-    expect(result).toEqual([
-      { id: "srv-fs", name: "filesystem", type: "stdio", command: "npx" },
-    ]);
+    expect(result).toEqual([{ id: "srv-fs", name: "filesystem", type: "stdio", command: "npx" }]);
   });
 
   it("getWorkspaceSettings reads workspace.getAutoCommit and maps to { autoCommitEnabled }", async () => {
@@ -556,4 +615,3 @@ describe("LiveSettingsClient user-rule accessors (rules.* — PROTOCOL §5.21)",
     expect(result.error).toContain("rule content exceeds");
   });
 });
-

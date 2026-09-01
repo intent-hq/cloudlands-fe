@@ -41,9 +41,10 @@ export function* readSettingsSnapshotSaga() {
           };
       const settings = snapshot.settings;
       if (Array.isArray(settings) && settings.length > 0) {
-        const changes: AppliedSettingChange[] = settings.map(({ path, value }) => ({
+        const changes: AppliedSettingChange[] = settings.map(({ path, value, origin }) => ({
           path,
           value,
+          ...(origin ? { origin } : {}),
         }));
         // The shared apply seam emits hydration actions only. It never calls
         // settings.update, so the boot snapshot cannot echo back into persistence.

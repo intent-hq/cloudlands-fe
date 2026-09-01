@@ -101,9 +101,16 @@ export class LiveSettingsClient implements SettingsClient {
         path?: string;
         value?: unknown;
         definition?: Omit<SettingDefinitionWithValue, 'value'>;
+        origin?: SettingDefinitionWithValue['origin'];
+        revision?: unknown;
       }>('settings.get', { path });
       if (!result?.definition) return null;
-      return { ...result.definition, value: result.value };
+      return {
+        ...result.definition,
+        value: result.value,
+        ...(result.origin ? { origin: result.origin } : {}),
+        ...(typeof result.revision === 'number' ? { revision: result.revision } : {}),
+      };
     } catch {
       return null;
     }

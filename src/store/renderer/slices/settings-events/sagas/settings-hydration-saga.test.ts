@@ -51,7 +51,13 @@ describe('settingsHydrationSaga', () => {
 
   it('hydrates once in source order without issuing a persistence write', async () => {
     mocks.list.mockResolvedValue([
-      { path: 'providers.active', value: 'auggie', label: '', description: '' },
+      {
+        path: 'providers.active',
+        value: 'auggie',
+        origin: 'file',
+        label: '',
+        description: '',
+      },
       { path: 'quickActions.defaultModel', value: 'fast', label: '', description: '' },
       {
         path: 'quickActions.typeOverrides',
@@ -66,7 +72,7 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.list).toHaveBeenCalledWith();
     expect(mocks.apply).toHaveBeenCalledWith([
-      { path: 'providers.active', value: 'auggie' },
+      { path: 'providers.active', value: 'auggie', origin: 'file' },
       { path: 'quickActions.defaultModel', value: 'fast' },
       { path: 'quickActions.typeOverrides', value: { commit: 'model' } },
     ]);
