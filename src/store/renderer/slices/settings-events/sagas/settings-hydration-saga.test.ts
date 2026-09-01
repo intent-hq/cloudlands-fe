@@ -30,6 +30,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
 import { settingsChangesReceived } from '../settings-events-slice';
+import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   SETTINGS_HYDRATION_RETRY_DELAYS_MS,
   hydrateSettingsOnceSaga,
@@ -206,6 +207,58 @@ describe('settingsHydrationSaga', () => {
     });
     await settle();
     expect(mocks.apply).toHaveBeenLastCalledWith([{ path: 'remote', value: 1 }]);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('resets the watermark when the same backend reconnects after a daemon restart', async () => {
+    mocks.listSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({ settings: [{ path: 'boot', value: 10 }], revision: 10 })
+      .mockResolvedValueOnce({ settings: [{ path: 'restarted', value: 0 }], revision: 0 });
+    const input = stdChannel();
+    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    await settle();
+
+    input.put(settingsChangesReceived([{ path: 'before-restart', value: 11 }], 11));
+    await settle();
+    input.put(backendReconnected());
+    await settle();
+    input.put(settingsChangesReceived([{ path: 'after-restart', value: 1 }], 1));
+    await settle();
+
+    expect(mocks.apply.mock.calls).toEqual([
+      [[{ path: 'boot', value: 10 }]],
+      [[{ path: 'before-restart', value: 11 }]],
+      [[{ path: 'restarted', value: 0 }]],
+      [[{ path: 'after-restart', value: 1 }]],
+    ]);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps monotonic revision filtering after an ordinary reconnect', async () => {
+    mocks.listSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({ settings: [{ path: 'boot', value: 5 }], revision: 5 })
+      .mockResolvedValueOnce({ settings: [{ path: 'reconnected', value: 7 }], revision: 7 });
+    const input = stdChannel();
+    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    await settle();
+
+    input.put(backendReconnected());
+    await settle();
+    input.put(settingsChangesReceived([{ path: 'stale', value: 6 }], 6));
+    input.put(settingsChangesReceived([{ path: 'newer', value: 8 }], 8));
+    await settle();
+
+    expect(mocks.apply.mock.calls).toEqual([
+      [[{ path: 'boot', value: 5 }]],
+      [[{ path: 'reconnected', value: 7 }]],
+      [[{ path: 'newer', value: 8 }]],
+    ]);
 
     task.cancel();
     await task.toPromise();

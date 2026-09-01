@@ -8,6 +8,7 @@ import { applySettingsChanges } from '$features/settings/settings-hydration-serv
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '../settings-events-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 const logger = createLogger('SettingsHydrationSaga');
 
@@ -83,10 +84,20 @@ export function* settingsHydrationSaga() {
       revision = snapshot.revision;
     }
     while (true) {
-      const { settings, connections } = yield* race({
+      const { settings, connections, reconnected } = yield* race({
         settings: take(channel),
         connections: take(connectionsListReceived),
+        reconnected: take(backendReconnected),
       });
+      if (reconnected) {
+        revision = -1;
+        const nextSnapshot = yield* call(readSettingsSnapshotSaga);
+        if (nextSnapshot) {
+          yield* call(applySettingsChanges, nextSnapshot.changes);
+          revision = nextSnapshot.revision;
+        }
+        continue;
+      }
       if (connections) {
         const nextBackendId = connections.payload[0].windowBackendId;
         if (nextBackendId === backendId) continue;
