@@ -1228,16 +1228,40 @@ describe('SimpleRichInput automatic composer geometry', () => {
     return render(SimpleRichInput, { target: panel, props: { ...props, ...overrides } });
   }
 
+  // Mirrors the real ResizeObserver: an initial callback is delivered
+  // asynchronously after observe() with the current size — the component
+  // relies on it instead of a synchronous clientHeight read (forced reflow).
+  class MockResizeObserver {
+    static instances: MockResizeObserver[] = [];
+    callback: ResizeObserverCallback;
+    observed: Element[] = [];
+    disconnected = false;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+      MockResizeObserver.instances.push(this);
+    }
+    observe(target: Element) {
+      this.observed.push(target);
+      queueMicrotask(() => {
+        if (!this.disconnected) this.fire(target, (target as HTMLElement).clientHeight);
+      });
+    }
+    fire(target: Element, height: number) {
+      this.callback(
+        [{ target, contentRect: { height } } as unknown as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {
+      this.disconnected = true;
+    }
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    );
+    MockResizeObserver.instances = [];
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
     addMockSession('ws-1', createSession());
   });
 
@@ -1405,6 +1429,34 @@ describe('SimpleRichInput automatic composer geometry', () => {
     });
 
     expect(observed).toEqual(configuredVisualStates);
+  });
+
+  it('sets up one panel observer and resizes update geometry without recreating it', async () => {
+    renderInPanel(560);
+    const composer = screen.getByTestId('message-input');
+
+    // The observer's initial callback (no synchronous clientHeight read)
+    // seeds the panel height.
+    await waitFor(() => {
+      expect(composer.getAttribute('style')).toContain('min-height: 56px');
+    });
+    expect(MockResizeObserver.instances).toHaveLength(1);
+    const observer = MockResizeObserver.instances[0];
+    expect(observer.observed).toHaveLength(1);
+
+    // A panel resize flows through the same observer — no teardown/recreate,
+    // no re-observe — while parentPanelHeight-derived geometry updates.
+    observer.fire(observer.observed[0], 720);
+    await waitFor(() => {
+      expect(composer.getAttribute('style')).toContain('min-height: 80px');
+    });
+    observer.fire(observer.observed[0], 560);
+    await waitFor(() => {
+      expect(composer.getAttribute('style')).toContain('min-height: 56px');
+    });
+    expect(MockResizeObserver.instances).toHaveLength(1);
+    expect(observer.observed).toHaveLength(1);
+    expect(observer.disconnected).toBe(false);
   });
 });
 
