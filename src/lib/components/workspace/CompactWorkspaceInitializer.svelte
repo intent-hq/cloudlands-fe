@@ -127,6 +127,10 @@
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
+    imageFilesToContextItems,
+    REFERENCE_IMAGE_MAX_BYTES,
+  } from '$lib/components/chat/input/image-context-items';
+  import {
     hasStagedFileItems,
     redeemStagedAttachments,
     sendHeldFirstMessage,
@@ -2448,10 +2452,8 @@
 
   // Shared file processing logic - images become attachment items, other files as mentions
   async function processImageFiles(files: File[]) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-    const addedImageCount = { value: 0 };
+    const imageFiles: File[] = [];
     const insertedFileCount = { value: 0 };
-    const oversizedFiles: string[] = [];
 
     // Helper to format file sizes - hoisted outside loop
     function formatFileSize(bytes: number): string {
@@ -2461,44 +2463,12 @@
     }
 
     for (const file of files) {
-      // The inline size cap only applies to images (they cross the wire as
-      // base64) — staged non-image files are placed daemon-side from their
-      // sourcePath, so any size is fine.
-      if (file.type.startsWith('image/') && file.size > MAX_FILE_SIZE) {
-        oversizedFiles.push(file.name);
-        continue;
-      }
-
-      // Images become attachment context items (not inline nodes)
+      // Images become attachment context items (not inline nodes); the
+      // shared helper converts them and enforces the size cap (they cross
+      // the wire as base64) — staged non-image files are placed daemon-side
+      // from their sourcePath, so any size is fine.
       if (file.type.startsWith('image/')) {
-        try {
-          const dataUrl = await fileToDataUrl(file);
-          // Parse data URL to extract mime type and base64 data
-          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            const [, mimeType, base64Data] = match;
-            const fileName = file.name || `Image ${contextItems.length + 1}`;
-
-            const contextItem: ContextItem = {
-              id: `image-${Date.now()}-${contextItems.length}`,
-              type: 'file',
-              label: fileName,
-              description: `${mimeType} • ${formatFileSize(file.size)}`,
-              path: fileName,
-              file: file,
-              imageData: base64Data,
-              imageMimeType: mimeType,
-            };
-
-            contextItems = [...contextItems, contextItem];
-            addedImageCount.value++;
-          }
-        } catch (err) {
-          logger.error('Failed to process image', { fileName: file.name, error: err });
-          toast.error(
-            m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }),
-          );
-        }
+        imageFiles.push(file);
       } else {
         // Non-image files are STAGED as path-only context items: no workspace
         // exists yet, so `file.placeAttachment` (PROTOCOL §5.9) runs at
@@ -2529,28 +2499,19 @@
       }
     }
 
-    if (addedImageCount.value > 0) {
-      logger.debug(`Added ${addedImageCount.value} image(s) as attachments`);
+    // Images travel as attachment-reference blocks via the held first
+    // message (image-attachment-placement.ts), so the cap is the daemon's
+    // 30 MiB reference-image limit — not the old 10 MB inline budget.
+    const added = await imageFilesToContextItems(imageFiles, {
+      maxBytes: REFERENCE_IMAGE_MAX_BYTES,
+    });
+    if (added.length > 0) {
+      contextItems = [...contextItems, ...added];
     }
 
     if (insertedFileCount.value > 0) {
       logger.debug(`Staged ${insertedFileCount.value} file(s) for placement at create`);
     }
-
-    if (oversizedFiles.length > 0) {
-      toast.error(
-        m.workspace_compactInitializer_filesTooLarge_error({ files: oversizedFiles.join(', ') }),
-      );
-    }
-  }
-
-  function fileToDataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   }
 
   // Remove a context item (for attachment removal)
