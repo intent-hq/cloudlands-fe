@@ -116,10 +116,12 @@
       const result = await appClient.settings.updateUserRule(RULE_TYPE, trimmedContent);
 
       if (result.success) {
-        rulesContent = trimmedContent;
+        // Don't rewrite rulesContent with the trimmed value - reassigning it
+        // mid-edit clobbers the textarea and swallows leading/trailing
+        // newlines the user just typed
         // Don't update originalContent - we want to keep track of what was loaded
         // so "Undo changes" can revert to the initial state
-        hasChanges = rulesContent !== originalContent;
+        hasChanges = rulesContent.trim() !== originalContent;
         saveStatus = 'saved';
 
         // Clear saved status after 2 seconds

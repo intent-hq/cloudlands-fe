@@ -505,6 +505,35 @@ describe('AIBehaviorEditor actions', () => {
     expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
   });
 
+  it('preserves a newline typed into global instructions across the debounced auto-save', async () => {
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Original instructions');
+
+    vi.useFakeTimers();
+    try {
+      await fireEvent.input(textarea, { target: { value: '\nOriginal instructions\n' } });
+
+      // Advance past the 1s debounce so the auto-save runs and settles.
+      await vi.advanceTimersByTimeAsync(1100);
+      flushSync();
+
+      // The persisted value is trimmed…
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith(
+        'base-system-prompt',
+        'Original instructions',
+      );
+      // …but the save must not rewrite the textarea mid-edit.
+      expect(textarea.value).toBe('\nOriginal instructions\n');
+      // A whitespace-only diff from the saved state leaves no "Undo changes" button.
+      expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('expands advanced specialist options', async () => {
     mocks.specialists$.set([specialist]);
     render(AIBehaviorEditor, { activeView: { type: 'specialist', id: 'implementor' } });
