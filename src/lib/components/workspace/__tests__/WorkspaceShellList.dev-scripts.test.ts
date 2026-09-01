@@ -1,15 +1,20 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ScriptOperationState,
   ScriptWithState,
 } from '$store/renderer/slices/scripts/scripts-types';
+import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   scripts: {} as Record<string, ScriptWithState[]>,
   operations: {} as Record<string, Record<string, ScriptOperationState>>,
+  terminals: {} as Record<
+    string,
+    Array<{ id: string; name: string; customName?: string; workspaceId: string }>
+  >,
 }));
 
 function workspaceReadable<T>(resolve: (workspaceId: string) => T) {
@@ -37,7 +42,9 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
   selectActiveTerminalIdForWorkspace: workspaceReadable(() => null),
-  selectTerminalsForWorkspace: workspaceReadable(() => []),
+  selectTerminalsForWorkspace: workspaceReadable(
+    (workspaceId) => mocks.terminals[workspaceId] ?? [],
+  ),
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -71,6 +78,25 @@ describe('WorkspaceShellList development script controls', () => {
     vi.clearAllMocks();
     mocks.scripts = {};
     mocks.operations = {};
+    mocks.terminals = {};
+  });
+
+  it('opens an existing terminal and renders truthful empty shell states', async () => {
+    mocks.terminals[WS] = [
+      { id: 'terminal-1', name: 'Terminal 1', customName: 'Dev shell', workspaceId: WS },
+    ];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dev shell' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(openTerminalOverlay(WS, 'terminal-1'));
+
+    cleanup();
+    mocks.dispatch.mockClear();
+    mocks.terminals = {};
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    expect(screen.getByText('No terminals open')).toBeTruthy();
+    expect(
+      screen.getByText('No scripts found. Add one manually or use AI detection.'),
+    ).toBeTruthy();
   });
 
   it('keeps compact one-line rows and maps runtime state to icon controls', () => {
