@@ -74,6 +74,7 @@
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
+  import BrowserFavicon from './BrowserFavicon.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsWorkspaceHostLocal,
@@ -1355,14 +1356,8 @@
     />
   {:else if resourceKind}
     <ResourceIconTile kind={resourceKind} variant={compact ? 'standard' : 'emphasized'} />
-  {:else if tab.faviconUrl}
-    <img
-      src={tab.faviconUrl}
-      alt=""
-      width={compact ? 14 : 16}
-      height={compact ? 14 : 16}
-      class="rounded-sm"
-    />
+  {:else if tab.type === 'browser'}
+    <BrowserFavicon faviconUrl={tab.faviconUrl} size={compact ? 14 : 16} />
   {:else}
     <Fa
       icon={getTabIcon(tab.type)}
@@ -1595,26 +1590,12 @@
                 />
               {:else if resourceKind}
                 <ResourceIconTile kind={resourceKind} />
-              {:else if tab.faviconUrl}
-                <img
-                  src={tab.faviconUrl}
-                  alt=""
-                  width="16"
-                  height="16"
-                  class="shrink-0 rounded-sm"
-                  onerror={(e) => {
-                    // On favicon load failure, hide the img so the fallback icon shows
-                    const target = e.currentTarget as HTMLImageElement;
-                    target.style.display = 'none';
-                    // Show the sibling fallback icon
-                    const fallback = target.nextElementSibling as HTMLElement | null;
-                    if (fallback) fallback.style.display = '';
-                  }}
+              {:else if tab.type === 'browser'}
+                <BrowserFavicon
+                  faviconUrl={tab.faviconUrl}
+                  size={16}
+                  fallbackClass="tab-icon opacity-50"
                 />
-                <!-- Fallback icon, hidden by default, shown if favicon fails to load -->
-                <span style="display: none;">
-                  <Fa icon={getTabIcon(tab.type)} size={16} class="tab-icon shrink-0 opacity-50" />
-                </span>
               {:else}
                 <Fa icon={getTabIcon(tab.type)} size={16} class="tab-icon shrink-0 opacity-50" />
               {/if}
