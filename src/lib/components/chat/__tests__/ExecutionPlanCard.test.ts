@@ -63,9 +63,15 @@ describe('ExecutionPlanCard', () => {
     ]);
 
     const card = screen.getByTestId('execution-plan-card');
+    const header = card.firstElementChild as HTMLElement;
+    const row = screen.getByRole('listitem');
     const content = screen.getByRole('listitem').lastElementChild as HTMLElement;
     expect(card.className).toContain('min-w-0');
     expect(card.className).toContain('max-w-full');
+    expect(header.className).toContain('gap-2');
+    expect(header.className).toContain('px-2');
+    expect(row.className).toContain('gap-2');
+    expect(row.className).toContain('px-2');
     expect(content.className).toContain('break-words');
     expect(content.className).toContain('whitespace-normal');
   });

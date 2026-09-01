@@ -30,7 +30,7 @@
     data-testid="execution-plan-card"
   >
     <div
-      class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} grid min-h-8 min-w-0 grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] bg-muted/30 px-[var(--operational-row-inline-padding)] py-1.5"
+      class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} grid min-h-8 min-w-0 grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-2 bg-muted/30 px-2 py-1.5"
     >
       <span class={CHAT_OPERATIONAL_LEADING_CLASS} aria-hidden="true">
         <Fa icon={faListCheck} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
@@ -49,7 +49,7 @@
     <ol class="min-w-0 border-t border-border py-1" data-testid="execution-plan-entries">
       {#each entries as entry, index (`${index}-${entry.content}`)}
         <li
-          class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} grid min-h-7 min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)] items-start gap-[var(--operational-leading-gap)] px-[var(--operational-row-inline-padding)] py-1.5 type-body {entry.status ===
+          class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} grid min-h-7 min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)] items-start gap-2 px-2 py-1.5 type-body {entry.status ===
           'in_progress'
             ? 'bg-muted/30'
             : ''}"

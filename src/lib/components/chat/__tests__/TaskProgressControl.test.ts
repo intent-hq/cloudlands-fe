@@ -260,7 +260,7 @@ describe('TaskProgressControl', () => {
       for (const indicator of indicators) {
         const classes = indicator.className.split(' ');
         const backgroundClass = classes.find((className) => className.startsWith('bg-'));
-        expect(backgroundClass).toBe('bg-[hsl(var(--background))]');
+        expect(backgroundClass).toBe('bg-background');
         expect(backgroundClass).not.toContain('/');
         expect(indicator.className).toContain('text-foreground');
         expect(classes).not.toEqual(
@@ -387,6 +387,7 @@ describe('TaskProgressControl', () => {
       const trigger = screen.getByTestId('task-progress-trigger');
 
       expect(trigger.className).toContain('transition-[border-color,box-shadow,scale]');
+      expect(trigger.className).toContain('duration-(--motion-fast)');
       expect(trigger.className).toContain('motion-safe:active:scale-[0.97]');
       expect(trigger.className).toContain('motion-reduce:scale-100');
       expect(trigger.className).toContain('motion-reduce:transition-none');
@@ -407,7 +408,7 @@ describe('TaskProgressControl', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     const scrollRegion = screen.getByTestId('task-progress-scroll-region');
 
-    expect(dialog.className).toContain('max-h-[var(--bits-popover-content-available-height)]');
+    expect(dialog.className).toContain('max-h-(--bits-popover-content-available-height)');
     expect(scrollRegion.className).toContain('max-h-64');
     expect(scrollRegion.className).toContain('overflow-y-auto');
     expect(scrollRegion.className).toContain('overscroll-contain');

@@ -137,7 +137,7 @@
   className = '',
 )}
   <span
-    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none {className}"
+    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-background text-foreground leading-none {className}"
     aria-hidden="true"
     data-testid={testId}
     data-task-status={status}
@@ -178,7 +178,7 @@
           {...props}
           bind:this={triggerElement}
           type="button"
-          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow,scale] duration-[var(--motion-fast)] motion-safe:active:scale-[0.97] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scale-100 motion-reduce:transition-none"
+          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow,scale] duration-(--motion-fast) motion-safe:active:scale-[0.97] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scale-100 motion-reduce:transition-none"
           aria-label={progressLabel}
           aria-expanded={open}
           onpointerdowncapture={() => (pointerFocusing = true)}
@@ -234,7 +234,7 @@
                   data-task-status="overflow"
                 >
                   <span
-                    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none"
+                    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-background text-foreground leading-none"
                     aria-hidden="true"
                     data-testid="task-progress-overflow-indicator"
                     data-overflow-count={overflowCount}
@@ -266,7 +266,7 @@
         collisionPadding={8}
         trapFocus={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        class="type-caption z-(--layer-popover) flex max-h-[var(--bits-popover-content-available-height)] w-72 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="task-progress-popover type-caption z-(--layer-popover) flex max-h-(--bits-popover-content-available-height) w-72 flex-col overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
         data-testid="task-progress-popover"
       >
         <div
@@ -276,7 +276,7 @@
           <ul class="min-w-0" data-testid="task-progress-list">
             {#each orderedTasks as task (task.id)}
               <li
-                class="flex min-h-7 min-w-0 items-start gap-2 overflow-hidden rounded-md px-2 py-1 text-popover-foreground transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none"
+                class="flex min-h-7 min-w-0 items-start gap-2 overflow-hidden rounded-md px-2 py-1 text-popover-foreground transition-colors duration-(--motion-fast) motion-reduce:transition-none"
                 data-testid="task-progress-row"
                 data-task-id={task.id}
                 data-task-status={task.status}
@@ -296,3 +296,12 @@
     </Popover.Portal>
   </Popover.Root>
 {/if}
+
+<style>
+  :global(.task-progress-popover) {
+    max-width: min(
+      calc(100vw - var(--space-4)),
+      calc(var(--bits-popover-content-available-width) - var(--space-2))
+    );
+  }
+</style>
