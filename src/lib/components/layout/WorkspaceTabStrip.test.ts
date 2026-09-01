@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -757,6 +758,24 @@ describe('WorkspaceTabStrip', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'tabState/moveWorkspace' }),
     );
+  });
+
+  it('announces, focuses, and reveals a workspace tab moved by a global shortcut', async () => {
+    render(WorkspaceTabStrip);
+    const beta = screen.getByRole('tab', { name: /Beta/ });
+    beta.scrollIntoView = vi.fn();
+
+    window.dispatchEvent(
+      new CustomEvent(WORKSPACE_TAB_MOVED_EVENT, {
+        detail: { workspaceId: 'ws-2', position: 1 },
+      }),
+    );
+
+    await waitFor(() => expect(document.activeElement).toBe(beta));
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      m.layout_workspaceTabStrip_reorderAnnouncement({ name: 'Beta', position: 1 }),
+    );
+    expect(beta.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
   });
 
   it('tracks every horizontal pointer move and keeps activation unchanged', async () => {

@@ -33,6 +33,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
 import type { ShortcutId } from '$lib/utils/shortcut-bindings';
 import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
+import type { WorkspaceTabMovedEventDetail } from './workspace-tab-move-event';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
 
@@ -82,6 +83,7 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  onWorkspaceTabMoved?: (detail: WorkspaceTabMovedEventDetail) => void;
   resolveBinding?: (id: ShortcutId) => string;
 }
 
@@ -266,6 +268,7 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  onWorkspaceTabMoved,
   resolveBinding,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
@@ -332,7 +335,14 @@ export function registerWorkspaceTabShortcuts({
     shift: true,
     global: true,
     description: SHORTCUTS.MOVE_SPACE_TAB_LEFT.label,
-    action: () => moveActiveWorkspaceTab(store, 'left'),
+    action: () => {
+      const workspaceId = moveActiveWorkspaceTab(store, 'left');
+      if (!workspaceId) return;
+      onWorkspaceTabMoved?.({
+        workspaceId,
+        position: selectWorkspaceTabOrder.select(store.state).indexOf(workspaceId) + 1,
+      });
+    },
   });
   register({
     ...effective('navigation.move-space-tab-right'),
@@ -342,7 +352,14 @@ export function registerWorkspaceTabShortcuts({
     shift: true,
     global: true,
     description: SHORTCUTS.MOVE_SPACE_TAB_RIGHT.label,
-    action: () => moveActiveWorkspaceTab(store, 'right'),
+    action: () => {
+      const workspaceId = moveActiveWorkspaceTab(store, 'right');
+      if (!workspaceId) return;
+      onWorkspaceTabMoved?.({
+        workspaceId,
+        position: selectWorkspaceTabOrder.select(store.state).indexOf(workspaceId) + 1,
+      });
+    },
   });
 
   for (const [direction, shift] of [

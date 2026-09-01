@@ -772,13 +772,16 @@ describe('global workspace tab navigation', () => {
 
   it('registers global non-macOS workspace movement chords', () => {
     const shortcuts: KeyboardShortcut[] = [];
+    const store = makeStore('ws-2');
+    const onWorkspaceTabMoved = vi.fn();
     registerWorkspaceTabShortcuts({
       isMac: false,
       register: (shortcut) => shortcuts.push(shortcut),
-      store: makeStore('ws-2'),
+      store,
       getCurrentPath: () => '/workspace/ws-2',
       navigate: vi.fn(),
       openNewWorkspace: vi.fn(),
+      onWorkspaceTabMoved,
     });
 
     expect(
@@ -799,6 +802,11 @@ describe('global workspace tab navigation', () => {
         global: true,
       }),
     ]);
+
+    shortcuts.find((shortcut) => shortcut.key === 'ArrowLeft')!.action();
+    expect(onWorkspaceTabMoved).toHaveBeenLastCalledWith({ workspaceId: 'ws-2', position: 1 });
+    shortcuts.find((shortcut) => shortcut.key === 'ArrowLeft')!.action();
+    expect(onWorkspaceTabMoved).toHaveBeenCalledTimes(1);
   });
 
   it('retains all nine indexed bindings after the tab range modifier is edited', () => {

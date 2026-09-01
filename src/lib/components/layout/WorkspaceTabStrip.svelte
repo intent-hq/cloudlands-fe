@@ -40,6 +40,10 @@
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
+  import {
+    WORKSPACE_TAB_MOVED_EVENT,
+    type WorkspaceTabMovedEventDetail,
+  } from '$features/workspace/utils/workspace-tab-move-event';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
@@ -152,7 +156,14 @@
 
   onMount(() => {
     activeStreamsTracker.startPolling();
-    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const handleMoved = (event: Event) =>
+      handleGlobalWorkspaceTabMoved(event as CustomEvent<WorkspaceTabMovedEventDetail>);
+    window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+    return () => {
+      unsubscribe();
+      window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+    };
   });
 
   // Overflow detection drives the strip's right margin: while tabs are
@@ -414,6 +425,21 @@
       position: targetIndex + 1,
     });
     requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
+  }
+
+  function handleGlobalWorkspaceTabMoved(event: CustomEvent<WorkspaceTabMovedEventDetail>) {
+    const { workspaceId, position } = event.detail;
+    if (!visibleTabIds.includes(workspaceId) || position < 1) return;
+    reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
+      name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
+      position,
+    });
+    requestAnimationFrame(() => {
+      const tab = tabButtons.get(workspaceId);
+      if (!tab) return;
+      tab.focus();
+      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
   }
 
   function handleTabKeydown(event: KeyboardEvent, workspaceId: string) {
