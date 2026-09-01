@@ -447,6 +447,8 @@
   function handleResizeEnd() {
     const committedSizes = liveResizeSizes;
     const previousPanelWidths = rootResizeStartChildWidths;
+    // Preview pixels are authoritative: the sizing helper owns minimums and
+    // inline scaling already maps visual zoom back to layout coordinates.
     const nextPanelWidths = rootResizeNextChildWidths;
     const wasRootResize = resizesRootDivider && previousPanelWidths !== null;
     suppressMotionThroughResizeCommit();

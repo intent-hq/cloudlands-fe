@@ -273,7 +273,8 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
-  it('updates canvas backing dimensions from resize notifications without frame layout reads', () => {
+  it('rounds and deduplicates resize-driven backing dimensions without frame layout reads', () => {
+    const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(1.5);
     const clientWidth = vi
       .spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
       .mockReturnValue(320);
@@ -288,11 +289,18 @@ describe('AuroraBackground cleanup', () => {
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
 
-    MockResizeObserver.instances[0].fire(640, 360);
-    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 640, 360);
+    MockResizeObserver.instances[0].fire(640.25, 360.25);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 960, 540);
+    const canvas = document.querySelector('canvas')!;
+    expect([canvas.width, canvas.height]).toEqual([960, 540]);
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
 
+    mockGL.gl.viewport.mockClear();
+    MockResizeObserver.instances[0].fire(640.25, 360.25);
+    expect(mockGL.gl.viewport).not.toHaveBeenCalled();
+
+    devicePixelRatio.mockRestore();
     clientWidth.mockRestore();
     clientHeight.mockRestore();
   });

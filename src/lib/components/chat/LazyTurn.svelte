@@ -197,9 +197,9 @@
       const entry = entries[0];
       if (!entry) return;
 
-      // Coalesce same-frame swap and resize notifications. The shared ledger
-      // batch measures every affected turn before applying scroll writes.
-      ledger.request();
+      // Coalesce same-frame swap and resize notifications, but flush in a
+      // microtask so ResizeObserver compensation still lands before paint.
+      ledger.requestBeforePaint();
 
       // Width validation: cached heights are wrap-width-dependent, so the
       // first fire (init-time read was unvalidated — width unknown) and

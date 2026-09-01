@@ -62,18 +62,11 @@
  * rect down and can misclassify an above-viewport turn as visible). The
  * clamp shift is derived from geometry — min(0, postMax - preScrollTop) —
  * NOT from the observed scrollTop, because in a same-flush bulk swap the
- * current scrollTop already includes sibling ledgers' compensation writes
- * (those shift rect and scrollTop together and cancel out of the
- * reconstruction). The reconstruction still assumes no OTHER turn's
- * geometry changed since the last account(). When several turns above the
- * viewport change height in the same flush (bulk swap after a scroll jump,
- * container-width re-wrap), a turn accounted while other turns' deltas are
- * still uncompensated has its rect polluted by those pending deltas, so the
- * above/below classification is not exact near the boundary. The
- * compensation magnitude is always this turn's own delta (the ledger never
- * drifts), and each earlier account()'s relative scrollTop write
- * progressively restores the rects for later ones, so any error is
- * boundary-local and self-limiting. Composition properties: the classic
+ * current scrollTop may already include sibling ledger compensation. Batched
+ * reconciliation sorts turns in DOM order and carries the pending same-scroller
+ * shift into each later turn's classification, reproducing the geometry that
+ * sequential compensation writes would have exposed without interleaving the
+ * batch's reads and writes. Composition properties: the classic
  * path uses RELATIVE writes, so same-flush bulk growths and no-clamp
  * shrinks sum exactly; when a clamp DID fire on the classic path (total
  * shrink exceeding a more-than-a-viewport distance from the bottom), each
@@ -126,6 +119,8 @@ export interface HeightLedger {
   account(preChange?: ScrollerSnapshot | null): void;
   /** Coalesce observer/swap reconciliation with other ledgers in the next frame. */
   request(preChange?: ScrollerSnapshot | null): void;
+  /** Coalesce ResizeObserver reconciliation before the current frame paints. */
+  requestBeforePaint(preChange?: ScrollerSnapshot | null): void;
   /** Drop any queued reconciliation for a turn that is being unmounted. */
   cancel(): void;
 }
@@ -138,11 +133,14 @@ interface CompensationPlan {
 }
 
 interface QueuedLedger {
-  measureQueued(): CompensationPlan | null;
+  getScroller(): HTMLElement | null | undefined;
+  getElement(): HTMLElement | null | undefined;
+  measureQueued(pendingScrollShift: number): CompensationPlan | null;
 }
 
 const queuedLedgers = new Set<QueuedLedger>();
 let ledgerBatchFrame: number | null = null;
+let ledgerBatchMicrotaskPending = false;
 
 function applyCompensationPlans(plans: CompensationPlan[]) {
   const initialByScroller = new Map<HTMLElement, number>();
@@ -162,18 +160,58 @@ function applyCompensationPlans(plans: CompensationPlan[]) {
 
 function flushLedgerBatch() {
   ledgerBatchFrame = null;
-  const batch = [...queuedLedgers];
+  const batch = [...queuedLedgers].sort((a, b) => {
+    if (a.getScroller() !== b.getScroller()) return 0;
+    const elementA = a.getElement();
+    const elementB = b.getElement();
+    if (
+      !elementA?.isConnected ||
+      !elementB?.isConnected ||
+      typeof elementA.compareDocumentPosition !== 'function'
+    ) {
+      return 0;
+    }
+    const position = elementA.compareDocumentPosition(elementB);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
   queuedLedgers.clear();
-  const plans = batch.map((ledger) => ledger.measureQueued()).filter((plan) => plan !== null);
+  const pendingScrollShiftByScroller = new Map<HTMLElement, number>();
+  const plans: CompensationPlan[] = [];
+  for (const ledger of batch) {
+    const scroller = ledger.getScroller();
+    const pendingScrollShift = scroller ? (pendingScrollShiftByScroller.get(scroller) ?? 0) : 0;
+    const plan = ledger.measureQueued(pendingScrollShift);
+    if (!plan) continue;
+    plans.push(plan);
+    pendingScrollShiftByScroller.set(
+      plan.scroller,
+      plan.kind === 'absolute' ? plan.value - plan.scrollTop : pendingScrollShift + plan.value,
+    );
+  }
   applyCompensationPlans(plans);
 }
 
 function scheduleLedgerBatch() {
-  if (ledgerBatchFrame !== null) return;
+  if (ledgerBatchFrame !== null || ledgerBatchMicrotaskPending) return;
   // The sentinel also makes synchronous test RAF shims safe.
   ledgerBatchFrame = -1;
   const frame = requestAnimationFrame(flushLedgerBatch);
   if (ledgerBatchFrame !== null) ledgerBatchFrame = frame;
+}
+
+function scheduleLedgerBatchBeforePaint() {
+  if (ledgerBatchFrame !== null) {
+    if (ledgerBatchFrame >= 0) cancelAnimationFrame(ledgerBatchFrame);
+    ledgerBatchFrame = null;
+  }
+  if (ledgerBatchMicrotaskPending) return;
+  ledgerBatchMicrotaskPending = true;
+  queueMicrotask(() => {
+    ledgerBatchMicrotaskPending = false;
+    if (queuedLedgers.size > 0) flushLedgerBatch();
+  });
 }
 
 export function createHeightLedger(
@@ -184,7 +222,10 @@ export function createHeightLedger(
   let queued = false;
   let queuedPreChange: ScrollerSnapshot | null = null;
 
-  function measure(preChange?: ScrollerSnapshot | null): CompensationPlan | null {
+  function measure(
+    preChange?: ScrollerSnapshot | null,
+    pendingScrollShift = 0,
+  ): CompensationPlan | null {
     const scroller = getScroller();
     const el = getElement();
     if (!scroller || !el || !el.isConnected) return null;
@@ -201,6 +242,7 @@ export function createHeightLedger(
     // the visible reading anchor while native anchoring is active.
     if (isFollowingBottom(scroller) || isNativeScrollAnchoringActive(scroller)) return null;
     const scrollTop = scroller.scrollTop;
+    const effectiveScrollTop = scrollTop + pendingScrollShift;
     const scrollerTop = scroller.getBoundingClientRect().top;
     const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     // How far the native clamp moved scrollTop at flush time: it fires
@@ -216,7 +258,8 @@ export function createHeightLedger(
     // pre-change bottom is reconstructed at the pre-change scroll
     // position — otherwise a partial clamp can misclassify an
     // above-viewport turn as visible, skipping compensation entirely.
-    const bottomBeforeChange = el.getBoundingClientRect().bottom - delta + clampShift;
+    const bottomBeforeChange =
+      el.getBoundingClientRect().bottom - pendingScrollShift - delta + clampShift;
     if (bottomBeforeChange > scrollerTop) return null;
 
     if (delta < 0) {
@@ -231,7 +274,7 @@ export function createHeightLedger(
             value: Math.max(0, maxScrollTop - preDistanceFromBottom),
           };
         }
-      } else if (!preChange && scrollTop >= maxScrollTop - 1) {
+      } else if (!preChange && effectiveScrollTop >= maxScrollTop - 1) {
         return null;
       }
     }
@@ -239,11 +282,13 @@ export function createHeightLedger(
   }
 
   const queuedLedger: QueuedLedger = {
-    measureQueued() {
+    getScroller,
+    getElement,
+    measureQueued(pendingScrollShift) {
       queued = false;
       const preChange = queuedPreChange;
       queuedPreChange = null;
-      return measure(preChange);
+      return measure(preChange, pendingScrollShift);
     },
   };
 
@@ -258,6 +303,14 @@ export function createHeightLedger(
       queued = true;
       queuedLedgers.add(queuedLedger);
       scheduleLedgerBatch();
+    },
+    requestBeforePaint(preChange?: ScrollerSnapshot | null) {
+      if (preChange && queuedPreChange === null) queuedPreChange = preChange;
+      if (!queued) {
+        queued = true;
+        queuedLedgers.add(queuedLedger);
+      }
+      scheduleLedgerBatchBeforePaint();
     },
     cancel() {
       queued = false;

@@ -379,8 +379,8 @@
     cachedCanvasWidth = cssWidth;
     cachedCanvasHeight = cssHeight;
 
-    const pixelWidth = cssWidth * cachedDpr;
-    const pixelHeight = cssHeight * cachedDpr;
+    const pixelWidth = Math.round(cssWidth * cachedDpr);
+    const pixelHeight = Math.round(cssHeight * cachedDpr);
     if (canvas.width === pixelWidth && canvas.height === pixelHeight) return;
 
     canvas.width = pixelWidth;
