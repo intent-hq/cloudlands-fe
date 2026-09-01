@@ -122,10 +122,12 @@ async function workspaceOwnershipProber(): Promise<WorkspaceOwnershipProber<Json
  * (internal error — file.readChunk fails root resolution, note.readAsset
  * fails the asset read); both trigger the probe, which fails closed, and a
  * genuine local error on the confirmed owner still 404s because same-backend
- * confirmation rethrows. Null when the error is not a JSON-RPC refusal, no
- * live backend confirms ownership, or the confirmed owner is the backend
- * that already failed — the caller then rethrows and fails with 404 as
- * before (never serve unconfirmed bytes).
+ * confirmation rethrows — a primary-fallback failure carries a null
+ * backendId, which is treated as the local backend for this comparison (the
+ * primary client is the local daemon). Null when the error is not a JSON-RPC
+ * refusal, no live backend confirms ownership, or the confirmed owner is the
+ * backend that already failed — the caller then rethrows and fails with 404
+ * as before (never serve unconfirmed bytes).
  */
 async function rescueBackendAfterWorkspaceUnknown(
   workspaceId: string,
@@ -137,7 +139,7 @@ async function rescueBackendAfterWorkspaceUnknown(
   const prober = await workspaceOwnershipProber();
   prober.invalidate(workspaceId);
   const owner = await prober.probeOwner(workspaceId);
-  if (!owner || owner.backendId === failedBackendId) return null;
+  if (!owner || owner.backendId === (failedBackendId ?? LOCAL_CONNECTION_ID)) return null;
   logger.info('workspace read rescued by ownership probe', {
     workspaceId,
     rescuedBackendId: owner.backendId,
@@ -535,6 +537,7 @@ export function setupWorkspaceFileProtocolHandler() {
       }
       let client = resolved.client;
       let rescueAttempted = false;
+      const chunks: Buffer[] = [];
 
       async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
         let chunk: WorkspaceFileChunk;
@@ -548,7 +551,11 @@ export function setupWorkspaceFileProtocolHandler() {
         } catch (error) {
           // Wrong-stamp heal: the resolved backend does not know the workspace
           // — retry once from the positively confirmed owner (or rethrow → 404).
-          if (rescueAttempted) throw error;
+          // Only before any bytes are assembled: a mid-file rescue would splice
+          // chunks from two daemons into one body, and in a workspace-id
+          // collision a same-size file on the other daemon would pass the
+          // size check silently.
+          if (rescueAttempted || chunks.length > 0) throw error;
           rescueAttempted = true;
           const rescued = await rescueBackendAfterWorkspaceUnknown(workspaceId, backendId, error);
           if (!rescued) throw error;
@@ -614,7 +621,6 @@ export function setupWorkspaceFileProtocolHandler() {
         }
       }
 
-      const chunks: Buffer[] = [];
       let offset = start;
       for (;;) {
         const remaining =

@@ -755,26 +755,33 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   });
 
   it('heals a wrong-stamp read: primary refuses with workspace-unknown, confirmed owner serves', async () => {
-    // ws-1 resolves to the primary client (unpooled local stamp), which does
-    // not know the workspace — the daemon surfaces this from file.readChunk
-    // as -32603 (root resolution fails): the probe confirms the remote owner
-    // and the read retries there.
+    // The workspace resolves to the primary client (unpooled local stamp),
+    // which does not know it — the daemon surfaces this from file.readChunk
+    // as -32603 (root resolution fails; the router puts the cause in `data`):
+    // the probe confirms the remote owner and the read retries there. Unique
+    // workspace id: the module-level prober cache persists across tests.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-heal-file', [7]);
     mockRequest.mockRejectedValueOnce(
-      new JsonRpcError({ code: -32603, message: 'Access denied: path outside workspace' }),
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Access denied: path outside workspace',
+      }),
     );
     const bytes = Buffer.from('healed-bytes');
     const remoteRequest = vi.fn(async (method: string) => {
-      if (method === 'workspace.get') return { workspace: { id: 'ws-1' } };
+      if (method === 'workspace.get') return { workspace: { id: 'ws-heal-file' } };
       return chunk(bytes, bytes.length, bytes.length);
     });
     pooledRequests.set('conn-remote', remoteRequest);
 
-    const res = await getHandler()(appRequest('workspace-file://ws-1/pic.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-heal-file/pic.png'));
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
-    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-heal-file' });
     expect(remoteRequest).toHaveBeenCalledWith('file.readChunk', {
-      workspaceId: 'ws-1',
+      workspaceId: 'ws-heal-file',
       path: 'pic.png',
       offset: 0,
       length: WORKSPACE_FILE_CHUNK_BYTES,
@@ -783,7 +790,34 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
+  it('does not rescue a workspace-unknown failure after bytes were already assembled', async () => {
+    // A mid-file rescue would splice chunks from two daemons into one body:
+    // once any bytes are buffered, a workspace-unknown error is fatal (404).
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-midfile', [7]);
+    const first = Buffer.alloc(WORKSPACE_FILE_CHUNK_BYTES, 1);
+    mockRequest
+      .mockResolvedValueOnce(chunk(first, first.length, first.length + 4))
+      .mockRejectedValueOnce(
+        new JsonRpcError({
+          code: -32603,
+          message: 'Internal error',
+          data: 'Access denied: path outside workspace',
+        }),
+      );
+    const remoteRequest = vi.fn(async () => ({ workspace: { id: 'ws-midfile' } }));
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getHandler()(appRequest('workspace-file://ws-midfile/big.png'));
+
+    expect(res.status).toBe(404);
+    expect(remoteRequest).not.toHaveBeenCalled();
+  });
+
   it('keeps the 404 when no live backend confirms ownership of an unknown workspace', async () => {
+    // Unique workspace id: the module-level prober cache persists across tests.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-no-owner', [7]);
     mockRequest.mockRejectedValueOnce(
       new JsonRpcError({ code: -32602, message: 'workspace not found' }),
     );
@@ -792,10 +826,10 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     });
     pooledRequests.set('conn-remote', remoteRequest);
 
-    const res = await getHandler()(appRequest('workspace-file://ws-1/pic.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-no-owner/pic.png'));
 
     expect(res.status).toBe(404);
-    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-no-owner' });
     expect(remoteRequest).toHaveBeenCalledTimes(1);
   });
 
@@ -885,22 +919,30 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
   });
 
   it('heals a wrong-stamp asset read from the confirmed owner after a workspace-unknown error', async () => {
-    // note.readAsset surfaces an unknown workspace as -32603 (internal error).
+    // note.readAsset surfaces an unknown workspace as -32603 (internal error;
+    // the router puts the cause in `data`). Unique workspace id: the
+    // module-level prober cache persists across tests.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-heal-asset', [7]);
     mockRequest.mockRejectedValueOnce(
-      new JsonRpcError({ code: -32603, message: 'Failed to read asset: not found' }),
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Failed to read asset: not found',
+      }),
     );
     const bytes = Buffer.from('healed-asset');
     const remoteRequest = vi.fn(async (method: string) => {
-      if (method === 'workspace.get') return { workspace: { id: 'ws-1' } };
+      if (method === 'workspace.get') return { workspace: { id: 'ws-heal-asset' } };
       return asset(bytes);
     });
     pooledRequests.set('conn-remote', remoteRequest);
 
-    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-heal-asset/asset-1'));
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
-      workspaceId: 'ws-1',
+      workspaceId: 'ws-heal-asset',
       asset: 'asset-1',
     });
     expect(res.status).toBe(200);
