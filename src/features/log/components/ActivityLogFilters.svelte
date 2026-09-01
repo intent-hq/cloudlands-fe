@@ -254,15 +254,13 @@
     <div class="mt-4 pt-4 border-t border-border" transition:slide={{ duration: 200 }}>
       <!-- Date Range -->
       <div class="flex items-center gap-2 mb-3">
-        <label for="date-range" class="text-sm min-w-[100px]"
-          >{m.log_filters_dateRange_label()}</label
-        >
+        <label for="date-range" class="text-sm min-w-24">{m.log_filters_dateRange_label()}</label>
         <div class="flex-1 min-w-0">
           <Select.Root value={filters.dateRange} onchange={(value) => (filters.dateRange = value)}>
             <Select.Trigger id="date-range" class="py-1">
               <span class="truncate">{selectedDateRangeLabel}</span>
             </Select.Trigger>
-            <Select.Content portal class="max-h-[300px]">
+            <Select.Content portal class="max-h-72">
               {#each dateRangeOptions as option (option.value)}
                 <Select.Item value={option.value}>
                   <span class="truncate">{option.label}</span>
@@ -275,8 +273,7 @@
 
       <!-- Actor Filter -->
       <div class="flex items-center gap-2 mb-3">
-        <label for="actor-filter" class="text-sm min-w-[100px]">{m.log_filters_actor_label()}</label
-        >
+        <label for="actor-filter" class="text-sm min-w-24">{m.log_filters_actor_label()}</label>
         <div class="flex-1 min-w-0">
           <Select.Root
             value={filters.actorFilter}
@@ -285,7 +282,7 @@
             <Select.Trigger id="actor-filter" class="py-1">
               <span class="truncate">{selectedActorLabel}</span>
             </Select.Trigger>
-            <Select.Content portal class="max-h-[300px]">
+            <Select.Content portal class="max-h-72">
               {#each actorOptions as option (option.value)}
                 <Select.Item value={option.value}>
                   <span class="truncate">{option.label}</span>

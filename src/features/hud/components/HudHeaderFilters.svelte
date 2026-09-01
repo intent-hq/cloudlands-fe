@@ -127,15 +127,15 @@
         <!-- i18n-ignore (glyph) -->
         <span class="hud-header-filter-caret">▼</span>
       </Menu.Trigger>
-      <Menu.Content align="start" sideOffset={6} class="hud-header-status-menu min-w-[270px]">
-        <Menu.Item class="gap-[9px] px-[10px] py-[7px]" onSelect={clearStates}>
+      <Menu.Content align="start" sideOffset={6} class="hud-header-status-menu min-w-64">
+        <Menu.Item class="gap-2 px-2.5 py-1.5" onSelect={clearStates}>
           <span class="hud-header-menu-name">{m.hud_filter_allStatuses_label()}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
         </Menu.Item>
         <Menu.Separator />
         {#each HUD_CARD_STATE_KEYS as stateKey (stateKey)}
           <Menu.CheckboxItem
-            class="gap-[9px] py-[7px] pr-[10px] pl-8!"
+            class="gap-2 py-1.5 pr-2.5 pl-8!"
             checked={$filter$.states.includes(stateKey)}
             closeOnSelect={false}
             onCheckedChange={() => toggleState(stateKey)}
