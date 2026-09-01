@@ -118,10 +118,14 @@ export async function restoreNewWorkspaceDraft(
 /**
  * Build the debounced `drafts.set` payload from the current prompt text and
  * context items. Serializes image attachments (empty ⇒ field omitted) and
- * applies the size guard to text + attachments combined: oversized
- * attachments are dropped so text still persists, and a pathologically large
- * text returns `null` (skip the wire call entirely). Empty text with no
- * attachments is the documented clear.
+ * applies the size guard to text + attachments combined: attachments that
+ * don't fit are dropped greedily (in item order) so text and every
+ * attachment that fits still persist — one oversized image (the accepted
+ * image cap, `REFERENCE_IMAGE_MAX_BYTES` = 30 MiB, exceeds this draft
+ * guard; such images survive the send but not a reload) doesn't wipe the
+ * rest from the draft. A pathologically large text returns `null` (skip the
+ * wire call entirely). Empty text with no attachments is the documented
+ * clear.
  */
 export function buildNewWorkspaceDraftPayload(
   text: string,
@@ -136,16 +140,28 @@ export function buildNewWorkspaceDraftPayload(
   }
   const attachments = serializeDraftAttachments(contextItems);
   if (attachments.length === 0) return { text };
-  const serializedBytes = text.length + JSON.stringify(attachments).length;
-  if (serializedBytes > MAX_DRAFT_ATTACHMENTS_BYTES) {
-    logger.warn('Draft text + attachments exceed the size guard; persisting text only', {
-      serializedBytes,
+  // Greedy fit: keep each attachment whose serialized size still fits under
+  // the guard alongside the text and the attachments already kept.
+  const kept: DraftAttachment[] = [];
+  let usedBytes = text.length + 2; // '[' + ']' of the serialized array
+  let droppedCount = 0;
+  for (const attachment of attachments) {
+    const attachmentBytes = JSON.stringify(attachment).length + 1; // + separator
+    if (usedBytes + attachmentBytes > MAX_DRAFT_ATTACHMENTS_BYTES) {
+      droppedCount += 1;
+      continue;
+    }
+    kept.push(attachment);
+    usedBytes += attachmentBytes;
+  }
+  if (droppedCount > 0) {
+    logger.warn('Draft attachments exceed the size guard; persisting the ones that fit', {
       limit: MAX_DRAFT_ATTACHMENTS_BYTES,
       attachmentCount: attachments.length,
+      droppedCount,
     });
-    return { text };
   }
-  return { text, attachments };
+  return kept.length > 0 ? { text, attachments: kept } : { text };
 }
 
 /** Fire-and-forget `drafts.set` under the sentinel keys; failures log only.

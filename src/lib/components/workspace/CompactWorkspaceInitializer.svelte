@@ -1244,6 +1244,12 @@
 
   // UI state
   let isCreating = $state(false);
+  // Non-zero while dropped/pasted/selected files are being converted to
+  // context items (FileReader is async) — submit is gated on it so a create
+  // can't race the conversion and silently drop the attachment. A counter
+  // (not a boolean) so overlapping conversions don't clear the gate early.
+  let processingImageCount = $state(0);
+  const isProcessingImages = $derived(processingImageCount > 0);
   let creationStage = $state(0); // 0-3 for progress stages
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
@@ -1622,7 +1628,7 @@
   }
 
   async function handleSubmit() {
-    if (!isValid || isCreating || isEnhancing) return;
+    if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
     // Attachments still placing or failed block the create: a failed pill
     // must be retried or removed first (no silent drop, no base64 fallback).
     if (hasBlockingAttachments(contextItems)) return;
@@ -2428,6 +2434,15 @@
 
   // Shared file processing logic - images become attachment items, other files as mentions
   async function processImageFiles(files: File[]) {
+    processingImageCount += 1;
+    try {
+      await processImageFilesInner(files);
+    } finally {
+      processingImageCount -= 1;
+    }
+  }
+
+  async function processImageFilesInner(files: File[]) {
     const imageFiles: File[] = [];
     const insertedFileCount = { value: 0 };
 
@@ -3139,7 +3154,7 @@
         <div class="shrink-0">
           <Button
             onclick={handleSubmit}
-            disabled={!isValid || isCreating || isEnhancing}
+            disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
             class="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
           >
             {#if isCreating}

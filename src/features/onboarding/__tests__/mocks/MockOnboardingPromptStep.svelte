@@ -7,6 +7,7 @@
    */
   let {
     onboardingInputValue = $bindable(''),
+    isOnboardingCreating = false,
     onboardingSkipWorktree = $bindable(false),
     onboardingSkipIsolation = $bindable(false),
     setupScript = $bindable(''),
@@ -29,6 +30,7 @@
     onBranchBehindChange,
   }: {
     onboardingInputValue?: string;
+    isOnboardingCreating?: boolean;
     onboardingSkipWorktree?: boolean;
     onboardingSkipIsolation?: boolean;
     setupScript?: string;
@@ -52,8 +54,18 @@
     [key: string]: unknown;
   } = $props();
 
+  // Optional editor stand-in (set via setEditorMentions below). Like the
+  // real step, the editor is only reachable while the form is mounted:
+  // isOnboardingCreating swaps it for the setup card, so reads after the
+  // flip return null — exactly the unmount race of intent-hq/intent#4050.
+  let editorStub = $state<{
+    getMentions: () => unknown[];
+    getContextMentions: () => unknown[];
+  } | null>(null);
+
   export function getRichTextarea() {
-    return null;
+    if (!editorStub || isOnboardingCreating) return null;
+    return editorStub;
   }
 
   // Test-settable stand-in for the real step's effective default-model
@@ -85,6 +97,12 @@
       },
       setImageContextItems: (items: unknown[]) => {
         imageContextItems = items;
+      },
+      setEditorMentions: (mentions: unknown[], contextMentions: unknown[]) => {
+        editorStub = {
+          getMentions: () => mentions,
+          getContextMentions: () => contextMentions,
+        };
       },
       setStagedContextItems: (items: unknown[]) => {
         stagedContextItems = items;

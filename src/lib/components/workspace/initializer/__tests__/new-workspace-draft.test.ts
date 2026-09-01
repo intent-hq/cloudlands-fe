@@ -211,6 +211,23 @@ describe('buildNewWorkspaceDraftPayload', () => {
     expect('attachments' in payload!).toBe(false);
   });
 
+  it('keeps the attachments that fit when one exceeds the size guard', () => {
+    // An image accepted at the 30 MiB reference cap exceeds the 20 MiB
+    // draft guard — it must be dropped alone, not take the fitting
+    // attachments down with it.
+    const oversizedItem: ContextItem = {
+      ...imageItem,
+      id: 'image-oversized',
+      imageData: 'a'.repeat(MAX_DRAFT_ATTACHMENTS_BYTES + 1),
+    };
+
+    const payload = buildNewWorkspaceDraftPayload('still saved', [oversizedItem, imageItem]);
+
+    expect(payload!.text).toBe('still saved');
+    expect(payload!.attachments).toHaveLength(1);
+    expect(payload!.attachments![0].id).toBe(imageItem.id);
+  });
+
   it('guards on text + attachments combined, not attachments alone', () => {
     const nearLimitItem: ContextItem = {
       ...imageItem,

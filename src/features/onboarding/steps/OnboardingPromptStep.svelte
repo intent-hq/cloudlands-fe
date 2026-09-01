@@ -184,6 +184,13 @@
   let isDragging = $state(false);
   let dragCounter = $state(0);
 
+  // Non-zero while dropped/pasted/selected files are being converted to
+  // context items (FileReader is async) — submit is gated on it so a create
+  // can't race the conversion and silently drop the attachment. A counter
+  // (not a boolean) so overlapping conversions don't clear the gate early.
+  let processingImageCount = $state(0);
+  const isProcessingImages = $derived(processingImageCount > 0);
+
   // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
   // §5.11): `specialist.list` with the onboarding provider context returns
   // additive `resolvedModel` fields computed by the same resolver a no-model
@@ -276,6 +283,23 @@
    * path-only context items placed at workspace.create
    * (`file.placeAttachment`, PROTOCOL §5.9) — never inlined, never dropped. */
   async function processImageFiles(files: File[]) {
+    processingImageCount += 1;
+    try {
+      await processImageFilesInner(files);
+    } finally {
+      processingImageCount -= 1;
+    }
+  }
+
+  /** Submit guard: every submit surface (editor Cmd+Enter, Create button,
+   * error-banner Retry) routes through here so a submit can't race an
+   * in-flight image conversion and drop the attachment. */
+  function handleSubmit() {
+    if (isProcessingImages) return;
+    onSubmit();
+  }
+
+  async function processImageFilesInner(files: File[]) {
     const imageFiles: File[] = [];
     for (const file of files) {
       if (file.type.startsWith('image/')) {
@@ -491,7 +515,7 @@
             bind:this={onboardingRichTextarea}
             bind:value={onboardingInputValue}
             repoPath={projectSelection?.repoPath || undefined}
-            onsubmit={onSubmit}
+            onsubmit={handleSubmit}
             onchange={onContentChange}
             onfocus={onFocus}
             onkeydown={onKeydown}
@@ -811,11 +835,12 @@
       <WorkspaceCreationError
         message={onboardingCreationError}
         errorCode={onboardingCreationErrorCode}
-        onRetry={onSubmit}
+        onRetry={handleSubmit}
       />
     {/if}
 
-    <!-- Create button (blocked while the branch is unresolved or a staged pill is placing/failed) -->
+    <!-- Create button (blocked while the branch is unresolved, an image is
+      still converting, or a staged pill is placing/failed) -->
     <div class="onboarding-create-action flex items-center gap-3 pt-2">
       <Button
         class="group/button"
@@ -823,8 +848,9 @@
         variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
         disabled={!onboardingInputValue.trim() ||
           !hasResolvedBranch ||
+          isProcessingImages ||
           hasBlockingAttachments(stagedContextItems)}
-        onclick={onSubmit}
+        onclick={handleSubmit}
       >
         {m.onboarding_promptStep_createWorkspace_label()}
         {#if onboardingInputValue.trim()}

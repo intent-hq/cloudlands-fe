@@ -138,12 +138,14 @@ vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
   resolveOnboardingModel: mocks.resolveModel,
 }));
 
-vi.mock('$features/onboarding/utils/parse-context-references', () => ({
-  parseContextMentions: vi.fn(() => []),
-  parseFileMentions: vi.fn(() => []),
+// Keep the real pure mention parsers (the #4050 regression test asserts
+// mention-derived context references reach the held payload); only the
+// runtime parser — which pulls in the terminal manager — is stubbed.
+vi.mock('$features/onboarding/utils/parse-context-references', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$features/onboarding/utils/parse-context-references')
+  >()),
   parseRuntimeMentions: vi.fn(async () => []),
-  extractLinearIssue: vi.fn(() => undefined),
-  extractSentryIssue: vi.fn(() => undefined),
 }));
 
 vi.mock('$lib/components/workspace/initializer/staged-attachments', async (importOriginal) => ({
@@ -1330,14 +1332,17 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
           onSubmit: () => void;
           setInputValue: (value: string) => void;
           setImageContextItems: (items: unknown[]) => void;
+          setEditorMentions: (mentions: unknown[], contextMentions: unknown[]) => void;
         };
       }
     ).__mockOnboardingPromptStep;
 
-  it('regression: image context items ride the held first message even though the editor is unmounted mid-submit', async () => {
-    // The mock prompt step's getRichTextarea() is always null — the same
-    // editor-gone condition isOnboardingCreating creates mid-submit. Images
-    // must come from the context-item state, not an editor read.
+  it('regression: image context items and editor mentions ride the held first message even though the editor is unmounted mid-submit', async () => {
+    // The mock prompt step's getRichTextarea() goes null the moment
+    // isOnboardingCreating flips — the same editor-gone condition the real
+    // page creates mid-submit. Images must come from the context-item
+    // state, and mentions must be snapshotted BEFORE the flip: reading
+    // either after the awaits would return nothing (intent-hq/intent#4050).
     mocks.workspaceCreate.mockResolvedValue({
       ok: true,
       data: {
@@ -1362,6 +1367,10 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
         imageMimeType: 'image/png',
       },
     ]);
+    captured().setEditorMentions(
+      [{ type: 'file', label: 'src/main.ts', meta: { fullPath: '/repo/a/src/main.ts' } }],
+      [],
+    );
     captured().setInputValue('Build the thing');
     captured().onSubmit();
 
@@ -1374,17 +1383,22 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     expect(createRequest.initialAgent.imageBlocks).toBeUndefined();
 
     // The held first message carries the image blocks built from the
-    // context items.
+    // context items AND the mention-derived context references snapshotted
+    // before the editor unmounted.
     await waitFor(() => expect(mocks.sendHeldFirstMessage).toHaveBeenCalledTimes(1));
     const [heldParams] = mocks.sendHeldFirstMessage.mock.calls[0] as [
       {
         content: string;
         imageBlocks: Array<{ type: string; data: string; mimeType: string }>;
+        contextReferences: Array<{ type: string; path?: string; title?: string }>;
       },
     ];
     expect(heldParams.content).toBe('Build the thing');
     expect(heldParams.imageBlocks).toEqual([
       { type: 'image', data: 'iVBORw0KGgoAAAANSUhEUg==', mimeType: 'image/png' },
+    ]);
+    expect(heldParams.contextReferences).toEqual([
+      { type: 'file', path: '/repo/a/src/main.ts', title: 'src/main.ts' },
     ]);
   });
 
