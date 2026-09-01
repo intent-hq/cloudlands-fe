@@ -486,6 +486,163 @@ export function classifyScrollbackGesture(params: ScrollbackGestureParams): 'ser
   return rowsAboveSegmentStart > nearPages * pageSize ? 'seek' : 'serial';
 }
 
+// ── Rapid-scroll detection ───────────────────────────────────────────────
+
+/**
+ * Window (ms) over which scroll displacement accumulates when deciding
+ * rapid vs gentle. Matches the panel's seek settle debounce
+ * (SEEK_DEBOUNCE_MS), so "rapid" means "moving faster than one settle
+ * window can absorb".
+ */
+export const RAPID_SCROLL_WINDOW_MS = 200;
+
+/**
+ * Displacement threshold as a multiple of the viewport height: a burst
+ * covering more than this many viewports inside the window is rapid.
+ */
+export const RAPID_SCROLL_VIEWPORT_FACTOR = 1;
+
+export interface ScrollSample {
+  /** scrollTop of the transcript scroll container at this event. */
+  scrollTop: number;
+  /** Monotonic timestamp (ms) of the event, e.g. performance.now(). */
+  timestamp: number;
+}
+
+/**
+ * Append a scroll sample to the burst buffer, dropping samples older than
+ * `windowMs` before the new sample. Pure — returns a new array; the caller
+ * keeps the returned buffer and feeds it back on the next scroll event, so
+ * it never grows past one window of events.
+ */
+export function appendScrollSample(
+  samples: readonly ScrollSample[],
+  sample: ScrollSample,
+  windowMs: number = RAPID_SCROLL_WINDOW_MS,
+): ScrollSample[] {
+  const cutoff = sample.timestamp - windowMs;
+  return [...samples.filter((s) => s.timestamp >= cutoff), sample];
+}
+
+export interface RapidScrollParams {
+  /** Recent scroll samples, oldest first (see `appendScrollSample`). */
+  samples: readonly ScrollSample[];
+  /** Container clientHeight (px). */
+  viewportHeight: number;
+  /** Displacement window (ms); defaults to RAPID_SCROLL_WINDOW_MS. */
+  windowMs?: number;
+  /** Threshold in viewports; defaults to RAPID_SCROLL_VIEWPORT_FACTOR. */
+  viewportFactor?: number;
+}
+
+/**
+ * Classify a scroll burst as `'rapid'` or `'gentle'`.
+ *
+ * Heuristic: accumulated absolute scrollTop displacement per settle window,
+ * relative to the viewport height — sum |delta| across consecutive samples
+ * within `windowMs` of the newest sample and compare against
+ * `viewportFactor` viewports. A wheel flick or scrollbar-thumb drag covers
+ * more than one viewport inside one settle window (200ms), which a serial
+ * page walk cannot usefully chase — the caller defers paging to the settle
+ * debounce. A gentle reading-pace scroll stays under the threshold and
+ * keeps today's immediate edge-triggered serial fetch. Absolute deltas (not
+ * net) so a fast up-down jiggle still counts as rapid.
+ *
+ * Deterministic and conservative: fewer than two in-window samples, or a
+ * degenerate viewport height, classify `'gentle'` (missing data never
+ * defers a fetch). Exactly at the threshold is NOT past it — gentle.
+ */
+export function classifyScrollBurst(params: RapidScrollParams): 'rapid' | 'gentle' {
+  const {
+    samples,
+    viewportHeight,
+    windowMs = RAPID_SCROLL_WINDOW_MS,
+    viewportFactor = RAPID_SCROLL_VIEWPORT_FACTOR,
+  } = params;
+  if (viewportHeight <= 0 || samples.length < 2) return 'gentle';
+  const cutoff = samples[samples.length - 1].timestamp - windowMs;
+  const inWindow = samples.filter((s) => s.timestamp >= cutoff);
+  if (inWindow.length < 2) return 'gentle';
+  let displacement = 0;
+  for (let i = 1; i < inWindow.length; i += 1) {
+    displacement += Math.abs(inWindow[i].scrollTop - inWindow[i - 1].scrollTop);
+  }
+  return displacement > viewportHeight * viewportFactor ? 'rapid' : 'gentle';
+}
+
+// ── Settle-point classification ──────────────────────────────────────────
+
+export type SettleDriver = 'seek' | 'serial' | 'none';
+
+export interface SettleClassificationParams {
+  /** Settled scrollTop of the transcript scroll container. */
+  scrollTop: number;
+  /** Height (px) of the virtual spacer above the resident rows. */
+  spacerAboveHeight: number;
+  /** Smoothed per-row height estimate; null before the first seed. */
+  rowHeightEstimate: number | null;
+  /**
+   * `historySeekUnsupported` latch: aroundIndex seeks are unavailable, so
+   * far positions fall back to the serial walk.
+   */
+  seekUnsupported?: boolean;
+  /**
+   * Snapshot `totalMessages` (0 when unknown) — a seek needs a known total
+   * to map the settled position to a target ordinal.
+   */
+  totalMessages: number;
+  /** Near-top serial trigger params, re-evaluated at the settled position. */
+  serial: OlderHistoryTriggerParams;
+  /** Rows per scrollback page (defaults to SCROLLBACK_PAGE_ROWS). */
+  pageSize?: number;
+  /** Near threshold in pages (defaults to SCROLLBACK_SEEK_NEAR_PAGES). */
+  nearPages?: number;
+}
+
+/**
+ * Classify a SETTLED position into the above-spacer driver to run. Call at
+ * ANY settle point — the seek debounce firing or an in-flight
+ * older-history/gap-fill page settling — so every settle re-classifies the
+ * parked position instead of blindly chaining the serial walk: a viewport
+ * parked deep in the spacer issues one aroundIndex jump rather than being
+ * reached page-by-page.
+ *
+ * - `'seek'` — the position sits deeper in the above-spacer than the serial
+ *   walk covers (`classifyScrollbackGesture`), seeks are supported, and the
+ *   snapshot total is known (the ordinal mapping needs it).
+ * - `'serial'` — otherwise, when the near-top trigger fires at the settled
+ *   position (`shouldRequestOlderHistory` over `serial`): near-spacer and
+ *   no-spacer near-top positions both land here, as does a far position
+ *   whose seek path is unavailable (unsupported / unknown total).
+ * - `'none'` — no above driver applies.
+ *
+ * Boundary: the below-spacer drivers (bounded gap refill, collapse-at-tail)
+ * stay PANEL-SIDE — they need DOM measurement (the below spacer's rendered
+ * position) this dependency-light module cannot see. The panel checks them
+ * around this classification exactly as today.
+ */
+export function classifySettledPosition(params: SettleClassificationParams): SettleDriver {
+  const {
+    scrollTop,
+    spacerAboveHeight,
+    rowHeightEstimate,
+    seekUnsupported = false,
+    totalMessages,
+    serial,
+    pageSize,
+    nearPages,
+  } = params;
+  const gesture = classifyScrollbackGesture({
+    scrollTop,
+    spacerAboveHeight,
+    rowHeightEstimate,
+    pageSize,
+    nearPages,
+  });
+  if (gesture === 'seek' && !seekUnsupported && totalMessages > 0) return 'seek';
+  return shouldRequestOlderHistory(serial) ? 'serial' : 'none';
+}
+
 export interface ScrollToOrdinalParams {
   /** Current scrollTop of the transcript scroll container. */
   scrollTop: number;
