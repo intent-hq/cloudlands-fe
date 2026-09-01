@@ -93,7 +93,10 @@
       }
       rulesContent = rule.content;
       originalContent = rulesContent;
-      lastSavedContent = rulesContent;
+      // Trimmed, like every payload saveRules persists: all drift
+      // comparisons are trimmed-vs-trimmed, so padding whitespace in a rule
+      // set outside this editor cannot register as unsaved drift.
+      lastSavedContent = rulesContent.trim();
       hasChanges = false;
     } catch (error) {
       logger.error('Failed to load rules', error instanceof Error ? error : undefined);

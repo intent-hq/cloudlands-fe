@@ -628,6 +628,24 @@ describe('AIBehaviorEditor actions', () => {
     }
   });
 
+  it('does not persist a trim-only diff when the loaded rule carries padding whitespace', async () => {
+    mocks.getUserRule.mockResolvedValueOnce({ content: '\nPadded instructions\n' });
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('\nPadded instructions\n');
+
+    mocks.updateUserRule.mockClear();
+    // Cmd/Ctrl+S with no edit must stay a quiet no-op — not silently persist
+    // the trimmed value of a rule that was stored with padding whitespace.
+    await fireEvent.keyDown(textarea, { key: 's', ctrlKey: true });
+    flushSync();
+
+    expect(mocks.updateUserRule).not.toHaveBeenCalled();
+    expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
+  });
+
   it('converges the backend when a revert to the original lands while a save is in flight', async () => {
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
