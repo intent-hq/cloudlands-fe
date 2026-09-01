@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { inspectLazyTurnObserverOwnership, observeLazyTurnVisibility } from '../lazy-turn-observer';
+import {
+  inspectLazyTurnObserverOwnership,
+  observeLazyTurnVisibility,
+  scheduleLazyTurnDeliveryFlush,
+} from '../lazy-turn-observer';
 
 class MockIntersectionObserver {
   static instances: MockIntersectionObserver[] = [];
@@ -85,5 +89,39 @@ describe('LazyTurn shared observer ownership', () => {
     releaseOld();
     releaseMid();
     releaseNewer();
+  });
+
+  it('runs a scheduled flush once after all entry callbacks of one delivery', () => {
+    const root = document.createElement('div');
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+    const calls: string[] = [];
+    const flush = () => calls.push('flush');
+    // Outside a delivery there is nothing to defer to: the caller flushes
+    // immediately instead.
+    expect(scheduleLazyTurnDeliveryFlush(flush)).toBe(false);
+    const releaseFirst = observeLazyTurnVisibility(first, root, (visible) => {
+      calls.push(`first:${visible}`);
+      expect(scheduleLazyTurnDeliveryFlush(flush)).toBe(true);
+    });
+    const releaseSecond = observeLazyTurnVisibility(second, root, (visible) => {
+      calls.push(`second:${visible}`);
+      expect(scheduleLazyTurnDeliveryFlush(flush)).toBe(true);
+    });
+    const observer = MockIntersectionObserver.instances[0];
+
+    // Both callbacks schedule the same flush during one delivery: it is
+    // deduped by identity and runs once, after the last entry callback.
+    observer.callback(
+      [
+        { target: first, isIntersecting: true },
+        { target: second, isIntersecting: true },
+      ] as IntersectionObserverEntry[],
+      observer as unknown as IntersectionObserver,
+    );
+
+    expect(calls).toEqual(['first:true', 'second:true', 'flush']);
+    releaseFirst();
+    releaseSecond();
   });
 });

@@ -14,7 +14,7 @@
  * module only reports deterministic transitions.
  */
 
-import { observeLazyTurnVisibility } from './lazy-turn-observer';
+import { observeLazyTurnVisibility, scheduleLazyTurnDeliveryFlush } from './lazy-turn-observer';
 
 export interface HydrationMessage {
   id: string;
@@ -146,7 +146,7 @@ export function createMessageHydrationPolicy(
 
   /** Coalesces a call's transitions into one onHydrationChange notification. */
   function flushBatch(): void {
-    if (!batchChanged) return;
+    if (disposed || !batchChanged) return;
     batchChanged = false;
     options.onHydrationChange?.();
   }
@@ -180,7 +180,10 @@ export function createMessageHydrationPolicy(
     record.isIntersecting = isIntersecting;
     recomputeFrontier();
     reconcile();
-    flushBatch();
+    // One observer delivery invokes this once per entry; defer the flush to
+    // delivery end so k per-entry reports coalesce into ONE onHydrationChange
+    // (still synchronous, before paint) instead of k consumer rebuilds.
+    if (!scheduleLazyTurnDeliveryFlush(flushBatch)) flushBatch();
   }
 
   function attachRegistration(id: string, registration: Registration) {

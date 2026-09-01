@@ -611,6 +611,28 @@ describe('message hydration policy', () => {
 
       expect(snapshots).toEqual([['b']]);
     });
+
+    it('notifies once per observer delivery, not once per entry', () => {
+      const messages = Array.from({ length: 8 }, (_, index) => assistant(`m${index}`));
+      const snapshots: string[][] = [];
+      const policy = createMessageHydrationPolicy(messages, {
+        onHydrationChange: () => snapshots.push(policy.getHydratedIds()),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['m2', 'm3', 'm4', 'm5']);
+
+      // A single IntersectionObserver delivery carries k entries and invokes
+      // the per-row report path k times — the flush defers to delivery end so
+      // the consumer rebuilds derived state ONCE with the committed net state.
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('m2')!, isIntersecting: true },
+        { target: elements.get('m3')!, isIntersecting: true },
+        { target: elements.get('m4')!, isIntersecting: true },
+        { target: elements.get('m5')!, isIntersecting: true },
+      ]);
+
+      expect(snapshots).toEqual([['m2', 'm3', 'm4', 'm5']]);
+    });
   });
 
   it('hydrates viewport rows after detach/re-attach when fresh reports cover only those rows', () => {
