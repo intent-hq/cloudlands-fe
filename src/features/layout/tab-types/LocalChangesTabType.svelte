@@ -38,16 +38,27 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isAbsolutePath, normalizePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    emptySecondaryRootState,
+    selectSecondaryRootGitRoots,
+  } from '$store/renderer/slices/git/git-selectors';
+  import { loadSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
+  import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
   const diffSideBySide = selectDiffSideBySide();
-  let { workspaceId, isActive }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
+  const gitRootId = $derived((tab.data?.gitRootId as string) || '');
+  // svelte-ignore state_referenced_locally
+  const gitRoots$ = selectGitRoots(workspaceId);
+  const selectedRoot = $derived($gitRoots$.find((root) => root.id === gitRootId));
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
+  const effectiveRootPath = $derived(selectedRoot?.path || workspacePath);
   // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
   // svelte-ignore state_referenced_locally
@@ -57,6 +68,29 @@
   // svelte-ignore state_referenced_locally
   const ftLoading$ = selectFileTrackingLoading(workspaceId);
   const allCommits = $derived($ftCommits$ || []);
+  // svelte-ignore state_referenced_locally
+  const rootGitRoots$ = selectSecondaryRootGitRoots(workspaceId);
+  const rootGit = $derived($rootGitRoots$[gitRootId] ?? emptySecondaryRootState);
+  const rootStatus = $derived(rootGit.status);
+  const rootLoading = $derived(rootGit.loading);
+  const rootCommitFiles = $derived(rootGit.commitFiles);
+  const rootCommits = $derived.by(() => {
+    const boundary = selectedRoot?.registeredCommitSha;
+    const index = boundary
+      ? rootGit.commits.findIndex((commit) => commit.hash === boundary)
+      : -1;
+    return index >= 0 ? rootGit.commits.slice(0, index) : rootGit.commits;
+  });
+
+  $effect(() => {
+    const wsId = workspaceId;
+    const rootId = gitRootId;
+    if (wsId && rootId) {
+      appStore.dispatch(
+        loadSecondaryRootGit(wsId, rootId, selectedRoot?.registeredCommitSha, 100),
+      );
+    }
+  });
 
   // State for expand/collapse and panel ref
   let changesAllExpanded = $state(true);
@@ -64,6 +98,34 @@
 
   // Build the changes array with all local changes
   const localChangesForPanel = $derived.by(() => {
+    if (gitRootId) {
+      return [
+        ...(rootStatus?.files ?? []).map((file) => ({
+          filePath: `${effectiveRootPath}/${file.path}`,
+          action: 'modify' as const,
+          additions: (file as typeof file & { additions?: number }).additions ?? 0,
+          deletions: (file as typeof file & { deletions?: number }).deletions ?? 0,
+          toolName: 'local',
+          toolCallId: `root-${gitRootId}-${file.staged}-${file.path}`,
+          staged: file.staged,
+          category: file.staged ? ('staged' as const) : ('unstaged' as const),
+        })),
+        ...rootCommits.flatMap((commit) =>
+          (rootCommitFiles[commit.hash] ?? []).map((file) => ({
+            filePath: `${effectiveRootPath}/${file.path}`,
+            action: 'modify' as const,
+            additions: file.additions ?? 0,
+            deletions: file.deletions ?? 0,
+            toolName: 'local',
+            toolCallId: `root-commit-${commit.hash}-${file.path}`,
+            staged: false,
+            category: 'committed' as const,
+            commitHash: commit.hash,
+            commitMessage: commit.message,
+          })),
+        ),
+      ];
+    }
     const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
     const staged = $ftChanges$.filter((c) => c.stage === 'staged');
     return [
@@ -205,21 +267,29 @@
 
 <ChatChangesPanel
   bind:this={changesPanelRef}
-  isLoading={$ftLoading$}
+  isLoading={gitRootId ? rootLoading : $ftLoading$}
   changes={localChangesForPanel}
+  gitRootId={gitRootId || undefined}
+  gitRootPath={gitRootId ? effectiveRootPath : undefined}
   branchBaseRef={$workspace?.baseRef ?? null}
-  branchBaseCommitSha={$ftBoundarySha$ || $workspace?.baseCommitSha || null}
-  showStagingControls={true}
+  branchBaseCommitSha={gitRootId
+    ? selectedRoot?.registeredCommitSha || null
+    : $ftBoundarySha$ || $workspace?.baseCommitSha || null}
+  showStagingControls={!gitRootId}
   showCategoryFilter={true}
-  onStage={(path) => void stageViaSeam([path])}
-  onUnstage={(path) => void unstageViaSeam([path])}
-  onRevert={(path) => void revertViaSeam([path])}
-  onStageAll={() => {
-    const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
-    void stageViaSeam(unstaged.map((c) => c.relativePath || c.file));
-  }}
-  onUnstageAll={() => {
-    const staged = $ftChanges$.filter((c) => c.stage === 'staged');
-    void unstageViaSeam(staged.map((c) => c.relativePath || c.file));
-  }}
+  onStage={gitRootId ? undefined : (path) => void stageViaSeam([path])}
+  onUnstage={gitRootId ? undefined : (path) => void unstageViaSeam([path])}
+  onRevert={gitRootId ? undefined : (path) => void revertViaSeam([path])}
+  onStageAll={gitRootId
+    ? undefined
+    : () => {
+        const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
+        void stageViaSeam(unstaged.map((c) => c.relativePath || c.file));
+      }}
+  onUnstageAll={gitRootId
+    ? undefined
+    : () => {
+        const staged = $ftChanges$.filter((c) => c.stage === 'staged');
+        void unstageViaSeam(staged.map((c) => c.relativePath || c.file));
+      }}
 />

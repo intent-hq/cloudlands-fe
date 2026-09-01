@@ -32,6 +32,7 @@ const DEFAULT_CONNECTIONS = {
   status: 'idle',
   error: null,
   certMismatch: null,
+  certWarnings: {},
 };
 
 // Mock svelte-fa
@@ -142,6 +143,26 @@ describe('DaemonStatusIndicator', () => {
   });
 
   describe('dropdown interaction', () => {
+    it('does not show a tooltip when the status trigger is hovered or focused', async () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+      };
+      render(DaemonStatusIndicatorPreloaded);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+
+      await fireEvent.mouseEnter(trigger);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+
+      trigger.focus();
+      expect(trigger).toBe(document.activeElement);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+
+      await fireEvent.click(trigger);
+      expect(screen.getByRole('menuitem', { name: 'Status - Healthy' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Connect another device' })).toBeTruthy();
+    });
+
     it('dispatches pollSystemStatus when dropdown opens ($effect at line 72)', async () => {
       // This test verifies the $effect at line 72
       // which dispatches pollSystemStatus when dropdownOpen becomes true
@@ -843,6 +864,7 @@ describe('DaemonStatusIndicator', () => {
           status: 'idle',
           error: null,
           certMismatch: null,
+          certWarnings: {},
           protocolMismatch: {
             id: 'r1',
             host: '10.0.0.2',
@@ -866,6 +888,62 @@ describe('DaemonStatusIndicator', () => {
       expect(
         screen.getByRole('menuitem', { name: /Protocol version differs from local/ }),
       ).toBeTruthy();
+    });
+
+    it('shows the passive cert-warnings icon on a connection row with observed per-host mismatches', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: null,
+          lastUpdated: null,
+          polling: false,
+        },
+        connections: {
+          connections: createCollection('id', [
+            {
+              id: 'local',
+              label: 'Local',
+              host: null,
+              port: null,
+              fingerprint: null,
+              isLocal: true,
+            },
+            {
+              id: 'r1',
+              label: 'desk:4180',
+              host: '10.0.0.2',
+              port: 4180,
+              fingerprint: 'AA:BB',
+              isLocal: false,
+            },
+          ]),
+          activeId: 'r1',
+          windowBackendId: 'r1',
+          status: 'idle',
+          error: null,
+          certMismatch: null,
+          certWarnings: {
+            r1: createCollection('host', [
+              { host: '10.0.0.3', expectedFingerprint: 'AA:BB', actualFingerprint: 'CC:DD' },
+            ]),
+          },
+          protocolMismatch: null,
+          protocolMismatchModalDismissed: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      // Same aria-only pattern as the protocol-mismatch icon: the explanation
+      // (including the warned host) is the icon's accessible name.
+      const icon = screen.getByTestId('daemon-status-cert-warnings-icon');
+      expect(icon.getAttribute('role')).toBe('img');
+      expect(icon.getAttribute('aria-label')).toContain('unexpected certificate');
+      expect(icon.getAttribute('aria-label')).toContain('10.0.0.3');
+      // Passive: the row remains a normal openable menu item.
+      expect(screen.getByRole('menuitem', { name: /desk:4180/ })).toBeTruthy();
     });
 
     it('exposes the active-connection check icon as role="img" (monorepo#2320)', async () => {
@@ -892,6 +970,7 @@ describe('DaemonStatusIndicator', () => {
           status: 'idle',
           error: null,
           certMismatch: null,
+          certWarnings: {},
         },
       };
 
@@ -1189,6 +1268,7 @@ describe('DaemonStatusIndicator', () => {
         status: 'idle',
         error: null,
         certMismatch: null,
+        certWarnings: {},
       };
     }
 
@@ -1385,6 +1465,7 @@ describe('DaemonStatusIndicator', () => {
           status: 'idle',
           error: null,
           certMismatch: null,
+          certWarnings: {},
         },
       };
 
@@ -1442,6 +1523,7 @@ describe('DaemonStatusIndicator', () => {
         status: 'idle',
         error: null,
         certMismatch: null,
+        certWarnings: {},
       };
     }
 

@@ -127,6 +127,10 @@
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
+    imageFilesToContextItems,
+    REFERENCE_IMAGE_MAX_BYTES,
+  } from '$lib/components/chat/input/image-context-items';
+  import {
     hasStagedFileItems,
     redeemStagedAttachments,
     sendHeldFirstMessage,
@@ -1240,6 +1244,12 @@
 
   // UI state
   let isCreating = $state(false);
+  // Non-zero while dropped/pasted/selected files are being converted to
+  // context items (FileReader is async) — submit is gated on it so a create
+  // can't race the conversion and silently drop the attachment. A counter
+  // (not a boolean) so overlapping conversions don't clear the gate early.
+  let processingImageCount = $state(0);
+  const isProcessingImages = $derived(processingImageCount > 0);
   let creationStage = $state(0); // 0-3 for progress stages
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
@@ -1618,7 +1628,7 @@
   }
 
   async function handleSubmit() {
-    if (!isValid || isCreating || isEnhancing) return;
+    if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
     // Attachments still placing or failed block the create: a failed pill
     // must be retried or removed first (no silent drop, no base64 fallback).
     if (hasBlockingAttachments(contextItems)) return;
@@ -1778,12 +1788,6 @@
         })),
       });
 
-      // Extract inline images from the editor (legacy fallback)
-      const inlineImages = richTextarea?.getInlineImages() ?? [];
-      logger.info('[CompactWorkspaceInitializer] Extracted inline images (fallback)', {
-        imageCount: inlineImages.length,
-      });
-
       // Convert context mentions to context references for the agent
       const contextReferences: any[] = remoteSetup ? [$state.snapshot(remoteSetup)] : [];
       for (const mention of contextMentions) {
@@ -1931,31 +1935,13 @@
 
       // Extract imageBlocks from ALL context items with imageData/imageMimeType
       // (includes attachment items created by processImageFiles)
-      // Also include inline images as fallback for legacy support
       const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = [];
-
-      // First, add images from attachment context items
       for (const item of contextItems) {
         if (item.imageData && item.imageMimeType) {
           imageBlocks.push({
             type: 'image',
             data: item.imageData,
             mimeType: item.imageMimeType,
-          });
-        }
-      }
-
-      // Then, add inline images as fallback (for any that were manually inserted)
-      for (let i = 0; i < inlineImages.length; i++) {
-        const img = inlineImages[i];
-        // Parse data URL to extract mime type and base64 data
-        const match = img.src.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          const [, mimeType, base64Data] = match;
-          imageBlocks.push({
-            type: 'image',
-            data: base64Data,
-            mimeType: mimeType,
           });
         }
       }
@@ -2448,10 +2434,17 @@
 
   // Shared file processing logic - images become attachment items, other files as mentions
   async function processImageFiles(files: File[]) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-    const addedImageCount = { value: 0 };
+    processingImageCount += 1;
+    try {
+      await processImageFilesInner(files);
+    } finally {
+      processingImageCount -= 1;
+    }
+  }
+
+  async function processImageFilesInner(files: File[]) {
+    const imageFiles: File[] = [];
     const insertedFileCount = { value: 0 };
-    const oversizedFiles: string[] = [];
 
     // Helper to format file sizes - hoisted outside loop
     function formatFileSize(bytes: number): string {
@@ -2461,44 +2454,12 @@
     }
 
     for (const file of files) {
-      // The inline size cap only applies to images (they cross the wire as
-      // base64) — staged non-image files are placed daemon-side from their
-      // sourcePath, so any size is fine.
-      if (file.type.startsWith('image/') && file.size > MAX_FILE_SIZE) {
-        oversizedFiles.push(file.name);
-        continue;
-      }
-
-      // Images become attachment context items (not inline nodes)
+      // Images become attachment context items (not inline nodes); the
+      // shared helper converts them and enforces the size cap (they cross
+      // the wire as base64) — staged non-image files are placed daemon-side
+      // from their sourcePath, so any size is fine.
       if (file.type.startsWith('image/')) {
-        try {
-          const dataUrl = await fileToDataUrl(file);
-          // Parse data URL to extract mime type and base64 data
-          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            const [, mimeType, base64Data] = match;
-            const fileName = file.name || `Image ${contextItems.length + 1}`;
-
-            const contextItem: ContextItem = {
-              id: `image-${Date.now()}-${contextItems.length}`,
-              type: 'file',
-              label: fileName,
-              description: `${mimeType} • ${formatFileSize(file.size)}`,
-              path: fileName,
-              file: file,
-              imageData: base64Data,
-              imageMimeType: mimeType,
-            };
-
-            contextItems = [...contextItems, contextItem];
-            addedImageCount.value++;
-          }
-        } catch (err) {
-          logger.error('Failed to process image', { fileName: file.name, error: err });
-          toast.error(
-            m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }),
-          );
-        }
+        imageFiles.push(file);
       } else {
         // Non-image files are STAGED as path-only context items: no workspace
         // exists yet, so `file.placeAttachment` (PROTOCOL §5.9) runs at
@@ -2529,28 +2490,19 @@
       }
     }
 
-    if (addedImageCount.value > 0) {
-      logger.debug(`Added ${addedImageCount.value} image(s) as attachments`);
+    // Images travel as attachment-reference blocks via the held first
+    // message (image-attachment-placement.ts), so the cap is the daemon's
+    // 30 MiB reference-image limit — not the old 10 MB inline budget.
+    const added = await imageFilesToContextItems(imageFiles, {
+      maxBytes: REFERENCE_IMAGE_MAX_BYTES,
+    });
+    if (added.length > 0) {
+      contextItems = [...contextItems, ...added];
     }
 
     if (insertedFileCount.value > 0) {
       logger.debug(`Staged ${insertedFileCount.value} file(s) for placement at create`);
     }
-
-    if (oversizedFiles.length > 0) {
-      toast.error(
-        m.workspace_compactInitializer_filesTooLarge_error({ files: oversizedFiles.join(', ') }),
-      );
-    }
-  }
-
-  function fileToDataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   }
 
   // Remove a context item (for attachment removal)
@@ -3202,7 +3154,7 @@
         <div class="shrink-0">
           <Button
             onclick={handleSubmit}
-            disabled={!isValid || isCreating || isEnhancing}
+            disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
             class="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
           >
             {#if isCreating}

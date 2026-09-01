@@ -114,6 +114,7 @@
     selectCurrentConnectionId,
     selectCurrentConnection,
     selectConnectionCertMismatch,
+    selectCertWarningsByConnectionId,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
   } from '$store/renderer/slices/connections/connections-selectors';
@@ -144,6 +145,7 @@
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
   const certMismatch$ = selectConnectionCertMismatch();
+  const certWarningsById$ = selectCertWarningsByConnectionId();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
@@ -420,24 +422,19 @@
   portal={true}
 >
   {#snippet trigger({ props })}
-    <Tooltip side="bottom">
-      {#snippet content()}
-        <span>{triggerLabel}</span>
-      {/snippet}
-      <button
-        {...props}
-        class={cn(
-          'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
-          currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
-        )}
-        aria-label={triggerAriaLabel}
-      >
-        {#if currentRemoteName}
-          <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
-        {/if}
-        <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
-      </button>
-    </Tooltip>
+    <button
+      {...props}
+      class={cn(
+        'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
+        currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
+      )}
+      aria-label={triggerAriaLabel}
+    >
+      {#if currentRemoteName}
+        <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
+      {/if}
+      <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
+    </button>
   {/snippet}
 
   {#snippet content()}
@@ -794,6 +791,30 @@
                   : formatConnectionLabel(conn)}
               </span>
               <span class="flex items-center gap-1.5 shrink-0">
+                {#if ($certWarningsById$[conn.id]?.length ?? 0) > 0}
+                  {@const certWarningHosts = $certWarningsById$[conn.id]
+                    .map((w) => w.host)
+                    .join(', ')}
+                  <Tooltip side="left" contentClass="z-[10001]">
+                    {#snippet content()}
+                      <span>{m.layout_daemonStatus_certWarnings_tooltip()}: {certWarningHosts}</span
+                      >
+                    {/snippet}
+                    <!--
+                        Passive per-host cert warnings (#1746 follow-up) —
+                        informative only, same aria-only pattern as the
+                        protocol-mismatch icon below.
+                      -->
+                    <span
+                      class="text-yellow-600 dark:text-yellow-500"
+                      role="img"
+                      aria-label={`${m.layout_daemonStatus_certWarnings_tooltip()}: ${certWarningHosts}`}
+                      data-testid="daemon-status-cert-warnings-icon"
+                    >
+                      <Fa icon={faTriangleExclamation} />
+                    </span>
+                  </Tooltip>
+                {/if}
                 {#if $activeProtocolMismatch$?.id === conn.id}
                   <Tooltip side="left" contentClass="z-[10001]">
                     {#snippet content()}

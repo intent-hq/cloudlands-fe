@@ -4,12 +4,11 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-  requestCollapsiblePanelCollapsed,
-  setCollapsiblePanelCollapsed,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    requestCollapsiblePanelCollapsed,
+    setCollapsiblePanelCollapsed,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { selectCollapsiblePanelCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
-
 
   interface Props {
     title: string;
@@ -82,7 +81,8 @@
         {/if}
         <h3 class="m-0 text-sm font-medium">{title}</h3>
         <div
-          class="transition-all mt-[2px] duration-200 text-subtle {!hovering && showChevronOnHover
+          class="transition-[opacity,transform] mt-[2px] duration-200 text-subtle {!hovering &&
+          showChevronOnHover
             ? 'opacity-0'
             : 'opacity-100'} {collapsed ? 'rotate-90' : ''}"
         >

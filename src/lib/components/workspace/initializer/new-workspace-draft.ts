@@ -19,7 +19,6 @@ import {
   serializeDraftAttachments,
 } from '$lib/components/chat/chat-draft-attachments';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
-import { parseImageDataUrl } from '$lib/components/chat/input/image-data-url';
 import { createLogger } from '$lib/utils/client-logger';
 
 /** Reserved sentinel `workspaceId` for the New Workspace modal draft (PROTOCOL §5.16). */
@@ -119,10 +118,14 @@ export async function restoreNewWorkspaceDraft(
 /**
  * Build the debounced `drafts.set` payload from the current prompt text and
  * context items. Serializes image attachments (empty ⇒ field omitted) and
- * applies the size guard to text + attachments combined: oversized
- * attachments are dropped so text still persists, and a pathologically large
- * text returns `null` (skip the wire call entirely). Empty text with no
- * attachments is the documented clear.
+ * applies the size guard to text + attachments combined: attachments that
+ * don't fit are dropped greedily (in item order) so text and every
+ * attachment that fits still persist — one oversized image (the accepted
+ * image cap, `REFERENCE_IMAGE_MAX_BYTES` = 30 MiB, exceeds this draft
+ * guard; such images survive the send but not a reload) doesn't wipe the
+ * rest from the draft. A pathologically large text returns `null` (skip the
+ * wire call entirely). Empty text with no attachments is the documented
+ * clear.
  */
 export function buildNewWorkspaceDraftPayload(
   text: string,
@@ -137,16 +140,28 @@ export function buildNewWorkspaceDraftPayload(
   }
   const attachments = serializeDraftAttachments(contextItems);
   if (attachments.length === 0) return { text };
-  const serializedBytes = text.length + JSON.stringify(attachments).length;
-  if (serializedBytes > MAX_DRAFT_ATTACHMENTS_BYTES) {
-    logger.warn('Draft text + attachments exceed the size guard; persisting text only', {
-      serializedBytes,
+  // Greedy fit: keep each attachment whose serialized size still fits under
+  // the guard alongside the text and the attachments already kept.
+  const kept: DraftAttachment[] = [];
+  let usedBytes = text.length + 2; // '[' + ']' of the serialized array
+  let droppedCount = 0;
+  for (const attachment of attachments) {
+    const attachmentBytes = JSON.stringify(attachment).length + 1; // + separator
+    if (usedBytes + attachmentBytes > MAX_DRAFT_ATTACHMENTS_BYTES) {
+      droppedCount += 1;
+      continue;
+    }
+    kept.push(attachment);
+    usedBytes += attachmentBytes;
+  }
+  if (droppedCount > 0) {
+    logger.warn('Draft attachments exceed the size guard; persisting the ones that fit', {
       limit: MAX_DRAFT_ATTACHMENTS_BYTES,
       attachmentCount: attachments.length,
+      droppedCount,
     });
-    return { text };
   }
-  return { text, attachments };
+  return kept.length > 0 ? { text, attachments: kept } : { text };
 }
 
 /** Fire-and-forget `drafts.set` under the sentinel keys; failures log only.
@@ -257,64 +272,4 @@ export function clearNewWorkspaceDraft(drafts: DraftsClient): void {
   drafts.clear(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID).catch((err) => {
     logger.warn('drafts.clear failed', { error: String(err) });
   });
-}
-
-/**
- * Inline editor image (data-URL `src`) — structurally matches the TipTap
- * editor's `InlineImage` without importing from a `.svelte` module.
- */
-export interface DraftInlineImage {
-  src: string;
-  alt?: string;
-}
-
-/**
- * Project inline editor images into image context items so they ride the
- * draft's `attachments` array ({@link serializeDraftAttachments} persists
- * `imageData`/`imageMimeType`). Parsed via {@link parseImageDataUrl} — no
- * regex over the potentially multi-MB base64 payload, and non-image data
- * URLs (e.g. `data:application/pdf`) are skipped like non-data-URL images.
- */
-export function inlineImagesToContextItems(images: DraftInlineImage[]): ContextItem[] {
-  const items: ContextItem[] = [];
-  images.forEach((image, index) => {
-    const parsed = parseImageDataUrl(image.src);
-    if (!parsed) return;
-    items.push({
-      id: `inline-image-${index}`,
-      type: 'file',
-      label: image.alt || `image-${index + 1}`,
-      imageData: parsed.data,
-      imageMimeType: parsed.mimeType,
-    });
-  });
-  return items;
-}
-
-/**
- * Resolve the inline images a scheduled draft save should persist: the live
- * editor read when the editor is mounted (an empty live read is a deliberate
- * deletion and wins), otherwise the caller's retained fallback (restored
- * draft images / the last live read). Keeps saves scheduled while the editor
- * is unmounted — restore settling before the prompt step exists, or the step
- * being destroyed mid-create — from wiping the draft's image attachments.
- */
-export function resolveDraftImages(
-  editorImages: DraftInlineImage[] | null,
-  fallbackImages: DraftInlineImage[],
-): DraftInlineImage[] {
-  return editorImages ?? fallbackImages;
-}
-
-/**
- * Rebuild inline editor images (data URLs for `insertImage`) from restored
- * image context items; items without image data are skipped.
- */
-export function contextItemsToInlineImages(items: ContextItem[]): DraftInlineImage[] {
-  return items
-    .filter((item) => item.imageData && item.imageMimeType)
-    .map((item) => ({
-      src: `data:${item.imageMimeType};base64,${item.imageData}`,
-      alt: item.label,
-    }));
 }

@@ -19,11 +19,8 @@ import {
   NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
   buildNewWorkspaceDraftPayload,
   clearNewWorkspaceDraft,
-  contextItemsToInlineImages,
   createNewWorkspaceDraftSaver,
-  inlineImagesToContextItems,
   persistNewWorkspaceDraft,
-  resolveDraftImages,
   restoreNewWorkspaceDraft,
 } from '../new-workspace-draft';
 
@@ -214,6 +211,23 @@ describe('buildNewWorkspaceDraftPayload', () => {
     expect('attachments' in payload!).toBe(false);
   });
 
+  it('keeps the attachments that fit when one exceeds the size guard', () => {
+    // An image accepted at the 30 MiB reference cap exceeds the 20 MiB
+    // draft guard — it must be dropped alone, not take the fitting
+    // attachments down with it.
+    const oversizedItem: ContextItem = {
+      ...imageItem,
+      id: 'image-oversized',
+      imageData: 'a'.repeat(MAX_DRAFT_ATTACHMENTS_BYTES + 1),
+    };
+
+    const payload = buildNewWorkspaceDraftPayload('still saved', [oversizedItem, imageItem]);
+
+    expect(payload!.text).toBe('still saved');
+    expect(payload!.attachments).toHaveLength(1);
+    expect(payload!.attachments![0].id).toBe(imageItem.id);
+  });
+
   it('guards on text + attachments combined, not attachments alone', () => {
     const nearLimitItem: ContextItem = {
       ...imageItem,
@@ -298,113 +312,8 @@ describe('clearNewWorkspaceDraft', () => {
   });
 });
 
-describe('inline image ↔ context item conversion', () => {
-  const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
-
-  it('projects data-URL inline images into image context items for the draft attachments', () => {
-    expect(
-      inlineImagesToContextItems([
-        { src: PNG_DATA_URL, alt: 'screenshot.png' },
-        { src: 'https://example.com/remote.png', alt: 'skipped' },
-      ]),
-    ).toEqual([
-      {
-        id: 'inline-image-0',
-        type: 'file',
-        label: 'screenshot.png',
-        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
-        imageMimeType: 'image/png',
-      },
-    ]);
-  });
-
-  it('falls back to a positional label when the image has no alt', () => {
-    const [item] = inlineImagesToContextItems([{ src: PNG_DATA_URL }]);
-
-    expect(item.label).toBe('image-1');
-  });
-
-  it('excludes non-image data URLs (image/ mime enforced via parseImageDataUrl)', () => {
-    expect(
-      inlineImagesToContextItems([
-        { src: 'data:application/pdf;base64,JVBERi0xLjQ=', alt: 'not-an-image.pdf' },
-        { src: PNG_DATA_URL, alt: 'screenshot.png' },
-      ]),
-    ).toEqual([
-      {
-        id: 'inline-image-1',
-        type: 'file',
-        label: 'screenshot.png',
-        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
-        imageMimeType: 'image/png',
-      },
-    ]);
-  });
-
-  it('rebuilds data URLs from restored image context items, skipping non-image items', () => {
-    expect(contextItemsToInlineImages([imageItem, plainItem])).toEqual([
-      { src: PNG_DATA_URL, alt: 'screenshot.png' },
-    ]);
-  });
-
-  it('round-trips an inline image through serialize → deserialize shape', () => {
-    const items = inlineImagesToContextItems([{ src: PNG_DATA_URL, alt: 'screenshot.png' }]);
-    const roundTripped = contextItemsToInlineImages(items);
-
-    expect(roundTripped).toEqual([{ src: PNG_DATA_URL, alt: 'screenshot.png' }]);
-  });
-});
-
-describe('resolveDraftImages', () => {
-  const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
-  const restoredImages = [{ src: PNG_DATA_URL, alt: 'screenshot.png' }];
-
-  it('falls back to the retained images when the editor is unmounted (null live read)', () => {
-    expect(resolveDraftImages(null, restoredImages)).toEqual(restoredImages);
-  });
-
-  it('lets a mounted editor win, including an empty read (deliberate deletion)', () => {
-    expect(resolveDraftImages([], restoredImages)).toEqual([]);
-    const liveImages = [{ src: PNG_DATA_URL, alt: 'live.png' }];
-    expect(resolveDraftImages(liveImages, restoredImages)).toEqual(liveImages);
-  });
-
-  it('regression: a save scheduled while the editor is unmounted keeps the restored images in the drafts.set payload instead of wiping them', () => {
-    vi.useFakeTimers();
-    try {
-      const drafts = createMockDrafts();
-      const saver = createNewWorkspaceDraftSaver(drafts);
-
-      // Editor absent (restore settled before step 4, or the prompt step was
-      // destroyed mid-create): the live read is null, the fallback carries
-      // the restored draft images.
-      saver.schedule(
-        'restored prompt',
-        inlineImagesToContextItems(resolveDraftImages(null, restoredImages)),
-      );
-      vi.advanceTimersByTime(300);
-
-      expect(drafts.set).toHaveBeenCalledOnce();
-      expect(drafts.set).toHaveBeenCalledWith(
-        '__new-workspace__',
-        '__initializer__',
-        'restored prompt',
-        [
-          {
-            id: 'inline-image-0',
-            type: 'file',
-            label: 'screenshot.png',
-            imageData: 'iVBORw0KGgoAAAANSUhEUg==',
-            imageMimeType: 'image/png',
-          },
-        ],
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('regression: staged non-image attachments ride the drafts.set payload alongside inline images (a text save must not wipe them)', () => {
+describe('image + staged attachment save payload', () => {
+  it('regression: staged non-image attachments ride the drafts.set payload alongside image context items (a text save must not wipe them)', () => {
     vi.useFakeTimers();
     try {
       const drafts = createMockDrafts();
@@ -422,12 +331,9 @@ describe('resolveDraftImages', () => {
         sourcePath: '/home/user/report.pdf',
       };
 
-      // Mirrors the onboarding save payload: inline editor images + staged
+      // Mirrors the onboarding save payload: image context items + staged
       // non-image items in one attachments array.
-      saver.schedule('typed after staging a pdf', [
-        ...inlineImagesToContextItems(resolveDraftImages(null, restoredImages)),
-        stagedItem,
-      ]);
+      saver.schedule('typed after staging a pdf', [imageItem, stagedItem]);
       vi.advanceTimersByTime(300);
 
       expect(drafts.set).toHaveBeenCalledOnce();
@@ -437,7 +343,7 @@ describe('resolveDraftImages', () => {
         'typed after staging a pdf',
         [
           {
-            id: 'inline-image-0',
+            id: 'image-1721650000000-0',
             type: 'file',
             label: 'screenshot.png',
             imageData: 'iVBORw0KGgoAAAANSUhEUg==',

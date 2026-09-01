@@ -8,6 +8,7 @@ import {
   isFollowingBottom,
   isNativeScrollAnchoringActive,
   restoreScrollAnchor,
+  type FollowBottomState,
 } from '../smartScroll';
 import { safeDisclosureTransition } from '../../components/chat/disclosure-motion';
 
@@ -485,6 +486,23 @@ describe('followBottom policy', () => {
     expect(layoutReads).toBeGreaterThan(0);
     expect(scrollTop).toBe(600);
     expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('deduplicates unchanged geometry reports during repeated scroll events', () => {
+    const states: FollowBottomState[] = [];
+    const action = followBottom(container, {
+      follow: true,
+      onScrollStateChange: (state) => states.push(state),
+    });
+    runSettleTail();
+    const initialReports = states.length;
+
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scroll'));
+
+    expect(states).toHaveLength(initialReports);
     action.destroy();
   });
 
@@ -1001,6 +1019,7 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(scrollHeight - clientHeight);
     runSettleTail();
+    expect(scrollTop).toBe(scrollHeight - clientHeight);
     expect(animationFrames).toHaveLength(0);
     expect(followChanges).toEqual([]);
     action.destroy();
@@ -1017,6 +1036,7 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(611);
     runSettleTail();
+    expect(scrollTop).toBe(611);
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 13;
@@ -1025,6 +1045,47 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(624);
     runSettleTail();
+    expect(scrollTop).toBe(624);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces same-frame mutation bursts into one geometry read and scroll write', () => {
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    const clientReads = vi.spyOn(container, 'clientHeight', 'get');
+    const topReads = vi.spyOn(container, 'scrollTop', 'get');
+    const topWrites = vi.spyOn(container, 'scrollTop', 'set');
+    scrollHeight += 40;
+
+    fireMutation();
+    fireMutation();
+    fireMutation();
+
+    expect(animationFrames).toHaveLength(1);
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(clientReads).not.toHaveBeenCalled();
+    expect(topReads).not.toHaveBeenCalled();
+    runFrame();
+    expect(heightReads).toHaveBeenCalledOnce();
+    expect(clientReads).toHaveBeenCalledOnce();
+    expect(topReads).toHaveBeenCalledOnce();
+    expect(topWrites).toHaveBeenCalledOnce();
+    expect(scrollTop).toBe(640);
+    action.destroy();
+  });
+
+  it('does not restart settling or write scrollTop for unchanged mutation geometry', () => {
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const topWrites = vi.spyOn(container, 'scrollTop', 'set');
+
+    fireMutation();
+    fireMutation();
+    runFrame();
+
+    expect(topWrites).not.toHaveBeenCalled();
     expect(animationFrames).toHaveLength(0);
     action.destroy();
   });

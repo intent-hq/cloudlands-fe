@@ -14,6 +14,37 @@ let viewportGroup: ObserverGroup | null = null;
 
 const LAZY_TURN_PRELOAD_ROOT_MARGIN = '100% 0px';
 
+let deliveryDepth = 0;
+const deliveryEndFlushes = new Set<() => void>();
+
+/**
+ * Defers `flush` until the current observer delivery finishes dispatching all
+ * of its entries, so a consumer receiving k per-entry callbacks in one
+ * delivery can coalesce its end-of-batch work into a single flush (deduped by
+ * function identity; still synchronous within the delivery task, i.e. before
+ * paint). Returns false — without scheduling — when no delivery is in
+ * progress; the caller flushes immediately instead.
+ */
+export function scheduleLazyTurnDeliveryFlush(flush: () => void): boolean {
+  if (deliveryDepth === 0) return false;
+  deliveryEndFlushes.add(flush);
+  return true;
+}
+
+function dispatchDelivery(run: () => void): void {
+  deliveryDepth += 1;
+  try {
+    run();
+  } finally {
+    deliveryDepth -= 1;
+    if (deliveryDepth === 0 && deliveryEndFlushes.size > 0) {
+      const flushes = [...deliveryEndFlushes];
+      deliveryEndFlushes.clear();
+      for (const flush of flushes) flush();
+    }
+  }
+}
+
 function createGroup(root: HTMLElement | null): ObserverGroup {
   const callbacks = new Map<Element, VisibilityCallback>();
   const group: ObserverGroup = {
@@ -45,7 +76,9 @@ function createGroup(root: HTMLElement | null): ObserverGroup {
             (group.order.get(b.target) ?? Number.MAX_SAFE_INTEGER)
           );
         });
-        for (const entry of orderedEntries) callbacks.get(entry.target)?.(entry.isIntersecting);
+        dispatchDelivery(() => {
+          for (const entry of orderedEntries) callbacks.get(entry.target)?.(entry.isIntersecting);
+        });
       },
       // Materialize one viewport before entry so cached-height correction and
       // late content layout settle outside the visible reading area.

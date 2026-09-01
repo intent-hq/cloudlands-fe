@@ -51,6 +51,7 @@ import {
   AuthRejectedError,
   candidateWssHosts,
   normalizeFingerprint,
+  pinnedTlsConnect,
   PinMismatchError,
   type BackendConnectionConfig,
 } from './backend-connection';
@@ -256,9 +257,14 @@ interface StreamState {
  * the JSON-RPC socket's auth posture: plain `ws` reuses the configured URL
  * with the `/tunnel` path; pinned `wss` sends the bearer token on the upgrade
  * (header + `?token=` fallback) and verifies the presented cert's fingerprint
- * against the pin before any data flows (mismatch → {@link PinMismatchError},
- * HTTP 401/403 → {@link AuthRejectedError}). UDS/TCP transports are local —
- * a tunnel is meaningless there — and are rejected.
+ * against the pin at the TLS HANDSHAKE via {@link pinnedTlsConnect} — the
+ * upgrade request (carrying the token) stays corked until the pin matches,
+ * and a mismatch destroys the socket with a {@link PinMismatchError} before a
+ * single application byte reaches the wire (monorepo#4072: the tunnel arm of
+ * the token-before-trust leak). HTTP 401/403 → {@link AuthRejectedError}; the
+ * `upgrade`/`unexpected-response` pin checks are kept as defense-in-depth
+ * behind the handshake-level pin. UDS/TCP transports are local — a tunnel is
+ * meaningless there — and are rejected.
  */
 function createTunnelSocket(config: BackendConnectionConfig): TunnelSocketLike {
   if (config.transport === 'ws') {
@@ -281,6 +287,11 @@ function createTunnelSocket(config: BackendConnectionConfig): TunnelSocketLike {
   const ws = new NodeWebSocket(url.toString(), {
     rejectUnauthorized: false,
     headers: { Authorization: `Bearer ${token}` },
+    // ws types createConnection as `typeof net.createConnection` but always
+    // invokes it with a single options object (websocket.js `initAsClient`),
+    // which is what pinnedTlsConnect consumes.
+    createConnection: ((connectOptions: tls.ConnectionOptions) =>
+      pinnedTlsConnect(connectOptions, expected)) as unknown as typeof net.createConnection,
   });
   const peerFingerprint = (response: IncomingMessage): string => {
     const socket = response.socket as tls.TLSSocket;

@@ -599,7 +599,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(details(container)).toBeNull();
   });
 
-  it('collapses the expanded terminal group when its message stops being conversation-final', async () => {
+  it('keeps the expanded terminal group expanded when its message stops being conversation-final', async () => {
     vi.useFakeTimers();
     try {
       const { container, rerender } = render(ResponseGroup, {
@@ -615,11 +615,9 @@ describe('ResponseGroup - collapse state model', () => {
       expect(btn.getAttribute('aria-expanded')).toBe('true');
 
       await rerender({ isLastConversationMessage: false });
-      await vi.advanceTimersByTimeAsync(799);
+      await vi.advanceTimersByTimeAsync(801);
       expect(btn.getAttribute('aria-expanded')).toBe('true');
-      await vi.advanceTimersByTimeAsync(1);
-      expect(btn.getAttribute('aria-expanded')).toBe('false');
-      expect(details(container)).toBeNull();
+      expect(details(container)).not.toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -1213,9 +1211,7 @@ describe('MessageContent - top-level response rows', () => {
       expect(previewChild).not.toBeNull();
       expect(previewChild.className).not.toMatch(/\bpt-/);
 
-      await fireEvent.click(
-        container.querySelector('[data-testid="response-group-disclosure"]')!,
-      );
+      await fireEvent.click(container.querySelector('[data-testid="response-group-disclosure"]')!);
       const details = await waitFor(() => {
         const node = container.querySelector('[data-operational-expanded-content]');
         expect(node).toBeTruthy();

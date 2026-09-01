@@ -16,6 +16,7 @@ afterEach(() => {
   setDraggedPane(null);
   document.body.classList.remove('panel-resizing');
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe('editorial panel resize handles', () => {
@@ -77,9 +78,20 @@ describe('editorial panel resize handles', () => {
     ).toContain('data-combined-panel-divider-border');
   });
 
+  // Scrollbar/hit-area interplay (the clipped leading strip must let clicks
+  // reach a neighboring panel's native scrollbar) is asserted behaviorally in
+  // panel-resize-handle-hit-area.ct.spec.ts via document.elementFromPoint.
+
   it('keeps a vertical 16px resize target while reporting horizontal drag deltas', async () => {
     const onResize = vi.fn();
     const onResizeEnd = vi.fn();
+    let scheduledResize: FrameRequestCallback | undefined;
+    const requestFrame = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        scheduledResize = callback;
+        return 1;
+      });
     render(PanelSplitHandle, {
       props: { direction: 'horizontal', onResize, onResizeEnd },
     });
@@ -91,26 +103,35 @@ describe('editorial panel resize handles', () => {
     await fireEvent.mouseDown(handle, { clientX: 20 });
     expect(document.body.classList.contains('panel-resizing')).toBe(true);
     await fireEvent.mouseMove(window, { clientX: 29 });
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    expect(onResize).toHaveBeenCalledWith(9);
+    await fireEvent.mouseMove(window, { clientX: 34 });
+    expect(requestFrame).toHaveBeenCalledOnce();
+    expect(onResize).not.toHaveBeenCalled();
+    scheduledResize?.(0);
+    expect(onResize).toHaveBeenCalledWith(14);
     await fireEvent.mouseUp(window);
     expect(onResizeEnd).toHaveBeenCalledOnce();
     expect(document.body.classList.contains('panel-resizing')).toBe(false);
   });
 
-  it('applies commit-critical pointer deltas before a fast mouse-up', async () => {
+  it('flushes a frame-coalesced pointer delta before a fast mouse-up commit', async () => {
     const onResize = vi.fn();
+    const onResizeEnd = vi.fn();
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame');
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 7);
     render(PanelSplitHandle, {
-      props: { direction: 'horizontal', immediateResize: true, onResize },
+      props: { direction: 'horizontal', onResize, onResizeEnd },
     });
 
     const handle = screen.getByRole('button', { name: 'Resize panel' });
     await fireEvent.mouseDown(handle, { clientX: 20 });
     await fireEvent.mouseMove(window, { clientX: 49 });
 
-    expect(onResize).toHaveBeenCalledWith(29);
+    expect(onResize).not.toHaveBeenCalled();
     await fireEvent.mouseUp(window);
+    expect(cancelFrame).toHaveBeenCalledWith(7);
     expect(onResize).toHaveBeenCalledOnce();
+    expect(onResize).toHaveBeenCalledWith(29);
+    expect(onResizeEnd).toHaveBeenCalledOnce();
   });
 
   it('routes handle drops only to fixed horizontal column insertion', async () => {

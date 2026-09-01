@@ -505,6 +505,93 @@ describe('AIBehaviorEditor actions', () => {
     expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
   });
 
+  it('preserves a newline typed into global instructions across the debounced auto-save', async () => {
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Original instructions');
+
+    vi.useFakeTimers();
+    try {
+      mocks.updateUserRule.mockClear();
+      await fireEvent.input(textarea, { target: { value: '\nOriginal instructions\n' } });
+
+      // Advance past the 1s debounce so the auto-save runs and settles.
+      await vi.advanceTimersByTimeAsync(1100);
+      flushSync();
+
+      // A whitespace-only diff trims to the already-persisted value: no
+      // redundant wire call is sent…
+      expect(mocks.updateUserRule).not.toHaveBeenCalled();
+      // …and the save must not rewrite the textarea mid-edit.
+      expect(textarea.value).toBe('\nOriginal instructions\n');
+      // Marked clean/saved consistently: the saved indicator shows and no
+      // phantom "Undo changes" button remains.
+      expect(
+        within(promptColumn).getByTestId('agent-rules-saved-indicator').className,
+      ).toContain('opacity-100');
+      expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coalesces overlapping auto-saves so the backend converges to the latest text', async () => {
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Original instructions');
+
+    vi.useFakeTimers();
+    try {
+      mocks.updateUserRule.mockClear();
+      const deferreds: Array<(result: { success: boolean }) => void> = [];
+      mocks.updateUserRule.mockImplementation(
+        () =>
+          new Promise<{ success: boolean }>((resolve) => {
+            deferreds.push(resolve);
+          }),
+      );
+
+      // Save A starts and stays in flight.
+      await fireEvent.input(textarea, { target: { value: 'draft v1' } });
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(1);
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith('base-system-prompt', 'draft v1');
+
+      // Edit while A is in flight; the debounce requests save B, but
+      // single-flight must not start a concurrent request.
+      await fireEvent.input(textarea, { target: { value: 'draft v2\n' } });
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(1);
+
+      // A resolves carrying the older payload: the editor must not report
+      // "saved" and must immediately re-send the latest trimmed text.
+      deferreds[0]({ success: true });
+      await vi.advanceTimersByTimeAsync(0);
+      flushSync();
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(2);
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith('base-system-prompt', 'draft v2');
+      const savedIndicator = within(promptColumn).getByTestId('agent-rules-saved-indicator');
+      expect(savedIndicator.className).toContain('opacity-0');
+
+      // The trailing save resolves: persisted value matches the live text.
+      deferreds[1]({ success: true });
+      await vi.advanceTimersByTimeAsync(0);
+      flushSync();
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(2);
+      expect(textarea.value).toBe('draft v2\n');
+      expect(savedIndicator.className).toContain('opacity-100');
+      // hasChanges stays consistent: content differs from the loaded original.
+      expect(within(promptColumn).getByTestId('agent-rules-header')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      mocks.updateUserRule.mockReset();
+    }
+  });
+
   it('expands advanced specialist options', async () => {
     mocks.specialists$.set([specialist]);
     render(AIBehaviorEditor, { activeView: { type: 'specialist', id: 'implementor' } });

@@ -8,12 +8,21 @@
    * reads (PROTOCOL §5.6, v6.15). Secondary roots are read-only: no staging,
    * commit, push, or PR affordances.
    */
-  import { gitClient } from '$features/git/git.client';
-  import type { CommitFile } from '$features/file-tracking/types';
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
-  import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    openWorkspaceCommitChangeset,
+    openWorkspaceLocalChanges,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
-  import type { GitStatus, CommitInfo, WorkspaceId } from '$shared/types';
+  import {
+    emptySecondaryRootState,
+    selectSecondaryRootGitRoots,
+  } from '$store/renderer/slices/git/git-selectors';
+  import {
+    loadSecondaryRootCommitFiles,
+    loadSecondaryRootGit,
+  } from '$store/renderer/slices/git/git-slice';
+  import type { CommitInfo } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
@@ -22,10 +31,9 @@
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { appClient } from '$lib/client';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
-  import { logger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
     faArrowsRotate,
     faChevronDown,
@@ -48,104 +56,35 @@
   // absent while unknown — the boundary the commit list splits at.
   const registeredCommitSha = $derived(entry.gitRoot?.registeredCommitSha ?? '');
 
-  let status = $state<GitStatus | null>(null);
-  let commits = $state<CommitInfo[]>([]);
-  let nextToken = $state<string | undefined>(undefined);
-  let loading = $state(false);
-  let loadingMore = $state(false);
+  // svelte-ignore state_referenced_locally
+  const rootGitRoots$ = selectSecondaryRootGitRoots(workspaceId);
+  const rootGit = $derived($rootGitRoots$[gitRootId] ?? emptySecondaryRootState);
+  const status = $derived(rootGit.status);
+  const commits = $derived(rootGit.commits);
+  const nextToken = $derived(rootGit.nextToken);
+  const loading = $derived(rootGit.loading);
+  const loadError = $derived(rootGit.error);
+  const commitFileCache = $derived(rootGit.commitFiles);
   let olderExpanded = $state(false);
-  let loadError = $state<string | null>(null);
-  // Per-commit expand state + lazily-fetched file lists, mirroring the
-  // primary CommitsTimeline rows: the `git.commits` list payload is
-  // metadata-only (PROTOCOL §5.6), so files are fetched via
-  // `git.commitDetails` (gitRootId-scoped) on first expand. `null` marks an
-  // in-flight fetch; it is cleared on failure so a later expand retries.
+  // Per-commit expand state. Root-scoped commit files are loaded by the Git
+  // read saga so this component remains a selector/action consumer.
   let expandedCommits = $state<Set<string>>(new Set());
-  let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
-  // Monotonic request epoch: only the most recent load may apply its results,
-  // so an older in-flight response can't overwrite a newer refresh.
-  let requestEpoch = 0;
 
   const COMMIT_LIMIT = 30;
 
-  async function load(wsId: string, rootId: string) {
-    const epoch = ++requestEpoch;
-    loading = true;
-    loadError = null;
-    const [statusResult, historyResult] = await Promise.all([
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- interaction-gated read-only per-root browse (monorepo#2053); secondary-root git state is transient view data, not Redux domain state
-      gitClient.getStatus(wsId as WorkspaceId, { gitRootId: rootId }),
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- same read-only per-root browse as above
-      gitClient.getHistory(wsId as WorkspaceId, COMMIT_LIMIT, { gitRootId: rootId }),
-    ]);
-    // Ignore stale responses: superseded by a newer load, or the selected
-    // root/workspace changed while this one was in flight.
-    if (epoch !== requestEpoch) return;
-    if (rootId !== gitRootId || wsId !== workspaceId) return;
-    if (statusResult.ok) {
-      status = statusResult.data;
-    } else {
-      status = null;
-      loadError = statusResult.error;
-    }
-    if (historyResult.ok) {
-      commits = historyResult.data.items;
-      nextToken = historyResult.data.nextToken;
-    } else {
-      // A commits failure must surface as the error state, not a
-      // plausible-but-wrong "No commits" empty state.
-      commits = [];
-      nextToken = undefined;
-      loadError = loadError ?? historyResult.error;
-    }
-    loading = false;
-  }
-
-  // Next `git.commits` page (same gitRootId scope), appended to the loaded
-  // list — used when the registration boundary is beyond the loaded page.
-  async function loadMore(wsId: string, rootId: string) {
-    const token = nextToken;
-    if (!token || loadingMore) return;
-    const epoch = requestEpoch;
-    loadingMore = true;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- same read-only per-root browse as load()
-    const result = await gitClient.getHistory(wsId as WorkspaceId, COMMIT_LIMIT, {
-      gitRootId: rootId,
-      nextToken: token,
-    });
-    // The request is settled either way; clear the flag before the stale
-    // guards so a discarded response can't wedge the affordance.
-    loadingMore = false;
-    if (epoch !== requestEpoch) return;
-    if (rootId !== gitRootId || wsId !== workspaceId) return;
-    // A concurrent refresh may have replaced the page this token came from
-    // (it bumps the epoch before loadMore captures it, so the epoch guard
-    // alone can't catch that interleave).
-    if (token !== nextToken) return;
-    if (result.ok) {
-      // De-dup on append: the daemon token is an offset skip token, so a
-      // commit landing between pages shifts offsets and repeats the tail —
-      // duplicate hashes would crash the keyed {#each}.
-      const seen = new Set(commits.map((c) => c.hash));
-      commits = [...commits, ...result.data.items.filter((c) => !seen.has(c.hash))];
-      nextToken = result.data.nextToken;
-    } else {
-      loadError = result.error;
-    }
+  function load() {
+    appStore.dispatch(
+      loadSecondaryRootGit(workspaceId, gitRootId, registeredCommitSha || undefined, COMMIT_LIMIT),
+    );
   }
 
   // Refetch whenever the selected root (or workspace) changes
   $effect(() => {
     const wsId = workspaceId;
     const rootId = gitRootId;
-    status = null;
-    commits = [];
-    nextToken = undefined;
     olderExpanded = false;
-    loadingMore = false;
     expandedCommits = new Set();
-    commitFileCache = {};
-    if (wsId && rootId) load(wsId, rootId);
+    if (wsId && rootId) load();
   });
 
   // Open the commit's changeset in the changes tab, scoped to this root.
@@ -161,49 +100,11 @@
       newSet.delete(commit.hash);
     } else {
       newSet.add(commit.hash);
-      fetchCommitFilesIfNeeded(commit);
+      if (commitFileCache[commit.hash] === null) {
+        appStore.dispatch(loadSecondaryRootCommitFiles(workspaceId, gitRootId, commit.hash));
+      }
     }
     expandedCommits = newSet;
-  }
-
-  function clearCommitFileMarker(hash: string) {
-    if (commitFileCache[hash] === null) {
-      const { [hash]: _, ...rest } = commitFileCache;
-      commitFileCache = rest;
-    }
-  }
-
-  // Lazy per-commit file fetch on first expand — `git.commitDetails`
-  // (PROTOCOL §5.6) scoped by gitRootId. `commitDetails` folds transport
-  // errors to `null`; the row simply shows no files on failure and a later
-  // expand retries (the in-flight marker is cleared on both failure paths).
-  async function fetchCommitFiles(wsId: string, rootId: string, hash: string) {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- same read-only per-root browse as load()
-    const result = await appClient.git.commitDetails(wsId, hash, { gitRootId: rootId });
-    // The root/workspace switch $effect resets the cache; drop a stale
-    // response so it can't repopulate the new root's cache.
-    if (rootId !== gitRootId || wsId !== workspaceId) return;
-    if (!result) {
-      clearCommitFileMarker(hash);
-      return;
-    }
-    const files: CommitFile[] =
-      result.fileDetails.length > 0
-        ? result.fileDetails
-        : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
-    commitFileCache = { ...commitFileCache, [hash]: files };
-  }
-
-  function fetchCommitFilesIfNeeded(commit: CommitInfo) {
-    if (commitFileCache[commit.hash] !== undefined || !workspaceId || !gitRootId) return;
-    const wsId = workspaceId;
-    const rootId = gitRootId;
-    commitFileCache = { ...commitFileCache, [commit.hash]: null };
-    fetchCommitFiles(wsId, rootId, commit.hash).catch((error) => {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- log call, not a data fetch ('client-logger' trips the import-source heuristic)
-      logger.error('Failed to fetch commit details', { hash: commit.hash, error });
-      if (rootId === gitRootId && wsId === workspaceId) clearCommitFileMarker(commit.hash);
-    });
   }
 
   // Split at the registration boundary: commits strictly newer than
@@ -216,6 +117,25 @@
   );
   const recentCommits = $derived(boundaryIndex >= 0 ? commits.slice(0, boundaryIndex) : commits);
   const olderCommits = $derived(boundaryIndex >= 0 ? commits.slice(boundaryIndex) : []);
+
+  // The workspace summary counts each root-relative path once across the
+  // working tree and commits made after this root was registered.
+  const summaryReady = $derived(
+    !loading && recentCommits.every((commit) => commit.hash in commitFileCache),
+  );
+  const changedFileCount = $derived.by(() => {
+    const paths = new Set(status?.files.map((file) => file.path) ?? []);
+    if (summaryReady) {
+      for (const commit of recentCommits) {
+        for (const file of commitFileCache[commit.hash] ?? []) paths.add(file.path);
+      }
+    }
+    return paths.size;
+  });
+
+  function openAllChanges() {
+    appStore.dispatch(openWorkspaceLocalChanges(workspaceId, { gitRootId }));
+  }
 
   // Prefer the freshly loaded status over the cached git-root list entry so
   // a refresh after a branch checkout shows the new branch immediately.
@@ -269,7 +189,7 @@
     <button
       type="button"
       class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
-      onclick={() => load(workspaceId, gitRootId)}
+      onclick={load}
       disabled={loading}
       title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
     >
@@ -288,6 +208,21 @@
       {m.workspace_sidebarChanges_rootLoadFailed_error()}
     </p>
   {:else}
+    {#if !loading && summaryReady && changedFileCount > 0}
+      <Button
+        type="button"
+        variant="plain"
+        class="h-auto w-full cursor-pointer justify-start rounded-sm border border-transparent px-2 py-1.5 text-left text-subtle"
+        onclick={openAllChanges}
+        data-testid="secondary-root-all-changes"
+      >
+        {changedFileCount === 1
+          ? m.workspace_sidebarChanges_filesChangedInSpace_one()
+          : m.workspace_sidebarChanges_filesChangedInSpace_many({
+              count: formatInteger(changedFileCount),
+            })}
+      </Button>
+    {/if}
     <!-- Changed files (read-only) -->
     <div>
       <p class="text-ui text-subtle mb-1">
@@ -372,10 +307,10 @@
             variant="plain"
             class="h-auto w-full !py-1 text-ui text-ghost hover:text-muted-foreground"
             data-testid="secondary-root-show-more"
-            disabled={loadingMore}
-            onclick={() => loadMore(workspaceId, gitRootId)}
+            disabled={loading}
+            onclick={load}
           >
-            {#if loadingMore}
+            {#if loading}
               <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
             {/if}
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}

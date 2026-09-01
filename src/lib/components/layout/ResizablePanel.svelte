@@ -920,7 +920,7 @@
         type="button"
         class="absolute top-0 {side === 'left'
           ? '-right-2'
-          : '-left-2'} app-resize-handle h-full w-4 z-30 {handleClassName}"
+          : '-left-2'} app-resize-handle resizable-panel-handle h-full w-4 z-30 {handleClassName}"
         data-resize-axis="x"
         data-resize-indicator={showHandleIndicator ? 'short' : undefined}
         data-resizing={isResizing}
@@ -950,7 +950,7 @@
         type="button"
         class="{edge === 'top'
           ? 'absolute -top-2'
-          : 'absolute -bottom-2'} app-resize-handle left-0 right-0 h-4 z-30 {handleClassName}"
+          : 'absolute -bottom-2'} app-resize-handle resizable-panel-handle left-0 right-0 h-4 z-30 {handleClassName}"
         data-resize-axis="y"
         data-resizing={isResizing}
         onmousedown={startResize}
@@ -967,3 +967,32 @@
     {@render children?.()}
   </div>
 {/if}
+
+<style>
+  /* The 16px handle is centered on the panel boundary, so its leading half
+     (left for the x-axis handle, top for the y-axis handle) overhangs the
+     edge where an adjacent scroll container's native 8px scrollbar renders —
+     the panel's own trailing edge for side="left"/edge="bottom", the
+     neighbor's trailing edge for side="right"/edge="top". Clip that half out
+     of hit-testing so scrollbar clicks land on the scrollbar (same approach
+     as PanelSplitHandle.svelte); the trailing half keeps the forgiving
+     target. Note inset() sides are physical, not logical: under RTL the
+     leading edge would flip to the right, but all shipped locales are LTR. */
+  .resizable-panel-handle[data-resize-axis='x'] {
+    clip-path: inset(0 0 0 8px);
+  }
+
+  /* Nudge the 2px indicator off the boundary center so the clip leaves it
+     fully visible instead of a 1px sliver. */
+  .resizable-panel-handle.app-resize-handle[data-resize-axis='x']::before {
+    left: calc(50% + 1px);
+  }
+
+  .resizable-panel-handle[data-resize-axis='y'] {
+    clip-path: inset(8px 0 0 0);
+  }
+
+  .resizable-panel-handle.app-resize-handle[data-resize-axis='y']::before {
+    top: calc(50% + 1px);
+  }
+</style>

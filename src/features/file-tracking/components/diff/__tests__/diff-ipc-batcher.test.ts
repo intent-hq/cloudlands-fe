@@ -161,6 +161,39 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
   });
 
+  it('scopes a secondary-root working diff and normalizes its absolute path', async () => {
+    mockDaemon({
+      diffs: [{ path: 'src/a.ts', hunks: [HUNK] }],
+      showFiles: { ':0:src/a.ts': 'old a' },
+      files: { '/workspace/packages/sub/src/a.ts': 'new a' },
+    });
+
+    const promise = batchedGitDiff(
+      'ws-1',
+      false,
+      '/workspace/packages/sub/src/a.ts',
+      { gitRootId: 'root-9', gitRootPath: '/workspace/packages/sub' },
+    );
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toMatchObject({ file: 'src/a.ts' });
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      gitRootId: 'root-9',
+      paths: ['src/a.ts'],
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-1',
+      filePath: 'src/a.ts',
+      ref: ':0',
+      gitRootId: 'root-9',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+      workspaceId: 'ws-1',
+      path: '/workspace/packages/sub/src/a.ts',
+    });
+  });
+
   it('keeps every diff and file read on explicit workspace B when active workspace is A', async () => {
     storeState.workspaces = [
       { id: 'ws-a', worktreePath: '/workspace-a' },

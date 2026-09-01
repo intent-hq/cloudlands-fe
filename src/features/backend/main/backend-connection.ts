@@ -208,24 +208,46 @@ export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   return out;
 }
 
+/** One observed per-host certificate-pin mismatch (#1746 race surfacing). */
+export interface HostCertMismatch {
+  /** Candidate host that presented the mismatching certificate. */
+  host: string;
+  /** Pinned fingerprint (colon-hex uppercase). */
+  expected: string;
+  /** Fingerprint the peer actually presented (colon-hex uppercase). */
+  actual: string;
+}
+
 /**
  * Raised when a `wss` peer presents a certificate whose SHA-256 fingerprint
  * does not match the pinned value (PROTOCOL §1.2). Distinct from a generic
  * connect failure so the switch/UI layer can surface the "certificate changed"
- * failure modal instead of a transient reconnect.
+ * failure modal instead of a transient reconnect. When raised by the
+ * multi-host race, `mismatches` carries every per-host mismatch observed;
+ * `expected`/`actual` mirror the first one so consumers that predate the
+ * aggregation keep working unchanged.
  */
 export class PinMismatchError extends Error {
   /** Pinned fingerprint (colon-hex uppercase). */
   readonly expected: string;
   /** Fingerprint the peer actually presented (colon-hex uppercase). */
   readonly actual: string;
-  constructor(expected: string, actual: string) {
+  /**
+   * Every per-host mismatch observed. Empty for single-host errors raised
+   * below the race layer (where the host is not known).
+   */
+  readonly mismatches: HostCertMismatch[];
+  constructor(expected: string, actual: string, mismatches: HostCertMismatch[] = []) {
+    const hosts = mismatches.map((m) => m.host).join(', ');
     super(
-      `certificate fingerprint mismatch: expected ${expected || '(none)'}, got ${actual || '(none)'}`,
+      `certificate fingerprint mismatch: expected ${expected || '(none)'}, got ${actual || '(none)'}${
+        hosts ? ` (hosts: ${hosts})` : ''
+      }`,
     );
     this.name = 'PinMismatchError';
     this.expected = expected;
     this.actual = actual;
+    this.mismatches = mismatches;
   }
 }
 
@@ -282,14 +304,19 @@ function peerFingerprint(response: IncomingMessage): string {
 /**
  * Connect the pinned `wss` transport: open the TLS WebSocket with
  * `rejectUnauthorized: false` (the daemon's cert is self-signed, PROTOCOL
- * §1.2) and **manually verify** the presented cert's fingerprint against the
- * config pin on the upgrade handshake — before any application data flows. A
- * mismatch destroys the stream with a {@link PinMismatchError}; a match hands
- * the connection to the shared {@link WebSocketDuplex} newline framing adapter.
- * The bearer token is sent via the `Authorization` header (PROTOCOL §2.1) with
- * a `?token=` query fallback. An upgrade rejected with HTTP 401/403 (bad token
- * / WS API disabled, PROTOCOL §2.1) destroys the stream with a distinct
- * {@link AuthRejectedError} instead of a generic transport error.
+ * §1.2) and verify the presented cert's fingerprint against the config pin at
+ * the TLS HANDSHAKE via {@link pinnedTlsConnect} — the upgrade request
+ * (carrying the bearer token) stays corked until the pin matches, and a
+ * mismatch destroys the socket with a {@link PinMismatchError} before a
+ * single application byte reaches the wire (monorepo#4055: the steady-state
+ * arm of the token-before-trust leak, every reconnect re-presents the token).
+ * A match hands the connection to the shared {@link WebSocketDuplex} newline
+ * framing adapter. The bearer token is sent via the `Authorization` header
+ * (PROTOCOL §2.1) with a `?token=` query fallback. An upgrade rejected with
+ * HTTP 401/403 (bad token / WS API disabled, PROTOCOL §2.1) destroys the
+ * stream with a distinct {@link AuthRejectedError} instead of a generic
+ * transport error. The `upgrade`/`unexpected-response` pin checks are kept as
+ * defense-in-depth behind the handshake-level pin.
  */
 function createWssSocket(config: BackendConnectionConfig): Duplex {
   const { host, port, token, fingerprint } = config;
@@ -301,6 +328,11 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
   const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
     rejectUnauthorized: false,
     headers: { Authorization: `Bearer ${token}` },
+    // ws types createConnection as `typeof net.createConnection` but always
+    // invokes it with a single options object (websocket.js `initAsClient`),
+    // which is what pinnedTlsConnect consumes.
+    createConnection: ((connectOptions: tls.ConnectionOptions) =>
+      pinnedTlsConnect(connectOptions, expected)) as unknown as typeof net.createConnection,
   });
   const duplex = new WebSocketDuplex(ws);
   ws.on('upgrade', (response: IncomingMessage) => {
@@ -362,18 +394,22 @@ function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duple
  * (with an injectable per-attempt factory) so unit tests can drive it with
  * in-memory fake sockets.
  *
- * Semantics (see #1746 acceptance criteria):
+ * Semantics (see #1746 acceptance criteria; iOS `raceHosts` model):
  * - The first candidate to emit `connect` wins; all others are destroyed.
- * - Before a winner settles, a {@link PinMismatchError} on ANY candidate fails
- *   the whole race with that error — a cert mismatch is surfaced as a cert
- *   error, never silently skipped as "unreachable" (no fallback onto other
- *   candidates).
+ * - A {@link PinMismatchError} on a candidate counts that candidate out but
+ *   does NOT fail the race — the remaining candidates keep racing, so one
+ *   stale IP now owned by a foreign pinned daemon cannot block a candidate
+ *   presenting the right cert. Every observed mismatch is recorded per host
+ *   and emitted as a non-fatal `'pin-mismatch'` event ({@link HostCertMismatch})
+ *   on the facade — both before and after a winner settles — so a mismatch on
+ *   a losing candidate stays observable instead of being log-only.
  * - Once a pin-verified winner has settled, the winner takes precedence: a
- *   late mismatch on a losing candidate is logged and discarded rather than
- *   tearing down the established (itself pin-verified) connection. This
- *   mirrors iOS `raceHosts` (first success cancels the task group) and keeps
- *   one stale IP now owned by a foreign pinned daemon from blocking a
- *   connection that has a valid candidate.
+ *   late mismatch on a losing candidate is emitted/logged, never tears down
+ *   the established (itself pin-verified) connection.
+ * - If no candidate wins and at least one mismatch was observed, the facade
+ *   errors with a {@link PinMismatchError} aggregating every per-host
+ *   mismatch — preferred over the generic last failure (including on race
+ *   timeout) so a cert problem is surfaced as a cert error.
  * - If every candidate fails without a pin mismatch, the facade errors with
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
@@ -389,18 +425,38 @@ export function raceDuplexSockets(
   let pendingCount = attempts.length;
   let lastError: Error | null = null;
   const candidates: Duplex[] = [];
+  const candidateHosts = new Map<Duplex, string>();
+  const mismatches: HostCertMismatch[] = [];
+  const reportedMismatchHosts = new Set<string>();
+
+  // Record one mismatch per host: fold it into the aggregate while the race
+  // is undecided (including a late mismatch on an already-counted candidate,
+  // e.g. one that first failed generically), and always emit the non-fatal
+  // event. The per-host dedupe keeps a candidate that surfaces the same
+  // mismatch twice from double-reporting.
+  const recordMismatch = (host: string, error: PinMismatchError): void => {
+    if (reportedMismatchHosts.has(host)) return;
+    reportedMismatchHosts.add(host);
+    const info: HostCertMismatch = { host, expected: error.expected, actual: error.actual };
+    if (!settled) mismatches.push(info);
+    facade.emit('pin-mismatch', info);
+  };
 
   // Tear a losing/failed candidate down without leaving it listener-less: a
   // destroyed-but-alive socket can still emit async 'error' events, and a
   // zero-listener 'error' is an uncaught exception in the main process. A
-  // late pin mismatch is logged so it is observed, never fully silent.
+  // late pin mismatch is logged AND recorded so a foreign cert on a
+  // torn-down candidate stays observable (and, pre-settlement, aggregated).
   const teardownCandidate = (candidate: Duplex): void => {
     candidate.removeAllListeners();
     candidate.on('error', (error: Error) => {
       if (error instanceof PinMismatchError) {
-        raceLogger.warn('pin mismatch on a losing race candidate (winner already settled)', {
+        const host = candidateHosts.get(candidate) ?? '';
+        raceLogger.warn('late pin mismatch on a torn-down race candidate', {
+          host,
           error: error.message,
         });
+        recordMismatch(host, error);
       }
     });
     candidate.destroy();
@@ -442,34 +498,42 @@ export function raceDuplexSockets(
     facade.destroy(error);
   };
 
+  // Prefer surfacing observed cert mismatches over a generic failure when the
+  // race produces no winner (#1746): the aggregate carries every per-host
+  // mismatch, with expected/actual mirroring the first one.
+  const preferCertError = (fallback: Error): Error =>
+    mismatches.length > 0
+      ? new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches])
+      : fallback;
+
   const timer = setTimeout(
-    () => failRace(new Error(`connection race timed out after ${timeoutMs}ms`)),
+    () => failRace(preferCertError(new Error(`connection race timed out after ${timeoutMs}ms`))),
     timeoutMs,
   );
   timer.unref?.();
 
-  const countCandidateFailure = (error: Error): void => {
+  const countCandidateFailure = (host: string, error: Error): void => {
     if (settled) return;
-    // A pinned-cert mismatch on any candidate before a winner settles fails
-    // the whole race — never silently skipped as unreachable (#1746
-    // acceptance).
+    // A pinned-cert mismatch counts this candidate out but keeps the race
+    // going (#1746): record it per host and emit the non-fatal event so it
+    // stays observable even if another candidate wins.
     if (error instanceof PinMismatchError) {
-      failRace(error);
-      return;
+      recordMismatch(host, error);
+    } else {
+      lastError = error;
     }
-    lastError = error;
     pendingCount -= 1;
     if (pendingCount <= 0) {
-      failRace(lastError);
+      failRace(preferCertError(lastError ?? new Error('no candidate hosts to connect')));
     }
   };
 
-  const onCandidateFailure = (candidate: Duplex, error: Error): void => {
+  const onCandidateFailure = (candidate: Duplex, host: string, error: Error): void => {
     // A failed candidate is dead to the race either way — destroy it now so
     // it cannot raise an uncaught 'error' while other racers continue, and so
     // its socket is freed before the race settles.
     teardownCandidate(candidate);
-    countCandidateFailure(error);
+    countCandidateFailure(host, error);
   };
 
   const onCandidateWin = (candidate: Duplex): void => {
@@ -497,16 +561,20 @@ export function raceDuplexSockets(
     try {
       candidate = attempt.create();
     } catch (error) {
-      countCandidateFailure(error instanceof Error ? error : new Error(String(error)));
+      countCandidateFailure(
+        attempt.host,
+        error instanceof Error ? error : new Error(String(error)),
+      );
       continue;
     }
     candidates.push(candidate);
+    candidateHosts.set(candidate, attempt.host);
     // A failing candidate can emit `error` AND `close`; count it out only once.
     let counted = false;
     const failOnce = (error: Error): void => {
       if (counted) return;
       counted = true;
-      onCandidateFailure(candidate, error);
+      onCandidateFailure(candidate, attempt.host, error);
     };
     const onConnect = (): void => onCandidateWin(candidate);
     candidate.once('connect', onConnect);
@@ -550,30 +618,109 @@ interface CaptureFingerprintError {
   error: string;
 }
 
-export type CaptureFingerprintResult = CaptureFingerprintOk | CaptureFingerprintError;
+/**
+ * Pinned capture aborted at the TLS handshake: the peer presented a
+ * certificate that does not match `expectedFingerprint`. Nothing beyond the
+ * handshake — no upgrade request, no `Authorization` header, no `?token=`
+ * query — reached the wire.
+ */
+interface CaptureFingerprintMismatch {
+  ok: false;
+  code: 'fingerprint-mismatch';
+  error: string;
+  /** Fingerprint the peer actually presented, normalized (PROTOCOL §1.2). */
+  actualFingerprint: string;
+}
+
+export type CaptureFingerprintResult =
+  CaptureFingerprintOk | CaptureFingerprintError | CaptureFingerprintMismatch;
+
+/**
+ * `tls.connect` with a fingerprint pin enforced at the HANDSHAKE boundary:
+ * application data (the WebSocket upgrade request, including any
+ * `Authorization` header or `?token=` query) is corked until the presented
+ * certificate's SHA-256 fingerprint has been verified against `expected`, and
+ * a mismatch destroys the socket with a {@link PinMismatchError} before a
+ * single request byte reaches the wire. This closes the TOCTOU window of
+ * monorepo#3782: a host that swaps its certificate between the
+ * unauthenticated probe and the authenticated verify never sees the token.
+ * Exported so every pinned `wss` upgrade shares the one enforcement point —
+ * the JSON-RPC transport and TOFU capture here, and the `/tunnel` socket in
+ * `tunnel-manager.ts` (monorepo#4072).
+ */
+export function pinnedTlsConnect(
+  connectOptions: tls.ConnectionOptions,
+  expected: string,
+): tls.TLSSocket {
+  // Mirror ws's own `tlsConnect`: drop the URL path (tls.connect would read
+  // it as a UDS path) and derive `servername` for non-IP hosts.
+  const opts: tls.ConnectionOptions & { host?: string } = { ...connectOptions, path: undefined };
+  if (!opts.servername && opts.servername !== '') {
+    opts.servername = net.isIP(opts.host ?? '') ? '' : opts.host;
+  }
+  const socket = tls.connect(opts);
+  socket.cork();
+  socket.once('secureConnect', () => {
+    const actual = normalizeFingerprint(socket.getPeerCertificate()?.fingerprint256 ?? '');
+    if (actual !== expected) {
+      socket.destroy(new PinMismatchError(expected, actual));
+      return;
+    }
+    socket.uncork();
+  });
+  return socket;
+}
 
 /**
  * Trust-on-first-use helper: open a `wss` connection to `{host, port}` with
  * `rejectUnauthorized: false`, read the presented self-signed cert's SHA-256
  * fingerprint (PROTOCOL §1.2), then close. Returns the normalized fingerprint
- * for the user to confirm, or a structured error. The bearer token is sent so
- * the capture exercises the real upgrade path; the fingerprint is still read
- * from the TLS layer even when the token is rejected (401/403 → unexpected
- * response), and the rejection is reported as `tokenValid: false` (with the
- * status code) so a bad or stale token surfaces during pairing rather than
- * only at pinned-connect time.
+ * for the user to confirm, or a structured error. When a `token` is supplied
+ * it is sent so the capture exercises the real upgrade path; the fingerprint
+ * is still read from the TLS layer even when the token is rejected (401/403 →
+ * unexpected response), and the rejection is reported as `tokenValid: false`
+ * (with the status code) so a bad or stale token surfaces during pairing
+ * rather than only at pinned-connect time.
+ *
+ * Without a `token` the probe is fully unauthenticated — no `Authorization`
+ * header and no `?token=` query reach the wire (monorepo#3782: a saved secret
+ * must never be transmitted to a host whose certificate the user has not yet
+ * confirmed). The daemon is then expected to reject the upgrade (PROTOCOL
+ * §2.1); a 401/403 says nothing about any token, so `tokenValid` stays `true`.
+ *
+ * With an `expectedFingerprint` the pin is enforced at the TLS handshake via
+ * {@link pinnedTlsConnect}: a peer presenting any other certificate is cut
+ * off before the upgrade request is written, so a supplied `token` cannot
+ * leak to a swapped endpoint (TOCTOU). The mismatch is reported as a
+ * structured `fingerprint-mismatch` result carrying the presented
+ * fingerprint.
  */
 export function captureFingerprint(
-  target: { host: string; port: number; token: string },
+  target: { host: string; port: number; token?: string; expectedFingerprint?: string },
   options: { timeoutMs?: number } = {},
 ): Promise<CaptureFingerprintResult> {
   const { host, port, token } = target;
+  const expected =
+    target.expectedFingerprint !== undefined
+      ? normalizeFingerprint(target.expectedFingerprint)
+      : undefined;
   const timeoutMs = options.timeoutMs ?? 10_000;
   return new Promise<CaptureFingerprintResult>((resolve) => {
     let settled = false;
     const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
       rejectUnauthorized: false,
-      headers: { Authorization: `Bearer ${token}` },
+      // Keyed off truthiness like `formatWssUrl` so both wire surfaces agree:
+      // an empty-string token sends neither `Authorization` nor `?token=`.
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      ...(expected !== undefined
+        ? {
+            // ws types createConnection as `typeof net.createConnection` but
+            // always invokes it with a single options object (websocket.js
+            // `initAsClient`), which is what pinnedTlsConnect consumes.
+            createConnection: ((connectOptions: tls.ConnectionOptions) =>
+              pinnedTlsConnect(connectOptions, expected)) as unknown as typeof net.createConnection,
+          }
+        : {}),
     });
     const finish = (result: CaptureFingerprintResult): void => {
       if (settled) return;
@@ -629,13 +776,25 @@ export function captureFingerprint(
     ws.on('upgrade', (response: IncomingMessage) => readCert(response, true));
     ws.on('unexpected-response', (_req, response: IncomingMessage) => {
       // 401/403 are the daemon's auth rejections (PROTOCOL §2.1); any other
-      // status says nothing about the token, so tokenValid stays true.
+      // status says nothing about the token, so tokenValid stays true. When
+      // no token was supplied, a 401/403 is the expected answer to the
+      // unauthenticated probe and judges no token either.
       const statusCode = response.statusCode ?? 0;
-      readCert(response, false, statusCode === 401 || statusCode === 403 ? statusCode : undefined);
+      const authRejected = Boolean(token) && (statusCode === 401 || statusCode === 403);
+      readCert(response, false, authRejected ? statusCode : undefined);
     });
-    ws.on('error', (err: Error) =>
-      finish({ ok: false, code: 'connect-failed', error: err.message }),
-    );
+    ws.on('error', (err: Error) => {
+      if (err instanceof PinMismatchError) {
+        finish({
+          ok: false,
+          code: 'fingerprint-mismatch',
+          error: err.message,
+          actualFingerprint: err.actual,
+        });
+        return;
+      }
+      finish({ ok: false, code: 'connect-failed', error: err.message });
+    });
   });
 }
 

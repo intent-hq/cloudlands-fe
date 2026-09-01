@@ -877,6 +877,9 @@ export const IPC_CHANNELS = {
     UPDATE_BACKEND: 'connections:update-backend',
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
+    // Non-fatal per-host cert warnings observed by the multi-host connection
+    // race (#1746) — informative push, never blocks the connection.
+    CERT_WARNINGS: 'connections:cert-warnings',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
     AUTH_REJECTED: 'connections:auth-rejected',
     // iCloud-keychain backend sync (T4): read the opt-in pref + availability
@@ -1115,10 +1118,12 @@ export const EVENT_CHANNELS = [
   // Hardware console ownership push (main → renderer, per-window { isOwner })
   'hardware-console:owner-changed',
   // Multi-backend connect (main → renderer): connections list/active changed,
-  // a pinned-cert mismatch that must block with a failure modal, and a
+  // a pinned-cert mismatch that must block with a failure modal, non-fatal
+  // per-host cert warnings from the connection race (#1746), and a
   // protocol-version mismatch that warns non-blockingly (connect still proceeds).
   'connections:changed',
   'connections:cert-mismatch',
+  'connections:cert-warnings',
   'connections:protocol-mismatch',
   // A 401/403 WebSocket-upgrade rejection (bad token / WS API disabled)
   // surfaced as a distinct auth failure instead of a generic transport error.

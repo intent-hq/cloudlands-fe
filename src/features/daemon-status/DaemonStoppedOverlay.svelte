@@ -50,6 +50,7 @@
     selectCurrentConnectionId,
     selectIsConnecting,
     selectActiveAuthRejected,
+    selectCurrentConnectionCertWarnings,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -75,6 +76,7 @@
   const activeConnectionId$ = selectCurrentConnectionId();
   const isConnecting$ = selectIsConnecting();
   const authRejected$ = selectActiveAuthRejected();
+  const certWarnings$ = selectCurrentConnectionCertWarnings();
   const repairConnection = $derived(
     $connections$.find((connection) => connection.id === $authRejected$?.id),
   );
@@ -305,6 +307,37 @@
                 : m.daemonStatus_overlay_retrying_label()}
             </span>
           </p>
+        {/if}
+
+        <!--
+          Passive per-host cert warnings (#1746 follow-up): the multi-host
+          connection race observed candidates presenting a foreign pinned
+          cert. Informative only — retries continue unaffected, nothing here
+          blocks or offers an action.
+        -->
+        {#if $certWarnings$.length > 0}
+          <div
+            class="mt-3 rounded-md border border-yellow-600/40 bg-yellow-500/10 p-2"
+            data-testid="daemon-stopped-cert-warnings"
+          >
+            <p class="text-xs text-muted-foreground">
+              {m.daemonStatus_overlay_certWarnings_label()}
+            </p>
+            <ul class="mt-1 space-y-1">
+              {#each $certWarnings$ as warning (warning.host)}
+                <li
+                  class="truncate font-mono text-xs text-muted-foreground"
+                  title={m.daemonStatus_overlay_certWarningDetail_label({
+                    expected: warning.expectedFingerprint,
+                    actual: warning.actualFingerprint,
+                  })}
+                  data-testid="daemon-stopped-cert-warning-host"
+                >
+                  {warning.host}
+                </li>
+              {/each}
+            </ul>
+          </div>
         {/if}
 
         {#if isAuthRejected}

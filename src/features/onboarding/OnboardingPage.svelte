@@ -16,12 +16,8 @@
   import { appClient } from '$lib/client';
   import {
     clearNewWorkspaceDraft,
-    contextItemsToInlineImages,
     createNewWorkspaceDraftSaver,
-    type DraftInlineImage,
-    inlineImagesToContextItems,
     LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
-    resolveDraftImages,
     restoreNewWorkspaceDraft,
   } from '$lib/components/workspace/initializer/new-workspace-draft';
   import {
@@ -103,7 +99,6 @@
     parseContextMentions,
     parseFileMentions,
     parseRuntimeMentions,
-    parseInlineImages,
     extractLinearIssue,
     extractSentryIssue,
     type ContextReference,
@@ -362,6 +357,10 @@
   // workspace at create (`file.placeAttachment`, PROTOCOL §5.9) and
   // referenced from the first message via attachment-reference blocks.
   let onboardingStagedItems = $state<ContextItem[]>([]);
+  // Image attachments as context items (`imageData`/`imageMimeType`),
+  // rendered as a thumbnail row in the prompt step — never inline in the
+  // editor; sent as attachment-reference blocks on the first message.
+  let onboardingImageItems = $state<ContextItem[]>([]);
   // Set when the workspace was created but staged-attachment placement (or
   // the held first-message send) failed: submit resumes this flow instead of
   // creating a second workspace. The created workspace is never rolled back.
@@ -369,7 +368,6 @@
     workspaceId: string;
     agentId?: string;
     prompt: string;
-    imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
     contextReferences: ContextReference[];
   } | null>(null);
 
@@ -388,7 +386,7 @@
   let hasFiredOnboardingType = $state(false);
 
   // Onboarding prompt drafts live in the daemon (drafts.* under the reserved
-  // sentinel keys, PROTOCOL §5.16) so text + inline images survive app
+  // sentinel keys, PROTOCOL §5.16) so text + image attachments survive app
   // restarts. Until the restore settles, saves are limited to text the user
   // actually typed (see scheduleOnboardingDraftSave) and empty saves are
   // skipped, so an initial empty/seeded save cannot clobber a not-yet-read
@@ -399,13 +397,6 @@
   // Set after a successful create: the draft is cleared and must not be
   // re-saved by a late flush or effect re-run.
   let onboardingDraftCleared = false;
-  // Restored image attachments waiting for the prompt step's editor to mount.
-  let pendingOnboardingDraftImages = $state<DraftInlineImage[] | null>(null);
-  // Last known inline images (restored draft images / last live editor read):
-  // scheduled saves fall back to these while the editor is unmounted (restore
-  // settles before step 4; isOnboardingCreating destroys the step mid-create)
-  // so they never wipe the draft's image attachments.
-  let onboardingDraftImageFallback: DraftInlineImage[] = [];
   const onboardingDraftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
     skipEmptySave: () => !onboardingDraftRestored || onboardingDraftRestoreFailed,
   });
@@ -433,9 +424,16 @@
         // Same no-clobber guard for images: when the text restore is skipped
         // (prefill / user typing), stale draft images must not sneak in.
         if (inputUntouched && restore.contextItems.length > 0) {
-          const restoredImages = contextItemsToInlineImages(restore.contextItems);
-          onboardingDraftImageFallback = restoredImages;
-          pendingOnboardingDraftImages = restoredImages;
+          // Image items (imageData/imageMimeType — including pre-migration
+          // drafts saved from the old inline-editor format, which serialized
+          // through the same context-item shape) rehydrate straight into the
+          // thumbnail row's context-item list.
+          const restoredImages = restore.contextItems.filter(
+            (item) => item.imageData && item.imageMimeType,
+          );
+          if (restoredImages.length > 0 && onboardingImageItems.length === 0) {
+            onboardingImageItems = restoredImages;
+          }
           // Non-image items (path-only staged files from either surface)
           // rehydrate into the staged list so they survive the round trip —
           // they are placed at create-time redemption, and a failed pill
@@ -451,23 +449,7 @@
     }
   })();
 
-  // Re-insert restored inline images once the prompt step's editor exists
-  // (the prompt step mounts several onboarding steps after the restore).
-  $effect(() => {
-    if (!promptStepRef || !pendingOnboardingDraftImages?.length) return;
-    const images = pendingOnboardingDraftImages;
-    // Same editor-init delay as the modal's draft restore. `pending` is
-    // nulled only after the images are actually inserted, so a save
-    // scheduled inside the delay still reads them via the fallback instead
-    // of a not-yet-populated editor.
-    setTimeout(() => {
-      const richTextarea = getOnboardingRichTextarea();
-      for (const image of images) richTextarea?.insertImage(image.src, image.alt);
-      pendingOnboardingDraftImages = null;
-    }, 50);
-  });
-
-  /** Debounced daemon draft save: prompt text + inline editor images +
+  /** Debounced daemon draft save: prompt text + image context items +
    * staged non-image attachments (path-only; placed at create-time
    * redemption). */
   function scheduleOnboardingDraftSave() {
@@ -477,26 +459,19 @@
     // The untouched initial value (prefill / legacy seed / empty) stays
     // unscheduled so it cannot clobber a newer shared daemon draft.
     if (!onboardingDraftRestored && onboardingInputValue === initialOnboardingPrompt) return;
-    // Live editor images win once the editor is mounted and any restored
-    // images have been inserted (an empty live read is a deliberate
-    // deletion); otherwise fall back to the retained images.
-    const richTextarea = getOnboardingRichTextarea();
-    const liveImages =
-      richTextarea && pendingOnboardingDraftImages === null ? richTextarea.getInlineImages() : null;
-    if (liveImages) onboardingDraftImageFallback = liveImages;
     onboardingDraftSaver.schedule(onboardingInputValue, [
-      ...inlineImagesToContextItems(resolveDraftImages(liveImages, onboardingDraftImageFallback)),
+      ...onboardingImageItems,
       ...onboardingStagedItems,
     ]);
   }
 
-  // Text changes flow through the bound value; image-only changes don't touch
-  // it, so handleOnboardingContentChange also schedules a save. Staged
-  // non-image attachments are tracked here too — adding/removing a staged
-  // file must persist without a keystroke.
+  // Text changes flow through the bound value; attachment-only changes don't
+  // touch it, so image + staged context items are tracked here too — adding/
+  // removing an attachment must persist without a keystroke.
   $effect(() => {
     void onboardingInputValue;
     void onboardingDraftRestored;
+    void onboardingImageItems;
     void onboardingStagedItems;
     scheduleOnboardingDraftSave();
   });
@@ -896,8 +871,8 @@
 
   // Handle content changes - check for PRs and fetch branch info if needed
   function handleOnboardingContentChange() {
-    // Inline image add/remove doesn't change the bound text value — keep the
-    // daemon draft in sync from the content-change signal too.
+    // Editor-only changes (e.g. mention nodes) can settle before the bound
+    // text value — keep the daemon draft in sync from this signal too.
     scheduleOnboardingDraftSave();
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
     onboardingContentChangeTimer = setTimeout(handleOnboardingContentChangeImmediate, 300);
@@ -1050,12 +1025,23 @@
       // Electron's structured clone rejects — passing it through verbatim
       // made the held send fail before reaching the daemon (monorepo#2576).
       const snapshot = $state.snapshot(pending);
+      // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
+      // snapshot: the thumbnails stay editable while the failed send is
+      // resumable, so a removed image must not ride the retry.
+      const imageBlocks = $state
+        .snapshot(onboardingImageItems)
+        .filter((item) => item.imageData && item.imageMimeType)
+        .map((item) => ({
+          type: 'image' as const,
+          data: item.imageData as string,
+          mimeType: item.imageMimeType as string,
+        }));
       const sendResult = await sendHeldFirstMessage(
         {
           workspaceId: snapshot.workspaceId,
           agentId: snapshot.agentId,
           content: snapshot.prompt,
-          imageBlocks: snapshot.imageBlocks,
+          imageBlocks,
           contextReferences: snapshot.contextReferences,
         },
         redemption.fileBlocks,
@@ -1073,6 +1059,7 @@
       }
       onboardingPendingSend = null;
       onboardingStagedItems = [];
+      onboardingImageItems = [];
       // The held first message is sent — cancel any armed debounced save
       // (its timer would fire drafts.set AFTER drafts.clear and resurrect
       // the draft), then clear the persisted daemon draft and stop saving so
@@ -1121,13 +1108,28 @@
       return;
     }
 
-    // Snapshot the picker's effective default selection BEFORE flipping
-    // isOnboardingCreating: the flag swaps the form for the setup card,
-    // destroying the prompt step (and nulling promptStepRef) by the time the
-    // awaited resolution below settles.
+    // Snapshot the picker's effective default selection AND all
+    // editor-derived state BEFORE flipping isOnboardingCreating: the flag
+    // swaps the form for the setup card, destroying the prompt step (and
+    // nulling promptStepRef) by the time any awaited call below settles —
+    // reads after that point return empty and silently drop mentions
+    // (intent-hq/intent#4050).
     const defaultModelPreview = onboardingModelWasOverridden
       ? undefined
       : promptStepRef?.getEffectiveDefaultModel();
+    const richTextareaMentions = getOnboardingRichTextarea()?.getMentions() ?? [];
+    const contextMentions = getOnboardingRichTextarea()?.getContextMentions() ?? [];
+    // Images live in the context-item list (bound to the prompt step's
+    // thumbnail row), not the editor — snapshot to plain JSON so the $state
+    // Proxy tree never reaches Electron's structured clone (monorepo#2576).
+    const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = $state
+      .snapshot(onboardingImageItems)
+      .filter((item) => item.imageData && item.imageMimeType)
+      .map((item) => ({
+        type: 'image' as const,
+        data: item.imageData as string,
+        mimeType: item.imageMimeType as string,
+      }));
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
@@ -1176,14 +1178,11 @@
       }
       const agentType = createAgentTypeId('workspace');
 
-      // Parse context from the rich textarea
-      const richTextareaMentions = getOnboardingRichTextarea()?.getMentions() ?? [];
-      const contextMentions = getOnboardingRichTextarea()?.getContextMentions() ?? [];
+      // Parse context from the editor state snapshotted above
       const contextMentionRefs = parseContextMentions(contextMentions);
       const fileMentionRefs = parseFileMentions(richTextareaMentions);
       const runtimeMentionRefs = await parseRuntimeMentions(richTextareaMentions, logger);
       const contextReferences = [...contextMentionRefs, ...fileMentionRefs, ...runtimeMentionRefs];
-      const imageBlocks = parseInlineImages(getOnboardingRichTextarea()?.getInlineImages() ?? []);
       const linearIssue = extractLinearIssue(contextReferences);
       const sentryIssue = extractSentryIssue(contextReferences);
 
@@ -1362,7 +1361,6 @@
           workspaceId: workspace.id,
           agentId,
           prompt,
-          imageBlocks,
           contextReferences,
         };
         const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
@@ -1399,6 +1397,7 @@
         }
         onboardingPendingSend = null;
         onboardingStagedItems = [];
+        onboardingImageItems = [];
       }
       logger.info('Workspace created with paths', {
         id: workspace.id,
@@ -1764,6 +1763,7 @@
                           {visibleSuggestions}
                           bind:focusedSuggestionIndex
                           bind:stagedContextItems={onboardingStagedItems}
+                          bind:imageContextItems={onboardingImageItems}
                           selectedModel={onboardingSelectedModel}
                           modelWasOverridden={onboardingModelWasOverridden}
                           onModelChange={handleOnboardingModelChange}

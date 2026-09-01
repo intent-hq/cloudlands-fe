@@ -78,10 +78,59 @@ describe('workspaceNavigationTabSaga', () => {
             type: 'local-changes',
             workspaceId: 'ws-1',
             closable: true,
+            data: { gitRootId: undefined },
           }),
         }),
       }),
     );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('threads gitRootId into a secondary-root all-changes tab', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+
+    channel.put(openWorkspaceLocalChanges('ws-1', { gitRootId: 'root-9' }));
+    await settle();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: 'local-changes',
+            data: { gitRootId: 'root-9' },
+          }),
+        }),
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('clears secondary-root identity when the singleton all-changes tab returns to primary', async () => {
+    let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
+      layoutState = reducePanelAction(layoutState, action);
+      return action;
+    });
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ panelLayout: layoutState }) },
+      workspaceNavigationTabSaga,
+    );
+
+    channel.put(openWorkspaceLocalChanges('ws-1', { gitRootId: 'root-9' }));
+    await settle();
+    channel.put(openWorkspaceLocalChanges('ws-1'));
+    await settle();
+
+    const tabs = Object.values(layoutState.byWorkspaceId['ws-1']!.panels).flatMap(
+      (panel) => panel.tabs,
+    );
+    expect(tabs.filter((tab) => tab.type === 'local-changes')).toHaveLength(1);
+    expect(tabs.find((tab) => tab.type === 'local-changes')?.data?.gitRootId).toBeUndefined();
     task.cancel();
     await task.toPromise();
   });
@@ -464,6 +513,8 @@ describe('workspaceNavigationTabSaga', () => {
         sourcePanelId: 'panel-b',
         branchBaseRef: 'main',
         branchBaseCommitSha: 'base-sha',
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
       }),
     );
     await settle();
@@ -495,7 +546,13 @@ describe('workspaceNavigationTabSaga', () => {
           diffPath: 'src/foo.ts',
           workspaceId: 'ws-1',
           closable: true,
-          data: { change, branchBaseRef: 'main', branchBaseCommitSha: 'base-sha' },
+          data: {
+            change,
+            branchBaseRef: 'main',
+            branchBaseCommitSha: 'base-sha',
+            gitRootId: 'root-9',
+            gitRootPath: '/repo/packages/sub',
+          },
         },
       },
     });
@@ -887,7 +944,7 @@ describe('workspaceNavigationTabSaga', () => {
         },
       },
     });
-    expect(dispatch.mock.calls[0]?.[0]?.payload?.tab?.data).toBeUndefined();
+    expect(dispatch.mock.calls[0]?.[0]?.payload?.tab?.data).toEqual({ gitRootId: undefined });
     task.cancel();
     await task.toPromise();
   });
