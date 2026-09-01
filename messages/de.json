@@ -3104,7 +3104,6 @@
   "tiptap_responsiveThread_replies_many": "{count} Antworten",
   "tiptap_responsiveThread_resolve_label": "Auflösen",
   "onboarding_promptStep_attachmentNoPath_error": "{name} kann nicht angehängt werden: kein Dateipfad verfügbar — Datei von der Festplatte ziehen oder auswählen",
-  "onboarding_promptStep_fileTooLarge_error": "Datei \"{name}\" ist zu groß (max. 10 MB)",
   "onboarding_promptStep_settingUpWorkspace_label": "Ihr Arbeitsbereich wird eingerichtet…",
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Prompt-Vorschläge",
   "onboarding_promptStep_enhancePrompt_tooltip": "Prompt verbessern  ⌘E",

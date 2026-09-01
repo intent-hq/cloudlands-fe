@@ -3104,7 +3104,6 @@
   "tiptap_responsiveThread_replies_many": "{count} 条回复",
   "tiptap_responsiveThread_resolve_label": "解决",
   "onboarding_promptStep_attachmentNoPath_error": "无法附加 {name}：没有可用的文件路径 — 请从磁盘拖放或选择文件",
-  "onboarding_promptStep_fileTooLarge_error": "文件“{name}”过大（最大 10MB）",
   "onboarding_promptStep_settingUpWorkspace_label": "正在设置你的工作区…",
   "onboarding_promptStep_promptSuggestions_ariaLabel": "提示词建议",
   "onboarding_promptStep_enhancePrompt_tooltip": "增强提示词  ⌘E",

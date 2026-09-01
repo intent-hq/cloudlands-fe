@@ -3104,7 +3104,6 @@
   "tiptap_responsiveThread_replies_many": "{count} 件の返信",
   "tiptap_responsiveThread_resolve_label": "解決",
   "onboarding_promptStep_attachmentNoPath_error": "{name} を添付できません: ファイルパスがありません — ディスクからファイルをドロップまたは選択してください",
-  "onboarding_promptStep_fileTooLarge_error": "ファイル「{name}」が大きすぎます（最大 10MB）",
   "onboarding_promptStep_settingUpWorkspace_label": "ワークスペースをセットアップ中…",
   "onboarding_promptStep_promptSuggestions_ariaLabel": "プロンプトの提案",
   "onboarding_promptStep_enhancePrompt_tooltip": "プロンプトを強化  ⌘E",

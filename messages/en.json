@@ -3105,7 +3105,6 @@
   "tiptap_responsiveThread_replies_many": "{count} replies",
   "tiptap_responsiveThread_resolve_label": "Resolve",
   "onboarding_promptStep_attachmentNoPath_error": "Cannot attach {name}: no file path available — drop or pick a file from disk",
-  "onboarding_promptStep_fileTooLarge_error": "File \"{name}\" is too large (max 10MB)",
   "onboarding_promptStep_settingUpWorkspace_label": "Setting up your workspace…",
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Prompt suggestions",
   "onboarding_promptStep_enhancePrompt_tooltip": "Enhance prompt  ⌘E",

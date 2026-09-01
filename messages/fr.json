@@ -3104,7 +3104,6 @@
   "tiptap_responsiveThread_replies_many": "{count} réponses",
   "tiptap_responsiveThread_resolve_label": "Résoudre",
   "onboarding_promptStep_attachmentNoPath_error": "Impossible de joindre {name} : aucun chemin de fichier disponible — déposez ou choisissez un fichier depuis le disque",
-  "onboarding_promptStep_fileTooLarge_error": "Le fichier \"{name}\" est trop volumineux (max 10 Mo)",
   "onboarding_promptStep_settingUpWorkspace_label": "Configuration de votre espace de travail…",
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Suggestions de prompts",
   "onboarding_promptStep_enhancePrompt_tooltip": "Améliorer le prompt  ⌘E",

@@ -3104,7 +3104,6 @@
   "tiptap_responsiveThread_replies_many": "{count} respuestas",
   "tiptap_responsiveThread_resolve_label": "Resolver",
   "onboarding_promptStep_attachmentNoPath_error": "No se puede adjuntar {name}: no hay ruta de archivo disponible — arrastra o elige un archivo del disco",
-  "onboarding_promptStep_fileTooLarge_error": "El archivo \"{name}\" es demasiado grande (máx. 10 MB)",
   "onboarding_promptStep_settingUpWorkspace_label": "Configurando su espacio de trabajo…",
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Sugerencias de prompts",
   "onboarding_promptStep_enhancePrompt_tooltip": "Mejorar el prompt  ⌘E",
