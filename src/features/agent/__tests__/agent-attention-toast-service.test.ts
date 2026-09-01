@@ -208,21 +208,48 @@ describe('agent-attention-toast-service', () => {
       reason: 'Need a decision',
     };
 
-    /** Seed the store so WS is the current workspace tab with the given active agent tab. */
-    function seedViewingState(activeAgentId: string | null): void {
+    /** A panel whose tabs/activeTabId mimic the panelLayout slice shape. */
+    function panel(
+      id: string,
+      tabs: { id: string; type: string; agentId?: string }[],
+      activeTabId: string | null,
+    ) {
+      return { id, tabs, activeTabId };
+    }
+
+    /**
+     * Seed the store so WS is the current workspace tab with the given
+     * panelLayout panels (tab visibility source of truth — tab clicks update
+     * `panel.activeTabId`, never `workspaceAgents.activeAgentId`).
+     */
+    function seedViewingState(
+      panels: ReturnType<typeof panel>[],
+      opts: { currentTabId?: string; expandedPanelId?: string | null } = {},
+    ): void {
       storeStateMock.value = {
-        tabState: { currentTabId: WS },
-        workspaceAgents: { byWorkspaceId: { [WS]: { activeAgentId } } },
+        tabState: { currentTabId: opts.currentTabId ?? WS },
+        panelLayout: {
+          byWorkspaceId: {
+            [WS]: {
+              panels: Object.fromEntries(panels.map((p) => [p.id, p])),
+              expandedPanelId: opts.expandedPanelId ?? null,
+            },
+          },
+        },
       };
     }
+
+    const agentTab = { id: 'tab-agent', type: 'agent', agentId: AGENT };
+    const otherAgentTab = { id: 'tab-other-agent', type: 'agent', agentId: 'agent-other' };
+    const fileTab = { id: 'tab-file', type: 'file' };
 
     function setWindowFocused(focused: boolean): void {
       vi.spyOn(document, 'hasFocus').mockReturnValue(focused);
     }
 
-    it('suppresses the toast when focused + current workspace tab + active agent tab all match', async () => {
+    it("suppresses the toast when focused + current workspace tab + the agent's tab active in a panel", async () => {
       setWindowFocused(true);
-      seedViewingState(AGENT);
+      seedViewingState([panel('p1', [agentTab, fileTab], agentTab.id)]);
 
       await showAgentAttentionToast(request);
 
@@ -231,9 +258,18 @@ describe('agent-attention-toast-service', () => {
       expect(toastDismissMock).not.toHaveBeenCalled();
     });
 
+    it('suppresses when the agent tab is active in a non-focused visible panel (any visible panel counts)', async () => {
+      setWindowFocused(true);
+      seedViewingState([panel('p1', [fileTab], fileTab.id), panel('p2', [agentTab], agentTab.id)]);
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+    });
+
     it('shows the toast when the window is unfocused, even while viewing the agent', async () => {
       setWindowFocused(false);
-      seedViewingState(AGENT);
+      seedViewingState([panel('p1', [agentTab], agentTab.id)]);
 
       await showAgentAttentionToast(request);
 
@@ -243,15 +279,7 @@ describe('agent-attention-toast-service', () => {
 
     it('shows the toast when a different workspace tab is current', async () => {
       setWindowFocused(true);
-      storeStateMock.value = {
-        tabState: { currentTabId: 'ws-other' },
-        workspaceAgents: {
-          byWorkspaceId: {
-            [WS]: { activeAgentId: AGENT },
-            'ws-other': { activeAgentId: 'agent-other' },
-          },
-        },
-      };
+      seedViewingState([panel('p1', [agentTab], agentTab.id)], { currentTabId: 'ws-other' });
 
       await showAgentAttentionToast(request);
 
@@ -260,7 +288,27 @@ describe('agent-attention-toast-service', () => {
 
     it("shows the toast when another agent's tab is active in the event's workspace", async () => {
       setWindowFocused(true);
-      seedViewingState('agent-other');
+      seedViewingState([panel('p1', [agentTab, otherAgentTab], otherAgentTab.id)]);
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the toast when a non-agent tab (file) is active, even with the agent tab open', async () => {
+      setWindowFocused(true);
+      seedViewingState([panel('p1', [agentTab, fileTab], fileTab.id)]);
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the toast when a panel is expanded and the agent tab is only active in a hidden panel', async () => {
+      setWindowFocused(true);
+      seedViewingState([panel('p1', [fileTab], fileTab.id), panel('p2', [agentTab], agentTab.id)], {
+        expandedPanelId: 'p1',
+      });
 
       await showAgentAttentionToast(request);
 

@@ -12,12 +12,12 @@
  * Fires for agents in ANY workspace — the daemon-events bridge feeds every
  * workspace's events through here without gating on the focused workspace.
  * The one exception is the already-viewing suppression: when the window is
- * focused AND the event's workspace is the current workspace tab AND that
- * workspace's active agent tab is the raising agent, the toast is skipped —
- * the in-conversation notice (and banner/indicators) are already in view, so
- * the toast would be redundant. Suppression only skips the toast; it never
- * marks the request handled, and the session-field-derived surfaces
- * (banner/badge) are untouched.
+ * focused AND the event's workspace is the current workspace tab AND the
+ * raising agent's conversation tab is the active tab of a visible panel in
+ * that workspace, the toast is skipped — the in-conversation notice (and
+ * banner/indicators) are already in view, so the toast would be redundant.
+ * Suppression only skips the toast; it never marks the request handled, and
+ * the session-field-derived surfaces (banner/badge) are untouched.
  * "Switch To" therefore routes cross-workspace: `goto(/workspace/{wsId})`
  * first, then `openAgentTabRequested` so the already-installed
  * `createAppLayoutNavigationMiddleware` hydrates the session and opens (or
@@ -128,7 +128,16 @@ function truncate(text: string, maxChars: number): string {
 /**
  * True when the user is already (likely) looking at the raising agent's
  * conversation: the window is focused, the event's workspace is the current
- * workspace tab, and that workspace's active agent tab is the raising agent.
+ * workspace tab, and the agent's conversation tab is the active tab of a
+ * visible panel in that workspace.
+ *
+ * Visibility comes from `panelLayout` — the slice that tab clicks actually
+ * update (`setActiveTab` → `panel.activeTabId`); `workspaceAgents.activeAgentId`
+ * is NOT synced by tab selection, so it must not be used here. "Viewing" means
+ * the agent tab is active in ANY visible panel (not just the focused one): a
+ * side-by-side column showing the conversation still puts the in-conversation
+ * notice in view. When a panel is expanded (`expandedPanelId`), only that
+ * panel is visible, so only it counts.
  *
  * Dependency-light per the module doc: state is read straight off
  * `appStore.state` (no selector imports — `selectCurrentWorkspaceTabId` reads
@@ -136,13 +145,21 @@ function truncate(text: string, maxChars: number): string {
  * pattern). Focus parity note (see web-notification-service.ts): Electron
  * keys suppression off the FOCUSED WINDOW viewing the workspace
  * (multi-window); the toast renders in the single renderer window, so this
- * collapses to `document.hasFocus()` + the active workspace/agent tabs.
+ * collapses to `document.hasFocus()` + the active workspace/panel tabs.
  */
 function isUserViewingAgent(workspaceId: string, agentId: string): boolean {
   if (typeof document === 'undefined' || !document.hasFocus()) return false;
   const state = appStore.state;
   if (state.tabState?.currentTabId !== workspaceId) return false;
-  return state.workspaceAgents?.byWorkspaceId[workspaceId]?.activeAgentId === agentId;
+  const layout = state.panelLayout?.byWorkspaceId[workspaceId];
+  if (!layout) return false;
+  const visiblePanels = layout.expandedPanelId
+    ? [layout.panels[layout.expandedPanelId]]
+    : Object.values(layout.panels);
+  return visiblePanels.some((panel) => {
+    const activeTab = panel?.tabs.find((tab) => tab.id === panel.activeTabId);
+    return activeTab?.type === 'agent' && activeTab.agentId === agentId;
+  });
 }
 
 /**
