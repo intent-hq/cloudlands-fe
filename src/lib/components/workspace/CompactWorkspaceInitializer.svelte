@@ -1782,12 +1782,6 @@
         })),
       });
 
-      // Extract inline images from the editor (legacy fallback)
-      const inlineImages = richTextarea?.getInlineImages() ?? [];
-      logger.info('[CompactWorkspaceInitializer] Extracted inline images (fallback)', {
-        imageCount: inlineImages.length,
-      });
-
       // Convert context mentions to context references for the agent
       const contextReferences: any[] = remoteSetup ? [$state.snapshot(remoteSetup)] : [];
       for (const mention of contextMentions) {
@@ -1935,31 +1929,13 @@
 
       // Extract imageBlocks from ALL context items with imageData/imageMimeType
       // (includes attachment items created by processImageFiles)
-      // Also include inline images as fallback for legacy support
       const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = [];
-
-      // First, add images from attachment context items
       for (const item of contextItems) {
         if (item.imageData && item.imageMimeType) {
           imageBlocks.push({
             type: 'image',
             data: item.imageData,
             mimeType: item.imageMimeType,
-          });
-        }
-      }
-
-      // Then, add inline images as fallback (for any that were manually inserted)
-      for (let i = 0; i < inlineImages.length; i++) {
-        const img = inlineImages[i];
-        // Parse data URL to extract mime type and base64 data
-        const match = img.src.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          const [, mimeType, base64Data] = match;
-          imageBlocks.push({
-            type: 'image',
-            data: base64Data,
-            mimeType: mimeType,
           });
         }
       }

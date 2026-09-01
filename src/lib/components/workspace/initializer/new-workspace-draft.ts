@@ -19,7 +19,6 @@ import {
   serializeDraftAttachments,
 } from '$lib/components/chat/chat-draft-attachments';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
-import { parseImageDataUrl } from '$lib/components/chat/input/image-data-url';
 import { createLogger } from '$lib/utils/client-logger';
 
 /** Reserved sentinel `workspaceId` for the New Workspace modal draft (PROTOCOL §5.16). */
@@ -257,64 +256,4 @@ export function clearNewWorkspaceDraft(drafts: DraftsClient): void {
   drafts.clear(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID).catch((err) => {
     logger.warn('drafts.clear failed', { error: String(err) });
   });
-}
-
-/**
- * Inline editor image (data-URL `src`) — structurally matches the TipTap
- * editor's `InlineImage` without importing from a `.svelte` module.
- */
-export interface DraftInlineImage {
-  src: string;
-  alt?: string;
-}
-
-/**
- * Project inline editor images into image context items so they ride the
- * draft's `attachments` array ({@link serializeDraftAttachments} persists
- * `imageData`/`imageMimeType`). Parsed via {@link parseImageDataUrl} — no
- * regex over the potentially multi-MB base64 payload, and non-image data
- * URLs (e.g. `data:application/pdf`) are skipped like non-data-URL images.
- */
-export function inlineImagesToContextItems(images: DraftInlineImage[]): ContextItem[] {
-  const items: ContextItem[] = [];
-  images.forEach((image, index) => {
-    const parsed = parseImageDataUrl(image.src);
-    if (!parsed) return;
-    items.push({
-      id: `inline-image-${index}`,
-      type: 'file',
-      label: image.alt || `image-${index + 1}`,
-      imageData: parsed.data,
-      imageMimeType: parsed.mimeType,
-    });
-  });
-  return items;
-}
-
-/**
- * Resolve the inline images a scheduled draft save should persist: the live
- * editor read when the editor is mounted (an empty live read is a deliberate
- * deletion and wins), otherwise the caller's retained fallback (restored
- * draft images / the last live read). Keeps saves scheduled while the editor
- * is unmounted — restore settling before the prompt step exists, or the step
- * being destroyed mid-create — from wiping the draft's image attachments.
- */
-export function resolveDraftImages(
-  editorImages: DraftInlineImage[] | null,
-  fallbackImages: DraftInlineImage[],
-): DraftInlineImage[] {
-  return editorImages ?? fallbackImages;
-}
-
-/**
- * Rebuild inline editor images (data URLs for `insertImage`) from restored
- * image context items; items without image data are skipped.
- */
-export function contextItemsToInlineImages(items: ContextItem[]): DraftInlineImage[] {
-  return items
-    .filter((item) => item.imageData && item.imageMimeType)
-    .map((item) => ({
-      src: `data:${item.imageMimeType};base64,${item.imageData}`,
-      alt: item.label,
-    }));
 }

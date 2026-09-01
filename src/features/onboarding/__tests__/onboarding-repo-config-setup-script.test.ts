@@ -50,6 +50,14 @@ const mocks = vi.hoisted(() => {
       behaviorPrompt: undefined,
       specialistId: 'spec-writer',
     })),
+    redeemStagedAttachments: vi.fn(
+      async (_workspaceId: string, items: unknown[]) => ({
+        items,
+        failedCount: 0,
+        fileBlocks: [],
+      }),
+    ),
+    sendHeldFirstMessage: vi.fn(async () => ({ sent: true })),
     // Mutable workspace-initializer state for the model-pick tests
     initializerHydrated: false,
     persistedOnboardingFormState: null as Record<string, unknown> | null,
@@ -134,9 +142,16 @@ vi.mock('$features/onboarding/utils/parse-context-references', () => ({
   parseContextMentions: vi.fn(() => []),
   parseFileMentions: vi.fn(() => []),
   parseRuntimeMentions: vi.fn(async () => []),
-  parseInlineImages: vi.fn(() => []),
   extractLinearIssue: vi.fn(() => undefined),
   extractSentryIssue: vi.fn(() => undefined),
+}));
+
+vi.mock('$lib/components/workspace/initializer/staged-attachments', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$lib/components/workspace/initializer/staged-attachments')
+  >()),
+  redeemStagedAttachments: mocks.redeemStagedAttachments,
+  sendHeldFirstMessage: mocks.sendHeldFirstMessage,
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -1278,5 +1293,125 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     const actions = dispatchedActions();
     expect(actions.find((a) => a.type === 'model/selectModel')).toBeUndefined();
     expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')).toBeUndefined();
+  });
+});
+
+describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    mocks.lastUsedSelect.mockReturnValue(undefined);
+    mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+    mocks.getRemoteUrl.mockResolvedValue({ success: false });
+    mocks.resolveModel.mockImplementation(async () => ({
+      provider: 'auggie',
+      model: 'model',
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    }));
+    mocks.redeemStagedAttachments.mockImplementation(async (_workspaceId, items) => ({
+      items,
+      failedCount: 0,
+      fileBlocks: [],
+    }));
+    mocks.sendHeldFirstMessage.mockImplementation(async () => ({ sent: true }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
+
+  const captured = () =>
+    (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+          setImageContextItems: (items: unknown[]) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+
+  it('regression: image context items ride the held first message even though the editor is unmounted mid-submit', async () => {
+    // The mock prompt step's getRichTextarea() is always null — the same
+    // editor-gone condition isOnboardingCreating creates mid-submit. Images
+    // must come from the context-item state, not an editor read.
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setImageContextItems([
+      {
+        id: 'image-1',
+        type: 'file',
+        label: 'screenshot.png',
+        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+        imageMimeType: 'image/png',
+      },
+    ]);
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    // Images force the held path: no prompt/imageBlocks on the create frame.
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: { prompt?: string; imageBlocks?: unknown };
+    };
+    expect(createRequest.initialAgent.prompt).toBeUndefined();
+    expect(createRequest.initialAgent.imageBlocks).toBeUndefined();
+
+    // The held first message carries the image blocks built from the
+    // context items.
+    await waitFor(() => expect(mocks.sendHeldFirstMessage).toHaveBeenCalledTimes(1));
+    const [heldParams] = mocks.sendHeldFirstMessage.mock.calls[0] as [
+      {
+        content: string;
+        imageBlocks: Array<{ type: string; data: string; mimeType: string }>;
+      },
+    ];
+    expect(heldParams.content).toBe('Build the thing');
+    expect(heldParams.imageBlocks).toEqual([
+      { type: 'image', data: 'iVBORw0KGgoAAAANSUhEUg==', mimeType: 'image/png' },
+    ]);
+  });
+
+  it('sends the prompt on the create frame when no attachments are staged', async () => {
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: { prompt?: string };
+    };
+    expect(createRequest.initialAgent.prompt).toBe('Build the thing');
+    expect(mocks.sendHeldFirstMessage).not.toHaveBeenCalled();
   });
 });

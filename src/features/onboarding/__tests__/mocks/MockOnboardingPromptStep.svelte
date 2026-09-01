@@ -15,6 +15,8 @@
     setupScriptNameSource = $bindable('custom'),
     isCustomSetupScript = $bindable(false),
     focusedSuggestionIndex = $bindable(-1),
+    stagedContextItems = $bindable([]),
+    imageContextItems = $bindable([]),
     repoConfigScript = null,
     hideSetupScriptControl = false,
     onboardingGithubRepoInfo = null,
@@ -35,6 +37,8 @@
     setupScriptNameSource?: string;
     isCustomSetupScript?: boolean;
     focusedSuggestionIndex?: number;
+    stagedContextItems?: unknown[];
+    imageContextItems?: unknown[];
     repoConfigScript?: string | null;
     hideSetupScriptControl?: boolean;
     onboardingGithubRepoInfo?: { owner: string; repo: string } | null;
@@ -78,6 +82,12 @@
       },
       setInputValue: (value: string) => {
         onboardingInputValue = value;
+      },
+      setImageContextItems: (items: unknown[]) => {
+        imageContextItems = items;
+      },
+      setStagedContextItems: (items: unknown[]) => {
+        stagedContextItems = items;
       },
       setSetupScript: (value: string) => {
         setupScript = value;

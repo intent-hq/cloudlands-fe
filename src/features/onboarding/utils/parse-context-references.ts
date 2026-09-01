@@ -22,10 +22,6 @@ interface FileMention {
   meta?: Record<string, unknown>;
 }
 
-interface InlineImage {
-  src: string;
-}
-
 interface ContextLogger {
   warn: (message: string, ...args: unknown[]) => void;
 }
@@ -39,12 +35,6 @@ export interface ContextReference {
   content?: string;
   metadata?: Record<string, unknown>;
   path?: string;
-}
-
-export interface ImageBlock {
-  type: 'image';
-  data: string;
-  mimeType: string;
 }
 
 /**
@@ -252,19 +242,4 @@ export function extractSentryIssue(refs: ContextReference[]) {
     firstSeen: m.firstSeen as string | undefined,
     lastSeen: m.lastSeen as string | undefined,
   };
-}
-
-/**
- * Parse inline images from the editor into image blocks for the agent.
- */
-export function parseInlineImages(images: InlineImage[]): ImageBlock[] {
-  const blocks: ImageBlock[] = [];
-  for (const img of images) {
-    const match = img.src.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      const [, mimeType, base64Data] = match;
-      blocks.push({ type: 'image', data: base64Data, mimeType });
-    }
-  }
-  return blocks;
 }
