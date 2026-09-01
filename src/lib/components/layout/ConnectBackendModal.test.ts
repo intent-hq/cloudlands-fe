@@ -142,7 +142,7 @@ describe('ConnectBackendModal', () => {
     render(ConnectBackendModal, { props: { open: true } });
 
     await fillDetails();
-    await fireEvent.click(screen.getByLabelText('Detect all backend IPs'));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Detect all backend IPs' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));

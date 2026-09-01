@@ -433,10 +433,12 @@
           </div>
 
           <div class="space-y-1">
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" bind:checked={detectHosts} />
-              {m.modals_connect_detectHosts_label()}
-            </label>
+            <div class="flex items-center gap-2">
+              <Checkbox id="connect-detect-hosts" bind:checked={detectHosts} />
+              <Label for="connect-detect-hosts" class="text-sm font-normal"
+                >{m.modals_connect_detectHosts_label()}</Label
+              >
+            </div>
             <p class="text-xs text-subtle">{m.modals_connect_detectHosts_description()}</p>
           </div>
 
