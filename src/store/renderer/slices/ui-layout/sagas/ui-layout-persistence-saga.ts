@@ -16,8 +16,22 @@ import {
   setCollapsiblePanelCollapsed,
   setResizablePanelGroupLayout,
   setResizablePanelSize,
+  setSidebarSide,
+  toggleSidebarSide,
   type ResizablePanelGroupLayoutState,
+  type SidebarSide,
 } from '../ui-layout-slice';
+import { selectSidebarSide } from '../ui-layout-selectors';
+
+const LAYOUT_SETTINGS_KEY = 'layout-settings';
+
+function isSidebarSide(value: unknown): value is SidebarSide {
+  return value === 'left' || value === 'right';
+}
+
+function isSettingsObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 function parseStoredNumber(value: string | null): number | null {
   if (!value) return null;
@@ -111,8 +125,34 @@ function* persistPanelCollapsed(
   }
 }
 
+function* hydrateSidebarSide(): SagaGenerator<void> {
+  try {
+    const settings = yield* call(getLocalStorageJSON<unknown>, LAYOUT_SETTINGS_KEY);
+    if (isSettingsObject(settings) && isSidebarSide(settings.sidebarSide)) {
+      yield* put(setSidebarSide(settings.sidebarSide));
+    }
+  } catch {
+    // Layout persistence is best-effort and must never prevent watcher registration.
+  }
+}
+
+function* persistSidebarSide(): SagaGenerator<void> {
+  try {
+    const sidebarSide = yield* selectSidebarSide.effect();
+    if (!isSidebarSide(sidebarSide)) return;
+
+    const stored = yield* call(getLocalStorageJSON<unknown>, LAYOUT_SETTINGS_KEY);
+    const settings = isSettingsObject(stored) ? stored : {};
+    yield* call(setLocalStorageJSON, LAYOUT_SETTINGS_KEY, { ...settings, sidebarSide });
+  } catch {
+    // Layout persistence is best-effort and must never terminate its watcher.
+  }
+}
+
 /** Unregistered until the S20 middleware cutover. */
 export function* uiLayoutPersistenceSaga(): SagaGenerator<void> {
+  yield* call(hydrateSidebarSide);
+  yield* takeEvery([setSidebarSide, toggleSidebarSide], persistSidebarSide);
   yield* takeEvery(requestResizablePanelSize, hydratePanelSize);
   yield* takeEvery(setResizablePanelSize, persistPanelSize);
   yield* takeEvery(requestResizablePanelGroupLayout, hydratePanelGroupLayout);
