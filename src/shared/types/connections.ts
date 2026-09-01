@@ -36,11 +36,7 @@ export const CONNECTION_CHANNELS = IPC_CHANNELS.CONNECTIONS;
  */
 export const CONNECTIONS_CHANGED_EVENT = 'connections:changed';
 export const CONNECTION_CERT_MISMATCH_EVENT = 'connections:cert-mismatch';
-// NOTE: the `connections:cert-warnings` push (EVENT_CHANNELS + preload
-// allow-lists) intentionally has no constant here yet — the renderer does not
-// subscribe to it until the follow-up UI work lands; add
-// CONNECTION_CERT_WARNINGS_EVENT alongside its first consumer (knip flags
-// unused exports).
+export const CONNECTION_CERT_WARNINGS_EVENT = 'connections:cert-warnings';
 export const CONNECTION_PROTOCOL_MISMATCH_EVENT = 'connections:protocol-mismatch';
 export const CONNECTION_AUTH_REJECTED_EVENT = 'connections:auth-rejected';
 export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';

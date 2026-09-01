@@ -26,6 +26,7 @@ import {
   CONNECTIONS_CHANGED_EVENT,
   CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
+  CONNECTION_CERT_WARNINGS_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
   KEYCHAIN_SYNC_STATUS_EVENT,
 } from '$shared/types/connections';
@@ -36,6 +37,7 @@ import type {
   CaptureFingerprintResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionCertWarningsEvent,
   ConnectionProtocolMismatchEvent,
   ConnectionRecord,
   ConnectionsChangedEvent,
@@ -60,6 +62,7 @@ import {
   addConnectionRequested,
   authRejectedReceived,
   certMismatchReceived,
+  certWarningsReceived,
   captureFingerprintRequested,
   connectOperationFailed,
   connectOperationSettled,
@@ -84,6 +87,7 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 type ConnectionsEvent =
   | { kind: 'changed'; payload: ConnectionsChangedEvent }
   | { kind: 'cert-mismatch'; payload: ConnectionCertMismatchEvent }
+  | { kind: 'cert-warnings'; payload: ConnectionCertWarningsEvent }
   | { kind: 'protocol-mismatch'; payload: ConnectionProtocolMismatchEvent }
   | { kind: 'auth-rejected'; payload: ConnectionAuthRejectedEvent }
   | { kind: 'sync-status'; payload: KeychainSyncUiStatus };
@@ -112,6 +116,12 @@ function createConnectionsEventChannel(): EventChannel<ConnectionsEvent> {
         CONNECTION_CERT_MISMATCH_EVENT,
         api.on(CONNECTION_CERT_MISMATCH_EVENT, (payload: ConnectionCertMismatchEvent) =>
           emit({ kind: 'cert-mismatch', payload }),
+        ),
+      ],
+      [
+        CONNECTION_CERT_WARNINGS_EVENT,
+        api.on(CONNECTION_CERT_WARNINGS_EVENT, (payload: ConnectionCertWarningsEvent) =>
+          emit({ kind: 'cert-warnings', payload }),
         ),
       ],
       [
@@ -629,6 +639,7 @@ function* consumeConnectionsEvents(
         yield* put(connectionsListReceived(event.payload));
         yield* call(announceDaemonsBehindPin, event.payload, tracker, updateActions);
       } else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
+      else if (event.kind === 'cert-warnings') yield* put(certWarningsReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
       else yield* put(protocolMismatchReceived(event.payload));

@@ -36,6 +36,8 @@ import type {
   UpdateBackendResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionCertWarningsEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
 
@@ -53,6 +55,7 @@ export const initialState: ConnectionsState = {
   status: 'idle',
   error: null,
   certMismatch: null,
+  certWarnings: {},
   authRejected: null,
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
@@ -100,6 +103,17 @@ export const certMismatchReceived = createAction<[event: ConnectionCertMismatchE
 
 /** User dismissed the cert-mismatch modal. */
 export const certMismatchCleared = createAction('connections/certMismatchCleared');
+
+/**
+ * A `connections:cert-warnings` push arrived — the set of NON-FATAL per-host
+ * cert mismatches observed for a connection changed (the multi-host connection
+ * race can connect through one candidate while another presents a foreign
+ * pinned cert). Informative only — never blocks the connection or retries. An
+ * empty `warnings` array clears the connection's entry (fresh client).
+ */
+export const certWarningsReceived = createAction<[event: ConnectionCertWarningsEvent]>(
+  'connections/certWarningsReceived',
+);
 
 /**
  * A `connections:auth-rejected` push arrived — the remote backend rejected the
@@ -248,6 +262,29 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
   if (result.authRejected !== undefined) {
     next.authRejected = result.authRejected;
   }
+  if (result.certWarnings !== undefined) {
+    // Replay of the window backend's sticky NON-FATAL per-host warnings —
+    // same shape as the one-shot push, so an empty/`null` replay clears the
+    // entry and a non-empty one seeds a renderer created after the push.
+    if (result.certWarnings === null || result.certWarnings.warnings.length === 0) {
+      // A `null` replay carries no id — it means the window backend has no
+      // sticky warnings, so the entry to drop is the window backend's.
+      const clearedId =
+        result.certWarnings === null ? result.windowBackendId : result.certWarnings.id;
+      if (state.certWarnings[clearedId]) {
+        const { [clearedId]: _cleared, ...rest } = state.certWarnings;
+        next.certWarnings = rest;
+      }
+    } else {
+      next.certWarnings = {
+        ...state.certWarnings,
+        [result.certWarnings.id]: createCollection<ConnectionHostCertWarning, 'host'>(
+          'host',
+          result.certWarnings.warnings,
+        ),
+      };
+    }
+  }
   if (result.protocolMismatch !== undefined) {
     next.protocolMismatch = result.protocolMismatch;
     if (result.protocolMismatch === null) {
@@ -274,10 +311,37 @@ connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) =>
   return { ...state, status: 'error', error };
 });
 connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
-  return { ...state, certMismatch: event };
+  // The fatal mismatch also carries every per-host mismatch the failing
+  // multi-host race observed — seed the passive list from it so the
+  // reconnect UI can show which hosts failed even when no separate
+  // `connections:cert-warnings` push preceded the failure.
+  const certWarnings =
+    event.mismatches && event.mismatches.length > 0
+      ? {
+          ...state.certWarnings,
+          [event.id]: createCollection<ConnectionHostCertWarning, 'host'>('host', event.mismatches),
+        }
+      : state.certWarnings;
+  return { ...state, certMismatch: event, certWarnings };
 });
 connectionsReducer.with(certMismatchCleared, (state) => {
   return { ...state, certMismatch: null };
+});
+connectionsReducer.with(certWarningsReceived, (state, { payload: [event] }) => {
+  // Empty warnings ⇒ the set was cleared for this id (fresh client) — drop
+  // the entry entirely so selectors return the shared empty list.
+  if (event.warnings.length === 0) {
+    if (!state.certWarnings[event.id]) return state;
+    const { [event.id]: _cleared, ...rest } = state.certWarnings;
+    return { ...state, certWarnings: rest };
+  }
+  return {
+    ...state,
+    certWarnings: {
+      ...state.certWarnings,
+      [event.id]: createCollection<ConnectionHostCertWarning, 'host'>('host', event.warnings),
+    },
+  };
 });
 connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
   return { ...state, authRejected: event };
