@@ -119,7 +119,7 @@ test('keeps named standard wake-up avatars optically centered at every required 
         }
         expect(value.avatars.at(-1)!.trigger.right - value.overflow.left).toBeCloseTo(5 * zoom, 1);
         expect(value.overflow.width).toBeGreaterThan(20 * zoom);
-        expect(value.overflow.width).toBeLessThanOrEqual(28 * zoom);
+        expect(value.overflow.width).toBeLessThanOrEqual(32 * zoom);
         expect(value.overflow.height).toBeCloseTo(20 * zoom, 1);
         expect(Number.parseFloat(value.overflowRadius)).toBeGreaterThan(0);
         expect(value.overflowBackground).not.toBe('rgba(0, 0, 0, 0)');

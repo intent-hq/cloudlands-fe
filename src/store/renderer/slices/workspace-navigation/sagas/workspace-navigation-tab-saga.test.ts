@@ -536,9 +536,9 @@ describe('workspaceNavigationTabSaga', () => {
         gitRootId: 'root-1',
       }),
     );
-    await settle();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
     channel.put(openWorkspaceCommitChangeset('ws-1', 'abcdef123456', 'feat: primary'));
-    await settle();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
       type: 'panelLayout/openTabInRightmostColumnRequested',
