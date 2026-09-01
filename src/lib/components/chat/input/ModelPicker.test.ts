@@ -2728,6 +2728,33 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     expect(selectModelActions[0]?.payload).toEqual(['model-1']);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
   });
+
+  it('keeps a settings pick visible while the provider switch briefly echoes its previous default', async () => {
+    const { rerender } = render(ModelPicker, {
+      props: {
+        selectedModel: 'previous-provider-model',
+        updateGlobalDefault: true,
+        portal: false,
+      },
+    });
+
+    await pickModelOne();
+    expect(screen.getByRole('button', { name: 'Model 1' })).toBeTruthy();
+
+    await rerender({
+      selectedModel: 'previous-default-for-new-provider',
+      updateGlobalDefault: true,
+      portal: false,
+    });
+    expect(screen.getByRole('button', { name: 'Model 1' })).toBeTruthy();
+
+    await rerender({
+      selectedModel: 'model-1',
+      updateGlobalDefault: true,
+      portal: false,
+    });
+    expect(screen.getByRole('button', { name: 'Model 1' })).toBeTruthy();
+  });
 });
 
 describe('ModelPicker confirmModelChange gate', () => {

@@ -671,7 +671,9 @@
 
     if (
       userChangedModel &&
-      (selectedModel === undefined || selectedModel === propModelAtLocalChange)
+      (updateGlobalDefault ||
+        selectedModel === undefined ||
+        selectedModel === propModelAtLocalChange)
     ) {
       return;
     }
