@@ -222,7 +222,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
     expect(progressCard).toContain('label: m.ui_sidebar_toggle_label()');
-    expect(progressCard).toContain('additionalActions={[sidebarToggleAction, sidebarSideAction]}');
+    expect(progressCard).toContain('const additionalActions: MenuAction[] = $derived([');
+    expect(progressCard).toContain('sidebarToggleAction,');
+    expect(progressCard).toContain('sidebarSideAction,');
+    expect(progressCard).toContain('...(transferAction ? [transferAction] : []),');
+    expect(progressCard).toContain('{additionalActions}');
     expect(titlebar).not.toContain('class="search-bar"');
   });
 

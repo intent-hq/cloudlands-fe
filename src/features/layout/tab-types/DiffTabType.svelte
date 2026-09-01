@@ -65,13 +65,16 @@
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
+  const gitRootId = $derived(tab.data?.gitRootId as string | undefined);
+  const gitRootPath = $derived(tab.data?.gitRootPath as string | undefined);
+  const effectiveRepoPath = $derived(gitRootPath || repoPath);
 
   // Compute absolute path for diff files
   const diffAbsolutePath = $derived(
-    tab.diffPath && repoPath
+    tab.diffPath && effectiveRepoPath
       ? isAbsolutePath(tab.diffPath)
         ? tab.diffPath
-        : `${repoPath}/${tab.diffPath}`
+        : `${effectiveRepoPath}/${tab.diffPath}`
       : null,
   );
 
@@ -207,7 +210,7 @@
       type: 'file' as const,
       title: fileName,
       closable: true,
-      filePath: tab.diffPath,
+      filePath: diffAbsolutePath || tab.diffPath,
       workspaceId,
     };
     const store = appStore;
@@ -289,7 +292,7 @@
       {workspaceId}
       isDirectory={false}
       embedded
-      workspaceFolderPath={repoPath}
+      workspaceFolderPath={effectiveRepoPath}
     />
   {/if}
 {/snippet}
@@ -306,8 +309,10 @@
       {refreshKey}
       {branchBaseRef}
       {branchBaseCommitSha}
-      onStageHunk={change.stage === ChangeStage.Unstaged ? handleStageHunk : undefined}
-      onUnstageHunk={change.stage === ChangeStage.Staged ? handleUnstageHunk : undefined}
+      {gitRootId}
+      {gitRootPath}
+      onStageHunk={!gitRootId && change.stage === ChangeStage.Unstaged ? handleStageHunk : undefined}
+      onUnstageHunk={!gitRootId && change.stage === ChangeStage.Staged ? handleUnstageHunk : undefined}
     />
   {/key}
 {/if}
