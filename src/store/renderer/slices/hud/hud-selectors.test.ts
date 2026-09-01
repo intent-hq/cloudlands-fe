@@ -1594,10 +1594,12 @@ describe('selectHudWorkspaceCards', () => {
       },
     );
     const [card] = selectHudWorkspaceCards.select(state);
+    // The idle-but-waiting coordinator still heads its subtree; among its
+    // children the running reviewer sorts before the idle implementor.
     expect(card.agents.map((a) => [a.id, a.bucket, a.isWaitingForAgents])).toEqual([
       ['coord', 'idle', true],
-      ['impl', 'idle', false],
       ['reviewer', 'running', false],
+      ['impl', 'idle', false],
     ]);
     expect(card.agents.find((a) => a.id === 'coord')?.waitingForAgentIds).toEqual([
       'impl',
@@ -2367,13 +2369,170 @@ describe('selectHudWorkspaceCards', () => {
       }),
     ]);
     const [card] = selectHudWorkspaceCards.select(state);
+    // All siblings are running with no lastActivity, so the stable id
+    // tiebreak orders child-a before child-b (wire order is NOT preserved).
     expect(card.agents.map((a) => [a.id, a.depth, a.treePrefix])).toEqual([
       ['root', 0, ''],
-      ['child-b', 1, '├─'],
-      // grandchild is child-b's LAST (only) child — closing connector, even
-      // though it is not the last row overall.
+      ['child-a', 1, '├─'],
+      ['child-b', 1, '└─'],
+      // grandchild is child-b's LAST (only) child — closing connector.
       ['grandchild', 2, '│ └─'],
-      ['child-a', 1, '└─'],
+    ]);
+  });
+
+  it('orders siblings non-idle-first by lastActivity desc, idle last (missing timestamps last in partition)', () => {
+    // The coordinator awaits the idle children so keepLiveWithAncestors
+    // keeps their rows visible — the ordering under test stays observable.
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 6,
+            agentIds: ['root', 'idle-old', 'run-old', 'run-new', 'run-nots', 'idle-new'],
+            agents: [
+              { id: 'root', name: 'Coordinator', status: 'idle' },
+              {
+                id: 'idle-old',
+                name: 'Idle Old',
+                status: 'idle',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T09:00:00Z',
+              },
+              {
+                id: 'run-old',
+                name: 'Runner Old',
+                status: 'active',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+              {
+                id: 'run-new',
+                name: 'Runner New',
+                status: 'active',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T11:00:00Z',
+              },
+              // No lastActivity — sorts after the timestamped runners but
+              // still before every idle sibling.
+              { id: 'run-nots', name: 'Runner Untimed', status: 'active', parentAgentId: 'root' },
+              {
+                id: 'idle-new',
+                name: 'Idle New',
+                status: 'idle',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            root: {
+              status: 'idle',
+              isWaitingForOtherAgents: true,
+              waitingForAgentIds: ['idle-old', 'idle-new'],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    // Non-idle partition first by recency desc (untimed runner last of it),
+    // then the idle partition by the same recency-desc rule.
+    expect(card.agents.map((a) => [a.id, a.bucket])).toEqual([
+      ['root', 'idle'],
+      ['run-new', 'running'],
+      ['run-old', 'running'],
+      ['run-nots', 'running'],
+      ['idle-new', 'idle'],
+      ['idle-old', 'idle'],
+    ]);
+  });
+
+  it('tiebreaks equal-recency siblings by agent id so rows stay stable', () => {
+    const state = cardState([
+      makeWorkspace('ws-1', {
+        displayStatus: 'in_progress',
+        agentSummary: {
+          count: 3,
+          agentIds: ['root', 'b-agent', 'a-agent'],
+          agents: [
+            { id: 'root', name: 'Coordinator', status: 'active' },
+            {
+              id: 'b-agent',
+              name: 'B',
+              status: 'active',
+              parentAgentId: 'root',
+              lastActivity: '2026-07-30T11:00:00Z',
+            },
+            {
+              id: 'a-agent',
+              name: 'A',
+              status: 'active',
+              parentAgentId: 'root',
+              lastActivity: '2026-07-30T11:00:00Z',
+            },
+          ],
+        } as Workspace['agentSummary'],
+      }),
+    ]);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => a.id)).toEqual(['root', 'a-agent', 'b-agent']);
+  });
+
+  it('orders roots by the same non-idle-first recency rule', () => {
+    // The idle root awaits a hook-parked agent elsewhere so it stays visible
+    // (isWaitingForAgents) — despite being more recent, it sorts after the
+    // running root.
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 2,
+            agentIds: ['idle-root', 'run-root'],
+            agents: [
+              {
+                id: 'idle-root',
+                name: 'Waiting Root',
+                status: 'idle',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+              {
+                id: 'run-root',
+                name: 'Running Root',
+                status: 'active',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            'idle-root': {
+              status: 'idle',
+              isWaitingForOtherAgents: true,
+              waitingForAgentIds: [],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => [a.id, a.bucket, a.treePrefix])).toEqual([
+      ['run-root', 'running', ''],
+      ['idle-root', 'idle', ''],
     ]);
   });
 
