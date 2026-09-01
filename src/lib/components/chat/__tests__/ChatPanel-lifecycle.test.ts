@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => {
     draftGet: vi.fn(),
     draftSet: vi.fn(),
     draftClear: vi.fn(),
+    listUserMessages: vi.fn(),
     invoke: vi.fn().mockResolvedValue(null),
     listenSync: vi.fn(),
     ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
@@ -94,7 +95,7 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$lib/client', () => ({
   appClient: {
     drafts: { get: mocks.draftGet, set: mocks.draftSet, clear: mocks.draftClear },
-    agents: { retry: vi.fn() },
+    agents: { retry: vi.fn(), listUserMessages: mocks.listUserMessages },
   },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
@@ -457,6 +458,7 @@ beforeEach(() => {
   clearDraftCacheForTests();
   clearChatScrollCacheForTests();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
+  mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   mocks.dispatch.mockImplementation((action) => {
     if (action?.type !== 'transientUi/setChatDraft') return action;
@@ -1666,6 +1668,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(onNavigationStateChange).toHaveBeenLastCalledWith({
       isAtBottom: false,
       userMessages: [{ id: 'message-1', text: 'User prompt' }],
+      isLoadingUserMessageIndex: false,
     });
 
     scrollContainer.scrollTop = 600;
@@ -1674,8 +1677,69 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(onNavigationStateChange).toHaveBeenLastCalledWith({
       isAtBottom: true,
       userMessages: [{ id: 'message-1', text: 'User prompt' }],
+      isLoadingUserMessageIndex: false,
     });
     expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
+  });
+
+  it('reports a loading index only while the first index fetch is in flight', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'message-1',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'text', text: 'User prompt' }],
+      },
+    ]);
+    const pending = deferred<{ ok: true; items: unknown[]; total: number }>();
+    mocks.listUserMessages.mockReturnValue(pending.promise);
+    const onNavigationStateChange = vi.fn();
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        onNavigationStateChange,
+      },
+    });
+    await tick();
+
+    view.component.refreshUserMessageIndex();
+    await tick();
+    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a');
+    expect(onNavigationStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ isLoadingUserMessageIndex: true }),
+    );
+
+    pending.resolve({
+      ok: true,
+      items: [
+        { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
+        { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+      ],
+      total: 2,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await tick();
+    expect(onNavigationStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        isLoadingUserMessageIndex: false,
+        userMessages: [
+          { id: 'older-1', text: 'Older prompt' },
+          { id: 'message-1', text: 'User prompt' },
+        ],
+      }),
+    );
+
+    // Reopen with a cached index: single-flight refresh must not re-report loading.
+    onNavigationStateChange.mockClear();
+    mocks.listUserMessages.mockClear();
+    mocks.listUserMessages.mockReturnValue(new Promise(() => {}));
+    view.component.refreshUserMessageIndex();
+    await tick();
+    expect(
+      onNavigationStateChange.mock.calls.some(([state]) => state.isLoadingUserMessageIndex),
+    ).toBe(false);
   });
 
   it('smoothly scrolls the header action before re-locking at the live bottom', async () => {

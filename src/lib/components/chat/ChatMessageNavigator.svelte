@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { Popover } from 'bits-ui';
   import { Input } from '$lib/components/ui/input';
   import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { Spinner } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
@@ -17,12 +18,24 @@
     onScrollToBottom: () => void;
     /** Called each time the popover opens (used to refresh the full-history index). */
     onOpen?: () => void;
+    /** True while the full-history index fetch is in flight (no cached index yet). */
+    isLoadingIndex?: boolean;
   }
 
-  let { messages, isAtBottom, onSelectMessage, onScrollToBottom, onOpen }: Props = $props();
+  let {
+    messages,
+    isAtBottom,
+    onSelectMessage,
+    onScrollToBottom,
+    onOpen,
+    isLoadingIndex = false,
+  }: Props = $props();
   let open = $state(false);
   let query = $state('');
   let activeIndex = $state(0);
+  // While true the newest (last) item stays active even as async index rows
+  // are prepended; cleared once the user scrolls or moves the active item.
+  let anchorToEnd = $state(true);
   let searchInput: HTMLInputElement | null = $state(null);
   let triggerElement: HTMLElement | null = $state(null);
   let contentElement: HTMLElement | null = $state(null);
@@ -45,14 +58,43 @@
     const panel = triggerElement?.closest('[data-panel-id]');
     collisionBoundary = panel ? [panel] : [];
     query = '';
-    activeIndex = 0;
+    anchorToEnd = true;
+    activeIndex = Math.max(messages.length - 1, 0);
     onOpen?.();
   }
 
   function handleInput(event: Event) {
     query = (event.currentTarget as HTMLInputElement).value;
-    activeIndex = 0;
+    anchorToEnd = true;
+    activeIndex = Math.max(filteredMessages.length - 1, 0);
   }
+
+  function moveActiveTo(index: number) {
+    anchorToEnd = false;
+    activeIndex = index;
+  }
+
+  // Keep the newest item active (and the list anchored at the bottom) while
+  // the user has not interacted, so the async index fetch prepending older
+  // rows does not yank the selection off the end. Otherwise only clamp.
+  $effect(() => {
+    if (!open) return;
+    const count = filteredMessages.length;
+    if (count === 0) return;
+    if (anchorToEnd) {
+      activeIndex = count - 1;
+    } else if (untrack(() => activeIndex) >= count) {
+      activeIndex = count - 1;
+    }
+  });
+
+  // Keep the active option visible whenever it or the list changes.
+  $effect(() => {
+    if (!open || !contentElement || filteredMessages.length === 0) return;
+    document
+      .getElementById(`${listboxId}-option-${activeIndex}`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  });
 
   function handleTriggerKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -100,16 +142,16 @@
     if (filteredMessages.length === 0) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      activeIndex = (activeIndex + 1) % filteredMessages.length;
+      moveActiveTo((activeIndex + 1) % filteredMessages.length);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      activeIndex = (activeIndex - 1 + filteredMessages.length) % filteredMessages.length;
+      moveActiveTo((activeIndex - 1 + filteredMessages.length) % filteredMessages.length);
     } else if (event.key === 'Home') {
       event.preventDefault();
-      activeIndex = 0;
+      moveActiveTo(0);
     } else if (event.key === 'End') {
       event.preventDefault();
-      activeIndex = filteredMessages.length - 1;
+      moveActiveTo(filteredMessages.length - 1);
     } else if (event.key === 'Enter') {
       event.preventDefault();
       void selectMessage(filteredMessages[activeIndex].id);
@@ -180,6 +222,16 @@
             class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70"
             data-testid="chat-message-navigator-search"
           />
+          {#if isLoadingIndex}
+            <div
+              aria-live="polite"
+              class="type-caption flex shrink-0 items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
+              data-testid="chat-message-navigator-loading"
+            >
+              <Spinner />
+              <span>{m.chat_messageNavigator_loading_label()}</span>
+            </div>
+          {/if}
           {#if filteredMessages.length > 0}
             <div
               id={listboxId}
@@ -213,7 +265,9 @@
                         void selectMessage(message.id);
                       }
                     }}
-                    onpointerenter={() => (activeIndex = index)}
+                    onpointermove={() => {
+                      if (activeIndex !== index || anchorToEnd) moveActiveTo(index);
+                    }}
                     data-testid="chat-message-navigator-result"
                     data-navigation-message-id={message.id}
                   >
@@ -226,7 +280,7 @@
                 </Tooltip>
               {/each}
             </div>
-          {:else}
+          {:else if !isLoadingIndex}
             <div
               class="type-caption px-2 py-6 text-center text-muted-foreground"
               data-testid="chat-message-navigator-empty"
