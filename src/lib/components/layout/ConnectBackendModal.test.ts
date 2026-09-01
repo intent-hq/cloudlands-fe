@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -50,6 +51,8 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', async () => 
 vi.mock('$lib/utils/open-external', () => ({
   openExternalUrl: mocks.openExternalUrl,
 }));
+
+warmImport(() => import('./ConnectBackendModal.svelte'));
 
 async function fillDetails() {
   await fireEvent.input(screen.getByLabelText('Device name'), {
@@ -335,6 +338,18 @@ describe('ConnectBackendModal', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await screen.findByText('AA:BB:CC:DD');
     }
+
+    it('uses the same shared checkbox treatment for both connection options', async () => {
+      mocks.syncState.value = macSync(true);
+      const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+      render(ConnectBackendModal, { props: { open: true } });
+
+      const detectHosts = screen.getByRole('checkbox', { name: 'Detect all backend IPs' });
+      const saveToICloud = screen.getByRole('checkbox', { name: 'Save to iCloud' });
+
+      expect(detectHosts.className).toBe(saveToICloud.className);
+      expect(detectHosts.getAttribute('aria-describedby')).toBe('connect-detect-hosts-description');
+    });
 
     it('hides the checkbox entirely when sync is unsupported (non-macOS)', async () => {
       mocks.syncState.value = { supported: false, enabled: false, status: null };

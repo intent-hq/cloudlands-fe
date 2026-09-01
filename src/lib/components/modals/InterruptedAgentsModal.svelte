@@ -5,6 +5,7 @@
    */
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -173,13 +174,14 @@
               <div class="space-y-1.5 pl-2">
                 {#each wsAgents as agent (agent.agentId)}
                   <label
+                    for={`interrupted-agent-${agent.agentId}`}
                     class="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/40 cursor-pointer"
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
+                      id={`interrupted-agent-${agent.agentId}`}
                       checked={checkedAgents.has(agent.agentId)}
-                      class="size-4 rounded border-border"
-                      onchange={() => toggleAgent(agent.agentId)}
+                      onCheckedChange={() => toggleAgent(agent.agentId)}
+                      ariaLabel={agent.agentName}
                     />
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-foreground truncate">{agent.agentName}</p>

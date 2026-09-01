@@ -203,10 +203,11 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: COW_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(false);
+    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    const pill = screen.getByText('Experimental');
+    expect(pill).toBeTruthy();
+    expect(pill.classList.contains('rounded-full')).toBe(true);
   });
 
   it('associates the CoW description with its toggle', async () => {
@@ -288,10 +289,8 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
 
     const { component } = render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: COW_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(true);
+    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
 
     component.resetToDefaults();
 
@@ -299,7 +298,7 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
         { path: 'workspace.cowIsolation', value: false },
       ]);
-      expect(toggle.checked).toBe(false);
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
   });
 });

@@ -34,6 +34,7 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/button/button.svelte': 15,
     'relative:src/lib/components/ui/button/index.ts': 1,
     'relative:src/lib/components/ui/checkbox/checkbox.svelte': 1,
+    'relative:src/lib/components/ui/checkbox/index.ts': 1,
     'relative:src/lib/components/ui/combobox/index.ts': 3,
     'relative:src/lib/components/ui/dropdown-menu.svelte': 2,
     'relative:src/lib/components/ui/highlight/highlight-target.ts': 1,
@@ -46,5 +47,77 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
     'relative:src/lib/components/ui/tooltip/index.ts': 1,
   },
-  rawControls: { button: 615, input: 83, select: 0, textarea: 11 },
+  rawControls: { button: 612, input: 72, select: 0, textarea: 11 },
+  checkboxControlAllowlist: [
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/checkbox/',
+      reason: 'Canonical general-purpose checkbox implementation.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/menu/',
+      reason: 'Canonical menu checkbox-item implementation.',
+    },
+    {
+      match: 'exact',
+      path: 'src/lib/components/markdown/MarkdownViewer.svelte',
+      reason: 'Generated read-only Markdown task-list markup and styling.',
+    },
+    {
+      match: 'exact',
+      path: 'src/lib/components/tiptap/TaskItemNodeView.svelte',
+      reason: 'TipTap task-state rendering internals.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/sandbox/',
+      reason: 'Sandbox-only controls.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/(app)/test-',
+      reason: 'App test harness routes.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/(app)/workspace/[id]/terminal-test/',
+      reason: 'Terminal test harness route.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/component-catalog/',
+      reason: 'Component catalog harnesses.',
+    },
+    {
+      match: 'contains',
+      path: '/__tests__/',
+      reason: 'Test-only components and fixtures.',
+    },
+    {
+      match: 'suffix',
+      path: 'Harness.svelte',
+      reason: 'Test and characterization harnesses.',
+    },
+    {
+      match: 'suffix',
+      path: 'TestWrapper.svelte',
+      reason: 'Test wrapper components.',
+    },
+    {
+      match: 'suffix',
+      path: 'test-harness.svelte',
+      reason: 'Test and characterization harnesses.',
+    },
+    {
+      match: 'suffix',
+      path: '.test.svelte',
+      reason: 'Test-only components.',
+    },
+    {
+      match: 'suffix',
+      path: '.spec.svelte',
+      reason: 'Test-only components.',
+    },
+  ],
 } as const;

@@ -1,13 +1,14 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-  faSearch,
-  faXmark,
-  faFilter,
-  faChevronUp,
-  faChevronDown,
-} from '@fortawesome/free-solid-svg-icons';
+    faSearch,
+    faXmark,
+    faFilter,
+    faChevronUp,
+    faChevronDown,
+  } from '@fortawesome/free-solid-svg-icons';
   import { safeSlide } from '$lib/utils/animations';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import { cubicOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -185,20 +186,20 @@
       <!-- Options -->
       <div class="flex items-center gap-4">
         <label class="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             bind:checked={filters.caseSensitive}
-            onchange={handleSearch}
-            class="w-3 h-3"
+            ariaLabel={m.chat_chatSearch_caseSensitive_label()}
+            onCheckedChange={handleSearch}
+            size="sm"
           />
           <span class="text-xs text-subtle">{m.chat_chatSearch_caseSensitive_label()}</span>
         </label>
         <label class="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             bind:checked={filters.regex}
-            onchange={handleSearch}
-            class="w-3 h-3"
+            ariaLabel={m.chat_chatSearch_useRegex_label()}
+            onCheckedChange={handleSearch}
+            size="sm"
           />
           <span class="text-xs text-subtle">{m.chat_chatSearch_useRegex_label()}</span>
         </label>

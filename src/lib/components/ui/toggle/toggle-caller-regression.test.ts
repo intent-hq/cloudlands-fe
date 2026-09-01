@@ -94,12 +94,18 @@ describe('B2 caller metadata regression', () => {
     const expected = {
       checkbox: [
         'src/features/onboarding/OnboardingPage.svelte',
+        'src/features/log/components/ActivityLogFilters.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
+        'src/lib/components/chat/ChatChangesPanel.svelte',
+        'src/lib/components/chat/ChatSearch.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
         'src/lib/components/layout/ConnectBackendModal.svelte',
+        'src/lib/components/modals/InterruptedAgentsModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
+        'src/lib/components/notes/NotesPanel.svelte',
+        'src/lib/components/settings/GitWorkspaceSettings.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
         'src/lib/components/workspace/initializer/BranchSelector.svelte',

@@ -25,6 +25,13 @@ export interface UiInternalImportLedgerEntry {
   catalogEntry: string;
 }
 
+export interface CheckboxControlLedgerEntry {
+  file: string;
+  line: number;
+  kind: 'native-input' | 'checkbox-role' | 'menuitemcheckbox-role';
+  exemption: string | null;
+}
+
 function walk(directory: string): string[] {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -217,6 +224,75 @@ export function countRawUiControls(root = process.cwd()) {
   return counts;
 }
 
+function checkboxControlExemption(file: string): string | null {
+  for (const exemption of uiComponentGuardrails.checkboxControlAllowlist) {
+    const matches =
+      exemption.match === 'exact'
+        ? file === exemption.path
+        : exemption.match === 'prefix'
+          ? file.startsWith(exemption.path)
+          : exemption.match === 'contains'
+            ? file.includes(exemption.path)
+            : file.endsWith(exemption.path);
+    if (matches) return exemption.reason;
+  }
+  return null;
+}
+
+function staticAttribute(attributes: string, name: string): string | null {
+  const match = attributes.match(
+    new RegExp(`\\b${name}\\s*=\\s*(?:["']([^"']+)["']|\\{\\s*["']([^"']+)["']\\s*\\})`, 'i'),
+  );
+  return match?.[1] ?? match?.[2] ?? null;
+}
+
+export function buildCheckboxControlLedger(root = process.cwd()): CheckboxControlLedgerEntry[] {
+  const entries: CheckboxControlLedgerEntry[] = [];
+  for (const absolute of walk(path.join(root, 'src')).filter((file) => file.endsWith('.svelte'))) {
+    const file = path.relative(root, absolute).split(path.sep).join('/');
+    const source = fs
+      .readFileSync(absolute, 'utf8')
+      .replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, ' '));
+    for (const match of source.matchAll(/<([A-Za-z][\w:.-]*)\b([\s\S]*?)>/g)) {
+      const tag = match[1].toLowerCase();
+      const attributes = match[2];
+      const type = staticAttribute(attributes, 'type')?.toLowerCase();
+      const role = staticAttribute(attributes, 'role')?.toLowerCase();
+      const kind =
+        tag === 'input' && type === 'checkbox'
+          ? 'native-input'
+          : role === 'checkbox'
+            ? 'checkbox-role'
+            : role === 'menuitemcheckbox'
+              ? 'menuitemcheckbox-role'
+              : null;
+      if (!kind) continue;
+      entries.push({
+        file,
+        line: source.slice(0, match.index).split('\n').length,
+        kind,
+        exemption: checkboxControlExemption(file),
+      });
+    }
+  }
+  return entries.sort(
+    (left, right) =>
+      sortText(left.file, right.file) || left.line - right.line || sortText(left.kind, right.kind),
+  );
+}
+
+export function checkboxControlGuardrailFailures(root = process.cwd()): string[] {
+  return buildCheckboxControlLedger(root)
+    .filter(({ exemption }) => exemption === null)
+    .map(({ file, line, kind }) => {
+      const replacement =
+        kind === 'menuitemcheckbox-role'
+          ? '$lib/components/ui/menu Menu.CheckboxItem'
+          : '$lib/components/ui/checkbox Checkbox';
+      return `${file}:${line}: ${kind} bypasses the checkbox design-system boundary; use ${replacement} or add a reviewed contextual exemption`;
+    });
+}
+
 export function structuralGuardrailFailures(root = process.cwd()): string[] {
   const failures: string[] = [];
   for (const entry of buildUiInternalImportLedger(root)) {
@@ -241,5 +317,6 @@ export function structuralGuardrailFailures(root = process.cwd()): string[] {
       );
     }
   }
+  failures.push(...checkboxControlGuardrailFailures(root));
   return failures.sort(sortText);
 }

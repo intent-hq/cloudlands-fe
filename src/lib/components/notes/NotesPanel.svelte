@@ -2,6 +2,7 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
 
   import { Skeleton } from '../ui/skeleton';
+  import { Checkbox } from '../ui/checkbox';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListEmpty, ListItem } from '../ui/list';
 
@@ -119,12 +120,7 @@
                       total: taskStats.total,
                     })}
                   >
-                    <input
-                      type="checkbox"
-                      checked
-                      disabled
-                      class="w-3.5 h-3.5 rounded border border-muted-foreground/40 accent-emerald-500 pointer-events-none"
-                    />
+                    <Checkbox checked disabled size="sm" />
                   </div>
                 {:else}
                   <!-- Show progress ring -->

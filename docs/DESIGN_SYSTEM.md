@@ -91,6 +91,16 @@ with an optional trailing keyboard shortcut. Keep labels short and verb-led, gro
 with `Menu.Separator`, and use canonical `Menu.Root`, `Menu.Trigger`, and `Menu.Content` rather than
 the deprecated dropdown compatibility wrapper in new callers.
 
+### Checkbox controls
+
+Use the public `Checkbox` primitive for ordinary product checkboxes and
+`Menu.CheckboxItem` for checkbox commands inside menus. Product code must not add native checkbox
+inputs or hand-built `checkbox`/`menuitemcheckbox` roles. The reviewed contextual exceptions are
+generated read-only Markdown task-list markup, TipTap task-state rendering internals, sandbox pages,
+and test or component-catalog harnesses; these preserve their host semantics and are not reusable
+product treatments. The exact enforcement scopes and rationales live in
+`scripts/ui-component-guardrails.ts` and are checked by `ui-component-audit.ts checkbox-controls`.
+
 | Family                                           | Verification/migration owner |
 | ------------------------------------------------ | ---------------------------- |
 | Button, ButtonGroup, Badge, Skeleton, feedback   | `007-B1`                     |
@@ -137,6 +147,7 @@ Run the deterministic component inventories from the repository root:
 pnpm exec tsx scripts/ui-component-audit.ts inventory
 pnpm exec tsx scripts/ui-component-audit.ts dynamic
 pnpm exec tsx scripts/ui-component-audit.ts boundaries
+pnpm exec tsx scripts/ui-component-audit.ts checkbox-controls
 pnpm exec tsx scripts/ui-component-audit.ts json
 pnpm exec tsx scripts/ui-component-audit.ts check
 pnpm vitest run scripts/ui-component-audit.test.ts

@@ -224,6 +224,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
@@ -1881,7 +1882,12 @@
     const wsId = routeWorkspaceId;
     if (!wsId) return;
     appStore.dispatch(
-      openWorkspaceCommitChangeset(wsId, commitHash, undefined, gitRootId ? { gitRootId } : undefined)
+      openWorkspaceCommitChangeset(
+        wsId,
+        commitHash,
+        undefined,
+        gitRootId ? { gitRootId } : undefined,
+      ),
     );
   }
 
@@ -3099,20 +3105,12 @@
             : m.chat_changesPanel_markViewed_title()}
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isViewed}
-            onchange={() => toggleViewed(change.filePath, expandKey)}
-            class="sr-only peer"
+            onCheckedChange={() => toggleViewed(change.filePath, expandKey)}
+            ariaLabel={m.chat_changesPanel_viewed_label()}
+            size="sm"
           />
-          <span
-            class="w-3.5 h-3.5 rounded border border-muted-foreground/30 flex items-center justify-center
-              peer-checked:bg-primary peer-checked:border-primary transition-colors"
-          >
-            {#if isViewed}
-              <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
-            {/if}
-          </span>
           <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
         </label>
       </div>

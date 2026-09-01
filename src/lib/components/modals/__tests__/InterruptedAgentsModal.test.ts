@@ -49,6 +49,23 @@ describe('InterruptedAgentsModal', () => {
     expect(screen.getByText('Remote Agent')).toBeTruthy();
   });
 
+  it('resumes checked agents and abandons unchecked agents', async () => {
+    const onResumeSelected = vi.fn();
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+
+    render(InterruptedAgentsModal, {
+      props: { open: true, agents: AGENTS, onResumeSelected },
+    });
+
+    const localAgent = await screen.findByRole('checkbox', { name: 'Local Agent' });
+    expect(localAgent.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(localAgent);
+    expect(localAgent.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(screen.getByRole('button', { name: 'Resume selected' }));
+
+    expect(onResumeSelected).toHaveBeenCalledWith(['a2'], ['a1']);
+  });
+
   it('focuses the dialog on open so Escape works without clicking inside', async () => {
     const onClose = vi.fn();
     const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;

@@ -7,6 +7,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
   import PathSettingField from './PathSettingField.svelte';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import { Select } from '$lib/components/ui/select';
   import { Toggle } from '$lib/components/ui/toggle';
   import type { Snippet } from 'svelte';
@@ -360,13 +361,18 @@
       {#if showCowToggle}
         <section class="px-6 py-5">
           <div class="flex items-center gap-2">
-            <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={cowIsolation}
-                onchange={handleSave}
-                class="cursor-pointer"
-                aria-describedby="cow-isolation-description"
+            <label
+              for="cow-isolation"
+              class="flex items-center gap-2 text-sm text-foreground cursor-pointer"
+            >
+              <Checkbox
+                id="cow-isolation"
+                checked={cowIsolation}
+                onCheckedChange={(checked) => {
+                  cowIsolation = checked;
+                  handleSave();
+                }}
+                ariaDescribedby="cow-isolation-description"
               />
               <span>{m.settings_gitWorkspace_cowIsolation_label()}</span>
             </label>

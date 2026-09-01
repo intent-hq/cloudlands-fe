@@ -471,12 +471,18 @@
 
           <div class="space-y-1">
             <div class="flex items-center gap-2">
-              <Checkbox id="connect-detect-hosts" bind:checked={detectHosts} />
+              <Checkbox
+                id="connect-detect-hosts"
+                bind:checked={detectHosts}
+                ariaDescribedby="connect-detect-hosts-description"
+              />
               <Label for="connect-detect-hosts" class="text-sm font-normal"
                 >{m.modals_connect_detectHosts_label()}</Label
               >
             </div>
-            <p class="text-xs text-subtle">{m.modals_connect_detectHosts_description()}</p>
+            <p id="connect-detect-hosts-description" class="text-xs text-subtle">
+              {m.modals_connect_detectHosts_description()}
+            </p>
           </div>
 
           {#if syncSupported}

@@ -7,8 +7,10 @@ import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
 import {
+  buildCheckboxControlLedger,
   buildUiInternalImportLedger,
   buildUiMigrationLedger,
+  checkboxControlGuardrailFailures,
   countRawUiControls,
   structuralGuardrailFailures,
   validateMigrationReplacement,
@@ -143,6 +145,60 @@ describe('Gate C generated migration ledger', () => {
 });
 
 describe('Gate C structural ratchets', () => {
+  it('keeps checkbox and menu caller metadata aligned with production imports', () => {
+    const inventory = buildUiComponentInventory();
+    for (const id of ['checkbox', 'menu']) {
+      const metadata = canonicalComponentManifest.find((component) => component.id === id);
+      const derived = inventory.components.find((component) => component.id === id);
+      expect(metadata?.callers, id).toEqual(derived?.callers);
+    }
+  });
+
+  it('rejects native and custom-role product checkboxes outside reviewed contexts', () => {
+    const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'checkbox-control-guardrail-'));
+    try {
+      const productRoot = path.join(syntheticRoot, 'src/features/example');
+      mkdirSync(productRoot, { recursive: true });
+      writeFileSync(
+        path.join(productRoot, 'Example.svelte'),
+        `<input type="checkbox" />\n<div role="checkbox"></div>\n<button role={'menuitemcheckbox'}></button>\n`,
+      );
+
+      expect(checkboxControlGuardrailFailures(syntheticRoot)).toEqual([
+        'src/features/example/Example.svelte:1: native-input bypasses the checkbox design-system boundary; use $lib/components/ui/checkbox Checkbox or add a reviewed contextual exemption',
+        'src/features/example/Example.svelte:2: checkbox-role bypasses the checkbox design-system boundary; use $lib/components/ui/checkbox Checkbox or add a reviewed contextual exemption',
+        'src/features/example/Example.svelte:3: menuitemcheckbox-role bypasses the checkbox design-system boundary; use $lib/components/ui/menu Menu.CheckboxItem or add a reviewed contextual exemption',
+      ]);
+    } finally {
+      rmSync(syntheticRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('records approved sandbox, task-list, and test/catalog contexts without violations', () => {
+    const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'checkbox-control-exemptions-'));
+    try {
+      const files = [
+        'src/lib/components/markdown/MarkdownViewer.svelte',
+        'src/lib/components/tiptap/TaskItemNodeView.svelte',
+        'src/routes/sandbox/example/+page.svelte',
+        'src/lib/component-catalog/CheckboxPreview.svelte',
+        'src/lib/components/example/__tests__/CheckboxHarness.svelte',
+      ];
+      for (const file of files) {
+        const target = path.join(syntheticRoot, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, '<input type="checkbox" />\n');
+      }
+
+      const ledger = buildCheckboxControlLedger(syntheticRoot);
+      expect(ledger.map(({ file }) => file)).toEqual(files.sort());
+      expect(ledger.every(({ exemption }) => exemption !== null)).toBe(true);
+      expect(checkboxControlGuardrailFailures(syntheticRoot)).toEqual([]);
+    } finally {
+      rmSync(syntheticRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects repository-relative internal imports with canonical repair guidance', () => {
     const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'ui-component-guardrail-'));
     try {
