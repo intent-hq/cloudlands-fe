@@ -55,6 +55,7 @@ import {
   toggleSpellcheck,
   type ActivityLogPresetPreference,
   type FontStyle,
+  type NoteFontStyle,
 } from '../user-preferences-slice';
 
 const SPELLCHECK_STORAGE_KEY = 'note-spellcheck-settings';
@@ -75,14 +76,21 @@ type ListSystemFontsResponse = {
   data?: unknown;
 };
 
-function validFont(value: unknown): value is { fontStyle: FontStyle } {
+function hasFontStyle(value: unknown): value is { fontStyle: string } {
   return (
     typeof value === 'object' &&
     value !== null &&
     'fontStyle' in value &&
-    typeof value.fontStyle === 'string' &&
-    FONT_STYLES.includes(value.fontStyle as FontStyle)
+    typeof value.fontStyle === 'string'
   );
+}
+
+function validAgentFont(value: unknown): value is { fontStyle: FontStyle } {
+  return hasFontStyle(value) && FONT_STYLES.includes(value.fontStyle as FontStyle);
+}
+
+function validNoteFont(value: unknown): value is { fontStyle: NoteFontStyle } {
+  return validAgentFont(value) || (hasFontStyle(value) && value.fontStyle === 'serif');
 }
 
 /**
@@ -143,10 +151,10 @@ export function* hydrateUserPreferencesWorker() {
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
-  if (validFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
+  if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
   const noteFont = yield* getLocalStorageJSON<unknown>(NOTE_STORAGE_KEY);
-  if (validFont(noteFont)) yield* put(setNoteFontStyle(noteFont.fontStyle));
+  if (validNoteFont(noteFont)) yield* put(setNoteFontStyle(noteFont.fontStyle));
 
   const codeFont = yield* getLocalStorageJSON<{ fontFamily?: unknown }>(CODE_STORAGE_KEY);
   if (typeof codeFont?.fontFamily === 'string' && codeFont.fontFamily.trim()) {
