@@ -43,6 +43,16 @@ vi.mock('$features/hardware-console/instance', () => ({
   }),
 }));
 
+// Static imports (vi.mock calls above are hoisted ahead of these): importing
+// the component + helpers once at module load keeps the transform/evaluation
+// cost out of the per-test timeout budget (intent-hq/monorepo#4015).
+import HardwareConsoleSettings from './HardwareConsoleSettings.svelte';
+import { codexCapLabel } from './HardwareConsoleDeviceSvg.svelte';
+import { m } from '$shared/paraglide/messages.js';
+import { CODEX_MIC_LINKED_SLOT } from '$features/hardware-console/actions/action-mapping';
+import { initialState } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+
 function workspace(id: string, title: string, lastActivity: string) {
   return {
     id,
@@ -53,11 +63,7 @@ function workspace(id: string, title: string, lastActivity: string) {
   };
 }
 
-async function buildState() {
-  const { initialState } =
-    await import('$store/renderer/slices/hardware-console/hardware-console-slice');
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
+function buildState() {
   return {
     hardwareConsole: { ...initialState, enabled: true },
     workspace: {
@@ -82,9 +88,7 @@ describe('HardwareConsoleSettings agent keys', () => {
   });
 
   it('clicking an assigned key opens the workspace-info popover and does not navigate', async () => {
-    mocks.state.current = await buildState();
-    const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
-    const { m } = await import('$shared/paraglide/messages.js');
+    mocks.state.current = buildState();
     const result = render(HardwareConsoleSettings);
 
     // Auto-fill by recency: slot 1 = ws-a (most recent), slot 2 = ws-b.
@@ -100,9 +104,7 @@ describe('HardwareConsoleSettings agent keys', () => {
   });
 
   it('assigned-key slot badges are display-only: clicking one opens the popover, not a pin menu', async () => {
-    mocks.state.current = await buildState();
-    const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
-    const { m } = await import('$shared/paraglide/messages.js');
+    mocks.state.current = buildState();
     const result = render(HardwareConsoleSettings);
 
     // No interactive MicroKeySlotBadge menu trigger in the device graphic.
@@ -129,9 +131,7 @@ describe('HardwareConsoleSettings agent keys', () => {
 
   it('agent keys are not interactive while disconnected', async () => {
     mocks.managerStatus.current = 'disconnected';
-    mocks.state.current = await buildState();
-    const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
-    const { m } = await import('$shared/paraglide/messages.js');
+    mocks.state.current = buildState();
     const result = render(HardwareConsoleSettings);
 
     expect(
@@ -144,12 +144,7 @@ describe('HardwareConsoleSettings agent keys', () => {
 
   it('shows the linked-key warning when the Codex second Mic switch is selected', async () => {
     mocks.deviceModel.current = 'codex-micro';
-    mocks.state.current = await buildState();
-    const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
-    const { m } = await import('$shared/paraglide/messages.js');
-    const { codexCapLabel } = await import('./HardwareConsoleDeviceSvg.svelte');
-    const { CODEX_MIC_LINKED_SLOT } =
-      await import('$features/hardware-console/actions/action-mapping');
+    mocks.state.current = buildState();
     const result = render(HardwareConsoleSettings);
 
     // Select the normal Mic key (ACT10): no warning.
