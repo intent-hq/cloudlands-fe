@@ -582,7 +582,7 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
-  <div class="h-[900px]" style:width="{width}px">
+  <div style:height="900px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
 </section>

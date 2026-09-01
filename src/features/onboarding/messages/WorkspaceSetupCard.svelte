@@ -169,7 +169,10 @@
   class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-500"
 >
   <!-- Header -->
-  <div class="flex items-baseline gap-2.5 px-[var(--operational-row-inline-padding)] pt-3 pb-2">
+  <div
+    class="flex items-baseline gap-2.5 pt-3 pb-2"
+    style:padding-inline="var(--operational-row-inline-padding)"
+  >
     <div class="inline-grid *:[grid-area:1/1]">
       {#key allDone}
         <h3
@@ -213,7 +216,9 @@
       doneContent: import('svelte').Snippet,
     )}
       <div
-        class="relative flex items-start gap-[var(--operational-leading-gap)] overflow-hidden rounded-md px-[var(--operational-row-inline-padding)] py-0.75 text-base leading-relaxed"
+        class="relative flex items-start overflow-hidden rounded-md py-0.75 text-base leading-relaxed"
+        style:gap="var(--operational-leading-gap)"
+        style:padding-inline="var(--operational-row-inline-padding)"
         transition:slide={{ duration: 300, easing: cubicOut }}
       >
         {#if status === 'active'}
