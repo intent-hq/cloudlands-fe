@@ -537,6 +537,33 @@ describe('non-fatal per-host cert-warning propagation', () => {
     expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(1);
   });
 
+  it('broadcasts an empty warnings array when the accumulated set is cleared', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+    expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(1);
+
+    // Dispose (re-pair path) — a renderer listening only on the dedicated
+    // channel must be told the stale hosts are gone.
+    mod.disconnectBackendClient('remote-1');
+    const warningCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-warnings');
+    expect(warningCalls).toHaveLength(2);
+    expect(warningCalls[1][1]).toEqual({ id: 'remote-1', warnings: [] });
+
+    // With nothing accumulated, a fresh client's clear broadcasts nothing.
+    await mod.connectBackendClient('remote-1');
+    expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(2);
+  });
+
   it('accumulates per-host warnings and keeps the latest fingerprint per host', async () => {
     const send = installWindow('remote-1');
     const { mod } = await loadModule();

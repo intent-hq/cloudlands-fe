@@ -516,7 +516,11 @@ function clearBackendFailureState(id: string): void {
   protocolMismatchById.delete(id);
   authRejectedById.delete(id);
   certMismatchById.delete(id);
+  const hadWarnings = (certWarningsById.get(id)?.size ?? 0) > 0;
   certWarningsById.delete(id);
+  // The warning contract promises an empty `warnings` broadcast on clear, so a
+  // renderer relying solely on the dedicated channel drops its stale hosts.
+  if (hadWarnings) broadcast(CONNECTIONS.CERT_WARNINGS, { id, warnings: [] }, id);
 }
 
 /**
