@@ -14,6 +14,11 @@ import {
 import { SHORTCUT_REGISTRY, SHORTCUTS } from './shortcuts';
 
 describe('shortcut bindings', () => {
+  it('does not register a chat stop binding', () => {
+    expect(SHORTCUT_DEFAULTS).not.toHaveProperty('chat.stop');
+    expect(SHORTCUT_REGISTRY.map(({ id }) => id)).not.toContain('chat.stop');
+  });
+
   it('gives every listed shortcut one stable default', () => {
     expect(SHORTCUT_REGISTRY).toHaveLength(Object.keys(SHORTCUT_DEFAULTS).length);
     expect(new Set(SHORTCUT_REGISTRY.map(({ id }) => id)).size).toBe(SHORTCUT_REGISTRY.length);
