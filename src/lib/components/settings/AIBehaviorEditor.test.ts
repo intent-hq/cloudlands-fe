@@ -514,20 +514,23 @@ describe('AIBehaviorEditor actions', () => {
 
     vi.useFakeTimers();
     try {
+      mocks.updateUserRule.mockClear();
       await fireEvent.input(textarea, { target: { value: '\nOriginal instructions\n' } });
 
       // Advance past the 1s debounce so the auto-save runs and settles.
       await vi.advanceTimersByTimeAsync(1100);
       flushSync();
 
-      // The persisted value is trimmed…
-      expect(mocks.updateUserRule).toHaveBeenLastCalledWith(
-        'base-system-prompt',
-        'Original instructions',
-      );
-      // …but the save must not rewrite the textarea mid-edit.
+      // A whitespace-only diff trims to the already-persisted value: no
+      // redundant wire call is sent…
+      expect(mocks.updateUserRule).not.toHaveBeenCalled();
+      // …and the save must not rewrite the textarea mid-edit.
       expect(textarea.value).toBe('\nOriginal instructions\n');
-      // A whitespace-only diff from the saved state leaves no "Undo changes" button.
+      // Marked clean/saved consistently: the saved indicator shows and no
+      // phantom "Undo changes" button remains.
+      expect(
+        within(promptColumn).getByTestId('agent-rules-saved-indicator').className,
+      ).toContain('opacity-100');
       expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -571,9 +574,7 @@ describe('AIBehaviorEditor actions', () => {
       flushSync();
       expect(mocks.updateUserRule).toHaveBeenCalledTimes(2);
       expect(mocks.updateUserRule).toHaveBeenLastCalledWith('base-system-prompt', 'draft v2');
-      const savedIndicator = promptColumn.querySelector(
-        '.agent-rules-textarea div.transition-opacity',
-      ) as HTMLElement;
+      const savedIndicator = within(promptColumn).getByTestId('agent-rules-saved-indicator');
       expect(savedIndicator.className).toContain('opacity-0');
 
       // The trailing save resolves: persisted value matches the live text.

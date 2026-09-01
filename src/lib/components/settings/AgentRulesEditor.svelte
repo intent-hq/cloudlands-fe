@@ -123,6 +123,19 @@
     }
 
     const trimmedContent = rulesContent.trim();
+
+    // The backend already holds this exact value: skip the redundant wire
+    // call and mark the clean/saved state directly.
+    if (trimmedContent === lastSavedContent) {
+      hasChanges = trimmedContent !== originalContent;
+      saveStatus = 'saved';
+      if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
+      savedStatusTimeout = setTimeout(() => {
+        saveStatus = 'idle';
+      }, 2000);
+      return;
+    }
+
     saveInFlight = true;
     let saveSucceeded = false;
     try {
@@ -273,6 +286,7 @@
       />
       <!-- Saved indicator -->
       <div
+        data-testid="agent-rules-saved-indicator"
         class="absolute top-2 right-2 transition-opacity duration-200 {saveStatus === 'saved'
           ? 'opacity-100'
           : 'opacity-0'}"
