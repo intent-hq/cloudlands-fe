@@ -19,6 +19,7 @@ import {
   type BackendConnectionConfig,
   createBackendSocket,
   describeBackendConfig,
+  type HostCertMismatch,
   resolveBackendConfig,
 } from './backend-connection';
 
@@ -112,7 +113,9 @@ const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
  * `reconnected` (void — fires when a successful connect follows an earlier
  * connected state so consumers can replay `events.subscribe` calls and
  * refresh coarse state after a daemon restart), `error` (Error),
- * `heartbeat` (void).
+ * `heartbeat` (void), `cert-warning` ({@link HostCertMismatch} — a NON-FATAL
+ * per-host pin mismatch observed by the multi-host connection race (#1746);
+ * informative only, never treated as a connection failure).
  */
 export class JsonRpcClient extends EventEmitter {
   private readonly config: BackendConnectionConfig;
@@ -342,6 +345,10 @@ export class JsonRpcClient extends EventEmitter {
     socket.once('connect', onConnect);
     socket.once('secureConnect', onConnect);
     socket.on('data', (chunk: Buffer | string) => this.onData(chunk));
+    // Non-fatal per-host pin mismatches from the multi-host connection race
+    // (#1746): re-emit for observers (backend.ipc's renderer warnings) without
+    // touching the connection lifecycle — the race itself decides fatality.
+    socket.on('pin-mismatch', (info: HostCertMismatch) => this.emit('cert-warning', info));
     socket.once('error', (error: Error) => this.onConnectionFailure(error));
     socket.once('close', () => this.onConnectionFailure(new Error('Connection closed')));
     logger.info('Connecting to backend', { target: describeBackendConfig(this.config) });

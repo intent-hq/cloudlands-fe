@@ -35,6 +35,7 @@ import {
   PinMismatchError,
   resolveBackendConfig,
   type BackendConnectionConfig,
+  type HostCertMismatch,
 } from './backend-connection';
 import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
 import {
@@ -91,6 +92,8 @@ import type {
   CaptureFingerprintResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionCertWarningsEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
   ConnectionsChangedEvent,
   ConnectionsListResult,
@@ -368,6 +371,20 @@ const authRejectedById = new Map<string, ConnectionAuthRejectedEvent>();
 const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
 
 /**
+ * Sticky NON-FATAL per-host cert warnings per backend connection id, keyed by
+ * host inside (latest fingerprint per host, accumulated across reconnect
+ * attempts). The multi-host connection race (#1746) can succeed through one
+ * candidate host while another presents a mismatching pinned cert — each such
+ * observation is recorded here and broadcast as `connections:cert-warnings`,
+ * and the aggregate is replayed on {@link listConnections} so a renderer
+ * created after the broadcast still surfaces it (the {@link certMismatchById}
+ * pattern, but informative rather than blocking). An id's entry is cleared
+ * whenever a fresh client for that id is constructed (see
+ * {@link clearBackendFailureState}).
+ */
+const certWarningsById = new Map<string, Map<string, ConnectionHostCertWarning>>();
+
+/**
  * Handle for the keychain-sync lifecycle (T3), set once in
  * {@link registerBackendHandlers}. The T4 settings IPC reads its last-known
  * availability status and requests an immediate reconcile on enable.
@@ -441,6 +458,11 @@ export function __resetBackendProtocolStateForTesting(): void {
   protocolMismatchById.clear();
   authRejectedById.clear();
   certMismatchById.clear();
+  certWarningsById.clear();
+}
+/** @internal Test seam: read the latched per-host cert warnings for one backend id. */
+export function __getCertWarningsForTesting(id: string): ConnectionCertWarningsEvent | null {
+  return getCertWarningsEvent(id);
 }
 /** @internal Test seam: read the latched auth-rejection for one backend id. */
 export function __getAuthRejectedForTesting(id: string): ConnectionAuthRejectedEvent | null {
@@ -492,7 +514,8 @@ const REMOTE_OPEN_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Drop every latched failure state (cert/auth one-shot guards, sticky protocol
- * mismatch and auth rejection) for one backend connection id. Called whenever
+ * mismatch and auth rejection, accumulated per-host cert warnings) for one
+ * backend connection id. Called whenever
  * a fresh client for that id is constructed — its own connect + `client.hello`
  * re-detects any still-present failure — and when the id's client is disposed.
  */
@@ -503,6 +526,59 @@ function clearBackendFailureState(id: string): void {
   protocolMismatchById.delete(id);
   authRejectedById.delete(id);
   certMismatchById.delete(id);
+  const hadWarnings = (certWarningsById.get(id)?.size ?? 0) > 0;
+  certWarningsById.delete(id);
+  // The warning contract promises an empty `warnings` broadcast on clear, so a
+  // renderer relying solely on the dedicated channel drops its stale hosts.
+  if (hadWarnings) broadcast(CONNECTIONS.CERT_WARNINGS, { id, warnings: [] }, id);
+}
+
+/**
+ * Build the `connections:cert-warnings` payload for one backend id from the
+ * accumulated per-host map, or `null` when nothing has been observed.
+ */
+function getCertWarningsEvent(id: string): ConnectionCertWarningsEvent | null {
+  const byHost = certWarningsById.get(id);
+  if (!byHost || byHost.size === 0) return null;
+  return { id, warnings: [...byHost.values()] };
+}
+
+/**
+ * Record one NON-FATAL per-host pin mismatch observed by a pool member's
+ * connection race (#1746): accumulate it (latest fingerprint per host) and
+ * broadcast the updated aggregate to the backend's windows. Deduped — an
+ * unchanged fingerprint for an already-recorded host re-broadcasts nothing
+ * (the race re-observes the same mismatch on every reconnect attempt).
+ */
+function recordCertWarning(
+  meta: { id: string; host: string; port: number },
+  info: HostCertMismatch,
+): void {
+  const warning: ConnectionHostCertWarning = {
+    host: info.host,
+    expectedFingerprint: info.expected,
+    actualFingerprint: info.actual,
+  };
+  let byHost = certWarningsById.get(meta.id);
+  if (!byHost) {
+    byHost = new Map();
+    certWarningsById.set(meta.id, byHost);
+  }
+  const previous = byHost.get(warning.host);
+  if (
+    previous &&
+    previous.expectedFingerprint === warning.expectedFingerprint &&
+    previous.actualFingerprint === warning.actualFingerprint
+  ) {
+    return;
+  }
+  byHost.set(warning.host, warning);
+  const payload = getCertWarningsEvent(meta.id);
+  if (payload) broadcast(CONNECTIONS.CERT_WARNINGS, payload, meta.id);
+  logger.warn('Backend pool observed a non-fatal per-host cert mismatch', {
+    id: meta.id,
+    host: warning.host,
+  });
 }
 
 /**
@@ -789,6 +865,13 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     );
     backendReconnectForwarder.emit('reconnected', id);
   });
+  // Non-fatal per-host pin mismatches from the multi-host connection race
+  // (#1746): a connect can succeed through one candidate host while another
+  // presents a mismatching pinned cert. Accumulated per host and pushed as
+  // `connections:cert-warnings` — informative only, never blocks anything.
+  instance.on('cert-warning', (info: HostCertMismatch) => {
+    if (meta) recordCertWarning(meta, info);
+  });
   instance.on('error', (error: Error) => {
     // Same non-transient failure handling as the primary client (see
     // getBackendClient's `error` handler), latched per connection id and
@@ -802,6 +885,18 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           port: meta.port,
           expectedFingerprint: error.expected,
           actualFingerprint: error.actual,
+          // Every per-host mismatch the failing race observed (#1746), so the
+          // trust modal can name each candidate host. Empty below the race
+          // layer (single-host failures carry no host attribution).
+          ...(error.mismatches.length > 0
+            ? {
+                mismatches: error.mismatches.map((m) => ({
+                  host: m.host,
+                  expectedFingerprint: m.expected,
+                  actualFingerprint: m.actual,
+                })),
+              }
+            : {}),
         };
         // Latch BEFORE broadcasting (same ordering as the primary). The boot
         // restore starts pooled clients before their windows exist, so the
@@ -1460,6 +1555,7 @@ async function listConnections(
     protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
     authRejected: authRejectedById.get(windowBackendId) ?? null,
     certMismatch: certMismatchById.get(windowBackendId) ?? null,
+    certWarnings: getCertWarningsEvent(windowBackendId),
     // The app's pinned intentd version so the renderer can compare each
     // remote's captured `daemonVersion` without a separate channel.
     pinnedVersion: getPinnedVersion(),
@@ -1489,6 +1585,7 @@ async function broadcastConnectionsChanged(): Promise<void> {
       protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
       authRejected: authRejectedById.get(windowBackendId) ?? null,
       certMismatch: certMismatchById.get(windowBackendId) ?? null,
+      certWarnings: getCertWarningsEvent(windowBackendId),
     };
     try {
       win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
