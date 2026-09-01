@@ -1273,6 +1273,7 @@
   "workspace_multiSelectSidebar_collapseAll_tooltip": "모두 접기",
   "workspace_multiSelectSidebar_contextTab_description": "작업에 대한 노트로, 이 스페이스의 모든 에이전트와 공유됩니다.",
   "workspace_multiSelectSidebar_contextTab_label": "컨텍스트",
+  "workspace_multiSelectSidebar_contextSummary_label": "사양, MCP, 스킬",
   "workspace_multiSelectSidebar_expandAll_tooltip": "모두 펼치기",
   "workspace_multiSelectSidebar_filesTab_description": "이 스페이스의 에이전트는 파일 사본을 기반으로 작업합니다.",
   "workspace_multiSelectSidebar_filesTab_label": "파일",

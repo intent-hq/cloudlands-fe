@@ -1273,6 +1273,7 @@
   "workspace_multiSelectSidebar_collapseAll_tooltip": "全部折叠",
   "workspace_multiSelectSidebar_contextTab_description": "关于任务的笔记，与此空间中的所有智能体共享。",
   "workspace_multiSelectSidebar_contextTab_label": "上下文",
+  "workspace_multiSelectSidebar_contextSummary_label": "规范、MCP、技能",
   "workspace_multiSelectSidebar_expandAll_tooltip": "全部展开",
   "workspace_multiSelectSidebar_filesTab_description": "此空间中的智能体基于你文件的副本工作。",
   "workspace_multiSelectSidebar_filesTab_label": "文件",

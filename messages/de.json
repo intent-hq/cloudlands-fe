@@ -1273,6 +1273,7 @@
   "workspace_multiSelectSidebar_collapseAll_tooltip": "Alle einklappen",
   "workspace_multiSelectSidebar_contextTab_description": "Notizen zur Aufgabe, geteilt mit allen Agenten in diesem Space.",
   "workspace_multiSelectSidebar_contextTab_label": "Kontext",
+  "workspace_multiSelectSidebar_contextSummary_label": "Spezifikation, MCP, Skills",
   "workspace_multiSelectSidebar_expandAll_tooltip": "Alle ausklappen",
   "workspace_multiSelectSidebar_filesTab_description": "Die Agenten in diesem Space arbeiten mit einer Kopie Ihrer Dateien.",
   "workspace_multiSelectSidebar_filesTab_label": "Dateien",

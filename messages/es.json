@@ -1273,6 +1273,7 @@
   "workspace_multiSelectSidebar_collapseAll_tooltip": "Contraer todo",
   "workspace_multiSelectSidebar_contextTab_description": "Notas sobre la tarea, compartidas con todos los agentes de este espacio.",
   "workspace_multiSelectSidebar_contextTab_label": "Contexto",
+  "workspace_multiSelectSidebar_contextSummary_label": "Especificación, MCP, habilidades",
   "workspace_multiSelectSidebar_expandAll_tooltip": "Expandir todo",
   "workspace_multiSelectSidebar_filesTab_description": "Los agentes de este espacio trabajan con una copia de sus archivos.",
   "workspace_multiSelectSidebar_filesTab_label": "Archivos",

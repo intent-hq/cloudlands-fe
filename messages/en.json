@@ -1274,6 +1274,7 @@
   "workspace_multiSelectSidebar_collapseAll_tooltip": "Collapse all",
   "workspace_multiSelectSidebar_contextTab_description": "Notes about the task, shared with all agents in this workspace.",
   "workspace_multiSelectSidebar_contextTab_label": "Context",
+  "workspace_multiSelectSidebar_contextSummary_label": "Spec, MCP, Skills",
   "workspace_multiSelectSidebar_expandAll_tooltip": "Expand all",
   "workspace_multiSelectSidebar_filesTab_description": "The agents in this workspace are working off a copy of your files.",
   "workspace_multiSelectSidebar_filesTab_label": "Files",
