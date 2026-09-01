@@ -765,7 +765,7 @@ describe('ChatPanel mounted lifecycle', () => {
     });
 
     expect(mocks.chatDrafts['workspace-a::agent-a']).toBeUndefined();
-    await vi.advanceTimersByTimeAsync(50);
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
     expect(mocks.chatDrafts['workspace-a::agent-a']).toBe('survive a sibling update');
     firstView.unmount();
     render(ChatPanel, {
@@ -792,7 +792,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.input(editor, { target: { value: 'abc' } });
 
     expect(mocks.dispatch.mock.calls).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(50);
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
 
     const draftActions = mocks.dispatch.mock.calls.filter(
       ([action]) => action?.type === 'transientUi/setChatDraft',

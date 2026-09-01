@@ -1697,16 +1697,10 @@
     ),
   );
 
-  const TRANSIENT_WRITE_DELAY_MS = 50;
   type PendingDraftWrite = { workspaceId: string; agentId: string; draft: string };
   let pendingDraftWrite: PendingDraftWrite | null = null;
-  let pendingDraftWriteTimer: ReturnType<typeof setTimeout> | null = null;
 
   function flushPendingDraftWrite(): void {
-    if (pendingDraftWriteTimer !== null) {
-      clearTimeout(pendingDraftWriteTimer);
-      pendingDraftWriteTimer = null;
-    }
     const pending = pendingDraftWrite;
     pendingDraftWrite = null;
     if (pending) {
@@ -1718,10 +1712,6 @@
     const workspaceId = workspace?.id;
     if (!workspaceId || !agentId) return;
     pendingDraftWrite = null;
-    if (pendingDraftWriteTimer !== null) {
-      clearTimeout(pendingDraftWriteTimer);
-      pendingDraftWriteTimer = null;
-    }
     appStore.dispatch(setChatDraft(workspaceId, agentId, draft));
   }
 
@@ -1729,11 +1719,6 @@
     const workspaceId = workspace?.id;
     if (!workspaceId || !agentId) return;
     pendingDraftWrite = { workspaceId, agentId, draft };
-    if (pendingDraftWriteTimer !== null) clearTimeout(pendingDraftWriteTimer);
-    pendingDraftWriteTimer = setTimeout(() => {
-      pendingDraftWriteTimer = null;
-      flushPendingDraftWrite();
-    }, TRANSIENT_WRITE_DELAY_MS);
   }
 
   // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
@@ -2036,12 +2021,12 @@
       }
     | { kind: 'clear'; key: string; panelId: string; tabId: string };
   let pendingSelectionWrites = new Map<string, PendingSelectionWrite>();
-  let pendingSelectionWriteTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingSelectionFrame: number | null = null;
 
   function flushPendingSelectionWrites(): void {
-    if (pendingSelectionWriteTimer !== null) {
-      clearTimeout(pendingSelectionWriteTimer);
-      pendingSelectionWriteTimer = null;
+    if (pendingSelectionFrame !== null) {
+      cancelAnimationFrame(pendingSelectionFrame);
+      pendingSelectionFrame = null;
     }
     const pending = pendingSelectionWrites;
     pendingSelectionWrites = new Map();
@@ -2056,11 +2041,11 @@
 
   function scheduleSelectionWrite(update: PendingSelectionWrite): void {
     pendingSelectionWrites.set(update.key, update);
-    if (pendingSelectionWriteTimer !== null) return;
-    pendingSelectionWriteTimer = setTimeout(() => {
-      pendingSelectionWriteTimer = null;
+    if (pendingSelectionFrame !== null) return;
+    pendingSelectionFrame = requestAnimationFrame(() => {
+      pendingSelectionFrame = null;
       flushPendingSelectionWrites();
-    }, TRANSIENT_WRITE_DELAY_MS);
+    });
   }
 
   $effect(() => {
