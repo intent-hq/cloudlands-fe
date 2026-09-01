@@ -490,9 +490,9 @@ export function classifyScrollbackGesture(params: ScrollbackGestureParams): 'ser
 
 /**
  * Window (ms) over which scroll displacement accumulates when deciding
- * rapid vs gentle. Matches the panel's seek settle debounce
- * (SEEK_DEBOUNCE_MS), so "rapid" means "moving faster than one settle
- * window can absorb".
+ * rapid vs gentle. The panel derives its seek settle debounce
+ * (SEEK_DEBOUNCE_MS) from this constant, so "rapid" means "moving faster
+ * than one settle window can absorb" by construction.
  */
 export const RAPID_SCROLL_WINDOW_MS = 200;
 
@@ -620,6 +620,15 @@ export interface SettleClassificationParams {
  * stay PANEL-SIDE — they need DOM measurement (the below spacer's rendered
  * position) this dependency-light module cannot see. The panel checks them
  * around this classification exactly as today.
+ *
+ * This helper is the REFERENCE implementation of the panel's settle
+ * decision, not the production call path: ChatPanel's
+ * maybeDispatchSettledSeek implements the 'seek' arm via
+ * seekTargetOrdinalAt (which also covers the below-spacer hole, a branch
+ * this DOM-free module cannot see) and the serial/none arms via its
+ * trigger guard. The full-walk harness keeps the two in agreement by
+ * asserting this classification against the mirrored panel drivers at the
+ * settled positions (chat-scrollback-full-walk.test.ts, settledParams).
  */
 export function classifySettledPosition(params: SettleClassificationParams): SettleDriver {
   const {

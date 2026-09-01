@@ -1200,12 +1200,26 @@ describe('full-walk scrollback harness', () => {
         this.maybeRequestOlderHistory();
       }
 
-      /** Mirrors the older-history settle chain (page lands → re-classify). */
+      /**
+       * Mirrors the older-history settle chain (page lands → re-classify,
+       * then the below drivers in the seek-debounce fire order, then the
+       * serial trigger).
+       */
       settleOlderFetch(): void {
         if (!this.fetchInFlight) return;
         this.sim.fetchOlderPage();
         this.fetchInFlight = false;
         if (this.maybeDispatchSettledSeek()) return;
+        if (this.sim.viewportFullyBelowOpenHole()) {
+          this.sim.collapseSegmentAtTail();
+          this.collapses += 1;
+          return;
+        }
+        if (this.sim.viewportOverlapsBelowSpacer()) {
+          this.gapFetchInFlight = true;
+          this.gapFillDispatches += 1;
+          return;
+        }
         this.maybeRequestOlderHistory();
       }
     }
@@ -1313,6 +1327,46 @@ describe('full-walk scrollback harness', () => {
       driver.onScroll(sim.above + 80, 400);
       expect(driver.debounceArmed).toBe(false);
       expect(driver.seekDispatches).toBe(0);
+    });
+
+    it('serial page in flight + flick down past the hole: the settle chain runs the below drivers (collapse) with zero extra scroll events', () => {
+      const conversation = buildConversation();
+      const sim = new WalkSim(conversation, 20);
+      sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+      sim.reconcile();
+      const driver = new PanelDriver(sim);
+
+      // Seek deep into the above spacer: the landing detaches the segment
+      // from the tail (open hole below it).
+      driver.onScroll(Math.round(0.3 * sim.above), 0);
+      driver.fireSeekDebounce();
+      expect(driver.seekDispatches).toBe(1);
+      expect(sim.meta.gapToTail).toBe(true);
+
+      // Gentle event near the landed segment's top edge: immediate serial
+      // dispatch, fetch now in flight.
+      driver.onScroll(Math.max(0, sim.above + 100), 600);
+      expect(driver.serialDispatches).toBe(1);
+      expect(driver.fetchInFlight).toBe(true);
+
+      // While the page is in flight the user flicks down past the open
+      // hole onto the live tail (fully below the hole, viewing tail rows —
+      // the anchor restore re-pins a tail row across the racing prepend);
+      // the debounce fire is consumed by the racing fetch (no dispatch).
+      driver.onScroll(sim.belowSpacerTopDoc() + sim.below + 200, 700);
+      expect(sim.viewportFullyBelowOpenHole()).toBe(true);
+      expect(driver.debounceArmed).toBe(true);
+      driver.fireSeekDebounce();
+      expect(driver.collapses).toBe(0);
+
+      // The in-flight page lands: the settle chain evaluates the below
+      // drivers and the return-to-tail collapse fires WITHOUT another
+      // scroll event.
+      driver.settleOlderFetch();
+      expect(driver.collapses).toBe(1);
+      expect(driver.seekDispatches, 'no spurious seek at the tail').toBe(1);
+      expect(sim.meta.gapToTail).toBe(false);
+      expect(sim.spacerOverlapPx()).toBe(0);
     });
 
     it('below-spacer drivers are unaffected: a flick back to the tail still collapses the segment', () => {

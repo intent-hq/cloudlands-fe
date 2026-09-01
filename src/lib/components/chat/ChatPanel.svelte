@@ -222,6 +222,7 @@
     mapScrollTopToOrdinal,
     OLDER_HISTORY_INDICATOR_QUIET_MS,
     olderHistoryIndicatorAction,
+    RAPID_SCROLL_WINDOW_MS,
     reconcileVirtualSpacer,
     restateFrozenSpacers,
     shouldRequestOlderHistory,
@@ -2171,8 +2172,10 @@
   // ONE aroundIndex seek that replaces the history segment with the landing
   // page (saga: historySeekWorker). Near-edge positions keep today's serial
   // chaining. Daemons without aroundIndex latch historySeekUnsupported and
-  // everything falls back to the serial walk.
-  const SEEK_DEBOUNCE_MS = 200;
+  // everything falls back to the serial walk. The debounce IS the rapid
+  // classification window: "rapid" means "moving faster than one settle
+  // window can absorb", so the two are the same constant by construction.
+  const SEEK_DEBOUNCE_MS = RAPID_SCROLL_WINDOW_MS;
   let seekDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   // Set from debounce fire until the landing is applied: suppresses the
   // serial trigger, the prepend anchor restore, and the frozen-phase
@@ -2453,6 +2456,12 @@
         // visible indicator (or its armed hide / pending evaluation) over
         // to the newly selected agent for the quiet window.
         resetOlderHistoryIndicator();
+        // Same rebaseline for the gap-fill settle tracker: the switch flips
+        // $fetchingGapFill$ to the NEW agent's value, and without this a
+        // mid-refill switch would read as a settle — re-running the settle
+        // chain (including a possible seek dispatch) for the new agent
+        // without any user scroll.
+        wasFetchingGapFill = false;
         return;
       }
       if (meta === discardBaselineMeta) return;
@@ -2728,9 +2737,16 @@
   // window — classifyScrollBurst) ALSO defer to the settle debounce even
   // over near/resident territory: chasing intermediate positions with
   // serial pages wastes fetches the settle re-classification replaces with
-  // one driver picked at the parked position. Stale samples age out of the
-  // burst buffer on the next event (appendScrollSample), so no reset is
-  // needed across agent switches.
+  // one driver picked at the parked position. The buffer ingests EVERY
+  // scroll event, including programmatic ones (prepend anchor restore,
+  // spacer compensation, seek-landing positioning, followToBottom on agent
+  // switch/send): a gentle user scroll within one window of such a write
+  // can transiently classify 'rapid' and defer its serial trigger by one
+  // settle window — accepted, because the deferral is self-correcting (the
+  // samples age out via appendScrollSample and the settle debounce still
+  // drives the walk) and the write sites are too scattered for a reliable
+  // per-site buffer reset. The same aging means no reset is needed across
+  // agent switches.
   let scrollBurstSamples: ScrollSample[] = [];
   $effect(() => {
     const container = scrollContainer;
@@ -2851,7 +2867,12 @@
   // (maybeDispatchSettledSeek — the classifySettledPosition contract): a
   // viewport still deep inside the spacer, e.g. parked there while this
   // page was in flight, issues ONE aroundIndex jump instead of serially
-  // chaining every intermediate page toward it.
+  // chaining every intermediate page toward it. The below drivers are
+  // evaluated too (collapse, then dead-zone gap refill — same order as the
+  // seek-debounce fire): a debounce consumed by this racing fetch may have
+  // carried a BELOW intent (the user flicked down past the open hole), and
+  // without these checks that intent would strand until the next scroll
+  // event.
   let wasFetchingOlderHistory = false;
   $effect(() => {
     const fetching = $fetchingOlderHistory$;
@@ -2872,7 +2893,15 @@
         requestAnimationFrame(() => {
           olderHistoryChainEvaluationPending = false;
           if (!isActive || isComponentDestroyed) return;
-          if (scrollContainer && !maybeDispatchSettledSeek()) maybeRequestOlderHistory();
+          if (scrollContainer && !maybeDispatchSettledSeek()) {
+            if (maybeCollapseHistorySegmentAtTail()) {
+              // Below intent handled; the chain (and its indicator) stops.
+            } else if (viewportOverlapsBelowSpacer()) {
+              requestHistoryGapFill();
+            } else {
+              maybeRequestOlderHistory();
+            }
+          }
           // The saga raises the fetching flag synchronously on dispatch, so
           // this read distinguishes "chain continued" (stay visible) from
           // "chain stopped" (arm the quiet-window hide).
