@@ -11,9 +11,8 @@
     state?: AvatarState;
   }
 
-  // Keep in sync with --agent-avatar-stack-overflow-gap (0.25rem) below.
-  const OVERFLOW_GAP_PX = 4;
   const FALLBACK_OVERFLOW_TEXT_WIDTH = 20;
+  const OVERFLOW_INLINE_PADDING = 12;
   let overflowMeasureContext: CanvasRenderingContext2D | null | undefined;
   let overflowFont: string | undefined;
   const overflowTextWidths = new Map<string, number>();
@@ -68,8 +67,9 @@
           availableWidth,
           surface: geometry.surface,
           overlap: geometry.overlap,
-          overflowGap: OVERFLOW_GAP_PX,
-          measureOverflowText: overflowTextWidth,
+          overflowOverlap: geometry.overlap,
+          measureOverflowText: (remaining) =>
+            Math.max(geometry.surface, overflowTextWidth(remaining) + OVERFLOW_INLINE_PADDING),
         })
       : undefined,
   );

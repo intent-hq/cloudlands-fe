@@ -3,7 +3,7 @@
   import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
-  import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
+  import { Skeleton } from '$lib/components/ui/skeleton';
   import TaskStatusProgress from '$lib/components/workspace/TaskStatusProgress.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';

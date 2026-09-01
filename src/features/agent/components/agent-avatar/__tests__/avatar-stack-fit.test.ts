@@ -16,7 +16,7 @@ function fit(overrides: Partial<AvatarStackFitOptions>): number {
     availableWidth: 200,
     surface: geometry.surface,
     overlap: geometry.overlap,
-    overflowGap: 4,
+    overflowOverlap: geometry.overlap,
     measureOverflowText: () => 20,
     ...overrides,
   });
@@ -30,21 +30,21 @@ describe('computeAdaptiveVisibleCount', () => {
     expect(fit({ itemCount: 0, availableWidth: 100 })).toBe(0);
   });
 
-  it('caps at maxVisible and reserves room for the overflow label', () => {
-    // 3 avatars (60) + gap (4) + label (20) = 84
-    expect(fit({ availableWidth: 84 })).toBe(3);
-    expect(fit({ availableWidth: 83 })).toBe(2);
+  it('caps at maxVisible and reserves room for the overlapping overflow tile', () => {
+    // 3 avatars (60) + tile (20) - overlap (6) = 74
+    expect(fit({ availableWidth: 74 })).toBe(3);
+    expect(fit({ availableWidth: 73 })).toBe(2);
   });
 
   it('drops avatars until avatars plus overflow label fit', () => {
-    // 2 avatars (42) + gap (4) + label (20) = 66
-    expect(fit({ availableWidth: 66 })).toBe(2);
-    // 1 avatar (24) + gap (4) + label (20) = 48
-    expect(fit({ availableWidth: 48 })).toBe(1);
+    // 2 avatars (42) + tile (20) - overlap (6) = 56
+    expect(fit({ availableWidth: 56 })).toBe(2);
+    // 1 avatar (24) + tile (20) - overlap (6) = 38
+    expect(fit({ availableWidth: 38 })).toBe(1);
   });
 
-  it('omits the overflow gap when only the label fits', () => {
-    // 0 avatars + label (20), no gap
+  it('omits overflow overlap when only the tile fits', () => {
+    // 0 avatars + tile (20), no overlap
     expect(fit({ availableWidth: 20 })).toBe(0);
     expect(fit({ availableWidth: 5 })).toBe(0);
   });
@@ -59,8 +59,8 @@ describe('computeAdaptiveVisibleCount', () => {
   });
 
   it('uses the measured overflow text width', () => {
-    // 2 avatars (42) + gap (4) + wide label (60) = 106 > 100 → drop to 1 (24 + 4 + 60 = 88)
-    expect(fit({ availableWidth: 100, measureOverflowText: () => 60 })).toBe(1);
+    // 2 avatars (42) + tile (60) - overlap (6) = 96 > 95 → drop to 1.
+    expect(fit({ availableWidth: 95, measureOverflowText: () => 60 })).toBe(1);
   });
 
   it('measures the actual remaining count', () => {
@@ -68,7 +68,7 @@ describe('computeAdaptiveVisibleCount', () => {
     fit({
       itemCount: 10,
       maxVisible: 3,
-      availableWidth: 48,
+      availableWidth: 38,
       measureOverflowText: (remaining) => {
         seen.push(remaining);
         return 20;
