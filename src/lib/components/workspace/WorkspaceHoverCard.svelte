@@ -426,9 +426,9 @@
                 <span class="min-w-0 truncate text-xs font-medium text-foreground">
                   {pr.title || m.workspace_hoverCard_pullRequest_label()}
                 </span>
-                <span class="shrink-0 text-[11px] text-subtle">#{pr.number}</span>
+                <span class="shrink-0 text-xs text-subtle">#{pr.number}</span>
                 <span
-                  class="col-start-2 col-end-4 min-w-0 truncate text-[11px] {pr.foregroundClass}"
+                  class="col-start-2 col-end-4 min-w-0 truncate text-xs {pr.foregroundClass}"
                   data-workspace-hover-card-pr-status
                 >
                   {pr.details.replaceAll('\n', ' · ')}
@@ -450,7 +450,7 @@
               >
                 <h3
                   id={`hover-${workspace.id}-${group.key}`}
-                  class="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-subtle"
+                  class="px-3 pb-0.5 pt-2 text-xs font-semibold uppercase tracking-wide text-subtle"
                 >
                   {group.label}
                 </h3>
@@ -474,13 +474,13 @@
                         class="max-w-[5.75rem] truncate text-sm font-medium text-foreground"
                         data-workspace-hover-card-agent-name>{row.name}</span
                       ><time
-                        class="whitespace-nowrap text-[11px] text-subtle"
+                        class="whitespace-nowrap text-xs text-subtle"
                         datetime={row.updated.dateTime}
                         aria-label={row.updated.accessible}
                         data-workspace-hover-card-agent-time>{row.updated.compact}</time
                       >
                       <span
-                        class="agent-detail flex min-w-0 items-start gap-1.5 text-[11px] leading-snug text-muted-foreground"
+                        class="agent-detail flex min-w-0 items-start gap-1.5 text-xs leading-snug text-muted-foreground"
                         title={row.context}
                         data-workspace-hover-card-agent-detail
                         data-workspace-hover-card-agent-preview={row.contextIsPreview || undefined}
