@@ -270,7 +270,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       'affirms coordinator and Spec ordering in every required visual state',
       [...visualStates],
     ),
-    selector(['open'], 'opens the Agents card and compact note exactly once'),
+    selector(['open'], 'keeps compact Context-card and Spec-icon actions separate'),
   ],
   'WORKSPACE-21': [
     selector(
