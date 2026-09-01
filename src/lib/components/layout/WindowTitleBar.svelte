@@ -36,7 +36,11 @@
     TITLEBAR_NAVIGATION_CONTROL_CLASS,
     TITLEBAR_NAVIGATION_GLYPH_CLASS,
   } from './titlebar-navigation';
-  import { getCounterScaledTitlebarHeight, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
+  import {
+    getCounterScaledTitlebarHeight,
+    TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
+    WINDOW_TITLEBAR_HEIGHT_PX,
+  } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
@@ -294,10 +298,7 @@
     style:width="{100 * $zoomFactor}%"
   >
     <!-- Left column -->
-    <div
-      class="titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-visible"
-      data-title-bar-navigation
-    >
+    <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-title-bar-navigation>
       <div
         class="titlebar-left-drag-handle shrink-0 self-stretch"
         data-titlebar-left-drag-handle

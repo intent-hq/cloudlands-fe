@@ -4,6 +4,7 @@
   import { store } from '$store/renderer/configured-store';
   import { loadWorkspaceTabsState } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { TITLEBAR_LEFT_DRAG_SURFACE_CLASS, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
 
   const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
@@ -35,9 +36,13 @@
   );
 </script>
 
-<div class="window-title-bar-wrapper" data-titlebar-geometry-root>
-  <div class="window-title-bar">
-    <div class="titlebar-left-drag-surface" data-titlebar-left-drag-surface>
+<div
+  class="window-title-bar-wrapper"
+  style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+  data-titlebar-geometry-root
+>
+  <div class="window-title-bar" style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px">
+    <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
       <div class="fixed-controls"></div>
       <div class="workspace-controls" data-titlebar-workspace-controls>
         <WorkspaceTabStrip activeWorkspaceId={ids[0]} />
@@ -52,8 +57,6 @@
   .window-title-bar-wrapper {
     position: relative;
     width: 360px;
-    height: 36px;
-    overflow: visible;
   }
 
   .window-title-bar {
@@ -63,7 +66,6 @@
     align-items: center;
     position: relative;
     width: 100%;
-    height: 36px;
     padding-top: 2px;
   }
 
@@ -73,7 +75,6 @@
     align-self: stretch;
     align-items: center;
     gap: 4px;
-    overflow: visible;
   }
 
   .fixed-controls {
