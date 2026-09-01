@@ -769,7 +769,6 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     daemon.lastAuthHeader = 'sentinel-not-overwritten';
     daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
     const before = daemon.decryptedBytes;
-    const secureBefore = daemon.secureConnections;
     const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
     const client = new JsonRpcClient({
       config: {
@@ -790,9 +789,8 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     // not one decrypted application byte — no upgrade request, no
     // Authorization header, no token query — reached the host. (The server may
     // or may not register the aborted session before the client tears it down,
-    // so only the byte count is asserted exactly.)
+    // so only the byte count is asserted, not the session count.)
     await new Promise((res) => setTimeout(res, 200));
-    expect(daemon.secureConnections).toBeGreaterThanOrEqual(secureBefore);
     expect(daemon.decryptedBytes).toBe(before);
     expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
     expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
