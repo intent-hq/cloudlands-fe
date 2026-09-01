@@ -535,8 +535,144 @@
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
+        <section class="px-4 pt-3" aria-labelledby={`${detailsId}-composition`}>
+          <h4 id={`${detailsId}-composition`} class="sr-only">
+            {m.workspace_tokenUsage_composition_label()}
+          </h4>
+          <span
+            id={`${detailsId}-preview-status`}
+            class="preview-status sr-only"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span>{m.workspace_tokenUsage_activeScope_label()}</span>
+            {#if activeTarget}
+              <span>{scopeKindLabel(activeTarget)}</span>
+            {/if}
+            <span title={scopeTitle(activeTarget)}>{scopeLabel(activeTarget)}</span>
+            <span>
+              <span>{compactWholeNumber(previewProcessedTokens)}</span>
+              {m.workspace_tokenUsage_processed_label()}
+            </span>
+          </span>
+          <div
+            class="token-summary mb-2 flex min-w-0 items-center justify-between gap-3 text-xs font-normal tracking-normal text-muted-foreground"
+          >
+            <span>{m.workspace_tokenUsage_title()}</span>
+            <span class="shrink-0 text-right text-sm font-normal tabular-nums text-foreground">
+              <AnimatedNumber
+                value={previewProcessedTokens}
+                format={compactWholeNumber}
+                pulse={false}
+                class="block text-right"
+              />
+            </span>
+          </div>
+          {#if visibleCompositionRows.length > 0}
+            <div
+              class="composition-strip mb-5 flex h-2.5 w-full min-w-0 overflow-hidden"
+              role="img"
+              aria-label={compositionSummary}
+            >
+              {#each visibleCompositionRows as row (row.id)}
+                <span
+                  class="composition-strip-segment block h-full shrink-0"
+                  data-metric={row.id}
+                  style={`width: ${segmentWidth(row.share, visibleCompositionRows.length)}`}
+                  aria-hidden="true"
+                ></span>
+              {/each}
+            </div>
+          {/if}
+          <div
+            class="composition-header min-w-0 border-b border-border pb-1 text-xs font-normal tracking-normal text-muted-foreground"
+          >
+            <span>{m.workspace_tokenUsage_metric_label()}</span>
+            <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
+            <span class="text-right">{m.workspace_tokenUsage_share_label()}</span>
+          </div>
+          <dl>
+            {#each compositionRows as row (row.id)}
+              <div class="composition-row token-composition-row min-w-0 py-1">
+                <dt
+                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal text-foreground"
+                >
+                  <span
+                    class="composition-key size-1.5 shrink-0 rounded-full"
+                    data-metric={row.id}
+                    aria-hidden="true"
+                  ></span>
+                  <span class="min-w-0 truncate">{row.label}</span>
+                </dt>
+                <dd
+                  class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
+                >
+                  <AnimatedNumber
+                    value={row.tokens}
+                    format={compactWholeNumber}
+                    pulse={false}
+                    class="block w-full text-right"
+                  />
+                </dd>
+                <dd
+                  class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
+                >
+                  <AnimatedNumber
+                    value={row.share}
+                    format={shareLabel}
+                    pulse={false}
+                    class="block w-full text-right"
+                  />
+                </dd>
+              </div>
+              {#if row.id === 'input' && crossFilterAvailable}
+                <div class="composition-row message-composition-row min-w-0 py-1">
+                  <dt
+                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
+                  >
+                    <span class="message-composition-label min-w-0 truncate">
+                      {m.workspace_tokenUsage_humanMessages_label()}
+                    </span>
+                  </dt>
+                  <dd
+                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
+                  >
+                    <AnimatedNumber
+                      value={previewHumanMessages ?? 0}
+                      format={formatInteger}
+                      pulse={false}
+                      class="block w-full text-right"
+                    />
+                  </dd>
+                  <dd class="composition-context" aria-hidden="true"></dd>
+                </div>
+                <div class="composition-row message-composition-row min-w-0 py-1">
+                  <dt
+                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
+                  >
+                    <span class="message-composition-label min-w-0 truncate">
+                      {m.workspace_tokenUsage_agentMessages_label()}
+                    </span>
+                  </dt>
+                  <dd
+                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
+                  >
+                    <AnimatedNumber
+                      value={previewAgentMessages ?? 0}
+                      format={formatInteger}
+                      pulse={false}
+                      class="block w-full text-right"
+                    />
+                  </dd>
+                  <dd class="composition-context" aria-hidden="true"></dd>
+                </div>
+              {/if}
+            {/each}
+          </dl>
+        </section>
+
         {#if agentRows.length > 0 || modelRows.length > 0}
-          <div class="breakdown-grid grid grid-cols-2 border-b border-border">
+          <div class="breakdown-grid grid grid-cols-2 border-t border-border">
             {#if agentRows.length > 0}
               <section
                 class="breakdown-section min-w-0 px-4 pb-4 pt-3"
@@ -688,142 +824,6 @@
             {/if}
           </div>
         {/if}
-
-        <section class="px-4 pb-3 pt-3" aria-labelledby={`${detailsId}-composition`}>
-          <h4 id={`${detailsId}-composition`} class="sr-only">
-            {m.workspace_tokenUsage_composition_label()}
-          </h4>
-          <span
-            id={`${detailsId}-preview-status`}
-            class="preview-status sr-only"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <span>{m.workspace_tokenUsage_activeScope_label()}</span>
-            {#if activeTarget}
-              <span>{scopeKindLabel(activeTarget)}</span>
-            {/if}
-            <span title={scopeTitle(activeTarget)}>{scopeLabel(activeTarget)}</span>
-            <span>
-              <span>{compactWholeNumber(previewProcessedTokens)}</span>
-              {m.workspace_tokenUsage_processed_label()}
-            </span>
-          </span>
-          <div
-            class="token-summary mb-2 flex min-w-0 items-center justify-between gap-3 text-xs font-normal tracking-normal text-muted-foreground"
-          >
-            <span>{m.workspace_tokenUsage_title()}</span>
-            <span class="shrink-0 text-right text-sm font-normal tabular-nums text-foreground">
-              <AnimatedNumber
-                value={previewProcessedTokens}
-                format={compactWholeNumber}
-                pulse={false}
-                class="block text-right"
-              />
-            </span>
-          </div>
-          {#if visibleCompositionRows.length > 0}
-            <div
-              class="composition-strip mb-3 flex h-2.5 w-full min-w-0 overflow-hidden"
-              role="img"
-              aria-label={compositionSummary}
-            >
-              {#each visibleCompositionRows as row (row.id)}
-                <span
-                  class="composition-strip-segment block h-full shrink-0"
-                  data-metric={row.id}
-                  style={`width: ${segmentWidth(row.share, visibleCompositionRows.length)}`}
-                  aria-hidden="true"
-                ></span>
-              {/each}
-            </div>
-          {/if}
-          <div
-            class="composition-header min-w-0 border-b border-border pb-1 text-xs font-normal tracking-normal text-muted-foreground"
-          >
-            <span>{m.workspace_tokenUsage_metric_label()}</span>
-            <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
-            <span class="text-right">{m.workspace_tokenUsage_share_label()}</span>
-          </div>
-          <dl>
-            {#each compositionRows as row (row.id)}
-              <div class="composition-row token-composition-row min-w-0 py-1">
-                <dt
-                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal text-foreground"
-                >
-                  <span
-                    class="composition-key size-1.5 shrink-0 rounded-full"
-                    data-metric={row.id}
-                    aria-hidden="true"
-                  ></span>
-                  <span class="min-w-0 truncate">{row.label}</span>
-                </dt>
-                <dd
-                  class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
-                >
-                  <AnimatedNumber
-                    value={row.tokens}
-                    format={compactWholeNumber}
-                    pulse={false}
-                    class="block w-full text-right"
-                  />
-                </dd>
-                <dd
-                  class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
-                >
-                  <AnimatedNumber
-                    value={row.share}
-                    format={shareLabel}
-                    pulse={false}
-                    class="block w-full text-right"
-                  />
-                </dd>
-              </div>
-              {#if row.id === 'input' && crossFilterAvailable}
-                <div class="composition-row message-composition-row min-w-0 py-1">
-                  <dt
-                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
-                  >
-                    <span class="message-composition-label min-w-0 truncate">
-                      {m.workspace_tokenUsage_humanMessages_label()}
-                    </span>
-                  </dt>
-                  <dd
-                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
-                  >
-                    <AnimatedNumber
-                      value={previewHumanMessages ?? 0}
-                      format={formatInteger}
-                      pulse={false}
-                      class="block w-full text-right"
-                    />
-                  </dd>
-                  <dd class="composition-context" aria-hidden="true"></dd>
-                </div>
-                <div class="composition-row message-composition-row min-w-0 py-1">
-                  <dt
-                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
-                  >
-                    <span class="message-composition-label min-w-0 truncate">
-                      {m.workspace_tokenUsage_agentMessages_label()}
-                    </span>
-                  </dt>
-                  <dd
-                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
-                  >
-                    <AnimatedNumber
-                      value={previewAgentMessages ?? 0}
-                      format={formatInteger}
-                      pulse={false}
-                      class="block w-full text-right"
-                    />
-                  </dd>
-                  <dd class="composition-context" aria-hidden="true"></dd>
-                </div>
-              {/if}
-            {/each}
-          </dl>
-        </section>
       </section>
     {/if}
   </div>

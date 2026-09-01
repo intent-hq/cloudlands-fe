@@ -250,7 +250,7 @@ describe('WorkspaceTokenUsage', () => {
       agentSection.compareDocumentPosition(modelSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      modelSection.compareDocumentPosition(compositionHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+      compositionHeading.compareDocumentPosition(agentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'By agent' }).classList).toContain('sr-only');
     expect(screen.getByRole('heading', { name: 'By model' }).classList).toContain('sr-only');
@@ -268,7 +268,11 @@ describe('WorkspaceTokenUsage', () => {
     expect(tokenSummary.classList).toContain('font-normal');
     expect(tokenSummary.classList).toContain('text-muted-foreground');
     expect(tokenSummary.lastElementChild?.classList).toContain('font-normal');
-    expect(breakdownGrid.classList).toContain('border-b');
+    expect(composition.nextElementSibling).toBe(breakdownGrid);
+    expect(details.lastElementChild).toBe(breakdownGrid);
+    expect(composition.classList).not.toContain('pb-3');
+    expect(breakdownGrid.classList).toContain('border-t');
+    expect(breakdownGrid.classList).not.toContain('border-b');
     expect(modelSection.classList).toContain('breakdown-section');
     expect(visibleText(compositionHeader)).toBe('Metric Value Share');
     expect(compositionHeader.classList).toContain('border-b');
@@ -279,6 +283,8 @@ describe('WorkspaceTokenUsage', () => {
     expect(compositionHeader.classList).toContain('text-muted-foreground');
     expect(composition.querySelector('.preview-status')?.classList).toContain('sr-only');
     expect(compositionStrip.nextElementSibling).toBe(compositionHeader);
+    expect(compositionStrip.classList).toContain('mb-5');
+    expect(compositionStrip.classList).not.toContain('mb-3');
     expect(compositionStrip.getAttribute('aria-label')).toContain(
       'Token composition, Cached context: 9M tokens, 99%',
     );
@@ -760,9 +766,9 @@ describe('WorkspaceTokenUsage', () => {
     ]);
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
     expect(
-      agentSection.compareDocumentPosition(
-        screen.getByRole('heading', { name: 'Token composition' }),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      screen
+        .getByRole('heading', { name: 'Token composition' })
+        .compareDocumentPosition(agentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(agentSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
     expect(modelSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
