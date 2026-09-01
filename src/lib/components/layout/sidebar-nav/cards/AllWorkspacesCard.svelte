@@ -16,15 +16,22 @@
   } from '$lib/components/workspace/utils/workspace-grouping';
   import { onMount } from 'svelte';
   import Header from '$lib/components/ui/Header.svelte';
+  import Fa from 'svelte-fa';
+  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { formatInteger } from '$lib/i18n/format';
 
   import {
     selectPinnedWorkspaceIds,
     selectAllSpacesViewMode,
+    selectCollapsedStatusGroupIds,
     selectShowArchivedWorkspaces,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
 
-  import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    togglePinWorkspace,
+    toggleStatusGroupCollapsed,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     compareWorkspaceActivityDisplayTimeDesc,
     getWorkspaceActivityDisplayTime,
@@ -45,6 +52,7 @@
   const hasLoaded$ = selectWorkspaceHasLoaded();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
+  const collapsedStatusGroupIds$ = selectCollapsedStatusGroupIds();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
 
   interface Props {
@@ -277,9 +285,9 @@
     'failed',
     'blocked',
     'needs_attention',
-    'idle',
     'not_started',
     'in_progress',
+    'idle',
     'complete',
     'pr_open',
     'pr_ready',
@@ -300,11 +308,18 @@
     }
     const liveGroups = statusOrder
       .filter((s) => groups.has(s))
-      .map((s) => [statusLabels[s](), groups.get(s)!] as [string, Workspace[]]);
+      .map((id) => ({ id, label: statusLabels[id](), workspaces: groups.get(id)! }));
     return archived.length > 0
-      ? [...liveGroups, [m.layout_allCard_archived_label(), archived] as [string, Workspace[]]]
+      ? [
+          ...liveGroups,
+          { id: 'archived', label: m.layout_allCard_archived_label(), workspaces: archived },
+        ]
       : liveGroups;
   });
+
+  function toggleStatusGroup(groupId: string) {
+    appStore.dispatch(toggleStatusGroupCollapsed(groupId));
+  }
 
   function _getStreamingIds(ws: Workspace): string[] {
     void activeStreamsVersion;
@@ -361,7 +376,11 @@
         visibleWorkspaces.map((workspace) => workspace.id),
       );
     } else if ($viewMode$ === 'status') {
-      return groupedByStatus.flatMap(([, workspaces]) => workspaces.map((w) => w.id));
+      return groupedByStatus.flatMap((group) =>
+        $collapsedStatusGroupIds$.includes(group.id)
+          ? []
+          : group.workspaces.map((workspace) => workspace.id),
+      );
     }
     return filteredWorkspaces.map((w) => w.id);
   });
@@ -609,34 +628,57 @@
             </div>
           {/each}
         {:else if $viewMode$ === 'status'}
-          {#each groupedByStatus as [statusLabel, workspaces]}
-            <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0">
-              <Header size={4} class="truncate">{statusLabel}</Header>
+          {#each groupedByStatus as group (group.id)}
+            {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
+            <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
+              <button
+                type="button"
+                class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                aria-expanded={isExpanded}
+                aria-controls={`status-group-${group.id}`}
+                data-status-group-toggle={group.id}
+                onclick={() => toggleStatusGroup(group.id)}
+                onkeydown={(event) => event.stopPropagation()}
+              >
+                <Fa
+                  icon={faChevronDown}
+                  size="xs"
+                  class="shrink-0 text-muted-foreground transition-transform {isExpanded
+                    ? ''
+                    : '-rotate-90'}"
+                />
+                <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
+                <span class="type-caption shrink-0 text-muted-foreground">
+                  {formatInteger(group.workspaces.length)}
+                </span>
+              </button>
             </div>
-            {#each workspaces as workspace, _i (workspace.id)}
-              <WorkspaceCard
-                {workspace}
-                variant="compact"
-                isUnread={_isUnread(workspace)}
-                isPinned={$pinnedIds$.includes(workspace.id)}
-                trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
-                  ? m.lib_commandPalette_archivedWorkspace_pill()
-                  : undefined}
-                streamingAgentIds={_getStreamingIds(workspace)}
-                highlighted={keyboardNavActive &&
-                  highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
-                suppressHover={keyboardNavActive}
-                onClick={(e) => handleClick(workspace.id, e)}
-                onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-                onMarkAsRead={_isUnread(workspace)
-                  ? (e) => handleMarkAsRead(e, workspace.id)
-                  : undefined}
-                onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
-                onHover={() => {
-                  hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
-                }}
-              />
-            {/each}
+            <div id={`status-group-${group.id}`} hidden={!isExpanded}>
+              {#each group.workspaces as workspace, _i (workspace.id)}
+                <WorkspaceCard
+                  {workspace}
+                  variant="compact"
+                  isUnread={_isUnread(workspace)}
+                  isPinned={$pinnedIds$.includes(workspace.id)}
+                  trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
+                    ? m.lib_commandPalette_archivedWorkspace_pill()
+                    : undefined}
+                  streamingAgentIds={_getStreamingIds(workspace)}
+                  highlighted={keyboardNavActive &&
+                    highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
+                  suppressHover={keyboardNavActive}
+                  onClick={(e) => handleClick(workspace.id, e)}
+                  onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+                  onMarkAsRead={_isUnread(workspace)
+                    ? (e) => handleMarkAsRead(e, workspace.id)
+                    : undefined}
+                  onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+                  onHover={() => {
+                    hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
+                  }}
+                />
+              {/each}
+            </div>
           {/each}
         {/if}
       </div>
