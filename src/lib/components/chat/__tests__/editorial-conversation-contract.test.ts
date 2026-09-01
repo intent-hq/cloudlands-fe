@@ -148,9 +148,11 @@ describe('editorial conversation presentation contract', () => {
     // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire
     // (before the shouldRenderContent early-return) so post-swap settles are
     // caught in the same frame.
-    expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.request\(\);/);
     expect(lazyTurn).toMatch(
-      /ledger\.request\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/,
+      /if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.requestBeforePaint\(\);/,
+    );
+    expect(lazyTurn).toMatch(
+      /ledger\.requestBeforePaint\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/,
     );
     // Cached heights are panel-scoped and wrap-width-dependent. ChatPanel
     // owns the bounded cache, while each LazyTurn validates reads and writes.
