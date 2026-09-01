@@ -16,6 +16,51 @@ function contrastRatio(first: Rgba, second: Rgba): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+for (const scenario of [
+  { name: 'cross-filter rows and navigators', crossFilter: true, navigators: true, messages: 2 },
+  { name: 'legacy rows and navigators', crossFilter: false, navigators: true, messages: 0 },
+  { name: 'legacy rows without navigators', crossFilter: false, navigators: false, messages: 0 },
+] as const) {
+  test(`keeps exactly 12px below the token table with ${scenario.name}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1100, height: 720 });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: {
+        theme: 'light',
+        width: 304,
+        crossFilter: scenario.crossFilter,
+        navigators: scenario.navigators,
+      },
+    });
+    await component.getByTestId('token-usage-disclosure').click();
+
+    const details = page.getByTestId('token-usage-details');
+    await expect(details.locator('.message-composition-row')).toHaveCount(scenario.messages);
+    await expect(details.locator('.breakdown-grid')).toHaveCount(scenario.navigators ? 1 : 0);
+    const geometry = await details.evaluate((element) => {
+      const composition = element.querySelector<HTMLElement>(
+        'section[aria-labelledby$="-composition"]',
+      )!;
+      const lastRow = composition
+        .querySelector('.composition-row:last-child')!
+        .getBoundingClientRect();
+      const navigator = element.querySelector('.breakdown-grid')?.getBoundingClientRect();
+      const detailsBox = element.getBoundingClientRect();
+      const detailsStyle = getComputedStyle(element);
+      const innerBottom = detailsBox.bottom - Number.parseFloat(detailsStyle.borderBottomWidth);
+      return {
+        paddingBottom: getComputedStyle(composition).paddingBottom,
+        gap: (navigator?.top ?? innerBottom) - lastRow.bottom,
+      };
+    });
+
+    expect(geometry.paddingBottom).toBe('12px');
+    expect(geometry.gap).toBeCloseTo(12, 2);
+  });
+}
+
 test('exposes compact values and keeps summary text readable on hover', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
@@ -786,6 +831,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         headerBorderBottomColor: getComputedStyle(compositionHeader).borderBottomColor,
         rowBorderTopWidths: rows.map((row) => getComputedStyle(row).borderTopWidth),
         lastRowBorderBottomWidth: getComputedStyle(rows.at(-1)!).borderBottomWidth,
+        lastRowBottom: rows.at(-1)!.getBoundingClientRect().bottom,
         compositionPaddingBottom: getComputedStyle(compositionHeader.parentElement!).paddingBottom,
         compositionBottom: compositionHeader.parentElement!.getBoundingClientRect().bottom,
         gridTop: grid.getBoundingClientRect().top,
@@ -944,7 +990,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     headerBorderBottomWidth: '1px',
     rowBorderTopWidths: ['0px', '0px', '0px', '0px', '0px', '0px'],
     lastRowBorderBottomWidth: '0px',
-    compositionPaddingBottom: '0px',
+    compositionPaddingBottom: '12px',
   });
   expect([
     breakdownDivider.gridBorderTopColor,
@@ -954,6 +1000,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     Math.abs(breakdownDivider.compositionBottom - breakdownDivider.gridTop),
   ).toBeLessThanOrEqual(0.01);
+  expect(breakdownDivider.gridTop - breakdownDivider.lastRowBottom).toBeCloseTo(12, 2);
   expect(
     Math.abs(breakdownDivider.gridBottom - breakdownDivider.detailsBottom),
   ).toBeLessThanOrEqual(1);
