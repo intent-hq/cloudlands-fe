@@ -1,29 +1,30 @@
-import { store } from "../../store";
-import type { EnvironmentConfig, FileGitStatus } from "$shared/types";
-import { shallowEqual } from "fast-equals";
-import { stripWorkspacePrefix } from "$lib/utils/file-utils";
-import { emptyFileExplorerWorkspaceState } from "./file-explorer-slice";
+import { store } from '../../store';
+import type { EnvironmentConfig, FileGitStatus } from '$shared/types';
+import { shallowEqual } from 'fast-equals';
+import { stripWorkspacePrefix } from '$lib/utils/file-utils';
+import { emptyFileExplorerWorkspaceState } from './file-explorer-slice';
 import type {
   FileExplorerTreeNode,
   FileExplorerWorkspaceState,
   FlattenedFileNode,
-} from "./file-explorer-types";
-import { flattenVisibleNodes } from "./file-explorer-utils";
-import { getItem } from "@augmentcode/themis/utils/collections/collection-utils";
+} from './file-explorer-types';
+import { flattenVisibleNodes } from './file-explorer-utils';
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   selectWorkspaceById,
   selectWorkspaceEnvironmentConfig,
-} from "../workspace/workspace-selectors";
+} from '../workspace/workspace-selectors';
 
 // ---------------------------------------------------------------------------
 // Per-workspace state selector
 // ---------------------------------------------------------------------------
 
-export const selectFileExplorerState = store.createSelector<[wsId: string], FileExplorerWorkspaceState>(
-  (state, wsId) => {
-    return state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
-  },
-);
+export const selectFileExplorerState = store.createSelector<
+  [wsId: string],
+  FileExplorerWorkspaceState
+>((state, wsId) => {
+  return state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
+});
 
 // ---------------------------------------------------------------------------
 // Individual field selectors
@@ -32,12 +33,10 @@ export const selectFileExplorerState = store.createSelector<[wsId: string], File
 export const selectFileExplorerRootNode = store.createSelector<
   [wsId: string],
   FileExplorerTreeNode | null
->(
-  (state, wsId) => {
-    const ws = selectFileExplorerState.select(state, wsId);
-    return ws.rootPath ? getItem(ws.nodes, ws.rootPath) ?? null : null;
-  },
-);
+>((state, wsId) => {
+  const ws = selectFileExplorerState.select(state, wsId);
+  return ws.rootPath ? (getItem(ws.nodes, ws.rootPath) ?? null) : null;
+});
 
 export const selectFileExplorerNodeMap = store.createSelector<
   [wsId: string],
@@ -65,12 +64,13 @@ export const selectFileExplorerGitStatus = store.createSelector<
   Record<string, FileGitStatus>
 >((state, wsId) => selectFileExplorerState.select(state, wsId).gitStatus);
 
-export const selectEffectiveFileExplorerWorkspacePath = store.createSelector<[wsId: string], string>(
-  (state, wsId) => {
-    const workspace = selectWorkspaceById.select(state, wsId);
-    return workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || "";
-  },
-);
+export const selectEffectiveFileExplorerWorkspacePath = store.createSelector<
+  [wsId: string],
+  string
+>((state, wsId) => {
+  const workspace = selectWorkspaceById.select(state, wsId);
+  return workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || '';
+});
 
 export interface FileExplorerInitializationInputs {
   workspacePath: string;
@@ -105,7 +105,7 @@ export const selectFileExplorerEnvironmentConfigTrigger = store.createSelector<
   if (!wsId) {
     return {
       wsId: null,
-      workspacePath: "",
+      workspacePath: '',
       workspaceEnvironmentConfig: undefined,
     };
   }
@@ -152,7 +152,7 @@ export const selectShouldInitializeFileExplorerForWorkspace = store.createSelect
 
   if (!currentState.isInitialized) return true;
 
-  return workspaceEnvironmentConfig?.type === "remote" && !currentState.isRemoteInitialized;
+  return workspaceEnvironmentConfig?.type === 'remote' && !currentState.isRemoteInitialized;
 });
 
 /**
@@ -189,8 +189,8 @@ const flattenedNodeCache = new WeakMap<FileExplorerTreeNode, FlattenedNodeCacheE
  * Each produced FlattenedFileNode has stable object identity across dispatches
  * when its per-row inputs (isExpanded, isLoading, gitStatus[relPath],
  * agentFileEdits[relPath], directoryHasChanges, displayPath,
- * compactedExpandedPaths) are unchanged.
- * Only the outer array identity may change.
+ * compactedExpandedPaths) are unchanged. The Store-created readable shallow-retains
+ * the outer array when every row retains its identity.
  */
 export const selectFlattenedNodes = store.createSelector<[wsId: string], FlattenedFileNode[]>(
   (state, wsId) => {
@@ -208,9 +208,9 @@ export const selectFlattenedNodes = store.createSelector<[wsId: string], Flatten
     // once, so the per-node directory rollup check below is O(1).
     const changedDirs = new Set<string>();
     for (const filePath of Object.keys(gitStatus)) {
-      const parts = filePath.split("/");
+      const parts = filePath.split('/');
       for (let i = 1; i < parts.length; i++) {
-        changedDirs.add(parts.slice(0, i).join("/"));
+        changedDirs.add(parts.slice(0, i).join('/'));
       }
     }
 
@@ -220,19 +220,19 @@ export const selectFlattenedNodes = store.createSelector<[wsId: string], Flatten
         const stripped = stripWorkspacePrefix(flatNode.node.path, workspacePath);
         if (stripped !== flatNode.node.path) relativePath = stripped;
       }
-      const isFile = flatNode.node.type === "file";
+      const isFile = flatNode.node.type === 'file';
       const edits = agentFileEdits[relativePath];
       const fileGitStatus = isFile ? gitStatus[relativePath] : undefined;
       const dirHasChanges = !isFile && changedDirs.has(relativePath);
 
-      const nextInputs: FlattenedNodeCacheEntry["inputs"] = {
+      const nextInputs: FlattenedNodeCacheEntry['inputs'] = {
         isExpanded: flatNode.isExpanded,
         isLoading: flatNode.isLoading,
         agentEdits: edits && edits.length > 0 ? edits : undefined,
         gitStatus: fileGitStatus,
         directoryHasChanges: dirHasChanges,
         displayPath: flatNode.displayPath,
-        compactedExpandedPathsKey: flatNode.compactedExpandedPaths?.join("\u0000"),
+        compactedExpandedPathsKey: flatNode.compactedExpandedPaths?.join('\u0000'),
         depth: flatNode.depth,
       };
 
@@ -263,5 +263,3 @@ export const selectFlattenedNodes = store.createSelector<[wsId: string], Flatten
     });
   },
 );
-
-
