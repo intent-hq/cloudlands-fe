@@ -33,6 +33,7 @@ import {
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
+import type { HostCertMismatch } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
@@ -1089,7 +1090,31 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect((await failed).message).toBe('ECONNREFUSED b');
   });
 
-  it('a PinMismatchError on ANY candidate fails the whole race immediately', async () => {
+  it('continues past a pin mismatch — a later good candidate still wins (iOS model)', async () => {
+    const bad = new FakeCandidate();
+    const good = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'bad', create: () => bad },
+      { host: 'good', create: () => good },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    const mismatchEvents: HostCertMismatch[] = [];
+    facade.on('pin-mismatch', (m: HostCertMismatch) => mismatchEvents.push(m));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    bad.emit('error', new PinMismatchError('AA', 'BB'));
+    // The mismatching candidate is counted out and torn down — not the race.
+    expect(bad.destroyedByRace).toBe(true);
+    expect(facade.destroyed).toBe(false);
+    good.emit('connect');
+    await connected;
+    expect(errors).toHaveLength(0);
+    // The pre-win mismatch is surfaced as a non-fatal per-host event.
+    expect(mismatchEvents).toEqual([{ host: 'bad', expected: 'AA', actual: 'BB' }]);
+    facade.destroy();
+  });
+
+  it('fails with an aggregated cert error listing every host when all candidates mismatch', async () => {
     const a = new FakeCandidate();
     const b = new FakeCandidate();
     const facade = raceDuplexSockets([
@@ -1098,16 +1123,58 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
     a.emit('error', new PinMismatchError('AA', 'BB'));
+    b.emit('error', new PinMismatchError('AA', 'CC'));
     const error = await failed;
     expect(error).toBeInstanceOf(PinMismatchError);
-    // The other candidate is torn down — no silent fallback past a bad cert.
-    expect(b.destroyedByRace).toBe(true);
-    // A late connect on the other candidate must not resurrect the race.
-    b.emit('connect');
-    expect(facade.destroyed).toBe(true);
+    const aggregate = error as PinMismatchError;
+    expect(aggregate.mismatches).toEqual([
+      { host: 'a', expected: 'AA', actual: 'BB' },
+      { host: 'b', expected: 'AA', actual: 'CC' },
+    ]);
+    // expected/actual mirror the FIRST mismatch (backward compatibility).
+    expect(aggregate.expected).toBe('AA');
+    expect(aggregate.actual).toBe('BB');
+    expect(aggregate.message).toContain('hosts: a, b');
   });
 
-  it('a pin mismatch AFTER a valid winner settles is discarded — winner takes precedence', async () => {
+  it('prefers the aggregated cert error over a generic failure when no candidate wins', async () => {
+    const mismatching = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'mismatching', create: () => mismatching },
+      { host: 'refused', create: () => refused },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    mismatching.emit('error', new PinMismatchError('AA', 'BB'));
+    refused.emit('error', new Error('ECONNREFUSED'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).mismatches).toEqual([
+      { host: 'mismatching', expected: 'AA', actual: 'BB' },
+    ]);
+  });
+
+  it('prefers the cert error on race timeout when a mismatch was observed', async () => {
+    const mismatching = new FakeCandidate();
+    const blackhole = new FakeCandidate();
+    const facade = raceDuplexSockets(
+      [
+        { host: 'mismatching', create: () => mismatching },
+        { host: 'blackhole', create: () => blackhole },
+      ],
+      { timeoutMs: 50 },
+    );
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    mismatching.emit('error', new PinMismatchError('AA', 'BB'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).mismatches).toEqual([
+      { host: 'mismatching', expected: 'AA', actual: 'BB' },
+    ]);
+    expect(blackhole.destroyedByRace).toBe(true);
+  });
+
+  it('a pin mismatch AFTER a valid winner settles emits the event without tearing down the winner', async () => {
     const good = new FakeCandidate();
     const stale = new FakeCandidate();
     const facade = raceDuplexSockets([
@@ -1116,14 +1183,18 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const errors: Error[] = [];
     facade.on('error', (e) => errors.push(e));
+    const mismatchEvents: HostCertMismatch[] = [];
+    facade.on('pin-mismatch', (m: HostCertMismatch) => mismatchEvents.push(m));
     const connected = new Promise<void>((res) => facade.once('connect', () => res()));
     good.emit('connect');
     await connected;
     // A stale IP now owned by a foreign pinned daemon reports a mismatch late:
-    // the established pin-verified winner must not be torn down by it.
+    // the established pin-verified winner must not be torn down by it, but the
+    // mismatch is still surfaced as a non-fatal per-host event (not log-only).
     stale.emit('error', new PinMismatchError('AA', 'BB'));
     expect(errors).toHaveLength(0);
     expect(facade.destroyed).toBe(false);
+    expect(mismatchEvents).toEqual([{ host: 'stale', expected: 'AA', actual: 'BB' }]);
     // The facade still proxies the winner.
     facade.write('ping\n');
     expect(good.written).toEqual(['ping\n']);
