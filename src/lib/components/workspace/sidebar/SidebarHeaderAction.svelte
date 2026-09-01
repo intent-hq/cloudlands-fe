@@ -15,8 +15,8 @@
 <Button
   bind:ref
   variant="plain"
-  size="icon-sm"
-  class="expanded-card-action size-7! rounded-md! border-0! bg-transparent! p-0! text-foreground shadow-none! outline-none transition-colors hover:bg-muted/50! focus-visible:border-transparent! focus-visible:bg-muted! motion-reduce:transition-none forced-colors:hover:outline forced-colors:focus-visible:outline"
+  size="icon-xs"
+  class="expanded-card-action rounded-md! border-0! bg-transparent! p-0! text-foreground shadow-none! outline-none transition-colors hover:bg-muted/50! focus-visible:border-transparent! focus-visible:bg-muted! motion-reduce:transition-none forced-colors:hover:outline forced-colors:focus-visible:outline"
   tooltip={label}
   tooltipSide="top"
   tooltipDelayDuration={300}
