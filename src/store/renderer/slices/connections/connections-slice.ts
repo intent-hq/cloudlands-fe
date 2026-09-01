@@ -266,8 +266,12 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     // same shape as the one-shot push, so an empty/`null` replay clears the
     // entry and a non-empty one seeds a renderer created after the push.
     if (result.certWarnings === null || result.certWarnings.warnings.length === 0) {
-      if (result.certWarnings && state.certWarnings[result.certWarnings.id]) {
-        const { [result.certWarnings.id]: _cleared, ...rest } = state.certWarnings;
+      // A `null` replay carries no id — it means the window backend has no
+      // sticky warnings, so the entry to drop is the window backend's.
+      const clearedId =
+        result.certWarnings === null ? result.windowBackendId : result.certWarnings.id;
+      if (state.certWarnings[clearedId]) {
+        const { [clearedId]: _cleared, ...rest } = state.certWarnings;
         next.certWarnings = rest;
       }
     } else {

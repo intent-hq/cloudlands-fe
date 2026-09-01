@@ -293,7 +293,22 @@ describe('connectionsReducer', () => {
       expect(next.certWarnings['remote-1']).toBeUndefined();
     });
 
-    it('connectionsListReceived with certWarnings: null leaves other ids untouched', () => {
+    it('connectionsListReceived with certWarnings: null clears the window backend entry', () => {
+      // Regression (#1983 review): a `null` replay carries no id — it must
+      // still drop the stale entry latched for this window's backend.
+      const state = {
+        ...initialState,
+        certWarnings: { 'remote-1': [HOST_WARNING], 'remote-2': [HOST_WARNING] },
+      };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({ ...LIST_RESULT, certWarnings: null }),
+      );
+      expect(next.certWarnings['remote-1']).toBeUndefined();
+      expect(next.certWarnings['remote-2']).toEqual([HOST_WARNING]);
+    });
+
+    it('connectionsListReceived with certWarnings: null and no latched entry is a no-op', () => {
       const state = { ...initialState, certWarnings: { 'remote-2': [HOST_WARNING] } };
       const next = connectionsReducer(
         state,
