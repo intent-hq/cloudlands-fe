@@ -49,6 +49,21 @@ describe('execution plan renderer routing', () => {
     expect(screen.getByText('Inspect the renderer')).toBeTruthy();
   });
 
+  it('keeps a plan-only message inline without creating a utility column', async () => {
+    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
+    const view = render(StreamingMessageContent, {
+      props: { content: [plan(initialEntries)], isStreaming: true },
+    });
+
+    const card = screen.getByTestId('execution-plan-card');
+    expect(view.container.querySelectorAll('[data-testid="execution-plan-card"]')).toHaveLength(1);
+    expect(card.closest('[data-operational-stack]')).not.toBeNull();
+    expect(card.classList.contains('w-full')).toBe(true);
+    expect(card.classList.contains('min-w-0')).toBe(true);
+    expect(card.classList.contains('max-w-full')).toBe(true);
+    expect(view.container.querySelector('[data-testid="subscription-utility-area"]')).toBeNull();
+  });
+
   it('replaces a streamed snapshot in place without duplicating the card', async () => {
     const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const view = render(StreamingMessageContent, {

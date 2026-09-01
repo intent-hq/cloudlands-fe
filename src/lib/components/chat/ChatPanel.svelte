@@ -911,13 +911,12 @@
   // The pinned-prompt overlay host subtracts it so the overlay lane occupies
   // the same horizontal box as the conversation column.
   let scrollbarGutterWidth = $state(0);
-  let hasVisibleEventUtility = $state(false);
-  const hasVisibleTranscriptUtility = $derived(hasVisibleEventUtility);
+  let hasVisibleTranscriptUtility = $state(false);
 
   $effect(() => {
     workspace?.id;
     agentId;
-    hasVisibleEventUtility = false;
+    hasVisibleTranscriptUtility = false;
   });
 
   $effect(() => {
@@ -6279,7 +6278,7 @@
                 workspaceId={workspace.id}
                 {agentId}
                 compact={isCompactMode}
-                bind:visible={hasVisibleEventUtility}
+                bind:visible={hasVisibleTranscriptUtility}
               />
             {/key}
           {/if}
