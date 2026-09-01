@@ -204,10 +204,10 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, async (arg) => {
     // an upstream ref means the exact `upstream..HEAD` count and no upstream
     // (never-pushed branch) means all commits ahead of the base are unpushed
     // (legacy parity). A pre-#4058 daemon (`hasUpstream` absent) falls back to
-    // the upstream-relative `ahead` approximation, and a failed status read to
-    // the base-ref ahead count.
+    // the upstream-relative `ahead` approximation, and a failed (or nullish)
+    // status read to the base-ref ahead count.
     let hasUnpushed: boolean;
-    if (status === null) {
+    if (status == null) {
       hasUnpushed = ahead > 0;
     } else if (typeof status.hasUpstream === 'boolean') {
       hasUnpushed = status.hasUpstream ? (status.unpushedCount ?? 0) > 0 : ahead > 0;
