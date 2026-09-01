@@ -22,30 +22,31 @@ export interface TaskProgressItem {
   status: TaskProgressStatus;
 }
 
-interface NativePlanSelection {
+export interface NativePlanSelection {
   present: boolean;
   items: TaskProgressItem[];
 }
 
-interface WorkspaceTaskFallbackInput {
+interface TaskProgressBaseInput {
   initialized: boolean;
   tasks: readonly WorkspaceTask[];
   session?: AgentSession | null;
+}
+
+interface WorkspaceTaskFallbackInput extends TaskProgressBaseInput {
   messages: readonly AgentMessage[];
 }
 
 export function hasNativeExecutionPlan(messages: readonly AgentMessage[]): boolean {
-  return latestNativePlan(messages).present;
+  return selectNativeExecutionPlan([messages]).present;
 }
 
-/** Select the zero-token task fallback without changing canonical task order. */
-export function deriveWorkspaceTaskFallback({
+function workspaceTaskFallback({
   initialized,
   tasks,
   session,
-  messages,
-}: WorkspaceTaskFallbackInput): WorkspaceTask[] {
-  if (!initialized || hasNativeExecutionPlan(messages)) return [];
+}: TaskProgressBaseInput): WorkspaceTask[] {
+  if (!initialized) return [];
 
   const taskNoteId = session?.metadata?.taskNoteId ?? session?.agentMetadata?.taskNoteId;
   if (typeof taskNoteId === 'string' && taskNoteId.length > 0) {
@@ -54,6 +55,12 @@ export function deriveWorkspaceTaskFallback({
   }
 
   return tasks.filter((task) => task.specLinked === true && task.status !== 'cancelled');
+}
+
+/** Select the zero-token task fallback without changing canonical task order. */
+export function deriveWorkspaceTaskFallback(input: WorkspaceTaskFallbackInput): WorkspaceTask[] {
+  if (hasNativeExecutionPlan(input.messages)) return [];
+  return workspaceTaskFallback(input);
 }
 
 function planStatus(status: PlanEntryStatus): TaskProgressStatus {
@@ -71,34 +78,47 @@ function workspaceStatus(status: TaskStatus): TaskProgressStatus {
   return 'pending';
 }
 
-function latestNativePlan(messages: readonly AgentMessage[]): NativePlanSelection {
-  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
-    const message = messages[messageIndex];
-    const blocks = message.contentBlocks ?? [];
-    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-      const block = blocks[blockIndex];
-      if (!isPlanContentBlock(block)) continue;
-      const blockId = block.id ?? `${message.id}:${blockIndex}`;
-      return {
-        present: true,
-        items: block.entries.map((entry, entryIndex) => ({
-          id: `plan:${blockId}:${entryIndex}`,
-          title: entry.content,
-          status: planStatus(entry.status),
-        })),
-      };
+/** Select the newest native plan without joining ordered transcript segments. */
+export function selectNativeExecutionPlan(
+  messageSources: readonly (readonly AgentMessage[])[],
+): NativePlanSelection {
+  for (let sourceIndex = messageSources.length - 1; sourceIndex >= 0; sourceIndex -= 1) {
+    const messages = messageSources[sourceIndex];
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      const message = messages[messageIndex];
+      const blocks = message.contentBlocks ?? [];
+      for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+        const block = blocks[blockIndex];
+        if (!isPlanContentBlock(block)) continue;
+        const blockId = block.id ?? `${message.id}:${blockIndex}`;
+        return {
+          present: true,
+          items: block.entries.map((entry, entryIndex) => ({
+            id: `plan:${blockId}:${entryIndex}`,
+            title: entry.content,
+            status: planStatus(entry.status),
+          })),
+        };
+      }
     }
   }
   return { present: false, items: [] };
 }
 
-/** Select the newest native plan, or the existing scoped workspace-task fallback. */
-export function deriveTaskProgress(input: WorkspaceTaskFallbackInput): TaskProgressItem[] {
-  const nativePlan = latestNativePlan(input.messages);
+/** Map one completed authority selection without scanning the transcript again. */
+export function deriveTaskProgressFromNativePlan(
+  input: TaskProgressBaseInput,
+  nativePlan: NativePlanSelection,
+): TaskProgressItem[] {
   if (nativePlan.present) return nativePlan.items;
-  return deriveWorkspaceTaskFallback(input).map((task) => ({
+  return workspaceTaskFallback(input).map((task) => ({
     id: `workspace:${task.id}`,
     title: task.title,
     status: workspaceStatus(task.status),
   }));
+}
+
+/** Select the newest native plan, or the existing scoped workspace-task fallback. */
+export function deriveTaskProgress(input: WorkspaceTaskFallbackInput): TaskProgressItem[] {
+  return deriveTaskProgressFromNativePlan(input, selectNativeExecutionPlan([input.messages]));
 }

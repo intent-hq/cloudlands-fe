@@ -1817,4 +1817,33 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       'idle-agent',
     ]);
   });
+
+  it('sorts idle-coded agents with runtime activity evidence in the active tier', async () => {
+    const wsId = 'ws-semantic-runtime-evidence';
+    seedSession('idle-agent', '2026-01-01T00:00:00.000Z', 'idle', wsId);
+    seedSession('responding-flag-agent', '2026-01-01T00:00:00.000Z', 'idle', wsId, {
+      isResponding: true,
+    });
+    seedSession('processing-flag-agent', '2026-01-01T00:00:00.000Z', 'idle', wsId, {
+      isProcessing: true,
+    });
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([
+        oneShotSubscription('watch-runtime-evidence', wsId, [
+          'idle-agent',
+          'responding-flag-agent',
+          'processing-flag-agent',
+        ]),
+      ]),
+    );
+    await expandWaitingAgents();
+
+    expect(visibleAgentIds()).toEqual([
+      'responding-flag-agent',
+      'processing-flag-agent',
+      'idle-agent',
+    ]);
+  });
 });

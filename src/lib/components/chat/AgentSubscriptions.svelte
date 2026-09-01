@@ -40,14 +40,18 @@
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
-  import type { AgentSession } from '$shared/types';
+  import type { AgentSession, WorkspaceTask } from '$shared/types';
   import {
     selectWorkspaceTasks,
     selectWorkspaceTasksInitialized,
+    selectWorkspaceTasksState,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
-  import { deriveTaskProgress, type TaskProgressItem } from './workspace-task-fallback';
-  import { hasNativeExecutionPlan } from './workspace-task-fallback';
+  import type { TaskProgressItem } from './workspace-task-fallback';
+  import {
+    createAgentTaskProgressDeriver,
+    type AgentTaskProgressInput,
+  } from './agent-task-progress-derivation';
   import { retainedChatTranscriptsSet } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 
@@ -357,10 +361,8 @@
     // Terminal states
     if (finishedAgentIdSet.has(agentId)) return 4;
 
-    const status = String(session.status).toLowerCase();
-
     // Active work
-    if (status === 'responding' || status === 'active' || status === 'processing') return 2;
+    if (isSessionRunning(session)) return 2;
 
     // Idle/waiting
     return 3;
@@ -395,39 +397,40 @@
         return bTimestamp - aTimestamp || a.agentId.localeCompare(b.agentId);
       });
   });
+  const deriveTaskProgressByAgentId = createAgentTaskProgressDeriver();
+  let taskStateReference: object | undefined;
+  let stableWorkspaceTasks: readonly WorkspaceTask[] = [];
   const taskProgressByAgentId = $derived.by(() => {
     if (isolatedPreview) {
+      deriveTaskProgressByAgentId([]);
       return Object.fromEntries(
         waitingAgentRows.map((row) => [row.agentId, row.fixtureTaskProgress ?? []]),
       );
     }
     const state = rendererState;
-    if (!state.workspaceTasks) return {};
+    if (!state.workspaceTasks) return deriveTaskProgressByAgentId([]);
     const sessionsById = selectAgentSessionsById.select(state);
     const initialized = selectWorkspaceTasksInitialized.select(state, workspaceId);
-    const tasks = selectWorkspaceTasks.select(state, workspaceId);
-    const progress: Record<string, TaskProgressItem[]> = {};
+    const nextTaskStateReference = selectWorkspaceTasksState.select(state, workspaceId);
+    if (nextTaskStateReference !== taskStateReference) {
+      taskStateReference = nextTaskStateReference;
+      stableWorkspaceTasks = selectWorkspaceTasks.select(state, workspaceId);
+    }
+    const derivationInputs: AgentTaskProgressInput[] = [];
     for (const row of waitingAgentRows) {
       const session = sessionsById[row.agentId];
       if (!session) continue;
-      const messages = [
-        ...selectAgentHistoryMessages.select(state, row.agentId),
-        ...(session.messages ?? []),
-      ];
-      if (
-        !hasNativeExecutionPlan(messages) &&
-        !selectTranscriptSnapshotMeta.select(state, row.agentId)
-      ) {
-        continue;
-      }
-      progress[row.agentId] = deriveTaskProgress({
+      derivationInputs.push({
+        agentId: row.agentId,
         initialized,
-        tasks,
+        tasks: stableWorkspaceTasks,
         session,
-        messages,
+        historyMessages: selectAgentHistoryMessages.select(state, row.agentId),
+        liveMessages: session.messages,
+        snapshotMeta: selectTranscriptSnapshotMeta.select(state, row.agentId),
       });
     }
-    return progress;
+    return deriveTaskProgressByAgentId(derivationInputs);
   });
   const shouldGroupWaitingAgents = $derived(
     forceWaitingHeader || waitingAgentRows.length > WAITING_AGENT_DISCLOSURE_THRESHOLD,
