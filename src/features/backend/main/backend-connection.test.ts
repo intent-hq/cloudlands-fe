@@ -761,6 +761,42 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     client.dispose();
   });
 
+  it('a mismatching pin aborts the transport before any request byte reaches the host', async () => {
+    // Steady-state arm of the token-before-trust leak (monorepo#4055): the
+    // pin is enforced at the TLS handshake, so the upgrade request — carrying
+    // the bearer token in the Authorization header and the `?token=` query
+    // fallback — is never written to a host presenting the wrong certificate.
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: wrong,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+      // Keep the client from re-dialing mid-assertion.
+      reconnectDelayMs: 10_000,
+    });
+    client.on('error', () => {});
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
+    // Let any in-flight server-side handshake/data events settle, then assert
+    // not one decrypted application byte — no upgrade request, no
+    // Authorization header, no token query — reached the host. (The server may
+    // or may not register the aborted session before the client tears it down,
+    // so only the byte count is asserted, not the session count.)
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+    expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
+    client.dispose();
+  });
+
   it('captureFingerprint returns the presented fingerprint for TOFU', async () => {
     const result = await captureFingerprint({
       host: daemon.host,

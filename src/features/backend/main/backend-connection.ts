@@ -304,14 +304,19 @@ function peerFingerprint(response: IncomingMessage): string {
 /**
  * Connect the pinned `wss` transport: open the TLS WebSocket with
  * `rejectUnauthorized: false` (the daemon's cert is self-signed, PROTOCOL
- * §1.2) and **manually verify** the presented cert's fingerprint against the
- * config pin on the upgrade handshake — before any application data flows. A
- * mismatch destroys the stream with a {@link PinMismatchError}; a match hands
- * the connection to the shared {@link WebSocketDuplex} newline framing adapter.
- * The bearer token is sent via the `Authorization` header (PROTOCOL §2.1) with
- * a `?token=` query fallback. An upgrade rejected with HTTP 401/403 (bad token
- * / WS API disabled, PROTOCOL §2.1) destroys the stream with a distinct
- * {@link AuthRejectedError} instead of a generic transport error.
+ * §1.2) and verify the presented cert's fingerprint against the config pin at
+ * the TLS HANDSHAKE via {@link pinnedTlsConnect} — the upgrade request
+ * (carrying the bearer token) stays corked until the pin matches, and a
+ * mismatch destroys the socket with a {@link PinMismatchError} before a
+ * single application byte reaches the wire (monorepo#4055: the steady-state
+ * arm of the token-before-trust leak, every reconnect re-presents the token).
+ * A match hands the connection to the shared {@link WebSocketDuplex} newline
+ * framing adapter. The bearer token is sent via the `Authorization` header
+ * (PROTOCOL §2.1) with a `?token=` query fallback. An upgrade rejected with
+ * HTTP 401/403 (bad token / WS API disabled, PROTOCOL §2.1) destroys the
+ * stream with a distinct {@link AuthRejectedError} instead of a generic
+ * transport error. The `upgrade`/`unexpected-response` pin checks are kept as
+ * defense-in-depth behind the handshake-level pin.
  */
 function createWssSocket(config: BackendConnectionConfig): Duplex {
   const { host, port, token, fingerprint } = config;
@@ -323,6 +328,11 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
   const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
     rejectUnauthorized: false,
     headers: { Authorization: `Bearer ${token}` },
+    // ws types createConnection as `typeof net.createConnection` but always
+    // invokes it with a single options object (websocket.js `initAsClient`),
+    // which is what pinnedTlsConnect consumes.
+    createConnection: ((connectOptions: tls.ConnectionOptions) =>
+      pinnedTlsConnect(connectOptions, expected)) as unknown as typeof net.createConnection,
   });
   const duplex = new WebSocketDuplex(ws);
   ws.on('upgrade', (response: IncomingMessage) => {
