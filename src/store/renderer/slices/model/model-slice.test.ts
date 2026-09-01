@@ -13,6 +13,7 @@ import {
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
   modelReducer,
+  providerModelsPersistRejected,
   setDefaultReasoningEffort,
   setAvailableModels,
   setLoadingStateForProvider,
@@ -202,6 +203,47 @@ describe('modelReducer', () => {
       [defaultProviderId]: 'gpt5.4',
       codex: 'codex:gpt-5.3-codex/high',
     });
+  });
+
+  it('keeps local model picks authoritative through stale hydration and retires them on confirmation', () => {
+    const picked = modelReducer(
+      modelReducer(initialState, setActiveProvider('codex')),
+      setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5.3-codex/high' }),
+    );
+    const stale = modelReducer(
+      picked,
+      loadProviderModelsFromStorage({ auggie: 'gpt5.4', codex: 'codex:old-model' }),
+    );
+    expect(stale.providerModels.codex).toBe('gpt-5.3-codex/high');
+    expect(stale.pendingProviderModels).toEqual({ codex: 'gpt-5.3-codex/high' });
+
+    const confirmed = modelReducer(
+      stale,
+      loadProviderModelsFromStorage({ auggie: 'gpt5.4', codex: 'gpt-5.3-codex/high' }),
+    );
+    expect(confirmed.pendingProviderModels).toEqual({});
+
+    const external = modelReducer(
+      confirmed,
+      loadProviderModelsFromStorage({ auggie: 'gpt5.4', codex: 'gpt-5.4-codex' }),
+    );
+    expect(external.providerModels.codex).toBe('gpt-5.4-codex');
+  });
+
+  it('retires a rejected local model intent so later hydration can win', () => {
+    const picked = modelReducer(
+      initialState,
+      setSelectedModel({ providerId: defaultProviderId, model: 'gpt5.4' }),
+    );
+    const rejected = modelReducer(
+      picked,
+      providerModelsPersistRejected({ [defaultProviderId]: 'gpt5.4' }),
+    );
+    const hydrated = modelReducer(
+      rejected,
+      loadProviderModelsFromStorage({ [defaultProviderId]: 'external' }),
+    );
+    expect(hydrated.providerModels[defaultProviderId]).toBe('external');
   });
 
   it('updates provider-specific loading state and preserves omitted fields', () => {

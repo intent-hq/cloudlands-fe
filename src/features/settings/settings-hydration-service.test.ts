@@ -33,7 +33,10 @@ import {
   loadEnabledProvidersFromStorage,
   setActiveProvider,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { loadProviderModelsFromStorage } from '$store/renderer/slices/model/model-slice';
+import {
+  loadProviderModelsFromStorage,
+  setSelectedModel,
+} from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   beforeAll(() => {
@@ -89,6 +92,42 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(state().providerSettings.activeProviderId).toBe('auggie');
     expect(state().providerSettings.pendingActiveProviderId).toBeNull();
     expect(state().model.defaultProviderId).toBe('auggie');
+  });
+
+  it('reconciles a cross-provider default selection through stale settings echoes', () => {
+    applySettingsChanges([
+      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
+    ]);
+
+    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(
+      setSelectedModel({ providerId: 'claude-code', model: 'claude-code:sonnet-4.8' }),
+    );
+    applySettingsChanges([
+      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
+    ]);
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe('claude-code');
+    expect(appStore.state.model.providerModels['claude-code']).toBe('sonnet-4.8');
+
+    applySettingsChanges([
+      { path: 'providers.active', value: 'claude-code' },
+      {
+        path: 'model.providerDefaults',
+        value: { auggie: 'opus-4.8', 'claude-code': 'sonnet-4.8' },
+      },
+    ]);
+    expect(appStore.state.providerSettings.pendingActiveProviderId).toBeNull();
+    expect(appStore.state.model.pendingProviderModels).toEqual({});
+
+    applySettingsChanges([
+      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.9' } },
+    ]);
+    expect(appStore.state.providerSettings.activeProviderId).toBe('auggie');
+    expect(appStore.state.model.providerModels.auggie).toBe('opus-4.9');
   });
 
   it('hydrates the mcp-settings slice from mcp.servers + mcp.disabledServers + mcp.enableUserServers', async () => {

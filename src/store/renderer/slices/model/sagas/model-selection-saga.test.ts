@@ -104,12 +104,7 @@ describe('modelSelectionSaga', () => {
       selectModel('unknown:model'),
     ).toPromise();
 
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      {
-        type: 'model/setSelectedModel',
-        payload: [{ providerId: 'unknown', model: 'unknown:model' }],
-      },
-    ]);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('adopts the picked compound provider before catalog hydration (onboarding race)', async () => {

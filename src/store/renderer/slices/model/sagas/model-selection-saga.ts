@@ -14,6 +14,7 @@ import { setActiveProvider } from '../../provider-settings/provider-settings-sli
 import { selectDefaultProviderId, selectProviderModels } from '../model-selectors';
 import { normalizeModelForProvider } from '../model-selection-utils';
 import {
+  providerModelsPersistRejected,
   reloadModelsForProvider,
   selectModel,
   setDefaultReasoningEffort,
@@ -44,6 +45,12 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
     if (provider || !catalogLoaded) {
       yield* put(setActiveProvider(compoundProviderId));
       yield* put(reloadModelsForProvider());
+    } else {
+      logger.warn('Ignoring model selection for unknown provider', {
+        model,
+        providerId: compoundProviderId,
+      });
+      return;
     }
   }
 
@@ -87,6 +94,7 @@ export function* persistSelectedModelsWorker(sessionPicks: Record<string, string
   } catch (error) {
     if (isDaemonErrorResponse(error)) {
       logger.warn('Daemon rejected model.providerDefaults write', { error });
+      yield* put(providerModelsPersistRejected({ ...sessionPicks }));
       return true;
     }
     logger.error('Failed to persist model.providerDefaults', { error });
