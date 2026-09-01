@@ -110,18 +110,24 @@ async function workspaceOwnershipProber(): Promise<WorkspaceOwnershipProber<Json
 
 /**
  * Heal a wrong-stamp read: when the resolved backend refuses a read because
- * the workspace is unknown to it (-32602), re-probe ownership and hand back
- * the confirmed owner so the caller can retry once. Null when the error is
- * not a workspace-unknown refusal, no live backend confirms ownership, or the
- * confirmed owner is the backend that already failed — the caller then
- * rethrows and fails with 404 as before (never serve unconfirmed bytes).
+ * the workspace is unknown to it, re-probe ownership and hand back the
+ * confirmed owner so the caller can retry once. The daemon surfaces an
+ * unknown workspace as -32602 (invalid params, e.g. workspace.get) or -32603
+ * (internal error — file.readChunk fails root resolution, note.readAsset
+ * fails the asset read); both trigger the probe, which fails closed, and a
+ * genuine local error on the confirmed owner still 404s because same-backend
+ * confirmation rethrows. Null when the error is not a JSON-RPC refusal, no
+ * live backend confirms ownership, or the confirmed owner is the backend
+ * that already failed — the caller then rethrows and fails with 404 as
+ * before (never serve unconfirmed bytes).
  */
 async function rescueBackendAfterWorkspaceUnknown(
   workspaceId: string,
   failedBackendId: string | null,
   error: unknown,
 ): Promise<{ client: JsonRpcClient; backendId: string } | null> {
-  if (!(error instanceof JsonRpcError) || error.rpcCode !== -32602) return null;
+  if (!(error instanceof JsonRpcError)) return null;
+  if (error.rpcCode !== -32602 && error.rpcCode !== -32603) return null;
   const prober = await workspaceOwnershipProber();
   prober.invalidate(workspaceId);
   const owner = await prober.probeOwner(workspaceId);

@@ -735,10 +735,11 @@ describe('setupWorkspaceFileProtocolHandler', () => {
 
   it('heals a wrong-stamp read: primary refuses with workspace-unknown, confirmed owner serves', async () => {
     // ws-1 resolves to the primary client (unpooled local stamp), which does
-    // not know the workspace (-32602): the probe confirms the remote owner
+    // not know the workspace — the daemon surfaces this from file.readChunk
+    // as -32603 (root resolution fails): the probe confirms the remote owner
     // and the read retries there.
     mockRequest.mockRejectedValueOnce(
-      new JsonRpcError({ code: -32602, message: 'workspace not found' }),
+      new JsonRpcError({ code: -32603, message: 'Access denied: path outside workspace' }),
     );
     const bytes = Buffer.from('healed-bytes');
     const remoteRequest = vi.fn(async (method: string) => {
@@ -863,8 +864,9 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
   });
 
   it('heals a wrong-stamp asset read from the confirmed owner after a workspace-unknown error', async () => {
+    // note.readAsset surfaces an unknown workspace as -32603 (internal error).
     mockRequest.mockRejectedValueOnce(
-      new JsonRpcError({ code: -32602, message: 'workspace not found' }),
+      new JsonRpcError({ code: -32603, message: 'Failed to read asset: not found' }),
     );
     const bytes = Buffer.from('healed-asset');
     const remoteRequest = vi.fn(async (method: string) => {
