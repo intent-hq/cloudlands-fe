@@ -627,6 +627,11 @@ class FakeWssDaemon {
   port = 0;
   fingerprint = '';
   lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
+  /** TLS sessions established (handshakes completed). */
+  secureConnections = 0;
+  /** Decrypted application bytes received across all TLS sessions. */
+  decryptedBytes = 0;
   handler: (req: {
     id?: number | string;
     method: string;
@@ -639,9 +644,16 @@ class FakeWssDaemon {
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('secureConnection', (socket) => {
+      this.secureConnections += 1;
+      socket.on('data', (chunk: Buffer) => {
+        this.decryptedBytes += chunk.length;
+      });
+    });
     this.wss = new WebSocketServer({ server: this.server });
     this.wss.on('connection', (socket, req) => {
       this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
       this.clients.push(socket);
       socket.on('message', (data, isBinary) => {
         if (isBinary) return;
@@ -763,6 +775,23 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     });
   });
 
+  it('captureFingerprint without a token transmits no Authorization header and no token query', async () => {
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = undefined;
+    const result = await captureFingerprint({ host: daemon.host, port: daemon.port });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    // Request-level assertion (monorepo#3782): the unauthenticated probe
+    // carries no bearer header and no `?token=` query fallback.
+    expect(daemon.lastAuthHeader).toBeUndefined();
+    expect(daemon.lastUpgradeUrl).toBeDefined();
+    expect(daemon.lastUpgradeUrl).not.toContain('token');
+  });
+
   it('captureFingerprint surfaces a structured error when the host is unreachable', async () => {
     // 127.0.0.1:1 is guaranteed refused.
     const result = await captureFingerprint(
@@ -771,6 +800,54 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('connect-failed');
+  });
+
+  it('captureFingerprint with a matching expectedFingerprint completes the authenticated upgrade', async () => {
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      expectedFingerprint: daemon.fingerprint,
+    });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('captureFingerprint with a mismatching expectedFingerprint aborts before any request byte reaches the host', async () => {
+    // TOCTOU regression (monorepo#3782): the handshake-level pin must stop the
+    // upgrade request — carrying the bearer token — from ever being written to
+    // a host presenting an unconfirmed certificate.
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const secureBefore = daemon.secureConnections;
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      expectedFingerprint: '11:22:33:44',
+    });
+    expect(result).toEqual({
+      ok: false,
+      code: 'fingerprint-mismatch',
+      error: expect.stringContaining('certificate fingerprint mismatch'),
+      actualFingerprint: normalizeFingerprint(daemon.fingerprint),
+    });
+    // Let any in-flight server-side handshake/data events settle, then assert
+    // not one decrypted application byte — no upgrade request, no
+    // Authorization header, no token query — reached the host. (The server may
+    // or may not register the aborted session before the client tears it down,
+    // so only the byte count is asserted exactly.)
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.secureConnections).toBeGreaterThanOrEqual(secureBefore);
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+    expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
   });
 });
 
@@ -788,12 +865,16 @@ class RejectingWssDaemon {
   statusCode = 401;
   /** Number of upgrade attempts observed (for reconnect-halt assertions). */
   upgradeAttempts = 0;
+  lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
 
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
-    this.server.on('upgrade', (_req, socket) => {
+    this.server.on('upgrade', (req, socket) => {
       this.upgradeAttempts += 1;
+      this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
       socket.write(
         `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
@@ -972,6 +1053,28 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
       tokenValid: true,
       statusCode: 500,
     });
+  });
+
+  it('captureFingerprint without a token captures a rejecting host fingerprint with zero token transmission', async () => {
+    // Regression (monorepo#3782): probing a changed/unknown host for its
+    // fingerprint must not transmit any bearer credential — the daemon
+    // rejects the unauthenticated upgrade (401), the cert is still read from
+    // the TLS layer, and nothing token-shaped reaches the wire.
+    daemon.statusCode = 401;
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = undefined;
+    const result = await captureFingerprint({ host: daemon.host, port: daemon.port });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: normalizeFingerprint(daemon.fingerprint),
+      connected: false,
+      // No token was supplied, so the 401 judges no token.
+      tokenValid: true,
+      statusCode: 401,
+    });
+    expect(daemon.lastAuthHeader).toBeUndefined();
+    expect(daemon.lastUpgradeUrl).toBeDefined();
+    expect(daemon.lastUpgradeUrl).not.toContain('token');
   });
 });
 

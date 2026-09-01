@@ -2235,21 +2235,21 @@ async function validateConnectionAddress(
   token: string,
   confirmedFingerprint?: string,
 ): Promise<TestConnectionResult> {
-  const captured = await captureFingerprint({ host, port, token });
-  if (!captured.ok) {
-    return { status: 'failed', reason: captured.code };
-  }
-  if (!captured.tokenValid) {
-    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
-  }
-  if (!captured.connected) {
+  // Trust before transmission (monorepo#3782): probe the address WITHOUT the
+  // bearer token first — the saved secret must never reach a host whose
+  // certificate the user has not confirmed. The unauthenticated upgrade is
+  // expected to be rejected (PROTOCOL §2.1); only the TLS-layer fingerprint
+  // matters here.
+  const probe = await captureFingerprint({ host, port });
+  if (!probe.ok) {
+    // No pin is passed on this probe, so `fingerprint-mismatch` cannot occur;
+    // the branch only satisfies the narrowed result union.
     return {
       status: 'failed',
-      reason: 'connect-failed',
-      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
+      reason: probe.code === 'fingerprint-mismatch' ? 'connect-failed' : probe.code,
     };
   }
-  const actualFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
+  const actualFingerprint = normalizeTransportFingerprint(probe.fingerprint ?? '');
   const expectedFingerprint = normalizeTransportFingerprint(connection.fingerprint ?? '');
   if (!actualFingerprint || !expectedFingerprint) {
     return { status: 'failed', reason: 'no-certificate' };
@@ -2262,6 +2262,45 @@ async function validateConnectionAddress(
       status: 'fingerprint-confirmation-required',
       expectedFingerprint,
       actualFingerprint,
+    };
+  }
+  // The presented certificate is trusted (saved pin or explicit user
+  // confirmation) — only now is the token transmitted, exercising the real
+  // authenticated upgrade path. The trusted fingerprint is pinned at the TLS
+  // handshake (`expectedFingerprint`): a certificate swap between the two
+  // probes aborts the connection before the upgrade request — and the token —
+  // is written (TOCTOU, monorepo#3782), surfacing as a fresh confirmation
+  // requirement instead of a disclosure.
+  const captured = await captureFingerprint({
+    host,
+    port,
+    token,
+    expectedFingerprint: actualFingerprint,
+  });
+  if (!captured.ok) {
+    if (captured.code === 'fingerprint-mismatch') {
+      const swappedFingerprint = normalizeTransportFingerprint(captured.actualFingerprint);
+      // An empty presented fingerprint means no certificate — a plain failure,
+      // not something to ask the user to confirm.
+      if (!swappedFingerprint) {
+        return { status: 'failed', reason: 'no-certificate' };
+      }
+      return {
+        status: 'fingerprint-confirmation-required',
+        expectedFingerprint,
+        actualFingerprint: swappedFingerprint,
+      };
+    }
+    return { status: 'failed', reason: captured.code };
+  }
+  if (!captured.tokenValid) {
+    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
+  }
+  if (!captured.connected) {
+    return {
+      status: 'failed',
+      reason: 'connect-failed',
+      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
     };
   }
   return { status: 'success', fingerprint: actualFingerprint };
