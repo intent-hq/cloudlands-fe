@@ -5,6 +5,10 @@ function source(relativePath: string) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 }
 
+function selfClosingTag(componentSource: string, componentName: string) {
+  return componentSource.match(new RegExp(`<${componentName}\\b[\\s\\S]*?/>`))?.[0] ?? '';
+}
+
 describe('workspace sidebar hierarchy presentation contract', () => {
   it('moves compact semantic global navigation beside the title-bar workspace tabs', () => {
     const navigation = source('../../layout/sidebar-nav/SidebarNav.svelte');
@@ -112,7 +116,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('shrink-0 px-6 pb-2 pt-5');
     expect(sidebar).toContain('data-workspace-title-region');
     expect(sidebar).toContain('<div class="px-4 pb-1 pt-4">');
-    expect(sidebar).toContain('<AddContextSection onAddNote={onCreateNote} compact />');
+    const addContext = selfClosingTag(sidebar, 'AddContextSection');
+    expect(addContext).toContain('onAddNote={onCreateNote}');
+    expect(addContext).toMatch(/\bcompact\b/);
     expect(sidebar).toContain('data-testid="agent-panel"');
     expect(sidebar).toContain('flex h-full flex-1 flex-col px-4');
     expect(agents).toContain('<div class="flex flex-col gap-0.5">');
