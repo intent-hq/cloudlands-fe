@@ -417,18 +417,26 @@ export function raceDuplexSockets(
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
   const mismatches: HostCertMismatch[] = [];
+  const reportedMismatchHosts = new Set<string>();
 
+  // Record one mismatch per host: fold it into the aggregate while the race
+  // is undecided (including a late mismatch on an already-counted candidate,
+  // e.g. one that first failed generically), and always emit the non-fatal
+  // event. The per-host dedupe keeps a candidate that surfaces the same
+  // mismatch twice from double-reporting.
   const recordMismatch = (host: string, error: PinMismatchError): void => {
+    if (reportedMismatchHosts.has(host)) return;
+    reportedMismatchHosts.add(host);
     const info: HostCertMismatch = { host, expected: error.expected, actual: error.actual };
-    mismatches.push(info);
+    if (!settled) mismatches.push(info);
     facade.emit('pin-mismatch', info);
   };
 
   // Tear a losing/failed candidate down without leaving it listener-less: a
   // destroyed-but-alive socket can still emit async 'error' events, and a
   // zero-listener 'error' is an uncaught exception in the main process. A
-  // late pin mismatch is logged AND emitted as a non-fatal 'pin-mismatch'
-  // event so a foreign cert on a torn-down candidate stays observable.
+  // late pin mismatch is logged AND recorded so a foreign cert on a
+  // torn-down candidate stays observable (and, pre-settlement, aggregated).
   const teardownCandidate = (candidate: Duplex): void => {
     candidate.removeAllListeners();
     candidate.on('error', (error: Error) => {
@@ -438,8 +446,7 @@ export function raceDuplexSockets(
           host,
           error: error.message,
         });
-        const info: HostCertMismatch = { host, expected: error.expected, actual: error.actual };
-        facade.emit('pin-mismatch', info);
+        recordMismatch(host, error);
       }
     });
     candidate.destroy();

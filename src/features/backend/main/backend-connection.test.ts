@@ -1223,6 +1223,33 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     facade.destroy();
   });
 
+  it('aggregates a late mismatch from an already-counted candidate and dedupes per host', async () => {
+    const flaky = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'flaky', create: () => flaky },
+      { host: 'refused', create: () => refused },
+    ]);
+    const mismatchEvents: HostCertMismatch[] = [];
+    facade.on('pin-mismatch', (m: HostCertMismatch) => mismatchEvents.push(m));
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    // The flaky candidate is counted out on a generic error first…
+    flaky.emit('error', new Error('read ECONNRESET'));
+    expect(flaky.destroyedByRace).toBe(true);
+    // …then surfaces the pin mismatch late, while the race is undecided: it
+    // must still be folded into the aggregate, and a repeat must not
+    // double-report the host.
+    flaky.emit('error', new PinMismatchError('AA', 'BB'));
+    flaky.emit('error', new PinMismatchError('AA', 'BB'));
+    refused.emit('error', new Error('ECONNREFUSED'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).mismatches).toEqual([
+      { host: 'flaky', expected: 'AA', actual: 'BB' },
+    ]);
+    expect(mismatchEvents).toEqual([{ host: 'flaky', expected: 'AA', actual: 'BB' }]);
+  });
+
   it('times out when no candidate ever connects', async () => {
     const a = new FakeCandidate();
     const facade = raceDuplexSockets([{ host: 'a', create: () => a }], { timeoutMs: 50 });
