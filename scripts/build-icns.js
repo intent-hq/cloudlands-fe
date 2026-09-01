@@ -49,12 +49,15 @@ async function releasePngBuffer(size) {
   return sharp(source).resize(size, size).png().toBuffer();
 }
 
-export async function releaseWindowsPngBuffer(size) {
+export async function releaseWindowsPngBuffer(size, source = sourcePath(1024)) {
   const inset = Math.max(1, Math.round(size * WINDOWS_CONTENT_INSET_RATIO));
   const contentSize = size - inset * 2;
-  return sharp(sourcePath(1024))
+  return sharp(source)
     .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 0 })
-    .resize(contentSize, contentSize, { fit: 'contain' })
+    .resize(contentSize, contentSize, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .extend({
       top: inset,
       bottom: inset,

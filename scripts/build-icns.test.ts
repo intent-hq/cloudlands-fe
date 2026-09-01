@@ -83,6 +83,25 @@ function icoImages(file: string | Buffer) {
 }
 
 describe('release Windows app icon asset', () => {
+  it('uses transparent padding when resized artwork is not square', async () => {
+    const source = await sharp({
+      create: { width: 8, height: 4, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+    const { data, info } = await sharp(await releaseWindowsPngBuffer(32, source))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixel = (x: number, y: number) => {
+      const offset = (y * info.width + x) * info.channels;
+      return data.subarray(offset, offset + info.channels);
+    };
+
+    expect([...pixel(16, 1)]).toEqual([0, 0, 0, 0]);
+    expect([...pixel(16, 16)]).toEqual([255, 0, 0, 255]);
+  });
+
   it('contains every required size with larger, unclipped artwork', async () => {
     const images = icoImages(join(iconsDirectory, 'icon.ico'));
     for (const { size, image } of images) {
