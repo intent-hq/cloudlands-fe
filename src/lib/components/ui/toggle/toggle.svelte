@@ -172,7 +172,7 @@
     {title}
     {onclick}
     class={cn(
-      'type-body inline-flex cursor-pointer items-center justify-center rounded-(--radius-medium) border border-border bg-card font-medium text-muted-foreground shadow-(--elevation-raised) transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:border-primary/60 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground motion-reduce:transition-none',
+      'type-body inline-flex cursor-pointer items-center justify-center rounded-(--radius-medium) border border-border bg-card font-medium text-muted-foreground shadow-(--elevation-raised) transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:border-primary data-[state=on]:hover:bg-primary data-[state=on]:hover:text-primary-foreground motion-reduce:transition-none',
       sizeClasses[size],
       className,
     )}

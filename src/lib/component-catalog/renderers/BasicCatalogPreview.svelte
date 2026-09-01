@@ -142,10 +142,19 @@
     </div>
   {:else if componentId === 'toggle'}
     {#if fixture.id === 'toggle-state-matrix'}
-      <div class="flex flex-wrap gap-2" data-catalog-rendered-state="off on disabled focus-visible">
-        <Toggle bind:pressed={togglePressed} ariaLabel="Bold">Bold</Toggle>
-        <Toggle pressed ariaLabel="Pinned">Pinned</Toggle>
-        <Toggle disabled ariaLabel="Disabled toggle">Disabled</Toggle>
+      <div
+        class="grid gap-3"
+        data-catalog-rendered-state="unpressed pressed disabled keyboard-focus light dark compact reduced-motion"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <Toggle bind:pressed={togglePressed}>Interactive</Toggle>
+          <Toggle pressed>Pinned</Toggle>
+          <Toggle size="xs">Compact</Toggle>
+          <Toggle size="xs" pressed>Compact pressed</Toggle>
+          <Toggle disabled>Disabled</Toggle>
+          <Toggle disabled pressed>Disabled pressed</Toggle>
+        </div>
+        <output class="sr-only" aria-label="Interactive toggle value">{togglePressed}</output>
       </div>
     {:else}
       <div class="flex flex-wrap gap-2" data-catalog-rendered-state="group switch indicator">
