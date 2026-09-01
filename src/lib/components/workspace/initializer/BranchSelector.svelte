@@ -3,9 +3,9 @@
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
@@ -1028,6 +1028,19 @@
     isOpen = false;
   }
 
+  function handleSkipIsolationChange(enabling: boolean) {
+    try {
+      onSkipIsolationChange?.(enabling);
+    } catch (e) {
+      logger.error('Error in onSkipIsolationChange callback', e);
+    }
+    if (enabling && currentBranch) {
+      // When enabling skip isolation, select current branch (keep skipIsolation on)
+      selectBranch(currentBranch, true);
+    }
+    isOpen = false;
+  }
+
   function handleManualInput(value: string) {
     searchValue = value;
     // Don't auto-select, let the user choose from dropdown or press enter
@@ -1817,44 +1830,28 @@
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-background">
-            <button
-              onclick={() => {
-                const enabling = !skipIsolation;
-                try {
-                  onSkipIsolationChange(enabling);
-                } catch (e) {
-                  logger.error('Error in onSkipIsolationChange callback', e);
-                }
-                if (enabling) {
-                  // When enabling skip isolation, select current branch (keep skipIsolation on)
-                  selectBranch(currentBranch, true);
-                }
-                isOpen = false;
-              }}
-              class="w-full flex items-start gap-3 px-2 py-1 rounded-md text-left cursor-pointer"
-            >
-              <Checkbox
-                checked={skipIsolation}
-                class="-mb-1"
-                onCheckedChange={() => {
-                  const enabling = !skipIsolation;
-                  try {
-                    onSkipIsolationChange(enabling);
-                  } catch (e) {
-                    logger.error('Error in onSkipIsolationChange callback', e);
-                  }
-                  if (enabling) {
-                    selectBranch(currentBranch, true);
-                  }
-                  isOpen = false;
-                }}
+            <div class="flex items-start gap-3 px-2 py-1 rounded-md">
+              <button
+                type="button"
+                onclick={() => handleSkipIsolationChange(!skipIsolation)}
+                class="flex-1 min-w-0 text-left cursor-pointer"
+              >
+                <span class="block text-ui font-medium -mt-0.25">
+                  {workDirectlyParts[0]}<span class="font-semibold">{currentBranch}</span
+                  >{workDirectlyParts[1]}
+                </span>
+              </button>
+              <Toggle
+                pressed={skipIsolation}
+                onChange={(value) => handleSkipIsolationChange(value as boolean)}
+                size="xs"
+                class="shrink-0"
+                ariaLabel={m.workspace_branchSelector_workDirectlyOnBranch_label({
+                  branch: currentBranch,
+                })}
               />
-              <div class="items-start flex-1 min-w-0 text-ui font-medium -mt-0.25">
-                {workDirectlyParts[0]}<span class="font-semibold">{currentBranch}</span
-                >{workDirectlyParts[1]}
-              </div>
-            </button>
-            <div class="ml-9 text-sm text-subtle">
+            </div>
+            <div class="mt-1 px-2 text-sm text-subtle">
               {m.workspace_branchSelector_stayInFolder_description({ isolationLabel })}
             </div>
           </div>

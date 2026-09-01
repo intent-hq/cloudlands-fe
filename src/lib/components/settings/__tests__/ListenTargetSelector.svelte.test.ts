@@ -27,35 +27,33 @@ function renderSelector(props: Partial<Parameters<typeof render>[1]> & Record<st
   return { ...utils, onchange };
 }
 
-const asInput = (el: HTMLElement): HTMLInputElement => el as HTMLInputElement;
+const asButton = (el: HTMLElement): HTMLButtonElement => el as HTMLButtonElement;
+const isPressed = (el: HTMLElement): boolean => el.getAttribute('aria-pressed') === 'true';
 
 describe('ListenTargetSelector', () => {
   it('renders available IPs with the bound ones checked, plus all-interfaces', () => {
     const { getByRole } = renderSelector({});
     expect(
-      asInput(getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }))
-        .checked,
+      isPressed(getByRole('button', { name: m.settings_listenTargets_allInterfaces_label() })),
     ).toBe(false);
-    expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).checked).toBe(true);
-    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).checked).toBe(false);
+    expect(isPressed(getByRole('button', { name: '192.168.1.10' }))).toBe(true);
+    expect(isPressed(getByRole('button', { name: '10.0.0.5' }))).toBe(false);
   });
 
   it('always lists the loopback entry, unchecked and enabled without the tunnel', () => {
     // 127.0.0.1 is never in the live IP enumeration, but must always be
     // offered — the tunnel forwards to it.
     const { getByRole } = renderSelector({});
-    const loopback = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+    const loopback = asButton(
+      getByRole('button', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(false);
+    expect(isPressed(loopback)).toBe(false);
     expect(loopback.disabled).toBe(false);
   });
 
   it('selecting loopback adds 127.0.0.1 to the bind list', async () => {
     const { getByRole, onchange } = renderSelector({});
-    await fireEvent.click(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
-    );
+    await fireEvent.click(getByRole('button', { name: m.settings_listenTargets_loopback_label() }));
     expect(onchange).toHaveBeenCalledWith({ ips: ['192.168.1.10', '127.0.0.1'], tunnel: false });
   });
 
@@ -64,19 +62,19 @@ describe('ListenTargetSelector', () => {
       availableIps: ['10.0.0.5'],
       selectedIps: ['172.16.0.9'],
     });
-    expect(asInput(getByRole('checkbox', { name: '172.16.0.9' })).checked).toBe(true);
+    expect(isPressed(getByRole('button', { name: '172.16.0.9' }))).toBe(true);
   });
 
   it('selecting another IP emits the union of selected IPs', async () => {
     const { getByRole, onchange } = renderSelector({});
-    await fireEvent.click(getByRole('checkbox', { name: '10.0.0.5' }));
+    await fireEvent.click(getByRole('button', { name: '10.0.0.5' }));
     expect(onchange).toHaveBeenCalledWith({ ips: ['192.168.1.10', '10.0.0.5'], tunnel: false });
   });
 
   it('selecting all-interfaces is exclusive: it replaces specific IPs', async () => {
     const { getByRole, onchange } = renderSelector({});
     await fireEvent.click(
-      getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+      getByRole('button', { name: m.settings_listenTargets_allInterfaces_label() }),
     );
     expect(onchange).toHaveBeenCalledWith({ ips: ['0.0.0.0'], tunnel: false });
   });
@@ -86,8 +84,8 @@ describe('ListenTargetSelector', () => {
     // checked but disabled until all-interfaces is unchecked.
     const { getByRole, getByText } = renderSelector({ selectedIps: ['0.0.0.0'] });
     for (const name of ['192.168.1.10', '10.0.0.5', m.settings_listenTargets_loopback_label()]) {
-      const box = asInput(getByRole('checkbox', { name }));
-      expect(box.checked).toBe(true);
+      const box = asButton(getByRole('button', { name }));
+      expect(isPressed(box)).toBe(true);
       expect(box.disabled).toBe(true);
     }
     expect(getByText(m.settings_listenTargets_coveredByAllInterfaces_note())).toBeTruthy();
@@ -95,10 +93,10 @@ describe('ListenTargetSelector', () => {
 
   it('unchecking all-interfaces makes the covered addresses toggleable again', async () => {
     const { getByRole, rerender } = renderSelector({ selectedIps: ['0.0.0.0'] });
-    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
+    expect(asButton(getByRole('button', { name: '10.0.0.5' })).disabled).toBe(true);
     await rerender({ selectedIps: ['127.0.0.1'] });
-    const other = asInput(getByRole('checkbox', { name: '10.0.0.5' }));
-    expect(other.checked).toBe(false);
+    const other = asButton(getByRole('button', { name: '10.0.0.5' }));
+    expect(isPressed(other)).toBe(false);
     expect(other.disabled).toBe(false);
   });
 
@@ -107,10 +105,10 @@ describe('ListenTargetSelector', () => {
       selectedIps: ['192.168.1.10', '127.0.0.1'],
       tunnelSelected: true,
     });
-    const loopback = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+    const loopback = asButton(
+      getByRole('button', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isPressed(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
     expect(getByText(m.settings_listenTargets_loopbackRequired_note())).toBeTruthy();
   });
@@ -120,10 +118,10 @@ describe('ListenTargetSelector', () => {
       selectedIps: ['0.0.0.0'],
       tunnelSelected: true,
     });
-    const loopback = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+    const loopback = asButton(
+      getByRole('button', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isPressed(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
     expect(queryByText(m.settings_listenTargets_loopbackRequired_note())).toBeNull();
   });
@@ -135,12 +133,12 @@ describe('ListenTargetSelector', () => {
       selectedIps: ['192.168.1.10'],
       tunnelSelected: true,
     });
-    const loopback = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+    const loopback = asButton(
+      getByRole('button', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isPressed(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
-    await fireEvent.click(getByRole('checkbox', { name: '10.0.0.5' }));
+    await fireEvent.click(getByRole('button', { name: '10.0.0.5' }));
     expect(onchange).toHaveBeenCalledWith({
       ips: ['192.168.1.10', '10.0.0.5', '127.0.0.1'],
       tunnel: true,
@@ -153,16 +151,16 @@ describe('ListenTargetSelector', () => {
       tunnelSelected: true,
     });
     await rerender({ selectedIps: ['192.168.1.10', '127.0.0.1'], tunnelSelected: false });
-    const loopback = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+    const loopback = asButton(
+      getByRole('button', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isPressed(loopback)).toBe(true);
     expect(loopback.disabled).toBe(false);
   });
 
   it('deselecting the last IP with the tunnel on yields tunnel-only and shows the note', async () => {
     const { getByRole, getByText, onchange, rerender } = renderSelector({ tunnelSelected: true });
-    await fireEvent.click(getByRole('checkbox', { name: '192.168.1.10' }));
+    await fireEvent.click(getByRole('button', { name: '192.168.1.10' }));
     expect(onchange).toHaveBeenCalledWith({ ips: [], tunnel: true });
     await rerender({ selectedIps: [], tunnelSelected: true });
     expect(getByText(m.settings_listenTargets_tunnelOnly_note())).toBeTruthy();
@@ -175,8 +173,8 @@ describe('ListenTargetSelector', () => {
       selectedIps: ['0.0.0.0'],
       tunnelSelected: true,
     });
-    const allInterfaces = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+    const allInterfaces = asButton(
+      getByRole('button', { name: m.settings_listenTargets_allInterfaces_label() }),
     );
     expect(allInterfaces.disabled).toBe(false);
     await fireEvent.click(allInterfaces);
@@ -185,19 +183,19 @@ describe('ListenTargetSelector', () => {
 
   it('never allows zero targets: unchecking the sole entry is refused and snaps back', async () => {
     const { getByRole, onchange } = renderSelector({});
-    const sole = asInput(getByRole('checkbox', { name: '192.168.1.10' }));
+    const sole = asButton(getByRole('button', { name: '192.168.1.10' }));
     expect(sole.disabled).toBe(false);
     await fireEvent.click(sole);
     expect(onchange).not.toHaveBeenCalled();
-    expect(sole.checked).toBe(true);
+    expect(isPressed(getByRole('button', { name: '192.168.1.10' }))).toBe(true);
   });
 
   it('unchecking all-interfaces as the sole target falls back to loopback', async () => {
     // The covered addresses are locked while 0.0.0.0 is bound, so refusing
     // the uncheck would deadlock the picker — fall back to loopback instead.
     const { getByRole, onchange } = renderSelector({ selectedIps: ['0.0.0.0'] });
-    const allInterfaces = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+    const allInterfaces = asButton(
+      getByRole('button', { name: m.settings_listenTargets_allInterfaces_label() }),
     );
     await fireEvent.click(allInterfaces);
     expect(onchange).toHaveBeenCalledWith({ ips: ['127.0.0.1'], tunnel: false });
@@ -205,16 +203,16 @@ describe('ListenTargetSelector', () => {
 
   it('tunnel-only posture: loopback stays unchecked and unlocked (daemon binds it itself)', () => {
     const { getByRole } = renderSelector({ selectedIps: [], tunnelSelected: true });
-    const loopback = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+    const loopback = asButton(
+      getByRole('button', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(false);
+    expect(isPressed(loopback)).toBe(false);
     expect(loopback.disabled).toBe(false);
   });
 
   it('disables all checkboxes while a save is in flight', () => {
     const { getByRole } = renderSelector({ saving: true });
-    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
-    expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).disabled).toBe(true);
+    expect(asButton(getByRole('button', { name: '10.0.0.5' })).disabled).toBe(true);
+    expect(asButton(getByRole('button', { name: '192.168.1.10' })).disabled).toBe(true);
   });
 });

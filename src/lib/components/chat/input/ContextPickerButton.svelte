@@ -27,7 +27,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { Button } from '$lib/components/ui/button';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { m } from '$shared/paraglide/messages.js';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import {
@@ -481,10 +481,7 @@
                 {#each group.panels as panel (panel.id)}
                   {@const isCurrentAgent =
                     panel.type === 'agent' && panel.agentId === currentAgentId}
-                  <button
-                    type="button"
-                    onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
-                    disabled={isCurrentAgent}
+                  <div
                     class={cn(
                       'type-body flex w-full items-center gap-2 px-3 py-2 transition-colors',
                       isCurrentAgent
@@ -492,43 +489,58 @@
                         : 'hover:bg-muted/40 cursor-pointer',
                     )}
                   >
-                    <Checkbox
-                      checked={panel.checked}
-                      size="sm"
+                    <button
+                      type="button"
+                      onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
                       disabled={isCurrentAgent}
-                      onCheckedChange={() => !isCurrentAgent && handleToggleItem(panel.id)}
-                      class="!mr-1"
+                      class="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <Fa icon={getIconForType(panel.type)} class="h-3.5 w-3.5 text-subtle" />
+                      <span class="flex-1 truncate">{panel.label}</span>
+                      {#if isCurrentAgent}
+                        <span class="type-caption text-muted-foreground uppercase"
+                          >{m.chat_contextPicker_you_badge()}</span
+                        >
+                      {:else if panel.isActive}
+                        <span class="type-caption text-muted-foreground uppercase"
+                          >{m.chat_contextPicker_active_badge()}</span
+                        >
+                      {/if}
+                    </button>
+                    <Toggle
+                      pressed={panel.checked}
+                      onChange={() => !isCurrentAgent && handleToggleItem(panel.id)}
+                      disabled={isCurrentAgent}
+                      size="xs"
+                      class="shrink-0"
+                      ariaLabel={panel.label}
                     />
-                    <Fa icon={getIconForType(panel.type)} class="h-3.5 w-3.5 text-subtle" />
-                    <span class="flex-1 truncate text-left">{panel.label}</span>
-                    {#if isCurrentAgent}
-                      <span class="type-caption text-muted-foreground uppercase"
-                        >{m.chat_contextPicker_you_badge()}</span
-                      >
-                    {:else if panel.isActive}
-                      <span class="type-caption text-muted-foreground uppercase"
-                        >{m.chat_contextPicker_active_badge()}</span
-                      >
-                    {/if}
-                  </button>
+                  </div>
                 {/each}
 
                 <!-- Selections in this group -->
                 {#each group.selections as selection (selection.id)}
-                  <button
-                    type="button"
-                    onclick={() => handleToggleSelectionItem(selection.id)}
+                  {@const selectionLabel = truncateText(selection.text)}
+                  <div
                     class="type-body flex w-full items-center gap-2 px-3 py-2
-                           hover:bg-muted/40 cursor-pointer transition-colors"
+                           hover:bg-muted/40 transition-colors"
                   >
-                    <Checkbox
-                      checked={selection.checked}
-                      size="sm"
-                      onCheckedChange={() => handleToggleSelectionItem(selection.id)}
+                    <button
+                      type="button"
+                      onclick={() => handleToggleSelectionItem(selection.id)}
+                      class="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+                    >
+                      <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
+                      <span class="flex-1 truncate">{selectionLabel}</span>
+                    </button>
+                    <Toggle
+                      pressed={selection.checked}
+                      onChange={() => handleToggleSelectionItem(selection.id)}
+                      size="xs"
+                      class="shrink-0"
+                      ariaLabel={selectionLabel}
                     />
-                    <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
-                    <span class="flex-1 truncate text-left">{truncateText(selection.text)}</span>
-                  </button>
+                  </div>
                 {/each}
               {/each}
             </div>

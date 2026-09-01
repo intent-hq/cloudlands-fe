@@ -72,8 +72,7 @@
     </div>
     <Toggle
       pressed={$notificationEnabled}
-      onclick={() => appStore.dispatch(setNotificationEnabled(!$notificationEnabled))}
-      variant="indicator"
+      onChange={(pressed) => appStore.dispatch(setNotificationEnabled(pressed === true))}
       size="xs"
       class="mb-auto"
       ariaLabel={m.settings_notifications_desktop_label()}
@@ -88,8 +87,7 @@
     </div>
     <Toggle
       pressed={$soundEnabled}
-      onclick={() => appStore.dispatch(setSoundEnabled(!$soundEnabled))}
-      variant="indicator"
+      onChange={(pressed) => appStore.dispatch(setSoundEnabled(pressed === true))}
       size="xs"
       class="mb-auto"
       ariaLabel={m.settings_notifications_sound_label()}
@@ -106,8 +104,7 @@
     </div>
     <Toggle
       pressed={$soundOnlyWhenUnfocused}
-      onclick={() => appStore.dispatch(setSoundOnlyWhenUnfocused(!$soundOnlyWhenUnfocused))}
-      variant="indicator"
+      onChange={(pressed) => appStore.dispatch(setSoundOnlyWhenUnfocused(pressed === true))}
       size="xs"
       class="mb-auto"
       ariaLabel={m.settings_notifications_unfocusedOnly_label()}

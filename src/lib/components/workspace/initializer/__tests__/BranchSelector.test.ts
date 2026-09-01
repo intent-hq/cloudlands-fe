@@ -166,6 +166,37 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'master' });
   });
 
+  it('uses a textless Toggle beside the work-directly label', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    const onSkipIsolationChange = vi.fn();
+    const { container } = render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/repo',
+        repoType: 'local',
+        skipIsolation: false,
+        onSkipIsolationChange,
+      },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await openDropdown(container);
+    const toggle = await screen.findByRole('button', {
+      name: 'Work directly in your folder on the main branch',
+      hidden: true,
+      pressed: false,
+    });
+    expect(toggle.textContent?.trim()).toBe('');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+    await fireEvent.click(toggle);
+    expect(onSkipIsolationChange).toHaveBeenCalledWith(true);
+  });
+
   it.each([
     ['explicit', true],
     ['persisted', false],

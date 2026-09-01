@@ -639,6 +639,10 @@
     {#snippet action()}
       <!-- Auto-commit toggle -->
       <div class="flex items-center justify-between gap-2 -my-0.5">
+        <span class="text-xs text-subtle whitespace-nowrap">
+          <!-- i18n-ignore (established compact product term) -->
+          Auto-commit
+        </span>
         <Tooltip
           content={$autoCommitEnabled
             ? m.workspace_fileChanges_autoCommitOn_tooltip()
@@ -649,17 +653,14 @@
           disableCloseOnTriggerClick={true}
         >
           <Toggle
-            variant="switch"
             size="xs"
-            onLabel="Auto-commit"
-            offLabel="Auto-commit"
             pressed={$autoCommitEnabled}
-            class="border-0! font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
-            onclick={() => {
+            onChange={(pressed) => {
               if (workspaceId) {
-                appStore.dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
+                appStore.dispatch(setAutoCommitEnabled(workspaceId as string, pressed as boolean));
               }
             }}
+            ariaLabel={m.workspace_commitDrawer_autoCommitWhenDone_label()}
           />
         </Tooltip>
       </div>

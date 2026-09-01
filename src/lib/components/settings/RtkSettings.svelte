@@ -18,13 +18,12 @@
   import { appClient } from '$lib/client';
 
   import {
-  addTerminal,
-  openTerminalOverlay,
-} from '$store/renderer/slices/terminals/terminals-slice';
+    addTerminal,
+    openTerminalOverlay,
+  } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { toast } from '$lib/components/ui/toast';
-
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
@@ -83,12 +82,18 @@
       if (!result.success || !result.id) {
         // Daemon-first invariant: never fabricate a tab without a PTY behind
         // it — surface the failure instead.
-        console.error('Failed to create install terminal:', result.success ? 'missing id' : result.error);
+        console.error(
+          // i18n-ignore (developer console diagnostic, not rendered UI text)
+          'Failed to create install terminal:',
+          result.success ? 'missing id' : result.error, // i18n-ignore (developer diagnostic detail)
+        );
         toast.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const termId = result.id;
-      appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()));
+      appStore.dispatch(
+        addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()),
+      );
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
@@ -114,15 +119,17 @@
     }
   }
 
-  async function handleToggle() {
+  async function handleToggle(pressed: string | boolean) {
     if (updating) return; // Guard against re-entrancy
-    const newValue = !rtkEnabled;
+    const newValue = pressed === true;
+    rtkEnabled = newValue;
     updating = true;
     try {
       await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
       rtkEnabled = newValue;
       settingsError = '';
     } catch (error) {
+      rtkEnabled = !newValue;
       settingsError = m.settings_rtk_saveError();
       console.error('Failed to update rtk.enabled setting:', error);
     } finally {
@@ -157,8 +164,7 @@
     </div>
     <Toggle
       pressed={rtkEnabled}
-      onclick={handleToggle}
-      variant="indicator"
+      onChange={handleToggle}
       size="xs"
       class="mb-auto"
       disabled={!rtkAvailable}
@@ -178,8 +184,7 @@
         href="https://github.com/rtk-ai/rtk"
         target="_blank"
         rel="noopener noreferrer"
-        class="text-primary hover:underline"
-        ><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
+        class="text-primary hover:underline"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
       >.
     </p>
   {/if}

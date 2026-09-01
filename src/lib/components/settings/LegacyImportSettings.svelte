@@ -73,13 +73,10 @@
         <p class="text-xs text-subtle mt-0.5">{m.settings_legacyImport_overwrite_description()}</p>
       </div>
       <Toggle
-        variant="indicator"
         size="xs"
         pressed={overwrite}
         disabled={$loading}
         ariaLabel={m.settings_legacyImport_overwrite_ariaLabel()}
-        onLabel={m.settings_legacyImport_on_label()}
-        offLabel={m.settings_legacyImport_off_label()}
         onChange={(value) => (overwrite = value === true)}
       />
     </div>

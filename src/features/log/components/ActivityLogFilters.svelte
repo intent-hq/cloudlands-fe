@@ -7,7 +7,7 @@
 
 <script lang="ts">
   import { slide } from 'svelte/transition';
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { Select } from '$lib/components/ui/select';
   import {
     deleteActivityLogPreset,
@@ -187,41 +187,41 @@
 <div class="p-4 bg-background border-b border-border">
   <!-- Quick Filters -->
   <div class="flex gap-4 items-center mb-2">
-    <label class="flex items-center gap-1 cursor-pointer select-none">
-      <Checkbox
-        bind:checked={filters.showFileChanges}
-        ariaLabel={m.log_filters_fileChanges_label()}
-        size="sm"
-      />
+    <div class="flex items-center gap-1.5">
       <span class="text-sm">{m.log_filters_fileChanges_label()}</span>
-    </label>
-
-    <label class="flex items-center gap-1 cursor-pointer select-none">
-      <Checkbox
-        bind:checked={filters.showAgentActivity}
-        ariaLabel={m.log_filters_agentActivity_label()}
-        size="sm"
+      <Toggle
+        bind:pressed={filters.showFileChanges}
+        ariaLabel={m.log_filters_fileChanges_label()}
+        size="xs"
       />
+    </div>
+
+    <div class="flex items-center gap-1.5">
       <span class="text-sm">{m.log_filters_agentActivity_label()}</span>
-    </label>
-
-    <label class="flex items-center gap-1 cursor-pointer select-none">
-      <Checkbox
-        bind:checked={filters.showSystemEvents}
-        ariaLabel={m.log_filters_systemEvents_label()}
-        size="sm"
+      <Toggle
+        bind:pressed={filters.showAgentActivity}
+        ariaLabel={m.log_filters_agentActivity_label()}
+        size="xs"
       />
+    </div>
+
+    <div class="flex items-center gap-1.5">
       <span class="text-sm">{m.log_filters_systemEvents_label()}</span>
-    </label>
-
-    <label class="flex items-center gap-1 cursor-pointer select-none">
-      <Checkbox
-        bind:checked={filters.showErrors}
-        ariaLabel={m.log_filters_errors_label()}
-        size="sm"
+      <Toggle
+        bind:pressed={filters.showSystemEvents}
+        ariaLabel={m.log_filters_systemEvents_label()}
+        size="xs"
       />
+    </div>
+
+    <div class="flex items-center gap-1.5">
       <span class="text-sm">{m.log_filters_errors_label()}</span>
-    </label>
+      <Toggle
+        bind:pressed={filters.showErrors}
+        ariaLabel={m.log_filters_errors_label()}
+        size="xs"
+      />
+    </div>
 
     <button
       class="bg-transparent border-none text-primary cursor-pointer text-sm px-2 py-1 ml-auto hover:underline"

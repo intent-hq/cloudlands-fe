@@ -91,7 +91,7 @@
   } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
@@ -1789,17 +1789,19 @@
                         <div class="max-w-5xl mx-auto flex flex-col items-start gap-2 mt-9">
                           {#if hasConnectedProvider && onboardingTestPromptSupported}
                             <div class="flex flex-col gap-1 mb-2">
-                              <label
-                                class="flex items-center gap-2 text-sm cursor-pointer"
+                              <div
+                                class="flex items-center justify-between gap-3 text-sm"
                                 data-testid="onboarding-test-prompt-checkbox"
                               >
-                                <Checkbox
-                                  bind:checked={onboardingSendTestPrompt}
+                                <span>{m.onboarding_testPrompt_checkbox_label()}</span>
+                                <Toggle
+                                  bind:pressed={onboardingSendTestPrompt}
                                   disabled={onboardingTestPromptRunning}
+                                  size="xs"
+                                  ariaLabel={m.onboarding_testPrompt_checkbox_label()}
                                 />
-                                {m.onboarding_testPrompt_checkbox_label()}
-                              </label>
-                              <p class="text-xs text-muted-foreground pl-6">
+                              </div>
+                              <p class="text-xs text-muted-foreground">
                                 {m.onboarding_testPrompt_finePrint_label()}
                               </p>
                             </div>

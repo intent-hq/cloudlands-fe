@@ -7,7 +7,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
   import PathSettingField from './PathSettingField.svelte';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import { Select } from '$lib/components/ui/select';
   import { Toggle } from '$lib/components/ui/toggle';
   import type { Snippet } from 'svelte';
@@ -271,8 +270,7 @@
           </p>
           <Toggle
             pressed={autoCommit}
-            onclick={handleAutoCommitToggle}
-            variant="indicator"
+            onChange={handleAutoCommitToggle}
             size="xs"
             class="mb-auto"
             ariaLabel={m.settings_gitWorkspace_autoCommit_label()}
@@ -292,8 +290,7 @@
             </div>
             <Toggle
               pressed={exposeGitCredential}
-              onclick={handleGitCredentialToggle}
-              variant="indicator"
+              onChange={handleGitCredentialToggle}
               size="xs"
               class="mb-auto"
               ariaLabel={m.settings_gitWorkspace_gitCredentials_label()}
@@ -360,30 +357,33 @@
       </section>
       {#if showCowToggle}
         <section class="px-6 py-5">
-          <div class="flex items-center gap-2">
-            <label
-              for="cow-isolation"
-              class="flex items-center gap-2 text-sm text-foreground cursor-pointer"
-            >
-              <Checkbox
-                id="cow-isolation"
-                checked={cowIsolation}
-                onCheckedChange={(checked) => {
-                  cowIsolation = checked;
-                  handleSave();
-                }}
-                ariaDescribedby="cow-isolation-description"
-              />
-              <span>{m.settings_gitWorkspace_cowIsolation_label()}</span>
-            </label>
-            <span
-              class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
-              >{m.settings_gitWorkspace_experimental_badge()}</span
-            >
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <p class="text-sm font-medium text-foreground">
+                  {m.settings_gitWorkspace_cowIsolation_label()}
+                </p>
+                <span
+                  class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
+                  >{m.settings_gitWorkspace_experimental_badge()}</span
+                >
+              </div>
+              <p id="cow-isolation-description" class="text-xs text-subtle mt-1">
+                {m.settings_gitWorkspace_cowIsolation_description()}
+              </p>
+            </div>
+            <Toggle
+              pressed={cowIsolation}
+              onChange={(pressed) => {
+                cowIsolation = pressed === true;
+                handleSave();
+              }}
+              size="xs"
+              class="mb-auto"
+              ariaLabel={m.settings_gitWorkspace_cowIsolation_label()}
+              ariaDescribedby="cow-isolation-description"
+            />
           </div>
-          <p id="cow-isolation-description" class="text-xs text-subtle mt-0.5 ml-6">
-            {m.settings_gitWorkspace_cowIsolation_description()}
-          </p>
         </section>
       {/if}
     </div>

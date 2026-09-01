@@ -57,10 +57,11 @@ describe('InterruptedAgentsModal', () => {
       props: { open: true, agents: AGENTS, onResumeSelected },
     });
 
-    const localAgent = await screen.findByRole('checkbox', { name: 'Local Agent' });
-    expect(localAgent.getAttribute('aria-checked')).toBe('true');
+    const localAgent = await screen.findByRole('button', { name: 'Local Agent' });
+    expect(localAgent.textContent?.trim()).toBe('');
+    expect(localAgent.getAttribute('aria-pressed')).toBe('true');
     await fireEvent.click(localAgent);
-    expect(localAgent.getAttribute('aria-checked')).toBe('false');
+    expect(localAgent.getAttribute('aria-pressed')).toBe('false');
     await fireEvent.click(screen.getByRole('button', { name: 'Resume selected' }));
 
     expect(onResumeSelected).toHaveBeenCalledWith(['a2'], ['a1']);
@@ -95,10 +96,10 @@ describe('InterruptedAgentsModal', () => {
     const dialogEl = await screen.findByRole('alertdialog', { name: 'Agents were interrupted' });
     expect(document.activeElement).toBe(dialogEl);
 
-    // A keyboard user moves focus onto a checkbox…
-    const checkbox = screen.getAllByRole('checkbox')[0];
-    checkbox.focus();
-    expect(document.activeElement).toBe(checkbox);
+    // A keyboard user moves focus onto a selection toggle…
+    const toggle = screen.getByRole('button', { name: 'Local Agent' });
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
 
     // …then a cross-window prune replaces the agents array mid-open. The
     // focus effect must not re-run and yank focus back to the container.

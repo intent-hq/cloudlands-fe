@@ -349,7 +349,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     )) as HTMLInputElement;
     expect(stepper.disabled).toBe(true);
     expect(
-      screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+      screen.getByRole('button', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-pressed'),
     ).toBe('false');
   });
 
@@ -377,7 +377,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() =>
@@ -403,14 +403,14 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     );
 
     // Off and back on round-trips their 30, not the catalog's 10.
-    const toggle = screen.getByRole('switch', { name: REAP_TOGGLE_LABEL });
+    const toggle = screen.getByRole('button', { name: REAP_TOGGLE_LABEL });
     await fireEvent.click(toggle);
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 0 }]),
     );
 
     mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 30 }]);
-    await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
 
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 30 }]),
@@ -426,7 +426,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() =>
@@ -443,7 +443,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() =>
@@ -484,7 +484,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 1 }]),
     );
     expect(
-      screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+      screen.getByRole('button', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-pressed'),
     ).toBe('true');
   });
 
@@ -494,16 +494,16 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() =>
       expect(
-        screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+        screen.getByRole('button', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-pressed'),
       ).toBe('true'),
     );
     expect(
-      screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+      screen.getByRole('button', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-pressed'),
     ).toBe('true');
     expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false);
   });
@@ -541,14 +541,14 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     render(AgentBackendSettings);
 
     // Toggling off and back on must restore 240, not the 120 convention.
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 0 }]),
     );
 
     mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 240 }]);
-    await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
 
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 240 }]),
@@ -562,7 +562,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     await waitFor(() => expect(screen.getByLabelText(BUDGET_LABEL)).toBeTruthy());
     expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
-    expect(screen.queryByRole('switch', { name: REAP_TOGGLE_LABEL })).toBeNull();
+    expect(screen.queryByRole('button', { name: REAP_TOGGLE_LABEL })).toBeNull();
   });
 
   it('disables the stepper as soon as reaping is switched off, before the write lands', async () => {
@@ -580,7 +580,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
     await waitFor(() => expect(pending).toHaveLength(1));
 
@@ -603,7 +603,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() =>
@@ -626,10 +626,10 @@ describe('AgentBackendSettings — idle reap minutes', () => {
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
     await fireEvent.click(toggle);
     await waitFor(() => expect(pending).toHaveLength(1));
-    await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(screen.getByRole('button', { name: REAP_TOGGLE_LABEL }));
 
     // Queued behind the first click rather than raced against it.
     expect(pending).toHaveLength(1);
@@ -646,7 +646,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     pending[1]();
     await waitFor(() =>
       expect(
-        screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+        screen.getByRole('button', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-pressed'),
       ).toBe('true'),
     );
     expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false);

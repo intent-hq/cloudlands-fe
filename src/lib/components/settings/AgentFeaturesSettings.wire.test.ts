@@ -116,7 +116,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Background hooks' });
+    const toggle = await screen.findByRole('button', { name: 'Background hooks' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -141,7 +141,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'State snapshot' });
+    const toggle = await screen.findByRole('button', { name: 'State snapshot' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -172,9 +172,9 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    const toggle = await screen.findByRole('button', { name: 'Task graph coordination' });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
     });
     await fireEvent.click(toggle);
 
@@ -187,7 +187,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         changes: [{ path: 'agentFeatures.taskGraph', value: false }],
       });
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('reverts taskGraph to off when the daemon rolls back a toggle-on', async () => {
@@ -209,9 +209,9 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    const toggle = await screen.findByRole('button', { name: 'Task graph coordination' });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
     await fireEvent.click(toggle);
 
@@ -222,7 +222,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       expect(updateCall).toBeDefined();
     });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
   });
 
@@ -267,11 +267,11 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', {
+    const toggle = await screen.findByRole('button', {
       name: 'Top-level agent spawning & retirement',
     });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
     await fireEvent.click(toggle);
 
@@ -284,7 +284,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         changes: [{ path: 'agentFeatures.peerAgents', value: true }],
       });
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('renders peerAgents OFF when settings.list omits it (opt-in default)', async () => {
@@ -301,11 +301,11 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', {
+    const toggle = await screen.findByRole('button', {
       name: 'Top-level agent spawning & retirement',
     });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
   });
 

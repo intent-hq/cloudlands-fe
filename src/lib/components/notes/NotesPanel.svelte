@@ -2,7 +2,7 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
 
   import { Skeleton } from '../ui/skeleton';
-  import { Checkbox } from '../ui/checkbox';
+  import { Toggle } from '../ui/toggle';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListEmpty, ListItem } from '../ui/list';
 
@@ -107,20 +107,26 @@
               active={selectedNoteId === note.id}
               iconClass="text-ghost"
               title={getNoteTitle(note)}
+              aria-label={getNoteTitle(note)}
               onclick={() => onOpenNote(note.id)}
               size="sm"
               indent={depth}
             >
               {#snippet iconSnippet()}
                 {#if isAllComplete}
-                  <!-- All tasks complete - show checked checkbox -->
+                  <!-- All tasks complete - show a disabled status toggle -->
                   <div
                     title={m.workspace_notesPanel_taskProgress_tooltip({
                       completed: taskStats.completed,
                       total: taskStats.total,
                     })}
                   >
-                    <Checkbox checked disabled size="sm" />
+                    <Toggle
+                      pressed
+                      disabled
+                      size="xs"
+                      ariaLabel={m.workspace_statusIcon_complete_label()}
+                    />
                   </div>
                 {:else}
                   <!-- Show progress ring -->

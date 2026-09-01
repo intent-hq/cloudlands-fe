@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { parse } from 'svelte/compiler';
 import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
@@ -29,6 +30,31 @@ export interface CheckboxControlLedgerEntry {
   file: string;
   line: number;
   kind: 'native-input' | 'checkbox-role' | 'menuitemcheckbox-role';
+  exemption: string | null;
+}
+
+export type BinaryControlKind =
+  | 'checkbox-import'
+  | 'switch-import'
+  | 'toggle-contract'
+  | 'toggle-switch-variant'
+  | 'toggle-indicator-variant';
+
+export interface BinaryControlLedgerEntry {
+  file: string;
+  line: number;
+  kind: BinaryControlKind;
+  exemption: string | null;
+}
+
+export interface ProductToggleLedgerEntry {
+  file: string;
+  line: number;
+  selfClosing: boolean;
+  size: string | null;
+  hasAriaLabel: boolean;
+  hasSourceDerivedAriaLabel: boolean;
+  variant: string | null;
   exemption: string | null;
 }
 
@@ -239,6 +265,22 @@ function checkboxControlExemption(file: string): string | null {
   return null;
 }
 
+function binaryControlExemption(file: string, kind: BinaryControlKind): string | null {
+  for (const exemption of uiComponentGuardrails.binaryControlAllowlist) {
+    if (!(exemption.kinds as readonly BinaryControlKind[]).includes(kind)) continue;
+    const matches =
+      exemption.match === 'exact'
+        ? file === exemption.path
+        : exemption.match === 'prefix'
+          ? file.startsWith(exemption.path)
+          : exemption.match === 'contains'
+            ? file.includes(exemption.path)
+            : file.endsWith(exemption.path);
+    if (matches) return exemption.reason;
+  }
+  return null;
+}
+
 function staticAttribute(attributes: string, name: string): string | null {
   const match = attributes.match(
     new RegExp(`\\b${name}\\s*=\\s*(?:["']([^"']+)["']|\\{\\s*["']([^"']+)["']\\s*\\})`, 'i'),
@@ -288,8 +330,255 @@ export function checkboxControlGuardrailFailures(root = process.cwd()): string[]
       const replacement =
         kind === 'menuitemcheckbox-role'
           ? '$lib/components/ui/menu Menu.CheckboxItem'
-          : '$lib/components/ui/checkbox Checkbox';
+          : '$lib/components/ui/toggle Toggle';
       return `${file}:${line}: ${kind} bypasses the checkbox design-system boundary; use ${replacement} or add a reviewed contextual exemption`;
+    });
+}
+
+function binaryControlImportKind(
+  file: string,
+  specifier: string,
+): 'checkbox-import' | 'switch-import' | null {
+  for (const family of ['checkbox', 'switch'] as const) {
+    const alias = `$lib/components/ui/${family}`;
+    if (
+      specifier === alias ||
+      specifier === `${alias}/index` ||
+      specifier === `${alias}/index.ts` ||
+      specifier === `${alias}/index.js` ||
+      specifier === `${alias}/${family}.svelte`
+    ) {
+      return `${family}-import`;
+    }
+    if (!specifier.startsWith('.')) continue;
+    const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+    const root = `${UI_ROOT}/${family}`;
+    if (
+      resolved === root ||
+      resolved === `${root}/index` ||
+      resolved === `${root}/index.ts` ||
+      resolved === `${root}/index.js` ||
+      resolved === `${root}/${family}.svelte`
+    ) {
+      return `${family}-import`;
+    }
+  }
+  return null;
+}
+
+function importsToggle(file: string, source: string): boolean {
+  return imports(source).some(({ specifier }) => {
+    const alias = '$lib/components/ui/toggle';
+    if (
+      specifier === alias ||
+      specifier === `${alias}/index` ||
+      specifier === `${alias}/index.ts` ||
+      specifier === `${alias}/index.js` ||
+      specifier === `${alias}/toggle.svelte`
+    ) {
+      return true;
+    }
+    if (!specifier.startsWith('.')) return false;
+    const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+    const root = `${UI_ROOT}/toggle`;
+    return (
+      resolved === root ||
+      resolved === `${root}/index` ||
+      resolved === `${root}/index.ts` ||
+      resolved === `${root}/index.js` ||
+      resolved === `${root}/toggle.svelte`
+    );
+  });
+}
+
+interface SvelteNode {
+  type?: string;
+  name?: string;
+  start?: number;
+  end?: number;
+  attributes?: Array<{
+    type?: string;
+    name?: string;
+    start?: number;
+    end?: number;
+    value?: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+function visitSvelteNodes(value: unknown, visitor: (node: SvelteNode) => void): void {
+  if (Array.isArray(value)) {
+    for (const item of value) visitSvelteNodes(item, visitor);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const node = value as SvelteNode;
+  if (typeof node.type === 'string') visitor(node);
+  for (const [key, child] of Object.entries(node)) {
+    if (['metadata', 'loc', 'name_loc'].includes(key)) continue;
+    if (Array.isArray(child) || (child && typeof child === 'object')) {
+      visitSvelteNodes(child, visitor);
+    }
+  }
+}
+
+function hasSourceDerivedAttributeExpression(
+  attribute: NonNullable<SvelteNode['attributes']>[number],
+): boolean {
+  if (!attribute.value || Array.isArray(attribute.value) || typeof attribute.value !== 'object') {
+    return false;
+  }
+  const value = attribute.value as {
+    type?: string;
+    expression?: { type?: string; expressions?: unknown[] };
+  };
+  if (value.type !== 'ExpressionTag' || !value.expression) return false;
+  if (value.expression.type === 'Literal') return false;
+  if (value.expression.type === 'TemplateLiteral' && value.expression.expressions?.length === 0) {
+    return false;
+  }
+  return true;
+}
+
+export function buildProductToggleLedger(root = process.cwd()): ProductToggleLedgerEntry[] {
+  const entries: ProductToggleLedgerEntry[] = [];
+  for (const absolute of walk(path.join(root, 'src')).filter((file) => file.endsWith('.svelte'))) {
+    const file = path.relative(root, absolute).split(path.sep).join('/');
+    const source = fs.readFileSync(absolute, 'utf8');
+    if (!importsToggle(file, source)) continue;
+    const ast = parse(source, { modern: true });
+    visitSvelteNodes(ast.fragment, (node) => {
+      if (
+        node.type !== 'Component' ||
+        node.name !== 'Toggle' ||
+        node.start === undefined ||
+        node.end === undefined
+      ) {
+        return;
+      }
+      const raw = source.slice(node.start, node.end);
+      const variant = staticAttribute(raw, 'variant');
+      if (variant === 'group') return;
+      const ariaLabelAttribute = node.attributes?.find(
+        (attribute) => attribute.type === 'Attribute' && attribute.name === 'ariaLabel',
+      );
+      entries.push({
+        file,
+        line: source.slice(0, node.start).split('\n').length,
+        selfClosing: raw.trimEnd().endsWith('/>'),
+        size: staticAttribute(raw, 'size'),
+        hasAriaLabel: ariaLabelAttribute !== undefined,
+        hasSourceDerivedAriaLabel:
+          ariaLabelAttribute !== undefined &&
+          hasSourceDerivedAttributeExpression(ariaLabelAttribute),
+        variant,
+        exemption: binaryControlExemption(file, 'toggle-contract'),
+      });
+    });
+  }
+  return entries.sort((left, right) => sortText(left.file, right.file) || left.line - right.line);
+}
+
+export function productToggleGuardrailFailures(root = process.cwd()): string[] {
+  return buildProductToggleLedger(root)
+    .filter(({ exemption }) => exemption === null)
+    .flatMap(
+      ({ file, line, selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, variant }) => {
+        const violations: string[] = [];
+        if (!selfClosing) {
+          violations.push('render no inline content and keep the visible label external');
+        }
+        if (size !== 'xs') violations.push('set size="xs"');
+        if (!hasAriaLabel) {
+          violations.push('provide a localized/source-derived ariaLabel expression');
+        } else if (!hasSourceDerivedAriaLabel) {
+          violations.push(
+            'replace the literal ariaLabel with a localized/source-derived expression',
+          );
+        }
+        if (variant !== null) {
+          violations.push('use the default variant without an explicit variant prop');
+        }
+        return violations.length
+          ? [
+              `${file}:${line}: product Toggle violates the compact binary-control contract (${violations.join('; ')})`,
+            ]
+          : [];
+      },
+    );
+}
+
+export function buildBinaryControlLedger(root = process.cwd()): BinaryControlLedgerEntry[] {
+  const entries: BinaryControlLedgerEntry[] = [];
+  for (const absolute of walk(path.join(root, 'src')).filter((file) =>
+    /\.(?:ts|svelte)$/.test(file),
+  )) {
+    const file = path.relative(root, absolute).split(path.sep).join('/');
+    const source = fs.readFileSync(absolute, 'utf8');
+    const importPatterns = [
+      /\bfrom\s*['"]([^'"]+)['"]/g,
+      /\bimport\s*['"]([^'"]+)['"]/g,
+      /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    ];
+    for (const pattern of importPatterns) {
+      for (const match of source.matchAll(pattern)) {
+        const kind = binaryControlImportKind(file, match[1]);
+        if (!kind) continue;
+        entries.push({
+          file,
+          line: source.slice(0, match.index).split('\n').length,
+          kind,
+          exemption: binaryControlExemption(file, kind),
+        });
+      }
+    }
+    for (const match of source.matchAll(
+      /\bimport\s*\{([^}]*)\}\s*from\s*['"]\$lib\/components\/ui['"]/g,
+    )) {
+      for (const family of ['Checkbox', 'Switch'] as const) {
+        if (!new RegExp(`\\b${family}(?:\\s+as\\s+\\w+)?\\b`).test(match[1])) continue;
+        const kind = `${family.toLowerCase()}-import` as const;
+        entries.push({
+          file,
+          line: source.slice(0, match.index).split('\n').length,
+          kind,
+          exemption: binaryControlExemption(file, kind),
+        });
+      }
+    }
+    if (!absolute.endsWith('.svelte')) continue;
+    const uncommented = source.replace(/<!--[\s\S]*?-->/g, (comment) =>
+      comment.replace(/[^\n]/g, ' '),
+    );
+    for (const match of uncommented.matchAll(/<Toggle\b[^>]*>/g)) {
+      const variant = staticAttribute(match[0], 'variant');
+      if (variant !== 'switch' && variant !== 'indicator') continue;
+      const kind = `toggle-${variant}-variant` as const;
+      entries.push({
+        file,
+        line: uncommented.slice(0, match.index).split('\n').length,
+        kind,
+        exemption: binaryControlExemption(file, kind),
+      });
+    }
+  }
+  return entries.sort(
+    (left, right) =>
+      sortText(left.file, right.file) || left.line - right.line || sortText(left.kind, right.kind),
+  );
+}
+
+export function binaryControlGuardrailFailures(root = process.cwd()): string[] {
+  return buildBinaryControlLedger(root)
+    .filter(({ exemption }) => exemption === null)
+    .map(({ file, line, kind }) => {
+      const guidance =
+        kind === 'checkbox-import'
+          ? 'imports Checkbox outside the approved TipTap task-checkbox and test/catalog contexts; use $lib/components/ui/toggle Toggle'
+          : kind === 'switch-import'
+            ? 'imports Switch outside test/catalog characterization; use $lib/components/ui/toggle Toggle'
+            : `uses removed Toggle ${kind === 'toggle-switch-variant' ? 'switch' : 'indicator'} compatibility mode; use the default compact Toggle`;
+      return `${file}:${line}: ${guidance}`;
     });
 }
 
@@ -318,5 +607,7 @@ export function structuralGuardrailFailures(root = process.cwd()): string[] {
     }
   }
   failures.push(...checkboxControlGuardrailFailures(root));
+  failures.push(...binaryControlGuardrailFailures(root));
+  failures.push(...productToggleGuardrailFailures(root));
   return failures.sort(sortText);
 }

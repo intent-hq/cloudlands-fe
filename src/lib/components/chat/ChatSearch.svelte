@@ -8,7 +8,7 @@
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
   import { safeSlide } from '$lib/utils/animations';
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { cubicOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -185,24 +185,24 @@
 
       <!-- Options -->
       <div class="flex items-center gap-4">
-        <label class="flex items-center gap-2 cursor-pointer">
-          <Checkbox
-            bind:checked={filters.caseSensitive}
-            ariaLabel={m.chat_chatSearch_caseSensitive_label()}
-            onCheckedChange={handleSearch}
-            size="sm"
-          />
+        <div class="flex items-center gap-2">
           <span class="text-xs text-subtle">{m.chat_chatSearch_caseSensitive_label()}</span>
-        </label>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <Checkbox
-            bind:checked={filters.regex}
-            ariaLabel={m.chat_chatSearch_useRegex_label()}
-            onCheckedChange={handleSearch}
-            size="sm"
+          <Toggle
+            bind:pressed={filters.caseSensitive}
+            ariaLabel={m.chat_chatSearch_caseSensitive_label()}
+            onChange={handleSearch}
+            size="xs"
           />
+        </div>
+        <div class="flex items-center gap-2">
           <span class="text-xs text-subtle">{m.chat_chatSearch_useRegex_label()}</span>
-        </label>
+          <Toggle
+            bind:pressed={filters.regex}
+            ariaLabel={m.chat_chatSearch_useRegex_label()}
+            onChange={handleSearch}
+            size="xs"
+          />
+        </div>
       </div>
     </div>
   {/if}

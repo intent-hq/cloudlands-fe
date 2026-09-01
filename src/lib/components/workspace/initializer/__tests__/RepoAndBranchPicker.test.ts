@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../RepoSelector.svelte', async () => ({
@@ -44,6 +44,32 @@ function expectMetadataPill(element: HTMLElement) {
 }
 
 describe('RepoAndBranchPicker', () => {
+  it('uses a textless Toggle beside the remote work-directly label', async () => {
+    const onSkipIsolationChange = vi.fn();
+    render(RepoAndBranchPicker, {
+      props: {
+        repoType: 'remote',
+        skipIsolation: true,
+        remoteSetup: {
+          id: 'remote-1',
+          name: 'cloud-host',
+          host: 'example.test',
+          port: 22,
+          username: 'dev',
+          workspacePath: '/srv/repo',
+          branch: 'main',
+        },
+        onSkipIsolationChange,
+      },
+    });
+
+    const toggle = screen.getByRole('button', { name: 'Work directly in your folder' });
+    expect(toggle.textContent?.trim()).toBe('');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(toggle);
+    expect(onSkipIsolationChange).toHaveBeenCalledWith(false);
+  });
+
   it.each([
     {
       kind: 'local',

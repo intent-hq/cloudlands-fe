@@ -19,7 +19,7 @@
     selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import { slide } from 'svelte/transition';
-  import Switch from '$lib/components/ui/switch/switch.svelte';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
     faChevronDown,
@@ -205,13 +205,12 @@
                 </Tooltip>
               {/if} -->
             </div>
-
-            <!-- Toggle Switch -->
-            <Switch
-              size="sm"
-              checked={isEnabled}
-              onCheckedChange={(checked) => handleToggle(server.name, checked)}
-              ariaLabel={`Toggle ${server.name} MCP server`}
+            <Toggle
+              size="xs"
+              pressed={isEnabled}
+              onChange={(pressed) => handleToggle(server.name, pressed as boolean)}
+              ariaLabel={server.name}
+              class="shrink-0"
             />
           </div>
         {/each}

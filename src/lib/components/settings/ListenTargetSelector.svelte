@@ -23,6 +23,7 @@
    *   lock applies in neither of those postures.
    */
   import { m } from '$shared/paraglide/messages.js';
+  import { Toggle } from '$lib/components/ui/toggle';
 
   export interface ListenTargetSelection {
     /** Selected bind IPs ('0.0.0.0' means all interfaces, exclusive). */
@@ -75,6 +76,7 @@
   const loopbackLocked = $derived(
     tunnelSelected && !selection.has(ALL_INTERFACES) && selectedIps.some((ip) => ip !== LOOPBACK),
   );
+  let refusedToggleVersion = $state(0);
 
   /** Force loopback into an emission when the lock applies to it. */
   function withLoopbackLock(ips: string[], tunnel: boolean): string[] {
@@ -89,7 +91,7 @@
   // entry — including all-interfaces — stays clickable and deselectable
   // whenever another target is selected (intent-hq/monorepo bug report:
   // 0.0.0.0 rendered disabled and could not be unchecked).
-  function toggleIp(ip: string, input: HTMLInputElement): void {
+  function toggleIp(ip: string): void {
     let ips: string[];
     if (selection.has(ip)) {
       // Removal bases on selectedIps (not effectiveIps): deselecting the
@@ -111,7 +113,7 @@
         onchange({ ips: [LOOPBACK], tunnel: tunnelSelected });
         return;
       }
-      input.checked = true; // refuse: never allow zero targets
+      refusedToggleVersion += 1;
       return;
     }
     onchange({ ips, tunnel: tunnelSelected });
@@ -126,9 +128,15 @@
       {@const covered = ip !== ALL_INTERFACES && allInterfacesSelected}
       {@const locked = covered || (ip === LOOPBACK && loopbackLocked)}
       {@const checked = selection.has(ip) || locked}
+      {@const label =
+        ip === ALL_INTERFACES
+          ? m.settings_listenTargets_allInterfaces_label()
+          : ip === LOOPBACK
+            ? m.settings_listenTargets_loopback_label()
+            : ip}
       <li>
-        <label
-          class="flex items-center gap-2 py-1 text-sm text-foreground cursor-pointer {saving
+        <div
+          class="flex items-center justify-between gap-3 py-1 text-sm text-foreground {saving
             ? 'opacity-50'
             : ''}"
           title={covered
@@ -137,21 +145,17 @@
               ? m.settings_listenTargets_loopbackRequired_note()
               : undefined}
         >
-          <input
-            type="checkbox"
-            {checked}
-            disabled={saving || locked}
-            onchange={(e) => toggleIp(ip, e.currentTarget)}
-            class="accent-primary"
-          />
-          <span class="font-mono text-xs">
-            {ip === ALL_INTERFACES
-              ? m.settings_listenTargets_allInterfaces_label()
-              : ip === LOOPBACK
-                ? m.settings_listenTargets_loopback_label()
-                : ip}
-          </span>
-        </label>
+          <span class="font-mono text-xs">{label}</span>
+          {#key refusedToggleVersion}
+            <Toggle
+              pressed={checked}
+              disabled={saving || locked}
+              onclick={() => toggleIp(ip)}
+              size="xs"
+              ariaLabel={label}
+            />
+          {/key}
+        </div>
         {#if locked && !covered}
           <p class="text-xs text-subtle ml-6">{m.settings_listenTargets_loopbackRequired_note()}</p>
         {/if}

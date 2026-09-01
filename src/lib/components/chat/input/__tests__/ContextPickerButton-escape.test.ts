@@ -95,4 +95,58 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     expect(searchMock).toHaveBeenLastCalledWith('ab', { workspaceId: 'workspace-1' });
     expect(document.querySelector('.animate-pulse')).toBeNull();
   });
+
+  it('renders panel and selection choices with textless Toggles and preserves controlled state', async () => {
+    const onToggle = vi.fn();
+    const onToggleSelection = vi.fn();
+    const panels = [
+      {
+        id: 'file-1',
+        panelId: 'panel-1',
+        tabId: 'tab-1',
+        type: 'file' as const,
+        label: 'README.md',
+        checked: false,
+      },
+    ];
+    const selections = [
+      {
+        id: 'selection-1',
+        panelId: 'panel-1',
+        tabId: 'tab-1',
+        sourceType: 'file' as const,
+        sourceLabel: 'README.md',
+        text: 'Selected context',
+        checked: true,
+        timestamp: 1,
+      },
+    ];
+    const view = render(ContextPickerButton, {
+      props: { panels, selections, onToggle, onToggleSelection },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add Context' }));
+    const panelToggle = screen.getByRole('button', { name: 'README.md', pressed: false });
+    const selectionToggle = screen.getByRole('button', { name: 'Selected context', pressed: true });
+    expect(panelToggle.textContent?.trim()).toBe('');
+    expect(selectionToggle.textContent?.trim()).toBe('');
+    expect(panelToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(selectionToggle.getAttribute('aria-pressed')).toBe('true');
+
+    await fireEvent.click(panelToggle);
+    expect(onToggle).toHaveBeenCalledWith('file-1');
+
+    await view.rerender({
+      panels: [{ ...panels[0], checked: true }],
+      selections,
+      onToggle,
+      onToggleSelection,
+    });
+    expect(
+      screen.getByRole('button', { name: 'README.md', pressed: true }).getAttribute('aria-pressed'),
+    ).toBe('true');
+
+    await fireEvent.click(selectionToggle);
+    expect(onToggleSelection).toHaveBeenCalledWith('selection-1');
+  });
 });

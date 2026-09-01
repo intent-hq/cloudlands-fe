@@ -24,7 +24,7 @@ describe('Toggle', () => {
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('renders its label inside the control and supports bound and controlled state', async () => {
+  it('supports slotted characterization content and bound and controlled state', async () => {
     const onChange = vi.fn();
     const { getByRole, getByTestId, rerender } = render(ToggleHarness, {
       props: { onChange },
@@ -40,25 +40,6 @@ describe('Toggle', () => {
     await rerender({ pressed: false, onChange });
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(getByTestId('toggle-value').textContent).toBe('false');
-  });
-
-  it('retains tested switch and indicator compatibility behavior', async () => {
-    for (const variant of ['switch', 'indicator'] as const) {
-      const onChange = vi.fn();
-      const { getByRole, unmount } = render(Toggle, {
-        props: {
-          variant,
-          ariaLabel: `${variant} mode`,
-          ariaDescribedby: `${variant}-description`,
-          onChange,
-        },
-      });
-      const control = getByRole('switch', { name: `${variant} mode` });
-      expect(control.getAttribute('aria-describedby')).toBe(`${variant}-description`);
-      await fireEvent.click(control);
-      expect(onChange).toHaveBeenLastCalledWith(true);
-      unmount();
-    }
   });
 
   it('retains tested group compatibility behavior', async () => {
@@ -78,24 +59,27 @@ describe('Toggle', () => {
     expect(onChange).toHaveBeenLastCalledWith('dark');
   });
 
-  it('uses semantic editorial presentation for canonical and compatibility modes', () => {
+  it('uses semantic editorial presentation for canonical and group modes', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/lib/components/ui/toggle/toggle.svelte'),
       'utf8',
     );
     expect(source).toContain('type-body');
     expect(source).toContain('border-border');
+    expect(source).toContain('bg-card');
+    expect(source).toContain('text-muted-foreground');
     expect(source).toContain('hover:border-input');
     expect(source).toContain('rounded-(--radius-medium)');
     expect(source).toContain('shadow-(--elevation-raised)');
     expect(source).toContain('data-[state=on]:border-primary');
     expect(source).toContain('data-[state=on]:bg-primary');
     expect(source).toContain('data-[state=on]:text-primary-foreground');
+    expect(source).toContain("xs: 'h-(--control-height-small) px-2'");
     expect(source).toContain('motion-reduce:transition-none');
     expect(source).not.toMatch(/bg-white|border-t-white|border-b-black|rgba\(|gradient/);
   });
 
-  it('publishes replacements and measurable removal gates for old modes', () => {
+  it('publishes a measurable removal gate only for the remaining group mode', () => {
     expect(() => parseUiComponentMetadata(toggleMetadata)).not.toThrow();
     expect(toggleMetadata.fixtures[0].states).toEqual(
       expect.arrayContaining([
@@ -110,7 +94,6 @@ describe('Toggle', () => {
       ]),
     );
     expect(toggleCompatibilityModes.group.replacement).toBe('$lib/components/ui/toggle-group');
-    expect(toggleCompatibilityModes.switch.replacement).toBe('$lib/components/ui/switch');
-    expect(toggleCompatibilityModes.indicator.removalGate).toContain('reach zero');
+    expect(Object.keys(toggleCompatibilityModes)).toEqual(['group']);
   });
 });

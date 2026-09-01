@@ -97,7 +97,7 @@ describe('OpenInAppsSettings', () => {
 
     renderApps();
 
-    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
     expect(mocks.dispatched).toContainEqual(fetchEditors());
   });
 
@@ -107,8 +107,10 @@ describe('OpenInAppsSettings', () => {
     mocks.hiddenIds$.set([visible.id]);
 
     renderApps();
-    const toggle = screen.getByRole('switch', { name: LONG_EDITOR_NAME });
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    const toggle = screen.getByRole('button', { name: LONG_EDITOR_NAME });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.textContent?.trim()).toBe('');
+    expect(screen.getByText(LONG_EDITOR_NAME).id).toBe(`open-in-${visible.id}-label`);
 
     await fireEvent.click(toggle);
 
@@ -118,6 +120,6 @@ describe('OpenInAppsSettings', () => {
         (action) => (action as { type: string }).type === toggleHiddenEditor.type,
       ),
     ).toEqual([toggleHiddenEditor(visible.id)]);
-    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'));
   });
 });

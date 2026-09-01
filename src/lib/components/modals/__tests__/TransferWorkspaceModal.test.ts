@@ -401,13 +401,18 @@ describe('TransferWorkspaceModal — transferring step', () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole('checkbox'));
+    const toggle = screen.getByRole('button', {
+      name: 'Restart in-flight agents on the destination',
+    });
+    expect(toggle.textContent?.trim()).toBe('');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    await fireEvent.click(toggle);
     expect(onSetRestartAgents).toHaveBeenCalledWith(true);
   });
 });
 
 describe('TransferWorkspaceModal — result step', () => {
-  it('success (server): archive checkbox, Done and Open buttons', async () => {
+  it('success (server): archive Toggle, Done and Open buttons', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
     const onFinalize = vi.fn();
     const onSetArchiveSource = vi.fn();
@@ -434,7 +439,10 @@ describe('TransferWorkspaceModal — result step', () => {
     expect(screen.getByTestId('transfer-result-interrupted').textContent).toContain('2');
     expect(screen.getByTestId('transfer-archive-source')).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole('checkbox'));
+    const toggle = screen.getByRole('button', { name: 'Archive the source workspace' });
+    expect(toggle.textContent?.trim()).toBe('');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(toggle);
     expect(onSetArchiveSource).toHaveBeenCalledWith(false);
 
     await fireEvent.click(screen.getByTestId('transfer-open-button'));
@@ -443,7 +451,7 @@ describe('TransferWorkspaceModal — result step', () => {
     expect(onFinalize).toHaveBeenCalledWith(false);
   });
 
-  it('success (download): saved-archive copy and path, no archive checkbox, no open button', async () => {
+  it('success (download): saved-archive copy and path, no archive Toggle, no open button', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
     render(TransferWorkspaceModal, {
@@ -463,7 +471,7 @@ describe('TransferWorkspaceModal — result step', () => {
       'Archive saved to /tmp/ws-1-transfer.zip',
     );
     expect(screen.queryByTestId('transfer-archive-source')).toBeNull();
-    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Archive the source workspace' })).toBeNull();
     expect(screen.queryByTestId('transfer-open-button')).toBeNull();
     expect(screen.getByTestId('transfer-done-button')).toBeTruthy();
   });

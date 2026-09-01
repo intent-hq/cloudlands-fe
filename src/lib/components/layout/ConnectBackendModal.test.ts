@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   setKeychainSyncEnabledRequested: vi.fn(),
   openExternalUrl: vi.fn(),
   // The keychain sync state the mocked selector serves; tests set it before
-  // render. Null = not loaded (checkbox hidden, adds proceed normally).
+  // render. Null = not loaded (Toggle hidden, adds proceed normally).
   syncState: {
     value: null as { supported: boolean; enabled: boolean; status: null } | null,
   },
@@ -145,7 +145,7 @@ describe('ConnectBackendModal', () => {
     render(ConnectBackendModal, { props: { open: true } });
 
     await fillDetails();
-    await fireEvent.click(screen.getByRole('checkbox', { name: 'Detect all backend IPs' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect all backend IPs' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
@@ -339,27 +339,31 @@ describe('ConnectBackendModal', () => {
       await screen.findByText('AA:BB:CC:DD');
     }
 
-    it('uses the same shared checkbox treatment for both connection options', async () => {
+    it('uses the same textless Toggle treatment beside both connection option labels', async () => {
       mocks.syncState.value = macSync(true);
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      const detectHosts = screen.getByRole('checkbox', { name: 'Detect all backend IPs' });
-      const saveToICloud = screen.getByRole('checkbox', { name: 'Save to iCloud' });
+      const detectHosts = screen.getByRole('button', { name: 'Detect all backend IPs' });
+      const saveToICloud = screen.getByRole('button', { name: 'Save to iCloud' });
 
       expect(detectHosts.className).toBe(saveToICloud.className);
+      expect(detectHosts.textContent?.trim()).toBe('');
+      expect(saveToICloud.textContent?.trim()).toBe('');
+      expect(detectHosts.getAttribute('aria-pressed')).toBe('true');
+      expect(saveToICloud.getAttribute('aria-pressed')).toBe('true');
       expect(detectHosts.getAttribute('aria-describedby')).toBe('connect-detect-hosts-description');
     });
 
-    it('hides the checkbox entirely when sync is unsupported (non-macOS)', async () => {
+    it('hides the Toggle entirely when sync is unsupported (non-macOS)', async () => {
       mocks.syncState.value = { supported: false, enabled: false, status: null };
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      expect(screen.queryByRole('checkbox', { name: 'Save to iCloud' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Save to iCloud' })).toBeNull();
     });
 
-    it('shows the checkbox checked by default on macOS and adds without syncExcluded', async () => {
+    it('shows the Toggle pressed by default on macOS and adds without syncExcluded', async () => {
       mocks.syncState.value = macSync(true);
       await renderAndReachConfirm();
 
@@ -376,9 +380,10 @@ describe('ConnectBackendModal', () => {
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      const checkbox = screen.getByRole('checkbox', { name: 'Save to iCloud' });
-      expect(checkbox.getAttribute('aria-checked')).toBe('true');
-      await fireEvent.click(checkbox);
+      const toggle = screen.getByRole('button', { name: 'Save to iCloud' });
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+      await fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
 
       await fillDetails();
       await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -434,7 +439,7 @@ describe('ConnectBackendModal', () => {
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      await fireEvent.click(screen.getByRole('checkbox', { name: 'Save to iCloud' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Save to iCloud' }));
       await fillDetails();
       await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await screen.findByText('AA:BB:CC:DD');
@@ -502,7 +507,7 @@ describe('ConnectBackendModal', () => {
 
     it('falls back to the preload platform gate while the sync state has not loaded', async () => {
       // Sync state never loads (null) but the preload bridge says darwin: the
-      // consent checkbox must still render so a fast add cannot silently
+      // consent Toggle must still render so a fast add cannot silently
       // default to synced without the user ever seeing the opt-out.
       mocks.syncState.value = null;
       (window as any).electronAPI = { ...(window as any).electronAPI, platform: 'darwin' };
@@ -510,7 +515,7 @@ describe('ConnectBackendModal', () => {
         const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
         render(ConnectBackendModal, { props: { open: true } });
 
-        expect(screen.getByRole('checkbox', { name: 'Save to iCloud' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Save to iCloud' })).toBeTruthy();
       } finally {
         delete (window as any).electronAPI.platform;
       }

@@ -358,8 +358,7 @@
       </div>
       <Toggle
         pressed={$enabled$}
-        onclick={handleToggleEnabled}
-        variant="indicator"
+        onChange={handleToggleEnabled}
         size="xs"
         class="mb-auto"
         ariaLabel={m.settings_mcpServers_title()}

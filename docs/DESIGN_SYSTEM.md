@@ -91,15 +91,25 @@ with an optional trailing keyboard shortcut. Keep labels short and verb-led, gro
 with `Menu.Separator`, and use canonical `Menu.Root`, `Menu.Trigger`, and `Menu.Content` rather than
 the deprecated dropdown compatibility wrapper in new callers.
 
-### Checkbox controls
+### Binary controls
 
-Use the public `Checkbox` primitive for ordinary product checkboxes and
-`Menu.CheckboxItem` for checkbox commands inside menus. Product code must not add native checkbox
-inputs or hand-built `checkbox`/`menuitemcheckbox` roles. The reviewed contextual exceptions are
-generated read-only Markdown task-list markup, TipTap task-state rendering internals, sandbox pages,
-and test or component-catalog harnesses; these preserve their host semantics and are not reusable
-product treatments. The exact enforcement scopes and rationales live in
-`scripts/ui-component-guardrails.ts` and are checked by `ui-component-audit.ts checkbox-controls`.
+Use the public `Toggle` primitive for product binary preferences and selections. Product Toggles use
+the default variant and compact `size="xs"` presentation, render no inline content, keep their visible
+label and any description outside the control, and provide the matching `ariaLabel` through a
+localized or source-derived expression; literal `ariaLabel` values are rejected. Their
+state is exposed through `aria-pressed`; the neutral off state uses the standard card treatment and
+the on state fills with theme `primary` plus `primary-foreground`. Product code must not import
+`Checkbox` or `Switch`, add native checkbox inputs or hand-built `checkbox` roles, or use the removed
+Toggle `switch`/`indicator` compatibility modes.
+
+Two product semantic exceptions remain: `Menu.CheckboxItem` for checkbox commands inside menus,
+and the Markdown/TipTap task-checkbox controls that represent document task state. The standalone
+`Checkbox` primitive also serves the TipTap exception; otherwise `Checkbox` and `Switch` remain
+available only to their explicit component-catalog and test characterization harnesses. Sandbox and
+test harness exemptions are path-scoped and recorded with a rationale; they are not reusable product
+treatments. The authoritative enforcement scopes, kinds, and rationales live in
+`scripts/ui-component-guardrails.ts` and are inventoried by `ui-component-audit.ts binary-controls`,
+`ui-component-audit.ts product-toggle-controls`, and `ui-component-audit.ts checkbox-controls`.
 
 | Family                                           | Verification/migration owner |
 | ------------------------------------------------ | ---------------------------- |

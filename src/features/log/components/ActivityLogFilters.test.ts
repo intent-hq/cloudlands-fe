@@ -20,17 +20,20 @@ import ActivityLogFiltersHarness from './ActivityLogFilters.test-harness.svelte'
 afterEach(() => cleanup());
 
 describe('ActivityLogFilters', () => {
-  it('uses compact shared checkboxes while preserving labels and bindings', async () => {
+  it('uses compact textless Toggles while preserving external labels and bindings', async () => {
     const { getByRole, getAllByRole, getByTestId } = render(ActivityLogFiltersHarness);
 
-    const checkboxes = getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(4);
-    expect(checkboxes.every((checkbox) => checkbox.className.includes('h-3.5'))).toBe(true);
+    const toggles = getAllByRole('button', { pressed: true });
+    expect(toggles).toHaveLength(4);
+    expect(toggles.every((toggle) => toggle.textContent?.trim() === '')).toBe(true);
+    expect(getByRole('button', { name: 'File Changes' }).previousElementSibling?.textContent).toBe(
+      'File Changes',
+    );
 
-    const fileChanges = getByRole('checkbox', { name: 'File Changes' });
+    const fileChanges = getByRole('button', { name: 'File Changes' });
     await fireEvent.click(fileChanges);
 
-    expect(fileChanges.getAttribute('aria-checked')).toBe('false');
+    expect(fileChanges.getAttribute('aria-pressed')).toBe('false');
     expect(JSON.parse(getByTestId('filters').textContent ?? '{}').showFileChanges).toBe(false);
   });
 });

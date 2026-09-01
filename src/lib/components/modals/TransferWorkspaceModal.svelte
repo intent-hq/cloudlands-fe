@@ -11,7 +11,7 @@
    *      counts, size estimate, git summary, and pre-flight warnings.
    *   3. `transferring` — live progress (build stage, bytes down/up vs the
    *      plan estimate) + the "restart in-flight agents" toggle.
-   *   4. `result` — success (archive-source checkbox and Open button for
+   *   4. `result` — success (archive-source Toggle and Open button for
    *      server transfers, Done) or failure (reason + Retry; the source
    *      stays usable).
    *
@@ -20,7 +20,7 @@
    */
 
   import { Button } from '$lib/components/ui/button';
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import Fa from 'svelte-fa';
   import {
     faCircleCheck,
@@ -462,22 +462,25 @@
           </ul>
 
           {#if destination?.kind === 'server'}
-            <label
-              class="flex items-start gap-2 text-sm cursor-pointer"
+            <div
+              class="flex items-start justify-between gap-4 text-sm"
               data-testid="transfer-restart-agents"
             >
-              <Checkbox
-                checked={restartAgents}
-                onCheckedChange={(v) => onSetRestartAgents?.(v)}
-                ariaLabel={m.workspace_transfer_restartAgents_label()}
-              />
               <span class="flex flex-col">
                 <span>{m.workspace_transfer_restartAgents_label()}</span>
-                <span class="text-xs text-subtle">
+                <span id="transfer-restart-agents-description" class="text-xs text-subtle">
                   {m.workspace_transfer_restartAgents_description()}
                 </span>
               </span>
-            </label>
+              <Toggle
+                pressed={restartAgents}
+                onChange={(value) => onSetRestartAgents?.(value as boolean)}
+                size="xs"
+                class="shrink-0"
+                ariaLabel={m.workspace_transfer_restartAgents_label()}
+                ariaDescribedby="transfer-restart-agents-description"
+              />
+            </div>
           {/if}
         {:else if step === 'result'}
           {#if runStatus === 'succeeded'}
@@ -511,22 +514,25 @@
             {/if}
 
             {#if destination?.kind === 'server'}
-              <label
-                class="flex items-start gap-2 text-sm cursor-pointer"
+              <div
+                class="flex items-start justify-between gap-4 text-sm"
                 data-testid="transfer-archive-source"
               >
-                <Checkbox
-                  checked={archiveSource}
-                  onCheckedChange={(v) => onSetArchiveSource?.(v)}
-                  ariaLabel={m.workspace_transfer_archiveSource_label()}
-                />
                 <span class="flex flex-col">
                   <span>{m.workspace_transfer_archiveSource_label()}</span>
-                  <span class="text-xs text-subtle">
+                  <span id="transfer-archive-source-description" class="text-xs text-subtle">
                     {m.workspace_transfer_archiveSource_description()}
                   </span>
                 </span>
-              </label>
+                <Toggle
+                  pressed={archiveSource}
+                  onChange={(value) => onSetArchiveSource?.(value as boolean)}
+                  size="xs"
+                  class="shrink-0"
+                  ariaLabel={m.workspace_transfer_archiveSource_label()}
+                  ariaDescribedby="transfer-archive-source-description"
+                />
+              </div>
             {/if}
 
             {#if finalizeStatus === 'running'}

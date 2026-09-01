@@ -109,6 +109,7 @@
   }
 
   async function handleToggle(path: FeaturePath, checked: boolean) {
+    values[path] = checked;
     try {
       const result = await appClient.settings.update([{ path, value: checked }]);
 
@@ -119,8 +120,6 @@
         values[path] = coerceValue(path, applied.value);
         return;
       }
-
-      values[path] = checked;
     } catch (error) {
       toast.error(
         m.settings_agentFeatures_saveError({
@@ -229,8 +228,7 @@
         </div>
         <Toggle
           pressed={values[feature.path]}
-          onclick={() => handleToggle(feature.path, !values[feature.path])}
-          variant="indicator"
+          onChange={(pressed) => handleToggle(feature.path, pressed === true)}
           size="xs"
           class="mb-auto"
           disabled={loading}
@@ -307,7 +305,9 @@
                 variant="secondary"
                 size="xs"
                 onclick={handleMaxAgentsSave}
-                disabled={maxAgentsSaving || !isMaxAgentsValid || !values['agentFeatures.peerAgents']}
+                disabled={maxAgentsSaving ||
+                  !isMaxAgentsValid ||
+                  !values['agentFeatures.peerAgents']}
               >
                 {maxAgentsSaving
                   ? m.settings_agentFeatures_maxTopLevelAgents_saving()

@@ -7,11 +7,15 @@ import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
 import {
+  binaryControlGuardrailFailures,
+  buildBinaryControlLedger,
   buildCheckboxControlLedger,
+  buildProductToggleLedger,
   buildUiInternalImportLedger,
   buildUiMigrationLedger,
   checkboxControlGuardrailFailures,
   countRawUiControls,
+  productToggleGuardrailFailures,
   structuralGuardrailFailures,
   validateMigrationReplacement,
 } from './ui-component-manifest';
@@ -145,9 +149,9 @@ describe('Gate C generated migration ledger', () => {
 });
 
 describe('Gate C structural ratchets', () => {
-  it('keeps checkbox and menu caller metadata aligned with production imports', () => {
+  it('keeps binary-control and menu caller metadata aligned with source imports', () => {
     const inventory = buildUiComponentInventory();
-    for (const id of ['checkbox', 'menu']) {
+    for (const id of ['checkbox', 'switch', 'toggle', 'menu']) {
       const metadata = canonicalComponentManifest.find((component) => component.id === id);
       const derived = inventory.components.find((component) => component.id === id);
       expect(metadata?.callers, id).toEqual(derived?.callers);
@@ -165,10 +169,74 @@ describe('Gate C structural ratchets', () => {
       );
 
       expect(checkboxControlGuardrailFailures(syntheticRoot)).toEqual([
-        'src/features/example/Example.svelte:1: native-input bypasses the checkbox design-system boundary; use $lib/components/ui/checkbox Checkbox or add a reviewed contextual exemption',
-        'src/features/example/Example.svelte:2: checkbox-role bypasses the checkbox design-system boundary; use $lib/components/ui/checkbox Checkbox or add a reviewed contextual exemption',
+        'src/features/example/Example.svelte:1: native-input bypasses the checkbox design-system boundary; use $lib/components/ui/toggle Toggle or add a reviewed contextual exemption',
+        'src/features/example/Example.svelte:2: checkbox-role bypasses the checkbox design-system boundary; use $lib/components/ui/toggle Toggle or add a reviewed contextual exemption',
         'src/features/example/Example.svelte:3: menuitemcheckbox-role bypasses the checkbox design-system boundary; use $lib/components/ui/menu Menu.CheckboxItem or add a reviewed contextual exemption',
       ]);
+    } finally {
+      rmSync(syntheticRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects product Checkbox/Switch imports and removed Toggle binary modes', () => {
+    const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'binary-control-guardrail-'));
+    try {
+      const productRoot = path.join(syntheticRoot, 'src/features/example');
+      mkdirSync(productRoot, { recursive: true });
+      writeFileSync(
+        path.join(productRoot, 'Example.svelte'),
+        `<script>\nimport { Checkbox } from '$lib/components/ui/checkbox';\nimport { Switch } from '$lib/components/ui/switch';\nimport { Toggle } from '$lib/components/ui/toggle';\n</script>\n<Checkbox />\n<Switch />\n<Toggle variant="switch" />\n<Toggle variant={'indicator'} />\n<Toggle size="sm">Inline label</Toggle>\n<Toggle size="xs" ariaLabel="Literal label" />\n<Toggle size="xs" ariaLabel={'Literal expression'} />\n<Toggle size="xs" ariaLabel={m.example()} />\n`,
+      );
+
+      expect(binaryControlGuardrailFailures(syntheticRoot)).toEqual([
+        'src/features/example/Example.svelte:2: imports Checkbox outside the approved TipTap task-checkbox and test/catalog contexts; use $lib/components/ui/toggle Toggle',
+        'src/features/example/Example.svelte:3: imports Switch outside test/catalog characterization; use $lib/components/ui/toggle Toggle',
+        'src/features/example/Example.svelte:8: uses removed Toggle switch compatibility mode; use the default compact Toggle',
+        'src/features/example/Example.svelte:9: uses removed Toggle indicator compatibility mode; use the default compact Toggle',
+      ]);
+      expect(productToggleGuardrailFailures(syntheticRoot)).toEqual([
+        'src/features/example/Example.svelte:8: product Toggle violates the compact binary-control contract (set size="xs"; provide a localized/source-derived ariaLabel expression; use the default variant without an explicit variant prop)',
+        'src/features/example/Example.svelte:9: product Toggle violates the compact binary-control contract (set size="xs"; provide a localized/source-derived ariaLabel expression; use the default variant without an explicit variant prop)',
+        'src/features/example/Example.svelte:10: product Toggle violates the compact binary-control contract (render no inline content and keep the visible label external; set size="xs"; provide a localized/source-derived ariaLabel expression)',
+        'src/features/example/Example.svelte:11: product Toggle violates the compact binary-control contract (replace the literal ariaLabel with a localized/source-derived expression)',
+        'src/features/example/Example.svelte:12: product Toggle violates the compact binary-control contract (replace the literal ariaLabel with a localized/source-derived expression)',
+      ]);
+    } finally {
+      rmSync(syntheticRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('records only explicit semantic and test/catalog binary-control exemptions', () => {
+    const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'binary-control-exemptions-'));
+    try {
+      const files = new Map([
+        [
+          'src/lib/components/tiptap/TaskItemNodeView.svelte',
+          `<script>import { Checkbox } from '$lib/components/ui/checkbox';</script>\n<Checkbox />\n`,
+        ],
+        [
+          'src/lib/component-catalog/Controls.svelte',
+          `<script>import { Switch } from '$lib/components/ui/switch';</script>\n<Switch />\n`,
+        ],
+        [
+          'src/lib/components/example/__tests__/BinaryHarness.svelte',
+          `<script>import { Switch } from '$lib/components/ui/switch';</script>\n<Toggle variant="switch" />\n`,
+        ],
+      ]);
+      for (const [file, source] of files) {
+        const target = path.join(syntheticRoot, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
+
+      const ledger = buildBinaryControlLedger(syntheticRoot);
+      expect(ledger).toHaveLength(4);
+      expect(ledger.every(({ exemption }) => exemption !== null)).toBe(true);
+      expect(binaryControlGuardrailFailures(syntheticRoot)).toEqual([]);
+      expect(buildProductToggleLedger(syntheticRoot).every(({ exemption }) => exemption)).toBe(
+        true,
+      );
+      expect(productToggleGuardrailFailures(syntheticRoot)).toEqual([]);
     } finally {
       rmSync(syntheticRoot, { recursive: true, force: true });
     }

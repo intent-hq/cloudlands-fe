@@ -19,7 +19,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Select } from '$lib/components/ui/select';
   import { Slider } from '$lib/components/ui/slider';
-  import { Switch } from '$lib/components/ui/switch';
+  import { Toggle } from '$lib/components/ui/toggle';
   import type { SettingDefinitionWithValue } from '$lib/client';
 
   type FlushQueuedMessagesMode = 'all' | 'systemOnly' | 'off';
@@ -82,7 +82,7 @@
   let idleReapSupported = $state(false);
   let idleReapMinutes = $state(0);
   let idleReapInput = $state('');
-  // Bound to the toggle rather than derived from it: the Switch owns its own
+  // Bound to the toggle rather than derived from it: the Toggle owns its own
   // checked state once clicked, so a rejected write has to be pushed back into
   // it explicitly or the toggle would sit in a state the daemon never accepted.
   let idleReapToggleOn = $state(false);
@@ -653,15 +653,15 @@
         </p>
       </div>
       <div class="shrink-0 w-56 flex items-center justify-end gap-3">
-        <span class="flex items-center gap-2 text-xs text-subtle">
+        <span class="text-xs text-subtle">
           {m.settings_agentBackend_idleReap_toggleLabel()}
-          <Switch
-            bind:checked={idleReapToggleOn}
-            onCheckedChange={handleIdleReapToggle}
-            size="sm"
-            ariaLabel={m.settings_agentBackend_idleReap_toggleLabel()}
-          />
         </span>
+        <Toggle
+          bind:pressed={idleReapToggleOn}
+          onChange={(pressed) => handleIdleReapToggle(pressed === true)}
+          size="xs"
+          ariaLabel={m.settings_agentBackend_idleReap_toggleLabel()}
+        />
         <!--
           The stepper follows the toggle, not the last daemon acknowledgement:
           while a disable is in flight the daemon still reports the old

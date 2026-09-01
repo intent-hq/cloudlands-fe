@@ -67,7 +67,11 @@ describe('LegacyImportSettings', () => {
   it('maps the overwrite control to force=true', async () => {
     render(LegacyImportSettings);
 
-    await fireEvent.click(screen.getByRole('switch', { name: 'Overwrite existing workspaces' }));
+    const toggle = screen.getByRole('button', { name: 'Overwrite existing workspaces' });
+    expect(toggle.textContent?.trim()).toBe('');
+    expect(screen.getByText('Overwrite existing')).toBeTruthy();
+
+    await fireEvent.click(toggle);
     await fireEvent.click(screen.getByRole('button', { name: 'Import legacy workspaces' }));
 
     expect(mocks.dispatch).toHaveBeenCalledWith(legacyImportRequested(true));

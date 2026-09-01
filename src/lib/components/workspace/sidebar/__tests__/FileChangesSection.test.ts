@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -216,6 +217,8 @@ async function renderSection(overrides: Partial<Record<string, unknown>> = {}) {
   return render(FileChangesSection, { props: { ...defaults, ...overrides } });
 }
 
+warmImport(() => import('../FileChangesSection.svelte'));
+
 describe('FileChangesSection', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
@@ -345,17 +348,22 @@ describe('FileChangesSection', () => {
     expect(mocks.stageFiles).toHaveBeenCalledWith('ws-1', ['src/free.ts']);
   });
 
-  it('auto-commit toggle dispatches setAutoCommitEnabled', async () => {
+  it.each([
+    [false, true],
+    [true, false],
+  ])('auto-commit Toggle maps pressed=%s to enabled=%s', async (initiallyEnabled, nextEnabled) => {
+    mocks.setAutoCommit(initiallyEnabled);
     mocks.unstaged.push(makeChange('src/a.ts'));
-    const { container } = await renderSection();
-    const toggle = container.querySelector('button[role="switch"], [role="switch"]') as HTMLElement;
-    expect(toggle).toBeDefined();
-    expect(toggle.className).toContain('border-0!');
+    const { getByRole } = await renderSection();
+    const toggle = getByRole('button', { name: 'Auto-commit when done' });
+
+    expect(toggle.getAttribute('aria-pressed')).toBe(String(initiallyEnabled));
+    expect(toggle.textContent?.trim()).toBe('');
     await fireEvent.click(toggle);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'workspaceSettings/setAutoCommitEnabled',
-        payload: ['ws-1', true],
+        payload: ['ws-1', nextEnabled],
       }),
     );
   });

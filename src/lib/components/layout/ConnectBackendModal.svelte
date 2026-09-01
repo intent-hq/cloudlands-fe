@@ -9,7 +9,7 @@
    *      connection (`addConnectionRequested`, which encrypts the token in main)
    *      and open a window for it (`openConnectionRequested`).
    *
-   * On macOS a "Save to iCloud" checkbox (default checked) controls whether the
+   * On macOS a "Save to iCloud" Toggle (pressed by default) controls whether the
    * stored record syncs via iCloud Keychain. Unchecking adds the connection with
    * `syncExcluded: true` (local-only). Keeping it checked while keychain sync is
    * explicitly disabled inserts a `syncConfirm` step before the add: confirming
@@ -25,9 +25,8 @@
    */
 
   import { Button } from '$lib/components/ui/button';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import { Input } from '$lib/components/ui/input';
-  import { Label } from '$lib/components/ui/label';
+  import { Toggle } from '$lib/components/ui/toggle';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -110,12 +109,12 @@
     connectionAccentOptions(prefillAccent === undefined ? defaultAccent : prefillAccent),
   );
 
-  // Keychain sync state gates the iCloud checkbox: `supported` is the platform
+  // Keychain sync state gates the iCloud Toggle: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
   // While the async state load is pending (or failed), fall back to a
-  // synchronous platform check so the consent checkbox renders on macOS even
+  // synchronous platform check so the consent Toggle renders on macOS even
   // when the user outraces the load — otherwise the add would proceed with the
-  // synced default behind a checkbox the user never saw. The loaded state wins
+  // synced default behind a Toggle the user never saw. The loaded state wins
   // once present.
   const platformIsMac =
     typeof window !== 'undefined' &&
@@ -324,9 +323,9 @@
       accent = prefillAccent === undefined ? defaultAccent : prefillAccent;
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
-      // Refresh the keychain sync state so the iCloud checkbox gate is current
+      // Refresh the keychain sync state so the iCloud Toggle gate is current
       // even when settings never loaded it. A failed load leaves the state
-      // null → the checkbox stays hidden and the add proceeds normally.
+      // null → the Toggle stays hidden and the add proceeds normally.
       const loadAction = loadKeychainSyncStateRequested();
       appStore.dispatch(loadAction);
       loadAction.promise.catch(() => {});
@@ -469,31 +468,37 @@
             />
           </div>
 
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <Checkbox
-                id="connect-detect-hosts"
-                bind:checked={detectHosts}
-                ariaDescribedby="connect-detect-hosts-description"
-              />
-              <Label for="connect-detect-hosts" class="text-sm font-normal"
-                >{m.modals_connect_detectHosts_label()}</Label
-              >
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-sm font-normal">{m.modals_connect_detectHosts_label()}</p>
+              <p id="connect-detect-hosts-description" class="text-xs text-subtle">
+                {m.modals_connect_detectHosts_description()}
+              </p>
             </div>
-            <p id="connect-detect-hosts-description" class="text-xs text-subtle">
-              {m.modals_connect_detectHosts_description()}
-            </p>
+            <Toggle
+              bind:pressed={detectHosts}
+              size="xs"
+              class="mb-auto shrink-0"
+              ariaLabel={m.modals_connect_detectHosts_label()}
+              ariaDescribedby="connect-detect-hosts-description"
+            />
           </div>
 
           {#if syncSupported}
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <Checkbox id="connect-save-to-icloud" bind:checked={saveToICloud} />
-                <Label for="connect-save-to-icloud" class="text-sm font-normal"
-                  >{m.modals_connect_saveToICloud_label()}</Label
-                >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="text-sm font-normal">{m.modals_connect_saveToICloud_label()}</p>
+                <p id="connect-save-to-icloud-description" class="text-xs text-subtle">
+                  {m.modals_connect_saveToICloud_description()}
+                </p>
               </div>
-              <p class="text-xs text-subtle">{m.modals_connect_saveToICloud_description()}</p>
+              <Toggle
+                bind:pressed={saveToICloud}
+                size="xs"
+                class="mb-auto shrink-0"
+                ariaLabel={m.modals_connect_saveToICloud_label()}
+                ariaDescribedby="connect-save-to-icloud-description"
+              />
             </div>
           {/if}
 

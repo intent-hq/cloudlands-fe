@@ -224,7 +224,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
@@ -3097,22 +3097,31 @@
             <Fa icon={faArrowUpRightFromSquare} class="w-3 h-3" />
           </Button>
         </div>
-        <!-- Always-visible viewed checkbox -->
-        <label
-          class="shrink-0 flex items-center gap-1.5 cursor-pointer ml-1"
+        <!-- Always-visible viewed toggle -->
+        <div
+          class="shrink-0 ml-1 flex items-center gap-1.5"
           title={isViewed
             ? m.chat_changesPanel_markNotViewed_title()
             : m.chat_changesPanel_markViewed_title()}
-          onclick={(e: MouseEvent) => e.stopPropagation()}
         >
-          <Checkbox
-            checked={isViewed}
-            onCheckedChange={() => toggleViewed(change.filePath, expandKey)}
+          <button
+            type="button"
+            class="text-xs text-subtle"
+            onclick={(e: MouseEvent) => {
+              e.stopPropagation();
+              toggleViewed(change.filePath, expandKey);
+            }}
+          >
+            {m.chat_changesPanel_viewed_label()}
+          </button>
+          <Toggle
+            pressed={isViewed}
+            onChange={() => toggleViewed(change.filePath, expandKey)}
+            onclick={(e: MouseEvent) => e.stopPropagation()}
             ariaLabel={m.chat_changesPanel_viewed_label()}
-            size="sm"
+            size="xs"
           />
-          <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
-        </label>
+        </div>
       </div>
     </div>
 

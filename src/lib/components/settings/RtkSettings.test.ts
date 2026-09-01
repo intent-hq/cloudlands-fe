@@ -74,7 +74,7 @@ describe('RtkSettings', () => {
 
     render(RtkSettings);
 
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('button', { name: m.settings_rtk_label() });
     expect(toggle.getAttribute('data-state')).toBe('off');
   });
 
@@ -85,7 +85,7 @@ describe('RtkSettings', () => {
 
     render(RtkSettings);
 
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('button', { name: m.settings_rtk_label() });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -100,7 +100,7 @@ describe('RtkSettings', () => {
 
     render(RtkSettings);
 
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('button', { name: m.settings_rtk_label() });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -127,7 +127,7 @@ describe('RtkSettings', () => {
 
     render(RtkSettings);
 
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('button', { name: m.settings_rtk_label() });
     expect(toggle.hasAttribute('disabled')).toBe(true);
   });
 
@@ -202,7 +202,7 @@ describe('RtkSettings', () => {
 
     render(RtkSettings);
 
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('button', { name: m.settings_rtk_label() });
     expect(toggle.getAttribute('data-state')).toBe('off');
 
     await fireEvent.click(toggle);

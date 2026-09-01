@@ -140,6 +140,46 @@ describe('UI component inventory gate', () => {
     expect(audit('inventory').split('\n')).toEqual([...audit('inventory').split('\n')].sort());
   });
 
+  it('publishes the audited Toggle-only binary-control boundary', () => {
+    const binaryControls = JSON.parse(audit('binary-controls')) as Array<{
+      kind: string;
+      exemption: string | null;
+    }>;
+    const checkboxControls = JSON.parse(audit('checkbox-controls')) as Array<{
+      exemption: string | null;
+    }>;
+    const productToggles = JSON.parse(audit('product-toggle-controls')) as Array<{
+      selfClosing: boolean;
+      size: string | null;
+      hasAriaLabel: boolean;
+      hasSourceDerivedAriaLabel: boolean;
+      variant: string | null;
+      exemption: string | null;
+    }>;
+
+    expect(binaryControls).toHaveLength(14);
+    expect(binaryControls.filter(({ kind }) => kind === 'checkbox-import')).toHaveLength(7);
+    expect(binaryControls.filter(({ kind }) => kind === 'switch-import')).toHaveLength(7);
+    expect(binaryControls.filter(({ kind }) => kind.startsWith('toggle-'))).toEqual([]);
+    expect(binaryControls.every(({ exemption }) => exemption !== null)).toBe(true);
+    expect(checkboxControls).toHaveLength(5);
+    expect(checkboxControls.every(({ exemption }) => exemption !== null)).toBe(true);
+    expect(productToggles).toHaveLength(61);
+    expect(productToggles.filter(({ exemption }) => exemption === null)).toHaveLength(54);
+    expect(
+      productToggles
+        .filter(({ exemption }) => exemption === null)
+        .every(
+          ({ selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, variant }) =>
+            selfClosing &&
+            size === 'xs' &&
+            hasAriaLabel &&
+            hasSourceDerivedAriaLabel &&
+            variant === null,
+        ),
+    ).toBe(true);
+  });
+
   it('removes zero-reference tabs from inventory without unresolved imports', () => {
     const legacyTabs = ['$lib/components/ui/tabs', '$lib/components/ui/TabBar.svelte'];
     const publicImports = buildUiComponentInventory().components.map(

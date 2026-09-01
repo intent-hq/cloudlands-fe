@@ -63,10 +63,9 @@
   }
 
   async function handleToonToggle(checked: boolean) {
+    toonOutput = checked;
     try {
-      const result = await appClient.settings.update([
-        { path: TOON_OUTPUT_PATH, value: checked },
-      ]);
+      const result = await appClient.settings.update([{ path: TOON_OUTPUT_PATH, value: checked }]);
 
       // Check if the daemon rolled back the setting on failure
       const applied = result.find(
@@ -77,8 +76,6 @@
         toonOutput = applied.value !== false;
         return;
       }
-
-      toonOutput = checked;
     } catch (error) {
       toast.error(
         m.settings_workspaceApi_toonOutput_error({
@@ -199,8 +196,7 @@
       </div>
       <Toggle
         pressed={toonOutput}
-        onclick={() => handleToonToggle(!toonOutput)}
-        variant="indicator"
+        onChange={(pressed) => handleToonToggle(pressed === true)}
         size="xs"
         class="mb-auto"
         disabled={loading}
