@@ -108,6 +108,46 @@ describe('workspace task fallback routing', () => {
     ]);
   });
 
+  it('ignores hostile in-memory message and block shapes without rendering undefined plan data', () => {
+    const hostileMessages = [
+      {
+        id: 'array-like-blocks',
+        contentBlocks: {
+          length: 1,
+          0: {
+            type: 'plan',
+            entries: [{ content: 'Must not render', priority: 'high', status: 'in_progress' }],
+          },
+        },
+      },
+      {
+        id: 'malformed-plans',
+        contentBlocks: [
+          null,
+          { type: 'plan', entries: { length: 1 } },
+          { type: 'plan', entries: [{}] },
+        ],
+      },
+      { id: 'null-blocks', contentBlocks: null },
+      null,
+    ] as unknown as AgentMessage[];
+
+    const progress = deriveTaskProgress({
+      initialized: true,
+      tasks,
+      session: session(),
+      messages: hostileMessages,
+    });
+
+    expect(progress).toEqual([
+      { id: 'workspace:root-1', title: 'First root task', status: 'pending' },
+      { id: 'workspace:root-2', title: 'Second root task', status: 'running' },
+    ]);
+    expect(progress.every((item) => item.title !== undefined && item.status !== undefined)).toBe(
+      true,
+    );
+  });
+
   it('shows spec-linked root tasks in canonical source order for a no-plan Coordinator', () => {
     expect(
       deriveWorkspaceTaskFallback({ initialized: true, tasks, session: session(), messages: [] }),

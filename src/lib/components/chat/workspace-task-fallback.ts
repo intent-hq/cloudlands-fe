@@ -82,18 +82,23 @@ function workspaceStatus(status: TaskStatus): TaskProgressStatus {
 export function selectNativeExecutionPlan(
   messageSources: readonly (readonly AgentMessage[])[],
 ): NativePlanSelection {
+  if (!Array.isArray(messageSources)) return { present: false, items: [] };
   for (let sourceIndex = messageSources.length - 1; sourceIndex >= 0; sourceIndex -= 1) {
     const messages = messageSources[sourceIndex];
+    if (!Array.isArray(messages)) continue;
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
       const message = messages[messageIndex];
-      const blocks = message.contentBlocks ?? [];
+      if (!message || typeof message !== 'object' || Array.isArray(message)) continue;
+      const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
       for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
         const block = blocks[blockIndex];
         if (!isPlanContentBlock(block)) continue;
+        const entries = block.entries;
+        if (!Array.isArray(entries)) continue;
         const blockId = block.id ?? `${message.id}:${blockIndex}`;
         return {
           present: true,
-          items: block.entries.map((entry, entryIndex) => ({
+          items: entries.map((entry, entryIndex) => ({
             id: `plan:${blockId}:${entryIndex}`,
             title: entry.content,
             status: planStatus(entry.status),
