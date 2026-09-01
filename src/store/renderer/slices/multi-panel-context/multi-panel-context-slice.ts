@@ -130,6 +130,21 @@ multiPanelContextReducer.with(togglePanel, (state, { payload: [id] }) => {
 });
 multiPanelContextReducer.with(setSelection, (state, { payload: [selection] }) => {
   const id = `sel-${selection.panelId}-${selection.tabId}`;
+  const existing = getItem(state.selections, id);
+  if (
+    existing &&
+    existing.panelId === selection.panelId &&
+    existing.tabId === selection.tabId &&
+    existing.sourceType === selection.sourceType &&
+    existing.sourceLabel === selection.sourceLabel &&
+    existing.filePath === selection.filePath &&
+    existing.noteId === selection.noteId &&
+    existing.text === selection.text &&
+    existing.language === selection.language &&
+    existing.checked === true
+  ) {
+    return state;
+  }
   const item: SelectionContextItem = {
     ...selection,
     id,
@@ -142,12 +157,16 @@ multiPanelContextReducer.with(setSelection, (state, { payload: [selection] }) =>
 
   return { ...state, selections };
 });
-multiPanelContextReducer.with(clearSelection, (state, { payload: [panelId, tabId] }) => ({
-  ...state,
-  selections: filterCollection(state.selections, (selection): selection is SelectionContextItem => {
-    return !(selection.panelId === panelId && selection.tabId === tabId);
-  }),
-}));
+multiPanelContextReducer.with(clearSelection, (state, { payload: [panelId, tabId] }) => {
+  const id = `sel-${panelId}-${tabId}`;
+  if (!getItem(state.selections, id)) return state;
+  return {
+    ...state,
+    selections: filterCollection(state.selections, (selection): selection is SelectionContextItem => {
+      return !(selection.panelId === panelId && selection.tabId === tabId);
+    }),
+  };
+});
 multiPanelContextReducer.with(toggleSelection, (state, { payload: [id] }) => {
   const selection = getItem(state.selections, id);
   if (!selection) return state;
