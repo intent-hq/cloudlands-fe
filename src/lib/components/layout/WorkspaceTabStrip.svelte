@@ -698,6 +698,9 @@
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
        (plus the parent's gap-1) keeps 8px of clearance before the "+".
+       The 2px bottom padding contains the dropped active-tab flares inside
+       the scrollport; the matching negative margin preserves the strip's
+       existing 32px titlebar footprint while preventing vertical overflow.
        data-app-region-clip: tabs scrolled out of this container must not carve
        no-drag holes in the titlebar drag strip (unclipped-geometry carving,
        intent-hq/monorepo#2400; rules in app.css). -->
@@ -712,6 +715,8 @@
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     tabindex="-1"
+    style:padding-bottom="2px"
+    style:margin-bottom="-2px"
     data-workspace-tab-strip
     data-app-region-clip
     onpointermove={handleDragPointerMove}
