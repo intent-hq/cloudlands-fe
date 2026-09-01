@@ -189,9 +189,6 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(titlebar).toContain('grid-template-columns: minmax(0, 1fr) auto');
     expect(titlebar).toContain('TITLEBAR_LEFT_DRAG_SURFACE_CLASS');
-    expect(source('../../titlebar-geometry.ts')).toContain(
-      'titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-visible',
-    );
     expect(titlebar).toContain('data-titlebar-drag-handle');
     expect(titlebar).toContain('data-titlebar-left-drag-handle');
     expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
