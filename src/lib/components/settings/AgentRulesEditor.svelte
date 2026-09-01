@@ -93,7 +93,10 @@
       }
       rulesContent = rule.content;
       originalContent = rulesContent;
-      lastSavedContent = rulesContent;
+      // Trimmed, like every payload saveRules persists: all drift
+      // comparisons are trimmed-vs-trimmed, so padding whitespace in a rule
+      // set outside this editor cannot register as unsaved drift.
+      lastSavedContent = rulesContent.trim();
       hasChanges = false;
     } catch (error) {
       logger.error('Failed to load rules', error instanceof Error ? error : undefined);
@@ -109,10 +112,18 @@
       return;
     }
 
-    if (!hasChanges) return;
+    const trimmedContent = rulesContent.trim();
 
-    // Block saving if over limit
+    // Gate on drift from the persisted value (lastSavedContent), not on
+    // hasChanges (which tracks the loaded original for "Undo changes"): a
+    // revert back to the original must still reconcile a persisted draft
+    // (intent-hq/intent#4094).
+    if (!hasChanges && trimmedContent === lastSavedContent) return;
+
+    // Block saving if over limit; never leave saveStatus stuck at 'saving'
+    // when a trailing save bails out here.
     if (isOverLimit) {
+      saveStatus = 'idle';
       showError(
         m.settings_agentRules_overLimitError({
           max: formatInteger(MAX_RULES_LENGTH),
@@ -121,8 +132,6 @@
       );
       return;
     }
-
-    const trimmedContent = rulesContent.trim();
 
     // The backend already holds this exact value: skip the redundant wire
     // call and mark the clean/saved state directly.
@@ -190,9 +199,11 @@
   function handleContentChange() {
     hasChanges = rulesContent !== originalContent;
 
-    // Debounced auto-save
+    // Debounced auto-save: schedule on drift from the persisted value too,
+    // so retyping the exact original after an auto-save still reconciles
+    // the backend.
     if (debounceTimeout) clearTimeout(debounceTimeout);
-    if (hasChanges) {
+    if (hasChanges || rulesContent.trim() !== lastSavedContent) {
       debounceTimeout = setTimeout(() => {
         saveRules();
       }, DEBOUNCE_MS);
@@ -204,6 +215,13 @@
     hasChanges = false;
     saveStatus = 'idle';
     if (debounceTimeout) clearTimeout(debounceTimeout);
+    // Undo persists the revert: when an auto-save already stored a draft,
+    // run the normal save flow so the backend converges to the original
+    // (intent-hq/intent#4094). A revert during an in-flight save is covered
+    // by the trailing coalesce in saveRules.
+    if (rulesContent.trim() !== lastSavedContent) {
+      void saveRules();
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
