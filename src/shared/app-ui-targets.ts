@@ -121,7 +121,6 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['websocket-api', 'WebSocket API', 'WebSocket API settings.', 'advanced'],
     ['connection', 'Connection', 'Daemon connection details.', 'advanced'],
     ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
-    ['data', 'Data', 'Data import settings.', 'advanced'],
     ['developer', 'Developer', 'Development-only settings.', 'advanced'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({
