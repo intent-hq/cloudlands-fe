@@ -644,8 +644,14 @@ export type CaptureFingerprintResult =
  * single request byte reaches the wire. This closes the TOCTOU window of
  * monorepo#3782: a host that swaps its certificate between the
  * unauthenticated probe and the authenticated verify never sees the token.
+ * Exported so every pinned `wss` upgrade shares the one enforcement point —
+ * the JSON-RPC transport and TOFU capture here, and the `/tunnel` socket in
+ * `tunnel-manager.ts` (monorepo#4072).
  */
-function pinnedTlsConnect(connectOptions: tls.ConnectionOptions, expected: string): tls.TLSSocket {
+export function pinnedTlsConnect(
+  connectOptions: tls.ConnectionOptions,
+  expected: string,
+): tls.TLSSocket {
   // Mirror ws's own `tlsConnect`: drop the URL path (tls.connect would read
   // it as a UDS path) and derive `servername` for non-IP hosts.
   const opts: tls.ConnectionOptions & { host?: string } = { ...connectOptions, path: undefined };
