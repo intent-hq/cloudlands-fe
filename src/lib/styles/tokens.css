@@ -47,7 +47,7 @@
 
   --theme-light-background: 0 0% 100%;
   --theme-light-foreground: 0 0% 0%;
-  --theme-light-card: var(--theme-light-background);
+  --theme-light-card: 0 0% 100%;
   --theme-light-card-foreground: 0 0% 0%;
   --theme-light-popover: 60 5% 92.1568627451%;
   --theme-light-popover-foreground: 0 0% 0%;
@@ -88,7 +88,7 @@
 
   --theme-dark-background: 0 0% 10.1960784314%;
   --theme-dark-foreground: 0 0% 100%;
-  --theme-dark-card: var(--theme-dark-background);
+  --theme-dark-card: 0 0% 10.1960784314%;
   --theme-dark-card-foreground: 0 0% 100%;
   --theme-dark-popover: 0 0% 14.9019607843%;
   --theme-dark-popover-foreground: 0 0% 100%;
