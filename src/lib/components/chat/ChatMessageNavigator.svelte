@@ -36,6 +36,12 @@
   // While true the newest (last) item stays active even as async index rows
   // are prepended; cleared once the user scrolls or moves the active item.
   let anchorToEnd = $state(true);
+  // Identity of the active option so prepended index rows cannot silently
+  // change which message activeIndex points at once the anchor is released.
+  let activeMessageId: string | null = null;
+  // True while the scroll-into-view effect below scrolls programmatically, so
+  // its own scroll events do not release the end anchor.
+  let suppressScrollRelease = false;
   let searchInput: HTMLInputElement | null = $state(null);
   let triggerElement: HTMLElement | null = $state(null);
   let contentElement: HTMLElement | null = $state(null);
@@ -72,28 +78,54 @@
   function moveActiveTo(index: number) {
     anchorToEnd = false;
     activeIndex = index;
+    activeMessageId = filteredMessages[index]?.id ?? null;
+  }
+
+  function handleListboxScroll() {
+    if (suppressScrollRelease) return;
+    anchorToEnd = false;
   }
 
   // Keep the newest item active (and the list anchored at the bottom) while
   // the user has not interacted, so the async index fetch prepending older
-  // rows does not yank the selection off the end. Otherwise only clamp.
+  // rows does not yank the selection off the end. Once released, follow the
+  // active message by identity so prepends cannot shift what Enter selects.
   $effect(() => {
     if (!open) return;
     const count = filteredMessages.length;
     if (count === 0) return;
     if (anchorToEnd) {
       activeIndex = count - 1;
-    } else if (untrack(() => activeIndex) >= count) {
+      activeMessageId = filteredMessages[count - 1].id;
+      return;
+    }
+    const currentIndex = untrack(() => activeIndex);
+    const preservedIndex =
+      activeMessageId === null
+        ? -1
+        : filteredMessages.findIndex((message) => message.id === activeMessageId);
+    if (preservedIndex >= 0) {
+      if (preservedIndex !== currentIndex) activeIndex = preservedIndex;
+    } else if (currentIndex >= count) {
       activeIndex = count - 1;
+      activeMessageId = filteredMessages[count - 1].id;
+    } else {
+      activeMessageId = filteredMessages[currentIndex]?.id ?? null;
     }
   });
 
-  // Keep the active option visible whenever it or the list changes.
+  // Keep the active option visible whenever it or the list changes. The
+  // suppress flag spans the resulting scroll event (scroll events fire before
+  // the next animation frame) so programmatic scrolls keep the end anchor.
   $effect(() => {
     if (!open || !contentElement || filteredMessages.length === 0) return;
-    document
-      .getElementById(`${listboxId}-option-${activeIndex}`)
-      ?.scrollIntoView?.({ block: 'nearest' });
+    const option = document.getElementById(`${listboxId}-option-${activeIndex}`);
+    if (!option) return;
+    suppressScrollRelease = true;
+    option.scrollIntoView?.({ block: 'nearest' });
+    requestAnimationFrame(() => {
+      suppressScrollRelease = false;
+    });
   });
 
   function handleTriggerKeydown(event: KeyboardEvent) {
@@ -222,20 +254,30 @@
             class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70"
             data-testid="chat-message-navigator-search"
           />
-          {#if isLoadingIndex}
-            <div
-              aria-live="polite"
-              class="type-caption flex shrink-0 items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
-              data-testid="chat-message-navigator-loading"
-            >
-              <Spinner />
-              <span>{m.chat_messageNavigator_loading_label()}</span>
-            </div>
-          {/if}
+          <!-- Persistent live region: announcements only fire for content
+               changes inside an already-rendered live region, so the container
+               stays mounted and only the loading row toggles. -->
+          <div
+            role="status"
+            aria-live="polite"
+            class="shrink-0"
+            data-testid="chat-message-navigator-loading-region"
+          >
+            {#if isLoadingIndex}
+              <div
+                class="type-caption flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
+                data-testid="chat-message-navigator-loading"
+              >
+                <Spinner />
+                <span>{m.chat_messageNavigator_loading_label()}</span>
+              </div>
+            {/if}
+          </div>
           {#if filteredMessages.length > 0}
             <div
               id={listboxId}
               role="listbox"
+              onscroll={handleListboxScroll}
               class="mt-[var(--space-1)] min-h-0 min-w-0 flex-1 max-h-72 overflow-x-hidden overflow-y-auto overscroll-contain"
             >
               {#each filteredMessages as message, index (message.id)}

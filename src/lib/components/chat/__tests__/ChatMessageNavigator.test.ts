@@ -314,18 +314,51 @@ describe('ChatMessageNavigator', () => {
     expect(options.at(-1)!.getAttribute('data-navigation-message-id')).toBe('long');
   });
 
-  it('does not re-anchor to the end after the user moved the active option', async () => {
+  it('keeps the same message active by identity after the user moved and items are prepended', async () => {
     const view = renderNavigator(false, messages.slice(3));
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
     const input = screen.getByRole('combobox', { name: 'Filter user messages' });
     await fireEvent.keyDown(input, { key: 'ArrowUp' });
     const before = screen.getAllByRole('option');
     expect(input.getAttribute('aria-activedescendant')).toBe(before[0].id);
+    expect(before[0].getAttribute('data-navigation-message-id')).toBe('azure');
 
     await view.rerender({ messages });
     const options = screen.getAllByRole('option');
     expect(options).toHaveLength(messages.length);
-    expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id);
+    const active = options.find((option) => option.getAttribute('aria-selected') === 'true');
+    expect(active?.getAttribute('data-navigation-message-id')).toBe('azure');
+    expect(input.getAttribute('aria-activedescendant')).toBe(active!.id);
+  });
+
+  it('releases the end anchor on user scroll but not on programmatic scroll', async () => {
+    const newerA = { id: 'newer-a', text: 'Newer message a' };
+    const newerB = { id: 'newer-b', text: 'Newer message b' };
+    const view = renderNavigator();
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    const listbox = screen.getByRole('listbox');
+
+    // The scroll-into-view effect has just run for the open: a scroll event
+    // inside its suppression window (before the next animation frame) must
+    // not release the anchor, so a new last item still becomes active.
+    await fireEvent.scroll(listbox);
+    await view.rerender({ messages: [...messages, newerA] });
+    let options = screen.getAllByTestId('chat-message-navigator-result');
+    expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
+    expect(options.at(-1)!.getAttribute('data-navigation-message-id')).toBe('newer-a');
+
+    // After the suppression window closes, a scroll is user intent and
+    // releases the anchor: the active option no longer follows the end.
+    await afterAnimationFrame();
+    await afterAnimationFrame();
+    await fireEvent.scroll(listbox);
+    await view.rerender({ messages: [...messages, newerA, newerB] });
+    options = screen.getAllByTestId('chat-message-navigator-result');
+    const active = options.find((option) => option.getAttribute('aria-selected') === 'true');
+    expect(active?.getAttribute('data-navigation-message-id')).toBe('newer-a');
+    expect(active).not.toBe(options.at(-1));
+    expect(input.getAttribute('aria-activedescendant')).toBe(active!.id);
   });
 
   it('shows a loading row while the index fetch is in flight and removes it after', async () => {
@@ -336,6 +369,23 @@ describe('ChatMessageNavigator', () => {
     expect(screen.getAllByRole('option')).toHaveLength(messages.length);
 
     await view.rerender({ isLoadingIndex: false });
+    expect(screen.queryByTestId('chat-message-navigator-loading')).toBeNull();
+  });
+
+  it('announces loading through a persistent live region that outlives the loader', async () => {
+    const view = renderNavigator(false, messages, false);
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const region = screen.getByTestId('chat-message-navigator-loading-region');
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(screen.queryByTestId('chat-message-navigator-loading')).toBeNull();
+
+    await view.rerender({ isLoadingIndex: true });
+    expect(screen.getByTestId('chat-message-navigator-loading-region')).toBe(region);
+    expect(region.contains(screen.getByTestId('chat-message-navigator-loading'))).toBe(true);
+
+    await view.rerender({ isLoadingIndex: false });
+    expect(screen.getByTestId('chat-message-navigator-loading-region')).toBe(region);
     expect(screen.queryByTestId('chat-message-navigator-loading')).toBeNull();
   });
 
