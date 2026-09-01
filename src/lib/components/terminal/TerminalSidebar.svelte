@@ -4,7 +4,7 @@
   import { flip } from 'svelte/animate';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
-  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
+  import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -523,27 +523,26 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   // ---- Status dot helpers ----
   function getStatusColor(script: ScriptWithState): string {
-    const { status, exitCode } = script.runtime;
-    // Live statuses (running/restarting) reuse the running treatment.
-    if (isLiveScriptStatus(status)) return 'bg-green-500';
-    if (status === 'idle') return 'bg-muted-foreground/40';
-    // exited
-    if (exitCode === 0 || exitCode === null || exitCode === undefined)
-      return 'bg-muted-foreground/40';
-    if (exitCode >= 128) return 'bg-muted-foreground/60'; // signal-stopped
-    return 'bg-red-500'; // error (1-127)
+    const kind = getScriptStatusKind(script.runtime);
+    if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
+    if (kind === 'restarting') return 'bg-amber-500';
+    if (kind === 'failed') return 'bg-red-500';
+    if (kind === 'stopped') return 'bg-muted-foreground/60';
+    return 'bg-muted-foreground/40';
   }
 
   function getStatusLabel(script: ScriptWithState): string {
-    const { status, exitCode } = script.runtime;
-    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
-    if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
-    if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
-    if (exitCode !== null && exitCode !== undefined) {
-      if (exitCode >= 128)
-        return m.terminal_quakeOverlay_status_stoppedSignal({ signal: exitCode - 128 });
-      return m.terminal_quakeOverlay_status_errorCode({ code: exitCode });
-    }
+    const kind = getScriptStatusKind(script.runtime);
+    if (kind === 'running') return m.terminal_quakeOverlay_status_running();
+    if (kind === 'restarting') return m.workspace_devScripts_restarting_label();
+    if (kind === 'idle') return m.terminal_quakeOverlay_status_idle();
+    if (kind === 'succeeded') return m.terminal_quakeOverlay_status_exitedZero();
+    if (kind === 'failed')
+      return m.terminal_quakeOverlay_status_errorCode({ code: script.runtime.exitCode ?? 1 });
+    if (kind === 'stopped')
+      return m.terminal_quakeOverlay_status_stoppedSignal({
+        signal: (script.runtime.exitCode ?? 128) - 128,
+      });
     return m.terminal_quakeOverlay_status_exited();
   }
 
@@ -1095,6 +1094,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       <div
                         class={cn('w-2 h-2 rounded-full', getStatusColor(script))}
                         title={getStatusLabel(script)}
+                        role="img"
+                        aria-label={getStatusLabel(script)}
                       ></div>
                     </div>
                   {/snippet}
