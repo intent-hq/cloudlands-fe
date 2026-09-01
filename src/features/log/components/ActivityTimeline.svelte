@@ -309,7 +309,7 @@
             {#if isAgent && event.actor?.id}
               <button
                 type="button"
-                class="shrink-0 -my-1 p-0.5 rounded-full hover:bg-muted/50 hover:ring-2 hover:ring-primary/20 transition-all cursor-pointer"
+                class="shrink-0 -my-1 p-0.5 rounded-full hover:bg-muted/50 hover:ring-2 hover:ring-primary/20 transition-[background-color,box-shadow] cursor-pointer"
                 onclick={(e) => onShowAgent?.(event.actor.id!, e)}
                 title={m.log_timeline_openAgent_tooltip()}
               >

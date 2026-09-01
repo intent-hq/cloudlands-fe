@@ -160,7 +160,7 @@
     // through that clamp instead of double-shifting (bottom snap-back).
     const preSwap = snapshotScroller(scrollRoot);
     isVisible = next;
-    void tick().then(() => ledger.account(preSwap));
+    void tick().then(() => ledger.request(preSwap));
   }
 
   onMount(() => {
@@ -197,14 +197,9 @@
       const entry = entries[0];
       if (!entry) return;
 
-      // Ledger first (synchronous, no debounce): any height change of a turn
-      // fully above the viewport must be compensated in the same frame, or
-      // the visible transcript jumps when native anchoring is unavailable.
-      // For the swap itself this fire is always second — the tick() microtask
-      // in setVisibleWithScrollCompensation consumes the swap delta before RO
-      // delivery — so here account() sees delta === 0 for the flush and its
-      // real job is the late settles (images, remounted blocks, re-wraps).
-      ledger.account();
+      // Coalesce same-frame swap and resize notifications, but flush in a
+      // microtask so ResizeObserver compensation still lands before paint.
+      ledger.requestBeforePaint();
 
       // Width validation: cached heights are wrap-width-dependent, so the
       // first fire (init-time read was unvalidated — width unknown) and
@@ -275,6 +270,7 @@
 
     return () => {
       disposed = true;
+      ledger.cancel();
       stopObserving();
       cancelPendingSwapOut();
       resizeObserver?.disconnect();

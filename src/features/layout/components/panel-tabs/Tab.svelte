@@ -116,7 +116,7 @@
 >
   <div
     class={cn(
-      'px-3 h-8 pt-0.5 rounded-lg flex items-center gap-1.5 focus/tab-button:outline-none focus-visible/tab-button:ring-2 focus-visible/tab-button:ring-primary focus-visible/tab-button:ring-offset-2 transition-all duration-200',
+      'px-3 h-8 pt-0.5 rounded-lg flex items-center gap-1.5 focus/tab-button:outline-none focus-visible/tab-button:ring-2 focus-visible/tab-button:ring-primary focus-visible/tab-button:ring-offset-2 transition-[background-color,color,border-color,box-shadow] duration-200',
       active
         ? ''
         : isPinned
@@ -187,7 +187,7 @@
             {:else}
               <button
                 type="button"
-                class="close-button flex items-center justify-center w-5 h-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-all duration-150 shrink-0 -mr-2 opacity-50"
+                class="close-button flex items-center justify-center w-5 h-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-[background-color,color,border-color,box-shadow,transform] duration-150 shrink-0 -mr-2 opacity-50"
                 onclick={(e) => {
                   e.stopPropagation();
                   onclose?.(e);
@@ -208,13 +208,17 @@
 <style>
   .tab-button {
     -webkit-app-region: no-drag;
-    /* Smooth transitions for all state changes */
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Smooth transitions for visual state changes without animating layout. */
+    transition:
+      background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* Smooth background color transitions */
+  /* Keep hover transitions responsive while limiting invalidation to paint. */
   .tab-button:hover:not(:disabled) {
-    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 0.15s;
   }
 
   /* Close button container smooth fade */
@@ -224,7 +228,12 @@
 
   /* Close button hover effects */
   .close-button {
-    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .close-button:hover {

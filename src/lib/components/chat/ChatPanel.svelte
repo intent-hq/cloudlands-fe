@@ -4107,19 +4107,24 @@
         return;
       }
       observer = new ResizeObserver((entries) => {
+        let scrollContainerResized = false;
         for (const entry of entries) {
           if (entry.target === scrollContainer) {
             const newHeight = entry.contentRect.height;
             if (newHeight !== containerHeight) {
               containerHeight = newHeight;
             }
+            scrollContainerResized = true;
           } else if (entry.target === composerElement) {
-            composerHeight = entry.contentRect.height;
+            const newHeight = entry.contentRect.height;
+            if (newHeight !== composerHeight) {
+              composerHeight = newHeight;
+            }
           } else if (entry.target === panelElement) {
             panelClientHeight = entry.contentRect.height;
           }
         }
-        if (scrollContainer) {
+        if (scrollContainerResized && scrollContainer) {
           const gutterWidth = measureScrollbarGutterWidth(scrollContainer);
           if (gutterWidth !== scrollbarGutterWidth) {
             scrollbarGutterWidth = gutterWidth;

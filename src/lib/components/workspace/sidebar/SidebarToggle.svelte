@@ -92,7 +92,7 @@
   {#if content}
     {#key activeTab}
       <div
-        class="transition-all duration-200 pt-1 pb-3"
+        class="transition-[opacity,transform] duration-200 pt-1 pb-3"
         in:fly={{ x: getTransitionX(), duration: 200 }}
       >
         {@render content(activeTab)}

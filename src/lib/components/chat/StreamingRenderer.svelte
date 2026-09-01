@@ -13,6 +13,7 @@
   let containerEl: HTMLDivElement;
   let rafId: number | null = null;
   let lastRenderedContent = '';
+  let lastRenderedHtml = '';
   let contentEl: HTMLDivElement | null = null;
   let cursorEl: HTMLSpanElement | null = null;
 
@@ -105,7 +106,7 @@
         const index = parseInt(indexStr, 10);
         return codeBlocks[index] !== undefined
           ? codeBlocks[index]
-          : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`;
+          : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`; // i18n-ignore (unresolved internal markdown placeholder, not user-facing)
       },
     );
 
@@ -137,17 +138,38 @@
     });
   }
 
+  function clearRenderedContent() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    if (containerEl?.childNodes.length) {
+      containerEl.replaceChildren();
+    }
+
+    lastRenderedContent = '';
+    lastRenderedHtml = '';
+    contentEl = null;
+    cursorEl = null;
+  }
+
   function performUpdate() {
     if (!containerEl) return;
 
     if (isActive) {
       const textContent = extractText(content);
 
-      // Only update if content actually changed
-      if (textContent === lastRenderedContent) return;
+      // Avoid re-parsing and touching the DOM for duplicate stream payloads.
+      // The element checks keep the initial empty state and externally-cleared
+      // containers recoverable without changing the cursor lifecycle.
+      if (textContent === lastRenderedContent && contentEl && cursorEl) return;
+      if (textContent === '' && !contentEl && !cursorEl) return;
       lastRenderedContent = textContent;
 
       const html = convertBasicMarkdown(AuggieTextParser.stripDigestTagsForDisplay(textContent));
+      if (html === lastRenderedHtml && contentEl && cursorEl) return;
+      lastRenderedHtml = html;
 
       // Create or update content element
       if (!contentEl) {
@@ -164,10 +186,7 @@
         containerEl.appendChild(cursorEl);
       }
     } else {
-      containerEl.innerHTML = '';
-      lastRenderedContent = '';
-      contentEl = null;
-      cursorEl = null;
+      clearRenderedContent();
     }
   }
 
@@ -179,16 +198,14 @@
     if (isActive) {
       scheduleUpdate();
     } else {
-      if (containerEl) {
-        containerEl.innerHTML = '';
-        lastRenderedContent = '';
-      }
+      clearRenderedContent();
     }
   });
 
   onDestroy(() => {
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
+      rafId = null;
     }
   });
 </script>

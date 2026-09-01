@@ -54,12 +54,9 @@
 
   // Cached device pixel ratio (updated on resize, not every frame)
   let cachedDpr = 1;
-
-  // Canvas CSS size cached from ResizeObserver deliveries; -1 = not yet
-  // delivered. Lets the render loop avoid clientWidth/clientHeight reads.
-  let cachedClientWidth = -1;
-  let cachedClientHeight = -1;
-  let hasSizeObserver = false;
+  let cachedCanvasWidth: number | null = null;
+  let cachedCanvasHeight: number | null = null;
+  let canvasResizeObserver: ResizeObserver | null = null;
 
   function getSemanticAuroraColor(): [number, number, number] | null {
     if (!canvas) return null;
@@ -368,20 +365,61 @@
     };
     scheduleSemanticColorSync();
 
-    // Cache initial DPR
-    cachedDpr = window.devicePixelRatio || 1;
+    updateCanvasSize();
 
     startTime = performance.now();
     render();
   }
 
+  function updateCanvasSize(width?: number, height?: number) {
+    if (!canvas) return;
+
+    const cssWidth = width ?? cachedCanvasWidth ?? canvas.clientWidth;
+    const cssHeight = height ?? cachedCanvasHeight ?? canvas.clientHeight;
+    cachedCanvasWidth = cssWidth;
+    cachedCanvasHeight = cssHeight;
+
+    const pixelWidth = Math.round(cssWidth * cachedDpr);
+    const pixelHeight = Math.round(cssHeight * cachedDpr);
+    if (canvas.width === pixelWidth && canvas.height === pixelHeight) return;
+
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+    gl?.viewport(0, 0, pixelWidth, pixelHeight);
+  }
+
+  function setupCanvasResizeObserver() {
+    if (!canvas || typeof ResizeObserver === 'undefined') return;
+
+    canvasResizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === canvas) {
+          updateCanvasSize(entry.contentRect.width, entry.contentRect.height);
+        }
+      }
+    });
+    canvasResizeObserver.observe(canvas);
+    updateCanvasSize();
+  }
+
+  function scheduleRender() {
+    if (animationFrame || !gl || !program || !isPageVisible || prefersReducedMotion) return;
+    animationFrame = requestAnimationFrame(render);
+  }
+
+  function cancelScheduledRender() {
+    if (animationFrame) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+    }
+  }
+
   function render() {
+    animationFrame = 0;
     if (!gl || !program || !canvas) return;
 
     // Skip rendering if page is hidden or user prefers reduced motion
     if (!isPageVisible || prefersReducedMotion) {
-      // Still schedule next frame to check visibility
-      animationFrame = requestAnimationFrame(render);
       return;
     }
 
@@ -389,38 +427,13 @@
     const now = performance.now();
     const elapsed = now - lastFrameTime;
     if (elapsed < TARGET_FRAME_TIME) {
-      animationFrame = requestAnimationFrame(render);
+      scheduleRender();
       return;
     }
     lastFrameTime = now - (elapsed % TARGET_FRAME_TIME);
 
-    // Canvas size comes from the ResizeObserver cache when available so the
-    // loop never reads clientWidth/clientHeight (a forced-reflow hazard right
-    // after other rAF callbacks mutate the DOM). Until the observer's initial
-    // delivery the size is unknown — keep looping without drawing.
-    let clientWidth: number;
-    let clientHeight: number;
-    if (hasSizeObserver) {
-      if (cachedClientWidth < 0) {
-        animationFrame = requestAnimationFrame(render);
-        return;
-      }
-      clientWidth = cachedClientWidth;
-      clientHeight = cachedClientHeight;
-    } else {
-      clientWidth = canvas.clientWidth;
-      clientHeight = canvas.clientHeight;
-    }
-
-    // Use cached DPR instead of reading window.devicePixelRatio every frame
-    const width = clientWidth * cachedDpr;
-    const height = clientHeight * cachedDpr;
-
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-      gl.viewport(0, 0, width, height);
-    }
+    const width = canvas.width;
+    const height = canvas.height;
 
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -438,23 +451,22 @@
       // Sync runs in the batched read phase, never from the render loop —
       // draw resumes once the color lands.
       scheduleSemanticColorSync();
-      animationFrame = requestAnimationFrame(render);
+      scheduleRender();
       return;
     }
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-    animationFrame = requestAnimationFrame(render);
+    scheduleRender();
   }
 
   function cleanup() {
-    if (animationFrame) {
-      cancelAnimationFrame(animationFrame);
-      animationFrame = 0;
-    }
+    cancelScheduledRender();
     cancelColorRead?.();
     cancelColorRead = null;
     colorReadPending = false;
+    canvasResizeObserver?.disconnect();
+    canvasResizeObserver = null;
     if (gl) {
       if (positionBuffer) {
         gl.deleteBuffer(positionBuffer);
@@ -484,11 +496,15 @@
   // Handle page visibility changes
   function handleVisibilityChange() {
     isPageVisible = !document.hidden;
+    if (isPageVisible) scheduleRender();
+    else cancelScheduledRender();
   }
 
   // Handle reduced motion preference changes
   function handleMotionPreference(e: MediaQueryListEvent) {
     prefersReducedMotion = e.matches;
+    if (prefersReducedMotion) cancelScheduledRender();
+    else scheduleRender();
   }
 
   // Handle DPR changes (e.g., moving window between displays)
@@ -502,6 +518,7 @@
     const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const handler = () => {
       cachedDpr = window.devicePixelRatio || 1;
+      updateCanvasSize();
       // Remove old listener and set up a new one with the updated DPR
       dprQuery.removeEventListener('change', handler);
       setupDprListener();
@@ -514,6 +531,7 @@
     // Check initial states
     isPageVisible = !document.hidden;
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    cachedDpr = window.devicePixelRatio || 1;
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -524,20 +542,7 @@
 
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
-
-    // Cache the canvas CSS size off ResizeObserver deliveries (after layout,
-    // pre-paint, no forced reflow) so the render loop never reads
-    // clientWidth/clientHeight itself.
-    let sizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && canvas) {
-      hasSizeObserver = true;
-      sizeObserver = new ResizeObserver(() => {
-        if (!canvas) return;
-        cachedClientWidth = canvas.clientWidth;
-        cachedClientHeight = canvas.clientHeight;
-      });
-      sizeObserver.observe(canvas);
-    }
+    setupCanvasResizeObserver();
 
     const handleSemanticColorChange = () => syncSemanticAuroraColor();
     const themeObserver = new MutationObserver(handleSemanticColorChange);
@@ -554,7 +559,6 @@
       motionQuery.removeEventListener('change', handleMotionPreference);
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
-      sizeObserver?.disconnect();
       dprCleanup?.();
     };
   });
