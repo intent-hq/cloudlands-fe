@@ -309,9 +309,7 @@ describe('modelSelectionSaga', () => {
   it('retries a failed providerDefaults write until it lands (daemon not ready at pick time)', async () => {
     vi.useFakeTimers();
     try {
-      mocks.update
-        .mockRejectedValueOnce(new Error('backend unavailable'))
-        .mockResolvedValue([]);
+      mocks.update.mockRejectedValueOnce(new Error('backend unavailable')).mockResolvedValue([]);
       const current = state();
       const channel = stdChannel();
       const task = runSaga(
@@ -340,9 +338,7 @@ describe('modelSelectionSaga', () => {
   it('lets a newer pick supersede a failed write instead of waiting out the backoff', async () => {
     vi.useFakeTimers();
     try {
-      mocks.update
-        .mockRejectedValueOnce(new Error('backend unavailable'))
-        .mockResolvedValue([]);
+      mocks.update.mockRejectedValueOnce(new Error('backend unavailable')).mockResolvedValue([]);
       const current = state();
       const channel = stdChannel();
       const task = runSaga(

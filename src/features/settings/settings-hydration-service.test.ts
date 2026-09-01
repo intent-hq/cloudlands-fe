@@ -357,7 +357,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
       // connections:list resolves on a remote backend — the re-run gate must
       // reject the seed instead of writing stale local state to the remote.
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }));
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
       for (let i = 0; i < 5; i++) await Promise.resolve();
       expect(catalogSpy).not.toHaveBeenCalled();
       expect(updateSpy).not.toHaveBeenCalled();
@@ -412,7 +418,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       appStore.dispatch(hydrateActiveProvider(''));
       appStore.dispatch(loadEnabledProvidersFromStorage({}));
       appStore.dispatch(loadProviderModelsFromStorage({}));
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }));
+      appStore.dispatch(
+        connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+      );
     });
 
     it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
@@ -571,7 +579,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     });
 
     it('never seeds on a remote backend, even when stale local state names a candidate', async () => {
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }));
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
       try {
         // Stale renderer state from the local session: active provider set,
         // no enablement entry — the exact shape that would seed locally.
@@ -585,7 +599,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
         expect(catalogSpy).not.toHaveBeenCalled();
         expect(updateSpy).not.toHaveBeenCalled();
       } finally {
-        appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }));
+        appStore.dispatch(
+          connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+        );
       }
     });
   });

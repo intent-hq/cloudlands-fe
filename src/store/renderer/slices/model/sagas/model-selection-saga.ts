@@ -173,8 +173,5 @@ function* watchDefaultReasoningEffortPersistence() {
 
 export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
-  yield* all([
-    call(watchSelectedModelPersistence),
-    call(watchDefaultReasoningEffortPersistence),
-  ]);
+  yield* all([call(watchSelectedModelPersistence), call(watchDefaultReasoningEffortPersistence)]);
 }
