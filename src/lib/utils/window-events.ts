@@ -31,6 +31,7 @@ type KnownWindowEventName =
   | 'theme-changed'
   | 'workspace:go-to-line'
   | 'workspace:new-terminal'
+  | 'workspace:tab-moved'
   | 'workspace:toggle-left-sidebar'
   // Orphan listener saga (`watchWaitingForFirstMessageSaga` in
   // workspace-agents-saga.ts) — no dispatcher exists today. Tracked as a
@@ -71,11 +72,21 @@ export type WorkspaceNewTerminalDetail = {
   workspaceId: string;
 };
 
+export type WorkspaceTabMovedDetail = {
+  workspaceId: string;
+  position: number;
+};
+
 export function dispatchWindowEvent(eventName: WindowEventName): void;
 export function dispatchWindowEvent(
   eventName: 'workspace:new-terminal',
   detail: WorkspaceNewTerminalDetail,
   options?: WindowEventOptions<WorkspaceNewTerminalDetail>,
+): void;
+export function dispatchWindowEvent(
+  eventName: 'workspace:tab-moved',
+  detail: WorkspaceTabMovedDetail,
+  options?: WindowEventOptions<WorkspaceTabMovedDetail>,
 ): void;
 export function dispatchWindowEvent<T>(
   eventName: WindowEventName,

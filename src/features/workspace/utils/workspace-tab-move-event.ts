@@ -1,6 +1,5 @@
-export const WORKSPACE_TAB_MOVED_EVENT = 'workspace-tab-moved';
+import type { WorkspaceTabMovedDetail } from '$lib/utils/window-events';
 
-export interface WorkspaceTabMovedEventDetail {
-  workspaceId: string;
-  position: number;
-}
+export const WORKSPACE_TAB_MOVED_EVENT = 'workspace:tab-moved';
+
+export type WorkspaceTabMovedEventDetail = WorkspaceTabMovedDetail;

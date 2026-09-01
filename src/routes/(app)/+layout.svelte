@@ -501,8 +501,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
-      onWorkspaceTabMoved: (detail) =>
-        window.dispatchEvent(new CustomEvent(WORKSPACE_TAB_MOVED_EVENT, { detail })),
+      onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
       resolveBinding: getEffectiveShortcut,
     });
 
