@@ -72,7 +72,8 @@ describe('SuggestedPrompts', () => {
     const prompt = screen.getByRole('button', { name: 'First prompt' });
     expect(prompt.className).toContain('gap-[var(--operational-leading-gap)]');
     expect(prompt.className).toContain('px-1.5');
-    expect(prompt.className).toContain('hover:bg-muted/30');
+    expect(prompt.className).not.toContain('hover:bg-');
+    expect(prompt.className).toContain('hover:text-foreground');
     const icon = prompt.querySelector('[data-suggested-prompt-icon]')!;
     for (const className of CHAT_OPERATIONAL_LEADING_CLASS.split(' ')) {
       expect(icon.classList.contains(className)).toBe(true);
