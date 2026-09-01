@@ -923,7 +923,9 @@ describe('DaemonStatusIndicator', () => {
           error: null,
           certMismatch: null,
           certWarnings: {
-            r1: [{ host: '10.0.0.3', expectedFingerprint: 'AA:BB', actualFingerprint: 'CC:DD' }],
+            r1: createCollection('host', [
+              { host: '10.0.0.3', expectedFingerprint: 'AA:BB', actualFingerprint: 'CC:DD' },
+            ]),
           },
           protocolMismatch: null,
           protocolMismatchModalDismissed: false,

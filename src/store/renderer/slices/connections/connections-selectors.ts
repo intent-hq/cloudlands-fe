@@ -79,10 +79,17 @@ export const selectConnectionCertMismatch = store.createSelector(
  * NON-FATAL per-host cert warnings by connection id (latest fingerprint per
  * host, accumulated by main across reconnect attempts). Informative only —
  * never blocks anything. Connections without observed warnings have no entry.
- * Drives the per-row warning icon in the daemon-status devices list.
+ * The state stores a host-keyed `Collection` per id; this unwraps to ordered
+ * lists for the per-row warning icon in the daemon-status devices list.
  */
 export const selectCertWarningsByConnectionId = store.createSelector(
-  (state) => state.connections.certWarnings,
+  (state): Record<string, ConnectionHostCertWarning[]> => {
+    const byId: Record<string, ConnectionHostCertWarning[]> = {};
+    for (const [id, warnings] of Object.entries(state.connections.certWarnings)) {
+      byId[id] = getItems(warnings);
+    }
+    return byId;
+  },
 );
 
 /**
@@ -92,8 +99,10 @@ export const selectCertWarningsByConnectionId = store.createSelector(
  * the reconnect overlay and the daemon-status menu.
  */
 export const selectCurrentConnectionCertWarnings = store.createSelector(
-  (state): ConnectionHostCertWarning[] =>
-    state.connections.certWarnings[state.connections.windowBackendId] ?? NO_CERT_WARNINGS,
+  (state): ConnectionHostCertWarning[] => {
+    const warnings = state.connections.certWarnings[state.connections.windowBackendId];
+    return warnings ? getItems(warnings) : NO_CERT_WARNINGS;
+  },
 );
 
 /**

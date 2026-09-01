@@ -31,7 +31,7 @@ import type {
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
 } from './connections-types';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,
@@ -81,6 +81,11 @@ const HOST_WARNING: ConnectionHostCertWarning = {
   expectedFingerprint: 'AB:CD',
   actualFingerprint: 'EF:01',
 };
+
+// State stores per-id host-keyed collections; tests build them from arrays.
+function warningsCollection(...warnings: ConnectionHostCertWarning[]) {
+  return createCollection<ConnectionHostCertWarning, 'host'>('host', warnings);
+}
 
 const LIST_RESULT: ConnectionsListResult = {
   connections: [LOCAL, REMOTE],
@@ -220,13 +225,16 @@ describe('connectionsReducer', () => {
         initialState,
         certMismatchReceived({ ...CERT_MISMATCH, mismatches: [HOST_WARNING] }),
       );
-      expect(next.certWarnings['remote-1']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-1'])).toEqual([HOST_WARNING]);
     });
 
     it('certMismatchReceived without mismatches leaves existing warnings untouched', () => {
-      const state = { ...initialState, certWarnings: { 'remote-1': [HOST_WARNING] } };
+      const state = {
+        ...initialState,
+        certWarnings: { 'remote-1': warningsCollection(HOST_WARNING) },
+      };
       const next = connectionsReducer(state, certMismatchReceived(CERT_MISMATCH));
-      expect(next.certWarnings['remote-1']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-1'])).toEqual([HOST_WARNING]);
     });
   });
 
@@ -236,30 +244,36 @@ describe('connectionsReducer', () => {
         initialState,
         certWarningsReceived({ id: 'remote-1', warnings: [HOST_WARNING] }),
       );
-      expect(next.certWarnings['remote-1']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-1'])).toEqual([HOST_WARNING]);
     });
 
     it('certWarningsReceived replaces the previous set for the same id', () => {
       const updated: ConnectionHostCertWarning = { ...HOST_WARNING, actualFingerprint: '12:34' };
-      const state = { ...initialState, certWarnings: { 'remote-1': [HOST_WARNING] } };
+      const state = {
+        ...initialState,
+        certWarnings: { 'remote-1': warningsCollection(HOST_WARNING) },
+      };
       const next = connectionsReducer(
         state,
         certWarningsReceived({ id: 'remote-1', warnings: [updated] }),
       );
-      expect(next.certWarnings['remote-1']).toEqual([updated]);
+      expect(getItems(next.certWarnings['remote-1'])).toEqual([updated]);
     });
 
     it('an empty warnings push clears the entry (fresh client for the id)', () => {
       const state = {
         ...initialState,
-        certWarnings: { 'remote-1': [HOST_WARNING], 'remote-2': [HOST_WARNING] },
+        certWarnings: {
+          'remote-1': warningsCollection(HOST_WARNING),
+          'remote-2': warningsCollection(HOST_WARNING),
+        },
       };
       const next = connectionsReducer(
         state,
         certWarningsReceived({ id: 'remote-1', warnings: [] }),
       );
       expect(next.certWarnings['remote-1']).toBeUndefined();
-      expect(next.certWarnings['remote-2']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-2'])).toEqual([HOST_WARNING]);
     });
 
     it('an empty push for an unknown id is a no-op', () => {
@@ -278,11 +292,14 @@ describe('connectionsReducer', () => {
           certWarnings: { id: 'remote-1', warnings: [HOST_WARNING] },
         }),
       );
-      expect(next.certWarnings['remote-1']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-1'])).toEqual([HOST_WARNING]);
     });
 
     it('connectionsListReceived with an empty replay clears the entry', () => {
-      const state = { ...initialState, certWarnings: { 'remote-1': [HOST_WARNING] } };
+      const state = {
+        ...initialState,
+        certWarnings: { 'remote-1': warningsCollection(HOST_WARNING) },
+      };
       const next = connectionsReducer(
         state,
         connectionsListReceived({
@@ -298,29 +315,38 @@ describe('connectionsReducer', () => {
       // still drop the stale entry latched for this window's backend.
       const state = {
         ...initialState,
-        certWarnings: { 'remote-1': [HOST_WARNING], 'remote-2': [HOST_WARNING] },
+        certWarnings: {
+          'remote-1': warningsCollection(HOST_WARNING),
+          'remote-2': warningsCollection(HOST_WARNING),
+        },
       };
       const next = connectionsReducer(
         state,
         connectionsListReceived({ ...LIST_RESULT, certWarnings: null }),
       );
       expect(next.certWarnings['remote-1']).toBeUndefined();
-      expect(next.certWarnings['remote-2']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-2'])).toEqual([HOST_WARNING]);
     });
 
     it('connectionsListReceived with certWarnings: null and no latched entry is a no-op', () => {
-      const state = { ...initialState, certWarnings: { 'remote-2': [HOST_WARNING] } };
+      const state = {
+        ...initialState,
+        certWarnings: { 'remote-2': warningsCollection(HOST_WARNING) },
+      };
       const next = connectionsReducer(
         state,
         connectionsListReceived({ ...LIST_RESULT, certWarnings: null }),
       );
-      expect(next.certWarnings['remote-2']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-2'])).toEqual([HOST_WARNING]);
     });
 
     it('connectionsListReceived without the field leaves warnings untouched (older main)', () => {
-      const state = { ...initialState, certWarnings: { 'remote-1': [HOST_WARNING] } };
+      const state = {
+        ...initialState,
+        certWarnings: { 'remote-1': warningsCollection(HOST_WARNING) },
+      };
       const next = connectionsReducer(state, connectionsListReceived(LIST_RESULT));
-      expect(next.certWarnings['remote-1']).toEqual([HOST_WARNING]);
+      expect(getItems(next.certWarnings['remote-1'])).toEqual([HOST_WARNING]);
     });
   });
 

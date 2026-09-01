@@ -37,6 +37,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionCertWarningsEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
 
@@ -277,7 +278,10 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     } else {
       next.certWarnings = {
         ...state.certWarnings,
-        [result.certWarnings.id]: result.certWarnings.warnings,
+        [result.certWarnings.id]: createCollection<ConnectionHostCertWarning, 'host'>(
+          'host',
+          result.certWarnings.warnings,
+        ),
       };
     }
   }
@@ -313,7 +317,10 @@ connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
   // `connections:cert-warnings` push preceded the failure.
   const certWarnings =
     event.mismatches && event.mismatches.length > 0
-      ? { ...state.certWarnings, [event.id]: event.mismatches }
+      ? {
+          ...state.certWarnings,
+          [event.id]: createCollection<ConnectionHostCertWarning, 'host'>('host', event.mismatches),
+        }
       : state.certWarnings;
   return { ...state, certMismatch: event, certWarnings };
 });
@@ -328,7 +335,13 @@ connectionsReducer.with(certWarningsReceived, (state, { payload: [event] }) => {
     const { [event.id]: _cleared, ...rest } = state.certWarnings;
     return { ...state, certWarnings: rest };
   }
-  return { ...state, certWarnings: { ...state.certWarnings, [event.id]: event.warnings } };
+  return {
+    ...state,
+    certWarnings: {
+      ...state.certWarnings,
+      [event.id]: createCollection<ConnectionHostCertWarning, 'host'>('host', event.warnings),
+    },
+  };
 });
 connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
   return { ...state, authRejected: event };

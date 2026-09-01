@@ -243,9 +243,10 @@ describe('connections selectors', () => {
       expectedFingerprint: 'AB:CD',
       actualFingerprint: 'EF:01',
     };
+    const WARNED = createCollection<ConnectionHostCertWarning, 'host'>('host', [HOST_WARNING]);
 
-    it('exposes the per-connection warnings map', () => {
-      const state = stateWith({ certWarnings: { 'remote-1': [HOST_WARNING] } });
+    it('exposes the per-connection warnings map as ordered lists', () => {
+      const state = stateWith({ certWarnings: { 'remote-1': WARNED } });
       expect(selectCertWarningsByConnectionId.select(state)).toEqual({
         'remote-1': [HOST_WARNING],
       });
@@ -253,14 +254,14 @@ describe('connections selectors', () => {
 
     it('surfaces only THIS WINDOW backend warnings for the current connection', () => {
       const boundToWarned = stateWith({
-        certWarnings: { 'remote-1': [HOST_WARNING] },
+        certWarnings: { 'remote-1': WARNED },
         activeId: LOCAL_CONNECTION_ID,
         windowBackendId: 'remote-1',
       });
       expect(selectCurrentConnectionCertWarnings.select(boundToWarned)).toEqual([HOST_WARNING]);
 
       const boundToLocal = stateWith({
-        certWarnings: { 'remote-1': [HOST_WARNING] },
+        certWarnings: { 'remote-1': WARNED },
         activeId: 'remote-1',
         windowBackendId: LOCAL_CONNECTION_ID,
       });

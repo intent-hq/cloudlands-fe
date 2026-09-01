@@ -469,7 +469,7 @@ describe('connectionsSaga', () => {
       port: REMOTE.port,
       statusCode: 401,
     });
-    expect(run.getState().connections.certWarnings[REMOTE.id]).toEqual([
+    expect(getItems(run.getState().connections.certWarnings[REMOTE.id])).toEqual([
       { host: '10.0.0.6', expectedFingerprint: 'AB:CD', actualFingerprint: 'EF:01' },
     ]);
 
