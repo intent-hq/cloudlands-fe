@@ -59,6 +59,8 @@ describe('AgentAvatarStack capping (non-adaptive)', () => {
   });
 });
 
+// In jsdom canvas.getContext('2d') is null, so the badge text width resolves to
+// FALLBACK_OVERFLOW_TEXT_WIDTH (20px); the width thresholds below assume it.
 describe('AgentAvatarStack capping (adaptive)', () => {
   class FakeResizeObserver {
     static instances: FakeResizeObserver[] = [];

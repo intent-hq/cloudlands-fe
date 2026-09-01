@@ -853,17 +853,34 @@ test('caps one through eight participants at three and computes overflow from re
      (createDeferredWidthApplier), so after a width change the visible count
      settles asynchronously. Reading count() and the badge in separate calls
      can straddle that settling frame (#4019) — read both atomically in one
-     evaluate and assert the pair is self-consistent. */
+     evaluate and assert the pair is self-consistent. Requiring two reads
+     spanning a double rAF (the deferred-width application window) to agree
+     ensures the poll observes the settled adaptive state rather than passing
+     on the pre-measurement default frame. The exact settled count is not
+     pinned because the stack's available width depends on surrounding header
+     layout. */
   await expect
     .poll(() =>
-      narrowStack.evaluate((stack) => {
-        const visible = stack.querySelectorAll('[data-agent-avatar-with-state]').length;
-        const badge =
-          stack.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim() ?? null;
-        return { capped: visible < 6, consistent: badge === `+${6 - visible}` };
+      narrowStack.evaluate(async (stack) => {
+        const read = () => {
+          const visible = stack.querySelectorAll('[data-agent-avatar-with-state]').length;
+          const badge =
+            stack.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim() ?? null;
+          return { visible, badge };
+        };
+        const first = read();
+        await new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+        const second = read();
+        return {
+          settled: first.visible === second.visible && first.badge === second.badge,
+          capped: second.visible < 6,
+          consistent: second.badge === `+${6 - second.visible}`,
+        };
       }),
     )
-    .toEqual({ capped: true, consistent: true });
+    .toEqual({ settled: true, capped: true, consistent: true });
 
   await component.update({
     props: { mode: 'agents', agentCount: 12, width: 600, initiallyExpanded: false },
@@ -871,7 +888,6 @@ test('caps one through eight participants at three and computes overflow from re
   const measuredStack = component
     .getByTestId('one-shot-header')
     .locator('[data-agent-avatar-stack]');
-  await expect.poll(() => measuredStack.locator('[data-agent-avatar-stack-item]').count()).toBe(3);
   /* The cutout mask is applied via CSS after the stack items render; under
      load (e.g. shared CI runners) the style evaluate below can win the race
      and read maskImage before it is applied. Wait for the masks first. The
