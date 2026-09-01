@@ -31,6 +31,7 @@ import {
   resolveTailcatBinaryPath,
   type TailcatSpawn,
 } from '../tailcat-tunnel';
+import { raceDuplexSockets } from '../backend-connection';
 
 /** Fake tailcat child: echoes stdin → stdout, records kill(). */
 class FakeChild extends EventEmitter {
@@ -214,5 +215,35 @@ describe('createTunneledSocket', () => {
     children[0]!.kill();
     await ended;
     facade.destroy();
+  });
+
+  it('losing the connect race to a direct candidate tears down the tailcat children', async () => {
+    // Cross-module path: a real tunneled facade races a direct candidate in
+    // raceDuplexSockets. The direct candidate wins; the loser's teardown must
+    // propagate through the tunnel facade to the spawned tailcat children.
+    const children: FakeChild[] = [];
+    const tunnelFacade = createTunneledSocket({
+      tcAddress: 'tc.example.ts.net',
+      remotePort: 8443,
+      binaryPath: '/fake/tailcat',
+      spawn: fakeSpawn(children, []),
+      createInner: (localPort) => net.connect(localPort, '127.0.0.1'),
+    });
+    const directWinner = new PassThrough() as unknown as net.Socket;
+    const raced = raceDuplexSockets([
+      { host: 'direct.example', create: () => directWinner as never },
+      { host: 'tunnel:tc.example.ts.net', create: () => tunnelFacade },
+    ]);
+    const won = new Promise<void>((resolve) => raced.once('connect', resolve));
+    directWinner.emit('connect');
+    await won;
+    // The losing tunnel candidate is destroyed by the race; every spawned
+    // tailcat child must die with it (children may spawn asynchronously
+    // during bring-up, so wait for the destroy to propagate).
+    await vi.waitFor(() => {
+      expect(tunnelFacade.destroyed).toBe(true);
+      expect(children.every((child) => child.killed)).toBe(true);
+    });
+    raced.destroy();
   });
 });
