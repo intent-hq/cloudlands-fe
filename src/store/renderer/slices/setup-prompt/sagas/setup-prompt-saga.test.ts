@@ -15,7 +15,11 @@ import {
 import { loadWorkspacesRequested, replaceWorkspaceList } from '../../workspace/workspace-slice';
 import { evaluateSetupStateRequested, setupEvaluationCompleted } from '../setup-prompt-slice';
 import { hasReadyProvider } from '../setup-prompt-utils';
-import { evaluateSetupStateWorker, requestReevaluation } from './setup-prompt-saga';
+import {
+  evaluateSetupStateWorker,
+  requestReevaluation,
+  setupPromptSaga,
+} from './setup-prompt-saga';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,
@@ -150,17 +154,15 @@ describe('evaluateSetupStateWorker', () => {
       hasCheckedOnce: false,
     });
     await settle();
-    // Blocked on the workspace-list refresh it requested: nothing evaluated,
-    // no provider check yet.
+    // Blocked on the workspace-list refresh it requested: nothing evaluated.
     expect(dispatched.some((a) => a.type === loadWorkspacesRequested.type)).toBe(true);
     expect(completedEvaluations(dispatched)).toEqual([]);
-    expect(dispatched.some((a) => a.type === ensureProvidersChecked.type)).toBe(false);
 
     state.workspace.hasLoaded = true;
     channel.put(replaceWorkspaceList([]) as never);
     await settle();
-    // Now blocked on the bulk provider check it requested.
-    expect(dispatched.some((a) => a.type === ensureProvidersChecked.type)).toBe(true);
+    // Setup requests exactly one bounded provider check and waits for it.
+    expect(dispatched.filter((a) => a.type === ensureProvidersChecked.type)).toHaveLength(1);
     expect(completedEvaluations(dispatched)).toEqual([]);
 
     state.agentAvailability.hasCheckedOnce = true;
@@ -171,61 +173,33 @@ describe('evaluateSetupStateWorker', () => {
     ]);
   });
 
-  it('re-requests the bulk provider check until one settles (missed-dispatch retry)', async () => {
-    vi.useFakeTimers();
-    try {
-      const { channel, dispatched, task, state } = harness({ hasCheckedOnce: false });
-      await settle();
-      channel.put(replaceWorkspaceList([]) as never);
-      await settle();
-      const requests = () =>
-        dispatched.filter((a) => a.type === ensureProvidersChecked.type).length;
-      expect(requests()).toBe(1);
+  it('stops after an all-failed provider attempt without evaluating or retrying', async () => {
+    const h = harness({ hasCheckedOnce: false });
+    await answerWorkspaceRefresh(h);
 
-      // The first request was missed (no watcher yet): the retry timer fires
-      // and the worker re-dispatches.
-      await vi.advanceTimersByTimeAsync(3_000);
-      expect(requests()).toBe(2);
+    h.channel.put(checkAllProvidersComplete() as never);
+    await h.task.toPromise();
 
-      state.agentAvailability.hasCheckedOnce = true;
-      channel.put(checkAllProvidersComplete() as never);
-      await task.toPromise();
-      expect(completedEvaluations(dispatched)).toHaveLength(1);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(completedEvaluations(h.dispatched)).toEqual([]);
+    expect(h.dispatched.map((action) => action.type)).toEqual([
+      loadWorkspacesRequested.type,
+      ensureProvidersChecked.type,
+    ]);
   });
 
-  it('paces re-requests when a sweep settles without flipping hasCheckedOnce (all probes failed)', async () => {
-    // Regression: an all-failed sweep dispatches checkAllProvidersComplete
-    // without flipping hasCheckedOnce (it lands no statuses). The settle must
-    // NOT immediately re-dispatch ensureProvidersChecked — with a fast-failing
-    // provider check that becomes a zero-delay hot loop (the CI OOM in the
-    // hardware-console composition test).
+  it('bounds the wait when the initial provider attempt never settles', async () => {
     vi.useFakeTimers();
     try {
-      const { channel, dispatched, task, state } = harness({ hasCheckedOnce: false });
-      await settle();
-      channel.put(replaceWorkspaceList([]) as never);
-      await settle();
-      const requests = () =>
-        dispatched.filter((a) => a.type === ensureProvidersChecked.type).length;
-      expect(requests()).toBe(1);
+      const h = harness({ hasCheckedOnce: false });
+      await answerWorkspaceRefresh(h);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await h.task.toPromise();
 
-      // Sweep settles all-failed: complete fires, hasCheckedOnce stays false.
-      channel.put(checkAllProvidersComplete() as never);
-      await settle();
-      expect(requests()).toBe(1);
-
-      // Only after the retry pause does the worker re-request.
-      await vi.advanceTimersByTimeAsync(3_000);
-      expect(requests()).toBe(2);
-
-      state.agentAvailability.hasCheckedOnce = true;
-      channel.put(checkAllProvidersComplete() as never);
-      await vi.advanceTimersByTimeAsync(3_000);
-      await task.toPromise();
-      expect(completedEvaluations(dispatched)).toHaveLength(1);
+      expect(completedEvaluations(h.dispatched)).toEqual([]);
+      expect(h.dispatched.map((action) => action.type)).toEqual([
+        loadWorkspacesRequested.type,
+        ensureProvidersChecked.type,
+      ]);
     } finally {
       vi.useRealTimers();
     }
@@ -273,19 +247,77 @@ describe('requestReevaluation', () => {
     expect(dispatched.map((a) => a.type)).toEqual([evaluateSetupStateRequested.type]);
   });
 
-  it('paces the re-evaluation while hasCheckedOnce is still false', async () => {
-    // A settle without landed statuses (all probes failed) must not re-enter
-    // the evaluate → ensure → sweep cycle with zero delay (hot-loop guard).
-    vi.useFakeTimers();
+  it('does not re-evaluate after an all-failed provider attempt', async () => {
+    const { dispatched, task } = run(false);
+    await task.toPromise();
+    expect(dispatched).toEqual([]);
+  });
+});
+
+describe('setupPromptSaga', () => {
+  it('single-flights repeated requests and retains one trailing evaluation', async () => {
+    const originalElectronApi = window.electronAPI;
+    let emit!: (payload: { status: string }) => void;
+    window.electronAPI = {
+      ...originalElectronApi,
+      on: vi.fn((_channel, handler) => {
+        emit = handler;
+        return 'setup-listener';
+      }),
+      offById: vi.fn(),
+    };
+    const channel = stdChannel();
+    const dispatched: { type: string; payload?: unknown }[] = [];
+    const state = {
+      connections: {
+        ...connectionsInitialState,
+        connections: createCollection<ConnectionRecord, 'id'>('id', [LOCAL]),
+        windowBackendId: LOCAL_CONNECTION_ID,
+      },
+      workspace: {
+        hasLoaded: true,
+        workspaces: createCollection<{ id: string }, 'id'>('id'),
+        recency: {},
+      },
+      agentAvailability: {
+        providerStatusMap: { auggie: { available: true } },
+        providerLoadingMap: {},
+        hasCheckedOnce: true,
+      },
+    };
+    const dispatch = (action: { type: string; payload?: unknown }) => {
+      dispatched.push(action);
+      channel.put(action as never);
+      return action;
+    };
+    const task = runSaga(
+      { channel, dispatch: dispatch as never, getState: () => state },
+      setupPromptSaga,
+    );
+
     try {
-      const { dispatched, task } = run(false);
-      await Promise.resolve();
-      expect(dispatched).toEqual([]);
-      await vi.advanceTimersByTimeAsync(3_000);
-      await task.toPromise();
-      expect(dispatched.map((a) => a.type)).toEqual([evaluateSetupStateRequested.type]);
+      await settle();
+      const workspaceLoads = () =>
+        dispatched.filter((action) => action.type === loadWorkspacesRequested.type).length;
+      expect(workspaceLoads()).toBe(1);
+
+      emit({ status: 'connected' });
+      channel.put(evaluateSetupStateRequested() as never);
+      channel.put(evaluateSetupStateRequested() as never);
+      await settle();
+      expect(workspaceLoads()).toBe(1);
+
+      channel.put(replaceWorkspaceList([]) as never);
+      await settle();
+      expect(workspaceLoads()).toBe(2);
+
+      channel.put(replaceWorkspaceList([]) as never);
+      await settle();
+      expect(completedEvaluations(dispatched)).toHaveLength(2);
     } finally {
-      vi.useRealTimers();
+      task.cancel();
+      await task.toPromise();
+      window.electronAPI = originalElectronApi;
     }
   });
 });
