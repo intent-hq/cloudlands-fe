@@ -208,24 +208,46 @@ export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   return out;
 }
 
+/** One observed per-host certificate-pin mismatch (#1746 race surfacing). */
+export interface HostCertMismatch {
+  /** Candidate host that presented the mismatching certificate. */
+  host: string;
+  /** Pinned fingerprint (colon-hex uppercase). */
+  expected: string;
+  /** Fingerprint the peer actually presented (colon-hex uppercase). */
+  actual: string;
+}
+
 /**
  * Raised when a `wss` peer presents a certificate whose SHA-256 fingerprint
  * does not match the pinned value (PROTOCOL §1.2). Distinct from a generic
  * connect failure so the switch/UI layer can surface the "certificate changed"
- * failure modal instead of a transient reconnect.
+ * failure modal instead of a transient reconnect. When raised by the
+ * multi-host race, `mismatches` carries every per-host mismatch observed;
+ * `expected`/`actual` mirror the first one so consumers that predate the
+ * aggregation keep working unchanged.
  */
 export class PinMismatchError extends Error {
   /** Pinned fingerprint (colon-hex uppercase). */
   readonly expected: string;
   /** Fingerprint the peer actually presented (colon-hex uppercase). */
   readonly actual: string;
-  constructor(expected: string, actual: string) {
+  /**
+   * Every per-host mismatch observed. Empty for single-host errors raised
+   * below the race layer (where the host is not known).
+   */
+  readonly mismatches: HostCertMismatch[];
+  constructor(expected: string, actual: string, mismatches: HostCertMismatch[] = []) {
+    const hosts = mismatches.map((m) => m.host).join(', ');
     super(
-      `certificate fingerprint mismatch: expected ${expected || '(none)'}, got ${actual || '(none)'}`,
+      `certificate fingerprint mismatch: expected ${expected || '(none)'}, got ${actual || '(none)'}${
+        hosts ? ` (hosts: ${hosts})` : ''
+      }`,
     );
     this.name = 'PinMismatchError';
     this.expected = expected;
     this.actual = actual;
+    this.mismatches = mismatches;
   }
 }
 
@@ -362,18 +384,22 @@ function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duple
  * (with an injectable per-attempt factory) so unit tests can drive it with
  * in-memory fake sockets.
  *
- * Semantics (see #1746 acceptance criteria):
+ * Semantics (see #1746 acceptance criteria; iOS `raceHosts` model):
  * - The first candidate to emit `connect` wins; all others are destroyed.
- * - Before a winner settles, a {@link PinMismatchError} on ANY candidate fails
- *   the whole race with that error — a cert mismatch is surfaced as a cert
- *   error, never silently skipped as "unreachable" (no fallback onto other
- *   candidates).
+ * - A {@link PinMismatchError} on a candidate counts that candidate out but
+ *   does NOT fail the race — the remaining candidates keep racing, so one
+ *   stale IP now owned by a foreign pinned daemon cannot block a candidate
+ *   presenting the right cert. Every observed mismatch is recorded per host
+ *   and emitted as a non-fatal `'pin-mismatch'` event ({@link HostCertMismatch})
+ *   on the facade — both before and after a winner settles — so a mismatch on
+ *   a losing candidate stays observable instead of being log-only.
  * - Once a pin-verified winner has settled, the winner takes precedence: a
- *   late mismatch on a losing candidate is logged and discarded rather than
- *   tearing down the established (itself pin-verified) connection. This
- *   mirrors iOS `raceHosts` (first success cancels the task group) and keeps
- *   one stale IP now owned by a foreign pinned daemon from blocking a
- *   connection that has a valid candidate.
+ *   late mismatch on a losing candidate is emitted/logged, never tears down
+ *   the established (itself pin-verified) connection.
+ * - If no candidate wins and at least one mismatch was observed, the facade
+ *   errors with a {@link PinMismatchError} aggregating every per-host
+ *   mismatch — preferred over the generic last failure (including on race
+ *   timeout) so a cert problem is surfaced as a cert error.
  * - If every candidate fails without a pin mismatch, the facade errors with
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
@@ -389,18 +415,38 @@ export function raceDuplexSockets(
   let pendingCount = attempts.length;
   let lastError: Error | null = null;
   const candidates: Duplex[] = [];
+  const candidateHosts = new Map<Duplex, string>();
+  const mismatches: HostCertMismatch[] = [];
+  const reportedMismatchHosts = new Set<string>();
+
+  // Record one mismatch per host: fold it into the aggregate while the race
+  // is undecided (including a late mismatch on an already-counted candidate,
+  // e.g. one that first failed generically), and always emit the non-fatal
+  // event. The per-host dedupe keeps a candidate that surfaces the same
+  // mismatch twice from double-reporting.
+  const recordMismatch = (host: string, error: PinMismatchError): void => {
+    if (reportedMismatchHosts.has(host)) return;
+    reportedMismatchHosts.add(host);
+    const info: HostCertMismatch = { host, expected: error.expected, actual: error.actual };
+    if (!settled) mismatches.push(info);
+    facade.emit('pin-mismatch', info);
+  };
 
   // Tear a losing/failed candidate down without leaving it listener-less: a
   // destroyed-but-alive socket can still emit async 'error' events, and a
   // zero-listener 'error' is an uncaught exception in the main process. A
-  // late pin mismatch is logged so it is observed, never fully silent.
+  // late pin mismatch is logged AND recorded so a foreign cert on a
+  // torn-down candidate stays observable (and, pre-settlement, aggregated).
   const teardownCandidate = (candidate: Duplex): void => {
     candidate.removeAllListeners();
     candidate.on('error', (error: Error) => {
       if (error instanceof PinMismatchError) {
-        raceLogger.warn('pin mismatch on a losing race candidate (winner already settled)', {
+        const host = candidateHosts.get(candidate) ?? '';
+        raceLogger.warn('late pin mismatch on a torn-down race candidate', {
+          host,
           error: error.message,
         });
+        recordMismatch(host, error);
       }
     });
     candidate.destroy();
@@ -442,34 +488,42 @@ export function raceDuplexSockets(
     facade.destroy(error);
   };
 
+  // Prefer surfacing observed cert mismatches over a generic failure when the
+  // race produces no winner (#1746): the aggregate carries every per-host
+  // mismatch, with expected/actual mirroring the first one.
+  const preferCertError = (fallback: Error): Error =>
+    mismatches.length > 0
+      ? new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches])
+      : fallback;
+
   const timer = setTimeout(
-    () => failRace(new Error(`connection race timed out after ${timeoutMs}ms`)),
+    () => failRace(preferCertError(new Error(`connection race timed out after ${timeoutMs}ms`))),
     timeoutMs,
   );
   timer.unref?.();
 
-  const countCandidateFailure = (error: Error): void => {
+  const countCandidateFailure = (host: string, error: Error): void => {
     if (settled) return;
-    // A pinned-cert mismatch on any candidate before a winner settles fails
-    // the whole race — never silently skipped as unreachable (#1746
-    // acceptance).
+    // A pinned-cert mismatch counts this candidate out but keeps the race
+    // going (#1746): record it per host and emit the non-fatal event so it
+    // stays observable even if another candidate wins.
     if (error instanceof PinMismatchError) {
-      failRace(error);
-      return;
+      recordMismatch(host, error);
+    } else {
+      lastError = error;
     }
-    lastError = error;
     pendingCount -= 1;
     if (pendingCount <= 0) {
-      failRace(lastError);
+      failRace(preferCertError(lastError ?? new Error('no candidate hosts to connect')));
     }
   };
 
-  const onCandidateFailure = (candidate: Duplex, error: Error): void => {
+  const onCandidateFailure = (candidate: Duplex, host: string, error: Error): void => {
     // A failed candidate is dead to the race either way — destroy it now so
     // it cannot raise an uncaught 'error' while other racers continue, and so
     // its socket is freed before the race settles.
     teardownCandidate(candidate);
-    countCandidateFailure(error);
+    countCandidateFailure(host, error);
   };
 
   const onCandidateWin = (candidate: Duplex): void => {
@@ -497,16 +551,20 @@ export function raceDuplexSockets(
     try {
       candidate = attempt.create();
     } catch (error) {
-      countCandidateFailure(error instanceof Error ? error : new Error(String(error)));
+      countCandidateFailure(
+        attempt.host,
+        error instanceof Error ? error : new Error(String(error)),
+      );
       continue;
     }
     candidates.push(candidate);
+    candidateHosts.set(candidate, attempt.host);
     // A failing candidate can emit `error` AND `close`; count it out only once.
     let counted = false;
     const failOnce = (error: Error): void => {
       if (counted) return;
       counted = true;
-      onCandidateFailure(candidate, error);
+      onCandidateFailure(candidate, attempt.host, error);
     };
     const onConnect = (): void => onCandidateWin(candidate);
     candidate.once('connect', onConnect);
