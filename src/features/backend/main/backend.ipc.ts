@@ -1239,6 +1239,18 @@ function extractUpdateSupported(result: unknown): boolean | null {
  * Pull the daemon's tailcat tunnel endpoint (`tcAddress`, PROTOCOL §12.3) out
  * of a `system.status` result. Returns `null` when the field is absent, empty,
  * or malformed — a conclusive "no tunnel" for a successful response.
+ *
+ * Known trade-off: the wire shape cannot distinguish "tunnel disabled" from
+ * "tunnel sidecar momentarily down" — `system.status` omits the field in both
+ * cases (including the daemon's restart-backoff window after an unexpected
+ * sidecar exit). A reconnect landing in that window therefore clears a stored
+ * address that would have come back on its own; it is re-learned from the
+ * next post-connect status once the sidecar recovers. Deliberately accepted
+ * over retaining stale values: a kept address whose tunnel was genuinely
+ * disabled would add a perpetually-failing race candidate to every connect,
+ * and the field's contract ("never advertises a route nothing is serving")
+ * argues for mirroring it faithfully. Distinguishing the two states needs a
+ * protocol change (tracked upstream), not FE-side guessing.
  */
 function extractTcAddress(result: unknown): string | null {
   if (result && typeof result === 'object') {

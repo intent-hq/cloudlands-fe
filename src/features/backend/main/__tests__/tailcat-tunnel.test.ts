@@ -89,8 +89,16 @@ describe('resolveTailcatBinaryPath', () => {
     expect(resolveTailcatBinaryPath({}, tmpDir, tmpDir)).toBe(path.join(staged, binName));
   });
 
-  it('walks up from cwd to the dev staging directory', () => {
-    const staging = path.join(tmpDir, 'packages', 'cloudlands-fe', 'resources', 'tailcat');
+  it('walks up from cwd to the dev staging directory (host per-target subdir)', () => {
+    const hostTargetDir = `${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : 'linux'}-${process.arch}`;
+    const staging = path.join(
+      tmpDir,
+      'packages',
+      'cloudlands-fe',
+      'resources',
+      'tailcat',
+      hostTargetDir,
+    );
     fs.mkdirSync(staging, { recursive: true });
     fs.writeFileSync(path.join(staging, binName), '');
     const deepCwd = path.join(tmpDir, 'packages', 'cloudlands-fe', 'dist', 'main');

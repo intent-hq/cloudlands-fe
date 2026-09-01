@@ -16,8 +16,9 @@
  *   - `TAILCAT_BIN=/path/to/tailcat` → explicit override (dev/testing).
  *   - Packaged → `process.resourcesPath/tailcat/tailcat` (tailcat.exe on
  *     Windows; staged by scripts/fetch-tailcat.cjs via extraResources).
- *   - Dev → walk from `cwd` up looking for
- *     `packages/cloudlands-fe/resources/tailcat/<bin>` (fetch-tailcat output).
+ *   - Dev → walk from `cwd` up looking for the fetch-tailcat staging output
+ *     `packages/cloudlands-fe/resources/tailcat/<os>-<arch>/<bin>` (the
+ *     per-target layout electron-builder packages from).
  *
  * Everything here fails soft: a missing binary or a failed spawn only breaks
  * the tunnel candidate, never the direct-host connect race.
@@ -31,6 +32,29 @@ import { Duplex } from 'node:stream';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('TailcatTunnel');
+
+/** Grace period between SIGTERM and the SIGKILL escalation. */
+const KILL_ESCALATION_MS = 2_000;
+
+/**
+ * Kill a tailcat child with escalation: SIGTERM first, SIGKILL after a short
+ * grace period if `exit` has not fired — a child wedged on relay I/O ignoring
+ * SIGTERM must not leak until app exit (the connect race can spawn a fresh
+ * child per attempt). No-op on Windows semantics concerns: `kill()` without a
+ * signal terminates unconditionally there, so the escalation timer just never
+ * finds a live child.
+ */
+function killWithEscalation(child: ChildProcess): void {
+  child.kill();
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const timer = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
+  }, KILL_ESCALATION_MS);
+  timer.unref?.();
+  child.once('exit', () => clearTimeout(timer));
+}
 
 /** Spawn signature the tunnel needs; injectable so tests can fake tailcat. */
 export type TailcatSpawn = (
@@ -59,12 +83,23 @@ export function resolveTailcatBinaryPath(
   }
   // Dev: walk upward from cwd probing the fetch-tailcat staging directory,
   // like resolveIntentdBinaryPath does for the sidecar (the Electron cwd is
-  // not guaranteed to be the monorepo root).
+  // not guaranteed to be the monorepo root). The staging layout is
+  // per-target (<os>-<arch> in electron-builder macro vocabulary); dev runs
+  // always execute on the build host, so probe the host's own target dir.
+  const hostTargetDir = `${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : 'linux'}-${process.arch}`;
   let dir = path.isAbsolute(cwd) ? cwd : path.resolve(cwd);
   for (let i = 0; i < 16; i++) {
     const candidates = [
-      path.join(dir, 'packages', 'cloudlands-fe', 'resources', 'tailcat', binaryName),
-      path.join(dir, 'resources', 'tailcat', binaryName),
+      path.join(
+        dir,
+        'packages',
+        'cloudlands-fe',
+        'resources',
+        'tailcat',
+        hostTargetDir,
+        binaryName,
+      ),
+      path.join(dir, 'resources', 'tailcat', hostTargetDir, binaryName),
     ];
     for (const candidate of candidates) {
       if (fs.existsSync(candidate)) return candidate;
@@ -123,7 +158,7 @@ export function createTailcatTunnel(options: CreateTailcatTunnelOptions): Promis
       if (torndown) return; // kill() may re-emit 'exit' synchronously
       torndown = true;
       children.delete(child);
-      child.kill();
+      killWithEscalation(child);
       socket.destroy();
     };
     child.on('error', (error: Error) => {
@@ -161,7 +196,7 @@ export function createTailcatTunnel(options: CreateTailcatTunnelOptions): Promis
         localPort: address.port,
         close(): void {
           server.close();
-          for (const child of children) child.kill();
+          for (const child of children) killWithEscalation(child);
           children.clear();
         },
       });
