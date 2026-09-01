@@ -481,6 +481,16 @@ export function isSameHostBackendActive(): boolean {
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
+ * Bound on the pre-window `host.status` probe for a REMOTE open. A remote
+ * probe failure opens the window anyway (the connection-lost overlay owns
+ * recovery), so a black-holed connect waiting out the client's 30s default
+ * request timeout would only delay that window. 5s comfortably covers a
+ * healthy WAN round-trip; a slower-but-healthy remote still opens fine — the
+ * retained client finishes connecting in the background.
+ */
+const REMOTE_OPEN_PROBE_TIMEOUT_MS = 5_000;
+
+/**
  * Drop every latched failure state (cert/auth one-shot guards, sticky protocol
  * mismatch and auth rejection) for one backend connection id. Called whenever
  * a fresh client for that id is constructed — its own connect + `client.hello`
@@ -1598,9 +1608,12 @@ function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Connect one pooled backend and open/focus its windows.
  * `options.probeTimeoutMs` bounds the authenticated `host.status` probe
- * for a single call (defaults to the client's flat request timeout) — used by
- * deadline-driven callers like {@link openLocalAndSpawn} whose own budget is
- * shorter than the 30s client default.
+ * for a single call — used by deadline-driven callers like
+ * {@link openLocalAndSpawn} whose own budget is shorter than the 30s client
+ * default. When omitted, a REMOTE open is bounded by
+ * {@link REMOTE_OPEN_PROBE_TIMEOUT_MS} (a probe failure opens the window
+ * anyway, so a black-holed connect must not sit out the 30s default before
+ * the window appears); a LOCAL open keeps the client's flat request timeout.
  *
  * A failed probe on a REMOTE no longer rejects the open: the window is created
  * anyway and the pooled client's reconnect loop keeps retrying, so the
@@ -1627,8 +1640,15 @@ async function performOpenBackendWindow(
     try {
       // Complete one authenticated request over the pinned transport before
       // creating a renderer, so the common healthy open never flashes the
-      // connection-lost overlay.
-      await target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs });
+      // connection-lost overlay. A remote probe is bounded well below the 30s
+      // client default: a timing-out remote already opens the window on
+      // failure, so a long probe only delays that window — and a healthy
+      // remote slower than this bound still opens fine (the retained client
+      // finishes connecting and the renderer never sees a 'down' health).
+      const probeTimeoutMs =
+        options?.probeTimeoutMs ??
+        (id !== LOCAL_CONNECTION_ID ? REMOTE_OPEN_PROBE_TIMEOUT_MS : undefined);
+      await target.request('host.status', undefined, { timeoutMs: probeTimeoutMs });
     } catch (error) {
       // Local keeps the strict reject: openLocalAndSpawn's deadline loop
       // retries on it, and a local window without a daemon has no client

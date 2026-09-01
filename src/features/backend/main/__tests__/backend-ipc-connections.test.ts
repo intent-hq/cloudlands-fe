@@ -1497,8 +1497,10 @@ describe('connections:* IPC handlers', () => {
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
     expect(remote).not.toBe(local);
+    // A remote open's probe is bounded (5s) so a black-holed connect cannot
+    // sit out the 30s client default before the window appears.
     expect(remote?.request).toHaveBeenCalledWith('host.status', undefined, {
-      timeoutMs: undefined,
+      timeoutMs: 5_000,
     });
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
