@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.123.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.123.0...v2.123.1) (2026-09-01)
+
+
+### 🐛 Bug Fixes
+
+* bridge workspace summary IPC channels to the daemon ([#1985](https://github.com/intent-hq/cloudlands-fe/issues/1985)) ([fefe5ef](https://github.com/intent-hq/cloudlands-fe/commit/fefe5ef9441054225187277ed1a116d1335ac5f1))
+* bump intentd sidecar to v0.9.1 ([#1993](https://github.com/intent-hq/cloudlands-fe/issues/1993)) ([ef3d46a](https://github.com/intent-hq/cloudlands-fe/commit/ef3d46aa498e270bb38791b701c37746f626de99))
+* keep panel resize handles off neighboring scrollbars ([#1988](https://github.com/intent-hq/cloudlands-fe/issues/1988)) ([8d159d9](https://github.com/intent-hq/cloudlands-fe/commit/8d159d9dbaf34bd43e967645e1997ddff4e2c67d))
+* migrate onboarding images to context items and stop dropping first-message attachments ([#1986](https://github.com/intent-hq/cloudlands-fe/issues/1986)) ([76d9b43](https://github.com/intent-hq/cloudlands-fe/commit/76d9b43d38e130fccea4bc62440a3c536e1dd4c0))
+* probe fingerprint unauthenticated before transmitting saved token ([#1987](https://github.com/intent-hq/cloudlands-fe/issues/1987)) ([491c59f](https://github.com/intent-hq/cloudlands-fe/commit/491c59f1d4a8f603019aa3bcd42fd1dbd5f1cc1f))
+* stop hydration frontier mass-hydrating transcript on workspace switch ([#1991](https://github.com/intent-hq/cloudlands-fe/issues/1991)) ([54245d7](https://github.com/intent-hq/cloudlands-fe/commit/54245d7d49a48e47d657f0243226f7a702f4ce16))
+
 ## [2.123.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.122.1...v2.123.0) (2026-09-01)
 
 
