@@ -12,6 +12,8 @@
     placement?: 'top' | 'bottom';
     side?: 'left' | 'right';
     locale?: AppLocale;
+    crossFilter?: boolean;
+    navigators?: boolean;
   }
 
   let {
@@ -20,12 +22,15 @@
     placement = 'top',
     side = 'left',
     locale = 'en',
+    crossFilter = true,
+    navigators = true,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
   const workspaceId = 'token-usage-accessibility-ct';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
 
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
   store.dispatch(
     tokenUsageReceived(workspaceId, {
       byAgentId: {
@@ -193,6 +198,8 @@
           agentMessages: 1,
         },
       ],
+      ...(crossFilter ? {} : { byAgentModel: undefined }),
+      ...(navigators ? {} : { byAgentId: {}, byModel: {} }),
       lastScanAt: '2026-08-22T00:00:00Z',
     }),
   );

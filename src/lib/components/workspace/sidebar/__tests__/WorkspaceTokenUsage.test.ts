@@ -134,6 +134,10 @@ describe('WorkspaceTokenUsage', () => {
     expect(details?.getAttribute('aria-labelledby')).toBe('workspace-token-usage-title-ws-1');
     expect(details?.parentElement).toBe(document.body);
     expect(screen.getByTestId('workspace-token-usage').contains(details)).toBe(false);
+    expect(
+      screen.getByRole('heading', { name: 'Token composition' }).closest('section')?.classList,
+    ).toContain('pb-3');
+    expect(details?.querySelector('.breakdown-grid')).toBeNull();
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
@@ -270,7 +274,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(tokenSummary.lastElementChild?.classList).toContain('font-normal');
     expect(composition.nextElementSibling).toBe(breakdownGrid);
     expect(details.lastElementChild).toBe(breakdownGrid);
-    expect(composition.classList).not.toContain('pb-3');
+    expect(composition.classList).toContain('pb-3');
     expect(breakdownGrid.classList).toContain('border-t');
     expect(breakdownGrid.classList).not.toContain('border-b');
     expect(modelSection.classList).toContain('breakdown-section');
@@ -720,6 +724,9 @@ describe('WorkspaceTokenUsage', () => {
 
     const details = screen.getByTestId('token-usage-details');
     const status = details.querySelector('.preview-status')!;
+    const composition = screen
+      .getByRole('heading', { name: 'Token composition' })
+      .closest('section')!;
     const messageCounts = () =>
       Array.from(details.querySelectorAll('.message-composition-row')).map((row) =>
         visibleText(row),
@@ -736,6 +743,7 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 7']);
+    expect(composition.classList).toContain('pb-3');
     const messageRows = Array.from(details.querySelectorAll('.message-composition-row'));
     expect(
       messageRows.every((row) =>

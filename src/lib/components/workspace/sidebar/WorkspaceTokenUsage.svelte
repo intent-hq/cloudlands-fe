@@ -535,7 +535,7 @@
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
-        <section class="px-4 pt-3" aria-labelledby={`${detailsId}-composition`}>
+        <section class="px-4 pb-3 pt-3" aria-labelledby={`${detailsId}-composition`}>
           <h4 id={`${detailsId}-composition`} class="sr-only">
             {m.workspace_tokenUsage_composition_label()}
           </h4>
