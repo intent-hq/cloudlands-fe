@@ -1246,7 +1246,12 @@ function extractUpdateSupported(result: unknown): boolean | null {
  * cases (including the daemon's restart-backoff window after an unexpected
  * sidecar exit). A reconnect landing in that window therefore clears a stored
  * address that would have come back on its own; it is re-learned from the
- * next post-connect status once the sidecar recovers. Deliberately accepted
+ * next post-connect status once the sidecar recovers. Now that the address is
+ * keychain-synced, the blast radius is fleet-wide: the clear bumps the LWW
+ * clock and propagates, so a device that can ONLY dial through the tunnel
+ * loses its route until any directly-connected device reconnects after the
+ * sidecar recovers and re-captures the address (the tunnel-only device cannot
+ * rediscover it on its own). Deliberately accepted
  * over retaining stale values: a kept address whose tunnel was genuinely
  * disabled would add a perpetually-failing race candidate to every connect,
  * and the field's contract ("never advertises a route nothing is serving")

@@ -411,6 +411,52 @@ describe('reconcile', () => {
     expect(result.pushed).toEqual([]);
   });
 
+  it('equal clocks but only local carries a tc address: pushed re-stamped strictly newer', async () => {
+    // Additive-field upgrade: the address was captured by an app version
+    // that did not sync tcAddress, so the local record and its keychain
+    // copy share the same clock. The address-bearing side must win or the
+    // address never reaches the user's other devices.
+    const remoteRecord = rec({ updatedAt: NOW - 1000 });
+    const localRecord = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({
+      kind: 'record',
+      record: { ...localRecord, updatedAt: NOW },
+    });
+  });
+
+  it('equal clocks but only remote carries a tc address: pulled verbatim', async () => {
+    const remoteRecord = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const localRecord = rec({ updatedAt: NOW - 1000 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(upserts).toEqual([]);
+    expect(result.pulled).toEqual([ACCOUNT]);
+    expect(applied).toEqual([{ account: ACCOUNT, record: remoteRecord }]);
+  });
+
+  it('equal clocks with matching tc addresses stay in sync (no writes)', async () => {
+    const record = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const { client, upserts } = fakeClient([item(record)]);
+    const { adapter, applied } = fakeAdapter([record]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(upserts).toEqual([]);
+    expect(result.pulled).toEqual([]);
+    expect(result.pushed).toEqual([]);
+  });
+
   it('two divergent zero-clock (pre-sync) records: local pushed with a fresh stamp', async () => {
     // Both machines hold pre-sync records (updatedAt 0) with different
     // content. The plain equal-clock skip would leave them divergent forever;

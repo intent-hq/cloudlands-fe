@@ -702,7 +702,9 @@ export interface ReconcileOptions {
  *
  * Per account (the union of both sides), strictly newer `updatedAt` wins;
  * equal clocks are treated as in-sync (except a live/tombstone tie, where the
- * tombstone wins so every machine converges on the same outcome). Accounts
+ * tombstone wins so every machine converges on the same outcome, and an
+ * equal-clock live pair where exactly one side carries a `tcAddress` — an
+ * additive-field upgrade — where the address-bearing side wins). Accounts
  * whose keychain payload is unparseable or from a newer schema version are
  * frozen — neither pulled nor pushed over.
  *
@@ -1006,8 +1008,23 @@ export async function reconcile(
       r.updatedAt !== 0 &&
       r.deleted !== true &&
       l.deleted !== true
-    )
+    ) {
+      // Additive-field upgrade: a tc address captured by an app version that
+      // did not sync the field shares its clock with the field-less keychain
+      // copy, so the plain equal-clock skip would keep it local forever.
+      // Whichever side carries an address the other lacks wins: a local one
+      // is pushed re-stamped strictly newer (so every other machine pulls
+      // it), a remote one is pulled verbatim. Safe: a genuine conclusive
+      // clear always bumps the clock (see setTcAddress), so an equal-clock
+      // null can never be a newer "no tunnel" losing to a stale address.
+      if (l.tcAddress !== null && r.tcAddress === null) {
+        await push(account, { ...l, updatedAt: Math.max(now, l.updatedAt + 1) });
+      } else if (r.tcAddress !== null && l.tcAddress === null) {
+        await adapter.applyRemote(account, r);
+        result.pulled.push(account);
+      }
       continue;
+    }
     const remoteWins =
       r.updatedAt > l.updatedAt || (r.updatedAt === l.updatedAt && r.deleted === true);
 

@@ -893,6 +893,14 @@ export async function setUpdateSupported(id: string, supported: boolean | null):
  * every-reconnect case skips the write (no artificial clock bump), and the
  * stamp is forced strictly past the record's current clock so a capture
  * landing in the same millisecond as `add` still out-clocks it.
+ * Trade-off (same as {@link setHostname}'s, but recurring with every tunnel
+ * flap rather than a rename): the clock covers the WHOLE record, so this
+ * AUTOMATIC every-reconnect capture can out-clock a manual edit (label/host/
+ * token) or forget made on another machine shortly before but not yet
+ * synced — the capture then wins the whole record and the other machine's
+ * change loses the LWW reconcile. Accepted: address changes are rare in
+ * steady state (the unchanged-skip above keeps flap-free reconnects
+ * clock-neutral), and a lost edit re-syncs on its next mutation.
  */
 export async function setTcAddress(id: string, tcAddress: string | null): Promise<boolean> {
   const normalized = tcAddress?.trim() || null;
