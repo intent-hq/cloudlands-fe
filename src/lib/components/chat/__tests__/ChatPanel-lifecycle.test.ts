@@ -764,6 +764,8 @@ describe('ChatPanel mounted lifecycle', () => {
       target: { value: 'survive a sibling update' },
     });
 
+    expect(mocks.chatDrafts['workspace-a::agent-a']).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.chatDrafts['workspace-a::agent-a']).toBe('survive a sibling update');
     firstView.unmount();
     render(ChatPanel, {
@@ -774,6 +776,29 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
       'survive a sibling update',
     );
+  });
+
+  it('coalesces a burst of draft changes and commits the latest value', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const editor = screen.getByTestId('mock-rich-input-editor');
+    await fireEvent.input(editor, { target: { value: 'a' } });
+    await fireEvent.input(editor, { target: { value: 'ab' } });
+    await fireEvent.input(editor, { target: { value: 'abc' } });
+
+    expect(mocks.dispatch.mock.calls).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(50);
+
+    const draftActions = mocks.dispatch.mock.calls.filter(
+      ([action]) => action?.type === 'transientUi/setChatDraft',
+    );
+    expect(draftActions).toHaveLength(1);
+    expect(draftActions[0][0].payload).toEqual(['workspace-a', 'agent-a', 'abc']);
   });
 
   it('keeps the composer mounted (wizard auto-collapsed) when questions arrive mid-typing', async () => {
