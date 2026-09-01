@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { Popover } from 'bits-ui';
   import Fa from 'svelte-fa';
   import {
@@ -26,8 +27,15 @@
   let { tasks, presentation = 'status-stack' }: Props = $props();
   let open = $state(false);
   let triggerElement: HTMLButtonElement | null = $state(null);
+  let pointerFocusing = false;
+  let suppressRestoredFocus = false;
+  let focusSuppressionTimer: ReturnType<typeof setTimeout> | undefined;
   let collisionBoundary: Element[] = $state([]);
+  let announcement = $state('');
+  let announcementTimer: ReturnType<typeof setTimeout> | undefined;
+  let previousTaskStates: Map<string, string> | undefined;
   const MAX_STACK_SLOTS = 5;
+  const ANNOUNCEMENT_DELAY_MS = 120;
   const activeTasks = $derived(tasks.filter((task) => task.status !== 'completed'));
   const completedTasks = $derived(tasks.filter((task) => task.status === 'completed'));
   const runningTasks = $derived(activeTasks.filter((task) => task.status === 'running'));
@@ -54,6 +62,36 @@
     }),
   );
 
+  $effect(() => {
+    const nextTaskStates = new Map(
+      tasks.map((task) => [task.id, `${task.status}\u0000${task.title}`]),
+    );
+    if (!previousTaskStates) {
+      previousTaskStates = nextTaskStates;
+      return;
+    }
+
+    const changedTask = tasks.find(
+      (task) => previousTaskStates?.get(task.id) !== nextTaskStates.get(task.id),
+    );
+    previousTaskStates = nextTaskStates;
+    if (!changedTask) return;
+
+    clearTimeout(announcementTimer);
+    announcement = '';
+    announcementTimer = setTimeout(() => {
+      announcement = m.chat_taskProgress_task_ariaLabel({
+        status: statusLabel(changedTask.status),
+        title: changedTask.title,
+      });
+    }, ANNOUNCEMENT_DELAY_MS);
+  });
+
+  onDestroy(() => {
+    clearTimeout(announcementTimer);
+    clearTimeout(focusSuppressionTimer);
+  });
+
   function statusLabel(status: TaskProgressStatus): string {
     if (status === 'completed') return m.workspace_taskStatus_complete_label();
     if (status === 'running') return m.workspace_taskStatus_inProgress_label();
@@ -76,12 +114,18 @@
 
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
-    if (!nextOpen) return;
+    if (!nextOpen) {
+      suppressRestoredFocus = true;
+      clearTimeout(focusSuppressionTimer);
+      focusSuppressionTimer = setTimeout(() => (suppressRestoredFocus = false));
+      return;
+    }
     const panel = triggerElement?.closest('[data-panel-id]');
     collisionBoundary = panel ? [panel] : [];
   }
 
   function handleTriggerFocus() {
+    if (pointerFocusing || suppressRestoredFocus) return;
     handleOpenChange(true);
   }
 </script>
@@ -115,6 +159,7 @@
     class="line-clamp-2 min-w-0 flex-1 {task.status === 'completed'
       ? 'text-muted-foreground'
       : 'text-popover-foreground'}"
+    dir="auto"
     title={task.title}
   >
     {#if task.status === 'running'}
@@ -133,9 +178,12 @@
           {...props}
           bind:this={triggerElement}
           type="button"
-          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow,scale] duration-[var(--motion-fast)] motion-safe:active:scale-[0.97] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scale-100 motion-reduce:transition-none"
           aria-label={progressLabel}
           aria-expanded={open}
+          onpointerdowncapture={() => (pointerFocusing = true)}
+          onpointerupcapture={() => (pointerFocusing = false)}
+          onpointercancelcapture={() => (pointerFocusing = false)}
           onfocus={handleTriggerFocus}
           data-testid="task-progress-trigger"
         >
@@ -198,6 +246,13 @@
             </span>
           {/if}
         </button>
+        <span
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="task-progress-announcement">{announcement}</span
+        >
       {/snippet}
     </Popover.Trigger>
     <Popover.Portal>
@@ -216,7 +271,6 @@
       >
         <div
           class="min-h-0 min-w-0 max-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
-          aria-live="polite"
           data-testid="task-progress-scroll-region"
         >
           <ul class="min-w-0" data-testid="task-progress-list">

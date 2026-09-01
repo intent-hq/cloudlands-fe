@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskProgressItem } from '../workspace-task-fallback';
 import TaskProgressControl from '../TaskProgressControl.svelte';
@@ -346,6 +347,51 @@ describe('TaskProgressControl', () => {
     expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
+
+  it('uses one atomic status node and coalesces task update bursts without an initial announcement', async () => {
+    vi.useFakeTimers();
+    const view = render(TaskProgressControl, { props: { tasks } });
+    const announcement = screen.getByRole('status');
+
+    expect(announcement.textContent).toBe('');
+    expect(announcement.getAttribute('aria-live')).toBe('polite');
+    expect(announcement.getAttribute('aria-atomic')).toBe('true');
+    expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
+
+    screen.getByTestId('task-progress-trigger').focus();
+    await tick();
+    expect(screen.getByTestId('task-progress-scroll-region').hasAttribute('aria-live')).toBe(false);
+
+    await view.rerender({
+      tasks: tasks.map((task) =>
+        task.id === 'running' ? { ...task, status: 'waiting' as const } : task,
+      ),
+    });
+    await view.rerender({
+      tasks: tasks.map((task) =>
+        task.id === 'running' ? { ...task, status: 'completed' as const } : task,
+      ),
+    });
+    await vi.advanceTimersByTimeAsync(119);
+    expect(announcement.textContent).toBe('');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(announcement.textContent).toBe('Complete: Move the task progress');
+    expect(announcement.textContent).not.toContain('Inspect the panel');
+    vi.useRealTimers();
+  });
+
+  it.each(['status-stack', 'checklist'] as const)(
+    'adds layout-safe reduced-motion-aware press feedback to the %s trigger',
+    (presentation) => {
+      render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+
+      expect(trigger.className).toContain('transition-[border-color,box-shadow,scale]');
+      expect(trigger.className).toContain('motion-safe:active:scale-[0.97]');
+      expect(trigger.className).toContain('motion-reduce:scale-100');
+      expect(trigger.className).toContain('motion-reduce:transition-none');
+    },
+  );
 
   it('retains every task in a bounded vertically scrollable long-list popover', async () => {
     const longTasks: TaskProgressItem[] = Array.from({ length: 12 }, (_, index) => ({
