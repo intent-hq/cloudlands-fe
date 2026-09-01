@@ -24,17 +24,17 @@ import { pathToFileURL } from 'node:url';
 export const MIN_FILES = 500;
 
 const MACHINE_LINE = /^\d+ (.*)$/;
-const COMPLETED_LINE =
-  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS (\d+) FILES_WITH_PROBLEMS$/;
-
 /**
- * Parse one machine-verbose output line into a structured event.
- * Returns null for lines that are not machine-format lines.
+ * The COMPLETED record, parsed leniently so tolerable drift in svelte-check's
+ * output (a dropped/added trailing clause, extra fields appended in a future
+ * version) does not read as "no COMPLETED summary" and fail a successful run
+ * (intent-hq/monorepo#4111). The counts we guard on stay strictly positional.
  */
-export function parseMachineLine(line) {
-  const match = MACHINE_LINE.exec(line);
-  if (!match) return null;
-  const body = match[1];
+const COMPLETED_LINE =
+  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS(?: (\d+) FILES_WITH_PROBLEMS)?(?: |$)/;
+
+/** Parse a machine-record body (the line minus any timestamp prefix). */
+function parseRecordBody(body) {
   const completed = COMPLETED_LINE.exec(body);
   if (completed) {
     return {
@@ -42,7 +42,7 @@ export function parseMachineLine(line) {
       files: Number(completed[1]),
       errors: Number(completed[2]),
       warnings: Number(completed[3]),
-      filesWithProblems: Number(completed[4]),
+      filesWithProblems: Number(completed[4] ?? 0),
     };
   }
   if (body.startsWith('START ')) return { kind: 'start' };
@@ -58,7 +58,23 @@ export function parseMachineLine(line) {
       // fall through to unknown
     }
   }
-  return { kind: 'unknown', body };
+  return null;
+}
+
+/**
+ * Parse one machine-verbose output line into a structured event.
+ * Returns null for lines that are not machine-format lines.
+ */
+export function parseMachineLine(line) {
+  const trimmed = line.replace(/[\s\r]+$/, '');
+  const match = MACHINE_LINE.exec(trimmed);
+  if (match) {
+    const body = match[1];
+    return parseRecordBody(body) ?? { kind: 'unknown', body };
+  }
+  // Recognize records even without the epoch-ms prefix, in case svelte-check
+  // drops or reformats the timestamp; anything else is not a machine line.
+  return parseRecordBody(trimmed);
 }
 
 /** Render a machine-verbose diagnostic like svelte-check's human writer. */
@@ -129,6 +145,39 @@ async function syncSvelteKitTypes() {
   }
 }
 
+/**
+ * Line consumer for the machine-verbose stream: re-prints diagnostics and
+ * passthrough lines, and records the COMPLETED summary when one is seen.
+ */
+export function createOutputCollector({
+  print = console.log,
+  printError = console.error,
+  workspaceDir = process.cwd(),
+} = {}) {
+  const state = { completed: null };
+  return {
+    get completed() {
+      return state.completed;
+    },
+    handleLine(line) {
+      const event = parseMachineLine(line);
+      if (!event) {
+        print(line);
+        return;
+      }
+      if (event.kind === 'diagnostic') {
+        print(formatDiagnostic(event.diagnostic, workspaceDir));
+      } else if (event.kind === 'completed') {
+        state.completed = event;
+      } else if (event.kind === 'failure') {
+        printError(`svelte-check failure: ${event.message}`);
+      } else if (event.kind === 'unknown') {
+        print(event.body);
+      }
+    },
+  };
+}
+
 async function main() {
   await syncSvelteKitTypes();
   const args = [
@@ -145,29 +194,22 @@ async function main() {
     env: syncEnv(),
   });
 
-  let completed = null;
+  const collector = createOutputCollector();
   const rl = createInterface({ input: child.stdout });
-  rl.on('line', (line) => {
-    const event = parseMachineLine(line);
-    if (!event) {
-      console.log(line);
-      return;
-    }
-    if (event.kind === 'diagnostic') {
-      console.log(formatDiagnostic(event.diagnostic));
-    } else if (event.kind === 'completed') {
-      completed = event;
-    } else if (event.kind === 'failure') {
-      console.error(`svelte-check failure: ${event.message}`);
-    } else if (event.kind === 'unknown') {
-      console.log(event.body);
-    }
-  });
+  rl.on('line', (line) => collector.handleLine(line));
 
-  const exitCode = await new Promise((resolve) => {
-    child.on('close', (code) => resolve(code ?? 1));
-  });
+  // Wait for the child to exit AND readline to drain the full stream, so a
+  // COMPLETED line delivered around process close is never missed (#4111).
+  const [exitCode] = await Promise.all([
+    new Promise((resolve) => {
+      child.on('close', (code) => resolve(code ?? 1));
+    }),
+    new Promise((resolve) => {
+      rl.once('close', resolve);
+    }),
+  ]);
 
+  const completed = collector.completed;
   if (completed) {
     console.log(
       `svelte-check found ${completed.errors} errors and ${completed.warnings} warnings ` +
