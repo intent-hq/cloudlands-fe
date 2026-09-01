@@ -18,6 +18,7 @@ const {
   microStatusMock,
   resolvedKeySlotSelectMock,
   workspaceByIdSelectMock,
+  storeStateMock,
 } = vi.hoisted(() => ({
   toastCustomMock: vi.fn(),
   toastInfoMock: vi.fn(),
@@ -29,6 +30,7 @@ const {
   workspaceByIdSelectMock: vi.fn(
     (_state: unknown, _workspaceId: string): { title?: string } | undefined => undefined,
   ),
+  storeStateMock: { value: {} as Record<string, unknown> },
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -59,7 +61,7 @@ vi.mock('$lib/utils/navigation.client', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch: dispatchMock });
+  return createAppStoreMockModule({ dispatch: dispatchMock, state: () => storeStateMock.value });
 });
 
 // Seams of the connected key-slot resolver (badge gating): manager status +
@@ -103,10 +105,12 @@ describe('agent-attention-toast-service', () => {
     microStatusMock.value = 'disconnected';
     resolvedKeySlotSelectMock.mockImplementation(() => null);
     workspaceByIdSelectMock.mockImplementation(() => undefined);
+    storeStateMock.value = {};
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('shows a STICKY toast (duration: Infinity) with a stable per-agent id', async () => {
@@ -192,6 +196,75 @@ describe('agent-attention-toast-service', () => {
       const call = lastCustomCall();
       expect(call.componentProps.title).toBe('Implementor requests a discussion');
       expect(call.componentProps.keySlot).toBeNull();
+    });
+  });
+
+  describe('already-viewing suppression', () => {
+    const request = {
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion' as const,
+      reason: 'Need a decision',
+    };
+
+    /** Seed the store so WS is the current workspace tab with the given active agent tab. */
+    function seedViewingState(activeAgentId: string | null): void {
+      storeStateMock.value = {
+        tabState: { currentTabId: WS },
+        workspaceAgents: { byWorkspaceId: { [WS]: { activeAgentId } } },
+      };
+    }
+
+    function setWindowFocused(focused: boolean): void {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(focused);
+    }
+
+    it('suppresses the toast when focused + current workspace tab + active agent tab all match', async () => {
+      setWindowFocused(true);
+      seedViewingState(AGENT);
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+      // Suppression only skips the toast — it never dismisses an existing one.
+      expect(toastDismissMock).not.toHaveBeenCalled();
+    });
+
+    it('shows the toast when the window is unfocused, even while viewing the agent', async () => {
+      setWindowFocused(false);
+      seedViewingState(AGENT);
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+      expect(lastCustomCall().id).toBe(agentAttentionToastId(AGENT));
+    });
+
+    it('shows the toast when a different workspace tab is current', async () => {
+      setWindowFocused(true);
+      storeStateMock.value = {
+        tabState: { currentTabId: 'ws-other' },
+        workspaceAgents: {
+          byWorkspaceId: {
+            [WS]: { activeAgentId: AGENT },
+            'ws-other': { activeAgentId: 'agent-other' },
+          },
+        },
+      };
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the toast when another agent's tab is active in the event's workspace", async () => {
+      setWindowFocused(true);
+      seedViewingState('agent-other');
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(1);
     });
   });
 
