@@ -4590,7 +4590,6 @@
   "ui_shortcuts_sendMessage_label": "Enviar mensaje",
   "ui_shortcuts_forceSend_label": "Enviar (interrumpir)",
   "ui_shortcuts_newLine_label": "Línea nueva",
-  "ui_shortcuts_stopGeneration_label": "Detener generación",
   "ui_shortcuts_focusInput_label": "Enfocar entrada",
   "ui_shortcuts_copy_label": "Copiar",
   "ui_shortcuts_edit_label": "Editar",

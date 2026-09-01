@@ -8,14 +8,20 @@
   let {
     value = $bindable(''),
     inputLocked = false,
+    isStreaming = false,
+    isResponding = false,
     onsubmit,
     oncancel,
+    onstop,
     onvaluechange,
   }: {
     value?: string;
     inputLocked?: boolean;
+    isStreaming?: boolean;
+    isResponding?: boolean;
     onsubmit?: (value: string) => void;
     oncancel?: () => void;
+    onstop?: () => void;
     onvaluechange?: (value: string) => void;
     [key: string]: unknown;
   } = $props();
@@ -46,4 +52,7 @@
   <button type="button" data-testid="mock-input-cancel" onclick={() => oncancel?.()}>
     cancel
   </button>
+  {#if isStreaming || isResponding}
+    <button type="button" data-testid="mock-input-stop" onclick={() => onstop?.()}>stop</button>
+  {/if}
 </div>

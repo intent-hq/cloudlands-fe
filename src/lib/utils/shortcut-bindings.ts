@@ -16,7 +16,6 @@ export const SHORTCUT_DEFAULTS = {
   'chat.send': 'enter',
   'chat.force-send': 'mod+enter',
   'chat.new-line': 'shift+enter',
-  'chat.stop': 'esc',
   'chat.focus-input': '/',
   'chat.mention-context': '@',
   'editor.go-to-line': 'mod+g',

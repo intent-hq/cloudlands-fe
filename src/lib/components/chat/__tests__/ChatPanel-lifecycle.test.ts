@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => {
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
+    agentSessionIsStreaming: mutableReadable(false),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -100,7 +101,9 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
-  selectAgentSessionIsStreaming: mocks.selector(false),
+  selectAgentSessionIsStreaming: Object.assign(() => mocks.agentSessionIsStreaming, {
+    select: () => false,
+  }),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: mocks.selector([]),
   selectHistorySegmentMeta: mocks.selector({
@@ -383,6 +386,10 @@ function latestSentAppMessageId(): string {
   return action.payload.payload.userAppMessageId as string;
 }
 
+function dispatchedTypes(): string[] {
+  return mocks.dispatch.mock.calls.map(([action]) => action?.type);
+}
+
 function optimisticUserMessage(appMessageId: string, text: string) {
   return {
     id: `optimistic-${appMessageId}`,
@@ -468,6 +475,7 @@ beforeEach(() => {
   });
   mocks.agentMessages.set([]);
   mocks.agentSession.set(null);
+  mocks.agentSessionIsStreaming.set(false);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -498,6 +506,34 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('keeps an active response running on Escape and stops it from the visible control', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(false);
+    expect(dispatchedTypes()).not.toContain('agentSessions/stopChatRequested');
+
+    await fireEvent.click(screen.getByTestId('mock-input-stop'));
+    expect(dispatchedTypes()).toContain('agentSessions/stopChatRequested');
+  });
+
   it('keeps user rows and newer off-screen assistant messages hydrated by message order', async () => {
     MockChatIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);

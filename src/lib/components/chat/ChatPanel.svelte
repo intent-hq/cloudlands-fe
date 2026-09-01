@@ -5045,15 +5045,6 @@
       focusPrompt();
       return;
     }
-    if (
-      isPanelFocused &&
-      $agentSessionIsStreaming$ &&
-      matchesShortcut(e, getEffectiveShortcut('chat.stop'), isMac)
-    ) {
-      e.preventDefault();
-      handleStop();
-      return;
-    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
