@@ -204,15 +204,22 @@
     z-index: 35;
   }
 
-  /* 8px gap, handle is 16px wide, so margin = -(16 - 8) / 2 = -4px each side */
+  /* 8px gap, handle is 16px wide, so margin = -(16 - 8) / 2 = -4px each side.
+     The leading 4px is clipped out of hit-testing: it overlays the previous
+     panel's trailing edge, where native scrollbars live (a left panel's
+     vertical scrollbar, an upper panel's horizontal scrollbar), and clicks
+     there must reach the scrollbar. The trailing 4px keeps intruding into the
+     next panel's leading edge, which hosts no scrollbar. */
   .panel-split-handle.horizontal {
     width: 16px;
     margin: 0 -4px;
+    clip-path: inset(0 0 0 4px);
   }
 
   .panel-split-handle.vertical {
     height: 16px;
     width: 100%;
     margin: -4px 0;
+    clip-path: inset(4px 0 0 0);
   }
 </style>

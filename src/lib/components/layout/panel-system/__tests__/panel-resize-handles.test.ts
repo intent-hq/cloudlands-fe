@@ -78,6 +78,26 @@ describe('editorial panel resize handles', () => {
     ).toContain('data-combined-panel-divider-border');
   });
 
+  it('clips the leading intrusion so handles never cover a neighboring scrollbar', () => {
+    const splitHandleSource = fs.readFileSync(
+      path.resolve(__dirname, '../PanelSplitHandle.svelte'),
+      'utf8',
+    );
+    const cornerHandleSource = fs.readFileSync(
+      path.resolve(__dirname, '../PanelCornerHandle.svelte'),
+      'utf8',
+    );
+
+    // The 16px target keeps a -4px margin on both sides, but the leading 4px
+    // (over the previous panel's trailing edge, where native scrollbars live)
+    // is clipped out of hit-testing. Only the trailing intrusion remains.
+    expect(splitHandleSource).toContain('width: 16px;\n    margin: 0 -4px;');
+    expect(splitHandleSource).toContain('clip-path: inset(0 0 0 4px);');
+    expect(splitHandleSource).toContain('height: 16px;\n    width: 100%;\n    margin: -4px 0;');
+    expect(splitHandleSource).toContain('clip-path: inset(4px 0 0 0);');
+    expect(cornerHandleSource).toContain('clip-path: inset(4px 0 0 4px);');
+  });
+
   it('keeps a vertical 16px resize target while reporting horizontal drag deltas', async () => {
     const onResize = vi.fn();
     const onResizeEnd = vi.fn();
