@@ -2279,10 +2279,16 @@ async function validateConnectionAddress(
   });
   if (!captured.ok) {
     if (captured.code === 'fingerprint-mismatch') {
+      const swappedFingerprint = normalizeTransportFingerprint(captured.actualFingerprint);
+      // An empty presented fingerprint means no certificate — a plain failure,
+      // not something to ask the user to confirm.
+      if (!swappedFingerprint) {
+        return { status: 'failed', reason: 'no-certificate' };
+      }
       return {
         status: 'fingerprint-confirmation-required',
         expectedFingerprint,
-        actualFingerprint: normalizeTransportFingerprint(captured.actualFingerprint),
+        actualFingerprint: swappedFingerprint,
       };
     }
     return { status: 'failed', reason: captured.code };
