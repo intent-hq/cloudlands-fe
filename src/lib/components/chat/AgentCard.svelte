@@ -113,6 +113,8 @@
     headerActions?: Snippet;
     /** Optional per-agent task progress rendered beside row actions. */
     taskProgress?: TaskProgressItem[];
+    /** Visual presentation for the optional task progress control. */
+    taskProgressPresentation?: 'status-stack' | 'checklist';
     openPanelCount?: number;
     activeInPanel?: boolean;
     /** Optional timestamp supplied by list data before the session selector is hydrated. */
@@ -143,6 +145,7 @@
     provider = undefined,
     headerActions,
     taskProgress = [],
+    taskProgressPresentation = 'status-stack',
     openPanelCount = 0,
     activeInPanel = false,
     updatedAt: updatedAtProp = undefined,
@@ -907,7 +910,7 @@
         data-testid="agent-card-trailing-slot"
       >
         {#if hasTaskProgress}
-          <TaskProgressControl tasks={taskProgress} />
+          <TaskProgressControl tasks={taskProgress} presentation={taskProgressPresentation} />
         {/if}
         {#if headerActions}
           <div class="relative h-6 w-14 shrink-0">

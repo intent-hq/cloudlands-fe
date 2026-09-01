@@ -117,7 +117,12 @@
     participantAvatarItems?: AgentAvatarStackItem[];
     /** Static rows for daemon-free catalog and visual-test previews. */
     isolatedPreview?: {
-      agents: Array<{ id: string; name: string; finished?: boolean }>;
+      agents: Array<{
+        id: string;
+        name: string;
+        finished?: boolean;
+        taskProgress?: TaskProgressItem[];
+      }>;
       initiallyExpanded?: boolean;
     };
     /** Promote the cohort disclosure to the sole header in an agent-only parent card. */
@@ -198,6 +203,7 @@
     agentId: string;
     agentName?: string;
     fixtureFinished?: boolean;
+    fixtureTaskProgress?: TaskProgressItem[];
     cancelSubscriptionId?: string;
     cancelGroupId?: string;
   }
@@ -212,6 +218,7 @@
         agentId: agent.id,
         agentName: agent.name,
         fixtureFinished: agent.finished,
+        fixtureTaskProgress: agent.taskProgress,
       }));
     }
     const rows: WaitingAgentRow[] = [];
@@ -389,6 +396,11 @@
       });
   });
   const taskProgressByAgentId = $derived.by(() => {
+    if (isolatedPreview) {
+      return Object.fromEntries(
+        waitingAgentRows.map((row) => [row.agentId, row.fixtureTaskProgress ?? []]),
+      );
+    }
     const state = rendererState;
     if (!state.workspaceTasks) return {};
     const sessionsById = selectAgentSessionsById.select(state);
@@ -686,6 +698,7 @@
       workspace={resolvedWorkspace}
       isCompleted={finished}
       taskProgress={taskProgressByAgentId[watchedAgentId] ?? []}
+      taskProgressPresentation="checklist"
       headerActions={oneShotActions}
       inline
       inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}

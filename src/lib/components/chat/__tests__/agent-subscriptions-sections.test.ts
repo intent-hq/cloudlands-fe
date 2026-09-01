@@ -131,6 +131,7 @@ import {
   applyTaskStatusChanged,
   loadWorkspaceTasksSucceeded,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import type { TaskProgressItem } from '../workspace-task-fallback';
 
 const PARENT = 'agent-parent-1';
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -1119,7 +1120,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     ]);
   });
 
-  it('shows each agent own native-or-linked task progress without nesting row controls', async () => {
+  it('shows each agent own checklist task progress without nesting or sharing row controls', async () => {
     const wsId = 'ws-agent-task-progress';
     seedSession('agent-native', '2026-01-03T00:00:00.000Z', 'responding', wsId, {
       metadata: { taskNoteId: 'task-native-fallback' },
@@ -1182,11 +1183,13 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(nativeTrigger.className).toContain('h-(--row-action-target-compact)');
     expect(nativeTrigger.className).toContain('min-w-(--row-action-target-compact)');
     expect(nativeTrigger.className).toContain('w-fit');
-    expect(
-      within(nativeTrigger)
-        .getAllByTestId('task-progress-status-icon')
-        .every((icon) => icon.className.includes('size-3.5') && !icon.className.includes('size-4')),
-    ).toBe(true);
+    for (const trigger of [nativeTrigger, linkedTrigger]) {
+      expect(within(trigger).getByTestId('task-progress-checklist-icon')).toBeTruthy();
+      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(within(trigger).queryByTestId('task-progress-icon-stack')).toBeNull();
+      expect(within(trigger).queryByTestId('task-progress-status-icon')).toBeNull();
+      expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();
+    }
     expect(activationButton.contains(nativeTrigger)).toBe(false);
     expect(nativeRow.querySelector('.agent-card-content')?.className).toContain('mr-25');
     expect(within(nativeRow).getByTestId('agent-card-trailing-slot').className).toContain('w-25');
@@ -1202,7 +1205,86 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(within(dialog).queryByText('Hidden native fallback')).toBeNull();
     expect(within(dialog).queryByText('Linked workspace task')).toBeNull();
     expect(within(dialog).getByText('Native task running').closest('.shimmer-text')).toBeTruthy();
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+    linkedTrigger.focus();
+    const linkedDialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(within(linkedDialog).getByText('Linked workspace task')).toBeTruthy();
+    expect(within(linkedDialog).queryByText('Native task running')).toBeNull();
+    expect(within(linkedDialog).queryByText('Native task completed')).toBeNull();
   });
+
+  const delegatedTaskCases: Array<{
+    name: string;
+    tasks: TaskProgressItem[];
+    completed: number;
+  }> = [
+    {
+      name: 'pending',
+      tasks: [{ id: 'pending', title: 'Pending delegated task', status: 'pending' }],
+      completed: 0,
+    },
+    {
+      name: 'running',
+      tasks: [{ id: 'running', title: 'Running delegated task', status: 'running' }],
+      completed: 0,
+    },
+    {
+      name: 'completed',
+      tasks: [{ id: 'completed', title: 'Completed delegated task', status: 'completed' }],
+      completed: 1,
+    },
+    {
+      name: 'mixed',
+      tasks: [
+        { id: 'mixed-pending', title: 'Mixed pending task', status: 'pending' },
+        { id: 'mixed-running', title: 'Mixed running task', status: 'running' },
+        { id: 'mixed-completed', title: 'Mixed completed task', status: 'completed' },
+      ],
+      completed: 1,
+    },
+    {
+      name: 'overflow',
+      tasks: Array.from({ length: 7 }, (_, index) => ({
+        id: `overflow-${index}`,
+        title: `Overflow delegated task ${index + 1}`,
+        status: index === 6 ? ('completed' as const) : ('pending' as const),
+      })),
+      completed: 1,
+    },
+  ];
+
+  it.each(delegatedTaskCases)(
+    'keeps one checklist glyph and a complete read-only popover for a $name task set',
+    async ({ name, tasks, completed }) => {
+      const agentId = `preview-${name}`;
+      render(AgentSubscriptions, {
+        props: {
+          workspaceId: `workspace-${name}`,
+          agentId: PARENT,
+          isolatedPreview: {
+            agents: [{ id: agentId, name: `Preview ${name}`, taskProgress: tasks }],
+            initiallyExpanded: true,
+          },
+        },
+      });
+
+      const row = agentRow(agentId);
+      const trigger = within(row).getByTestId('task-progress-trigger');
+      expect(trigger.getAttribute('aria-label')).toBe(
+        `Task progress: ${completed} of ${tasks.length} completed`,
+      );
+      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(within(trigger).queryByTestId('task-progress-icon-stack')).toBeNull();
+      expect(within(trigger).queryByTestId('task-progress-status-icon')).toBeNull();
+      expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();
+
+      trigger.focus();
+      const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+      expect(within(dialog).getAllByTestId('task-progress-row')).toHaveLength(tasks.length);
+    },
+  );
 
   it('updates linked task counts live while keeping the progress trigger focused', async () => {
     const wsId = 'ws-agent-task-progress-live';

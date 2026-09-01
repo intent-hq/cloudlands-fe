@@ -3,10 +3,71 @@ import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
 
+const delegatedTaskSets = [
+  [{ id: 'pending', title: 'Pending row task', status: 'pending' }],
+  [{ id: 'running', title: 'Running row task', status: 'running' }],
+  [{ id: 'completed', title: 'Completed row task', status: 'completed' }],
+  [
+    { id: 'mixed-pending', title: 'Mixed pending task', status: 'pending' },
+    { id: 'mixed-running', title: 'Mixed running task', status: 'running' },
+    { id: 'mixed-completed', title: 'Mixed completed task', status: 'completed' },
+  ],
+  Array.from({ length: 7 }, (_, index) => ({
+    id: `overflow-${index}`,
+    title: `Overflow row task ${index + 1}`,
+    status: index === 6 ? ('completed' as const) : ('pending' as const),
+  })),
+] as const;
+const delegatedTaskLabels = [
+  'Task progress: 0 of 1 completed',
+  'Task progress: 0 of 1 completed',
+  'Task progress: 1 of 1 completed',
+  'Task progress: 1 of 3 completed',
+  'Task progress: 1 of 7 completed',
+] as const;
+
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);
   });
+});
+
+test('keeps one 28px checklist control per delegated row across themes, narrow width, and motion settings', async ({
+  mount,
+  page,
+}) => {
+  const taskSets = delegatedTaskSets.map((tasks) => [...tasks]);
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { agentCount: taskSets.length, taskSets, width: 240 },
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      await page.emulateMedia({ reducedMotion });
+      await component.update({
+        props: { agentCount: taskSets.length, taskSets, width: 240, theme },
+      });
+      const triggers = component.getByTestId('task-progress-trigger');
+      await expect(triggers).toHaveCount(taskSets.length);
+      await expect(component.getByTestId('task-progress-checklist-icon')).toHaveCount(
+        taskSets.length,
+      );
+      await expect(component.getByTestId('task-progress-icon-stack')).toHaveCount(0);
+      await expect(component.getByTestId('task-progress-status-icon')).toHaveCount(0);
+      await expect(component.getByTestId('task-progress-overflow-indicator')).toHaveCount(0);
+      for (let index = 0; index < taskSets.length; index += 1) {
+        await expect(triggers.nth(index)).toHaveCSS('height', '28px');
+        await expect(triggers.nth(index)).toHaveCSS('width', '28px');
+        await expect(triggers.nth(index)).toHaveAccessibleName(delegatedTaskLabels[index]);
+        await expect(triggers.nth(index).locator('svg')).toHaveCount(1);
+        await expect(triggers.nth(index)).toHaveText('');
+      }
+      await expect(component.getByTestId('agent-list-item').first()).toHaveCSS(
+        'overflow',
+        'hidden',
+      );
+    }
+  }
 });
 
 async function measure(component: Locator, page: Page) {
