@@ -15,6 +15,11 @@ import { parseImageDataUrl } from './image-data-url';
 
 const logger = createLogger('image-context-items');
 
+// Monotonic disambiguator: Date.now() alone collides when two same-named
+// files finish reading in the same millisecond, and thumbnail rows key /
+// remove by item id.
+let uploadSequence = 0;
+
 /**
  * Composer cap for images that travel as attachment-reference blocks
  * (monorepo#3338): the send path places the bytes via file.placeAttachment /
@@ -89,7 +94,7 @@ export async function imageFilesToContextItems(
       const timestamp = Date.now();
       const fileName = file.name || `image-${timestamp}.${mimeType.split('/')[1] || 'png'}`;
       items.push({
-        id: `file-upload-${timestamp}-${fileName}`,
+        id: `file-upload-${timestamp}-${++uploadSequence}-${fileName}`,
         type: 'file',
         label: fileName,
         description: `${mimeType} • ${formatFileSize(file.size)}`,

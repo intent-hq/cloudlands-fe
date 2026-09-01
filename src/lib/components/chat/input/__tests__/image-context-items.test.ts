@@ -40,7 +40,7 @@ describe('imageFilesToContextItems', () => {
       imageData: PNG_B64,
       imageMimeType: 'image/png',
     });
-    expect(items[0].id).toMatch(/^file-upload-\d+-shot\.png$/);
+    expect(items[0].id).toMatch(/^file-upload-\d+-\d+-shot\.png$/);
     expect(items[0].description).toContain('image/png');
     expect(toast.success).toHaveBeenCalledTimes(1);
     expect(toast.error).not.toHaveBeenCalled();

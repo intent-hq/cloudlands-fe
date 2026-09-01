@@ -1388,6 +1388,68 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     ]);
   });
 
+  it('rebuilds imageBlocks from the current thumbnail state on retry, not the pending snapshot', async () => {
+    // First held send fails → onboardingPendingSend arms the retry. The
+    // thumbnails stay editable, so a removed image must not ride the retry.
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+    mocks.sendHeldFirstMessage
+      .mockImplementationOnce(async () => ({ sent: false }))
+      .mockImplementation(async () => ({ sent: true }));
+
+    const imageA = {
+      id: 'image-a',
+      type: 'file',
+      label: 'a.png',
+      imageData: 'AAAA',
+      imageMimeType: 'image/png',
+    };
+    const imageB = {
+      id: 'image-b',
+      type: 'file',
+      label: 'b.png',
+      imageData: 'BBBB',
+      imageMimeType: 'image/png',
+    };
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setImageContextItems([imageA, imageB]);
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.sendHeldFirstMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1);
+
+    // User removes one thumbnail, then presses Create again (the retry).
+    captured().setImageContextItems([imageB]);
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.sendHeldFirstMessage).toHaveBeenCalledTimes(2));
+    // The retry resumed the pending send — no second workspace.
+    expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1);
+    const [retryParams] = mocks.sendHeldFirstMessage.mock.calls[1] as [
+      {
+        content: string;
+        imageBlocks: Array<{ type: string; data: string; mimeType: string }>;
+      },
+    ];
+    expect(retryParams.content).toBe('Build the thing');
+    expect(retryParams.imageBlocks).toEqual([
+      { type: 'image', data: 'BBBB', mimeType: 'image/png' },
+    ]);
+  });
+
   it('sends the prompt on the create frame when no attachments are staged', async () => {
     mocks.workspaceCreate.mockResolvedValue({
       ok: true,

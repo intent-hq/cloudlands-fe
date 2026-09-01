@@ -368,7 +368,6 @@
     workspaceId: string;
     agentId?: string;
     prompt: string;
-    imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
     contextReferences: ContextReference[];
   } | null>(null);
 
@@ -1026,12 +1025,23 @@
       // Electron's structured clone rejects — passing it through verbatim
       // made the held send fail before reaching the daemon (monorepo#2576).
       const snapshot = $state.snapshot(pending);
+      // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
+      // snapshot: the thumbnails stay editable while the failed send is
+      // resumable, so a removed image must not ride the retry.
+      const imageBlocks = $state
+        .snapshot(onboardingImageItems)
+        .filter((item) => item.imageData && item.imageMimeType)
+        .map((item) => ({
+          type: 'image' as const,
+          data: item.imageData as string,
+          mimeType: item.imageMimeType as string,
+        }));
       const sendResult = await sendHeldFirstMessage(
         {
           workspaceId: snapshot.workspaceId,
           agentId: snapshot.agentId,
           content: snapshot.prompt,
-          imageBlocks: snapshot.imageBlocks,
+          imageBlocks,
           contextReferences: snapshot.contextReferences,
         },
         redemption.fileBlocks,
@@ -1351,7 +1361,6 @@
           workspaceId: workspace.id,
           agentId,
           prompt,
-          imageBlocks,
           contextReferences,
         };
         const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
