@@ -562,13 +562,13 @@
         <!-- TLS Certificate Fingerprint -->
         {#if certFingerprint}
           <section>
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-muted-foreground"
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-sm text-muted-foreground shrink-0"
                 >{m.settings_wsApi_tlsFingerprint_label()}</span
               >
               <code
-                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-                title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
+                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded break-all"
+                title={certFingerprint}>{certFingerprint}</code
               >
             </div>
           </section>
