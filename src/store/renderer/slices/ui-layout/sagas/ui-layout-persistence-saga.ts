@@ -241,7 +241,6 @@ function* persistSidebarSide(): SagaGenerator<void> {
   }
 }
 
-/** Unregistered until the S20 middleware cutover. */
 export function* uiLayoutPersistenceSaga(): SagaGenerator<void> {
   yield* call(hydrateSidebarSide);
   yield* call(hydrateEditorSettings);
