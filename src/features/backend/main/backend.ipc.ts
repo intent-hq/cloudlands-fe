@@ -2242,7 +2242,12 @@ async function validateConnectionAddress(
   // matters here.
   const probe = await captureFingerprint({ host, port });
   if (!probe.ok) {
-    return { status: 'failed', reason: probe.code };
+    // No pin is passed on this probe, so `fingerprint-mismatch` cannot occur;
+    // the branch only satisfies the narrowed result union.
+    return {
+      status: 'failed',
+      reason: probe.code === 'fingerprint-mismatch' ? 'connect-failed' : probe.code,
+    };
   }
   const actualFingerprint = normalizeTransportFingerprint(probe.fingerprint ?? '');
   const expectedFingerprint = normalizeTransportFingerprint(connection.fingerprint ?? '');
@@ -2261,21 +2266,26 @@ async function validateConnectionAddress(
   }
   // The presented certificate is trusted (saved pin or explicit user
   // confirmation) — only now is the token transmitted, exercising the real
-  // authenticated upgrade path.
-  const captured = await captureFingerprint({ host, port, token });
+  // authenticated upgrade path. The trusted fingerprint is pinned at the TLS
+  // handshake (`expectedFingerprint`): a certificate swap between the two
+  // probes aborts the connection before the upgrade request — and the token —
+  // is written (TOCTOU, monorepo#3782), surfacing as a fresh confirmation
+  // requirement instead of a disclosure.
+  const captured = await captureFingerprint({
+    host,
+    port,
+    token,
+    expectedFingerprint: actualFingerprint,
+  });
   if (!captured.ok) {
+    if (captured.code === 'fingerprint-mismatch') {
+      return {
+        status: 'fingerprint-confirmation-required',
+        expectedFingerprint,
+        actualFingerprint: normalizeTransportFingerprint(captured.actualFingerprint),
+      };
+    }
     return { status: 'failed', reason: captured.code };
-  }
-  // A certificate swap between the two probes means the token reached an
-  // endpoint the user never confirmed — surface it as a fresh confirmation
-  // requirement instead of proceeding.
-  const authedFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
-  if (authedFingerprint !== actualFingerprint) {
-    return {
-      status: 'fingerprint-confirmation-required',
-      expectedFingerprint,
-      actualFingerprint: authedFingerprint,
-    };
   }
   if (!captured.tokenValid) {
     return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };

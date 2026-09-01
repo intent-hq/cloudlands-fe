@@ -628,6 +628,10 @@ class FakeWssDaemon {
   fingerprint = '';
   lastAuthHeader: string | undefined;
   lastUpgradeUrl: string | undefined;
+  /** TLS sessions established (handshakes completed). */
+  secureConnections = 0;
+  /** Decrypted application bytes received across all TLS sessions. */
+  decryptedBytes = 0;
   handler: (req: {
     id?: number | string;
     method: string;
@@ -640,6 +644,12 @@ class FakeWssDaemon {
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('secureConnection', (socket) => {
+      this.secureConnections += 1;
+      socket.on('data', (chunk: Buffer) => {
+        this.decryptedBytes += chunk.length;
+      });
+    });
     this.wss = new WebSocketServer({ server: this.server });
     this.wss.on('connection', (socket, req) => {
       this.lastAuthHeader = req.headers.authorization;
@@ -790,6 +800,54 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('connect-failed');
+  });
+
+  it('captureFingerprint with a matching expectedFingerprint completes the authenticated upgrade', async () => {
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      expectedFingerprint: daemon.fingerprint,
+    });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('captureFingerprint with a mismatching expectedFingerprint aborts before any request byte reaches the host', async () => {
+    // TOCTOU regression (monorepo#3782): the handshake-level pin must stop the
+    // upgrade request — carrying the bearer token — from ever being written to
+    // a host presenting an unconfirmed certificate.
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const secureBefore = daemon.secureConnections;
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      expectedFingerprint: '11:22:33:44',
+    });
+    expect(result).toEqual({
+      ok: false,
+      code: 'fingerprint-mismatch',
+      error: expect.stringContaining('certificate fingerprint mismatch'),
+      actualFingerprint: normalizeFingerprint(daemon.fingerprint),
+    });
+    // Let any in-flight server-side handshake/data events settle, then assert
+    // not one decrypted application byte — no upgrade request, no
+    // Authorization header, no token query — reached the host. (The server may
+    // or may not register the aborted session before the client tears it down,
+    // so only the byte count is asserted exactly.)
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.secureConnections).toBeGreaterThanOrEqual(secureBefore);
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+    expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
   });
 });
 

@@ -1230,12 +1230,15 @@ describe('connections:* IPC handlers', () => {
     });
     // Two-phase probe (monorepo#3782): the fingerprint is captured WITHOUT
     // the saved secret first; the token is transmitted only once the
-    // presented certificate matched the saved pin.
+    // presented certificate matched the saved pin — and the authenticated
+    // capture pins that fingerprint at the TLS handshake so a swapped
+    // certificate aborts before the token is written (TOCTOU).
     expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(1, { host: '10.0.0.99', port: 9443 });
     expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(2, {
       host: '10.0.0.99',
       port: 9443,
       token: 'secret-token',
+      expectedFingerprint: REMOTE.fingerprint,
     });
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
@@ -1322,12 +1325,14 @@ describe('connections:* IPC handlers', () => {
     await expect(
       handler!({}, { ...params, confirmedFingerprint: changedFingerprint }),
     ).resolves.toMatchObject({ status: 'updated' });
-    // Only the confirmed retry transmits the saved token (phase two).
+    // Only the confirmed retry transmits the saved token (phase two), pinned
+    // to the just-confirmed fingerprint at the TLS handshake.
     expect(mockCaptureFingerprint).toHaveBeenCalledTimes(3);
     expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(3, {
       host: '10.0.0.99',
       port: 9443,
       token: 'secret-token',
+      expectedFingerprint: changedFingerprint,
     });
     expect(store.updateMetadata).toHaveBeenCalledWith(
       REMOTE.id,
@@ -1337,6 +1342,51 @@ describe('connections:* IPC handlers', () => {
         fingerprint: changedFingerprint,
       }),
     );
+  });
+
+  it('surfaces a certificate swap between the probe and the verify as a fresh confirmation', async () => {
+    // TOCTOU regression (monorepo#3782): the unauthenticated probe sees the
+    // saved pin, but the host swaps its certificate before the authenticated
+    // verify. The handshake-level pin aborts that capture (structured
+    // fingerprint-mismatch, token never written) and the handler surfaces a
+    // fresh confirmation requirement instead of persisting.
+    const swappedFingerprint = 'EE:FF:00:11';
+    mockCaptureFingerprint
+      .mockResolvedValueOnce({
+        ok: true,
+        fingerprint: REMOTE.fingerprint,
+        connected: false,
+        tokenValid: true,
+        statusCode: 401,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'fingerprint-mismatch',
+        error: 'certificate fingerprint mismatch',
+        actualFingerprint: swappedFingerprint,
+      });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!(
+        {},
+        { id: REMOTE.id, label: REMOTE.label, accent: 'blue', host: '10.0.0.99', port: 9443 },
+      ),
+    ).resolves.toEqual({
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint: REMOTE.fingerprint,
+      actualFingerprint: swappedFingerprint,
+    });
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    // The verify carried the handshake pin that stopped the token.
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(2, {
+      host: '10.0.0.99',
+      port: 9443,
+      token: 'secret-token',
+      expectedFingerprint: REMOTE.fingerprint,
+    });
   });
 
   it('returns token-free guidance when an address change cannot decrypt the saved secret', async () => {
