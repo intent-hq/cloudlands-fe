@@ -172,7 +172,6 @@
     hardware: 'advanced',
     'websocket-api': 'advanced',
     connection: 'advanced',
-    data: 'advanced',
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
