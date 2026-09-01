@@ -689,6 +689,7 @@
   "settings_footer_updateAvailable": "업데이트 사용 가능",
   "settings_footer_upToDate": "최신 상태",
   "settings_footer_support": "지원",
+  "settings_footer_tailcatAttribution": "tailcat 포함(BSD-3-Clause 라이선스)",
   "settings_models_noneAvailable": "{providerId}에 사용 가능한 모델이 없습니다. 다시 시도해 주세요.",
   "settings_models_loadError": "모델을 불러오지 못했습니다",
   "ui_agentBadge_unread_one": "읽지 않은 응답 1개",

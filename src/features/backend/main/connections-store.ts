@@ -106,6 +106,17 @@ interface StoredConnection {
    */
   hosts?: string[];
   /**
+   * tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3),
+   * captured from the pairing URI's `tc=` at add time and refreshed from
+   * `system.status.tcAddress` after each successful connect. Absent on
+   * records written before this field existed and until the first capture;
+   * `null` after a conclusive refresh saying the daemon has no tunnel. Like
+   * `daemonVersion`, per-machine observational state: never part of the
+   * keychain-sync surface, so writes never bump the LWW clock or notify sync
+   * (each machine re-learns it from its own connects).
+   */
+  tcAddress?: string | null;
+  /**
    * "Detect all backend IPs" option (#1746). Absent on older records — treated
    * as enabled so existing connections gain the resilience benefit. When
    * `false`, the host list is never refreshed from the backend.
@@ -162,6 +173,8 @@ export interface NewConnection {
   port: number;
   fingerprint: string;
   token: string;
+  /** tc address from the pairing URI's `tc=` (PROTOCOL §12.3); absent = none advertised. */
+  tcAddress?: string;
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts?: boolean;
   /**
@@ -196,6 +209,7 @@ function localRecord(): ConnectionRecord {
     hosts: null,
     port: null,
     fingerprint: null,
+    tcAddress: null,
     isLocal: true,
   };
 }
@@ -231,6 +245,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     hosts: candidateHosts(stored),
     port: stored.port,
     fingerprint: stored.fingerprint,
+    tcAddress: stored.tcAddress ?? null,
     hostname: stored.hostname ?? null,
     daemonVersion: stored.daemonVersion ?? null,
     updateSupported: stored.updateSupported ?? null,
@@ -268,6 +283,10 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     (c.hosts === undefined ||
       (Array.isArray(c.hosts) && c.hosts.every((h) => typeof h === 'string'))) &&
     (c.detectHosts === undefined || typeof c.detectHosts === 'boolean') &&
+    // `tcAddress` is an optional late addition (tailcat tunnel): absent on
+    // older records, string once captured, null after a conclusive "no
+    // tunnel" refresh. Accept missing/null/string; reject any other type.
+    (c.tcAddress === undefined || c.tcAddress === null || typeof c.tcAddress === 'string') &&
     // `updatedAt` is an optional late addition (keychain sync): absent on
     // records written before sync existed — treated as epoch-old.
     (c.updatedAt === undefined || typeof c.updatedAt === 'number') &&
@@ -532,6 +551,9 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.hosts = (survivor.hosts ?? []).filter((h) => h.trim() !== conn.host.trim());
       survivor.fingerprint = conn.fingerprint;
       survivor.encToken = encToken;
+      // Re-pair carries fresh pairing-URI facts: a tc= param overwrites, but
+      // an absent one keeps the known address (older daemons/QRs omit it).
+      if (conn.tcAddress !== undefined) survivor.tcAddress = conn.tcAddress;
       survivor.detectHosts = conn.detectHosts ?? true;
       survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
@@ -549,6 +571,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       host: conn.host,
       port: conn.port,
       fingerprint: conn.fingerprint,
+      tcAddress: conn.tcAddress,
       detectHosts: conn.detectHosts ?? true,
       syncExcluded: conn.syncExcluded ?? false,
       encToken,
@@ -847,6 +870,31 @@ export async function setUpdateSupported(id: string, supported: boolean | null):
     // Absent and null both mean "unknown" — normalize before comparing.
     if ((conn.updateSupported ?? null) === supported) return false;
     conn.updateSupported = supported;
+    await writeState(state);
+    return true;
+  });
+}
+
+/**
+ * Persist the remote daemon's tailcat tunnel endpoint (`tcAddress` from its
+ * `system.status`, PROTOCOL §12.3). `null` clears the address back to "no
+ * tunnel" — used when a successful `system.status` lacks the field, so a
+ * stale address never survives a conclusive tunnel-less response. Returns
+ * `true` when the stored value actually changed so the caller can broadcast
+ * the refreshed list. A no-op for an unknown id (fail-soft: the tunnel is one
+ * extra connect candidate, never a hard requirement). Like
+ * {@link setDaemonVersion}, this is per-machine observational state: it never
+ * bumps the LWW clock (`updatedAt`) and never notifies keychain sync.
+ */
+export async function setTcAddress(id: string, tcAddress: string | null): Promise<boolean> {
+  const normalized = tcAddress?.trim() || null;
+  return mutate(async (state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return false; // unknown id: nothing to update
+    // Unchanged address (the common every-reconnect case): skip the write.
+    // Absent and null both mean "no tunnel" — normalize before comparing.
+    if ((conn.tcAddress ?? null) === normalized) return false;
+    conn.tcAddress = normalized;
     await writeState(state);
     return true;
   });

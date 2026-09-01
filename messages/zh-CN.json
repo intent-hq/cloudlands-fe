@@ -689,6 +689,7 @@
   "settings_footer_updateAvailable": "有可用更新",
   "settings_footer_upToDate": "已是最新",
   "settings_footer_support": "支持",
+  "settings_footer_tailcatAttribution": "包含 tailcat（BSD-3-Clause 许可证）",
   "settings_models_noneAvailable": "{providerId} 没有可用的模型。请重试。",
   "settings_models_loadError": "加载模型失败",
   "ui_agentBadge_unread_one": "1 条未读回复",

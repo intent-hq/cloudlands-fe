@@ -689,6 +689,7 @@
   "settings_footer_updateAvailable": "Update verfügbar",
   "settings_footer_upToDate": "Auf dem neuesten Stand",
   "settings_footer_support": "Support",
+  "settings_footer_tailcatAttribution": "Enthält tailcat (BSD-3-Clause-Lizenz)",
   "settings_models_noneAvailable": "Keine Modelle für {providerId} verfügbar. Bitte versuchen Sie es erneut.",
   "settings_models_loadError": "Modelle konnten nicht geladen werden",
   "ui_agentBadge_unread_one": "1 ungelesene Antwort",

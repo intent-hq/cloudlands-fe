@@ -1236,19 +1236,37 @@ function extractUpdateSupported(result: unknown): boolean | null {
 }
 
 /**
+ * Pull the daemon's tailcat tunnel endpoint (`tcAddress`, PROTOCOL §12.3) out
+ * of a `system.status` result. Returns `null` when the field is absent, empty,
+ * or malformed — a conclusive "no tunnel" for a successful response.
+ */
+function extractTcAddress(result: unknown): string | null {
+  if (result && typeof result === 'object') {
+    const value = (result as { tcAddress?: unknown }).tcAddress;
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return null;
+}
+
+/**
  * Capture whether a freshly-connected remote's daemon supports self-update
  * (`updateSupported` from `system.status`) and persist it on the connection
  * record, following the `captureRemoteHostname` capture pattern. Runs on
  * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
  * change) refreshes the stored flag; the renderer gates the Update affordance
- * on it. A SUCCESSFUL response lacking a boolean field (a daemon too old to
+ * on it. The same response also refreshes the stored tailcat tunnel endpoint
+ * (`tcAddress`, PROTOCOL §12.3) used as a connect-race candidate, so a
+ * daemon gaining/losing its tunnel is reflected without re-pairing. A
+ * SUCCESSFUL response lacking a boolean field (a daemon too old to
  * report it — e.g. the machine's daemon was replaced/downgraded) is a
  * conclusive "unknown" and clears any previously-stored flag to `null`, so a
  * stale `true` never keeps offering Update against a daemon whose capability
- * is no longer known. Only a FAILED request (unreachable, method unknown,
- * store write error) is fail-soft: swallowed with a warn, stored value kept
- * as-is. Results that arrive after the backend's client was disposed are
- * discarded (monorepo#2221). Never called for the local entry.
+ * is no longer known (and likewise a stale `tcAddress` never keeps dialing a
+ * tunnel the daemon no longer advertises). Only a FAILED request
+ * (unreachable, method unknown, store write error) is fail-soft: swallowed
+ * with a warn, stored value kept as-is. Results that arrive after the
+ * backend's client was disposed are discarded (monorepo#2221). Never called
+ * for the local entry.
  */
 async function captureRemoteUpdateSupported(id: string): Promise<void> {
   try {
@@ -1257,11 +1275,13 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     const client = getBackendClientForId(id);
     const result = await client.request('system.status');
     const supported = extractUpdateSupported(result);
+    const tcAddress = extractTcAddress(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
       const changed = await connectionsStore.setUpdateSupported(id, supported);
-      if (changed) await broadcastConnectionsChanged();
+      const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
+      if (changed || tcChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote updateSupported flag', {
@@ -1659,6 +1679,7 @@ export async function buildConfigForConnection(
       port: record.port,
       token,
       fingerprint: record.fingerprint,
+      tcAddress: record.tcAddress ?? undefined,
     },
     meta: { id, host: record.host, port: record.port },
   };
