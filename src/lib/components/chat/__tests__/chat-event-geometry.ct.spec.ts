@@ -82,7 +82,7 @@ test('measures the production finished-card turn gap across all required states'
                 };
               });
               expect(measurement.finishedInset).toEqual(measurement.sentInset);
-              expect(measurement.finishedHeight).toBeCloseTo(36 * zoom, 1);
+              expect(measurement.finishedHeight).toBeCloseTo(40 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
               const topGap = measurement.cardTop - measurement.predecessorBottom;
               const bottomGap = measurement.nextRowTop - measurement.cardBottom;
@@ -236,7 +236,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
-            36 * zoom,
+            40 * zoom,
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
