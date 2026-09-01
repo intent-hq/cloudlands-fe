@@ -7,12 +7,16 @@
  * is exercised against real ephemeral TCP sockets on both ends without a
  * network WebSocket in between.
  */
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import https from 'node:https';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { BackendConnectionConfig } from './backend-connection';
+import { AuthRejectedError, PinMismatchError } from './backend-connection';
 import {
   decodeFrame,
   encodeFrame,
@@ -901,5 +905,221 @@ describe('TunnelManager', () => {
     expect(raw.readUInt8(0)).toBe(OP_DATA);
     expect(raw.readUInt32BE(1)).toBe(open!.streamId);
     expect(raw.subarray(HEADER_LEN).equals(payload)).toBe(true);
+  });
+});
+
+
+// The `ws` package is CJS and the vitest suite aliases the ESM import to a
+// browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both.
+const nodeRequire = createRequire(import.meta.url);
+const { WebSocketServer } = nodeRequire('ws') as typeof import('ws');
+
+// Self-signed EC (P-256) cert + key — the same stable identity
+// `backend-connection.test.ts` pins (subject/issuer CN=localhost, SAN
+// DNS:localhost + IP:127.0.0.1, 10y validity), duplicated here so this suite
+// stays self-contained. The fingerprint is derived via `crypto.X509Certificate`
+// rather than hardcoded.
+const WSS_CERT_PEM = Buffer.from(
+  'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJtVENDQVQrZ0F3SUJBZ0lVWVlzc05zWkxXdTZXZXdkb2p6UlpFY3k0LzRzd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1CNFhEVEkyTURnd056QXhOVGt6TkZvWERUTTJNRGd3TkRBeApOVGt6TkZvd0ZERVNNQkFHQTFVRUF3d0piRzlqWVd4b2IzTjBNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBECkFRY0RRZ0FFSlkvM2I0RHdRQXAyVVdIay84SGljZEFxaVdXL0pBVnRtMkRFbmUrZ3RBa0daVmo1VGlYUDZBREkKeXltbEc0bWRWU25QVUtXS2NUYmFxT3NWZVVGd2Y2TnZNRzB3SFFZRFZSME9CQllFRk80WTZBc2c2NEJVV1RhQgo2SzBUeDgvczR2S21NQjhHQTFVZEl3UVlNQmFBRk80WTZBc2c2NEJVV1RhQjZLMFR4OC9zNHZLbU1BOEdBMVVkCkV3RUIvd1FGTUFNQkFmOHdHZ1lEVlIwUkJCTXdFWUlKYkc5allXeG9iM04waHdSL0FBQUJNQW9HQ0NxR1NNNDkKQkFNQ0EwZ0FNRVVDSVFET3hKTXBKcy9DcmQwOG95U2tGdVRueVo0c3VqVklvL3BDK1RVWUpRMEY5UUlnU2pvagppWG56RlZ0Q1U0Wll2VWFtRkc0bFNUYmlQano5QXlubWxpSkI1a289Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K',
+  'base64',
+).toString('utf8');
+
+const WSS_KEY_PEM = Buffer.from(
+  'LS0tLS1CRUdJTiBFQyBQQVJBTUVURVJTLS0tLS0KQmdncWhrak9QUU1CQnc9PQotLS0tLUVORCBFQyBQQVJBTUVURVJTLS0tLS0KLS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSVBLTnFYZll2aEdqbDErMmNpMmEyOFZDNC9BbTVWLzBOV1JvS0cxeWlLbWFvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSlkvM2I0RHdRQXAyVVdIay84SGljZEFxaVdXL0pBVnRtMkRFbmUrZ3RBa0daVmo1VGlYUAo2QURJeXltbEc0bWRWU25QVUtXS2NUYmFxT3NWZVVGd2Z3PT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=',
+  'base64',
+).toString('utf8');
+
+/** Coerce a `ws` RawData message into one Buffer. */
+function rawDataToBuffer(data: unknown): Buffer {
+  if (Buffer.isBuffer(data)) return data;
+  if (Array.isArray(data)) return Buffer.concat(data as Buffer[]);
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  return Buffer.from(String(data), 'utf8');
+}
+
+/**
+ * Fake `/tunnel` WSS daemon: an HTTPS server presenting the pinned self-signed
+ * cert with a `ws` upgrade handler speaking a minimal mux — OPEN → OPEN_OK,
+ * DATA echoed back on the same stream — so a real TunnelManager can run a
+ * forward end to end. Mirrors `FakeWssDaemon` in `backend-connection.test.ts`:
+ * decrypted-byte accounting on every TLS session plus `lastAuthHeader` /
+ * `lastUpgradeUrl` sentinels for the token-leak assertions (monorepo#4072).
+ */
+class FakeTunnelWssDaemon {
+  private server!: https.Server;
+  private wss!: import('ws').WebSocketServer;
+  host = '127.0.0.1';
+  port = 0;
+  fingerprint = '';
+  lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
+  /** Decrypted application bytes received across all TLS sessions. */
+  decryptedBytes = 0;
+  private clients: import('ws').WebSocket[] = [];
+
+  async start(): Promise<void> {
+    this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
+    this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('secureConnection', (socket) => {
+      socket.on('data', (chunk: Buffer) => {
+        this.decryptedBytes += chunk.length;
+      });
+    });
+    this.wss = new WebSocketServer({ server: this.server });
+    this.wss.on('connection', (socket, req) => {
+      this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
+      this.clients.push(socket);
+      socket.on('message', (data, isBinary) => {
+        if (!isBinary) return;
+        const frame = decodeFrame(rawDataToBuffer(data));
+        if (frame.type === 'open') {
+          socket.send(encodeFrame({ type: 'openOk', streamId: frame.streamId }));
+        } else if (frame.type === 'data') {
+          socket.send(
+            encodeFrame({ type: 'data', streamId: frame.streamId, payload: frame.payload }),
+          );
+        }
+      });
+    });
+    await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
+    this.port = (this.server.address() as AddressInfo).port;
+  }
+
+  async stop(): Promise<void> {
+    for (const c of this.clients) c.terminate();
+    await new Promise<void>((res) => this.wss.close(() => res()));
+    await new Promise<void>((res) => this.server.close(() => res()));
+  }
+}
+
+/**
+ * TLS server that REJECTS every `/tunnel` upgrade with a fixed HTTP status —
+ * the daemon's auth-rejection shape (PROTOCOL §2.1). Presents the same pinned
+ * cert as {@link FakeTunnelWssDaemon} so only the upgrade outcome differs.
+ */
+class RejectingTunnelDaemon {
+  private server!: https.Server;
+  host = '127.0.0.1';
+  port = 0;
+  fingerprint = '';
+  statusCode = 401;
+
+  async start(): Promise<void> {
+    this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
+    this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('upgrade', (_req, socket) => {
+      socket.write(
+        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+      );
+      socket.destroy();
+    });
+    await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
+    this.port = (this.server.address() as AddressInfo).port;
+  }
+
+  async stop(): Promise<void> {
+    await new Promise<void>((res) => this.server.close(() => res()));
+  }
+}
+
+describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', () => {
+  let daemon: FakeTunnelWssDaemon;
+  const TOKEN = 'c'.repeat(64);
+  const cleanups: Array<() => void | Promise<void>> = [];
+  const onCleanup = (fn: () => void | Promise<void>): void => {
+    cleanups.push(fn);
+  };
+
+  beforeAll(async () => {
+    daemon = new FakeTunnelWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  afterEach(async () => {
+    while (cleanups.length > 0) {
+      await cleanups.pop()?.();
+    }
+  });
+
+  function makeWireManager(fingerprint: string): TunnelManager {
+    // No socketFactory override: the REAL createTunnelSocket dials the fake
+    // daemon over TLS, so the handshake-level pin is what's under test.
+    const manager = new TunnelManager({
+      getConfig: () => ({
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint,
+      }),
+      connectTimeoutMs: 2000,
+    });
+    onCleanup(() => manager.dispose());
+    return manager;
+  }
+
+  it('a matching pin opens the tunnel end to end and presents the bearer token', async () => {
+    const manager = makeWireManager(daemon.fingerprint);
+    const localPort = await manager.forwardPort(4242);
+    const client = await connectClient(localPort);
+    onCleanup(() => client.destroy());
+    const payload = Buffer.from('through the pinned tunnel');
+    const received = collectUntil(client, payload.length);
+    client.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+    // Bearer token presented on the upgrade (PROTOCOL §2.1), plus the
+    // `?token=` query fallback on the `/tunnel` path.
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+    expect(daemon.lastUpgradeUrl).toContain('/tunnel');
+  });
+
+  it('a mismatching pin aborts the tunnel before any request byte reaches the host', async () => {
+    // Tunnel arm of the token-before-trust leak (monorepo#4072): the pin is
+    // enforced at the TLS handshake, so the upgrade request — carrying the
+    // bearer token in the Authorization header and the `?token=` query — is
+    // never written to a host presenting the wrong certificate.
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const manager = makeWireManager(wrong);
+    const error = await manager.ensureTunnel().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).actual).toBe(daemon.fingerprint);
+    // Let any in-flight server-side handshake/data events settle, then assert
+    // not one decrypted application byte — no upgrade request, no
+    // Authorization header, no token query — reached the host.
+    await delay(200);
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+    expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
+  });
+
+  it('classifies a 401 upgrade rejection from a pin-matching host as AuthRejectedError', async () => {
+    // Classification order unchanged: the pin (verified at the handshake)
+    // decides trust first; only then is the daemon's 401/403 read as an auth
+    // rejection.
+    const rejecting = new RejectingTunnelDaemon();
+    await rejecting.start();
+    onCleanup(() => rejecting.stop());
+    const manager = new TunnelManager({
+      getConfig: () => ({
+        transport: 'wss',
+        host: rejecting.host,
+        port: rejecting.port,
+        token: TOKEN,
+        fingerprint: rejecting.fingerprint,
+      }),
+      connectTimeoutMs: 2000,
+    });
+    onCleanup(() => manager.dispose());
+    const error = await manager.ensureTunnel().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AuthRejectedError);
+    expect((error as AuthRejectedError).statusCode).toBe(401);
   });
 });

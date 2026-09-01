@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
@@ -268,7 +268,7 @@ vi.mock('../sidebar', async () => {
     FilesPanel: filesPanel,
     SidebarChangesPanel: simple,
     isChildNote: () => false,
-    isSpecNote: () => false,
+    isSpecNote: (noteId: string) => noteId === 'spec',
   };
 });
 
@@ -587,7 +587,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(agentOverflow.matches('button, [role="button"], [tabindex]')).toBe(false);
     expect(agentOverflow.textContent).toBe('+2');
     expect(agentOverflow.className).toContain('agent-avatar-stack-overflow');
-    expect(contextStack.style.gridTemplateColumns).toBe('repeat(5, 15px) 23px max-content');
+    expect(contextStack.style.gridTemplateColumns).toBe(
+      'max-content repeat(4, 15px) 36px max-content',
+    );
     expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -858,7 +860,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     );
   });
 
-  it('opens the Agents card and compact note exactly once', async () => {
+  it('keeps compact Context-card and Spec-icon actions separate', async () => {
     mocks.agents = [makeAgent('primary', { isInitialAgent: true })];
     mocks.notes = [{ id: 'spec', title: 'Spec', content: '' }];
     mocks.changes = [{ id: 'change', file: '/tmp/file.ts', relativePath: 'file.ts' }];
@@ -879,10 +881,26 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       }),
     );
 
+    const contextCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="context"]')!;
+    const contextAction = within(contextCard).getByRole('button', { name: 'Expand panel' });
+    const specButton = within(contextCard).getByRole('button', { name: 'Spec' });
+    const contextSelections = () =>
+      mocks.dispatch.mock.calls.filter(
+        ([action]) =>
+          action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs' &&
+          action.payload?.[1]?.[0] === 'context',
+      );
+
     mocks.openUserTab.mockClear();
-    await fireEvent.click(container.querySelector('[data-sidebar-context="spec"]')!);
+    mocks.dispatch.mockClear();
+    await fireEvent.click(specButton);
     expect(mocks.openUserTab).toHaveBeenCalledTimes(1);
     expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'spec' }));
+    expect(contextSelections()).toHaveLength(0);
+
+    mocks.dispatch.mockClear();
+    await fireEvent.click(contextAction);
+    expect(contextSelections()).toHaveLength(1);
   });
 
   it('keeps Changes while omitting Activity Log and Local Changes previews', async () => {

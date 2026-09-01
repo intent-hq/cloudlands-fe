@@ -243,6 +243,31 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
+  it('renders the full TLS fingerprint without truncation', async () => {
+    // Arrange: WSS enabled with a realistic SHA-256 fingerprint (95 chars)
+    const fullFingerprint =
+      'AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89';
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    mocks.mockPairingInfo.mockResolvedValue({
+      token: 'tok-1234567890',
+      port: 5181,
+      certFingerprint: fullFingerprint,
+      localIps: ['192.168.1.2'],
+      hostname: 'my-mac',
+    });
+
+    render(WebSocketApiSettings);
+
+    // Assert: the complete fingerprint value is rendered (regression: it was
+    // previously sliced to 23 chars with a literal ellipsis)
+    await waitFor(() => {
+      expect(screen.getByText(fullFingerprint)).toBeTruthy();
+    });
+  });
+
   describe('self-entry refresh triggers (token rotation, port change)', () => {
     const PAIRING = {
       token: 'tok-1234567890',

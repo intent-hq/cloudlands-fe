@@ -4,6 +4,43 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.123.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.123.0...v2.123.1) (2026-09-01)
+
+
+### 🐛 Bug Fixes
+
+* bridge workspace summary IPC channels to the daemon ([#1985](https://github.com/intent-hq/cloudlands-fe/issues/1985)) ([fefe5ef](https://github.com/intent-hq/cloudlands-fe/commit/fefe5ef9441054225187277ed1a116d1335ac5f1))
+* bump intentd sidecar to v0.9.1 ([#1993](https://github.com/intent-hq/cloudlands-fe/issues/1993)) ([ef3d46a](https://github.com/intent-hq/cloudlands-fe/commit/ef3d46aa498e270bb38791b701c37746f626de99))
+* keep panel resize handles off neighboring scrollbars ([#1988](https://github.com/intent-hq/cloudlands-fe/issues/1988)) ([8d159d9](https://github.com/intent-hq/cloudlands-fe/commit/8d159d9dbaf34bd43e967645e1997ddff4e2c67d))
+* migrate onboarding images to context items and stop dropping first-message attachments ([#1986](https://github.com/intent-hq/cloudlands-fe/issues/1986)) ([76d9b43](https://github.com/intent-hq/cloudlands-fe/commit/76d9b43d38e130fccea4bc62440a3c536e1dd4c0))
+* probe fingerprint unauthenticated before transmitting saved token ([#1987](https://github.com/intent-hq/cloudlands-fe/issues/1987)) ([491c59f](https://github.com/intent-hq/cloudlands-fe/commit/491c59f1d4a8f603019aa3bcd42fd1dbd5f1cc1f))
+* stop hydration frontier mass-hydrating transcript on workspace switch ([#1991](https://github.com/intent-hq/cloudlands-fe/issues/1991)) ([54245d7](https://github.com/intent-hq/cloudlands-fe/commit/54245d7d49a48e47d657f0243226f7a702f4ce16))
+
+## [2.123.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.122.1...v2.123.0) (2026-09-01)
+
+
+### 🚀 Features
+
+* continue wss race past pin mismatches and collect per-host cert failures ([#1975](https://github.com/intent-hq/cloudlands-fe/issues/1975)) ([249fefc](https://github.com/intent-hq/cloudlands-fe/commit/249fefc457c9809a50e814b4584318f1afb889bb))
+* pipe non-fatal per-host cert warnings to the renderer ([#1981](https://github.com/intent-hq/cloudlands-fe/issues/1981)) ([1fb6445](https://github.com/intent-hq/cloudlands-fe/commit/1fb6445831d5d72b8b100867406e3a3d432faf8a))
+* show passive per-host cert failure list while reconnecting ([#1983](https://github.com/intent-hq/cloudlands-fe/issues/1983)) ([3ae67c2](https://github.com/intent-hq/cloudlands-fe/commit/3ae67c27be0cb4a4a18f0121ae2ba0babd58dc2d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.32 ([#1982](https://github.com/intent-hq/cloudlands-fe/issues/1982)) ([69a6db6](https://github.com/intent-hq/cloudlands-fe/commit/69a6db640d53a5e320e257669b6c1e0c0356ff69))
+* bump intentd sidecar to v0.9.0 ([#1984](https://github.com/intent-hq/cloudlands-fe/issues/1984)) ([fef86ee](https://github.com/intent-hq/cloudlands-fe/commit/fef86eeca7f3e8dad495606ad1dbb911f0e3b168))
+* increase Windows icon footprint ([#1962](https://github.com/intent-hq/cloudlands-fe/issues/1962)) ([a5b8545](https://github.com/intent-hq/cloudlands-fe/commit/a5b85452ecf9d08f2a82ee668a6179ae8fba1606))
+* open the window on connect even when the backend is unreachable ([#1974](https://github.com/intent-hq/cloudlands-fe/issues/1974)) ([4acb1b3](https://github.com/intent-hq/cloudlands-fe/commit/4acb1b3bde67b93af781d325fa6b57d9f05ffd46))
+* persist active UI layout preferences ([#1971](https://github.com/intent-hq/cloudlands-fe/issues/1971)) ([c1d7a54](https://github.com/intent-hq/cloudlands-fe/commit/c1d7a54dab490c052526c50cf8a2a4066a04c1cc))
+* **settings:** show full TLS fingerprint in WebSocket API settings ([#1979](https://github.com/intent-hq/cloudlands-fe/issues/1979)) ([735725c](https://github.com/intent-hq/cloudlands-fe/commit/735725c15636087c2687032744843a0ade24eab3))
+* **workspace:** Separate Context and Spec launcher actions ([#1964](https://github.com/intent-hq/cloudlands-fe/issues/1964)) ([647842d](https://github.com/intent-hq/cloudlands-fe/commit/647842dca46048e9838e2168d45345da07e79ffe))
+
+
+### ⚡ Performance
+
+* **ui:** Minimize style recalculation and layout work ([#1968](https://github.com/intent-hq/cloudlands-fe/issues/1968)) ([7f02457](https://github.com/intent-hq/cloudlands-fe/commit/7f02457374ee78c8e46e8f81795e9934a3a79bc0))
+
 ## [2.122.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.122.0...v2.122.1) (2026-09-01)
 
 

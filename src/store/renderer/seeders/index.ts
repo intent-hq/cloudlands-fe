@@ -34,3 +34,4 @@ import './quit-confirmation-bridge-seeder';
 import './language-preference-bridge-seeder';
 import './renderer-log-bridge-seeder';
 import './user-activity-bridge-seeder';
+import './workspace-summaries-bridge-seeder';

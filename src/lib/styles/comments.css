@@ -9,7 +9,10 @@
   background-color: hsl(var(--warning) / 0.2);
   border-bottom: 2px solid hsl(var(--warning) / 0.5);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    border-bottom-color 0.2s ease,
+    transform 0.2s ease;
   position: relative;
 }
 
@@ -122,11 +125,13 @@
 
 /* Overlapping comments - striped pattern */
 .comment-highlight.comment-overlap {
-  background: repeating-linear-gradient(45deg,
-      hsl(var(--warning) / 0.2),
-      hsl(var(--warning) / 0.2) 5px,
-      hsl(var(--primary) / 0.2) 5px,
-      hsl(var(--primary) / 0.2) 10px);
+  background: repeating-linear-gradient(
+    45deg,
+    hsl(var(--warning) / 0.2),
+    hsl(var(--warning) / 0.2) 5px,
+    hsl(var(--primary) / 0.2) 5px,
+    hsl(var(--primary) / 0.2) 10px
+  );
   border-bottom: 2px solid hsl(var(--accent) / 0.5);
 }
 
@@ -222,7 +227,9 @@
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
   box-shadow: var(--elevation-raised);
-  transition: all 0.2s ease;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 }
 
 .comment-bubble:hover {
@@ -272,7 +279,7 @@
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .comment-bubble-action:hover {

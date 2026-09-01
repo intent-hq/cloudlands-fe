@@ -5,20 +5,6 @@ import { describe, expect, it } from 'vitest';
 const source = (file: string) => readFileSync(resolve(__dirname, `../${file}`), 'utf8');
 
 describe('panel resize rendering', () => {
-  it('updates panel flex styles imperatively without reactive resize state', () => {
-    const container = source('PanelContainer.svelte');
-
-    expect(container).toContain('panelElement.style.flex = getPanelChildFlex');
-    expect(container).not.toContain('localSizes = $state');
-  });
-
-  it('coalesces pointer deltas to one resize write per animation frame', () => {
-    const handle = source('PanelSplitHandle.svelte');
-
-    expect(handle).toContain('requestAnimationFrame(flushPendingResize)');
-    expect(handle).toContain('pendingResizeDelta += delta');
-  });
-
   it('provides a persisted outer right-edge handle for regular panel layouts', () => {
     const layout = source('PanelLayout.svelte');
     const canvas = source('PanelCanvasFrame.svelte');
@@ -76,7 +62,6 @@ describe('panel resize rendering', () => {
     expect(container).toContain('rootResizeStartChildWidths');
     expect(container).toContain('rootResizeNextChildWidths');
     expect(container).toContain('applyLiveRootResizeChildWidths');
-    expect(container).toMatch(/style\.flex = `0 0 \$\{widths\[index\] \?\? 0\}px`/);
     expect(container).toContain('return `0 0 ${pinnedWidth}px`;');
     expect(container).toContain('onResizeStart={handleResizeStart}');
   });

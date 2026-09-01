@@ -73,20 +73,50 @@ describe('message hydration policy', () => {
     expect(policy.getHydratedIds()).toEqual([]);
   });
 
-  it('hydrates displayport rows and derives the oldest adjacent frontier', () => {
+  it('eagerly hydrates a newer row appended after the frontier is established', () => {
     const transitions: string[] = [];
-    const policy = createPolicy(
-      [assistant('old'), assistant('near'), assistant('new')],
-      (transition) => transitions.push(transition),
+    const policy = createPolicy([assistant('frontier')], (transition) =>
+      transitions.push(transition),
     );
-    const elements = observe(policy, ['old', 'near', 'new']);
-
+    const elements = observe(policy, ['frontier']);
     MockIntersectionObserver.instances[0].fire([
-      { target: elements.get('near')!, isIntersecting: true },
+      { target: elements.get('frontier')!, isIntersecting: true },
     ]);
+    transitions.length = 0;
 
-    expect(transitions).toEqual(['hydrate:near', 'hydrate:new']);
-    expect(policy.getHydratedIds()).toEqual(['near', 'new']);
+    // The appended row hydrates via the eager-append tail window, not the
+    // frontier (which never hydrates).
+    policy.updateMessages([assistant('frontier'), assistant('new')]);
+
+    expect(transitions).toEqual(['hydrate:new']);
+    expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
+  });
+
+  it('keeps newer hydrated rows and dehydrates older ones while scrolling toward the tail', () => {
+    const messages = Array.from({ length: 200 }, (_, index) =>
+      index === 20 ? user('user-anchor') : assistant(`assistant-${index}`),
+    );
+    const transitions: string[] = [];
+    const policy = createPolicy(messages, (transition) => transitions.push(transition));
+    const elements = observe(policy, ['assistant-190', 'assistant-195']);
+    const observer = MockIntersectionObserver.instances[0];
+
+    expect(policy.getHydratedIds()).toEqual([]);
+    // Both rows enter the preload band while scrolling down: only the
+    // intersecting rows hydrate, never their unseen neighbors.
+    observer.fire([
+      { target: elements.get('assistant-190')!, isIntersecting: true },
+      { target: elements.get('assistant-195')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['assistant-190', 'assistant-195']);
+    transitions.length = 0;
+
+    // The older row leaves the band: the frontier moves to the newer row and
+    // only the older row dehydrates.
+    observer.fire([{ target: elements.get('assistant-190')!, isIntersecting: false }]);
+
+    expect(transitions).toEqual(['dehydrate:assistant-190']);
+    expect(policy.getHydratedIds()).toEqual(['assistant-195']);
   });
 
   it('retains newer hydrated rows while dehydrating only older rows', () => {
@@ -112,52 +142,6 @@ describe('message hydration policy', () => {
 
     expect(transitions).toEqual(['dehydrate:old']);
     expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
-  });
-
-  it('hydrates a newer placeholder added after the frontier is established', () => {
-    const transitions: string[] = [];
-    const policy = createPolicy([assistant('frontier')], (transition) =>
-      transitions.push(transition),
-    );
-    const elements = observe(policy, ['frontier']);
-    MockIntersectionObserver.instances[0].fire([
-      { target: elements.get('frontier')!, isIntersecting: true },
-    ]);
-    transitions.length = 0;
-
-    policy.updateMessages([assistant('frontier'), assistant('new')]);
-
-    expect(transitions).toEqual(['hydrate:new']);
-    expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
-  });
-
-  it('keeps newer rows hydrated while scrolling toward the tail of a long transcript', () => {
-    const messages = Array.from({ length: 200 }, (_, index) =>
-      index === 20 ? user('user-anchor') : assistant(`assistant-${index}`),
-    );
-    const transitions: string[] = [];
-    const policy = createPolicy(messages, (transition) => transitions.push(transition));
-    const elements = observe(policy, ['assistant-190', 'assistant-195']);
-    const observer = MockIntersectionObserver.instances[0];
-
-    expect(policy.getHydratedIds()).toEqual([]);
-    observer.fire([{ target: elements.get('assistant-190')!, isIntersecting: true }]);
-    expect(policy.getHydratedIds()).toEqual(
-      Array.from({ length: 10 }, (_, index) => `assistant-${index + 190}`),
-    );
-    transitions.length = 0;
-
-    observer.fire([
-      { target: elements.get('assistant-190')!, isIntersecting: false },
-      { target: elements.get('assistant-195')!, isIntersecting: true },
-    ]);
-
-    expect(transitions).toEqual(
-      Array.from({ length: 5 }, (_, index) => `dehydrate:assistant-${index + 190}`),
-    );
-    expect(policy.getHydratedIds()).toEqual(
-      Array.from({ length: 5 }, (_, index) => `assistant-${index + 195}`),
-    );
   });
 
   it('makes mixed observer entry/exit ordering deterministic and enter-safe', () => {
@@ -186,7 +170,7 @@ describe('message hydration policy', () => {
       { target: secondElements.get('old')!, isIntersecting: false },
     ]);
 
-    expect(firstTransitions).toEqual(['dehydrate:old']);
+    expect(firstTransitions).toEqual(['hydrate:new', 'dehydrate:old']);
     expect(secondTransitions).toEqual(firstTransitions);
     expect(first.getHydratedIds()).toEqual(second.getHydratedIds());
   });
@@ -341,7 +325,10 @@ describe('message hydration policy', () => {
     );
     const elements = observe(policy, ['a', 'b']);
     const observer = MockIntersectionObserver.instances[0];
-    observer.fire([{ target: elements.get('a')!, isIntersecting: true }]);
+    observer.fire([
+      { target: elements.get('a')!, isIntersecting: true },
+      { target: elements.get('b')!, isIntersecting: true },
+    ]);
     expect(transitions).toEqual(['hydrate:a', 'hydrate:b']);
 
     policy.updateMessages([assistant('b')]);
@@ -371,8 +358,10 @@ describe('message hydration policy', () => {
     ]);
     policy.updateMessages([assistant('a'), assistant('b')]);
 
-    expect(transitions).toEqual(['hydrate:a', 'hydrate:b']);
-    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+    // The replayed report hydrates only the reported row; its unseen newer
+    // neighbor stays a placeholder (the frontier never hydrates).
+    expect(transitions).toEqual(['hydrate:a']);
+    expect(policy.getHydratedIds()).toEqual(['a']);
   });
 
   it('keeps a pre-record non-intersecting report from hydrating an offscreen row', () => {
@@ -515,6 +504,135 @@ describe('message hydration policy', () => {
     expect(inspectLazyTurnObserverOwnership().targetCount).toBe(2);
     observer.fire([{ target: freshElementA, isIntersecting: true }]);
     expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+  });
+
+  describe('workspace-switch mass hydration regression', () => {
+    // Guards against the ~1s workspace-switch flush: on a transcript scrolled
+    // away from the bottom, the observer reports only the rows near the
+    // scroll position and the frontier lands on an OLD row. The frontier is a
+    // retention barrier, never a hydration trigger — it must not hydrate the
+    // newer rows the user has never seen.
+    it('does not hydrate unseen rows newer than the frontier on a scrolled-up transcript', () => {
+      const messages = Array.from({ length: 200 }, (_, index) => assistant(`assistant-${index}`));
+      const transitions: string[] = [];
+      const policy = createPolicy(messages, (transition) => transitions.push(transition));
+      // Only the rows around the restored scroll position (near the top of
+      // the transcript) mount into the viewport and report intersection.
+      const elements = observe(policy, ['assistant-40', 'assistant-41', 'assistant-42']);
+
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('assistant-40')!, isIntersecting: true },
+        { target: elements.get('assistant-41')!, isIntersecting: true },
+        { target: elements.get('assistant-42')!, isIntersecting: true },
+      ]);
+
+      // Rows 43..199 were never intersecting and never hydrated: the frontier
+      // is a retention barrier, not a hydration trigger, so they must stay
+      // placeholders instead of mounting in one synchronous pass.
+      expect(policy.getHydratedIds()).toEqual(['assistant-40', 'assistant-41', 'assistant-42']);
+      expect(transitions).toEqual([
+        'hydrate:assistant-40',
+        'hydrate:assistant-41',
+        'hydrate:assistant-42',
+      ]);
+    });
+
+    it('retains an already-hydrated row newer than the frontier after it leaves the preload band', () => {
+      const messages = Array.from({ length: 200 }, (_, index) => assistant(`assistant-${index}`));
+      const transitions: string[] = [];
+      const policy = createPolicy(messages, (transition) => transitions.push(transition));
+      const elements = observe(policy, ['assistant-40', 'assistant-150']);
+      const observer = MockIntersectionObserver.instances[0];
+
+      // The row hydrates by intersecting, then exits the preload band while
+      // the frontier moves to an older row (user scrolled up).
+      observer.fire([{ target: elements.get('assistant-150')!, isIntersecting: true }]);
+      expect(policy.getHydratedIds()).toContain('assistant-150');
+
+      observer.fire([
+        { target: elements.get('assistant-150')!, isIntersecting: false },
+        { target: elements.get('assistant-40')!, isIntersecting: true },
+      ]);
+
+      // Newer than the frontier and previously hydrated: retained, so
+      // scrolling back down never flashes a placeholder.
+      expect(transitions).not.toContain('dehydrate:assistant-150');
+      expect(policy.getHydratedIds()).toContain('assistant-150');
+    });
+
+    it('eagerly hydrates exactly the MAX_EAGER_APPEND_ROWS tail of a large append', () => {
+      const transitions: string[] = [];
+      const policy = createPolicy([assistant('seed')], (transition) => transitions.push(transition));
+
+      const backlog = Array.from({ length: 40 }, (_, index) => assistant(`appended-${index}`));
+      policy.updateMessages([assistant('seed'), ...backlog]);
+
+      // The eager window is the trailing MAX_EAGER_APPEND_ROWS (8) rows of
+      // the list; everything before it stays a placeholder.
+      expect(policy.getHydratedIds()).toEqual(backlog.slice(-8).map((message) => message.id));
+      expect(transitions).toEqual(backlog.slice(-8).map((message) => `hydrate:${message.id}`));
+    });
+  });
+
+  describe('batched hydration notifications', () => {
+    it('fires onHydrationChange once per updateMessages call, after all transitions commit', () => {
+      const snapshots: string[][] = [];
+      const policy = createMessageHydrationPolicy([assistant('a'), assistant('b')], {
+        onHydrationChange: () => snapshots.push(policy.getHydratedIds()),
+      });
+      policies.push(policy);
+
+      // Several eager-append transitions in one call coalesce into a single
+      // notification carrying the committed net state.
+      policy.updateMessages([assistant('a'), assistant('b'), user('s1'), assistant('s2')]);
+      expect(snapshots).toEqual([['s1', 's2']]);
+
+      // A call that transitions nothing does not notify.
+      policy.updateMessages([assistant('a'), assistant('b'), user('s1'), assistant('s2')]);
+      expect(snapshots).toHaveLength(1);
+    });
+
+    it('notifies once for a visibility report that both hydrates and dehydrates rows', () => {
+      const snapshots: string[][] = [];
+      const policy = createMessageHydrationPolicy([assistant('a'), assistant('b')], {
+        onHydrationChange: () => snapshots.push(policy.getHydratedIds()),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['a', 'b']);
+      const observer = MockIntersectionObserver.instances[0];
+
+      observer.fire([{ target: elements.get('a')!, isIntersecting: true }]);
+      observer.fire([{ target: elements.get('a')!, isIntersecting: false }]);
+      snapshots.length = 0;
+
+      // One report moves the frontier to 'b': 'b' hydrates and 'a' dehydrates
+      // in the same reconcile pass — a single notification with the net state.
+      observer.fire([{ target: elements.get('b')!, isIntersecting: true }]);
+
+      expect(snapshots).toEqual([['b']]);
+    });
+
+    it('notifies once per observer delivery, not once per entry', () => {
+      const messages = Array.from({ length: 8 }, (_, index) => assistant(`m${index}`));
+      const snapshots: string[][] = [];
+      const policy = createMessageHydrationPolicy(messages, {
+        onHydrationChange: () => snapshots.push(policy.getHydratedIds()),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['m2', 'm3', 'm4', 'm5']);
+
+      // A single IntersectionObserver delivery carries k entries and invokes
+      // the per-row report path k times — the flush defers to delivery end so
+      // the consumer rebuilds derived state ONCE with the committed net state.
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('m2')!, isIntersecting: true },
+        { target: elements.get('m3')!, isIntersecting: true },
+        { target: elements.get('m4')!, isIntersecting: true },
+        { target: elements.get('m5')!, isIntersecting: true },
+      ]);
+
+      expect(snapshots).toEqual([['m2', 'm3', 'm4', 'm5']]);
+    });
   });
 
   it('hydrates viewport rows after detach/re-attach when fresh reports cover only those rows', () => {

@@ -1,13 +1,23 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
+import { buildIco, ICO_SIZES, releaseWindowsPngBuffer } from './build-icns.js';
 
 const iconsDirectory = join(process.cwd(), 'src/assets/icons');
 const devSourcePath = join(iconsDirectory, 'app-icon/Dev-Source.png');
 const devPngPath = join(iconsDirectory, 'dev-icon.png');
 const devSourceSha256 = '4e6e13f59557bb3ee33ed7810ba07d05f7308d564e16456b1117885822c68581';
+const previousReleaseAlphaWeight: Record<number, number> = {
+  16: 159,
+  32: 638,
+  48: 1437,
+  64: 2551,
+  128: 10201,
+  256: 40799,
+};
 const generatedAlphaBounds: Record<
   number,
   { left: number; top: number; right: number; bottom: number }
@@ -42,6 +52,87 @@ async function alphaBounds(file: string | Buffer) {
   }
   return { width: info.width, height: info.height, left, top, right, bottom };
 }
+
+async function alphaWeight(file: string | Buffer) {
+  const { data, info } = await sharp(file)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let weight = 0;
+  for (let offset = 3; offset < data.length; offset += info.channels) {
+    weight += data[offset] / 255;
+  }
+  return weight;
+}
+
+function icoImages(file: string | Buffer) {
+  const ico = Buffer.isBuffer(file) ? file : readFileSync(file);
+  expect([ico.readUInt16LE(0), ico.readUInt16LE(2), ico.readUInt16LE(4)]).toEqual([
+    0,
+    1,
+    ICO_SIZES.length,
+  ]);
+  return ICO_SIZES.map((expectedSize, index) => {
+    const entry = 6 + index * 16;
+    const size = ico[entry] || 256;
+    const length = ico.readUInt32LE(entry + 8);
+    const offset = ico.readUInt32LE(entry + 12);
+    expect(size).toBe(expectedSize);
+    return { size, image: ico.subarray(offset, offset + length) };
+  });
+}
+
+describe('release Windows app icon asset', () => {
+  it('uses transparent padding when resized artwork is not square', async () => {
+    const source = await sharp({
+      create: { width: 8, height: 4, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+    const { data, info } = await sharp(await releaseWindowsPngBuffer(32, source))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixel = (x: number, y: number) => {
+      const offset = (y * info.width + x) * info.channels;
+      return data.subarray(offset, offset + info.channels);
+    };
+
+    expect([...pixel(16, 1)]).toEqual([0, 0, 0, 0]);
+    expect([...pixel(16, 16)]).toEqual([255, 0, 0, 255]);
+  });
+
+  it('contains every required size with larger, unclipped artwork', async () => {
+    const images = icoImages(join(iconsDirectory, 'icon.ico'));
+    for (const { size, image } of images) {
+      expect(await sharp(image).metadata()).toMatchObject({
+        format: 'png',
+        width: size,
+        height: size,
+      });
+      const bounds = await alphaBounds(image);
+      expect(bounds.left).toBeGreaterThan(0);
+      expect(bounds.top).toBeGreaterThan(0);
+      expect(bounds.right).toBeLessThan(size - 1);
+      expect(bounds.bottom).toBeLessThan(size - 1);
+      expect(await alphaWeight(image)).toBeGreaterThan(previousReleaseAlphaWeight[size] * 1.05);
+    }
+  });
+
+  it('rebuilds deterministically from the approved release source', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'intent-windows-icon-test-'));
+    try {
+      const first = join(directory, 'first.ico');
+      const second = join(directory, 'second.ico');
+      await buildIco(releaseWindowsPngBuffer, first);
+      await buildIco(releaseWindowsPngBuffer, second);
+      expect(readFileSync(first)).toEqual(readFileSync(second));
+      expect(readFileSync(first)).toEqual(readFileSync(join(iconsDirectory, 'icon.ico')));
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('development app icon assets', () => {
   it('preserves the complete approved source canvas and generated PNG spacing', async () => {

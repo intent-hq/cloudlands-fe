@@ -335,6 +335,29 @@ describe('root horizontal panel resizing', () => {
     },
   );
 
+  it('coalesces root pointer moves and performs all layout measurements before preview writes', async () => {
+    await renderLayout(true);
+    const handle = splitHandle(0);
+    const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+
+    await fireEvent.mouseDown(handle, { clientX: 100 });
+    const measurementsAfterStart = measure.mock.calls.length;
+    await fireEvent.mouseMove(window, { clientX: 130 });
+    await fireEvent.mouseMove(window, { clientX: 170 });
+
+    expectGeometry(panelGeometry(), INITIAL_WIDTHS);
+    expect(measure).toHaveBeenCalledTimes(measurementsAfterStart);
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const expected = resizePanelWidthsAtDivider(INITIAL_WIDTHS, 0, 70).panelWidths;
+    expectGeometry(panelGeometry(), expected);
+    expect(measure).toHaveBeenCalledTimes(measurementsAfterStart);
+
+    await fireEvent.mouseUp(window);
+    expectGeometry(panelGeometry(), expected);
+    expect(measure).toHaveBeenCalledTimes(measurementsAfterStart);
+  });
+
   it('preserves the left side while resizing the second divider', async () => {
     await renderLayout(true);
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;

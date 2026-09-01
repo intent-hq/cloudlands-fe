@@ -83,5 +83,9 @@
     z-index: 36;
     /* Center on the corner intersection */
     transform: translate(-50%, -50%);
+    /* Clip the leading (top/left) 4px out of hit-testing so the handle never
+       covers the top-left neighbor's scrollbars meeting at its corner; see
+       PanelSplitHandle for the same rule. */
+    clip-path: inset(4px 0 0 4px);
   }
 </style>

@@ -214,17 +214,21 @@
   } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
+    appendScrollSample,
     classifyScrollbackGesture,
+    classifyScrollBurst,
     composeTranscript,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
     OLDER_HISTORY_INDICATOR_QUIET_MS,
     olderHistoryIndicatorAction,
+    RAPID_SCROLL_WINDOW_MS,
     reconcileVirtualSpacer,
     restateFrozenSpacers,
     shouldRequestOlderHistory,
     splitUnloadedRows,
     VIRTUAL_ROW_HEIGHT_MIN_PX,
+    type ScrollSample,
   } from './chat-scrollback-composition';
   import { buildDateGroupKeys } from '$lib/utils/timeFormatting';
   import {
@@ -741,9 +745,10 @@
     hydratedMessageIds = new Set(messageHydrationPolicy.getHydratedIds());
   }
 
+  // Batch-end callback: one hydratedMessageIds rebuild per policy call, not
+  // one per transitioned row (a mass transition would otherwise be O(n²)).
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
-    onHydrate: syncHydratedMessageIds,
-    onDehydrate: syncHydratedMessageIds,
+    onHydrationChange: syncHydratedMessageIds,
   });
 
   $effect(() => {
@@ -2168,8 +2173,10 @@
   // ONE aroundIndex seek that replaces the history segment with the landing
   // page (saga: historySeekWorker). Near-edge positions keep today's serial
   // chaining. Daemons without aroundIndex latch historySeekUnsupported and
-  // everything falls back to the serial walk.
-  const SEEK_DEBOUNCE_MS = 200;
+  // everything falls back to the serial walk. The debounce IS the rapid
+  // classification window: "rapid" means "moving faster than one settle
+  // window can absorb", so the two are the same constant by construction.
+  const SEEK_DEBOUNCE_MS = RAPID_SCROLL_WINDOW_MS;
   let seekDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   // Set from debounce fire until the landing is applied: suppresses the
   // serial trigger, the prepend anchor restore, and the frozen-phase
@@ -2310,6 +2317,30 @@
     }
   }
 
+  /**
+   * Settle-point re-classification (the 'seek' arm of
+   * classifySettledPosition, DOM-side): map the settled scrollTop through
+   * seekTargetOrdinalAt — the same near/far classification over both
+   * spacers — and dispatch ONE aroundIndex jump when the parked position is
+   * still far from resident rows. Called at EVERY settle point (the seek
+   * debounce firing, an older-history page settling, a gap-fill page
+   * settling) so a chain never keeps serially walking toward a far target.
+   * Returns true when a seek was dispatched (the caller stops its chain).
+   */
+  function maybeDispatchSettledSeek(): boolean {
+    if (!isActive || isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId)
+      return false;
+    if ($fetchingHistorySeek$ || seekLandingPending) return false;
+    if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
+    const target = seekTargetOrdinalAt(scrollContainer.scrollTop);
+    if (target === null) return false;
+    cancelSeekDebounce();
+    seekLandingPending = true;
+    pendingSeekTargetOrdinal = target;
+    appStore.dispatch(historySeekRequested(workspace.id, agentId, target));
+    return true;
+  }
+
   // (Re)arm the settle debounce; the target is recomputed at fire time from
   // the settled scrollTop, so intermediate drag positions never fire.
   function armSeekDebounce() {
@@ -2320,25 +2351,20 @@
       if (!isActive || isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId)
         return;
       if ($fetchingHistorySeek$ || seekLandingPending) return;
-      // Racing serial fetch: let it settle, the settle chain re-classifies.
+      // Racing serial fetch: let it settle — the settle chains call
+      // maybeDispatchSettledSeek and re-classify the parked position.
       if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
-      const target = seekTargetOrdinalAt(scrollContainer.scrollTop);
-      if (target === null) {
-        // Settled without a far target: the below drivers decide. Fully
-        // below the hole collapses the segment (return-to-tail); a
-        // dead-zone overlap with the below spacer chains a bounded forward
-        // gap refill; otherwise the near-top serial trigger applies.
-        if (maybeCollapseHistorySegmentAtTail()) return;
-        if (viewportOverlapsBelowSpacer()) {
-          requestHistoryGapFill();
-          return;
-        }
-        maybeRequestOlderHistory();
+      if (maybeDispatchSettledSeek()) return;
+      // Settled without a far target: the below drivers decide. Fully
+      // below the hole collapses the segment (return-to-tail); a
+      // dead-zone overlap with the below spacer chains a bounded forward
+      // gap refill; otherwise the near-top serial trigger applies.
+      if (maybeCollapseHistorySegmentAtTail()) return;
+      if (viewportOverlapsBelowSpacer()) {
+        requestHistoryGapFill();
         return;
       }
-      seekLandingPending = true;
-      pendingSeekTargetOrdinal = target;
-      appStore.dispatch(historySeekRequested(workspace.id, agentId, target));
+      maybeRequestOlderHistory();
     }, SEEK_DEBOUNCE_MS);
   }
 
@@ -2431,6 +2457,12 @@
         // visible indicator (or its armed hide / pending evaluation) over
         // to the newly selected agent for the quiet window.
         resetOlderHistoryIndicator();
+        // Same rebaseline for the gap-fill settle tracker: the switch flips
+        // $fetchingGapFill$ to the NEW agent's value, and without this a
+        // mid-refill switch would read as a settle — re-running the settle
+        // chain (including a possible seek dispatch) for the new agent
+        // without any user scroll.
+        wasFetchingGapFill = false;
         return;
       }
       if (meta === discardBaselineMeta) return;
@@ -2701,13 +2733,33 @@
   // Scroll events also mark interaction activity, keeping the spacer frozen
   // until the transcript goes quiet. Positions deep inside a spacer arm the
   // seek debounce INSTEAD of the serial trigger — the serial walk would
-  // load every intermediate page on the way to a far target.
+  // load every intermediate page on the way to a far target. Rapid bursts
+  // (a wheel flick / thumb drag covering more than a viewport per settle
+  // window — classifyScrollBurst) ALSO defer to the settle debounce even
+  // over near/resident territory: chasing intermediate positions with
+  // serial pages wastes fetches the settle re-classification replaces with
+  // one driver picked at the parked position. The buffer ingests EVERY
+  // scroll event, including programmatic ones (prepend anchor restore,
+  // spacer compensation, seek-landing positioning, followToBottom on agent
+  // switch/send): a gentle user scroll within one window of such a write
+  // can transiently classify 'rapid' and defer its serial trigger by one
+  // settle window — accepted, because the deferral is self-correcting (the
+  // samples age out via appendScrollSample and the settle debounce still
+  // drives the walk) and the write sites are too scattered for a reliable
+  // per-site buffer reset. The same aging means no reset is needed across
+  // agent switches.
+  let scrollBurstSamples: ScrollSample[] = [];
   $effect(() => {
     const container = scrollContainer;
     if (!isActive || !container) return;
+    scrollBurstSamples = [];
     const onScroll = () => {
       lastScrollActivityAt = performance.now();
       scheduleSpacerReconcile();
+      scrollBurstSamples = appendScrollSample(scrollBurstSamples, {
+        scrollTop: container.scrollTop,
+        timestamp: lastScrollActivityAt,
+      });
       if (seekTargetOrdinalAt(container.scrollTop) !== null) {
         armSeekDebounce();
         return;
@@ -2720,6 +2772,19 @@
       // from the settled position and picks the collapse or bounded
       // gap-refill driver.
       if (viewportOverlapsBelowSpacer() || viewportFullyBelowOpenHole()) {
+        armSeekDebounce();
+        return;
+      }
+      // Rapid burst over near/resident territory: defer to the settle
+      // debounce — its fire (or the in-flight page's settle chain)
+      // re-classifies the SETTLED position instead of chasing every
+      // intermediate one with serial pages.
+      if (
+        classifyScrollBurst({
+          samples: scrollBurstSamples,
+          viewportHeight: container.clientHeight,
+        }) === 'rapid'
+      ) {
         armSeekDebounce();
         return;
       }
@@ -2798,7 +2863,17 @@
   // anchoring effect below) so it measures the post-restore scrollTop.
   // Runaway-loop guards are the trigger guard's own stop conditions: the
   // restore moving the viewport past the threshold, exhaustion, or all rows
-  // resident stop the chain (shouldChainOlderHistoryOnSettle).
+  // resident stop the chain (shouldChainOlderHistoryOnSettle). Every settle
+  // point re-classifies the parked position first
+  // (maybeDispatchSettledSeek — the classifySettledPosition contract): a
+  // viewport still deep inside the spacer, e.g. parked there while this
+  // page was in flight, issues ONE aroundIndex jump instead of serially
+  // chaining every intermediate page toward it. The below drivers are
+  // evaluated too (collapse, then dead-zone gap refill — same order as the
+  // seek-debounce fire): a debounce consumed by this racing fetch may have
+  // carried a BELOW intent (the user flicked down past the open hole), and
+  // without these checks that intent would strand until the next scroll
+  // event.
   let wasFetchingOlderHistory = false;
   $effect(() => {
     const fetching = $fetchingOlderHistory$;
@@ -2819,7 +2894,15 @@
         requestAnimationFrame(() => {
           olderHistoryChainEvaluationPending = false;
           if (!isActive || isComponentDestroyed) return;
-          if (scrollContainer) maybeRequestOlderHistory();
+          if (scrollContainer && !maybeDispatchSettledSeek()) {
+            if (maybeCollapseHistorySegmentAtTail()) {
+              // Below intent handled; the chain (and its indicator) stops.
+            } else if (viewportOverlapsBelowSpacer()) {
+              requestHistoryGapFill();
+            } else {
+              maybeRequestOlderHistory();
+            }
+          }
           // The saga raises the fetching flag synchronously on dispatch, so
           // this read distinguishes "chain continued" (stay visible) from
           // "chain stopped" (arm the quiet-window hide).
@@ -2843,11 +2926,14 @@
   // Gap-refill chaining (mirror of the older-history settle chain above,
   // for the forward walk): a refill page emits no scroll event, so on the
   // fetching flag's true→false transition re-evaluate the below drivers
-  // after the anchor restore has landed. Collapse when the viewport is now
-  // fully below the hole; another bounded refill page while it still
-  // overlaps the below spacer. Stop conditions are state-derived — the gap
-  // closing (gapToTail false) or the overlap clearing ends the chain — so
-  // the loop is bounded by the hole's row count.
+  // after the anchor restore has landed. The settle re-classification runs
+  // first (maybeDispatchSettledSeek): a viewport dragged far away while the
+  // refill was in flight jumps there instead of continuing the refill.
+  // Otherwise collapse when the viewport is now fully below the hole;
+  // another bounded refill page while it still overlaps the below spacer.
+  // Stop conditions are state-derived — the gap closing (gapToTail false)
+  // or the overlap clearing ends the chain — so the loop is bounded by the
+  // hole's row count.
   let wasFetchingGapFill = false;
   $effect(() => {
     const fetching = $fetchingGapFill$;
@@ -2862,6 +2948,7 @@
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!isActive || isComponentDestroyed || !scrollContainer) return;
+          if (maybeDispatchSettledSeek()) return;
           if (maybeCollapseHistorySegmentAtTail()) return;
           if (viewportOverlapsBelowSpacer()) requestHistoryGapFill();
         });
@@ -4107,19 +4194,24 @@
         return;
       }
       observer = new ResizeObserver((entries) => {
+        let scrollContainerResized = false;
         for (const entry of entries) {
           if (entry.target === scrollContainer) {
             const newHeight = entry.contentRect.height;
             if (newHeight !== containerHeight) {
               containerHeight = newHeight;
             }
+            scrollContainerResized = true;
           } else if (entry.target === composerElement) {
-            composerHeight = entry.contentRect.height;
+            const newHeight = entry.contentRect.height;
+            if (newHeight !== composerHeight) {
+              composerHeight = newHeight;
+            }
           } else if (entry.target === panelElement) {
             panelClientHeight = entry.contentRect.height;
           }
         }
-        if (scrollContainer) {
+        if (scrollContainerResized && scrollContainer) {
           const gutterWidth = measureScrollbarGutterWidth(scrollContainer);
           if (gutterWidth !== scrollbarGutterWidth) {
             scrollbarGutterWidth = gutterWidth;

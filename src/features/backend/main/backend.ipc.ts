@@ -35,6 +35,7 @@ import {
   PinMismatchError,
   resolveBackendConfig,
   type BackendConnectionConfig,
+  type HostCertMismatch,
 } from './backend-connection';
 import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
 import {
@@ -91,6 +92,8 @@ import type {
   CaptureFingerprintResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionCertWarningsEvent,
+  ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
   ConnectionsChangedEvent,
   ConnectionsListResult,
@@ -368,6 +371,20 @@ const authRejectedById = new Map<string, ConnectionAuthRejectedEvent>();
 const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
 
 /**
+ * Sticky NON-FATAL per-host cert warnings per backend connection id, keyed by
+ * host inside (latest fingerprint per host, accumulated across reconnect
+ * attempts). The multi-host connection race (#1746) can succeed through one
+ * candidate host while another presents a mismatching pinned cert — each such
+ * observation is recorded here and broadcast as `connections:cert-warnings`,
+ * and the aggregate is replayed on {@link listConnections} so a renderer
+ * created after the broadcast still surfaces it (the {@link certMismatchById}
+ * pattern, but informative rather than blocking). An id's entry is cleared
+ * whenever a fresh client for that id is constructed (see
+ * {@link clearBackendFailureState}).
+ */
+const certWarningsById = new Map<string, Map<string, ConnectionHostCertWarning>>();
+
+/**
  * Handle for the keychain-sync lifecycle (T3), set once in
  * {@link registerBackendHandlers}. The T4 settings IPC reads its last-known
  * availability status and requests an immediate reconcile on enable.
@@ -441,6 +458,11 @@ export function __resetBackendProtocolStateForTesting(): void {
   protocolMismatchById.clear();
   authRejectedById.clear();
   certMismatchById.clear();
+  certWarningsById.clear();
+}
+/** @internal Test seam: read the latched per-host cert warnings for one backend id. */
+export function __getCertWarningsForTesting(id: string): ConnectionCertWarningsEvent | null {
+  return getCertWarningsEvent(id);
 }
 /** @internal Test seam: read the latched auth-rejection for one backend id. */
 export function __getAuthRejectedForTesting(id: string): ConnectionAuthRejectedEvent | null {
@@ -481,8 +503,19 @@ export function isSameHostBackendActive(): boolean {
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
+ * Bound on the pre-window `host.status` probe for a REMOTE open. A remote
+ * probe failure opens the window anyway (the connection-lost overlay owns
+ * recovery), so a black-holed connect waiting out the client's 30s default
+ * request timeout would only delay that window. 5s comfortably covers a
+ * healthy WAN round-trip; a slower-but-healthy remote still opens fine — the
+ * retained client finishes connecting in the background.
+ */
+const REMOTE_OPEN_PROBE_TIMEOUT_MS = 5_000;
+
+/**
  * Drop every latched failure state (cert/auth one-shot guards, sticky protocol
- * mismatch and auth rejection) for one backend connection id. Called whenever
+ * mismatch and auth rejection, accumulated per-host cert warnings) for one
+ * backend connection id. Called whenever
  * a fresh client for that id is constructed — its own connect + `client.hello`
  * re-detects any still-present failure — and when the id's client is disposed.
  */
@@ -493,6 +526,59 @@ function clearBackendFailureState(id: string): void {
   protocolMismatchById.delete(id);
   authRejectedById.delete(id);
   certMismatchById.delete(id);
+  const hadWarnings = (certWarningsById.get(id)?.size ?? 0) > 0;
+  certWarningsById.delete(id);
+  // The warning contract promises an empty `warnings` broadcast on clear, so a
+  // renderer relying solely on the dedicated channel drops its stale hosts.
+  if (hadWarnings) broadcast(CONNECTIONS.CERT_WARNINGS, { id, warnings: [] }, id);
+}
+
+/**
+ * Build the `connections:cert-warnings` payload for one backend id from the
+ * accumulated per-host map, or `null` when nothing has been observed.
+ */
+function getCertWarningsEvent(id: string): ConnectionCertWarningsEvent | null {
+  const byHost = certWarningsById.get(id);
+  if (!byHost || byHost.size === 0) return null;
+  return { id, warnings: [...byHost.values()] };
+}
+
+/**
+ * Record one NON-FATAL per-host pin mismatch observed by a pool member's
+ * connection race (#1746): accumulate it (latest fingerprint per host) and
+ * broadcast the updated aggregate to the backend's windows. Deduped — an
+ * unchanged fingerprint for an already-recorded host re-broadcasts nothing
+ * (the race re-observes the same mismatch on every reconnect attempt).
+ */
+function recordCertWarning(
+  meta: { id: string; host: string; port: number },
+  info: HostCertMismatch,
+): void {
+  const warning: ConnectionHostCertWarning = {
+    host: info.host,
+    expectedFingerprint: info.expected,
+    actualFingerprint: info.actual,
+  };
+  let byHost = certWarningsById.get(meta.id);
+  if (!byHost) {
+    byHost = new Map();
+    certWarningsById.set(meta.id, byHost);
+  }
+  const previous = byHost.get(warning.host);
+  if (
+    previous &&
+    previous.expectedFingerprint === warning.expectedFingerprint &&
+    previous.actualFingerprint === warning.actualFingerprint
+  ) {
+    return;
+  }
+  byHost.set(warning.host, warning);
+  const payload = getCertWarningsEvent(meta.id);
+  if (payload) broadcast(CONNECTIONS.CERT_WARNINGS, payload, meta.id);
+  logger.warn('Backend pool observed a non-fatal per-host cert mismatch', {
+    id: meta.id,
+    host: warning.host,
+  });
 }
 
 /**
@@ -779,6 +865,13 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     );
     backendReconnectForwarder.emit('reconnected', id);
   });
+  // Non-fatal per-host pin mismatches from the multi-host connection race
+  // (#1746): a connect can succeed through one candidate host while another
+  // presents a mismatching pinned cert. Accumulated per host and pushed as
+  // `connections:cert-warnings` — informative only, never blocks anything.
+  instance.on('cert-warning', (info: HostCertMismatch) => {
+    if (meta) recordCertWarning(meta, info);
+  });
   instance.on('error', (error: Error) => {
     // Same non-transient failure handling as the primary client (see
     // getBackendClient's `error` handler), latched per connection id and
@@ -792,6 +885,18 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           port: meta.port,
           expectedFingerprint: error.expected,
           actualFingerprint: error.actual,
+          // Every per-host mismatch the failing race observed (#1746), so the
+          // trust modal can name each candidate host. Empty below the race
+          // layer (single-host failures carry no host attribution).
+          ...(error.mismatches.length > 0
+            ? {
+                mismatches: error.mismatches.map((m) => ({
+                  host: m.host,
+                  expectedFingerprint: m.expected,
+                  actualFingerprint: m.actual,
+                })),
+              }
+            : {}),
         };
         // Latch BEFORE broadcasting (same ordering as the primary). The boot
         // restore starts pooled clients before their windows exist, so the
@@ -1450,6 +1555,7 @@ async function listConnections(
     protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
     authRejected: authRejectedById.get(windowBackendId) ?? null,
     certMismatch: certMismatchById.get(windowBackendId) ?? null,
+    certWarnings: getCertWarningsEvent(windowBackendId),
     // The app's pinned intentd version so the renderer can compare each
     // remote's captured `daemonVersion` without a separate channel.
     pinnedVersion: getPinnedVersion(),
@@ -1479,6 +1585,7 @@ async function broadcastConnectionsChanged(): Promise<void> {
       protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
       authRejected: authRejectedById.get(windowBackendId) ?? null,
       certMismatch: certMismatchById.get(windowBackendId) ?? null,
+      certWarnings: getCertWarningsEvent(windowBackendId),
     };
     try {
       win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
@@ -1598,9 +1705,21 @@ function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Connect one pooled backend and open/focus its windows.
  * `options.probeTimeoutMs` bounds the authenticated `host.status` probe
- * for a single call (defaults to the client's flat request timeout) — used by
- * deadline-driven callers like {@link openLocalAndSpawn} whose own budget is
- * shorter than the 30s client default.
+ * for a single call — used by deadline-driven callers like
+ * {@link openLocalAndSpawn} whose own budget is shorter than the 30s client
+ * default. When omitted, a REMOTE open is bounded by
+ * {@link REMOTE_OPEN_PROBE_TIMEOUT_MS} (a probe failure opens the window
+ * anyway, so a black-holed connect must not sit out the 30s default before
+ * the window appears); a LOCAL open keeps the client's flat request timeout.
+ *
+ * A failed probe on a REMOTE no longer rejects the open: the window is created
+ * anyway and the pooled client's reconnect loop keeps retrying, so the
+ * renderer's connection-lost overlay (or the latched cert-mismatch /
+ * auth-rejected failure event, replayed on `connections:list`) owns recovery.
+ * Only a missing secret ({@link ConnectionSecretUnavailableError}, thrown
+ * before any client is built) still blocks the window — there is nothing for
+ * a window to retry against. The LOCAL open keeps strict probe semantics:
+ * {@link openLocalAndSpawn}'s deadline/retry loop depends on the rejection.
  */
 export function openBackendWindow(
   id: string,
@@ -1615,13 +1734,39 @@ async function performOpenBackendWindow(
 ): Promise<{ id: string }> {
   const target = await connectBackendClient(id);
   try {
-    // Do not create a renderer until the pinned transport has completed an
-    // authenticated request. A cert/token failure rejects this remote only.
-    await target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs });
+    try {
+      // Complete one authenticated request over the pinned transport before
+      // creating a renderer, so the common healthy open never flashes the
+      // connection-lost overlay. A remote probe is bounded well below the 30s
+      // client default: a timing-out remote already opens the window on
+      // failure, so a long probe only delays that window — and a healthy
+      // remote slower than this bound still opens fine (the retained client
+      // finishes connecting and the renderer never sees a 'down' health).
+      const probeTimeoutMs =
+        options?.probeTimeoutMs ??
+        (id !== LOCAL_CONNECTION_ID ? REMOTE_OPEN_PROBE_TIMEOUT_MS : undefined);
+      await target.request('host.status', undefined, { timeoutMs: probeTimeoutMs });
+    } catch (error) {
+      // Local keeps the strict reject: openLocalAndSpawn's deadline loop
+      // retries on it, and a local window without a daemon has no client
+      // reconnect posture worth showing.
+      if (id === LOCAL_CONNECTION_ID) throw error;
+      // Remote probe failure (unreachable, cert mismatch, auth rejected):
+      // open the window anyway. The retained pooled client keeps
+      // reconnecting, the renderer shows the daemon-loss overlay, and a
+      // latched cert-mismatch/auth-rejected failure event is replayed to the
+      // new window via `connections:list` — instead of a silent failed click.
+      logger.warn('Backend probe failed on open; opening window and retrying in background', {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     // Label the remote by its hostname once it connects (T14). Reuses the
     // live client's `host.status`; fire-and-forget so a slow remote never
     // stalls the open — the label upgrades from `host:port` to
-    // `hostname (host:port)` asynchronously. Skipped for the local sidecar
+    // `hostname (host:port)` asynchronously (the request queues until the
+    // socket connects, so this also covers a probe-failed open once the
+    // client eventually reconnects). Skipped for the local sidecar
     // (UDS has no remote hostname to show; its label is fixed). The
     // candidate-host refresh (#1746) piggybacks on the same post-connect
     // window, equally fire-and-forget/fail-soft.
@@ -2090,21 +2235,21 @@ async function validateConnectionAddress(
   token: string,
   confirmedFingerprint?: string,
 ): Promise<TestConnectionResult> {
-  const captured = await captureFingerprint({ host, port, token });
-  if (!captured.ok) {
-    return { status: 'failed', reason: captured.code };
-  }
-  if (!captured.tokenValid) {
-    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
-  }
-  if (!captured.connected) {
+  // Trust before transmission (monorepo#3782): probe the address WITHOUT the
+  // bearer token first — the saved secret must never reach a host whose
+  // certificate the user has not confirmed. The unauthenticated upgrade is
+  // expected to be rejected (PROTOCOL §2.1); only the TLS-layer fingerprint
+  // matters here.
+  const probe = await captureFingerprint({ host, port });
+  if (!probe.ok) {
+    // No pin is passed on this probe, so `fingerprint-mismatch` cannot occur;
+    // the branch only satisfies the narrowed result union.
     return {
       status: 'failed',
-      reason: 'connect-failed',
-      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
+      reason: probe.code === 'fingerprint-mismatch' ? 'connect-failed' : probe.code,
     };
   }
-  const actualFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
+  const actualFingerprint = normalizeTransportFingerprint(probe.fingerprint ?? '');
   const expectedFingerprint = normalizeTransportFingerprint(connection.fingerprint ?? '');
   if (!actualFingerprint || !expectedFingerprint) {
     return { status: 'failed', reason: 'no-certificate' };
@@ -2117,6 +2262,45 @@ async function validateConnectionAddress(
       status: 'fingerprint-confirmation-required',
       expectedFingerprint,
       actualFingerprint,
+    };
+  }
+  // The presented certificate is trusted (saved pin or explicit user
+  // confirmation) — only now is the token transmitted, exercising the real
+  // authenticated upgrade path. The trusted fingerprint is pinned at the TLS
+  // handshake (`expectedFingerprint`): a certificate swap between the two
+  // probes aborts the connection before the upgrade request — and the token —
+  // is written (TOCTOU, monorepo#3782), surfacing as a fresh confirmation
+  // requirement instead of a disclosure.
+  const captured = await captureFingerprint({
+    host,
+    port,
+    token,
+    expectedFingerprint: actualFingerprint,
+  });
+  if (!captured.ok) {
+    if (captured.code === 'fingerprint-mismatch') {
+      const swappedFingerprint = normalizeTransportFingerprint(captured.actualFingerprint);
+      // An empty presented fingerprint means no certificate — a plain failure,
+      // not something to ask the user to confirm.
+      if (!swappedFingerprint) {
+        return { status: 'failed', reason: 'no-certificate' };
+      }
+      return {
+        status: 'fingerprint-confirmation-required',
+        expectedFingerprint,
+        actualFingerprint: swappedFingerprint,
+      };
+    }
+    return { status: 'failed', reason: captured.code };
+  }
+  if (!captured.tokenValid) {
+    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
+  }
+  if (!captured.connected) {
+    return {
+      status: 'failed',
+      reason: 'connect-failed',
+      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
     };
   }
   return { status: 'success', fingerprint: actualFingerprint };
@@ -2324,8 +2508,10 @@ function registerConnectionsHandlers(): void {
   );
 
   // Open or focus one backend without changing activeId or tearing down any
-  // other backend's windows/client. The authenticated probe rejects before a
-  // window is created when the saved token or certificate is invalid.
+  // other backend's windows/client. A failed remote probe (unreachable, bad
+  // token/cert) still opens the window — the renderer's connection-lost
+  // overlay / latched failure events own recovery; only a missing stored
+  // secret blocks the open (structured `secret-unavailable`, no window).
   ipcMain.handle(
     CONNECTIONS.OPEN,
     createValidatedHandler(

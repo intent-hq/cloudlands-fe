@@ -498,7 +498,7 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
-  it('keeps user rows and newer off-screen assistant messages hydrated by message order', async () => {
+  it('retains user rows and newer hydrated assistant messages after the frontier passes them', async () => {
     MockChatIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
     const offsetHeight = vi
@@ -552,6 +552,13 @@ describe('ChatPanel mounted lifecycle', () => {
       const newer = view.container.querySelector('[data-lazy-turn-key="assistant-18"]')!;
 
       observer.fire([{ target: older, isIntersecting: true }]);
+      await tick();
+      // The frontier is a retention barrier, never a hydration trigger: only
+      // the intersecting row hydrates; unseen newer rows stay placeholders.
+      expect(older.getAttribute('data-lazy-visible')).toBe('true');
+      expect(newer.getAttribute('data-lazy-visible')).toBe('false');
+
+      observer.fire([{ target: newer, isIntersecting: true }]);
       await tick();
       expect(newer.getAttribute('data-lazy-visible')).toBe('true');
 

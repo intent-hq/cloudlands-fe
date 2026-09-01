@@ -627,6 +627,36 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
 
     client.dispose();
   });
+
+  it("re-emits the socket facade's non-fatal pin-mismatch as a cert-warning event (#1746)", () => {
+    const { client, socket } = makeClient();
+    const certWarning = vi.fn();
+    const errors = vi.fn();
+    const statuses: string[] = [];
+    client.on('cert-warning', certWarning);
+    client.on('error', errors);
+    client.on('status', (s: string) => statuses.push(s));
+    client.start();
+
+    // The race can report a losing host's mismatch BEFORE the winning
+    // candidate connects — the client must stay on its normal lifecycle.
+    const info = { host: '192.168.1.9', expected: 'AA:BB', actual: 'CC:DD' };
+    socket.emit('pin-mismatch', info);
+    socket.open();
+
+    expect(certWarning).toHaveBeenCalledTimes(1);
+    expect(certWarning).toHaveBeenCalledWith(info);
+    // Non-fatal: no error, no disconnect — the connection proceeds untouched.
+    expect(errors).not.toHaveBeenCalled();
+    expect(client.getStatus()).toBe('connected');
+    expect(statuses).toEqual(['connecting', 'connected']);
+
+    // Also forwarded while already connected (a late candidate failing).
+    socket.emit('pin-mismatch', { host: '10.0.0.7', expected: 'AA:BB', actual: 'EE:FF' });
+    expect(certWarning).toHaveBeenCalledTimes(2);
+
+    client.dispose();
+  });
 });
 
 describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {

@@ -146,6 +146,7 @@
     side="bottom"
     align="start"
     delayDuration={300}
+    maxWidth="max-content"
     class="w-full"
   >
     {#snippet content()}

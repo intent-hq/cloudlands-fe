@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { AgentMessage } from '$shared/types';
 import {
+  appendScrollSample,
+  classifyScrollBurst,
   classifyScrollbackGesture,
+  classifySettledPosition,
   composeTranscript,
   estimateSeekLandingStartOrdinal,
   estimateVirtualSpacerHeight,
@@ -10,6 +13,8 @@ import {
   mapScrollTopToOrdinal,
   OLDER_HISTORY_INDICATOR_QUIET_MS,
   olderHistoryIndicatorAction,
+  RAPID_SCROLL_VIEWPORT_FACTOR,
+  RAPID_SCROLL_WINDOW_MS,
   reconcileVirtualSpacer,
   restateFrozenSpacers,
   SCROLLBACK_PAGE_ROWS,
@@ -32,7 +37,10 @@ function msg(id: string, role: 'user' | 'assistant', timestamp: string): AgentMe
 
 describe('composeTranscript', () => {
   it('returns the tail-only grouping (no group keys, no gap) when history is empty', () => {
-    const tail = [msg('t1', 'user', '2026-08-01T10:00:00Z'), msg('t2', 'assistant', '2026-08-01T10:01:00Z')];
+    const tail = [
+      msg('t1', 'user', '2026-08-01T10:00:00Z'),
+      msg('t2', 'assistant', '2026-08-01T10:01:00Z'),
+    ];
     const composed = composeTranscript([], tail, false);
     expect(composed.gapBeforeGroupIndex).toBeNull();
     expect(composed.groups).toHaveLength(1);
@@ -171,8 +179,11 @@ describe('composeTranscript', () => {
       // them). The composed output must never render an identity twice.
       const mkRow = (i: number, role: 'user' | 'assistant') =>
         wireRow(`msg_${String(i).padStart(3, '0')}`, role, ts(i));
-      const ts = (i: number) => new Date(Date.parse('2026-08-01T00:00:00Z') + i * 60_000).toISOString();
-      const all = Array.from({ length: 24 }, (_, i) => mkRow(i, i % 2 === 0 ? 'user' : 'assistant'));
+      const ts = (i: number) =>
+        new Date(Date.parse('2026-08-01T00:00:00Z') + i * 60_000).toISOString();
+      const all = Array.from({ length: 24 }, (_, i) =>
+        mkRow(i, i % 2 === 0 ? 'user' : 'assistant'),
+      );
 
       let history: AgentMessage[] = [];
       let tail = all.slice(18); // newest 6 resident
@@ -213,17 +224,17 @@ describe('shouldRequestOlderHistory', () => {
   });
 
   it('fires when history rows are already hydrated even if the tail flag is stale', () => {
-    expect(
-      shouldRequestOlderHistory({ ...base, tailTruncated: false, historyCount: 5 }),
-    ).toBe(true);
+    expect(shouldRequestOlderHistory({ ...base, tailTruncated: false, historyCount: 5 })).toBe(
+      true,
+    );
   });
 
   it('fires on client-pruned rows: totalMessages > resident rows with truncated=false', () => {
     // Client cap (30) < daemon snapshot page: rows pruned locally, daemon
     // `truncated` stays false — totalMessages is the only evidence.
-    expect(
-      shouldRequestOlderHistory({ ...base, tailTruncated: false, totalMessages: 120 }),
-    ).toBe(true);
+    expect(shouldRequestOlderHistory({ ...base, tailTruncated: false, totalMessages: 120 })).toBe(
+      true,
+    );
     expect(
       shouldRequestOlderHistory({
         ...base,
@@ -256,13 +267,11 @@ describe('shouldRequestOlderHistory', () => {
   it('extends the near-top threshold by the virtual spacer height (thumb drag)', () => {
     // Thumb dragged INTO the estimated region: scrollTop is far beyond the
     // resident threshold but inside spacer + threshold — fires.
-    expect(
-      shouldRequestOlderHistory({ ...base, scrollTop: 5000, spacerAbove: 10000 }),
-    ).toBe(true);
+    expect(shouldRequestOlderHistory({ ...base, scrollTop: 5000, spacerAbove: 10000 })).toBe(true);
     // Below the spacer region: does not fire.
-    expect(
-      shouldRequestOlderHistory({ ...base, scrollTop: 10500, spacerAbove: 10000 }),
-    ).toBe(false);
+    expect(shouldRequestOlderHistory({ ...base, scrollTop: 10500, spacerAbove: 10000 })).toBe(
+      false,
+    );
     // No spacer keeps the resident-only behavior byte-identical.
     expect(shouldRequestOlderHistory({ ...base, scrollTop: 500, spacerAbove: 0 })).toBe(false);
   });
@@ -451,13 +460,13 @@ describe('estimateVirtualSpacerHeight (virtual scrollbar)', () => {
 
   it('clamps degenerate average row heights', () => {
     // Zero-height measurement (container mid-layout) → min clamp, not 0.
-    expect(
-      estimateVirtualSpacerHeight({ ...base, residentContentHeight: 0 }),
-    ).toBe(170 * VIRTUAL_ROW_HEIGHT_MIN_PX);
+    expect(estimateVirtualSpacerHeight({ ...base, residentContentHeight: 0 })).toBe(
+      170 * VIRTUAL_ROW_HEIGHT_MIN_PX,
+    );
     // One enormous turn skewing the mean → max clamp.
-    expect(
-      estimateVirtualSpacerHeight({ ...base, residentContentHeight: 300000 }),
-    ).toBe(170 * VIRTUAL_ROW_HEIGHT_MAX_PX);
+    expect(estimateVirtualSpacerHeight({ ...base, residentContentHeight: 300000 })).toBe(
+      170 * VIRTUAL_ROW_HEIGHT_MAX_PX,
+    );
   });
 });
 
@@ -564,9 +573,7 @@ describe('reconcileVirtualSpacer (quiet-point reconcile)', () => {
     // Compensation = exact height change above the viewport, so applying
     // scrollTop += delta keeps content and thumb position stable.
     expect(result.scrollTopDelta).toBe(16000 - 12000);
-    expect(
-      result.spacerHeight - result.scrollTopDelta,
-    ).toBe(12000);
+    expect(result.spacerHeight - result.scrollTopDelta).toBe(12000);
   });
 
   it('applies drifts larger than one viewport even when under the ratio', () => {
@@ -684,6 +691,286 @@ describe('classifyScrollbackGesture (far-flick seek)', () => {
     expect(SCROLLBACK_PAGE_ROWS).toBe(200);
     expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeGreaterThanOrEqual(2);
     expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('appendScrollSample (burst buffer)', () => {
+  it('appends the sample and keeps in-window predecessors', () => {
+    const buffer = appendScrollSample(
+      [
+        { scrollTop: 100, timestamp: 1000 },
+        { scrollTop: 90, timestamp: 1100 },
+      ],
+      { scrollTop: 80, timestamp: 1200 },
+    );
+    expect(buffer).toEqual([
+      { scrollTop: 100, timestamp: 1000 },
+      { scrollTop: 90, timestamp: 1100 },
+      { scrollTop: 80, timestamp: 1200 },
+    ]);
+  });
+
+  it('prunes samples older than the window before the new sample', () => {
+    const buffer = appendScrollSample(
+      [
+        { scrollTop: 500, timestamp: 0 },
+        { scrollTop: 400, timestamp: 950 },
+      ],
+      { scrollTop: 300, timestamp: 1100 },
+    );
+    // 0 < 1100 - RAPID_SCROLL_WINDOW_MS (200) → dropped; 950 kept (edge in).
+    expect(buffer).toEqual([
+      { scrollTop: 400, timestamp: 950 },
+      { scrollTop: 300, timestamp: 1100 },
+    ]);
+  });
+
+  it('does not mutate the input buffer (pure)', () => {
+    const input = [{ scrollTop: 10, timestamp: 100 }];
+    appendScrollSample(input, { scrollTop: 20, timestamp: 150 });
+    expect(input).toEqual([{ scrollTop: 10, timestamp: 100 }]);
+  });
+
+  it('honors a custom window', () => {
+    const buffer = appendScrollSample(
+      [{ scrollTop: 10, timestamp: 500 }],
+      { scrollTop: 20, timestamp: 1200 },
+      1000,
+    );
+    expect(buffer).toHaveLength(2);
+  });
+});
+
+describe('classifyScrollBurst (rapid-scroll detection)', () => {
+  const viewportHeight = 800;
+
+  it('slow near-top scrolling stays gentle (reading pace)', () => {
+    // 4 events over the window, ~40px each — well under one viewport.
+    const samples = [
+      { scrollTop: 400, timestamp: 1000 },
+      { scrollTop: 360, timestamp: 1060 },
+      { scrollTop: 320, timestamp: 1120 },
+      { scrollTop: 280, timestamp: 1180 },
+    ];
+    expect(classifyScrollBurst({ samples, viewportHeight })).toBe('gentle');
+  });
+
+  it('a fast wheel flick classifies rapid (more than one viewport in the window)', () => {
+    const samples = [
+      { scrollTop: 50_000, timestamp: 1000 },
+      { scrollTop: 49_000, timestamp: 1050 },
+      { scrollTop: 48_000, timestamp: 1100 },
+    ];
+    expect(classifyScrollBurst({ samples, viewportHeight })).toBe('rapid');
+  });
+
+  it('a scrollbar-thumb drag classifies rapid (one huge jump)', () => {
+    const samples = [
+      { scrollTop: 100_000, timestamp: 1000 },
+      { scrollTop: 20_000, timestamp: 1016 },
+    ];
+    expect(classifyScrollBurst({ samples, viewportHeight })).toBe('rapid');
+  });
+
+  it('accumulates absolute deltas so a fast up-down jiggle counts (no net cancellation)', () => {
+    const samples = [
+      { scrollTop: 10_000, timestamp: 1000 },
+      { scrollTop: 10_600, timestamp: 1060 },
+      { scrollTop: 10_000, timestamp: 1120 },
+    ];
+    // Net displacement 0, accumulated 1200px > 800px viewport.
+    expect(classifyScrollBurst({ samples, viewportHeight })).toBe('rapid');
+  });
+
+  it('threshold boundary: exactly one viewport is gentle, one px past is rapid', () => {
+    const at = [
+      { scrollTop: 800, timestamp: 1000 },
+      { scrollTop: 0, timestamp: 1100 },
+    ];
+    expect(classifyScrollBurst({ samples: at, viewportHeight })).toBe('gentle');
+    const past = [
+      { scrollTop: 801, timestamp: 1000 },
+      { scrollTop: 0, timestamp: 1100 },
+    ];
+    expect(classifyScrollBurst({ samples: past, viewportHeight })).toBe('rapid');
+  });
+
+  it('ignores displacement that fell out of the window', () => {
+    // A big jump long ago, then slow movement: only the in-window pair counts.
+    const samples = [
+      { scrollTop: 100_000, timestamp: 0 },
+      { scrollTop: 5_000, timestamp: 900 },
+      { scrollTop: 4_950, timestamp: 1050 },
+    ];
+    expect(classifyScrollBurst({ samples, viewportHeight })).toBe('gentle');
+  });
+
+  it('fewer than two in-window samples is gentle (missing data never defers)', () => {
+    expect(classifyScrollBurst({ samples: [], viewportHeight })).toBe('gentle');
+    expect(
+      classifyScrollBurst({ samples: [{ scrollTop: 0, timestamp: 1000 }], viewportHeight }),
+    ).toBe('gentle');
+    // Two samples but the older one is outside the window.
+    expect(
+      classifyScrollBurst({
+        samples: [
+          { scrollTop: 100_000, timestamp: 0 },
+          { scrollTop: 0, timestamp: 1000 },
+        ],
+        viewportHeight,
+      }),
+    ).toBe('gentle');
+  });
+
+  it('degenerate viewport height is gentle', () => {
+    const samples = [
+      { scrollTop: 100_000, timestamp: 1000 },
+      { scrollTop: 0, timestamp: 1050 },
+    ];
+    expect(classifyScrollBurst({ samples, viewportHeight: 0 })).toBe('gentle');
+    expect(classifyScrollBurst({ samples, viewportHeight: -1 })).toBe('gentle');
+  });
+
+  it('honors custom windowMs/viewportFactor', () => {
+    const samples = [
+      { scrollTop: 2000, timestamp: 0 },
+      { scrollTop: 0, timestamp: 900 },
+    ];
+    // Default 200ms window excludes the pair; a 1s window includes it.
+    expect(classifyScrollBurst({ samples, viewportHeight })).toBe('gentle');
+    expect(classifyScrollBurst({ samples, viewportHeight, windowMs: 1000 })).toBe('rapid');
+    // 2000px = 2.5 viewports: a factor of 3 keeps it gentle.
+    expect(
+      classifyScrollBurst({ samples, viewportHeight, windowMs: 1000, viewportFactor: 3 }),
+    ).toBe('gentle');
+  });
+
+  it('default constants: one viewport per settle window (200ms)', () => {
+    expect(RAPID_SCROLL_WINDOW_MS).toBe(200);
+    expect(RAPID_SCROLL_VIEWPORT_FACTOR).toBe(1);
+  });
+});
+
+describe('classifySettledPosition (settle-point driver)', () => {
+  // Same geometry as the gesture tests: rowHeight 100, near threshold
+  // 2 pages x 200 rows = 40000px from the segment start (spacer 100000px).
+  const serialAtTop = {
+    scrollTop: 100,
+    threshold: 240,
+    canScroll: true,
+    fetching: false,
+    exhausted: false,
+    historyCount: 10,
+    tailCount: 30,
+    tailTruncated: true,
+    totalMessages: 1000,
+  };
+  const base = {
+    scrollTop: 0,
+    spacerAboveHeight: 100_000,
+    rowHeightEstimate: 100,
+    totalMessages: 1000,
+    serial: serialAtTop,
+  };
+
+  it('far inside the spacer → seek', () => {
+    expect(classifySettledPosition(base)).toBe('seek');
+    expect(classifySettledPosition({ ...base, scrollTop: 100_000 - 401 * 100 })).toBe('seek');
+  });
+
+  it('near the segment start → serial (the walk reaches it quickly)', () => {
+    const scrollTop = 100_000 - 300 * 100; // 300 rows above the start (< 400)
+    expect(
+      classifySettledPosition({
+        ...base,
+        scrollTop,
+        serial: { ...serialAtTop, scrollTop, spacerAbove: 100_000 },
+      }),
+    ).toBe('serial');
+  });
+
+  it('threshold boundary: exactly at nearPages x pageSize is serial, one row deeper seeks', () => {
+    const atThreshold = 100_000 - 400 * 100;
+    expect(
+      classifySettledPosition({
+        ...base,
+        scrollTop: atThreshold,
+        serial: { ...serialAtTop, scrollTop: atThreshold, spacerAbove: 100_000 },
+      }),
+    ).toBe('serial');
+    expect(classifySettledPosition({ ...base, scrollTop: atThreshold - 100 })).toBe('seek');
+  });
+
+  it('no spacer near the top → serial', () => {
+    expect(
+      classifySettledPosition({
+        ...base,
+        spacerAboveHeight: 0,
+        scrollTop: 100,
+        serial: { ...serialAtTop, scrollTop: 100 },
+      }),
+    ).toBe('serial');
+  });
+
+  it('far position with seeks latched unsupported falls back to serial', () => {
+    expect(
+      classifySettledPosition({
+        ...base,
+        seekUnsupported: true,
+        serial: { ...serialAtTop, scrollTop: 0, spacerAbove: 100_000 },
+      }),
+    ).toBe('serial');
+  });
+
+  it('far position with an unknown snapshot total falls back to serial', () => {
+    expect(
+      classifySettledPosition({
+        ...base,
+        totalMessages: 0,
+        serial: { ...serialAtTop, scrollTop: 0, spacerAbove: 100_000 },
+      }),
+    ).toBe('serial');
+  });
+
+  it('no above driver applies → none (mid-transcript, past the trigger)', () => {
+    expect(
+      classifySettledPosition({
+        ...base,
+        spacerAboveHeight: 0,
+        scrollTop: 5000,
+        serial: { ...serialAtTop, scrollTop: 5000 },
+      }),
+    ).toBe('none');
+  });
+
+  it('none when the serial trigger is suppressed (fetching/exhausted) at a near position', () => {
+    expect(
+      classifySettledPosition({
+        ...base,
+        spacerAboveHeight: 0,
+        scrollTop: 100,
+        serial: { ...serialAtTop, scrollTop: 100, exhausted: true },
+      }),
+    ).toBe('none');
+    expect(
+      classifySettledPosition({
+        ...base,
+        spacerAboveHeight: 0,
+        scrollTop: 100,
+        serial: { ...serialAtTop, scrollTop: 100, fetching: true },
+      }),
+    ).toBe('none');
+  });
+
+  it('honors custom pageSize/nearPages', () => {
+    expect(
+      classifySettledPosition({
+        ...base,
+        scrollTop: 100_000 - 50 * 100,
+        pageSize: 10,
+        nearPages: 3,
+      }),
+    ).toBe('seek');
   });
 });
 

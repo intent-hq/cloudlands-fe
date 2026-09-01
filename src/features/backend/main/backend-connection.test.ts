@@ -33,6 +33,7 @@ import {
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
+import type { HostCertMismatch } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
@@ -626,6 +627,11 @@ class FakeWssDaemon {
   port = 0;
   fingerprint = '';
   lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
+  /** TLS sessions established (handshakes completed). */
+  secureConnections = 0;
+  /** Decrypted application bytes received across all TLS sessions. */
+  decryptedBytes = 0;
   handler: (req: {
     id?: number | string;
     method: string;
@@ -638,9 +644,16 @@ class FakeWssDaemon {
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('secureConnection', (socket) => {
+      this.secureConnections += 1;
+      socket.on('data', (chunk: Buffer) => {
+        this.decryptedBytes += chunk.length;
+      });
+    });
     this.wss = new WebSocketServer({ server: this.server });
     this.wss.on('connection', (socket, req) => {
       this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
       this.clients.push(socket);
       socket.on('message', (data, isBinary) => {
         if (isBinary) return;
@@ -748,6 +761,42 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     client.dispose();
   });
 
+  it('a mismatching pin aborts the transport before any request byte reaches the host', async () => {
+    // Steady-state arm of the token-before-trust leak (monorepo#4055): the
+    // pin is enforced at the TLS handshake, so the upgrade request — carrying
+    // the bearer token in the Authorization header and the `?token=` query
+    // fallback — is never written to a host presenting the wrong certificate.
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: wrong,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+      // Keep the client from re-dialing mid-assertion.
+      reconnectDelayMs: 10_000,
+    });
+    client.on('error', () => {});
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
+    // Let any in-flight server-side handshake/data events settle, then assert
+    // not one decrypted application byte — no upgrade request, no
+    // Authorization header, no token query — reached the host. (The server may
+    // or may not register the aborted session before the client tears it down,
+    // so only the byte count is asserted, not the session count.)
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+    expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
+    client.dispose();
+  });
+
   it('captureFingerprint returns the presented fingerprint for TOFU', async () => {
     const result = await captureFingerprint({
       host: daemon.host,
@@ -762,6 +811,23 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     });
   });
 
+  it('captureFingerprint without a token transmits no Authorization header and no token query', async () => {
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = undefined;
+    const result = await captureFingerprint({ host: daemon.host, port: daemon.port });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    // Request-level assertion (monorepo#3782): the unauthenticated probe
+    // carries no bearer header and no `?token=` query fallback.
+    expect(daemon.lastAuthHeader).toBeUndefined();
+    expect(daemon.lastUpgradeUrl).toBeDefined();
+    expect(daemon.lastUpgradeUrl).not.toContain('token');
+  });
+
   it('captureFingerprint surfaces a structured error when the host is unreachable', async () => {
     // 127.0.0.1:1 is guaranteed refused.
     const result = await captureFingerprint(
@@ -770,6 +836,54 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('connect-failed');
+  });
+
+  it('captureFingerprint with a matching expectedFingerprint completes the authenticated upgrade', async () => {
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      expectedFingerprint: daemon.fingerprint,
+    });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('captureFingerprint with a mismatching expectedFingerprint aborts before any request byte reaches the host', async () => {
+    // TOCTOU regression (monorepo#3782): the handshake-level pin must stop the
+    // upgrade request — carrying the bearer token — from ever being written to
+    // a host presenting an unconfirmed certificate.
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const secureBefore = daemon.secureConnections;
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      expectedFingerprint: '11:22:33:44',
+    });
+    expect(result).toEqual({
+      ok: false,
+      code: 'fingerprint-mismatch',
+      error: expect.stringContaining('certificate fingerprint mismatch'),
+      actualFingerprint: normalizeFingerprint(daemon.fingerprint),
+    });
+    // Let any in-flight server-side handshake/data events settle, then assert
+    // not one decrypted application byte — no upgrade request, no
+    // Authorization header, no token query — reached the host. (The server may
+    // or may not register the aborted session before the client tears it down,
+    // so only the byte count is asserted exactly.)
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.secureConnections).toBeGreaterThanOrEqual(secureBefore);
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+    expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
   });
 });
 
@@ -787,12 +901,16 @@ class RejectingWssDaemon {
   statusCode = 401;
   /** Number of upgrade attempts observed (for reconnect-halt assertions). */
   upgradeAttempts = 0;
+  lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
 
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
-    this.server.on('upgrade', (_req, socket) => {
+    this.server.on('upgrade', (req, socket) => {
       this.upgradeAttempts += 1;
+      this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
       socket.write(
         `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
@@ -972,6 +1090,28 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
       statusCode: 500,
     });
   });
+
+  it('captureFingerprint without a token captures a rejecting host fingerprint with zero token transmission', async () => {
+    // Regression (monorepo#3782): probing a changed/unknown host for its
+    // fingerprint must not transmit any bearer credential — the daemon
+    // rejects the unauthenticated upgrade (401), the cert is still read from
+    // the TLS layer, and nothing token-shaped reaches the wire.
+    daemon.statusCode = 401;
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = undefined;
+    const result = await captureFingerprint({ host: daemon.host, port: daemon.port });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: normalizeFingerprint(daemon.fingerprint),
+      connected: false,
+      // No token was supplied, so the 401 judges no token.
+      tokenValid: true,
+      statusCode: 401,
+    });
+    expect(daemon.lastAuthHeader).toBeUndefined();
+    expect(daemon.lastUpgradeUrl).toBeDefined();
+    expect(daemon.lastUpgradeUrl).not.toContain('token');
+  });
 });
 
 describe('normalizeFingerprint', () => {
@@ -1089,7 +1229,31 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect((await failed).message).toBe('ECONNREFUSED b');
   });
 
-  it('a PinMismatchError on ANY candidate fails the whole race immediately', async () => {
+  it('continues past a pin mismatch — a later good candidate still wins (iOS model)', async () => {
+    const bad = new FakeCandidate();
+    const good = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'bad', create: () => bad },
+      { host: 'good', create: () => good },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    const mismatchEvents: HostCertMismatch[] = [];
+    facade.on('pin-mismatch', (m: HostCertMismatch) => mismatchEvents.push(m));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    bad.emit('error', new PinMismatchError('AA', 'BB'));
+    // The mismatching candidate is counted out and torn down — not the race.
+    expect(bad.destroyedByRace).toBe(true);
+    expect(facade.destroyed).toBe(false);
+    good.emit('connect');
+    await connected;
+    expect(errors).toHaveLength(0);
+    // The pre-win mismatch is surfaced as a non-fatal per-host event.
+    expect(mismatchEvents).toEqual([{ host: 'bad', expected: 'AA', actual: 'BB' }]);
+    facade.destroy();
+  });
+
+  it('fails with an aggregated cert error listing every host when all candidates mismatch', async () => {
     const a = new FakeCandidate();
     const b = new FakeCandidate();
     const facade = raceDuplexSockets([
@@ -1098,16 +1262,58 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
     a.emit('error', new PinMismatchError('AA', 'BB'));
+    b.emit('error', new PinMismatchError('AA', 'CC'));
     const error = await failed;
     expect(error).toBeInstanceOf(PinMismatchError);
-    // The other candidate is torn down — no silent fallback past a bad cert.
-    expect(b.destroyedByRace).toBe(true);
-    // A late connect on the other candidate must not resurrect the race.
-    b.emit('connect');
-    expect(facade.destroyed).toBe(true);
+    const aggregate = error as PinMismatchError;
+    expect(aggregate.mismatches).toEqual([
+      { host: 'a', expected: 'AA', actual: 'BB' },
+      { host: 'b', expected: 'AA', actual: 'CC' },
+    ]);
+    // expected/actual mirror the FIRST mismatch (backward compatibility).
+    expect(aggregate.expected).toBe('AA');
+    expect(aggregate.actual).toBe('BB');
+    expect(aggregate.message).toContain('hosts: a, b');
   });
 
-  it('a pin mismatch AFTER a valid winner settles is discarded — winner takes precedence', async () => {
+  it('prefers the aggregated cert error over a generic failure when no candidate wins', async () => {
+    const mismatching = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'mismatching', create: () => mismatching },
+      { host: 'refused', create: () => refused },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    mismatching.emit('error', new PinMismatchError('AA', 'BB'));
+    refused.emit('error', new Error('ECONNREFUSED'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).mismatches).toEqual([
+      { host: 'mismatching', expected: 'AA', actual: 'BB' },
+    ]);
+  });
+
+  it('prefers the cert error on race timeout when a mismatch was observed', async () => {
+    const mismatching = new FakeCandidate();
+    const blackhole = new FakeCandidate();
+    const facade = raceDuplexSockets(
+      [
+        { host: 'mismatching', create: () => mismatching },
+        { host: 'blackhole', create: () => blackhole },
+      ],
+      { timeoutMs: 50 },
+    );
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    mismatching.emit('error', new PinMismatchError('AA', 'BB'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).mismatches).toEqual([
+      { host: 'mismatching', expected: 'AA', actual: 'BB' },
+    ]);
+    expect(blackhole.destroyedByRace).toBe(true);
+  });
+
+  it('a pin mismatch AFTER a valid winner settles emits the event without tearing down the winner', async () => {
     const good = new FakeCandidate();
     const stale = new FakeCandidate();
     const facade = raceDuplexSockets([
@@ -1116,14 +1322,18 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const errors: Error[] = [];
     facade.on('error', (e) => errors.push(e));
+    const mismatchEvents: HostCertMismatch[] = [];
+    facade.on('pin-mismatch', (m: HostCertMismatch) => mismatchEvents.push(m));
     const connected = new Promise<void>((res) => facade.once('connect', () => res()));
     good.emit('connect');
     await connected;
     // A stale IP now owned by a foreign pinned daemon reports a mismatch late:
-    // the established pin-verified winner must not be torn down by it.
+    // the established pin-verified winner must not be torn down by it, but the
+    // mismatch is still surfaced as a non-fatal per-host event (not log-only).
     stale.emit('error', new PinMismatchError('AA', 'BB'));
     expect(errors).toHaveLength(0);
     expect(facade.destroyed).toBe(false);
+    expect(mismatchEvents).toEqual([{ host: 'stale', expected: 'AA', actual: 'BB' }]);
     // The facade still proxies the winner.
     facade.write('ping\n');
     expect(good.written).toEqual(['ping\n']);
@@ -1150,6 +1360,33 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     await connected;
     expect(errors).toHaveLength(0);
     facade.destroy();
+  });
+
+  it('aggregates a late mismatch from an already-counted candidate and dedupes per host', async () => {
+    const flaky = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'flaky', create: () => flaky },
+      { host: 'refused', create: () => refused },
+    ]);
+    const mismatchEvents: HostCertMismatch[] = [];
+    facade.on('pin-mismatch', (m: HostCertMismatch) => mismatchEvents.push(m));
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    // The flaky candidate is counted out on a generic error first…
+    flaky.emit('error', new Error('read ECONNRESET'));
+    expect(flaky.destroyedByRace).toBe(true);
+    // …then surfaces the pin mismatch late, while the race is undecided: it
+    // must still be folded into the aggregate, and a repeat must not
+    // double-report the host.
+    flaky.emit('error', new PinMismatchError('AA', 'BB'));
+    flaky.emit('error', new PinMismatchError('AA', 'BB'));
+    refused.emit('error', new Error('ECONNREFUSED'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    expect((error as PinMismatchError).mismatches).toEqual([
+      { host: 'flaky', expected: 'AA', actual: 'BB' },
+    ]);
+    expect(mismatchEvents).toEqual([{ host: 'flaky', expected: 'AA', actual: 'BB' }]);
   });
 
   it('times out when no candidate ever connects', async () => {

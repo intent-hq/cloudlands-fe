@@ -18,7 +18,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from './context-api';
-  import { isFileDragEvent } from '$lib/utils/drop-guard';
+  import { isFileDragEvent, isFilePasteEvent } from '$lib/utils/drop-guard';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
   import { createMentionSuggestionRenderer } from './mention-suggestion-renderer';
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
@@ -907,6 +907,15 @@
             autocapitalize: 'off',
           },
           handlePaste: (view, event) => {
+            // Block ProseMirror's default handling for file-bearing pastes
+            // (mirrors handleDrop below): a clipboard pairing the file with
+            // text/html (browser "Copy image") would otherwise insert an
+            // inline image node synchronously. Returning true (without
+            // stopPropagation) lets the event bubble to the container-level
+            // paste handler, which attaches the files as context items.
+            if (isFilePasteEvent(event)) {
+              return true;
+            }
             const text = event.clipboardData?.getData('text/plain');
             if (text) {
               const lines = text.split('\n');

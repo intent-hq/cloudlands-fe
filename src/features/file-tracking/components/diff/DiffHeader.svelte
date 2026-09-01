@@ -218,7 +218,11 @@
     background: var(--background, hsl(var(--background)));
     color: var(--foreground, hsl(var(--foreground)));
     cursor: pointer;
-    transition: all 0.15s;
+    transition:
+      background-color 0.15s,
+      border-color 0.15s,
+      color 0.15s,
+      opacity 0.15s;
   }
 
   .diff-action-button:hover:not(:disabled) {

@@ -68,7 +68,6 @@
   let desiredExpanded = false;
   let prevStreaming = false;
   let prevTerminal = false;
-  let prevLastConversationMessage = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
@@ -112,21 +111,19 @@
   $effect(() => {
     const currentlyStreaming = isStreaming;
     const currentlyTerminal = isTerminal;
-    const currentlyLastMessage = isLastConversationMessage;
     const hasCurrentChild = Boolean(currentChild);
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
-      prevLastConversationMessage = currentlyLastMessage;
       if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
         // A terminal group of the conversation's final assistant message keeps
         // its completed expansion across remounts (message finalization,
         // reload); everything else in history mounts collapsed.
-        setExpanded(currentlyTerminal && currentlyLastMessage);
+        setExpanded(currentlyTerminal && isLastConversationMessage);
       }
       return;
     }
@@ -149,10 +146,6 @@
       scheduleCollapse();
     } else if (!prevTerminal && currentlyTerminal) {
       clearCollapseTimer();
-    } else if (prevLastConversationMessage && !currentlyLastMessage && currentlyTerminal) {
-      // The owning message stopped being the conversation's last (a new turn
-      // started): the completed expansion loses its claim.
-      scheduleCollapse();
     } else if (
       !searchOwnsExpansion &&
       disclosureOverride !== 'expanded-completed' &&
@@ -162,7 +155,6 @@
     }
     prevStreaming = currentlyStreaming;
     prevTerminal = currentlyTerminal;
-    prevLastConversationMessage = currentlyLastMessage;
   });
 
   onDestroy(() => {

@@ -192,6 +192,7 @@
     ),
   );
   const launcherNotes = $derived(launcherNoteState.launcherNotes);
+  const launcherHasSpecNote = $derived(launcherNotes.some((note) => isSpecNote(note.id as string)));
   const launcherNoteOverflowCount = $derived(launcherNoteState.overflowCount);
   const launcherNoteOverflowLabel = $derived(
     m.lib_commandPalette_showMoreNotes_label({
@@ -275,6 +276,18 @@
   function launcherGridTemplateColumns(tabId: string): string {
     const itemCount = launcherItemCount(tabId);
     const hasOverflow = tabId === 'context' && launcherNoteOverflowCount > 0;
+    if (tabId === 'context' && launcherHasSpecNote) {
+      const additionalNoteCount = launcherNotes.length - 1;
+      const columns = ['max-content'];
+      if (additionalNoteCount > 0) {
+        if (additionalNoteCount > 1) {
+          columns.push(`repeat(${additionalNoteCount - 1}, ${LAUNCHER_STEP_SIZE}px)`);
+        }
+        columns.push(`${hasOverflow ? LAUNCHER_TARGET_SIZE : LAUNCHER_VISIBLE_SIZE}px`);
+      }
+      if (hasOverflow) columns.push('max-content');
+      return columns.join(' ');
+    }
     if (hasOverflow) {
       return itemCount > 2
         ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_OFFSET + LAUNCHER_STEP_SIZE}px max-content`
@@ -1268,33 +1281,46 @@
                       />
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
-                        <SidebarLauncherHoverCard
-                          title={note.title || m.chat_mentions_untitledNote_label()}
-                          rows={[{ text: getNoteLauncherPreview(note) }]}
-                          emptyText="Empty note"
-                          kind="note"
-                          gridPosition="start"
-                          open={openLauncherHoverKey === `note:${note.id}`}
-                          onOpenChange={(open) =>
-                            handleLauncherHoverOpenChange(`note:${note.id}`, open)}
+                        {@const isSpec = isSpecNote(note.id as string)}
+                        <div
+                          class={isSpec ? 'flex h-9 items-center' : 'contents'}
+                          data-context-spec-summary-row={isSpec ? 'true' : undefined}
                         >
-                          <Button
-                            variant="plain"
-                            class={LAUNCHER_ICON_BUTTON_CLASS}
-                            onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}
-                            aria-label={note.title || m.chat_mentions_untitledNote_label()}
-                            data-sidebar-context={note.id}
-                            data-launcher-leading-item={index === 0 ? 'true' : undefined}
-                            data-launcher-preview-item
+                          <SidebarLauncherHoverCard
+                            title={note.title || m.chat_mentions_untitledNote_label()}
+                            rows={[{ text: getNoteLauncherPreview(note) }]}
+                            emptyText="Empty note"
+                            kind="note"
+                            gridPosition="start"
+                            open={openLauncherHoverKey === `note:${note.id}`}
+                            onOpenChange={(open) =>
+                              handleLauncherHoverOpenChange(`note:${note.id}`, open)}
                           >
-                            <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
-                              <ResourceIconTile
-                                kind="note"
-                                class="transition-colors group-hover/preview:bg-background/70! group-focus-visible/preview:bg-background/80!"
-                              />
-                            </span>
-                          </Button>
-                        </SidebarLauncherHoverCard>
+                            <Button
+                              variant="plain"
+                              class={LAUNCHER_ICON_BUTTON_CLASS}
+                              onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}
+                              aria-label={note.title || m.chat_mentions_untitledNote_label()}
+                              data-sidebar-context={note.id}
+                              data-launcher-leading-item={index === 0 ? 'true' : undefined}
+                              data-launcher-preview-item
+                            >
+                              <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
+                                <ResourceIconTile
+                                  kind="note"
+                                  class="transition-colors group-hover/preview:bg-background/70! group-focus-visible/preview:bg-background/80!"
+                                />
+                              </span>
+                            </Button>
+                          </SidebarLauncherHoverCard>
+                          {#if isSpec}
+                            <span
+                              class="pointer-events-none whitespace-nowrap text-[11px] leading-none font-medium text-muted-foreground /* a11y-ignore: product requires an 11px compact Context summary */"
+                              data-context-capability-summary
+                              >{m.workspace_multiSelectSidebar_contextSummary_label()}</span
+                            >
+                          {/if}
+                        </div>
                       {/each}
                       {#if launcherNoteOverflowCount > 0}
                         <Button

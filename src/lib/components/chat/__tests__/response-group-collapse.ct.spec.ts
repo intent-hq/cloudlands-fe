@@ -83,7 +83,7 @@ test('keeps only the terminal completed group open until later visible content f
   );
 });
 
-test('mounts the conversation-final terminal group expanded and collapses it on demotion', async ({
+test('mounts the conversation-final terminal group expanded and keeps it expanded on demotion', async ({
   mount,
   page,
 }) => {
@@ -122,7 +122,7 @@ test('mounts the conversation-final terminal group expanded and collapses it on 
       afterGroupsVisible: false,
     },
   });
-  await expect(finalTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(finalTrigger).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('mounts every group collapsed when the completed message is not conversation-final', async ({

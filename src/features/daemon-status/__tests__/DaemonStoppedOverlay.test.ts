@@ -79,6 +79,7 @@ import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/
 import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
 import {
   authRejectedReceived,
+  certWarningsReceived,
   connectionsListReceived,
   connectOperationStarted,
   openConnectionRequested,
@@ -341,6 +342,73 @@ describe('DaemonStoppedOverlay', () => {
     const retrying = screen.getByTestId('daemon-stopped-retrying').textContent!;
     expect(retrying).toContain('Retrying connection');
     expect(retrying).not.toContain('attempt');
+  });
+
+  describe('passive per-host cert warnings (#1746 follow-up)', () => {
+    const REMOTE: ConnectionRecord = {
+      id: 'remote-1',
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AB:CD',
+      isLocal: false,
+    };
+    const WARNING = {
+      host: '10.0.0.6',
+      expectedFingerprint: 'AB:CD',
+      actualFingerprint: 'EF:01',
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.5:8443/ws',
+    };
+
+    function bindWindowToRemote() {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [REMOTE],
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
+      );
+    }
+
+    it('lists warned hosts passively while reconnecting, keeping the retry indicator', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+      dispatchAndFlush(certWarningsReceived({ id: REMOTE.id, warnings: [WARNING] }));
+
+      const warnings = screen.getByTestId('daemon-stopped-cert-warnings');
+      expect(warnings.textContent).toContain('unexpected certificate');
+      const hosts = screen.getAllByTestId('daemon-stopped-cert-warning-host');
+      expect(hosts).toHaveLength(1);
+      expect(hosts[0].textContent).toContain('10.0.0.6');
+      // Fingerprint detail is exposed on the row (title attribute).
+      expect(hosts[0].getAttribute('title')).toContain('AB:CD');
+      expect(hosts[0].getAttribute('title')).toContain('EF:01');
+      // Passive: the retrying indicator stays — nothing is blocked.
+      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    });
+
+    it('hides warnings latched for another backend than this window', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      // Window stays bound to local; another backend's warnings are not shown.
+      dispatchAndFlush(certWarningsReceived({ id: REMOTE.id, warnings: [WARNING] }));
+      expect(screen.queryByTestId('daemon-stopped-cert-warnings')).toBeNull();
+    });
+
+    it('drops the list when main clears the warnings (fresh client)', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+      dispatchAndFlush(certWarningsReceived({ id: REMOTE.id, warnings: [WARNING] }));
+      expect(screen.getByTestId('daemon-stopped-cert-warnings')).toBeTruthy();
+
+      dispatchAndFlush(certWarningsReceived({ id: REMOTE.id, warnings: [] }));
+      expect(screen.queryByTestId('daemon-stopped-cert-warnings')).toBeNull();
+    });
   });
 
   it('shows the crash-loop posture after the supervisor gave up, with distinct copy and the reason', async () => {

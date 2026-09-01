@@ -3,8 +3,11 @@
  *
  * Covers the behaviours the spec calls out as must-assert:
  *   - **Validated open**: `openBackendWindow` connects a pooled client, probes
- *     it with an authenticated request, and only then opens the window; a bad
- *     target is rejected before any window opens.
+ *     it with an authenticated request, and only then opens the window; an
+ *     unknown/incomplete target or a missing secret is rejected before any
+ *     window opens, while a remote whose probe merely FAILS (unreachable, bad
+ *     token/cert) still gets its window — the retained client keeps retrying
+ *     and the renderer overlay / latched failure events own recovery.
  *   - **Cert-mismatch propagation**: a {@link PinMismatchError} from the pinned
  *     `wss` transport surfaces a single `connections:cert-mismatch` failure
  *     event to the renderer instead of silently reconnecting.
@@ -457,6 +460,198 @@ describe('pinned-cert mismatch propagation', () => {
       certMismatch: null,
     });
   });
+
+  it('carries the per-host mismatch list from a raced PinMismatchError (#1746)', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+    const { PinMismatchError } = await import('../backend-connection');
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit(
+      'error',
+      new PinMismatchError('AA:BB:CC:DD', 'EE:FF:00:11', [
+        { host: '10.0.0.5', expected: 'AA:BB:CC:DD', actual: 'EE:FF:00:11' },
+        { host: '192.168.1.9', expected: 'AA:BB:CC:DD', actual: '22:33:44:55' },
+      ]),
+    );
+
+    const mismatchCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-mismatch');
+    expect(mismatchCalls).toHaveLength(1);
+    expect(mismatchCalls[0][1]).toMatchObject({
+      id: 'remote-1',
+      expectedFingerprint: 'AA:BB:CC:DD',
+      actualFingerprint: 'EE:FF:00:11',
+      mismatches: [
+        { host: '10.0.0.5', expectedFingerprint: 'AA:BB:CC:DD', actualFingerprint: 'EE:FF:00:11' },
+        {
+          host: '192.168.1.9',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: '22:33:44:55',
+        },
+      ],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-fatal per-host cert warnings (#1746)
+// ---------------------------------------------------------------------------
+
+describe('non-fatal per-host cert-warning propagation', () => {
+  it('broadcasts connections:cert-warnings when the client observes a pin-mismatch', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+
+    const warningCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-warnings');
+    expect(warningCalls).toHaveLength(1);
+    expect(warningCalls[0][1]).toEqual({
+      id: 'remote-1',
+      warnings: [
+        {
+          host: '192.168.1.9',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: '22:33:44:55',
+        },
+      ],
+    });
+
+    // The connection race re-observes the same mismatch on every reconnect
+    // attempt — an unchanged fingerprint re-broadcasts nothing.
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+    expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(1);
+  });
+
+  it('broadcasts an empty warnings array when the accumulated set is cleared', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+    expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(1);
+
+    // Dispose (re-pair path) — a renderer listening only on the dedicated
+    // channel must be told the stale hosts are gone.
+    mod.disconnectBackendClient('remote-1');
+    const warningCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-warnings');
+    expect(warningCalls).toHaveLength(2);
+    expect(warningCalls[1][1]).toEqual({ id: 'remote-1', warnings: [] });
+
+    // With nothing accumulated, a fresh client's clear broadcasts nothing.
+    await mod.connectBackendClient('remote-1');
+    expect(send.mock.calls.filter(([c]) => c === 'connections:cert-warnings')).toHaveLength(2);
+  });
+
+  it('accumulates per-host warnings and keeps the latest fingerprint per host', async () => {
+    const send = installWindow('remote-1');
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+    client.emit('cert-warning', {
+      host: '10.0.0.99',
+      expected: 'AA:BB:CC:DD',
+      actual: '66:77:88:99',
+    });
+    // The same host later presents a DIFFERENT cert — latest fingerprint wins.
+    client.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: 'FF:FF:FF:FF',
+    });
+
+    const warningCalls = send.mock.calls.filter(([c]) => c === 'connections:cert-warnings');
+    expect(warningCalls).toHaveLength(3);
+    expect(warningCalls.at(-1)?.[1]).toEqual({
+      id: 'remote-1',
+      warnings: [
+        {
+          host: '192.168.1.9',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: 'FF:FF:FF:FF',
+        },
+        {
+          host: '10.0.0.99',
+          expectedFingerprint: 'AA:BB:CC:DD',
+          actualFingerprint: '66:77:88:99',
+        },
+      ],
+    });
+  });
+
+  it('latches warnings fired with zero windows and replays them on connections:list', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const pooled = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    pooled.emit('cert-warning', {
+      host: '192.168.1.9',
+      expected: 'AA:BB:CC:DD',
+      actual: '22:33:44:55',
+    });
+
+    const { localSender, remoteSender } = installBackendWindows();
+    const handler = findHandler('connections:list');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certWarnings: {
+        id: 'remote-1',
+        warnings: [
+          {
+            host: '192.168.1.9',
+            expectedFingerprint: 'AA:BB:CC:DD',
+            actualFingerprint: '22:33:44:55',
+          },
+        ],
+      },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      certWarnings: null,
+    });
+
+    // A fresh client (re-pair) clears the accumulated warnings: the next
+    // connect re-observes any still-mismatching host.
+    mod.disconnectBackendClient('remote-1');
+    await mod.connectBackendClient('remote-1');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certWarnings: null,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -599,6 +794,8 @@ describe('connections:* IPC handlers', () => {
       authRejected: null,
       // No pinned cert has mismatched, so there is no sticky cert failure.
       certMismatch: null,
+      // No non-fatal per-host mismatch has been observed either (#1746).
+      certWarnings: null,
       // The app's pinned intentd version rides the list payload.
       pinnedVersion: '0.1.0',
       // No client reports 'connected' (the fake pool returns 'disconnected').
@@ -1031,10 +1228,17 @@ describe('connections:* IPC handlers', () => {
       status: 'success',
       fingerprint: REMOTE.fingerprint,
     });
-    expect(mockCaptureFingerprint).toHaveBeenCalledWith({
+    // Two-phase probe (monorepo#3782): the fingerprint is captured WITHOUT
+    // the saved secret first; the token is transmitted only once the
+    // presented certificate matched the saved pin — and the authenticated
+    // capture pins that fingerprint at the TLS handshake so a swapped
+    // certificate aborts before the token is written (TOCTOU).
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(1, { host: '10.0.0.99', port: 9443 });
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(2, {
       host: '10.0.0.99',
       port: 9443,
       token: 'secret-token',
+      expectedFingerprint: REMOTE.fingerprint,
     });
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
@@ -1057,6 +1261,8 @@ describe('connections:* IPC handlers', () => {
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain('preview-token');
+    // The unauthenticated probe never carries the override token either.
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(1, { host: '10.0.0.99', port: 9443 });
     expect(mockCaptureFingerprint).toHaveBeenCalledWith(
       expect.objectContaining({ token: 'preview-token' }),
     );
@@ -1110,10 +1316,24 @@ describe('connections:* IPC handlers', () => {
       actualFingerprint: changedFingerprint,
     });
     expect(store.updateMetadata).not.toHaveBeenCalled();
+    // Trust before transmission (monorepo#3782): the changed host was probed
+    // exactly once, WITHOUT the saved secret — declining the fingerprint means
+    // the token never reached the new host.
+    expect(mockCaptureFingerprint).toHaveBeenCalledTimes(1);
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith({ host: '10.0.0.99', port: 9443 });
 
     await expect(
       handler!({}, { ...params, confirmedFingerprint: changedFingerprint }),
     ).resolves.toMatchObject({ status: 'updated' });
+    // Only the confirmed retry transmits the saved token (phase two), pinned
+    // to the just-confirmed fingerprint at the TLS handshake.
+    expect(mockCaptureFingerprint).toHaveBeenCalledTimes(3);
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(3, {
+      host: '10.0.0.99',
+      port: 9443,
+      token: 'secret-token',
+      expectedFingerprint: changedFingerprint,
+    });
     expect(store.updateMetadata).toHaveBeenCalledWith(
       REMOTE.id,
       expect.objectContaining({
@@ -1122,6 +1342,51 @@ describe('connections:* IPC handlers', () => {
         fingerprint: changedFingerprint,
       }),
     );
+  });
+
+  it('surfaces a certificate swap between the probe and the verify as a fresh confirmation', async () => {
+    // TOCTOU regression (monorepo#3782): the unauthenticated probe sees the
+    // saved pin, but the host swaps its certificate before the authenticated
+    // verify. The handshake-level pin aborts that capture (structured
+    // fingerprint-mismatch, token never written) and the handler surfaces a
+    // fresh confirmation requirement instead of persisting.
+    const swappedFingerprint = 'EE:FF:00:11';
+    mockCaptureFingerprint
+      .mockResolvedValueOnce({
+        ok: true,
+        fingerprint: REMOTE.fingerprint,
+        connected: false,
+        tokenValid: true,
+        statusCode: 401,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'fingerprint-mismatch',
+        error: 'certificate fingerprint mismatch',
+        actualFingerprint: swappedFingerprint,
+      });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!(
+        {},
+        { id: REMOTE.id, label: REMOTE.label, accent: 'blue', host: '10.0.0.99', port: 9443 },
+      ),
+    ).resolves.toEqual({
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint: REMOTE.fingerprint,
+      actualFingerprint: swappedFingerprint,
+    });
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    // The verify carried the handshake pin that stopped the token.
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(2, {
+      host: '10.0.0.99',
+      port: 9443,
+      token: 'secret-token',
+      expectedFingerprint: REMOTE.fingerprint,
+    });
   });
 
   it('returns token-free guidance when an address change cannot decrypt the saved secret', async () => {
@@ -1238,11 +1503,16 @@ describe('connections:* IPC handlers', () => {
   });
 
   it('serializes connection tests so each uses a stable saved-secret snapshot', async () => {
-    let finishFirst!: (value: unknown) => void;
-    let finishSecond!: (value: unknown) => void;
-    mockCaptureFingerprint
-      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
-      .mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)));
+    // Each test now performs a two-phase capture (unauthenticated probe, then
+    // authenticated verify — monorepo#3782), so gate every capture call.
+    const gates: Array<(value: unknown) => void> = [];
+    mockCaptureFingerprint.mockImplementation(() => new Promise((resolve) => gates.push(resolve)));
+    const capturedOk = {
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    };
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:test')!;
@@ -1250,20 +1520,15 @@ describe('connections:* IPC handlers', () => {
     const first = handler({}, { id: REMOTE.id, host: '10.0.0.8', port: 8443 });
     const second = handler({}, { id: REMOTE.id, host: '10.0.0.9', port: 8443 });
     await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(1));
-    finishFirst({
-      ok: true,
-      fingerprint: REMOTE.fingerprint,
-      connected: true,
-      tokenValid: true,
-    });
-    await expect(first).resolves.toMatchObject({ status: 'success' });
+    gates[0]!(capturedOk);
     await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(2));
-    finishSecond({
-      ok: true,
-      fingerprint: REMOTE.fingerprint,
-      connected: true,
-      tokenValid: true,
-    });
+    gates[1]!(capturedOk);
+    await expect(first).resolves.toMatchObject({ status: 'success' });
+    // The second test's probe starts only after the first fully settled.
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(3));
+    gates[2]!(capturedOk);
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(4));
+    gates[3]!(capturedOk);
     await expect(second).resolves.toMatchObject({ status: 'success' });
   });
 
@@ -1494,8 +1759,10 @@ describe('connections:* IPC handlers', () => {
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
     expect(remote).not.toBe(local);
+    // A remote open's probe is bounded (5s) so a black-holed connect cannot
+    // sit out the 30s client default before the window appears.
     expect(remote?.request).toHaveBeenCalledWith('host.status', undefined, {
-      timeoutMs: undefined,
+      timeoutMs: 5_000,
     });
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
@@ -1503,9 +1770,13 @@ describe('connections:* IPC handlers', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('connections:open drops only a failed remote and leaves local usable', async () => {
+  it('connections:open opens the window and retains the client when the remote probe fails', async () => {
+    // An unreachable/rejecting remote must not fail the click silently: the
+    // window opens anyway, the pooled client is RETAINED (its reconnect loop
+    // keeps retrying), and the renderer's connection-lost overlay owns
+    // recovery. Local stays untouched.
     rpc.handler = async (method) => {
-      if (method === 'host.status') throw new Error('remote rejected');
+      if (method === 'host.status') throw new Error('remote unreachable');
       return {};
     };
     const { mod, openOrFocus } = await loadModule();
@@ -1513,12 +1784,51 @@ describe('connections:* IPC handlers', () => {
     mod.registerBackendHandlers();
     const handler = findHandler('connections:open');
 
-    await expect(handler!({}, { id: 'remote-1' })).rejects.toThrow('remote rejected');
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
 
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
-    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
-    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(mod.getBackendClientForConnection('remote-1')).toBeDefined();
+    expect(lifecycle.events.filter((e) => e.type === 'dispose')).toEqual([]);
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open opens the window on a probe auth/cert failure and replays the latched event', async () => {
+    // A cert-mismatch/auth-rejected probe failure also opens the window: the
+    // transport raises the typed error on the retained client, whose latched
+    // failure event is replayed to the new window via connections:list — the
+    // trust modal / re-pair overlay surfaces there instead of a failed click.
+    const { AuthRejectedError } = await import('../backend-connection');
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new AuthRejectedError(401);
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const open = findHandler('connections:open');
+
+    await expect(open!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+
+    // The retained client's transport raises the same rejection on its
+    // reconnect attempts; the window created by the open learns it from the
+    // sticky replay on its initial list fetch.
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('error', new AuthRejectedError(401));
+    const { remoteSender } = installBackendWindows();
+    const list = findHandler('connections:list');
+    await expect(list!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
   });
 
   it('returns token-free open guidance and connects after write-only secret recovery', async () => {

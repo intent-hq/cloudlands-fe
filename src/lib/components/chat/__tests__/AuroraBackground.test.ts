@@ -59,6 +59,26 @@ function createMockGL() {
   return { gl, loseContext };
 }
 
+class MockResizeObserver {
+  static instances: MockResizeObserver[] = [];
+  constructor(private readonly callback: ResizeObserverCallback) {
+    MockResizeObserver.instances.push(this);
+  }
+  observe() {}
+  disconnect() {}
+  fire(width: number, height: number) {
+    this.callback(
+      [
+        {
+          target: document.querySelector('canvas')!,
+          contentRect: { width, height },
+        } as ResizeObserverEntry,
+      ],
+      this as unknown as ResizeObserver,
+    );
+  }
+}
+
 describe('AuroraBackground cleanup', () => {
   let mockGL: ReturnType<typeof createMockGL>;
   let getContextSpy: ReturnType<typeof vi.spyOn>;
@@ -92,6 +112,8 @@ describe('AuroraBackground cleanup', () => {
       }),
     );
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
+    MockResizeObserver.instances = [];
   });
 
   afterEach(() => {
@@ -251,6 +273,38 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
+  it('rounds and deduplicates resize-driven backing dimensions without frame layout reads', () => {
+    const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(1.5);
+    const clientWidth = vi
+      .spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(320);
+    const clientHeight = vi
+      .spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(180);
+    render(AuroraBackground);
+
+    expect(clientWidth).toHaveBeenCalledTimes(1);
+    expect(clientHeight).toHaveBeenCalledTimes(1);
+    flushRafCallbacks();
+    expect(clientWidth).toHaveBeenCalledTimes(1);
+    expect(clientHeight).toHaveBeenCalledTimes(1);
+
+    MockResizeObserver.instances[0].fire(640.25, 360.25);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 960, 540);
+    const canvas = document.querySelector('canvas')!;
+    expect([canvas.width, canvas.height]).toEqual([960, 540]);
+    expect(clientWidth).toHaveBeenCalledTimes(1);
+    expect(clientHeight).toHaveBeenCalledTimes(1);
+
+    mockGL.gl.viewport.mockClear();
+    MockResizeObserver.instances[0].fire(640.25, 360.25);
+    expect(mockGL.gl.viewport).not.toHaveBeenCalled();
+
+    devicePixelRatio.mockRestore();
+    clientWidth.mockRestore();
+    clientHeight.mockRestore();
+  });
+
   it('does not draw frames when reduced motion is requested', () => {
     vi.mocked(window.matchMedia).mockImplementation(
       (query) =>
@@ -270,5 +324,6 @@ describe('AuroraBackground cleanup', () => {
     flushRafCallbacks();
 
     expect(mockGL.gl.drawArrays).not.toHaveBeenCalled();
+    expect(rafCallbacks).toHaveLength(0);
   });
 });

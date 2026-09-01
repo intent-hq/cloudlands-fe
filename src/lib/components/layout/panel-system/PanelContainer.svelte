@@ -251,6 +251,8 @@
     if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
     resizeCommitMotionFrame = requestAnimationFrame(() => {
       resizeCommitMotionFrame = null;
+      rootResizeStartChildWidths = null;
+      rootResizeNextChildWidths = null;
       suppressResizeCommitMotion = false;
     });
   }
@@ -300,13 +302,12 @@
   }
 
   function applyLiveResizeSizes(resizeSizes: number[]) {
-    if (node.type !== 'split' || !containerRef) return;
-    const panelElements = Array.from(
-      containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
-    );
-    panelElements.forEach((panelElement, index) => {
+    if (node.type !== 'split') return;
+    resizePanelElements.forEach((panelElement, index) => {
       const child = node.children[index];
-      if (child) panelElement.style.flex = getPanelChildFlex(child, index, resizeSizes);
+      if (!child) return;
+      const flex = getPanelChildFlex(child, index, resizeSizes);
+      if (panelElement.style.flex !== flex) panelElement.style.flex = flex;
     });
   }
 
@@ -364,6 +365,8 @@
   let rootResizeNextChildWidths: number[] | null = null;
   let rootResizeRequestedDelta = 0;
   let rootResizeInlineScale = 1;
+  let resizeReferenceSize = 1;
+  let resizePanelElements: HTMLElement[] = [];
 
   function handleResize(index: number, delta: number) {
     if (node.type !== 'split' || !containerRef) return;
@@ -380,11 +383,7 @@
       return;
     }
 
-    const containerSize =
-      panelReferenceSize ??
-      (node.direction === 'horizontal' ? containerRef.offsetWidth : containerRef.offsetHeight);
-
-    const deltaPercent = (delta / containerSize) * 100;
+    const deltaPercent = (delta / resizeReferenceSize) * 100;
 
     const newSizes = resizeAdjacentPanels(liveResizeSizes ?? node.sizes, index, deltaPercent);
     liveResizeSizes = newSizes;
@@ -392,12 +391,10 @@
   }
 
   function applyLiveRootResizeChildWidths(widths: readonly number[]) {
-    if (node.type !== 'split' || !containerRef) return;
-    const panelElements = Array.from(
-      containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
-    );
-    panelElements.forEach((panelElement, index) => {
-      panelElement.style.flex = `0 0 ${widths[index] ?? 0}px`;
+    if (node.type !== 'split') return;
+    resizePanelElements.forEach((panelElement, index) => {
+      const flex = `0 0 ${widths[index] ?? 0}px`;
+      if (panelElement.style.flex !== flex) panelElement.style.flex = flex;
     });
   }
 
@@ -410,9 +407,9 @@
     ) {
       return null;
     }
-    const widths = Array.from(
-      containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
-    ).map((element) => element.getBoundingClientRect().width / rootResizeInlineScale);
+    const widths = resizePanelElements.map(
+      (element) => element.getBoundingClientRect().width / rootResizeInlineScale,
+    );
     return widths.length === node.children.length && widths.every((width) => width > 0)
       ? widths
       : null;
@@ -422,8 +419,18 @@
     if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
     resizeCommitMotionFrame = null;
     suppressResizeCommitMotion = false;
-    liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
-    isResizing = true;
+    resizePanelElements = containerRef
+      ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'))
+      : [];
+    resizeReferenceSize = Math.max(
+      1,
+      panelReferenceSize ??
+        (node.type === 'split' && containerRef
+          ? node.direction === 'horizontal'
+            ? containerRef.offsetWidth
+            : containerRef.offsetHeight
+          : 1),
+    );
     const renderedContainerWidth = containerRef?.getBoundingClientRect().width ?? 0;
     const layoutContainerWidth = containerRef?.offsetWidth ?? 0;
     rootResizeInlineScale =
@@ -433,12 +440,16 @@
     rootResizeStartChildWidths = measureRootResizeChildWidths();
     rootResizeNextChildWidths = rootResizeStartChildWidths ? [...rootResizeStartChildWidths] : null;
     rootResizeRequestedDelta = 0;
+    liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
+    isResizing = true;
   }
 
   function handleResizeEnd() {
     const committedSizes = liveResizeSizes;
     const previousPanelWidths = rootResizeStartChildWidths;
-    const nextPanelWidths = measureRootResizeChildWidths() ?? rootResizeNextChildWidths;
+    // Preview pixels are authoritative: the sizing helper owns minimums and
+    // inline scaling already maps visual zoom back to layout coordinates.
+    const nextPanelWidths = rootResizeNextChildWidths;
     const wasRootResize = resizesRootDivider && previousPanelWidths !== null;
     suppressMotionThroughResizeCommit();
     if (
@@ -450,10 +461,10 @@
     }
     liveResizeSizes = null;
     isResizing = false;
-    rootResizeStartChildWidths = null;
-    rootResizeNextChildWidths = null;
     rootResizeRequestedDelta = 0;
     rootResizeInlineScale = 1;
+    resizeReferenceSize = 1;
+    resizePanelElements = [];
     if (wasRootResize) return;
     if (!committedSizes) return;
     onUpdateSizes?.(nodePath, committedSizes);
@@ -769,7 +780,6 @@
               direction={node.direction}
               {nodePath}
               handleIndex={item.index}
-              immediateResize={resizesRootDivider}
               onResizeStart={handleResizeStart}
               onResize={(delta) => handleResize(item.index, delta)}
               onResizeEnd={handleResizeEnd}
