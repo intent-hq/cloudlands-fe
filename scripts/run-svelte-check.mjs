@@ -25,26 +25,44 @@ export const MIN_FILES = 500;
 
 const MACHINE_LINE = /^\d+ (.*)$/;
 /**
- * The COMPLETED record, parsed leniently so tolerable drift in svelte-check's
- * output (a dropped/added trailing clause, extra fields appended in a future
- * version) does not read as "no COMPLETED summary" and fail a successful run
- * (intent-hq/monorepo#4111). The counts we guard on stay strictly positional.
+ * The COMPLETED record. Tolerated variants beyond the exact current format
+ * (intent-hq/monorepo#4111): trailing whitespace/CR (stripped before this
+ * regex runs) and the legacy form that omits the FILES_WITH_PROBLEMS clause.
+ * The tail is otherwise anchored: a line cut off after the WARNINGS clause
+ * (e.g. `… 2 WARNINGS 1 FI`) is rejected, not read as a completion.
  */
 const COMPLETED_LINE =
-  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS(?: (\d+) FILES_WITH_PROBLEMS)?(?: |$)/;
+  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS(?: (\d+) FILES_WITH_PROBLEMS)?$/;
 
-/** Parse a machine-record body (the line minus any timestamp prefix). */
-function parseRecordBody(body) {
+/** Parse a COMPLETED record body (the line minus any timestamp prefix). */
+function parseCompletedBody(body) {
   const completed = COMPLETED_LINE.exec(body);
-  if (completed) {
-    return {
-      kind: 'completed',
-      files: Number(completed[1]),
-      errors: Number(completed[2]),
-      warnings: Number(completed[3]),
-      filesWithProblems: Number(completed[4] ?? 0),
-    };
+  if (!completed) return null;
+  return {
+    kind: 'completed',
+    files: Number(completed[1]),
+    errors: Number(completed[2]),
+    warnings: Number(completed[3]),
+    filesWithProblems: Number(completed[4] ?? 0),
+  };
+}
+
+/**
+ * Parse one machine-verbose output line into a structured event.
+ * Returns null for lines that are not machine-format lines.
+ */
+export function parseMachineLine(line) {
+  const trimmed = line.replace(/\s+$/, '');
+  const match = MACHINE_LINE.exec(trimmed);
+  if (!match) {
+    // Recognize the guard-relevant COMPLETED record even without the epoch-ms
+    // prefix, in case svelte-check drops or reformats the timestamp. All other
+    // prefix-less lines stay passthrough.
+    return parseCompletedBody(trimmed);
   }
+  const body = match[1];
+  const completed = parseCompletedBody(body);
+  if (completed) return completed;
   if (body.startsWith('START ')) return { kind: 'start' };
   if (body.startsWith('FAILURE '))
     return { kind: 'failure', message: body.slice('FAILURE '.length) };
@@ -58,23 +76,7 @@ function parseRecordBody(body) {
       // fall through to unknown
     }
   }
-  return null;
-}
-
-/**
- * Parse one machine-verbose output line into a structured event.
- * Returns null for lines that are not machine-format lines.
- */
-export function parseMachineLine(line) {
-  const trimmed = line.replace(/[\s\r]+$/, '');
-  const match = MACHINE_LINE.exec(trimmed);
-  if (match) {
-    const body = match[1];
-    return parseRecordBody(body) ?? { kind: 'unknown', body };
-  }
-  // Recognize records even without the epoch-ms prefix, in case svelte-check
-  // drops or reformats the timestamp; anything else is not a machine line.
-  return parseRecordBody(trimmed);
+  return { kind: 'unknown', body };
 }
 
 /** Render a machine-verbose diagnostic like svelte-check's human writer. */

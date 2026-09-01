@@ -40,25 +40,26 @@ describe('parseMachineLine', () => {
     });
   });
 
-  it('parses a COMPLETED line with extra trailing fields from a newer format', () => {
+  it('rejects a COMPLETED line with unexpected extra trailing fields', () => {
     const event = parseMachineLine(
       '1590680326283 COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS 1 FILES_WITH_PROBLEMS 3 HINTS',
     );
-    expect(event).toMatchObject({
-      kind: 'completed',
-      files: 4400,
-      errors: 0,
-      warnings: 2,
-      filesWithProblems: 1,
+    expect(event).toEqual({
+      kind: 'unknown',
+      body: 'COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS 1 FILES_WITH_PROBLEMS 3 HINTS',
     });
   });
 
-  it('parses machine records without the epoch timestamp prefix', () => {
+  it('parses a COMPLETED record without the epoch timestamp prefix', () => {
     expect(
       parseMachineLine('COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS 1 FILES_WITH_PROBLEMS'),
     ).toMatchObject({ kind: 'completed', files: 4400 });
-    expect(parseMachineLine('START "/repo"')).toEqual({ kind: 'start' });
-    expect(parseMachineLine('FAILURE "boom"')).toEqual({ kind: 'failure', message: '"boom"' });
+  });
+
+  it('keeps prefix-less non-COMPLETED lines as passthrough', () => {
+    expect(parseMachineLine('START "/repo"')).toBeNull();
+    expect(parseMachineLine('FAILURE "boom"')).toBeNull();
+    expect(parseMachineLine('{"type":"ERROR","message":"x"}')).toBeNull();
   });
 
   it('does not treat a truncated COMPLETED line as a completion', () => {
@@ -67,6 +68,17 @@ describe('parseMachineLine', () => {
       body: 'COMPLETED 4400 FILES 0 ERR',
     });
     expect(parseMachineLine('COMPLETED 4400 FI')).toBeNull();
+  });
+
+  it('rejects a COMPLETED line truncated after the WARNINGS clause', () => {
+    for (const tail of ['1', '1 FI', '1 FILES_WITH_PROB']) {
+      expect(
+        parseMachineLine(`1590680326283 COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS ${tail}`),
+      ).toEqual({
+        kind: 'unknown',
+        body: `COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS ${tail}`,
+      });
+    }
   });
 
   it('parses machine-verbose JSON diagnostics', () => {
