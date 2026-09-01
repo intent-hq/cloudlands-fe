@@ -42,6 +42,7 @@ vi.mock('../../features/backend/main/backend.ipc', () => ({
     const request = pooledRequests.get(id);
     return request ? { request } : undefined;
   },
+  getLiveBackendIds: () => [...pooledRequests.keys()],
 }));
 
 vi.mock('../../features/system/main/system.ipc', () => ({
@@ -58,9 +59,11 @@ import {
   workspaceFileMimeTypeForPath,
 } from '../utils/workspace-file-url';
 import {
+  createWorkspaceOwnershipProber,
   resolveWorkspaceBackendClient,
   resolveWorkspaceBackendClientWithRetry,
 } from '../utils/workspace-backend-client';
+import { JsonRpcError } from '../../features/backend/main/json-rpc-errors';
 import {
   setupWorkspaceAssetProtocolHandler,
   setupWorkspaceFileProtocolHandler,
@@ -356,6 +359,92 @@ describe('resolveWorkspaceBackendClientWithRetry', () => {
   });
 });
 
+describe('createWorkspaceOwnershipProber', () => {
+  const proberLookup = (clients: Map<string, string>, owners: Set<string>) => ({
+    getLiveBackendIds: () => [...clients.keys()],
+    getClientForBackend: (id: string) => clients.get(id),
+    confirmOwnership: vi.fn(async (client: string) => {
+      if (client === 'client-broken') throw new Error('probe transport failed');
+      return owners.has(client);
+    }),
+  });
+
+  it('confirms the owning backend and caches it so repeat lookups skip probing', async () => {
+    const clients = new Map([
+      ['local', 'client-local'],
+      ['conn-remote', 'client-remote'],
+    ]);
+    const lookup = proberLookup(clients, new Set(['client-remote']));
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    const first = await prober.probeOwner('ws-a');
+    expect(first).toEqual({ client: 'client-remote', backendId: 'conn-remote' });
+    expect(lookup.confirmOwnership).toHaveBeenCalledTimes(2);
+
+    const second = await prober.probeOwner('ws-a');
+    expect(second).toEqual({ client: 'client-remote', backendId: 'conn-remote' });
+    expect(lookup.confirmOwnership).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns null when no live backend confirms ownership and never caches the miss', async () => {
+    const clients = new Map([['local', 'client-local']]);
+    const lookup = proberLookup(clients, new Set());
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    expect(await prober.probeOwner('ws-a')).toBeNull();
+    expect(await prober.probeOwner('ws-a')).toBeNull();
+    expect(lookup.confirmOwnership).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a rejecting probe on one backend as not-the-owner without killing resolution', async () => {
+    const clients = new Map([
+      ['conn-broken', 'client-broken'],
+      ['conn-owner', 'client-owner'],
+    ]);
+    const lookup = proberLookup(clients, new Set(['client-owner']));
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    expect(await prober.probeOwner('ws-a')).toEqual({
+      client: 'client-owner',
+      backendId: 'conn-owner',
+    });
+  });
+
+  it('self-invalidates a cached owner whose backend lost its live client', async () => {
+    const clients = new Map([['conn-remote', 'client-remote']]);
+    const lookup = proberLookup(clients, new Set(['client-remote']));
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    await prober.probeOwner('ws-a');
+    clients.delete('conn-remote');
+
+    expect(await prober.probeOwner('ws-a')).toBeNull();
+  });
+
+  it('re-probes from scratch after invalidate()', async () => {
+    const clients = new Map([['conn-remote', 'client-remote']]);
+    const lookup = proberLookup(clients, new Set(['client-remote']));
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    await prober.probeOwner('ws-a');
+    prober.invalidate('ws-a');
+    await prober.probeOwner('ws-a');
+
+    expect(lookup.confirmOwnership).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces concurrent probes for the same workspace into one fan-out', async () => {
+    const clients = new Map([['conn-remote', 'client-remote']]);
+    const lookup = proberLookup(clients, new Set(['client-remote']));
+    const prober = createWorkspaceOwnershipProber(lookup);
+
+    const [a, b] = await Promise.all([prober.probeOwner('ws-a'), prober.probeOwner('ws-a')]);
+
+    expect(a).toEqual(b);
+    expect(lookup.confirmOwnership).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('setupWorkspaceFileProtocolHandler', () => {
   beforeEach(() => {
     protocolHandle.mockClear();
@@ -617,6 +706,87 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     expect(res.status).toBe(404);
     expect(mockRequest).not.toHaveBeenCalled();
   });
+
+  it('rescues a disconnected-backend resolution by probing the live backends for the owner', async () => {
+    // Stamped backend is gone, but the workspace's real owner is live in the
+    // pool: the ownership probe (workspace.get) finds it and the read serves.
+    windowBackends.set(7, 'conn-disconnected');
+    workspaceWindows.set('ws-probe-bd', [7]);
+    const bytes = Buffer.from('rescued-bytes');
+    const remoteRequest = vi.fn(async (method: string) => {
+      if (method === 'workspace.get') return { workspace: { id: 'ws-probe-bd' } };
+      return chunk(bytes, bytes.length, bytes.length);
+    });
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getHandler()(new Request('workspace-file://ws-probe-bd/pic.png'));
+
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-probe-bd' });
+    expect(remoteRequest).toHaveBeenCalledWith('file.readChunk', {
+      workspaceId: 'ws-probe-bd',
+      path: 'pic.png',
+      offset: 0,
+      length: WORKSPACE_FILE_CHUNK_BYTES,
+    });
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('heals a wrong-stamp read: primary refuses with workspace-unknown, confirmed owner serves', async () => {
+    // ws-1 resolves to the primary client (unpooled local stamp), which does
+    // not know the workspace (-32602): the probe confirms the remote owner
+    // and the read retries there.
+    mockRequest.mockRejectedValueOnce(
+      new JsonRpcError({ code: -32602, message: 'workspace not found' }),
+    );
+    const bytes = Buffer.from('healed-bytes');
+    const remoteRequest = vi.fn(async (method: string) => {
+      if (method === 'workspace.get') return { workspace: { id: 'ws-1' } };
+      return chunk(bytes, bytes.length, bytes.length);
+    });
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getHandler()(appRequest('workspace-file://ws-1/pic.png'));
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
+    expect(remoteRequest).toHaveBeenCalledWith('file.readChunk', {
+      workspaceId: 'ws-1',
+      path: 'pic.png',
+      offset: 0,
+      length: WORKSPACE_FILE_CHUNK_BYTES,
+    });
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('keeps the 404 when no live backend confirms ownership of an unknown workspace', async () => {
+    mockRequest.mockRejectedValueOnce(
+      new JsonRpcError({ code: -32602, message: 'workspace not found' }),
+    );
+    const remoteRequest = vi.fn(async () => {
+      throw new JsonRpcError({ code: -32602, message: 'workspace not found' });
+    });
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getHandler()(appRequest('workspace-file://ws-1/pic.png'));
+
+    expect(res.status).toBe(404);
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not probe on non-workspace-unknown read errors', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('transport dropped'));
+    const remoteRequest = vi.fn();
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getHandler()(appRequest('workspace-file://ws-1/pic.png'));
+
+    expect(res.status).toBe(404);
+    expect(remoteRequest).not.toHaveBeenCalled();
+  });
 });
 
 describe('setupWorkspaceAssetProtocolHandler', () => {
@@ -667,6 +837,51 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
       asset: 'asset-1',
     });
     expect(res.status).toBe(200);
+  });
+
+  it('rescues a no-hosting-window resolution by probing the live backends for the owner', async () => {
+    // No window maps the workspace, but a live remote backend positively
+    // confirms ownership: the probe routes the read there instead of the
+    // blind primary fallback (v2.123.1 remote broken-images regression).
+    const bytes = Buffer.from('probed-asset');
+    const remoteRequest = vi.fn(async (method: string) => {
+      if (method === 'workspace.get') return { workspace: { id: 'ws-orphan' } };
+      return asset(bytes);
+    });
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-orphan/asset-1'));
+
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-orphan' });
+    expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
+      workspaceId: 'ws-orphan',
+      asset: 'asset-1',
+    });
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('heals a wrong-stamp asset read from the confirmed owner after a workspace-unknown error', async () => {
+    mockRequest.mockRejectedValueOnce(
+      new JsonRpcError({ code: -32602, message: 'workspace not found' }),
+    );
+    const bytes = Buffer.from('healed-asset');
+    const remoteRequest = vi.fn(async (method: string) => {
+      if (method === 'workspace.get') return { workspace: { id: 'ws-1' } };
+      return asset(bytes);
+    });
+    pooledRequests.set('conn-remote', remoteRequest);
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
+      workspaceId: 'ws-1',
+      asset: 'asset-1',
+    });
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
   it('issues note.readAsset on the backend of the window hosting the workspace', async () => {

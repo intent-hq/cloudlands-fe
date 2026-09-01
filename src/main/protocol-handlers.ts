@@ -6,8 +6,14 @@ import * as fs from 'fs';
 import { safeResolvePath } from './utils/safe-resolve-path';
 import { parseWorkspaceFileRequest } from './utils/workspace-file-url';
 import { isTrustedRendererUrl } from './ipc-authorization';
-import { resolveWorkspaceBackendClientWithRetry } from './utils/workspace-backend-client';
+import {
+  createWorkspaceOwnershipProber,
+  resolveWorkspaceBackendClientWithRetry,
+  type WorkspaceOwnershipProber,
+} from './utils/workspace-backend-client';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
+import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
+import type { JsonRpcClient } from '../features/backend/main/json-rpc-client';
 
 /**
  * Bounded retry while no hosting window is known yet: the window→workspace
@@ -37,7 +43,7 @@ async function backendClientForWorkspace(workspaceId: string) {
     import('../features/system/main/system.ipc'),
     import('./window'),
   ]);
-  return resolveWorkspaceBackendClientWithRetry(
+  const resolution = await resolveWorkspaceBackendClientWithRetry(
     workspaceId,
     {
       getWindowIdsForWorkspace,
@@ -57,6 +63,75 @@ async function backendClientForWorkspace(workspaceId: string) {
       delayMs: WORKSPACE_BACKEND_RESOLUTION_RETRY_MS,
     },
   );
+  if (
+    resolution.fallback !== 'no-hosting-window' &&
+    resolution.fallback !== 'backend-disconnected'
+  ) {
+    return resolution;
+  }
+  // The window map could not name a live owning backend: find the owner by
+  // positive confirmation instead of blindly trusting the local fallback
+  // (v2.123.1 remote-backend broken-images regression). No confirmed owner
+  // keeps the previous semantics: primary-client guess or fail closed.
+  const owner = await (await workspaceOwnershipProber()).probeOwner(workspaceId);
+  if (!owner) return resolution;
+  logger.info('workspace backend resolved by ownership probe', {
+    workspaceId,
+    rescuedBackendId: owner.backendId,
+    originalFallback: resolution.fallback,
+    originalBackendId: resolution.backendId,
+  });
+  return { client: owner.client, backendId: owner.backendId, fallback: 'ownership-probe' as const };
+}
+
+/**
+ * Shared ownership prober for the workspace protocol handlers: confirms which
+ * live pooled backend owns a workspace via a cheap `workspace.get` (-32602 if
+ * unknown; any rejection means "not the owner"). Lazily created because the
+ * backend client pool is behind a dynamic import like the resolvers above.
+ */
+let ownershipProber: WorkspaceOwnershipProber<JsonRpcClient> | null = null;
+
+async function workspaceOwnershipProber(): Promise<WorkspaceOwnershipProber<JsonRpcClient>> {
+  if (!ownershipProber) {
+    const { getLiveBackendIds, getBackendClientForConnection } =
+      await import('../features/backend/main/backend.ipc');
+    ownershipProber = createWorkspaceOwnershipProber<JsonRpcClient>({
+      getLiveBackendIds,
+      getClientForBackend: getBackendClientForConnection,
+      confirmOwnership: async (client, workspaceId) => {
+        await client.request('workspace.get', { workspaceId });
+        return true;
+      },
+    });
+  }
+  return ownershipProber;
+}
+
+/**
+ * Heal a wrong-stamp read: when the resolved backend refuses a read because
+ * the workspace is unknown to it (-32602), re-probe ownership and hand back
+ * the confirmed owner so the caller can retry once. Null when the error is
+ * not a workspace-unknown refusal, no live backend confirms ownership, or the
+ * confirmed owner is the backend that already failed — the caller then
+ * rethrows and fails with 404 as before (never serve unconfirmed bytes).
+ */
+async function rescueBackendAfterWorkspaceUnknown(
+  workspaceId: string,
+  failedBackendId: string | null,
+  error: unknown,
+): Promise<{ client: JsonRpcClient; backendId: string } | null> {
+  if (!(error instanceof JsonRpcError) || error.rpcCode !== -32602) return null;
+  const prober = await workspaceOwnershipProber();
+  prober.invalidate(workspaceId);
+  const owner = await prober.probeOwner(workspaceId);
+  if (!owner || owner.backendId === failedBackendId) return null;
+  logger.info('workspace read rescued by ownership probe', {
+    workspaceId,
+    rescuedBackendId: owner.backendId,
+    failedBackendId,
+  });
+  return owner;
 }
 
 // ---- Shared Helpers ----
@@ -273,10 +348,26 @@ export function setupWorkspaceAssetProtocolHandler() {
         // i18n-ignore (internal protocol response body)
         return new Response('Asset not found', { status: 404 });
       }
-      const result = (await resolved.client.request('note.readAsset', {
-        workspaceId,
-        asset: assetId,
-      })) as { assetId: string; mimeType: string; data: string; sizeKb: number };
+      let client = resolved.client;
+      let result: { assetId: string; mimeType: string; data: string; sizeKb: number };
+      try {
+        result = (await client.request('note.readAsset', {
+          workspaceId,
+          asset: assetId,
+        })) as typeof result;
+      } catch (error) {
+        // Wrong-stamp heal: the resolved backend does not know the workspace —
+        // retry once from the positively confirmed owner (or rethrow → 404).
+        const rescued = await rescueBackendAfterWorkspaceUnknown(workspaceId, backendId, error);
+        if (!rescued) throw error;
+        backendId = rescued.backendId;
+        fallback = 'ownership-probe';
+        client = rescued.client;
+        result = (await client.request('note.readAsset', {
+          workspaceId,
+          asset: assetId,
+        })) as typeof result;
+      }
       return new Response(new Uint8Array(Buffer.from(result.data, 'base64')), {
         status: 200,
         headers: {
@@ -430,15 +521,35 @@ export function setupWorkspaceFileProtocolHandler() {
         // i18n-ignore (internal protocol response body)
         return new Response('File not found', { status: 404 });
       }
-      const client = resolved.client;
+      let client = resolved.client;
+      let rescueAttempted = false;
 
       async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
-        const chunk = (await client.request('file.readChunk', {
-          workspaceId,
-          path: filePath,
-          offset,
-          length,
-        })) as WorkspaceFileChunk;
+        let chunk: WorkspaceFileChunk;
+        try {
+          chunk = (await client.request('file.readChunk', {
+            workspaceId,
+            path: filePath,
+            offset,
+            length,
+          })) as WorkspaceFileChunk;
+        } catch (error) {
+          // Wrong-stamp heal: the resolved backend does not know the workspace
+          // — retry once from the positively confirmed owner (or rethrow → 404).
+          if (rescueAttempted) throw error;
+          rescueAttempted = true;
+          const rescued = await rescueBackendAfterWorkspaceUnknown(workspaceId, backendId, error);
+          if (!rescued) throw error;
+          backendId = rescued.backendId;
+          fallback = 'ownership-probe';
+          client = rescued.client;
+          chunk = (await client.request('file.readChunk', {
+            workspaceId,
+            path: filePath,
+            offset,
+            length,
+          })) as WorkspaceFileChunk;
+        }
         if (
           !Number.isSafeInteger(chunk.size) ||
           chunk.size < 0 ||

@@ -143,3 +143,85 @@ export async function resolveWorkspaceBackendClientWithRetry<C>(
   }
   return resolution;
 }
+
+export interface WorkspaceOwnershipLookup<C> {
+  /** Snapshot of every live pooled backend id (the local backend included). */
+  getLiveBackendIds(): string[];
+  /** Live pooled client for a backend id, if one is connected. */
+  getClientForBackend(backendId: string): C | undefined;
+  /**
+   * Cheap positive ownership check against one backend (e.g. `workspace.get`).
+   * A rejection is treated as "not the owner".
+   */
+  confirmOwnership(client: C, workspaceId: string): Promise<boolean>;
+}
+
+export interface WorkspaceOwnershipProber<C> {
+  /**
+   * Find the live backend that owns `workspaceId` by positive confirmation.
+   * Serves from the workspaceId → backendId cache while the cached backend
+   * still has a live client (a disconnected backend self-invalidates its
+   * entries); otherwise probes every live backend concurrently and caches the
+   * first confirming one (multiple confirmations — a workspace-id collision
+   * across daemons — resolve to the first in `getLiveBackendIds` order,
+   * matching the existing "first backend wins" documentation). Returns null
+   * when no live backend confirms ownership; a null result is never cached.
+   */
+  probeOwner(workspaceId: string): Promise<{ client: C; backendId: string } | null>;
+  /** Drop the cached owner so the next probe re-confirms from scratch. */
+  invalidate(workspaceId: string): void;
+}
+
+/**
+ * Ownership-probing fallback for the workspace protocol handlers (v2.123.1
+ * remote-backend broken-images regression): when the window-map resolution
+ * cannot name a live owning backend — or the backend it named refuses the
+ * read — the owner is found by positively confirming ownership against every
+ * live pooled backend instead of blindly trusting the local fallback.
+ * Concurrent probes for the same workspace coalesce into one in-flight
+ * fan-out (single-flight), so a burst of image requests costs one probe.
+ */
+export function createWorkspaceOwnershipProber<C>(
+  lookup: WorkspaceOwnershipLookup<C>,
+): WorkspaceOwnershipProber<C> {
+  const owners = new Map<string, string>();
+  const inflight = new Map<string, Promise<{ client: C; backendId: string } | null>>();
+
+  async function probeAllBackends(
+    workspaceId: string,
+  ): Promise<{ client: C; backendId: string } | null> {
+    const candidates = lookup
+      .getLiveBackendIds()
+      .map((backendId) => ({ backendId, client: lookup.getClientForBackend(backendId) }))
+      .filter((entry): entry is { backendId: string; client: C } => entry.client !== undefined);
+    const confirmations = await Promise.all(
+      candidates.map(({ client }) =>
+        lookup.confirmOwnership(client, workspaceId).catch(() => false),
+      ),
+    );
+    const ownerIndex = confirmations.indexOf(true);
+    if (ownerIndex === -1) return null;
+    const owner = candidates[ownerIndex];
+    owners.set(workspaceId, owner.backendId);
+    return owner;
+  }
+
+  return {
+    probeOwner(workspaceId) {
+      const cachedBackendId = owners.get(workspaceId);
+      if (cachedBackendId !== undefined) {
+        const client = lookup.getClientForBackend(cachedBackendId);
+        if (client) return Promise.resolve({ client, backendId: cachedBackendId });
+        owners.delete(workspaceId);
+      }
+      const pending = inflight.get(workspaceId);
+      if (pending) return pending;
+      const probe = probeAllBackends(workspaceId).finally(() => inflight.delete(workspaceId));
+      inflight.set(workspaceId, probe);
+      return probe;
+    },
+    invalidate(workspaceId) {
+      owners.delete(workspaceId);
+    },
+  };
+}
