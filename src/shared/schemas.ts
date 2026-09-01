@@ -294,7 +294,6 @@ const PlanEntrySchema = z.object({
   content: z.string(),
   priority: z.enum(PLAN_ENTRY_PRIORITIES),
   status: z.enum(PLAN_ENTRY_STATUSES),
-  _meta: z.record(z.unknown()).optional(),
 });
 
 export const ContentBlockSchema = z.object({

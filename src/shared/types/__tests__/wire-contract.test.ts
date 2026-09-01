@@ -43,7 +43,7 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
     expect(out).toEqual(wire);
   });
 
-  it('passes a canonical bounded plan snapshot through unchanged', () => {
+  it('strips provider metadata from an otherwise valid bounded plan snapshot', () => {
     const wire = {
       type: 'plan',
       id: 'blk_plan',
@@ -53,10 +53,15 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
           priority: 'high',
           status: 'completed',
           _meta: { provider: 'codex' },
+          providerExtension: { traceId: 'provider-only' },
         },
       ],
     };
-    expect(migrateFromLegacy(wire)).toEqual(wire);
+    expect(migrateFromLegacy(wire)).toEqual({
+      type: 'plan',
+      id: 'blk_plan',
+      entries: [{ content: 'Inspect the code', priority: 'high', status: 'completed' }],
+    });
   });
 
   it('rejects a plan snapshot with an unsupported entry value', () => {

@@ -73,11 +73,23 @@ describe('Zod Schemas', () => {
         type: 'plan',
         id: 'msg-1:0',
         entries: [
-          { content: 'Inspect the code', priority: 'high', status: 'completed' },
+          {
+            content: 'Inspect the code',
+            priority: 'high',
+            status: 'completed',
+            _meta: { provider: 'codex' },
+            providerExtension: true,
+          },
           { content: 'Run tests', priority: 'medium', status: 'in_progress' },
         ],
       };
-      expect(ContentBlockSchema.parse(block)).toEqual(block);
+      expect(ContentBlockSchema.parse(block)).toEqual({
+        ...block,
+        entries: [
+          { content: 'Inspect the code', priority: 'high', status: 'completed' },
+          { content: 'Run tests', priority: 'medium', status: 'in_progress' },
+        ],
+      });
       expect(() =>
         ContentBlockSchema.parse({
           type: 'plan',

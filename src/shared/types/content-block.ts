@@ -12,8 +12,6 @@ export interface PlanEntry {
   content: string;
   priority: PlanEntryPriority;
   status: PlanEntryStatus;
-  /** Opaque ACP extensibility metadata. */
-  _meta?: Record<string, unknown>;
 }
 
 export type VideoSource =
@@ -172,8 +170,7 @@ export function isPlanEntry(value: unknown): value is PlanEntry {
   return (
     typeof value.content === 'string' &&
     PLAN_ENTRY_PRIORITIES.includes(value.priority as PlanEntryPriority) &&
-    PLAN_ENTRY_STATUSES.includes(value.status as PlanEntryStatus) &&
-    (value._meta === undefined || isRecord(value._meta))
+    PLAN_ENTRY_STATUSES.includes(value.status as PlanEntryStatus)
   );
 }
 

@@ -55,7 +55,6 @@ describe('ContentBlock Type', () => {
             content: 'Run focused tests',
             priority: 'high',
             status: 'in_progress',
-            _meta: { source: 'provider' },
           },
         ],
       };
@@ -382,6 +381,28 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     expect(converted.text).toBe('hello');
   });
 
+  it('convertFromACP strips provider metadata from plan entries', () => {
+    expect(
+      convertFromACP({
+        type: 'plan',
+        id: 'plan-1',
+        entries: [
+          {
+            content: 'Run focused tests',
+            priority: 'high',
+            status: 'in_progress',
+            _meta: { source: 'provider' },
+            providerExtension: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      type: 'plan',
+      id: 'plan-1',
+      entries: [{ content: 'Run focused tests', priority: 'high', status: 'in_progress' }],
+    });
+  });
+
   it('convertFromACP throws when the ACP `type` discriminator is missing', () => {
     expect(() => convertFromACP({ text: 'hello' })).toThrow(/type/);
   });
@@ -409,6 +430,27 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     const acp = convertToACP(block);
     expect(acp.type).toBe('text');
     expect(acp.text).toBe('hello');
+  });
+
+  it('convertToACP preserves only canonical plan entry fields', () => {
+    const block = {
+      type: 'plan',
+      id: 'plan-1',
+      entries: [
+        {
+          content: 'Run focused tests',
+          priority: 'high',
+          status: 'in_progress',
+          _meta: { source: 'provider' },
+        },
+      ],
+    } as unknown as ContentBlock;
+
+    expect(convertToACP(block)).toEqual({
+      type: 'plan',
+      id: 'plan-1',
+      entries: [{ content: 'Run focused tests', priority: 'high', status: 'in_progress' }],
+    });
   });
 
   it('migrateContentBlocks passes canonical PROTOCOL §7 blocks through unchanged', () => {

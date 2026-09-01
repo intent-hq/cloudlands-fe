@@ -38,6 +38,12 @@ const nativePlanMessage = {
   ],
 } as AgentMessage;
 
+const emptyNativePlanMessage = {
+  ...nativePlanMessage,
+  id: 'message-empty',
+  contentBlocks: [{ type: 'plan', id: 'message-empty:plan', entries: [] }],
+} as AgentMessage;
+
 describe('workspace task fallback routing', () => {
   it('preserves native plan precedence after transcript hydration or reload', () => {
     expect(hasNativeExecutionPlan([nativePlanMessage])).toBe(true);
@@ -49,6 +55,57 @@ describe('workspace task fallback routing', () => {
         messages: [nativePlanMessage],
       }),
     ).toEqual([]);
+  });
+
+  it('treats an empty-only native plan as present and suppresses workspace fallback', () => {
+    expect(hasNativeExecutionPlan([emptyNativePlanMessage])).toBe(true);
+    expect(
+      deriveWorkspaceTaskFallback({
+        initialized: true,
+        tasks,
+        session: session(),
+        messages: [emptyNativePlanMessage],
+      }),
+    ).toEqual([]);
+    expect(
+      deriveTaskProgress({
+        initialized: true,
+        tasks,
+        session: session(),
+        messages: [emptyNativePlanMessage],
+      }),
+    ).toEqual([]);
+  });
+
+  it('lets a later empty native plan clear an older non-empty snapshot', () => {
+    expect(
+      deriveTaskProgress({
+        initialized: true,
+        tasks,
+        session: session(),
+        messages: [nativePlanMessage, emptyNativePlanMessage],
+      }),
+    ).toEqual([]);
+  });
+
+  it('uses workspace fallback only when no valid native plan is present', () => {
+    const malformedPlanMessage = {
+      ...nativePlanMessage,
+      contentBlocks: [{ type: 'plan', entries: [{ content: 'Missing status' }] }],
+    } as AgentMessage;
+
+    expect(hasNativeExecutionPlan([malformedPlanMessage])).toBe(false);
+    expect(
+      deriveTaskProgress({
+        initialized: true,
+        tasks,
+        session: session(),
+        messages: [malformedPlanMessage],
+      }),
+    ).toEqual([
+      { id: 'workspace:root-1', title: 'First root task', status: 'pending' },
+      { id: 'workspace:root-2', title: 'Second root task', status: 'running' },
+    ]);
   });
 
   it('shows spec-linked root tasks in canonical source order for a no-plan Coordinator', () => {
@@ -112,7 +169,7 @@ describe('workspace task fallback routing', () => {
     expect(second.status).toBe('review_required');
   });
 
-  it('maps the newest native plan into stable progress rows before workspace tasks', () => {
+  it('maps the latest of repeated native plan snapshots in stable entry order', () => {
     const newerPlan = {
       ...nativePlanMessage,
       id: 'message-2',

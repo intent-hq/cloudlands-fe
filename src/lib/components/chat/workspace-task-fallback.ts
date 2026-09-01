@@ -5,6 +5,7 @@ import type {
   TaskStatus,
   WorkspaceTask,
 } from '$shared/types';
+import { isPlanContentBlock } from '$shared/types';
 
 export type TaskProgressStatus =
   | 'pending'
@@ -21,6 +22,11 @@ export interface TaskProgressItem {
   status: TaskProgressStatus;
 }
 
+interface NativePlanSelection {
+  present: boolean;
+  items: TaskProgressItem[];
+}
+
 interface WorkspaceTaskFallbackInput {
   initialized: boolean;
   tasks: readonly WorkspaceTask[];
@@ -29,11 +35,7 @@ interface WorkspaceTaskFallbackInput {
 }
 
 export function hasNativeExecutionPlan(messages: readonly AgentMessage[]): boolean {
-  return messages.some((message) =>
-    message.contentBlocks?.some(
-      (block) => block.type === 'plan' && Array.isArray(block.entries) && block.entries.length > 0,
-    ),
-  );
+  return latestNativePlan(messages).present;
 }
 
 /** Select the zero-token task fallback without changing canonical task order. */
@@ -69,28 +71,31 @@ function workspaceStatus(status: TaskStatus): TaskProgressStatus {
   return 'pending';
 }
 
-function latestNativePlan(messages: readonly AgentMessage[]): TaskProgressItem[] {
+function latestNativePlan(messages: readonly AgentMessage[]): NativePlanSelection {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const message = messages[messageIndex];
     const blocks = message.contentBlocks ?? [];
     for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
       const block = blocks[blockIndex];
-      if (block.type !== 'plan' || !block.entries?.length) continue;
+      if (!isPlanContentBlock(block)) continue;
       const blockId = block.id ?? `${message.id}:${blockIndex}`;
-      return block.entries.map((entry, entryIndex) => ({
-        id: `plan:${blockId}:${entryIndex}`,
-        title: entry.content,
-        status: planStatus(entry.status),
-      }));
+      return {
+        present: true,
+        items: block.entries.map((entry, entryIndex) => ({
+          id: `plan:${blockId}:${entryIndex}`,
+          title: entry.content,
+          status: planStatus(entry.status),
+        })),
+      };
     }
   }
-  return [];
+  return { present: false, items: [] };
 }
 
 /** Select the newest native plan, or the existing scoped workspace-task fallback. */
 export function deriveTaskProgress(input: WorkspaceTaskFallbackInput): TaskProgressItem[] {
   const nativePlan = latestNativePlan(input.messages);
-  if (nativePlan.length > 0) return nativePlan;
+  if (nativePlan.present) return nativePlan.items;
   return deriveWorkspaceTaskFallback(input).map((task) => ({
     id: `workspace:${task.id}`,
     title: task.title,
