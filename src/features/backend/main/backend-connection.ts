@@ -614,15 +614,21 @@ export type CaptureFingerprintResult = CaptureFingerprintOk | CaptureFingerprint
  * Trust-on-first-use helper: open a `wss` connection to `{host, port}` with
  * `rejectUnauthorized: false`, read the presented self-signed cert's SHA-256
  * fingerprint (PROTOCOL §1.2), then close. Returns the normalized fingerprint
- * for the user to confirm, or a structured error. The bearer token is sent so
- * the capture exercises the real upgrade path; the fingerprint is still read
- * from the TLS layer even when the token is rejected (401/403 → unexpected
- * response), and the rejection is reported as `tokenValid: false` (with the
- * status code) so a bad or stale token surfaces during pairing rather than
- * only at pinned-connect time.
+ * for the user to confirm, or a structured error. When a `token` is supplied
+ * it is sent so the capture exercises the real upgrade path; the fingerprint
+ * is still read from the TLS layer even when the token is rejected (401/403 →
+ * unexpected response), and the rejection is reported as `tokenValid: false`
+ * (with the status code) so a bad or stale token surfaces during pairing
+ * rather than only at pinned-connect time.
+ *
+ * Without a `token` the probe is fully unauthenticated — no `Authorization`
+ * header and no `?token=` query reach the wire (monorepo#3782: a saved secret
+ * must never be transmitted to a host whose certificate the user has not yet
+ * confirmed). The daemon is then expected to reject the upgrade (PROTOCOL
+ * §2.1); a 401/403 says nothing about any token, so `tokenValid` stays `true`.
  */
 export function captureFingerprint(
-  target: { host: string; port: number; token: string },
+  target: { host: string; port: number; token?: string },
   options: { timeoutMs?: number } = {},
 ): Promise<CaptureFingerprintResult> {
   const { host, port, token } = target;
@@ -631,7 +637,7 @@ export function captureFingerprint(
     let settled = false;
     const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
       rejectUnauthorized: false,
-      headers: { Authorization: `Bearer ${token}` },
+      ...(token !== undefined ? { headers: { Authorization: `Bearer ${token}` } } : {}),
     });
     const finish = (result: CaptureFingerprintResult): void => {
       if (settled) return;
@@ -687,9 +693,12 @@ export function captureFingerprint(
     ws.on('upgrade', (response: IncomingMessage) => readCert(response, true));
     ws.on('unexpected-response', (_req, response: IncomingMessage) => {
       // 401/403 are the daemon's auth rejections (PROTOCOL §2.1); any other
-      // status says nothing about the token, so tokenValid stays true.
+      // status says nothing about the token, so tokenValid stays true. When
+      // no token was supplied, a 401/403 is the expected answer to the
+      // unauthenticated probe and judges no token either.
       const statusCode = response.statusCode ?? 0;
-      readCert(response, false, statusCode === 401 || statusCode === 403 ? statusCode : undefined);
+      const authRejected = token !== undefined && (statusCode === 401 || statusCode === 403);
+      readCert(response, false, authRejected ? statusCode : undefined);
     });
     ws.on('error', (err: Error) =>
       finish({ ok: false, code: 'connect-failed', error: err.message }),

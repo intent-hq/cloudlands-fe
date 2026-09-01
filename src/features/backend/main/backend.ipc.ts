@@ -2235,21 +2235,16 @@ async function validateConnectionAddress(
   token: string,
   confirmedFingerprint?: string,
 ): Promise<TestConnectionResult> {
-  const captured = await captureFingerprint({ host, port, token });
-  if (!captured.ok) {
-    return { status: 'failed', reason: captured.code };
+  // Trust before transmission (monorepo#3782): probe the address WITHOUT the
+  // bearer token first — the saved secret must never reach a host whose
+  // certificate the user has not confirmed. The unauthenticated upgrade is
+  // expected to be rejected (PROTOCOL §2.1); only the TLS-layer fingerprint
+  // matters here.
+  const probe = await captureFingerprint({ host, port });
+  if (!probe.ok) {
+    return { status: 'failed', reason: probe.code };
   }
-  if (!captured.tokenValid) {
-    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
-  }
-  if (!captured.connected) {
-    return {
-      status: 'failed',
-      reason: 'connect-failed',
-      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
-    };
-  }
-  const actualFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
+  const actualFingerprint = normalizeTransportFingerprint(probe.fingerprint ?? '');
   const expectedFingerprint = normalizeTransportFingerprint(connection.fingerprint ?? '');
   if (!actualFingerprint || !expectedFingerprint) {
     return { status: 'failed', reason: 'no-certificate' };
@@ -2262,6 +2257,34 @@ async function validateConnectionAddress(
       status: 'fingerprint-confirmation-required',
       expectedFingerprint,
       actualFingerprint,
+    };
+  }
+  // The presented certificate is trusted (saved pin or explicit user
+  // confirmation) — only now is the token transmitted, exercising the real
+  // authenticated upgrade path.
+  const captured = await captureFingerprint({ host, port, token });
+  if (!captured.ok) {
+    return { status: 'failed', reason: captured.code };
+  }
+  // A certificate swap between the two probes means the token reached an
+  // endpoint the user never confirmed — surface it as a fresh confirmation
+  // requirement instead of proceeding.
+  const authedFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
+  if (authedFingerprint !== actualFingerprint) {
+    return {
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint,
+      actualFingerprint: authedFingerprint,
+    };
+  }
+  if (!captured.tokenValid) {
+    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
+  }
+  if (!captured.connected) {
+    return {
+      status: 'failed',
+      reason: 'connect-failed',
+      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
     };
   }
   return { status: 'success', fingerprint: actualFingerprint };

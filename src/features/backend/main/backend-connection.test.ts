@@ -627,6 +627,7 @@ class FakeWssDaemon {
   port = 0;
   fingerprint = '';
   lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
   handler: (req: {
     id?: number | string;
     method: string;
@@ -642,6 +643,7 @@ class FakeWssDaemon {
     this.wss = new WebSocketServer({ server: this.server });
     this.wss.on('connection', (socket, req) => {
       this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
       this.clients.push(socket);
       socket.on('message', (data, isBinary) => {
         if (isBinary) return;
@@ -763,6 +765,23 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     });
   });
 
+  it('captureFingerprint without a token transmits no Authorization header and no token query', async () => {
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = undefined;
+    const result = await captureFingerprint({ host: daemon.host, port: daemon.port });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    // Request-level assertion (monorepo#3782): the unauthenticated probe
+    // carries no bearer header and no `?token=` query fallback.
+    expect(daemon.lastAuthHeader).toBeUndefined();
+    expect(daemon.lastUpgradeUrl).toBeDefined();
+    expect(daemon.lastUpgradeUrl).not.toContain('token');
+  });
+
   it('captureFingerprint surfaces a structured error when the host is unreachable', async () => {
     // 127.0.0.1:1 is guaranteed refused.
     const result = await captureFingerprint(
@@ -788,12 +807,16 @@ class RejectingWssDaemon {
   statusCode = 401;
   /** Number of upgrade attempts observed (for reconnect-halt assertions). */
   upgradeAttempts = 0;
+  lastAuthHeader: string | undefined;
+  lastUpgradeUrl: string | undefined;
 
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
-    this.server.on('upgrade', (_req, socket) => {
+    this.server.on('upgrade', (req, socket) => {
       this.upgradeAttempts += 1;
+      this.lastAuthHeader = req.headers.authorization;
+      this.lastUpgradeUrl = req.url;
       socket.write(
         `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
@@ -972,6 +995,28 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
       tokenValid: true,
       statusCode: 500,
     });
+  });
+
+  it('captureFingerprint without a token captures a rejecting host fingerprint with zero token transmission', async () => {
+    // Regression (monorepo#3782): probing a changed/unknown host for its
+    // fingerprint must not transmit any bearer credential — the daemon
+    // rejects the unauthenticated upgrade (401), the cert is still read from
+    // the TLS layer, and nothing token-shaped reaches the wire.
+    daemon.statusCode = 401;
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    daemon.lastUpgradeUrl = undefined;
+    const result = await captureFingerprint({ host: daemon.host, port: daemon.port });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: normalizeFingerprint(daemon.fingerprint),
+      connected: false,
+      // No token was supplied, so the 401 judges no token.
+      tokenValid: true,
+      statusCode: 401,
+    });
+    expect(daemon.lastAuthHeader).toBeUndefined();
+    expect(daemon.lastUpgradeUrl).toBeDefined();
+    expect(daemon.lastUpgradeUrl).not.toContain('token');
   });
 });
 

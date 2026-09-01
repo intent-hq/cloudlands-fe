@@ -1228,7 +1228,11 @@ describe('connections:* IPC handlers', () => {
       status: 'success',
       fingerprint: REMOTE.fingerprint,
     });
-    expect(mockCaptureFingerprint).toHaveBeenCalledWith({
+    // Two-phase probe (monorepo#3782): the fingerprint is captured WITHOUT
+    // the saved secret first; the token is transmitted only once the
+    // presented certificate matched the saved pin.
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(1, { host: '10.0.0.99', port: 9443 });
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(2, {
       host: '10.0.0.99',
       port: 9443,
       token: 'secret-token',
@@ -1254,6 +1258,8 @@ describe('connections:* IPC handlers', () => {
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain('preview-token');
+    // The unauthenticated probe never carries the override token either.
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(1, { host: '10.0.0.99', port: 9443 });
     expect(mockCaptureFingerprint).toHaveBeenCalledWith(
       expect.objectContaining({ token: 'preview-token' }),
     );
@@ -1307,10 +1313,22 @@ describe('connections:* IPC handlers', () => {
       actualFingerprint: changedFingerprint,
     });
     expect(store.updateMetadata).not.toHaveBeenCalled();
+    // Trust before transmission (monorepo#3782): the changed host was probed
+    // exactly once, WITHOUT the saved secret — declining the fingerprint means
+    // the token never reached the new host.
+    expect(mockCaptureFingerprint).toHaveBeenCalledTimes(1);
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith({ host: '10.0.0.99', port: 9443 });
 
     await expect(
       handler!({}, { ...params, confirmedFingerprint: changedFingerprint }),
     ).resolves.toMatchObject({ status: 'updated' });
+    // Only the confirmed retry transmits the saved token (phase two).
+    expect(mockCaptureFingerprint).toHaveBeenCalledTimes(3);
+    expect(mockCaptureFingerprint).toHaveBeenNthCalledWith(3, {
+      host: '10.0.0.99',
+      port: 9443,
+      token: 'secret-token',
+    });
     expect(store.updateMetadata).toHaveBeenCalledWith(
       REMOTE.id,
       expect.objectContaining({
@@ -1435,11 +1453,16 @@ describe('connections:* IPC handlers', () => {
   });
 
   it('serializes connection tests so each uses a stable saved-secret snapshot', async () => {
-    let finishFirst!: (value: unknown) => void;
-    let finishSecond!: (value: unknown) => void;
-    mockCaptureFingerprint
-      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
-      .mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)));
+    // Each test now performs a two-phase capture (unauthenticated probe, then
+    // authenticated verify — monorepo#3782), so gate every capture call.
+    const gates: Array<(value: unknown) => void> = [];
+    mockCaptureFingerprint.mockImplementation(() => new Promise((resolve) => gates.push(resolve)));
+    const capturedOk = {
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    };
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:test')!;
@@ -1447,20 +1470,15 @@ describe('connections:* IPC handlers', () => {
     const first = handler({}, { id: REMOTE.id, host: '10.0.0.8', port: 8443 });
     const second = handler({}, { id: REMOTE.id, host: '10.0.0.9', port: 8443 });
     await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(1));
-    finishFirst({
-      ok: true,
-      fingerprint: REMOTE.fingerprint,
-      connected: true,
-      tokenValid: true,
-    });
-    await expect(first).resolves.toMatchObject({ status: 'success' });
+    gates[0]!(capturedOk);
     await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(2));
-    finishSecond({
-      ok: true,
-      fingerprint: REMOTE.fingerprint,
-      connected: true,
-      tokenValid: true,
-    });
+    gates[1]!(capturedOk);
+    await expect(first).resolves.toMatchObject({ status: 'success' });
+    // The second test's probe starts only after the first fully settled.
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(3));
+    gates[2]!(capturedOk);
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(4));
+    gates[3]!(capturedOk);
     await expect(second).resolves.toMatchObject({ status: 'success' });
   });
 
