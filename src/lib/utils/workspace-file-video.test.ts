@@ -19,6 +19,22 @@ describe('splitWorkspaceVideoMarkdown', () => {
     ]);
   });
 
+  it('resolves the workspace-qualified form for the current workspace', () => {
+    expect(splitWorkspaceVideoMarkdown(`![demo](intent://local/${WS}/file/demo.webm)`, WS)).toEqual(
+      [
+        {
+          type: 'video',
+          name: 'demo',
+          source: {
+            kind: 'workspace',
+            url: `workspace-file://${WS}/demo.webm`,
+            mimeType: 'video/webm',
+          },
+        },
+      ],
+    );
+  });
+
   it('leaves workspace PNG image markdown unchanged', () => {
     const markdown = '![diagram](intent://local/file/diagram.png)';
     expect(splitWorkspaceVideoMarkdown(markdown, WS)).toEqual([
