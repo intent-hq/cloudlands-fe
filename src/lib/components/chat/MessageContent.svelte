@@ -56,6 +56,7 @@
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
+    NESTED_REASONING_SECTION_SEAM_CLASS,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
@@ -64,6 +65,8 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupCurrentChildIndex,
+    isNestedReasoningSectionBoundary,
+    isNestedReasoningSectionStart,
     normalizeResponseGroups,
     shouldRenderResponseGroupInline,
   } from './response-group-blocks';
@@ -670,16 +673,24 @@
   childIndex: number,
   suppressSpacing: boolean = false,
 )}
+  {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
+  {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
+    group,
+    childIndex,
+    isVisibleGroupChild,
+  )}
   <div
     class={`${
       suppressSpacing
         ? ''
-        : getOperationalClusterSpacingClass(
-            group.children,
-            childIndex,
-            isVisibleGroupChild,
-            group.isReasoningPhase,
-          )
+        : reasoningSectionBoundary
+          ? NESTED_REASONING_SECTION_SEAM_CLASS
+          : getOperationalClusterSpacingClass(
+              group.children,
+              childIndex,
+              isVisibleGroupChild,
+              group.isReasoningPhase,
+            )
     } ${
       isOperationalClusterBlock(childBlock)
         ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
@@ -693,6 +704,8 @@
       ? undefined
       : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
+    data-reasoning-section-start={reasoningSectionStart || undefined}
+    data-reasoning-section-boundary={reasoningSectionBoundary || undefined}
   >
     {@render renderContentBlock(
       childBlock,
