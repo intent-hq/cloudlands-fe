@@ -69,8 +69,12 @@ vi.mock('../../backend/main/backend.ipc', () => ({
 // (monorepo#3045). Defaults to "visible" so focus-bearing actions carry no
 // warning unless a test opts into an inactive workspace.
 const mockGetWindowIdForWorkspace = vi.fn<(workspaceId: string) => number | undefined>(() => 1);
+// Workspace-open-anywhere probe for the capture mount fail-fast
+// (monorepo#4103). Defaults to one hosting window.
+const mockGetWindowIdsForWorkspace = vi.fn<(workspaceId: string) => number[]>(() => [1]);
 vi.mock('../../system/main/system.ipc', () => ({
   getWindowIdForWorkspace: (workspaceId: string) => mockGetWindowIdForWorkspace(workspaceId),
+  getWindowIdsForWorkspace: (workspaceId: string) => mockGetWindowIdsForWorkspace(workspaceId),
 }));
 
 import { executeActions } from '../main/browser-action-executor';
@@ -1227,6 +1231,7 @@ describe('browser-action-executor', () => {
       vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue({ tabs: [], stale: false });
       vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(true);
       mockGetWindowIdForWorkspace.mockReturnValue(1);
+      mockGetWindowIdsForWorkspace.mockReturnValue([1]);
     });
 
     it('mounts the tab on demand and carries the not-visible warning on success', async () => {
@@ -1247,7 +1252,9 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       // The tab-list request is the hydration nudge that mounts the webview.
       expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a');
-      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden');
+      // The capture path passes its own shorter registration budget so a
+      // mount + capture fits inside intentd's 20s batch deadline.
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
       expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledWith('tab-hidden');
       expect(result.results[0]?.warning).toContain('not currently visible');
     });
@@ -1327,6 +1334,58 @@ describe('browser-action-executor', () => {
       expect(result.results[0]?.errorCode).toBeUndefined();
       expect(result.results[0]?.error).toContain('not found in workspace workspace-a');
       expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
+    });
+
+    it('fails fast on a stale list when no window hosts the workspace, without waiting', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      // A cached list survives even though the workspace is open nowhere —
+      // the hydration nudge reached no renderer, so a mount can never happen.
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue({
+        ...hiddenTabList,
+        stale: true,
+      } as any);
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+      mockGetWindowIdsForWorkspace.mockReturnValue([]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.errorCode).toBe('workspace-not-visible');
+      expect(result.results[0]?.error).toContain('not open in any window');
+      expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.screenshot).not.toHaveBeenCalled();
+    });
+
+    it('still waits on a stale list when a background window hosts the workspace', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      // Stale list but the workspace IS open (background tab): the nudge
+      // reached that window, so the bounded wait can settle the mount.
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue({
+        ...hiddenTabList,
+        stale: true,
+      } as any);
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(true);
+      vi.mocked(embeddedBrowserCdp.screenshot).mockResolvedValue({ data: 'img' } as any);
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+      mockGetWindowIdsForWorkspace.mockReturnValue([2]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
+      expect(result.results[0]?.warning).toContain('not currently visible');
     });
 
     it('mounts on demand for navigate and echoes the warning', async () => {

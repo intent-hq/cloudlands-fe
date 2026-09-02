@@ -26,9 +26,19 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
-import { getWindowIdForWorkspace } from '../../system/main/system.ipc';
+import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserActionExecutor');
+
+/**
+ * Registration-wait budget for the capture-path mount-on-demand
+ * (intent-hq/monorepo#4103). Deliberately shorter than the service default:
+ * intentd caps a browser.exec batch containing a screenshot at 20s
+ * (SCREENSHOT_REVERSE_TIMEOUT), so the mount wait must leave room for the
+ * CDP capture itself — otherwise a slow-but-successful mount would surface
+ * as a generic transport timeout instead of a structured result.
+ */
+const CAPTURE_MOUNT_TIMEOUT_MS = 10_000;
 
 // ============================================================================
 // Action Schemas
@@ -374,10 +384,24 @@ async function ensureCaptureTabMounted(
       },
     };
   }
+  // A stale (cached) list with no window hosting the workspace means the
+  // hydration nudge reached no renderer — a mount can never happen, so fail
+  // fast instead of burning the full registration wait.
+  if (listed.stale && getWindowIdsForWorkspace(workspaceId).length === 0) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'workspace-not-visible' as const,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and workspace ${workspaceId} is not open in any window, so it cannot be mounted on demand. Open the workspace in a window and retry.`,
+      },
+    };
+  }
 
   // The tab-list request hydrated the layout; the offscreen host mounts the
   // tab and its registerTab settles this bounded wait (never rejects).
-  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId);
+  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, CAPTURE_MOUNT_TIMEOUT_MS);
   if (!mounted) {
     const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
     return {
@@ -391,8 +415,10 @@ async function ensureCaptureTabMounted(
       },
     };
   }
-  // Mounted on demand: surface the standard not-visible caveat so the caller
-  // knows the capture ran against an offscreen webview.
+  // Mounted on demand: when the workspace is not displayed, surface the
+  // standard not-visible caveat so the caller knows the capture ran against
+  // an offscreen webview (a hidden tab in a displayed workspace mounts with
+  // no warning).
   return { ...workspaceNotVisibleWarning(workspaceId) };
 }
 
