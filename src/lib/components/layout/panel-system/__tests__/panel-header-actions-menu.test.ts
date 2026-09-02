@@ -387,7 +387,7 @@ describe('mounted panel header actions menu', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
     expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
-    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
+    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
     expect(screen.getByTestId('content-display-action')).toBeTruthy();
     expect(screen.getByTestId('content-command-action')).toBeTruthy();
   });

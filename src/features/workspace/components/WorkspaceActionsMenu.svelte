@@ -54,10 +54,12 @@
   import { toast } from 'svelte-sonner';
   import { withToastCountdown } from '$lib/components/ui/toast';
   import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
+    layout?: 'list' | 'submenu';
     filePath?: string;
     workspaceId?: string;
     isDirectory?: boolean;
@@ -81,6 +83,7 @@
   }
 
   let {
+    layout = 'list',
     filePath = '',
     workspaceId = '',
     isDirectory = true,
@@ -618,7 +621,82 @@
 </script>
 
 <div class="w-full overflow-hidden">
-  {#if showFileActions}
+  {#if showFileActions && layout === 'submenu'}
+    <Menu.Sub>
+      <Menu.SubTrigger>
+        <Fa icon={faUpRightFromSquare} size="12" class="w-4 text-muted-foreground opacity-70" />
+        <span>{m.ui_openCombo_openInApp_tooltip()}</span>
+      </Menu.SubTrigger>
+      <Menu.SubContent class="w-60">
+        {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
+          {#each visibleEditors as editor (editor.id)}
+            {@const IconComponent = resolveEditorIcon(editor)}
+            <Menu.Item onclick={() => openInEditor(editor)}>
+              <span class={iconSlotClass} aria-hidden="true">
+                {#if editor.iconBase64}
+                  <img
+                    src="data:image/png;base64,{editor.iconBase64}"
+                    alt={editor.name}
+                    class="size-4"
+                  />
+                {:else if IconComponent}
+                  <IconComponent size={12} />
+                {:else}
+                  <Fa
+                    icon={resolveEditorFallbackIcon(editor.category)}
+                    size="12"
+                    class="opacity-50"
+                  />
+                {/if}
+              </span>
+              <span class="min-w-0 flex-1 truncate">
+                {m.ui_workspaceActions_openIn_label({ name: editor.name })}
+              </span>
+            </Menu.Item>
+          {/each}
+
+          <Menu.Item onclick={openWithOther}>
+            <span class={iconSlotClass} aria-hidden="true">
+              <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
+          </Menu.Item>
+          <Menu.Separator />
+        {/if}
+
+        <Menu.Item onclick={copyAbsolutePath}>
+          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true">
+            {isWindowsPlatform() ? '\\' : '/'}
+          </span>
+          <span class="min-w-0 flex-1 truncate">
+            {m.ui_workspaceActions_copyAbsolutePath_label()}
+          </span>
+        </Menu.Item>
+
+        {#if !isWorkspaceRoot}
+          <Menu.Item onclick={copyWorkspacePath}>
+            <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true"
+              >./</span
+            >
+            <span class="min-w-0 flex-1 truncate">
+              {m.ui_workspaceActions_copyRelativePath_label()}
+            </span>
+          </Menu.Item>
+        {/if}
+
+        {#if showFileNameCopy && !isDirectory}
+          <Menu.Item onclick={copyFileName}>
+            <span class={iconSlotClass} aria-hidden="true">
+              <Fa icon={faFile} size="12" class="opacity-50" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">
+              {m.ui_workspaceActions_copyFileName_label()}
+            </span>
+          </Menu.Item>
+        {/if}
+      </Menu.SubContent>
+    </Menu.Sub>
+  {:else if showFileActions}
     {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
       <!-- Open Actions - dynamically rendered based on installed editors -->
       <div class="space-y-0.5">

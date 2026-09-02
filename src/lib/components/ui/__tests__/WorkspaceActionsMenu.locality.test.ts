@@ -8,7 +8,7 @@
  * actions stay.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -152,7 +152,19 @@ function openInLabels(container: HTMLElement): string[] {
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('./mocks/button.svelte'));
+warmImport(() => import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte'));
 warmImport(() => import('$features/workspace/components/WorkspaceActionsMenu.svelte'));
+
+async function renderSubmenu() {
+  const Harness = (await import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte')).default;
+  render(Harness);
+  await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+  const trigger = await screen.findByRole('menuitem', { name: 'Open in...' });
+  trigger.focus();
+  await fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+  await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+  return trigger;
+}
 
 describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
   beforeEach(() => {
@@ -224,6 +236,29 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
       'Open in Windsurf',
       'Open in Cursor',
     ]);
+  });
+
+  it('stacks editor and copy actions in an accessible submenu', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const trigger = await renderSubmenu();
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      await screen.findByRole('menuitem', { name: 'Open in Visual Studio Code' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Choose app' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy Relative Path' })).toBeTruthy();
+  });
+
+  it('keeps copy actions in submenu mode when external editors are unavailable', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' });
+    await renderSubmenu();
+
+    expect(screen.queryByRole('menuitem', { name: 'Choose app' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
+    expect(await screen.findByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy Relative Path' })).toBeTruthy();
   });
 });
 
