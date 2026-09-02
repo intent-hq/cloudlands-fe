@@ -17,18 +17,29 @@ const paraglideOutdir = join(__dirname, 'src/shared/paraglide');
 const messagesDir = join(__dirname, 'messages');
 const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
 
-function canReuseGeneratedParaglide() {
-  const outputs = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file));
-  if (outputs.some((file) => !existsSync(file))) return false;
+// Pure decision logic, kept separate from the hard-coded project paths so it can be
+// unit-tested deterministically with injected paths/stats (fresh, stale, missing,
+// partial output) instead of depending on the ambient mtimes of this checkout's
+// gitignored src/shared/paraglide output. Called with no arguments (the defaults),
+// production/dev behavior is unchanged.
+export function canReuseGeneratedParaglide({
+  outputPaths = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file)),
+  inputPaths,
+  existsSync: exists = existsSync,
+  statSync: stat = statSync,
+  readdirSync: readdir = readdirSync,
+} = {}) {
+  if (outputPaths.some((file) => !exists(file))) return false;
 
-  const inputs = [
+  const resolvedInputPaths = inputPaths ?? [
     join(paraglideProject, 'settings.json'),
-    ...readdirSync(messagesDir)
+    ...readdir(messagesDir)
       .filter((file) => file.endsWith('.json'))
       .map((file) => join(messagesDir, file)),
   ];
-  const newestInput = Math.max(...inputs.map((file) => statSync(file).mtimeMs));
-  const oldestOutput = Math.min(...outputs.map((file) => statSync(file).mtimeMs));
+
+  const newestInput = Math.max(...resolvedInputPaths.map((file) => stat(file).mtimeMs));
+  const oldestOutput = Math.min(...outputPaths.map((file) => stat(file).mtimeMs));
   return oldestOutput >= newestInput;
 }
 
@@ -288,7 +299,7 @@ const excludeNodeModules = () => ({
   },
 });
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command, mode }, testOverrides = {}) => {
   // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
   // scripts) builds the renderer for a plain browser — no Electron main or
   // preload. svelte.config.js switches the adapter output to dist/web for the
@@ -300,6 +311,7 @@ export default defineConfig(({ command, mode }) => {
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
+  const canReuse = testOverrides.canReuseGeneratedParaglide ?? canReuseGeneratedParaglide;
   const env = loadEnv(mode, __dirname, '');
 
   const webDefines = {};
@@ -361,7 +373,7 @@ export default defineConfig(({ command, mode }) => {
           return null;
         },
       },
-      isUiPreview && canReuseGeneratedParaglide()
+      isUiPreview && canReuse()
         ? reuseGeneratedParaglide()
         : paraglideVitePlugin({
             project: paraglideProject,
