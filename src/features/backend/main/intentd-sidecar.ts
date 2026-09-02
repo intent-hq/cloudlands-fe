@@ -29,6 +29,7 @@ import { setConnectionMode, setDaemonVersionInfo, setOrphanedSidecarInfo } from 
 import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 import { readPinnedVersion } from './intentd-version-pin';
 import { detectOrphanedSidecar } from './intentd-orphan';
+import { resolveTailcatBinaryPath } from './tailcat-tunnel';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
 // `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
@@ -792,6 +793,34 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
 }
 
 /**
+ * Build the env for a sidecar spawn. Exported for unit tests.
+ *
+ * Besides normalizing `INTENTD_DATA_DIR`, this points the daemon at the
+ * app-bundled tailcat client via `INTENTD_TAILCAT_BIN`: intentd's own
+ * tunnel binary probing (env → libexec next to its exe → sibling → PATH)
+ * cannot find the Electron-packaged binary, which lives under
+ * `Resources/tailcat/` while the daemon runs from `Resources/intentd/`, so
+ * enabling the tunnel in a packaged app would fail with ENOENT. An
+ * explicitly-set `INTENTD_TAILCAT_BIN` from the user's env always wins,
+ * and when no bundled tailcat exists the var is simply not set (fail-soft,
+ * intentd probes as before).
+ */
+export function buildSidecarSpawnEnv(
+  env: NodeJS.ProcessEnv,
+  resolveTailcat: () => string | null = () => resolveTailcatBinaryPath(env),
+): NodeJS.ProcessEnv {
+  const spawnEnv = { ...env };
+  if (env.INTENTD_DATA_DIR?.trim()) {
+    spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
+  }
+  if (!env.INTENTD_TAILCAT_BIN?.trim()) {
+    const tailcatPath = resolveTailcat();
+    if (tailcatPath) spawnEnv.INTENTD_TAILCAT_BIN = tailcatPath;
+  }
+  return spawnEnv;
+}
+
+/**
  * Spawn the sidecar daemon process.
  *
  * Internal helper extracted from startIntentdSidecar for restart path reuse.
@@ -805,10 +834,7 @@ async function spawnSidecarProcess(
 
   logger.info('Spawning intentd sidecar', { binaryPath, socketPath });
 
-  const spawnEnv = { ...env };
-  if (env.INTENTD_DATA_DIR?.trim()) {
-    spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
-  }
+  const spawnEnv = buildSidecarSpawnEnv(env);
 
   const proc = spawn(binaryPath, ['serve'], {
     env: spawnEnv,
