@@ -41,7 +41,9 @@ import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import { selectProviderAuthFailureGuidance } from '../../provider-catalog/provider-catalog-selectors';
 import { openPanel, setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
@@ -68,6 +70,9 @@ interface AgentToastState {
   /** Entry `at` when the user manually closed the toast; the toast re-shows
    *  only when a NEWER failure lands for this agent. */
   dismissedThroughAt?: number;
+  /** Entry `at` of the last auth failure that triggered a forced provider
+   *  auth-status refresh — one refresh per failure, not per re-render. */
+  authRefreshedAt?: number;
 }
 
 type FailureMessage =
@@ -162,6 +167,13 @@ function* buildToastProps(
       ? rawWorkspaceName
       : undefined;
   const resolveKeySlot = yield* call(getKeySlotResolver);
+  // Provider auth failure (matched against the catalog's authErrorPatterns):
+  // the toast carries actionable login guidance alongside the raw error.
+  const authGuidance = yield* selectProviderAuthFailureGuidance.effect(
+    session?.provider,
+    session?.model,
+    entry.error,
+  );
   return {
     title: agentName
       ? m.agent_failureToast_agentFailed_title({ name: agentName })
@@ -177,6 +189,8 @@ function* buildToastProps(
     retrying: state.retrying,
     retryNote: state.retryNote,
     keySlot: resolveKeySlot(entry.workspaceId),
+    loginCommandHint: authGuidance?.loginCommandHint,
+    showClaudeDesktopNote: authGuidance?.showClaudeDesktopNote ?? false,
     onRetry: () => emit({ kind: 'retry', agentId: entry.agentId }),
     onSwitchTo: () => emit({ kind: 'switch-to', agentId: entry.agentId }),
     onClose: () => emit({ kind: 'close', agentId: entry.agentId }),
@@ -197,6 +211,22 @@ function* renderEntry(
     class: WRAPPER_CLASS,
   });
   state.visible = true;
+  // Auth failure: force a provider auth-status refresh so provider cards /
+  // settings flip to "Log in" without waiting for the next poll (the
+  // checkSingleProviderRequested worker probes with force: true). One
+  // refresh per failure — re-renders of the same entry don't re-probe.
+  if (state.authRefreshedAt !== entry.at) {
+    const session = yield* selectAgentSession.effect(entry.agentId);
+    const authGuidance = yield* selectProviderAuthFailureGuidance.effect(
+      session?.provider,
+      session?.model,
+      entry.error,
+    );
+    if (authGuidance) {
+      state.authRefreshedAt = entry.at;
+      yield* put(checkSingleProviderRequested(authGuidance.providerId));
+    }
+  }
 }
 
 /**

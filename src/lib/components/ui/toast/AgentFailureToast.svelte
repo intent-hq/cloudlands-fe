@@ -2,6 +2,7 @@
   import Fa from 'svelte-fa';
   import { faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import ToastCloseButton from './ToastCloseButton.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -21,6 +22,10 @@
     retryNote?: string;
     /** Resolved 0-based micro key slot of the workspace (badge hidden when null). */
     keySlot?: number | null;
+    /** Provider auth failure: login command to run (copyable guidance). */
+    loginCommandHint?: string;
+    /** claude-code auth failure: desktop-app sign-in doesn't carry over to the CLI. */
+    showClaudeDesktopNote?: boolean;
     onRetry: () => void;
     /** Navigate to the agent WITHOUT retrying. */
     onSwitchTo: () => void;
@@ -35,6 +40,8 @@
     retrying,
     retryNote,
     keySlot = null,
+    loginCommandHint,
+    showClaudeDesktopNote = false,
     onRetry,
     onSwitchTo,
     onClose,
@@ -58,6 +65,24 @@
       <p class="min-w-0 break-words text-sm font-medium text-foreground">{title}</p>
     </div>
     <p class="text-sm text-muted-foreground line-clamp-2 mt-0.5 break-words">{errorSummary}</p>
+
+    {#if loginCommandHint}
+      <div class="mt-1.5 flex min-w-0 flex-col gap-1" data-testid="toast-auth-guidance">
+        <p class="text-xs text-muted-foreground">{m.settings_providers_runToLogIn_label()}</p>
+        <div class="flex items-center gap-1">
+          <code
+            class="rounded bg-muted px-1.5 py-0.5 text-xs"
+            data-testid="toast-auth-login-command">{loginCommandHint}</code
+          >
+          <CopyButton text={loginCommandHint} size="xs" />
+        </div>
+        {#if showClaudeDesktopNote}
+          <p class="text-xs text-muted-foreground break-words" data-testid="toast-auth-claude-desktop-note">
+            {m.settings_providers_claudeDesktopNote_label()}
+          </p>
+        {/if}
+      </div>
+    {/if}
 
     {#if contextLine}
       <p class="text-xs text-muted-foreground truncate mt-1.5 min-w-0">{contextLine}</p>
