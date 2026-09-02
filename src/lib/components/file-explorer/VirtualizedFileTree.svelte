@@ -35,9 +35,6 @@
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   // Sentinel path for inline creation node
@@ -72,8 +69,6 @@
     overscan?: number;
     /** Callback when external files are dropped onto the tree */
     onExternalFilesDrop?: (files: File[], targetPath: string | null) => void;
-    openPanelTabs?: PanelTab[];
-    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -90,8 +85,6 @@
     itemHeight = 25, // Match ListItem sm size
     overscan = 5,
     onExternalFilesDrop,
-    openPanelTabs = [],
-    activePanelTab,
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
@@ -999,14 +992,6 @@
     return false;
   }
 
-  function getFilePanelState(filePath: string) {
-    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
-      type: 'file',
-      filePath,
-      workspaceId,
-    });
-  }
-
   // Scroll state
   let scrollTop = $state(0);
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -1062,8 +1047,7 @@
   let treeContainer: HTMLDivElement | undefined = $state();
 
   // Handle item click
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function handleItemClick(flatNode: FlattenedFileNode, index: number, event: MouseEvent) {
+  function handleItemClick(flatNode: FlattenedFileNode, _index: number, event: MouseEvent) {
     // Update focused path on click (use path directly for stability)
     focusedPath = flatNode.node.path;
     if (flatNode.node.type === 'file') {
@@ -1174,8 +1158,6 @@
             {@const hasChanges =
               (flatNode.gitStatus?.additions ?? 0) > 0 || (flatNode.gitStatus?.deletions ?? 0) > 0}
             {@const isModified = isFileModified(node.path) && node.type === 'file'}
-            {@const panelState =
-              node.type === 'file' ? getFilePanelState(node.path) : { count: 0, isActive: false }}
             {@const isDropTarget =
               isExternalFileDragOver &&
               dropTargetPath !== null &&
@@ -1270,7 +1252,6 @@
                       {@html getFileTypeIconSvg(node.name)}
                     </span>
                   {/snippet}
-                  <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                 </ListItem>
               {/if}
               {#if hasChanges}

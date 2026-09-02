@@ -230,9 +230,7 @@ describe('directoryPickerSaga', () => {
     send(loadDirectoryRequested('/Users/me/ghost'));
     await settle();
 
-    expect(mocks.request.mock.calls).toEqual([
-      ['host.listDirectory', { path: '/Users/me/ghost' }],
-    ]);
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/ghost' }]]);
     expect(dispatched).toEqual([
       {
         type: 'directoryPicker/pathNavigationFailed',
@@ -477,6 +475,26 @@ describe('directoryPickerSaga', () => {
       {
         type: 'directoryPicker/listingLoaded',
         payload: ['/Users/me/new-folder', created],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('surfaces a create failure as createDirectoryFailed without reloading', async () => {
+    mocks.request.mockRejectedValueOnce(new Error('Permission denied (os error 13)'));
+    const { send, dispatched, task } = harness();
+
+    send(createDirectoryRequested('/forbidden/new-folder'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.createDirectory', { path: '/forbidden/new-folder' }],
+    ]);
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/createDirectoryFailed',
+        payload: ['/forbidden/new-folder', 'Permission denied (os error 13)'],
       },
     ]);
     task.cancel();

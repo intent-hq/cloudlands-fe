@@ -4,6 +4,53 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.125.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.124.1...v2.125.0) (2026-09-02)
+
+
+### 🚀 Features
+
+* allow dragging folders into chat as path references (local daemon) ([#2035](https://github.com/intent-hq/cloudlands-fe/issues/2035)) ([9752e36](https://github.com/intent-hq/cloudlands-fe/commit/9752e365a00158d86851ca7c940be6c0a09fed81))
+* **chat:** login guidance on agent auth-failure surfaces ([#2031](https://github.com/intent-hq/cloudlands-fe/issues/2031)) ([14bef3a](https://github.com/intent-hq/cloudlands-fe/commit/14bef3a1a5d47152bae00f119e4dd8c1a9e89069))
+* **ci:** allow manual builds to compile intentd from a ref ([#2023](https://github.com/intent-hq/cloudlands-fe/issues/2023)) ([a3c6c2d](https://github.com/intent-hq/cloudlands-fe/commit/a3c6c2d33ce7b4e7fab5c950297209caad10160c))
+* gate field-derived attention indicators on live agent activity ([#2027](https://github.com/intent-hq/cloudlands-fe/issues/2027)) ([9484b78](https://github.com/intent-hq/cloudlands-fe/commit/9484b785643ed338def583092d3f691b1304b0dc))
+* order subagent rows non-idle-first by recency, idle last ([#2026](https://github.com/intent-hq/cloudlands-fe/issues/2026)) ([54fb8fd](https://github.com/intent-hq/cloudlands-fe/commit/54fb8fdc5762b41626ba0e67cdf74f3a2444b747))
+* polish workspace navigation and chat presentation ([#2008](https://github.com/intent-hq/cloudlands-fe/issues/2008)) ([237b3c0](https://github.com/intent-hq/cloudlands-fe/commit/237b3c0ce87562ab217dfcb127a4fedc0457927e))
+* refine workspace panel and tab interactions ([#1965](https://github.com/intent-hq/cloudlands-fe/issues/1965)) ([0519bd8](https://github.com/intent-hq/cloudlands-fe/commit/0519bd8103f1cafeafa159c2bd042eba97769c7e))
+* select highlighted folder in directory picker ([#2032](https://github.com/intent-hq/cloudlands-fe/issues/2032)) ([21a4eca](https://github.com/intent-hq/cloudlands-fe/commit/21a4ecaa8242191bd1543997afb9da4772ce0066))
+* support dropping folders into the new-workspace modal as path references ([#2036](https://github.com/intent-hq/cloudlands-fe/issues/2036)) ([df7568d](https://github.com/intent-hq/cloudlands-fe/commit/df7568d6b323b26da113c4d48f4b65f58e215db2))
+* suppress agent-attention toast when the user is already viewing the agent ([#2021](https://github.com/intent-hq/cloudlands-fe/issues/2021)) ([b6c12d7](https://github.com/intent-hq/cloudlands-fe/commit/b6c12d778527f019aadd824ebb0017f4ebc246f5))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.4 ([#2025](https://github.com/intent-hq/cloudlands-fe/issues/2025)) ([753aefe](https://github.com/intent-hq/cloudlands-fe/commit/753aefee160d1b8e2c26931a158dda32425bf1cc))
+* bump intentd sidecar to v0.9.5 ([#2039](https://github.com/intent-hq/cloudlands-fe/issues/2039)) ([d63aabb](https://github.com/intent-hq/cloudlands-fe/commit/d63aabb2a2b6bf268feb22c2f138fdece0e60b62))
+* **chat:** order transcript by daemon seq so idle-send skew cannot invert rows ([#2037](https://github.com/intent-hq/cloudlands-fe/issues/2037)) ([c8bd706](https://github.com/intent-hq/cloudlands-fe/commit/c8bd706b24da373e8199f5e7ee9c4a7b0f8635fc))
+* clear crash-leftover isStreaming/isProcessing on agent list refresh ([#2028](https://github.com/intent-hq/cloudlands-fe/issues/2028)) ([8d3119c](https://github.com/intent-hq/cloudlands-fe/commit/8d3119ce1574172d476c8732acfc264c8e8850db))
+* dedup re-dropped folder on onboarding prompt step ([#2038](https://github.com/intent-hq/cloudlands-fe/issues/2038)) ([4a9abdc](https://github.com/intent-hq/cloudlands-fe/commit/4a9abdcfd284a1ba12725c6ebde5efea1f1a1f58))
+* make Markdown preview read-only ([#2017](https://github.com/intent-hq/cloudlands-fe/issues/2017)) ([f64d0cc](https://github.com/intent-hq/cloudlands-fe/commit/f64d0cccd120d0be26dc920d1a7dea5b3c83c74d))
+* mount hidden agent-owned tabs on demand for capture ops ([#2029](https://github.com/intent-hq/cloudlands-fe/issues/2029)) ([28aa965](https://github.com/intent-hq/cloudlands-fe/commit/28aa965693fd5dca167d36d09311ebe22e0224a6))
+* persist the Undo changes revert in AgentRulesEditor ([#2018](https://github.com/intent-hq/cloudlands-fe/issues/2018)) ([4183aaa](https://github.com/intent-hq/cloudlands-fe/commit/4183aaa71a4217ba5b98846a29c36f153f2ec32b))
+* preserve nested reasoning section boundaries ([#1869](https://github.com/intent-hq/cloudlands-fe/issues/1869)) ([b98bc05](https://github.com/intent-hq/cloudlands-fe/commit/b98bc055337d09f2d785e88d9c866dcc637cbc1f))
+* reconcile cross-provider default model settings ([#2009](https://github.com/intent-hq/cloudlands-fe/issues/2009)) ([406be63](https://github.com/intent-hq/cloudlands-fe/commit/406be63bd1f3c63ea61373a7d6dc51c1f7785626))
+* remove Escape stream-stop shortcut ([#2015](https://github.com/intent-hq/cloudlands-fe/issues/2015)) ([59bcf44](https://github.com/intent-hq/cloudlands-fe/commit/59bcf44152a7f532881c42401bc9279b4b923688))
+* restore window sessions to the correct monitor and preserve fullscreen ([#2034](https://github.com/intent-hq/cloudlands-fe/issues/2034)) ([5bfef14](https://github.com/intent-hq/cloudlands-fe/commit/5bfef146981155c77ca1fd7901640ebc2c2852ec))
+* **titlebar:** Prevent workspace tab vertical scrolling ([#2016](https://github.com/intent-hq/cloudlands-fe/issues/2016)) ([0d9612d](https://github.com/intent-hq/cloudlands-fe/commit/0d9612d7f2fdd330ab88f6e0953d4dde99312dba))
+* tolerate svelte-check COMPLETED variants and drain output before evaluating the check guard ([#2020](https://github.com/intent-hq/cloudlands-fe/issues/2020)) ([aad72ec](https://github.com/intent-hq/cloudlands-fe/commit/aad72ec0426b84a201b3e40575e5739f5bbcfc5b))
+* unify tool result transcript visibility ([#1833](https://github.com/intent-hq/cloudlands-fe/issues/1833)) ([90687e0](https://github.com/intent-hq/cloudlands-fe/commit/90687e02998a59217624eb811549c5282cd8dc1d))
+
+
+### ⚡ Performance
+
+* Bound renderer update churn ([#2014](https://github.com/intent-hq/cloudlands-fe/issues/2014)) ([cdc386a](https://github.com/intent-hq/cloudlands-fe/commit/cdc386a760ea63cb2fe8a00a816579eca40f646d))
+
+## [2.124.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.124.0...v2.124.1) (2026-09-01)
+
+
+### 🐛 Bug Fixes
+
+* resolve workspace protocol backends by ownership probing ([#2007](https://github.com/intent-hq/cloudlands-fe/issues/2007)) ([e5296e6](https://github.com/intent-hq/cloudlands-fe/commit/e5296e67e784e2d09a54933c617d82563cc19f72))
+
 ## [2.124.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.123.1...v2.124.0) (2026-09-01)
 
 

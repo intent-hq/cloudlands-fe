@@ -8,7 +8,7 @@
 
 <svg
   viewBox="0 0 14 14"
-  class="size-3.5 shrink-0"
+  class="size-3.5! shrink-0"
   fill="none"
   stroke="currentColor"
   stroke-width="1.5"

@@ -465,6 +465,9 @@ async function signSidecar(context) {
   const appName = packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
   const sidecarPath = path.join(appPath, 'Contents', 'Resources', 'intentd', 'intentd');
+  // Optional tailcat tunnel client (scripts/fetch-tailcat.cjs); absent when
+  // the staging build skipped it (TAILCAT_SKIP=1).
+  const tailcatPath = path.join(appPath, 'Contents', 'Resources', 'tailcat', 'tailcat');
   // Optional macOS speech transcription helper (scripts/build-speech-helper.cjs);
   // absent when the staging build skipped it (no swiftc / non-mac packaging host).
   const speechHelperPath = path.join(
@@ -530,6 +533,12 @@ async function signSidecar(context) {
 
     // Verify the signature
     await verifySignature(sidecarPath);
+
+    // Sign the tailcat tunnel client when bundled (same seal-ordering constraint)
+    if (fs.existsSync(tailcatPath)) {
+      await signBinary(tailcatPath, identity);
+      await verifySignature(tailcatPath);
+    }
 
     // Sign the speech helper when bundled (same seal-ordering constraint)
     if (fs.existsSync(speechHelperPath)) {

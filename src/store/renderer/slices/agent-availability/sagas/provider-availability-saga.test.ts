@@ -235,7 +235,13 @@ describe('providerAvailabilitySaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn((action) => channel.put(action));
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} } }) },
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
+        }),
+      },
       providerAvailabilitySaga,
     );
     await settle();
@@ -255,6 +261,68 @@ describe('providerAvailabilitySaga', () => {
     expect(offById.mock.calls).toEqual([['backend:status', 'provider-listener']]);
   });
 
+  it('runs one trailing bulk check after repeated triggers arrive in flight', async () => {
+    let emit!: (payload: { status: string }) => void;
+    window.electronAPI = {
+      ...originalElectronApi,
+      on: vi.fn((_channel, handler) => {
+        emit = handler;
+        return 'provider-listener';
+      }),
+      offById: vi.fn(),
+    };
+    let resolveFirstAvailability!: (value: unknown) => void;
+    let availabilityCalls = 0;
+    mocks.invoke.mockImplementation((channel: string) => {
+      if (channel !== 'providers:get-availability') {
+        return Promise.resolve({ success: false });
+      }
+      availabilityCalls += 1;
+      if (availabilityCalls === 1) {
+        return new Promise((resolve) => {
+          resolveFirstAvailability = resolve;
+        });
+      }
+      return new Promise(() => {});
+    });
+    const channel = stdChannel();
+    const dispatch = vi.fn((action) => channel.put(action));
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
+        }),
+      },
+      providerAvailabilitySaga,
+    );
+
+    await settle();
+    channel.put(checkAllProvidersRequested());
+    await settle();
+    expect(availabilityCalls).toBe(1);
+    emit({ status: 'connected' });
+    channel.put(checkAllProvidersRequested());
+    channel.put(checkAllProvidersRequested());
+    channel.put(ensureProvidersChecked());
+    await settle();
+    expect(availabilityCalls).toBe(1);
+
+    resolveFirstAvailability({ success: false });
+    await vi.waitFor(() => expect(availabilityCalls).toBe(2));
+    await settle();
+    expect(availabilityCalls).toBe(2);
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action.type === 'agentAvailability/checkAllProvidersComplete',
+      ),
+    ).toHaveLength(1);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('owns exact catalog hydration at startup and after a connected status', async () => {
     let emit!: (payload: { status: string }) => void;
     window.electronAPI = {
@@ -269,7 +337,13 @@ describe('providerAvailabilitySaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn((action) => channel.put(action));
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} } }) },
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
+        }),
+      },
       providerAvailabilitySaga,
     );
     await settle();
@@ -284,6 +358,9 @@ describe('providerAvailabilitySaga', () => {
     expect(
       dispatch.mock.calls.filter(([action]) => action.type === providerCatalogLoaded.type),
     ).toHaveLength(2);
+    expect(
+      dispatch.mock.calls.filter(([action]) => action.type === checkAllProvidersRequested.type),
+    ).toHaveLength(1);
 
     task.cancel();
     await task.toPromise();
@@ -304,7 +381,13 @@ describe('providerAvailabilitySaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn((action) => channel.put(action));
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} } }) },
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
+        }),
+      },
       providerAvailabilitySaga,
     );
     await settle();
@@ -357,7 +440,9 @@ describe('providerAvailabilitySaga', () => {
       {
         channel,
         dispatch: vi.fn(),
-        getState: () => ({ agentAvailability: { hasCheckedOnce: true, providerCheckEpochMap: {} } }),
+        getState: () => ({
+          agentAvailability: { hasCheckedOnce: true, providerCheckEpochMap: {} },
+        }),
       },
       providerAvailabilitySaga,
     );

@@ -13,7 +13,7 @@
  */
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
-import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
 
@@ -23,9 +23,8 @@ export const selectProviderCatalogLoaded = store.createSelector(
 );
 
 /** All rows in the daemon's registry order (gated-off rows included). */
-export const selectProviderCatalogEntries = store.createSelector(
-  (state): ProviderCatalogEntry[] =>
-    state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
+export const selectProviderCatalogEntries = store.createSelector((state): ProviderCatalogEntry[] =>
+  state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
 );
 
 /** All provider ids in registry order. */
@@ -70,7 +69,7 @@ export const selectEffectiveDefaultProviderId = store.createSelector((state): st
     ? state.model?.providerModels?.[activeProviderId]
     : undefined;
   if (globalModel?.includes(':')) {
-    const { providerId } = splitCompoundModelId(globalModel);
+    const { providerId } = splitLegacyCompoundId(globalModel);
     if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
   }
   return activeProviderId;
@@ -131,16 +130,13 @@ export const selectProviderDisplayName = store.createSelector(
 );
 
 /**
- * `isModelValidForProvider`-equivalent against the effective default:
- * whether a (compound or bare) model id belongs to `targetProviderId`.
+ * Whether a (legacy compound or bare) model id belongs to
+ * `targetProviderId`; bare ids attribute to the effective default provider.
  */
 export const selectIsModelValidForProvider = store.createSelector(
   (state, model: string, targetProviderId: string): boolean =>
-    isModelValidForProvider(
-      model,
-      targetProviderId,
-      selectEffectiveDefaultProviderId.select(state),
-    ),
+    (splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state)) ===
+    targetProviderId,
 );
 
 /**
@@ -154,4 +150,47 @@ export const selectIsProviderAuthenticationError = store.createSelector(
       selectProviderCatalogEntryOrDefault.select(state, providerId),
       errorMessage,
     ),
+);
+
+/** Login guidance for a provider authentication failure. */
+export interface ProviderAuthFailureGuidance {
+  /** Canonical id of the provider whose auth failed (refresh target). */
+  providerId: string;
+  /** Login command to surface (catalog hint, else `<command> login`). */
+  loginCommandHint: string;
+  /** claude-code only: desktop-app sign-in does not carry over to the CLI. */
+  showClaudeDesktopNote: boolean;
+}
+
+/**
+ * Login guidance for an agent failure: when `errorMessage` matches the
+ * provider's catalog `authErrorPatterns`, return the actionable login
+ * command (and the claude-code desktop-app caveat). The provider resolves
+ * from the session's explicit provider id, else the compound model prefix,
+ * else the effective default (via the EntryOrDefault fallback). `null` when
+ * there is no error or it is not an authentication failure.
+ */
+export const selectProviderAuthFailureGuidance = store.createSelector(
+  (
+    state,
+    provider: string | null | undefined,
+    model: string | null | undefined,
+    errorMessage: string | null | undefined,
+  ): ProviderAuthFailureGuidance | null => {
+    if (!errorMessage) return null;
+    // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
+    // treat it as unset so resolution falls through to the model prefix.
+    let rawId = provider && provider !== 'acp' ? provider : '';
+    if (!rawId && model?.includes(':')) {
+      rawId = splitLegacyCompoundId(model).providerId || '';
+    }
+    const entry = selectProviderCatalogEntryOrDefault.select(state, rawId);
+    if (!isProviderAuthenticationErrorForEntry(entry, errorMessage)) return null;
+    const providerId = entry?.id ?? rawId;
+    return {
+      providerId,
+      loginCommandHint: entry?.loginCommandHint || `${entry?.command ?? providerId} login`,
+      showClaudeDesktopNote: providerId === 'claude-code',
+    };
+  },
 );

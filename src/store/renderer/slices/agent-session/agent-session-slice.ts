@@ -138,11 +138,30 @@ function repairNearSimultaneousOrphanAssistantOrdering(messages: AgentMessage[])
 }
 
 /**
- * Stable sort by timestamp ascending, then repair the close event-ordering case
- * where a subsequent assistant reply sorts immediately above its user reply.
+ * Order the transcript by the daemon's per-agent monotonic `seq` (PROTOCOL
+ * §5.5) when any row carries one: seq-bearing rows sort ascending by seq;
+ * rows WITHOUT a seq (optimistic user rows pre-echo, in-flight assistant
+ * messages before the terminal frame) sort AFTER all seq-bearing rows,
+ * preserving their local insertion order among themselves. `seq` lives in a
+ * single clock domain (the daemon's), so this ordering is immune to
+ * daemon/renderer clock skew — the idle-send transient inversion where a
+ * skewed-ahead daemon timestamp on the user-row echo sorted the
+ * renderer-clock in-flight assistant message above it cannot occur.
+ *
+ * Old-daemon compatibility: when NO row carries a seq (daemons predating the
+ * per-message `seq` wire field, or purely-local transcripts), fall back to
+ * the previous stable timestamp-ascending sort plus the near-simultaneous
+ * orphan-assistant repair.
  */
 function orderMessagesForConversation(messages: AgentMessage[]): AgentMessage[] {
   if (messages.length <= 1) return messages;
+  if (messages.some((m) => typeof m.seq === 'number')) {
+    const withSeq = messages
+      .filter((m) => typeof m.seq === 'number')
+      .sort((a, b) => (a.seq as number) - (b.seq as number));
+    const withoutSeq = messages.filter((m) => typeof m.seq !== 'number');
+    return [...withSeq, ...withoutSeq];
+  }
   const sorted = [...messages].sort((a, b) => {
     const tsA =
       typeof a.timestamp === 'string' ? a.timestamp : (a.timestamp?.toISOString?.() ?? '');

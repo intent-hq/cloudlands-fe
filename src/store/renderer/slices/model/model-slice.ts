@@ -5,6 +5,7 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   activeProviderReconciled,
+  setAtomicDefaultModel,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
 import { normalizeModelForProvider, normalizeProviderModels } from './model-selection-utils';
@@ -69,6 +70,7 @@ export const initialState: ModelState = {
   availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
+  pendingProviderModels: {},
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
   defaultReasoningEffort: '',
@@ -102,6 +104,10 @@ export const setLoadingStateForProvider = createAction<
 
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
   'model/loadProviderModelsFromStorage',
+);
+
+export const providerModelsPersistRejected = createAction<[models: Record<string, string>]>(
+  'model/providerModelsPersistRejected',
 );
 
 /**
@@ -204,7 +210,26 @@ modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }
     ...state.providerModels,
     [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
   },
+  pendingProviderModels: {
+    ...state.pendingProviderModels,
+    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
+  },
 }));
+modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model }] }) => {
+  const normalizedModel = normalizeModelForProvider(providerId, model, providerId);
+  return {
+    ...state,
+    defaultProviderId: providerId,
+    providerModels: {
+      ...normalizeProviderModels(state.providerModels, providerId),
+      [providerId]: normalizedModel,
+    },
+    pendingProviderModels: {
+      ...normalizeProviderModels(state.pendingProviderModels, providerId),
+      [providerId]: normalizedModel,
+    },
+  };
+});
 modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
   ...state,
   availableModels: createCollection<AuggieModel, 'value'>('value', models),
@@ -226,10 +251,29 @@ modelReducer.with(
     },
   }),
 );
-modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
-  ...state,
-  providerModels: normalizeProviderModels(models, state.defaultProviderId),
-}));
+modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => {
+  const normalized = normalizeProviderModels(models, state.defaultProviderId);
+  const pending: Record<string, string> = {};
+  for (const [providerId, model] of Object.entries(state.pendingProviderModels)) {
+    if (normalized[providerId] !== model) pending[providerId] = model;
+  }
+  return {
+    ...state,
+    providerModels: { ...normalized, ...pending },
+    pendingProviderModels: pending,
+  };
+});
+modelReducer.with(providerModelsPersistRejected, (state, { payload: [models] }) => {
+  const pending = { ...state.pendingProviderModels };
+  for (const [providerId, model] of Object.entries(models)) {
+    if (
+      pending[providerId] === normalizeModelForProvider(providerId, model, state.defaultProviderId)
+    ) {
+      delete pending[providerId];
+    }
+  }
+  return { ...state, pendingProviderModels: pending };
+});
 modelReducer.with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
   ...state,
   defaultReasoningEffort: effort,

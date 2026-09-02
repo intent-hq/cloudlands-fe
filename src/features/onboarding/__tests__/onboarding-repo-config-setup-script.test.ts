@@ -50,13 +50,11 @@ const mocks = vi.hoisted(() => {
       behaviorPrompt: undefined,
       specialistId: 'spec-writer',
     })),
-    redeemStagedAttachments: vi.fn(
-      async (_workspaceId: string, items: unknown[]) => ({
-        items,
-        failedCount: 0,
-        fileBlocks: [],
-      }),
-    ),
+    redeemStagedAttachments: vi.fn(async (_workspaceId: string, items: unknown[]) => ({
+      items,
+      failedCount: 0,
+      fileBlocks: [],
+    })),
     sendHeldFirstMessage: vi.fn(async () => ({ sent: true })),
     // Mutable workspace-initializer state for the model-pick tests
     initializerHydrated: false,
@@ -142,9 +140,7 @@ vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
 // mention-derived context references reach the held payload); only the
 // runtime parser — which pulls in the terminal manager — is stubbed.
 vi.mock('$features/onboarding/utils/parse-context-references', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('$features/onboarding/utils/parse-context-references')
-  >()),
+  ...(await importOriginal<typeof import('$features/onboarding/utils/parse-context-references')>()),
   parseRuntimeMentions: vi.fn(async () => []),
 }));
 
@@ -1332,6 +1328,7 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
           onSubmit: () => void;
           setInputValue: (value: string) => void;
           setImageContextItems: (items: unknown[]) => void;
+          setStagedContextItems: (items: unknown[]) => void;
           setEditorMentions: (mentions: unknown[], contextMentions: unknown[]) => void;
         };
       }
@@ -1489,5 +1486,106 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     };
     expect(createRequest.initialAgent.prompt).toBe('Build the thing');
     expect(mocks.sendHeldFirstMessage).not.toHaveBeenCalled();
+  });
+
+  it('folder-only staging rides the create frame as an absolute-path context reference', async () => {
+    // A staged folder is path-only (never placed), so it does NOT force the
+    // held path: the prompt and the folder-derived context reference go out
+    // on the workspace.create frame itself.
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setStagedContextItems([
+      {
+        id: 'staged-folder-/home/user/projects/data',
+        type: 'folder',
+        label: 'data',
+        path: '/home/user/projects/data',
+      },
+    ]);
+    captured().setInputValue('Analyze the data');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: {
+        prompt?: string;
+        contextReferences?: Array<{ type: string; path?: string; title?: string }>;
+      };
+    };
+    expect(createRequest.initialAgent.prompt).toBe('Analyze the data');
+    expect(createRequest.initialAgent.contextReferences).toEqual([
+      { type: 'file', path: '/home/user/projects/data', title: 'data' },
+    ]);
+    expect(mocks.sendHeldFirstMessage).not.toHaveBeenCalled();
+  });
+
+  it('mixed staging (folder + file) delivers the folder reference on the held first message', async () => {
+    // A staged non-image FILE forces the held path; the folder's absolute
+    // path must ride the held send's contextReferences, not be dropped.
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setStagedContextItems([
+      {
+        id: 'staged-folder-/home/user/projects/data',
+        type: 'folder',
+        label: 'data',
+        path: '/home/user/projects/data',
+      },
+      {
+        id: 'staged-file-1721650000000-0',
+        type: 'file',
+        label: 'notes.txt',
+        path: 'notes.txt',
+        sourcePath: '/home/user/notes.txt',
+      },
+    ]);
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    // The staged file holds the prompt and references off the create frame.
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: { prompt?: string; contextReferences?: unknown };
+    };
+    expect(createRequest.initialAgent.prompt).toBeUndefined();
+    expect(createRequest.initialAgent.contextReferences).toBeUndefined();
+
+    await waitFor(() => expect(mocks.sendHeldFirstMessage).toHaveBeenCalledTimes(1));
+    const [heldParams] = mocks.sendHeldFirstMessage.mock.calls[0] as [
+      {
+        content: string;
+        contextReferences: Array<{ type: string; path?: string; title?: string }>;
+      },
+    ];
+    expect(heldParams.content).toBe('Build the thing');
+    expect(heldParams.contextReferences).toEqual([
+      { type: 'file', path: '/home/user/projects/data', title: 'data' },
+    ]);
   });
 });

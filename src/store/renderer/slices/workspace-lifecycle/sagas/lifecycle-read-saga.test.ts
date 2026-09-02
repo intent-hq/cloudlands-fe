@@ -1355,6 +1355,100 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('clears a crash-leftover in-flight pair when the list snapshot reports the agent idle (monorepo#4135)', async () => {
+    const current = state();
+    current.agentSessions.byAgentId['agent-stale'] = agent('agent-stale', {
+      isStreaming: true,
+      isProcessing: true,
+    });
+    // The fresh daemon rows: agent-stale is idle (crash leftover — no event
+    // will ever clear the stored pair), agent-normal has no stored session.
+    const staleRow = agent('agent-stale');
+    const normalRow = agent('agent-normal');
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [staleRow, normalRow],
+      retiredCount: 0,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The stale agent is upserted separately with the stale-clear options so
+    // the snapshot's idle flags win over the pair-guard; the rest keep the
+    // default preservation semantics. Pin the exact dispatch set so a
+    // regression that additionally upserts the stale row optionless (order-
+    // dependent re-assertion of the pair-guard) cannot slip through.
+    const bulkUpserts = run.actions.filter(
+      (action) => action.type === 'agentSessions/bulkUpsertSessions',
+    );
+    expect(bulkUpserts).toEqual([
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[normalRow]] },
+      {
+        type: 'agentSessions/bulkUpsertSessions',
+        payload: [
+          [staleRow],
+          { preserveExplicitRuntimeFlags: false, allowActiveTurnRuntimeFlagClear: true },
+        ],
+      },
+    ]);
+    await stop(run.task);
+  });
+
+  it('does not clear a pair set while the list fetch was in flight, even if the row reports idle', async () => {
+    // Race regression (PR #2028 review): chatSendStarted lands the both-true
+    // pair AFTER hydration starts but BEFORE the daemon list resolves. The
+    // daemon snapshot was cut before the turn started, so the row reports
+    // idle — but the pair does not predate the fetch, so it must keep the
+    // default #1250 preservation semantics, not be treated as a crash
+    // leftover.
+    const current = state();
+    const raceRow = agent('agent-race');
+    mocks.agents.listWithMeta.mockImplementation(async () => {
+      current.agentSessions.byAgentId['agent-race'] = agent('agent-race', {
+        isStreaming: true,
+        isProcessing: true,
+      });
+      return { agents: [raceRow], retiredCount: 0 };
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    const bulkUpserts = run.actions.filter(
+      (action) => action.type === 'agentSessions/bulkUpsertSessions',
+    );
+    expect(bulkUpserts).toEqual([
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[raceRow]] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('keeps the pair-guard for a live in-flight pair the fresh snapshot still reports busy', async () => {
+    const current = state();
+    current.agentSessions.byAgentId['agent-live'] = agent('agent-live', {
+      isStreaming: true,
+      isProcessing: true,
+    });
+    const liveRow = agent('agent-live', { isStreaming: true });
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [liveRow], retiredCount: 0 });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The daemon reports the turn in flight, so the single optionless bulk
+    // upsert keeps the default preservation semantics (monorepo#1250).
+    const bulkUpserts = run.actions.filter(
+      (action) => action.type === 'agentSessions/bulkUpsertSessions',
+    );
+    expect(bulkUpserts).toEqual([
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[liveRow]] },
+    ]);
+    await stop(run.task);
+  });
+
   // The two tests below stub the seam (appClient.agents.listWithMeta), not the
   // wire. On an 8.2+ daemon the default read excludes retired rows, but the saga
   // must stay agnostic to row provenance: retired rows re-enter state via the

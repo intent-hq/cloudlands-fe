@@ -1090,6 +1090,8 @@ export const ConnectionsAddSchema = z.object({
   port: z.number().int().positive('Port must be a positive integer'),
   fingerprint: z.string().min(1, 'Fingerprint is required'),
   token: z.string().min(1, 'Token is required'),
+  /** tc address from the pairing URI's `tc=` (PROTOCOL §12.3); absent = none. */
+  tcAddress: z.string().trim().min(1).optional(),
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts: z.boolean().optional(),
   /** Per-backend keychain-sync opt-out (spec Phase 2); absent = synced. */

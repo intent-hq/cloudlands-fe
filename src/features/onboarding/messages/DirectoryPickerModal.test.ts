@@ -346,11 +346,136 @@ describe('DirectoryPickerModal directory mode (default)', () => {
     render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
     await flush();
 
-    const select = screen.getByRole('button', { name: 'Select folder' }) as HTMLButtonElement;
+    // With no folder highlighted the button targets the open directory —
+    // its label names it (home renders as ~) and Select submits its path.
+    const select = screen.getByRole('button', { name: 'Select "~"' }) as HTMLButtonElement;
     expect(select.disabled).toBe(false);
     await fireEvent.click(select);
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+
+  it('clicking a folder highlights it and Select commits that folder', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    const row = screen.getByRole('option', { name: /code/ });
+    await fireEvent.click(row);
+    await flush();
+
+    expect(row.getAttribute('aria-selected')).toBe('true');
+    // The button label follows the highlighted folder.
+    const select = screen.getByRole('button', { name: 'Select "code"' }) as HTMLButtonElement;
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/code');
+  });
+
+  it('single-clicking a folder does not navigate', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+    expect(loadCalls()).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+
+    expect(loadCalls()).toHaveLength(1);
+  });
+
+  it('navigation clears the highlighted folder so Select falls back to the open directory', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+    expect(screen.getByRole('button', { name: 'Select "code"' })).toBeTruthy();
+
+    // Double-click navigates into the folder and must drop the highlight
+    // (the mock store keeps the same listing, so a stale selection would
+    // otherwise still submit the old child path).
+    await fireEvent.dblClick(screen.getByRole('option', { name: /repo/ }));
+    await flush();
+
+    const select = screen.getByRole('button', { name: 'Select "~"' }) as HTMLButtonElement;
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+
+  it('changing the search filter clears the highlighted folder', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+    expect(screen.getByRole('button', { name: 'Select "code"' })).toBeTruthy();
+
+    const search = screen.getByRole('searchbox', { name: 'Filter folder contents' });
+    await fireEvent.input(search, { target: { value: 'repo' } });
+    await flush();
+
+    const select = screen.getByRole('button', { name: 'Select "~"' }) as HTMLButtonElement;
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+
+  it('committing a typed path clears the highlighted folder even when navigation fails', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+    expect(screen.getByRole('button', { name: 'Select "code"' })).toBeTruthy();
+
+    // The mock store keeps the listing unchanged after navigateToPathRequested,
+    // modelling a failed typed navigation — the highlight must still be dropped
+    // so Select cannot submit the stale child path.
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
+    const input = screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '/does/not/exist' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    expect(navigateCalls()).toHaveLength(1);
+    const select = screen.getByRole('button', { name: 'Select "~"' }) as HTMLButtonElement;
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+
+  it('arrow-key focus movement does not highlight a folder', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await flush();
+
+    const select = screen.getByRole('button', { name: 'Select "~"' }) as HTMLButtonElement;
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+
+  it('exposes at most one aria-selected row when a highlight and focus diverge', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+    await fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await flush();
+
+    const selectedRows = screen
+      .getAllByRole('option')
+      .filter((row) => row.getAttribute('aria-selected') === 'true');
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0].textContent).toContain('code');
   });
 });
 
@@ -559,6 +684,38 @@ describe('DirectoryPickerModal New Folder', () => {
     await flush();
     // The mock store never updates, so the input survives with its value.
     expect(nameInput().value).toBe('denied');
+  });
+
+  it('Backspace and arrow keys inside the input do not drive list navigation', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    // With no folder highlighted, aria-selected tracks the focused row — the
+    // first option carries it before any key is pressed.
+    const selectedRows = () =>
+      screen.getAllByRole('option').filter((row) => row.getAttribute('aria-selected') === 'true');
+    expect(selectedRows()[0].textContent).toContain('code');
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: 'ab' } });
+    await fireEvent.keyDown(input, { key: 'Backspace' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await flush();
+
+    // Only the load-on-open request — Backspace in the input must not
+    // navigate up to the parent (the listing has one).
+    expect(loadCalls()).toHaveLength(1);
+    expect(createCalls()).toHaveLength(0);
+    expect(nameInput()).toBeTruthy();
+    // And the focused row did not move: the first option still carries
+    // aria-selected (ArrowDown from index 0 would have moved it to "repo").
+    const selected = selectedRows();
+    expect(selected).toHaveLength(1);
+    expect(selected[0].textContent).toContain('code');
   });
 });
 

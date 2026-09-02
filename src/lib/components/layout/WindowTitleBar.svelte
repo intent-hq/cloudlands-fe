@@ -36,7 +36,11 @@
     TITLEBAR_NAVIGATION_CONTROL_CLASS,
     TITLEBAR_NAVIGATION_GLYPH_CLASS,
   } from './titlebar-navigation';
-  import { getCounterScaledTitlebarHeight, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
+  import {
+    getCounterScaledTitlebarHeight,
+    TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
+    WINDOW_TITLEBAR_HEIGHT_PX,
+  } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
@@ -294,17 +298,14 @@
     style:width="{100 * $zoomFactor}%"
   >
     <!-- Left column -->
-    <div
-      class="titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-hidden"
-      data-title-bar-navigation
-    >
+    <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-title-bar-navigation>
       <div
-        class="titlebar-left-drag-handle w-4 shrink-0 self-stretch"
+        class="titlebar-left-drag-handle shrink-0 self-stretch"
         data-titlebar-left-drag-handle
         aria-hidden="true"
       ></div>
       <div
-        class="flex min-w-0 items-center gap-1"
+        class="titlebar-fixed-controls flex min-w-0 items-center gap-1"
         bind:this={fixedControlsEl}
         data-titlebar-fixed-controls
       >
@@ -372,10 +373,12 @@
     position: relative;
     z-index: 50;
     padding-top: 2px;
+    --titlebar-control-shift: 0px;
     -webkit-app-region: drag;
   }
 
   .window-title-bar:global(.window-title-bar-mac) {
+    --titlebar-control-shift: 8px;
     padding-left: 60px; /* Space for macOS traffic lights */
   }
 
@@ -390,6 +393,14 @@
   .titlebar-left-drag-surface,
   .titlebar-left-drag-handle {
     -webkit-app-region: drag;
+  }
+
+  .titlebar-left-drag-handle {
+    width: calc(16px - var(--titlebar-control-shift));
+  }
+
+  .titlebar-fixed-controls {
+    padding-right: var(--titlebar-control-shift);
   }
 
   /* Track the panel width directly (no easing) while it is being resized */

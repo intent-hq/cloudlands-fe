@@ -19,6 +19,7 @@ import {
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { removeScript } from '../scripts/scripts-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
@@ -1574,28 +1575,28 @@ function dropTabsPresentInPanels(
   return result;
 }
 
-/**
- * Strip a destroyed tab from every layout-history snapshot so goBack/goForward
- * can never resurrect it after its main-process registrations are gone
- * (monorepo#2857). Layout structure is left untouched — only the tab entry
- * (and a matching activeTabId) is removed.
- */
-function purgeTabFromLayoutHistory(
+/** Strip matching tabs from history so navigation cannot resurrect deleted resources. */
+function purgeTabsFromLayoutHistory(
   ws: WorkspacePanelLayoutState,
-  tabId: string,
+  shouldRemove: (tab: PanelTab) => boolean,
 ): WorkspacePanelLayoutState {
   let changed = false;
   const layoutHistory = ws.layoutHistory.map((snapshot) => {
     let snapshotChanged = false;
     const panels: Record<string, PanelState> = {};
     for (const [pId, panel] of Object.entries(snapshot.panels)) {
-      if (panel.tabs.some((tab) => tab.id === tabId)) {
+      if (panel.tabs.some(shouldRemove)) {
         snapshotChanged = true;
-        const tabs = panel.tabs.filter((tab) => tab.id !== tabId);
+        const tabs = panel.tabs.filter((tab) => !shouldRemove(tab));
         panels[pId] = {
           ...panel,
           tabs,
-          activeTabId: panel.activeTabId === tabId ? (tabs[0]?.id ?? null) : panel.activeTabId,
+          activeTabId: tabs.some((tab) => tab.id === panel.activeTabId)
+            ? panel.activeTabId
+            : (tabs[0]?.id ?? null),
+          attentionTabIds: panel.attentionTabIds?.filter((tabId) =>
+            tabs.some((tab) => tab.id === tabId),
+          ),
         };
       } else {
         panels[pId] = panel;
@@ -1605,7 +1606,7 @@ function purgeTabFromLayoutHistory(
     changed = true;
     return { ...snapshot, panels };
   });
-  const recentlyClosedColumns = removeTabFromClosedPanelColumns(ws, (tab) => tab.id === tabId);
+  const recentlyClosedColumns = removeTabFromClosedPanelColumns(ws, shouldRemove);
   if (
     ws.recentlyClosedColumns
       ? recentlyClosedColumns !== ws.recentlyClosedColumns
@@ -1614,6 +1615,13 @@ function purgeTabFromLayoutHistory(
     changed = true;
   }
   return changed ? { ...ws, layoutHistory, recentlyClosedColumns } : ws;
+}
+
+function purgeTabFromLayoutHistory(
+  ws: WorkspacePanelLayoutState,
+  tabId: string,
+): WorkspacePanelLayoutState {
+  return purgeTabsFromLayoutHistory(ws, (tab) => tab.id === tabId);
 }
 
 /**
@@ -2660,6 +2668,73 @@ panelLayoutReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => 
     recentlyClosed: filtered,
     recentlyClosedColumns,
   });
+});
+// --- Cross-slice: destroy script-backed tabs when a script is removed ---
+panelLayoutReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
+  const current = state.byWorkspaceId[wsId];
+  if (!current) return state;
+
+  const shouldRemove = (tab: PanelTab) => tab.type === 'terminal' && tab.scriptId === scriptId;
+  const removedTabIds = new Set<string>();
+  const emptiedPanelIds: string[] = [];
+  let panels = current.panels;
+
+  for (const [panelId, panel] of Object.entries(current.panels)) {
+    const tabs = panel.tabs.filter((tab) => {
+      if (!shouldRemove(tab)) return true;
+      removedTabIds.add(tab.id);
+      return false;
+    });
+    if (tabs.length === panel.tabs.length) continue;
+    if (panels === current.panels) panels = { ...current.panels };
+    const activeIndex = panel.tabs.findIndex((tab) => tab.id === panel.activeTabId);
+    const activeWasRemoved = activeIndex >= 0 && shouldRemove(panel.tabs[activeIndex]);
+    const fallbackIndex = panel.tabs
+      .slice(0, Math.max(0, activeIndex))
+      .filter((tab) => !shouldRemove(tab)).length;
+    panels[panelId] = {
+      ...panel,
+      tabs,
+      activeTabId: activeWasRemoved
+        ? (tabs[Math.min(fallbackIndex, tabs.length - 1)]?.id ?? null)
+        : panel.activeTabId,
+      attentionTabIds: panel.attentionTabIds?.filter((tabId) => !removedTabIds.has(tabId)),
+    };
+    if (tabs.length === 0) emptiedPanelIds.push(panelId);
+  }
+
+  const recentlyClosed = current.recentlyClosed.filter((entry) => !shouldRemove(entry.tab));
+  let next = current;
+  if (panels !== current.panels || recentlyClosed.length !== current.recentlyClosed.length) {
+    next = {
+      ...current,
+      panels,
+      recentlyClosed,
+      pendingFocusTabId:
+        current.pendingFocusTabId && removedTabIds.has(current.pendingFocusTabId)
+          ? null
+          : current.pendingFocusTabId,
+      pendingPanelReveal:
+        current.pendingPanelReveal?.tabId && removedTabIds.has(current.pendingPanelReveal.tabId)
+          ? null
+          : current.pendingPanelReveal,
+      focusHistory: current.focusHistory.filter((entry) => !removedTabIds.has(entry.tabId)),
+    };
+  }
+  next = purgeTabsFromLayoutHistory(next, shouldRemove);
+
+  if (next === current) return state;
+
+  for (const panelId of emptiedPanelIds) {
+    if (next.panels[panelId] && Object.keys(next.panels).length > 1) {
+      next = closePanelHelper(next, panelId);
+    }
+  }
+  next = {
+    ...next,
+    focusHistoryIndex: Math.min(next.focusHistoryIndex, next.focusHistory.length - 1),
+  };
+  return setWorkspaceState(state, wsId, next);
 });
 // --- Reopen Closed Panel Column ---
 panelLayoutReducer.with(reopenClosedPanelColumn, (state, { payload }) => {

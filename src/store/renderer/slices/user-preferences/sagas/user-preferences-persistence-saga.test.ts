@@ -30,6 +30,7 @@ import {
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
   hydrateShortcutOverrides,
+  initialState,
   saveActivityLogPreset,
   setAgentFontStyle,
   setCodeFontFamily,
@@ -48,6 +49,7 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleSpellcheck,
+  userPreferencesReducer,
 } from '../user-preferences-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import {
@@ -75,6 +77,28 @@ const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+function startPreferenceStore() {
+  const channel = stdChannel();
+  let userPreferences = initialState;
+  const dispatch = (action: unknown) => {
+    userPreferences = userPreferencesReducer(userPreferences, action as never);
+    channel.put(action as never);
+    return action;
+  };
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ userPreferences }) },
+    userPreferencesPersistenceSaga,
+  );
+  return {
+    dispatch,
+    getUserPreferences: () => userPreferences,
+    stop: async () => {
+      task.cancel();
+      await task.toPromise();
+    },
+  };
+}
 
 describe('userPreferencesPersistenceSaga', () => {
   beforeEach(() => {
@@ -171,6 +195,67 @@ describe('userPreferencesPersistenceSaga', () => {
       [setGithubLinkDefaultAction('copy-link')],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
+  });
+
+  it('persists an agent font action and restores it in a fresh store', async () => {
+    const stored: Record<string, unknown> = {};
+    mocks.getJSON.mockImplementation((key: string) => stored[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      stored[key] = value;
+    });
+    const first = startPreferenceStore();
+    await settle();
+
+    first.dispatch(setAgentFontStyle('monospace'));
+    await settle();
+    expect(stored['agent-font-settings']).toEqual({ fontStyle: 'monospace' });
+    await first.stop();
+
+    const fresh = startPreferenceStore();
+    await settle();
+    expect(fresh.getUserPreferences().agentFontStyle).toBe('monospace');
+    await fresh.stop();
+  });
+
+  it('persists a note font cycle and restores serif in a fresh store', async () => {
+    const stored: Record<string, unknown> = {};
+    mocks.getJSON.mockImplementation((key: string) => stored[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      stored[key] = value;
+    });
+    const first = startPreferenceStore();
+    await settle();
+
+    first.dispatch(cycleNoteFontStyle());
+    await settle();
+    expect(first.getUserPreferences().noteFontStyle).toBe('serif');
+    expect(stored['note-font-settings']).toEqual({ fontStyle: 'serif' });
+    await first.stop();
+
+    const fresh = startPreferenceStore();
+    await settle();
+    expect(fresh.getUserPreferences().noteFontStyle).toBe('serif');
+    await fresh.stop();
+  });
+
+  it('persists a code font action and restores it in a fresh store', async () => {
+    const stored: Record<string, unknown> = {};
+    mocks.getJSON.mockImplementation((key: string) => stored[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      stored[key] = value;
+    });
+    const first = startPreferenceStore();
+    await settle();
+
+    first.dispatch(setCodeFontFamily('JetBrains Mono'));
+    await settle();
+    expect(stored['code-font-settings']).toEqual({ fontFamily: 'JetBrains Mono' });
+    await first.stop();
+
+    const fresh = startPreferenceStore();
+    await settle();
+    expect(fresh.getUserPreferences().codeFontFamily).toBe('JetBrains Mono');
+    await fresh.stop();
   });
 
   it('ignores missing and malformed stored values', async () => {

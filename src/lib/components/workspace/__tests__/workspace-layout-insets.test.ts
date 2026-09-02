@@ -23,16 +23,16 @@ describe('WorkspaceLayout panel insets', () => {
     expect(rightBranch).toContain('main-content-area flex h-full min-w-0 z-10 bg-sidebar');
     expect(rightBranch).toContain('bg-sidebar pl-2 sm:pl-3');
     expect(leftBranch).toContain('main-content-area flex h-full min-w-0 z-10');
-    expect(leftBranch).not.toContain('sm:pl-3');
+    expect(leftBranch).not.toContain('bg-sidebar pl-2 sm:pl-3');
   });
 
-  it('adds an 8px gutter beside a collapsed single-layout left sidebar', () => {
+  it('matches the responsive outer gutter beside a collapsed left sidebar', () => {
     const leftBranch = workspaceLayout.match(
       /\{#if sidebarSide === 'left'\}([\s\S]*?)\{\/if\}/,
     )?.[1];
 
     expect(workspaceLayout).toContain('const sidebarIsCollapsed = selectIsCollapsed();');
-    expect(leftBranch).toContain('class:pl-2={$sidebarIsCollapsed}');
+    expect(leftBranch).toMatch(/\{\$sidebarIsCollapsed\s*\?\s*'pl-2 sm:pl-3'\s*:\s*''\}/);
   });
 
   it('uses only the standard workspace layout contract', () => {

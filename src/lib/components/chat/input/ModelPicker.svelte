@@ -73,7 +73,7 @@
     selectProviderModelsClearEpoch,
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
-  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
@@ -123,7 +123,8 @@
     providerId: string;
     modelId: string;
   } {
-    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
   const activeProviderId$ = selectActiveProviderId();

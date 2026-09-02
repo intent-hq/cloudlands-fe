@@ -7,13 +7,15 @@
  * so the adapter's newline framing + event-push path exercise the same code
  * a live daemon would.
  */
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import https from 'node:https';
 import { createRequire } from 'node:module';
-import type { AddressInfo } from 'node:net';
+import net, { type AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Duplex } from 'node:stream';
+import { Duplex, PassThrough } from 'node:stream';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -31,6 +33,8 @@ import {
   PinMismatchError,
   raceDuplexSockets,
   resolveBackendConfig,
+  TUNNEL_RACE_HOST,
+  tunnelRaceAttempt,
   WebSocketDuplex,
 } from './backend-connection';
 import type { HostCertMismatch } from './backend-connection';
@@ -1408,6 +1412,157 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
     expect((await failed).message).toBe('boom');
+  });
+});
+
+describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
+  const wssConfig = {
+    transport: 'wss' as const,
+    host: '10.0.0.9',
+    port: 5181,
+    token: 't',
+    fingerprint: 'AB:CD',
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns null without a tcAddress (direct-only race unchanged)', () => {
+    expect(tunnelRaceAttempt(wssConfig)).toBeNull();
+  });
+
+  it('returns null when the tailcat binary is unavailable (fail-soft)', () => {
+    vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
+    // Force resolution away from any staged dev binary by also making the
+    // packaged/dev probes fail: an empty resourcesPath and a cwd walk from
+    // tmp never find resources/tailcat.
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
+    try {
+      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' })).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('builds a tunnel attempt labeled with the pseudo-host when binary + tcAddress exist', () => {
+    // Any existing file satisfies the TAILCAT_BIN existence probe; the
+    // attempt is not dialed in this test.
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' });
+    expect(attempt).not.toBeNull();
+    expect(attempt!.host).toBe(TUNNEL_RACE_HOST);
+    expect(typeof attempt!.create).toBe('function');
+  });
+});
+
+describe('captureFingerprint through the tailcat tunnel (tc-address host)', () => {
+  let daemon: FakeWssDaemon;
+  const TOKEN = 'c'.repeat(64);
+
+  /**
+   * Fake tailcat child: instead of dialing the tc mesh, relays its stdio to
+   * the FakeWssDaemon's TLS port — the same pipe topology the real client
+   * binary provides, so the forwarder-loopback capture path runs end to end.
+   */
+  class FakeRelayChild extends EventEmitter {
+    stdin = new PassThrough();
+    stdout = new PassThrough();
+    stderr = new PassThrough();
+    killed = false;
+    constructor(remotePort: number) {
+      super();
+      const socket = net.connect(remotePort, '127.0.0.1');
+      this.stdin.pipe(socket);
+      socket.pipe(this.stdout);
+      this.once('exit', () => socket.destroy());
+    }
+    kill(): boolean {
+      this.killed = true;
+      this.emit('exit', 0);
+      return true;
+    }
+  }
+
+  beforeAll(async () => {
+    daemon = new FakeWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('fails structured (connect-failed) when the tailcat binary is unavailable', async () => {
+    vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
+    try {
+      const result = await captureFingerprint({ host: 'tc-key-abc', port: daemon.port });
+      expect(result).toEqual({
+        ok: false,
+        code: 'connect-failed',
+        error: expect.stringContaining('tailcat binary unavailable'),
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('captures via the loopback forwarder, lowercases the dialed tc address, and closes the tunnel', async () => {
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    const children: FakeRelayChild[] = [];
+    const spawnArgs: string[][] = [];
+    const result = await captureFingerprint(
+      // Hand-typed uppercase form: the dial must normalize it.
+      { host: '  TC-KEY-ABC  ', port: daemon.port, token: TOKEN },
+      {
+        tailcatSpawn: (_command, args) => {
+          spawnArgs.push(args);
+          const child = new FakeRelayChild(daemon.port);
+          children.push(child);
+          return child as unknown as ChildProcess;
+        },
+      },
+    );
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    // The forwarder spawned exactly one relay with the normalized address and
+    // the daemon's port, and the finally-block teardown killed it.
+    expect(spawnArgs).toEqual([['tc-key-abc', String(daemon.port)]]);
+    expect(children).toHaveLength(1);
+    expect(children[0].killed).toBe(true);
+  });
+
+  it('keeps the pin enforced across the loopback re-target: a mismatch never leaks the token', async () => {
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const result = await captureFingerprint(
+      { host: 'tc-key-abc', port: daemon.port, token: TOKEN, expectedFingerprint: wrong },
+      {
+        tailcatSpawn: () => new FakeRelayChild(daemon.port) as unknown as ChildProcess,
+      },
+    );
+    expect(result).toEqual({
+      ok: false,
+      code: 'fingerprint-mismatch',
+      error: expect.any(String),
+      actualFingerprint: daemon.fingerprint,
+    });
+    // No decrypted application byte — no upgrade request, no Authorization
+    // header — reached the daemon through the tunnel (monorepo#3782 TOCTOU).
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
   });
 });
 

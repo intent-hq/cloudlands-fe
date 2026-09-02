@@ -115,6 +115,9 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', a
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
+vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () => ({
+  default: (await import('./mocks/MockWorkspaceActionsMenu.svelte')).default,
+}));
 
 import PanelTabBar from '../PanelTabBar.svelte';
 import { PANE_DRAG_MIME, getDraggedPane, setDraggedPane } from '../panel-drag';
@@ -375,6 +378,22 @@ describe('mounted panel header actions menu', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'panelLayout/toggleExpandPanel' }),
     );
+  });
+
+  it('opens the same panel actions menu from non-interactive header right-click', async () => {
+    const { container } = renderHeader('note');
+    const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+    const trigger = panelTrigger(container);
+
+    await fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
+
+    const menu = await screen.findByRole('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
+    expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
+    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
+    expect(screen.getByTestId('content-display-action')).toBeTruthy();
+    expect(screen.getByTestId('content-command-action')).toBeTruthy();
   });
 
   it('sizes the grouped action menu from content within a viewport cap', async () => {

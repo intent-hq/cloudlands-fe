@@ -12,7 +12,8 @@ import type { ContentBlock } from '$shared/types';
 import type { Proposal } from '$shared/types/proposal';
 import { createProposalResource } from '$shared/types/proposal-resource';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { warmImport } from '../../../../test/warm-import';
+import MessageContent from '../MessageContent.svelte';
+import StreamingMessageContent from '../StreamingMessageContent.svelte';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../ui/__tests__/mocks/Fa.svelte')).default,
@@ -33,9 +34,6 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 afterEach(cleanup);
-
-warmImport(() => import('../MessageContent.svelte'));
-warmImport(() => import('../StreamingMessageContent.svelte'));
 
 const lifecycleStates = ['pending', 'resolved', 'metadata-unknown'] as const;
 
@@ -80,8 +78,7 @@ describe.each([
   ['a normal workspace', 'workspace-1'],
   ['the Chief workspace', CHIEF_WORKSPACE_ID as string],
 ])('inline proposal transcript rendering in %s', (_name, workspaceId) => {
-  it('renders every proposal block in the static transcript', async () => {
-    const MessageContent = (await import('../MessageContent.svelte')).default;
+  it('renders every proposal block in the static transcript', () => {
     const { container } = render(MessageContent, {
       props: { content, workspaceId, agentId: 'agent-1', messageId: 'm1' },
     });
@@ -89,7 +86,6 @@ describe.each([
   });
 
   it('renders every proposal block while streaming', async () => {
-    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const { container } = render(StreamingMessageContent, {
       props: { content, isStreaming: true, workspaceId, agentId: 'agent-1', messageId: 'm1' },
     });
@@ -97,7 +93,6 @@ describe.each([
   });
 
   it('keeps every proposal block inline after the turn completes', async () => {
-    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const { container, rerender } = render(StreamingMessageContent, {
       props: { content, isStreaming: true, workspaceId, agentId: 'agent-1', messageId: 'm1' },
     });

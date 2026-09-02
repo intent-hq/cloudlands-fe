@@ -5,7 +5,11 @@ import {
   getToolResultContentBlockKey,
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
-import { extractReasoningHeading, extractStandaloneReasoningTitle } from './reasoning-heading';
+import {
+  extractReasoningHeading,
+  extractReasoningHistory,
+  extractStandaloneReasoningTitle,
+} from './reasoning-heading';
 
 // This provider phase arrives in the same parsed content_group shape as normal
 // named groups. Keep the compatibility match narrow so authored group names
@@ -148,6 +152,31 @@ export function shouldRenderResponseGroupInline(
   group: Pick<ContentBlockGroup, 'isReasoningPhase' | 'isStreaming' | 'name'>,
 ): boolean {
   return group.isReasoningPhase === true && !group.isStreaming && !group.name.trim();
+}
+
+export function isNestedReasoningSectionStart(
+  group: Pick<ContentBlockGroup, 'children' | 'isReasoningPhase'>,
+  childIndex: number,
+): boolean {
+  if (!group.isReasoningPhase) return false;
+  const child = group.children[childIndex];
+  if (child?.type !== 'thinking') return false;
+
+  return extractReasoningHistory(child.text ?? child.content ?? '').some(
+    (section) => section.title,
+  );
+}
+
+export function isNestedReasoningSectionBoundary(
+  group: Pick<ContentBlockGroup, 'children' | 'isReasoningPhase'>,
+  childIndex: number,
+  isVisible: (block: ContentBlock) => boolean = (block) => block.type !== 'tool_result',
+): boolean {
+  if (!isNestedReasoningSectionStart(group, childIndex)) return false;
+
+  let previousIndex = childIndex - 1;
+  while (previousIndex >= 0 && !isVisible(group.children[previousIndex])) previousIndex -= 1;
+  return previousIndex >= 0;
 }
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {

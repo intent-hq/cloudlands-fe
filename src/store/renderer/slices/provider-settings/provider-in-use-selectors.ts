@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { selectProviderModels } from '../model/model-selectors';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 import { selectSpecialists } from '../specialists/specialists-selectors';
@@ -35,7 +35,7 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
   const activeProviderId = selectActiveProviderId.select(state);
   const globalModel = selectProviderModels.select(state)[activeProviderId];
   if (globalModel) {
-    const { providerId } = parseCompoundModelId(globalModel, defaultProviderId);
+    const providerId = splitLegacyCompoundId(globalModel).providerId ?? defaultProviderId;
     addReason(providerId, m.settings_providers_inUseDefaultModel_label({ model: globalModel }));
   }
 
@@ -49,7 +49,8 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
     // Explicit model pin.
     if (specialist.defaultModel) {
       if (specialist.defaultModel.includes(':')) {
-        const { providerId } = parseCompoundModelId(specialist.defaultModel, defaultProviderId);
+        const providerId =
+          splitLegacyCompoundId(specialist.defaultModel).providerId ?? defaultProviderId;
         addReason(
           providerId,
           m.settings_providers_inUseSpecialistModel_label({

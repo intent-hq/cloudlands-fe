@@ -14,7 +14,7 @@ import { AgentStatus } from '$shared/types';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import {
@@ -121,7 +121,7 @@ function* openCreatedAgent(
 }
 
 function providerForModel(model: string | undefined, fallback: string): string {
-  return model?.includes(':') ? splitCompoundModelId(model).providerId || fallback : fallback;
+  return model?.includes(':') ? splitLegacyCompoundId(model).providerId || fallback : fallback;
 }
 
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
@@ -372,13 +372,18 @@ function* launchAgent(
   try {
     const model = config.model ?? (yield* selectSelectedModel.effect());
     const activeProvider = yield* selectActiveProviderId.effect();
+    const provider = config.provider ?? providerForModel(model, activeProvider);
+    const modelProvider = providerForModel(model, provider);
+    if (model && provider && modelProvider !== provider) {
+      throw new Error(`model ${model} does not belong to provider ${provider}`);
+    }
     const request = createAgentFromConfigRequested(
       wsId,
       {
         ...config,
         workspaceId: WorkspaceId(wsId),
         model,
-        provider: config.provider ?? providerForModel(model, activeProvider),
+        provider,
       },
       options,
     );

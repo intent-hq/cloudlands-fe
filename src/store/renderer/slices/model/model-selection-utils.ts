@@ -1,4 +1,4 @@
-import { splitCompoundModelId } from "$shared/utils/compound-model-id";
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 
 /**
  * Resolve the default model from a provider's catalog rows: the row the
@@ -21,7 +21,7 @@ export function normalizeModelForProvider(
   model: string,
   defaultProviderId: string,
 ): string {
-  const { modelId } = splitCompoundModelId(model);
+  const { modelId } = splitLegacyCompoundId(model);
 
   if (providerId === defaultProviderId) {
     return modelId;
@@ -38,7 +38,7 @@ export function normalizeProviderModels(
     Object.entries(models).map(([providerId, model]) => [
       providerId,
       normalizeModelForProvider(providerId, model, defaultProviderId),
-    ])
+    ]),
   );
 }
 
@@ -53,11 +53,10 @@ export function findAvailableModelMatch(
     return normalizedModel;
   }
 
-  const { modelId: targetModelId } = splitCompoundModelId(normalizedModel);
+  const { modelId: targetModelId } = splitLegacyCompoundId(normalizedModel);
 
   return availableValues.find((availableValue) => {
-    const { modelId } = splitCompoundModelId(availableValue);
+    const { modelId } = splitLegacyCompoundId(availableValue);
     return availableValue === targetModelId || modelId === targetModelId;
   });
 }
-

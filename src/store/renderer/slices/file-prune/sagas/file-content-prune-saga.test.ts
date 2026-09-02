@@ -3,6 +3,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 import type { StoreState } from '../../../types';
 import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
+import { removeScript } from '../../scripts/scripts-slice';
 import {
   applyPreset,
   clearPanelLayout,
@@ -158,6 +159,7 @@ const tabRemovalActionCases = [
   goBack(WS_2, NOW),
   goForward(WS_2),
   reconcileStaleAgentTabs(WS_2, [], 'replacement', 'Replacement'),
+  removeScript(WS_2, 'script'),
   clearPanelLayout(WS_2),
 ];
 

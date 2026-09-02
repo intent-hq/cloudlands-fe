@@ -17,12 +17,15 @@ import {
   getResponseGroupCurrentBlockIndex,
   getResponseGroupCurrentChildIndex,
   getResponseGroupPreviewBlock,
+  isNestedReasoningSectionBoundary,
+  isNestedReasoningSectionStart,
   isReasoningPhaseGroupName,
   normalizeResponseGroup,
   normalizeResponseGroups,
   shouldRenderResponseGroupInline,
 } from '../response-group-blocks';
 import { extractReasoningHistory } from '../reasoning-heading';
+import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
@@ -927,6 +930,48 @@ describe('ResponseGroup - block identity', () => {
     expect(shouldRenderResponseGroupInline({ ...group, isReasoningPhase: false })).toBe(false);
   });
 
+  it('identifies only titled nested reasoning as explicit section starts and boundaries', () => {
+    const group = {
+      type: 'content_group' as const,
+      name: 'Reasoning',
+      isStreaming: false,
+      isReasoningPhase: true,
+      children: [
+        { type: 'text', text: 'Review the input.' },
+        { type: 'thinking', text: '**Evaluating user feedback mechanisms**\n\nReview input.' },
+        { type: 'tool_result', output: 'hidden' },
+        { type: 'thinking', text: '**Specifying task requirements**\n\nDefine scope.' },
+        { type: 'tool_use', name: 'view' },
+      ] as ContentBlock[],
+    };
+    const visible = (block: ContentBlock) => block.type !== 'tool_result';
+
+    expect(group.children.map((_, index) => isNestedReasoningSectionStart(group, index))).toEqual([
+      false,
+      true,
+      false,
+      true,
+      false,
+    ]);
+    expect(
+      group.children.map((_, index) => isNestedReasoningSectionBoundary(group, index, visible)),
+    ).toEqual([false, true, false, true, false]);
+    expect(
+      isNestedReasoningSectionBoundary(
+        { ...group, children: group.children.slice(1), name: 'Reasoning' },
+        0,
+        visible,
+      ),
+    ).toBe(false);
+    expect(isNestedReasoningSectionStart({ ...group, isReasoningPhase: false }, 1)).toBe(false);
+    expect(
+      isNestedReasoningSectionStart(
+        { ...group, children: [{ type: 'thinking', text: 'Long body sentence with no title.' }] },
+        0,
+      ),
+    ).toBe(false);
+  });
+
   it('does not pair ordinary authored groups or adjacent prose', () => {
     const titledReasoning = {
       type: 'thinking',
@@ -1120,6 +1165,159 @@ describe('dedupeKeys', () => {
 });
 
 describe('MessageContent - top-level response rows', () => {
+  function reconciledBlocks(contentBlocks: ContentBlock[]): ContentBlock[] {
+    const reconciler = new ChatTranscriptReconciler();
+    reconciler.applySnapshot(0, {
+      agentId: 'agent-result-visibility',
+      messages: [
+        {
+          id: 'message-result-visibility',
+          role: 'assistant',
+          contentBlocks,
+        },
+      ],
+      truncated: false,
+      totalMessages: 1,
+    });
+    return reconciler.transcript().messages[0].contentBlocks ?? [];
+  }
+
+  const renderers = [
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const;
+
+  it.each(renderers)(
+    'renders a paired result exactly once through %s',
+    async (_name, loadComponent) => {
+      const Component = (await loadComponent()).default;
+      const content = reconciledBlocks([
+        {
+          type: 'tool_use',
+          id: 'message-result-visibility:0',
+          toolCallId: 'call-paired',
+          name: 'shell',
+          input: { command: 'true' },
+        },
+        {
+          type: 'tool_result',
+          id: 'message-result-visibility:1',
+          tool_use_id: 'call-paired',
+          output: 'paired-output-marker',
+        },
+      ] as ContentBlock[]);
+      const { container } = render(Component, { props: { content } });
+
+      await fireEvent.click(container.querySelector('[data-testid="tool-call-disclosure"]')!);
+      expect(container.textContent?.match(/paired-output-marker/g)).toHaveLength(1);
+    },
+  );
+
+  it.each(renderers)(
+    'renders an orphan result exactly once through %s',
+    async (_name, loadComponent) => {
+      const Component = (await loadComponent()).default;
+      const content = reconciledBlocks([
+        {
+          type: 'thinking',
+          id: 'message-result-visibility:0',
+          text: 'Inspect the unmatched result.',
+        },
+        {
+          type: 'tool_result',
+          id: 'message-result-visibility:1',
+          tool_use_id: 'missing-call',
+          output: 'orphan-output',
+        },
+      ] as ContentBlock[]);
+      const { container } = render(Component, { props: { content } });
+
+      expect(container.textContent?.match(/orphan-output/g)).toHaveLength(1);
+      expect(
+        container.querySelector('[data-message-content-block="tool_result"]')?.className,
+      ).toContain('pt-6');
+    },
+  );
+
+  it.each(renderers)(
+    'treats an orphan result as a later visible terminal row through %s',
+    async (_name, loadComponent) => {
+      vi.useFakeTimers();
+      try {
+        const Component = (await loadComponent()).default;
+        const streamingContent = reconciledBlocks([
+          { type: 'text', text: '<group:Earlier>' },
+          { type: 'text', text: 'Earlier detail' },
+        ] as ContentBlock[]);
+        const completedContent = reconciledBlocks([
+          ...streamingContent,
+          { type: 'text', text: '</group:Earlier>' },
+          {
+            type: 'tool_result',
+            id: 'message-result-visibility:3',
+            tool_use_id: 'missing-call',
+            output: 'orphan-output',
+          },
+        ] as ContentBlock[]);
+        const { container, rerender } = render(Component, {
+          props: { content: streamingContent, isStreaming: true },
+        });
+        const disclosure = container.querySelector('[data-testid="response-group-disclosure"]')!;
+        await fireEvent.click(disclosure);
+
+        await rerender({ content: completedContent, isStreaming: false });
+        await vi.advanceTimersByTimeAsync(799);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+        await vi.advanceTimersByTimeAsync(1);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each(renderers)(
+    'keeps a group terminal when only its paired result follows through %s',
+    async (_name, loadComponent) => {
+      vi.useFakeTimers();
+      try {
+        const Component = (await loadComponent()).default;
+        const streamingContent = reconciledBlocks([
+          {
+            type: 'tool_use',
+            id: 'message-result-visibility:0',
+            toolCallId: 'call-before-group',
+            name: 'shell',
+            input: { command: 'true' },
+          },
+          { type: 'text', text: '<group:Final>' },
+          { type: 'text', text: 'Final detail' },
+        ] as ContentBlock[]);
+        const completedContent = reconciledBlocks([
+          ...streamingContent,
+          { type: 'text', text: '</group:Final>' },
+          {
+            type: 'tool_result',
+            id: 'message-result-visibility:4',
+            tool_use_id: 'call-before-group',
+            output: 'paired-output-marker',
+          },
+        ] as ContentBlock[]);
+        const { container, rerender } = render(Component, {
+          props: { content: streamingContent, isStreaming: true },
+        });
+        const disclosure = container.querySelector('[data-testid="response-group-disclosure"]')!;
+        await fireEvent.click(disclosure);
+
+        await rerender({ content: completedContent, isStreaming: false });
+        await vi.advanceTimersByTimeAsync(800);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('renders duplicate top-level tool_results without each_key_duplicate', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
     const content = [
