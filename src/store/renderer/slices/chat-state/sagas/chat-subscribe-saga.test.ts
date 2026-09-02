@@ -991,76 +991,81 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(userRows[0].appMessageId).toBe('app-msg-opt-2');
   });
 
-  it.fails(
-    'keeps the user row above the streaming assistant message when the daemon clock is skewed ahead (idle-send mis-ordering)',
-    () => {
-      // Regression repro for the idle-send transient mis-ordering (mixed clock
-      // domains on the ordering sort key). Sequence mirrors production:
-      //   1. Optimistic user row — renderer clock (agent-send.ts).
-      //   2. Canonical user-row echo — daemon clock, skewed AHEAD (>1s beyond
-      //      the USER_REPLY_ORDER_WINDOW_MS repair window). appMessageId dedup
-      //      collapses the optimistic row onto the daemon timestamp.
-      //   3. First streamed chunk — §7.1 chunk deltas carry NO timestamp, so
-      //      the reconciler creates the in-flight assistant message with a
-      //      renderer-clock fallback (live-chat-client.ts upsertBlock), which
-      //      is BEHIND the user row's daemon timestamp.
-      // orderMessagesForConversation sorts by raw timestamp string, so the
-      // streaming assistant message sorts ABOVE the user row (visually
-      // appended to the previous assistant reply) until the terminal frame
-      // stamps the authoritative daemon timestamp. `it.fails` documents the
-      // bug: flip to `it` when the ordering fix lands.
-      const agentId = 'agent-sub-clock-skew';
-      seedSession(agentId);
-      const sub = openChat(agentId);
-      const prevAssistant = makeMessage('msg_prev-assistant', 'previous reply', {
-        timestamp: '2026-01-01T00:00:00.000Z',
-      });
-      sub.handler(transcript([prevAssistant]));
+  it('keeps the user row above the streaming assistant message when the daemon clock is skewed ahead (idle-send mis-ordering)', () => {
+    // Regression test for the idle-send transient mis-ordering (mixed clock
+    // domains on the ordering sort key). Sequence mirrors production:
+    //   1. Optimistic user row — renderer clock (agent-send.ts), NO seq.
+    //   2. Canonical user-row echo — daemon clock, skewed AHEAD (>1s beyond
+    //      the USER_REPLY_ORDER_WINDOW_MS repair window), carrying the
+    //      authoritative `seq` (§7.1 user-row deltas carry `messageSeq`).
+    //      appMessageId dedup collapses the optimistic row onto it.
+    //   3. First streamed chunk — §7.1 chunk deltas carry NO timestamp and
+    //      NO messageSeq, so the reconciler creates the in-flight assistant
+    //      message with a renderer-clock fallback (live-chat-client.ts
+    //      upsertBlock), BEHIND the user row's daemon timestamp.
+    // orderMessagesForConversation now sorts by daemon `seq` (single clock
+    // domain); the seq-less in-flight message sorts AFTER every seq-bearing
+    // row, so the user row stays above its streaming reply at every store
+    // state regardless of skew.
+    const agentId = 'agent-sub-clock-skew';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const prevAssistant = makeMessage('msg_prev-assistant', 'previous reply', {
+      timestamp: '2026-01-01T00:00:00.000Z',
+      seq: 4,
+    });
+    sub.handler(transcript([prevAssistant]));
 
-      // 1. Optimistic user row (renderer clock at send).
-      const appMessageId = 'app-msg-skew-1';
-      appStore.dispatch(
-        addMessage(agentId, {
-          id: 'renderer-minted-user-skew',
-          appMessageId,
-          role: 'user',
-          timestamp: '2026-01-01T00:00:02.000Z',
-          contentBlocks: [{ type: 'text', text: 'follow up' }],
-        }),
-      );
-
-      // 2. Canonical echo (message_row_delta re-read): daemon clock ~3.5s
-      // ahead of the renderer.
-      const canonicalUser: AgentMessage = {
-        id: 'user-msg-skew-1111-2222-3333-444455556666',
+    // 1. Optimistic user row (renderer clock at send, no seq yet).
+    const appMessageId = 'app-msg-skew-1';
+    appStore.dispatch(
+      addMessage(agentId, {
+        id: 'renderer-minted-user-skew',
         appMessageId,
         role: 'user',
-        timestamp: '2026-01-01T00:00:05.500Z',
-        contentBlocks: [
-          { type: 'text', id: 'user-msg-skew-1111-2222-3333-444455556666:0', text: 'follow up' },
-        ],
-      };
-      sub.handler(transcript([prevAssistant, canonicalUser]));
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'follow up' }],
+      }),
+    );
+    // The optimistic (seq-less) row renders after the seq-bearing history.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'msg_prev-assistant',
+      'renderer-minted-user-skew',
+    ]);
 
-      // 3. First chunk delta: no timestamp on the wire → renderer-clock
-      // fallback at chunk arrival (~300ms after send on the renderer clock).
-      const inFlight: AgentMessage = {
-        id: 'msg_streaming-reply',
-        role: 'assistant',
-        timestamp: '2026-01-01T00:00:02.300Z',
-        isStreaming: true,
-        contentBlocks: [{ type: 'text', id: 'msg_streaming-reply:0', text: 'On it' }],
-      };
-      sub.handler(transcript([prevAssistant, canonicalUser, inFlight], true));
+    // 2. Canonical echo (message_row_delta re-read): daemon clock ~3.5s
+    // ahead of the renderer, authoritative seq.
+    const canonicalUser: AgentMessage = {
+      id: 'user-msg-skew-1111-2222-3333-444455556666',
+      appMessageId,
+      role: 'user',
+      timestamp: '2026-01-01T00:00:05.500Z',
+      seq: 5,
+      contentBlocks: [
+        { type: 'text', id: 'user-msg-skew-1111-2222-3333-444455556666:0', text: 'follow up' },
+      ],
+    };
+    sub.handler(transcript([prevAssistant, canonicalUser]));
 
-      // Desired rendered order: the user row stays above its streaming reply.
-      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-        'msg_prev-assistant',
-        'user-msg-skew-1111-2222-3333-444455556666',
-        'msg_streaming-reply',
-      ]);
-    },
-  );
+    // 3. First chunk delta: no timestamp/messageSeq on the wire →
+    // renderer-clock fallback at chunk arrival (~300ms after send on the
+    // renderer clock), no seq until the terminal frame.
+    const inFlight: AgentMessage = {
+      id: 'msg_streaming-reply',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:02.300Z',
+      isStreaming: true,
+      contentBlocks: [{ type: 'text', id: 'msg_streaming-reply:0', text: 'On it' }],
+    };
+    sub.handler(transcript([prevAssistant, canonicalUser, inFlight], true));
+
+    // The user row stays above its streaming reply.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'msg_prev-assistant',
+      'user-msg-skew-1111-2222-3333-444455556666',
+      'msg_streaming-reply',
+    ]);
+  });
 
   it('corrects the skewed-clock inversion once the terminal frame stamps the daemon timestamp', () => {
     // Companion to the it.fails repro above: the terminal §7.1 reconcile
