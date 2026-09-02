@@ -16,7 +16,6 @@ for (const theme of ['dark'] as const) {
 
     const snapshot = component.getByRole('button', { name: 'Play demo.mp4' });
     await expect(snapshot.locator('video')).not.toHaveAttribute('controls', '');
-    await expect(snapshot).toHaveClass(/aspect-video/);
     await snapshot.focus();
     const keyboardBefore = await scroll.evaluate((node) => node.scrollTop);
     await snapshot.press('Enter');
@@ -26,10 +25,7 @@ for (const theme of ['dark'] as const) {
     const player = dialog.getByTestId('chat-video-player');
     await expect(player).toHaveAttribute('controls', '');
     await expect(player).not.toHaveAttribute('autoplay', '');
-    await expect(dialog.getByRole('link', { name: 'Open or download video' })).toHaveAttribute(
-      'href',
-      'https://media.example/demo.mp4',
-    );
+    await expect(dialog.getByRole('button', { name: 'Video options' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(snapshot).toBeFocused();

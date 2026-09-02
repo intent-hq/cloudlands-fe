@@ -270,6 +270,7 @@
   "ui_dropdownMenu_ariaLabel": ["fr"],
   "ui_imageActionsMenu_dimensions_label": "*",
   "ui_imageLightbox_image_alt": ["fr"],
+  "ui_videoActionsMenu_dimensions_label": "*",
   "ui_openCombo_copyBranch_shortLabel": ["de"],
   "ui_patchBlock_label": ["de"],
   "ui_shortcuts_chatCategory_title": ["de", "es"],
