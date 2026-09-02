@@ -52,6 +52,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+  import { resize } from './size-transition';
   import {
     WORKSPACE_TAB_BORDER_WIDTH_PX,
     WORKSPACE_TAB_FLARE_BOTTOM_PX,
@@ -117,8 +118,18 @@
   let pendingDragPointer: WorkspaceTabPointerGrab | null = null;
   let dragClientX = $state(0);
   let proposedTabOrder = $state<string[] | null>(null);
+  let closingActiveWorkspaceId = $state<string | null>(null);
+  let lifecycleMotionReady = $state(false);
+  let prefersReducedMotion = $state(false);
   let suppressClickWorkspaceId: string | null = null;
   const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
+  const selectedWorkspaceId = $derived(
+    activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId,
+  );
+  const visualActiveWorkspaceId = $derived(closingActiveWorkspaceId ?? selectedWorkspaceId);
+  const workspaceTabMotionDuration = $derived(
+    prefersReducedMotion ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
+  );
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
   let stripElement = $state<HTMLDivElement | null>(null);
@@ -137,7 +148,6 @@
   // mask stays put while the tab slides. Poll via rAF for the full layout
   // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
-  const ACTIVE_TAB_TRACKING_DURATION_MS = 240;
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
   let dragTracking = false;
@@ -182,6 +192,13 @@
     const unsubscribeHoverCardIntent = workspaceHoverCardIntentSession.subscribe(
       (delay) => (workspaceHoverCardOpenDelay = delay),
     );
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
+    updateMotionPreference();
+    motionQuery.addEventListener('change', updateMotionPreference);
+    const lifecycleFrame = requestAnimationFrame(() => {
+      lifecycleMotionReady = true;
+    });
     const handleMoved = (event: Event) =>
       handleGlobalWorkspaceTabMoved(event as CustomEvent<WorkspaceTabMovedEventDetail>);
     window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
@@ -191,6 +208,8 @@
       openWorkspaceHoverCardIds.forEach(() => workspaceHoverCardIntentSession.notifyClosed());
       openWorkspaceHoverCardIds.clear();
       pointerOpenEligibleWorkspaceHoverCardIds.clear();
+      cancelAnimationFrame(lifecycleFrame);
+      motionQuery.removeEventListener('change', updateMotionPreference);
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     };
   });
@@ -229,6 +248,7 @@
   $effect(() => {
     void renderedTabOrder;
     void horizontalPositionTrackingKey;
+    const trackingDuration = workspaceTabMotionDuration;
     if (activeTabBoundsPollers.size === 0) return;
     layoutTracking = true;
     reportActiveTabTracking();
@@ -240,7 +260,7 @@
       if (cancelled) return;
       startedAt ??= timestamp;
       activeTabBoundsPollers.forEach((poll) => poll());
-      if (timestamp - startedAt < ACTIVE_TAB_TRACKING_DURATION_MS) {
+      if (timestamp - startedAt < trackingDuration) {
         frame = requestAnimationFrame(tick);
       } else {
         layoutTracking = false;
@@ -424,7 +444,8 @@
 
   function closeWorkspace(workspaceId: string, event?: Event) {
     event?.stopPropagation();
-    const wasCurrent = $currentWorkspaceTabId$ === workspaceId;
+    const wasCurrent = selectedWorkspaceId === workspaceId;
+    if (wasCurrent) closingActiveWorkspaceId = workspaceId;
     appStore.dispatch(closeWorkspaceTab(workspaceId));
     if (!wasCurrent) return;
 
@@ -438,6 +459,9 @@
 
   function closeWorkspaceTabs(workspaceIds: string[], focusWorkspaceId?: string) {
     if (workspaceIds.length === 0) return;
+    if (selectedWorkspaceId && workspaceIds.includes(selectedWorkspaceId)) {
+      closingActiveWorkspaceId = selectedWorkspaceId;
+    }
     if (focusWorkspaceId) appStore.dispatch(openWorkspaceTab(focusWorkspaceId));
     workspaceIds.forEach((workspaceId) => appStore.dispatch(closeWorkspaceTab(workspaceId)));
     const nextWorkspaceId = focusWorkspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state);
@@ -728,6 +752,16 @@
     }
     void openWorkspace(workspaceId, event.detail === 0);
   }
+
+  function handleTabIntroEnd(workspaceId: string) {
+    if (workspaceId !== visualActiveWorkspaceId) return;
+    activeTabBoundsPollers.forEach((poll) => poll());
+  }
+
+  function handleTabOutroEnd(workspaceId: string) {
+    if (closingActiveWorkspaceId !== workspaceId) return;
+    closingActiveWorkspaceId = null;
+  }
 </script>
 
 <svelte:window onkeydown={handleDragKeydown} />
@@ -768,18 +802,25 @@
     {#each renderedTabOrder as workspaceId (workspaceId)}
       {@const workspace = workspaceById.get(workspaceId)}
       {@const isDragged = draggedWorkspaceId === workspaceId}
-      {@const isCurrent =
-        workspaceId ===
-        (activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId)}
+      {@const isCurrent = workspaceId === visualActiveWorkspaceId}
       <div
-        class="min-w-0 shrink-0"
+        class="w-40 max-w-[40vw] min-w-0 shrink-0"
         data-workspace-tab-motion={workspaceId}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 32}px` : undefined}
         animate:flip={{
-          duration: isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
+          duration: isDragged ? 0 : workspaceTabMotionDuration,
           easing: workspaceTabMotionEasing,
         }}
+        transition:resize={{
+          axis: 'x',
+          duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
+          easing: workspaceTabMotionEasing,
+          fade: true,
+          clip: false,
+        }}
+        onintroend={() => handleTabIntroEnd(workspaceId)}
+        onoutroend={() => handleTabOutroEnd(workspaceId)}
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
@@ -797,7 +838,7 @@
           {/if}
           <div
             class={cn(
-              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
+              'group/workspace-tab flex h-8 w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
@@ -941,7 +982,7 @@
         {:else}
           <div
             class={cn(
-              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
+              'group/workspace-tab relative flex h-8 w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground',

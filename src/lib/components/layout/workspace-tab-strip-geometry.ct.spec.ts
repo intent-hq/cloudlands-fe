@@ -53,6 +53,48 @@ async function expectVisibleThroughAncestorClipping(target: Locator) {
   ).toBe(true);
 }
 
+async function expectMaskAttachedToActiveTab(component: Locator) {
+  const activeBox = await component
+    .locator('[data-workspace-tab][data-active="true"]')
+    .boundingBox();
+  const maskBox = await component.locator('[data-active-tab-border-mask]').boundingBox();
+  expect(activeBox).toBeTruthy();
+  expect(maskBox).toBeTruthy();
+  expect(Math.abs((maskBox?.x ?? 0) + 12 - (activeBox?.x ?? 0))).toBeLessThanOrEqual(1);
+  expect(Math.abs((maskBox?.width ?? 0) - 24 - (activeBox?.width ?? 0))).toBeLessThanOrEqual(1);
+}
+
+async function captureTabMotion(control: Locator, workspaceId: string) {
+  return control.evaluate(async (button, id) => {
+    const frames: Array<{
+      width: number | null;
+      activeId: string | null;
+      maskLeftDelta: number | null;
+      maskWidthDelta: number | null;
+    }> = [];
+    (button as HTMLButtonElement).click();
+    for (let index = 0; index < 40; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const motion = document.querySelector<HTMLElement>(`[data-workspace-tab-motion="${id}"]`);
+      const active = document.querySelector<HTMLElement>(
+        '[data-workspace-tab][data-active="true"]',
+      );
+      const mask = document.querySelector<HTMLElement>('[data-active-tab-border-mask]');
+      const activeRect = active?.getBoundingClientRect();
+      const maskRect = mask?.getBoundingClientRect();
+      frames.push({
+        width: motion?.getBoundingClientRect().width ?? null,
+        activeId: active?.dataset.workspaceTab ?? null,
+        maskLeftDelta:
+          activeRect && maskRect ? Math.abs(maskRect.left + 12 - activeRect.left) : null,
+        maskWidthDelta:
+          activeRect && maskRect ? Math.abs(maskRect.width - 24 - activeRect.width) : null,
+      });
+    }
+    return frames;
+  }, workspaceId);
+}
+
 test('keeps flares mounted and synchronizes visibility through activation and clipping', async ({
   mount,
 }) => {
@@ -92,4 +134,83 @@ test('keeps flares mounted and synchronizes visibility through activation and cl
   await component.update({ props: { activeWorkspaceId: 'geometry-beta' } });
   for (const flare of await firstFlares.all()) await expect(flare).toHaveCSS('opacity', '0');
   for (const flare of await middleFlares.all()) await expect(flare).toHaveCSS('opacity', '1');
+});
+
+test('grows and removes a tab while the active mask follows the shared motion', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta'], interactive: true },
+  });
+  const tab = component.locator('[data-workspace-tab-motion="geometry-gamma"]');
+  const naturalWidth = await component
+    .locator('[data-workspace-tab-motion="geometry-beta"]')
+    .evaluate((element) => element.getBoundingClientRect().width);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+
+  const openingFrames = await captureTabMotion(
+    component.locator('[data-open-tab]'),
+    'geometry-gamma',
+  );
+  expect(
+    openingFrames.some(({ width }) => width !== null && width > 0 && width < naturalWidth),
+  ).toBe(true);
+  expect(
+    openingFrames.some(
+      ({ width, activeId, maskLeftDelta, maskWidthDelta }) =>
+        width !== null &&
+        width > 0 &&
+        width < naturalWidth &&
+        activeId === 'geometry-gamma' &&
+        maskLeftDelta !== null &&
+        maskLeftDelta <= 1 &&
+        maskWidthDelta !== null &&
+        maskWidthDelta <= 1,
+    ),
+  ).toBe(true);
+  await expect(tab).toHaveCount(1);
+  expect(await tab.evaluate((element) => element.getBoundingClientRect().width)).toBe(naturalWidth);
+
+  const closingFrames = await captureTabMotion(
+    component.locator('[data-workspace-tab="geometry-gamma"] [data-workspace-tab-close]'),
+    'geometry-gamma',
+  );
+  expect(
+    closingFrames.some(({ width }) => width !== null && width > 0 && width < naturalWidth),
+  ).toBe(true);
+  expect(closingFrames.some(({ width }) => width === null)).toBe(true);
+  expect(
+    closingFrames.some(
+      ({ width, activeId }) =>
+        width !== null && width > 0 && width < naturalWidth && activeId === 'geometry-gamma',
+    ),
+  ).toBe(true);
+  await expect(tab).toHaveCount(0);
+
+  await expectMaskAttachedToActiveTab(component);
+});
+
+test('settles tab lifecycle changes immediately with reduced motion', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta'], interactive: true },
+  });
+  const tab = component.locator('[data-workspace-tab-motion="geometry-gamma"]');
+
+  await component.locator('[data-open-tab]').click();
+  await expect(tab).toHaveCount(1);
+  expect(await tab.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(
+    100,
+  );
+  await component
+    .locator('[data-workspace-tab="geometry-gamma"] [data-workspace-tab-close]')
+    .click();
+  await expect(tab).toHaveCount(0);
 });
