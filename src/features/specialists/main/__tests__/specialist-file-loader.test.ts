@@ -736,7 +736,7 @@ Prompt.`;
       expect(loaded?.frontmatter.codingAgent).toBe('opencode');
     });
 
-    it('should drop unusable compound entries (empty prefix or rest) on write', async () => {
+    it('should drop unusable compound entries (empty prefix, empty rest, multi-colon) on write', async () => {
       await writeSpecialistFile({
         id: 'options-malformed-write',
         name: 'Options Malformed Write',
@@ -744,6 +744,7 @@ Prompt.`;
         modelOptions: [
           { model: 'opencode:', hint: 'no rest' },
           { model: ':kimi-k3', hint: 'no prefix' },
+          { model: 'a:b:c', hint: 'multi-colon' },
           { model: 'sonnet-4.5', hint: 'kept' },
         ],
         behaviorPrompt: 'Prompt',

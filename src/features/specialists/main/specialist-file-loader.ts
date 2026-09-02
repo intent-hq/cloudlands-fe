@@ -698,16 +698,17 @@ export async function writeSpecialistFile(specialist: {
     // inherit-clearing form and is written verbatim; undefined writes no key.
     // Entries are normalized to the triple shape (compound ids split, the
     // prefix winning over the entry-level provider) so writes never persist a
-    // compound `model`; a compound with an empty prefix or empty rest is
-    // unusable (the read path would skip it) and is dropped instead of
-    // persisting a malformed id.
+    // compound `model`; a compound with an empty prefix, an empty rest, or a
+    // rest that itself still contains a colon (multi-colon id — the daemon
+    // rejects these at write) is malformed and is dropped instead of
+    // persisting a colon-bearing model.
     if (specialist.modelOptions !== undefined) {
       const normalizedOptions = specialist.modelOptions.flatMap((opt) => {
         const colonIndex = opt.model.indexOf(':');
         if (colonIndex < 0) return [opt];
         const prefix = opt.model.slice(0, colonIndex).trim();
         const rest = opt.model.slice(colonIndex + 1).trim();
-        if (prefix === '' || rest === '') return [];
+        if (prefix === '' || rest === '' || rest.includes(':')) return [];
         const { provider: _provider, ...restFields } = opt;
         return [{ provider: prefix, ...restFields, model: rest }];
       });
