@@ -423,6 +423,31 @@ describe('DirectoryPickerModal directory mode (default)', () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
   });
 
+  it('committing a typed path clears the highlighted folder even when navigation fails', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+    expect(screen.getByRole('button', { name: 'Select "code"' })).toBeTruthy();
+
+    // The mock store keeps the listing unchanged after navigateToPathRequested,
+    // modelling a failed typed navigation — the highlight must still be dropped
+    // so Select cannot submit the stale child path.
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
+    const input = screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '/does/not/exist' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    expect(navigateCalls()).toHaveLength(1);
+    const select = screen.getByRole('button', { name: 'Select "~"' }) as HTMLButtonElement;
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+
   it('arrow-key focus movement does not highlight a folder', async () => {
     const onSelect = vi.fn();
     render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });

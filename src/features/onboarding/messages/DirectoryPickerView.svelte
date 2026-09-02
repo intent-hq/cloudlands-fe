@@ -201,6 +201,8 @@
       pathDraft = displayPath;
       if (pathError) onClearPathError();
     } else {
+      selectedFilePath = null;
+      selectedFolderPath = null;
       onNavigateToPath(target);
     }
   }
