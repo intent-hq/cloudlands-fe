@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { m } from '$shared/paraglide/messages.js';
 import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
@@ -35,6 +36,15 @@ const mockToast = vi.hoisted(() => ({
 
 vi.mock('svelte-sonner', () => ({
   toast: mockToast,
+}));
+
+// Mock the lazily-imported qrcode module so QR tests can assert the pairing URI.
+const qrMocks = vi.hoisted(() => ({
+  toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,'),
+}));
+
+vi.mock('qrcode', () => ({
+  default: { toDataURL: qrMocks.toDataURL },
 }));
 
 // Mock the store so selectCurrentConnectionId resolves; tests flip
@@ -799,6 +809,119 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
       });
+    });
+  });
+
+  describe('listen targets + tunnel (PR #2030 review)', () => {
+    const PAIRING = {
+      token: 'tok-1234567890',
+      port: 5181,
+      certFingerprint: 'AA:BB',
+      localIps: ['192.168.1.2', '10.0.0.5'],
+      hostname: 'my-mac',
+    };
+
+    /** settings.list rows for an enabled WSS daemon; tunnel rows optional. */
+    function settingsRows(tunnel?: { enabled: boolean; only: boolean }) {
+      const rows: { path: string; value: unknown }[] = [
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+        { path: 'server.bindAddress', value: ['192.168.1.2'] },
+      ];
+      if (tunnel) {
+        rows.push({ path: 'server.tunnel.enabled', value: tunnel.enabled });
+        rows.push({ path: 'server.tunnel.only', value: tunnel.only });
+        rows.push({ path: 'server.tunnel.derpUrl', value: '' });
+      }
+      return rows;
+    }
+
+    it('omits server.tunnel.* from the update batch on daemons without tunnel support', async () => {
+      // Old daemon: no server.tunnel.* rows → tunnelSupported=false. An
+      // IP-only change must not batch the unknown tunnel paths (atomic
+      // settings.update would reject the whole batch).
+      mocks.mockSettingsList.mockResolvedValue(settingsRows());
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('checkbox', { name: '10.0.0.5' }));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5'] },
+        ]);
+      });
+    });
+
+    it('includes the tunnel paths in the batch when the daemon supports them', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('checkbox', { name: '10.0.0.5' }));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+    });
+
+    it('renders the tunnel-only posture on reload: persisted bind IPs show unselected', async () => {
+      // server.tunnel.only=true deliberately leaves server.bindAddress
+      // persisted for later restoration — the selector must not present those
+      // IPs as active listeners.
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: true }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+
+      await waitFor(() =>
+        expect(screen.getByRole('checkbox', { name: '192.168.1.2' })).toBeTruthy(),
+      );
+      expect(
+        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
+      ).toBe(false);
+      expect(
+        (
+          screen.getByRole('checkbox', {
+            name: m.settings_listenTargets_tunnel_label(),
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(true);
+    });
+
+    it('includes tc= in the QR pairing URI when the daemon reports a tunnel address', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByText(m.settings_wsApi_showQrCode())).toBeTruthy());
+
+      await fireEvent.click(screen.getByText(m.settings_wsApi_showQrCode()));
+
+      await waitFor(() => {
+        expect(qrMocks.toDataURL).toHaveBeenCalledWith(
+          expect.stringContaining('&tc=tc-key-abc'),
+          expect.anything(),
+        );
+      });
+    });
+
+    it('omits tc= from the QR pairing URI when the daemon reports none', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows());
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByText(m.settings_wsApi_showQrCode())).toBeTruthy());
+
+      await fireEvent.click(screen.getByText(m.settings_wsApi_showQrCode()));
+
+      await waitFor(() => expect(qrMocks.toDataURL).toHaveBeenCalled());
+      expect(qrMocks.toDataURL.mock.calls[0][0]).not.toContain('tc=');
     });
   });
 });

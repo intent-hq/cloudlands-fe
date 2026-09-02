@@ -77,6 +77,7 @@
   // `server.tunnel.*` settings, so the UI degrades to the plain IP selector.
   let bindIps = $state<string[]>([]);
   let tunnelEnabled = $state(false);
+  let tunnelOnly = $state(false);
   let tunnelSupported = $state(false);
   let tcAddress = $state('');
   let derpUrl = $state('');
@@ -157,6 +158,12 @@
       );
       tunnelSupported = tunnelSetting !== undefined;
       tunnelEnabled = tunnelSetting?.value === true;
+      const tunnelOnlySetting = settings.find(
+        (s: { path: string; value: unknown }) => s.path === 'server.tunnel.only',
+      );
+      // Tunnel-only keeps the persisted bindAddress for later restoration, so
+      // the selector must not present those IPs as active listeners.
+      tunnelOnly = tunnelEnabled && tunnelOnlySetting?.value === true;
       const derpSetting = settings.find(
         (s: { path: string; value: unknown }) => s.path === 'server.tunnel.derpUrl',
       );
@@ -206,19 +213,27 @@
     if (listenSaving) return;
     listenSaving = true;
     try {
-      const changes: { path: string; value: unknown }[] = [
-        { path: 'server.tunnel.enabled', value: selection.tunnel },
-        { path: 'server.tunnel.only', value: selection.tunnel && selection.ips.length === 0 },
-      ];
+      const changes: { path: string; value: unknown }[] = [];
       // Tunnel-only leaves the persisted bindAddress untouched — tunnel.only
       // already disables direct listeners, and the previous IPs restore when
       // an IP is re-selected.
       if (selection.ips.length > 0) {
-        changes.unshift({ path: 'server.bindAddress', value: selection.ips });
+        changes.push({ path: 'server.bindAddress', value: selection.ips });
+      }
+      // settings.update is atomic: on daemons predating server.tunnel.* the
+      // unknown paths would reject the whole batch, so only include them when
+      // supported (the selector never emits tunnel selections otherwise).
+      if (tunnelSupported) {
+        changes.push({ path: 'server.tunnel.enabled', value: selection.tunnel });
+        changes.push({
+          path: 'server.tunnel.only',
+          value: selection.tunnel && selection.ips.length === 0,
+        });
       }
       await appClient.settings.update(changes);
       bindIps = selection.ips.length > 0 ? selection.ips : bindIps;
       tunnelEnabled = selection.tunnel;
+      tunnelOnly = selection.tunnel && selection.ips.length === 0;
       toast.success(m.settings_listenTargets_saved());
       // The bound listeners changed — refresh the pairing info (port/IPs/tc).
       await loadStatus();
@@ -511,11 +526,13 @@
     }
     try {
       const QRCode = (await import('qrcode')).default;
+      // `tc=` carries the tunnel address (PROTOCOL §12.3) so a scanned device
+      // can reach the daemon in tunnel-only mode or away from the LAN.
       const pairingUri = `intent://pair?token=${encodeURIComponent(token)}&host=${localIps
         .map(encodeURIComponent)
         .join(',')}&port=${port}&path=/ws${
         certFingerprint ? `&certFingerprint=${encodeURIComponent(certFingerprint)}` : ''
-      }`;
+      }${tcAddress ? `&tc=${encodeURIComponent(tcAddress)}` : ''}`;
       qrDataUrl = await QRCode.toDataURL(pairingUri, {
         width: 200,
         margin: 2,
@@ -631,7 +648,7 @@
         <section>
           <ListenTargetSelector
             availableIps={localIps}
-            selectedIps={bindIps}
+            selectedIps={tunnelOnly ? [] : bindIps}
             tunnelSelected={tunnelEnabled}
             {tunnelSupported}
             saving={listenSaving}
