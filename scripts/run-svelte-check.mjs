@@ -15,8 +15,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -140,18 +141,27 @@ async function main() {
     'error',
     ...process.argv.slice(2),
   ];
+  const outputDir = mkdtempSync(path.join(tmpdir(), 'cloudlands-svelte-check-'));
+  const outputPath = path.join(outputDir, 'output.ndjson');
+  const outputFd = openSync(outputPath, 'w');
   const child = spawn(process.execPath, [resolveBin('svelte-check', 'svelte-check'), ...args], {
-    stdio: ['inherit', 'pipe', 'inherit'],
+    stdio: ['inherit', outputFd, 'inherit'],
     env: syncEnv(),
   });
 
   let completed = null;
-  const rl = createInterface({ input: child.stdout });
-  rl.on('line', (line) => {
+  const exitCode = await new Promise((resolve) => {
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+  closeSync(outputFd);
+  const lines = readFileSync(outputPath, 'utf8').split(/\r?\n/);
+  rmSync(outputDir, { recursive: true });
+  for (const line of lines) {
+    if (!line) continue;
     const event = parseMachineLine(line);
     if (!event) {
       console.log(line);
-      return;
+      continue;
     }
     if (event.kind === 'diagnostic') {
       console.log(formatDiagnostic(event.diagnostic));
@@ -162,11 +172,7 @@ async function main() {
     } else if (event.kind === 'unknown') {
       console.log(event.body);
     }
-  });
-
-  const exitCode = await new Promise((resolve) => {
-    child.on('close', (code) => resolve(code ?? 1));
-  });
+  }
 
   if (completed) {
     console.log(

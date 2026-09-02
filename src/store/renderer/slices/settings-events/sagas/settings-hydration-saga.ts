@@ -12,6 +12,15 @@ import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycl
 
 const logger = createLogger('SettingsHydrationSaga');
 
+type LifecycleAction =
+  ReturnType<typeof connectionsListReceived> | ReturnType<typeof backendReconnected>;
+
+function isConnectionsListReceived(
+  action: LifecycleAction,
+): action is ReturnType<typeof connectionsListReceived> {
+  return action.type === connectionsListReceived.type;
+}
+
 /**
  * Retry backoff for a boot `settings.list` that failed to land. On a fresh
  * app start the daemon's UDS listener may not be up yet (connect ENOENT
@@ -74,7 +83,7 @@ export function* hydrateSettingsOnceSaga() {
 
 export function* settingsHydrationSaga() {
   const channel = yield* actionChannel(settingsChangesReceived, buffers.expanding());
-  const lifecycleChannel = yield* actionChannel(
+  const lifecycleChannel = yield* actionChannel<LifecycleAction>(
     [connectionsListReceived, backendReconnected],
     buffers.expanding(),
   );
@@ -91,7 +100,7 @@ export function* settingsHydrationSaga() {
           lifecycle: take(lifecycleChannel),
         });
         if (lifecycle) {
-          if (lifecycle.type === connectionsListReceived.type) {
+          if (isConnectionsListReceived(lifecycle)) {
             backendId = lifecycle.payload[0].windowBackendId;
           }
           revision = -1;
@@ -114,7 +123,7 @@ export function* settingsHydrationSaga() {
         needsSnapshot = true;
         continue;
       }
-      if (lifecycle?.type === connectionsListReceived.type) {
+      if (lifecycle && isConnectionsListReceived(lifecycle)) {
         const nextBackendId = lifecycle.payload[0].windowBackendId;
         if (nextBackendId === backendId) continue;
         backendId = nextBackendId;
