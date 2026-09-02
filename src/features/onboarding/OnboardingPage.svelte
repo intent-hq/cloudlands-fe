@@ -681,6 +681,9 @@
         // No explicit model: the daemon applies its resolved default for the
         // provider (the welcome step precedes any model pick).
         const result = await runProviderTestPrompt({ providerId });
+        // Provider switched mid-test: the result belongs to the previous
+        // selection — drop it (neither advance nor show stale guidance).
+        if (providerId !== onboardingGridSelectedProviderId) return;
         if (!result.ok) {
           const entry = selectProviderCatalogEntries
             .select(appStore.state)
@@ -694,10 +697,15 @@
           return;
         }
       } catch (err) {
-        // Transport/wire error (daemon unreachable, divergent payload).
+        if (providerId !== onboardingGridSelectedProviderId) return;
+        // Transport/wire error (daemon unreachable, divergent payload). The
+        // raw message can be a multi-line ZodError dump — log the full detail
+        // and surface only the first line.
+        logger.error('Onboarding test prompt failed', { providerId, error: err });
+        const rawMessage = err instanceof Error ? err.message : String(err);
         onboardingTestPromptFailure = {
           message: m.onboarding_testPrompt_generic_error({
-            message: err instanceof Error ? err.message : String(err),
+            message: rawMessage.split('\n', 1)[0],
           }),
           showClaudeDesktopNote: false,
           isAuthRequired: false,
@@ -1751,8 +1759,14 @@
                                 hasConnectedProvider = hasAny;
                               }}
                               onSelectionChange={(providerId) => {
-                                onboardingGridSelectedProviderId = providerId;
-                                onboardingTestPromptFailure = null;
+                                // Guard on actual change: AgentGrid's $effect tracks
+                                // this callback prop, so a parent re-render re-invokes
+                                // it with an unchanged selection — which must not
+                                // clear a just-assigned failure panel.
+                                if (providerId !== onboardingGridSelectedProviderId) {
+                                  onboardingGridSelectedProviderId = providerId;
+                                  onboardingTestPromptFailure = null;
+                                }
                               }}
                             />
                           </div>

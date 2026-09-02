@@ -3238,7 +3238,6 @@
   "onboarding_providerCard_npxTooOld_label": "npm/npx가 너무 오래됨 — npm 7 이상 필요",
   "onboarding_testPrompt_checkbox_label": "모델에 테스트 프롬프트 보내기",
   "onboarding_testPrompt_finePrint_label": "아주 작은 프롬프트(\"say hello\")로 설정을 엔드투엔드로 검증합니다 — 토큰 사용량은 무시할 수 있는 수준입니다.",
-  "onboarding_testPrompt_unsupported_note": "{name}은(는) 라이브 테스트 프롬프트를 지원하지 않습니다.",
   "onboarding_testPrompt_running_label": "테스트 프롬프트 전송 중…",
   "onboarding_testPrompt_authRequired_error": "{name}이(가) 응답하려면 로그인이 필요합니다 — 아래 CLI 로그인을 실행한 뒤 다시 시도하세요.",
   "onboarding_testPrompt_busy_error": "데몬이 지금 다른 에이전트를 실행 중입니다 — 잠시 기다렸다가 다시 시도하세요.",

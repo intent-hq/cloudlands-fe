@@ -3239,7 +3239,6 @@
   "onboarding_providerCard_npxTooOld_label": "npm/npx too old — npm 7+ required",
   "onboarding_testPrompt_checkbox_label": "Send a test prompt to the model",
   "onboarding_testPrompt_finePrint_label": "Verifies your setup end to end with one tiny prompt (\"say hello\") — uses an insignificant amount of tokens.",
-  "onboarding_testPrompt_unsupported_note": "{name} doesn't support the live test prompt.",
   "onboarding_testPrompt_running_label": "Sending a test prompt…",
   "onboarding_testPrompt_authRequired_error": "{name} needs a login before it can answer — run the CLI login below, then try again.",
   "onboarding_testPrompt_busy_error": "The daemon is busy running other agents right now — wait a moment and try again.",

@@ -17,13 +17,14 @@ import {
 } from '$shared/provider-test-prompt';
 
 /**
- * Transport budget for the RPC. The daemon's own `session/prompt` budget is
- * 90s (sized to absorb a first-run npx download) on top of npx-aware staged
- * setup budgets, so the transport must wait well past the flat 30s default —
- * the daemon's structured `{ ok: false }` result (e.g. `timeout`) must win
- * over a transport timeout.
+ * Transport budget for the RPC. The daemon's worst-case structured-result
+ * path stacks the adapter-slot queue wait (up to the caller's 90s prompt
+ * budget) on npx-aware staged setup budgets (45s `initialize` + 20s
+ * `session/new`) plus the 90s `session/prompt` budget (~245s total), so the
+ * transport must outlast all of it — the daemon's structured `{ ok: false }`
+ * result (e.g. `timeout`, `busy`) must win over a transport timeout.
  */
-const TEST_PROMPT_TIMEOUT_MS = 180_000;
+const TEST_PROMPT_TIMEOUT_MS = 300_000;
 
 /**
  * Run one live test prompt against `providerId`'s adapter. `model` is

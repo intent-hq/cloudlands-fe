@@ -3238,7 +3238,6 @@
   "onboarding_providerCard_npxTooOld_label": "npm/npx trop ancien — npm 7+ requis",
   "onboarding_testPrompt_checkbox_label": "Envoyer un prompt de test au modèle",
   "onboarding_testPrompt_finePrint_label": "Vérifie votre configuration de bout en bout avec un prompt minuscule (« say hello ») — consomme une quantité insignifiante de tokens.",
-  "onboarding_testPrompt_unsupported_note": "{name} ne prend pas en charge le prompt de test en direct.",
   "onboarding_testPrompt_running_label": "Envoi d'un prompt de test…",
   "onboarding_testPrompt_authRequired_error": "{name} nécessite une connexion avant de pouvoir répondre — exécutez le login CLI ci-dessous, puis réessayez.",
   "onboarding_testPrompt_busy_error": "Le daemon est occupé à exécuter d'autres agents pour le moment — attendez un instant et réessayez.",

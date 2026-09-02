@@ -3238,7 +3238,6 @@
   "onboarding_providerCard_npxTooOld_label": "npm/npx zu alt — npm 7+ erforderlich",
   "onboarding_testPrompt_checkbox_label": "Test-Prompt an das Modell senden",
   "onboarding_testPrompt_finePrint_label": "Prüft dein Setup Ende-zu-Ende mit einem winzigen Prompt („say hello“) — verbraucht eine unbedeutende Menge an Tokens.",
-  "onboarding_testPrompt_unsupported_note": "{name} unterstützt den Live-Test-Prompt nicht.",
   "onboarding_testPrompt_running_label": "Test-Prompt wird gesendet…",
   "onboarding_testPrompt_authRequired_error": "{name} benötigt eine Anmeldung, bevor es antworten kann — führe unten den CLI-Login aus und versuche es erneut.",
   "onboarding_testPrompt_busy_error": "Der Daemon ist gerade mit anderen Agents beschäftigt — warte einen Moment und versuche es erneut.",

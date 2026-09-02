@@ -3238,7 +3238,6 @@
   "onboarding_providerCard_npxTooOld_label": "npm/npx 版本过旧——需要 npm 7 及以上",
   "onboarding_testPrompt_checkbox_label": "向模型发送测试提示词",
   "onboarding_testPrompt_finePrint_label": "用一个极小的提示词(\"say hello\")端到端验证你的配置——消耗的 token 微乎其微。",
-  "onboarding_testPrompt_unsupported_note": "{name} 不支持实时测试提示词。",
   "onboarding_testPrompt_running_label": "正在发送测试提示词…",
   "onboarding_testPrompt_authRequired_error": "{name} 需要先登录才能应答——请在下方运行 CLI 登录命令后重试。",
   "onboarding_testPrompt_busy_error": "守护进程正忙于运行其他智能体——请稍等片刻后重试。",

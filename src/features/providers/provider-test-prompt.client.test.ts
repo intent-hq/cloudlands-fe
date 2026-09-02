@@ -26,7 +26,7 @@ describe('runProviderTestPrompt wire contract (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith(
       'host.providerTestPrompt',
       { providerId: 'claude-code' },
-      { timeoutMs: 180_000 },
+      { timeoutMs: 300_000 },
     );
     expect(result).toEqual({ ok: true });
   });
@@ -39,7 +39,7 @@ describe('runProviderTestPrompt wire contract (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith(
       'host.providerTestPrompt',
       { providerId: 'codex', model: 'gpt-5' },
-      { timeoutMs: 180_000 },
+      { timeoutMs: 300_000 },
     );
   });
 

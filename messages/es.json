@@ -3238,7 +3238,6 @@
   "onboarding_providerCard_npxTooOld_label": "npm/npx demasiado antiguo — se requiere npm 7+",
   "onboarding_testPrompt_checkbox_label": "Enviar un prompt de prueba al modelo",
   "onboarding_testPrompt_finePrint_label": "Verifica tu configuración de extremo a extremo con un prompt mínimo (\"say hello\") — usa una cantidad insignificante de tokens.",
-  "onboarding_testPrompt_unsupported_note": "{name} no admite el prompt de prueba en vivo.",
   "onboarding_testPrompt_running_label": "Enviando un prompt de prueba…",
   "onboarding_testPrompt_authRequired_error": "{name} necesita iniciar sesión antes de poder responder — ejecuta el login de la CLI abajo y vuelve a intentarlo.",
   "onboarding_testPrompt_busy_error": "El daemon está ocupado ejecutando otros agentes ahora mismo — espera un momento y vuelve a intentarlo.",
