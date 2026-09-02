@@ -1298,6 +1298,8 @@ describe('connections-store', () => {
       '::1',
       '[::1]',
       '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '[::ffff:7f00:0001]',
       '10.0.0.5',
     ]);
     const remote = (await store.list()).find((c) => c.id === rec.id);
