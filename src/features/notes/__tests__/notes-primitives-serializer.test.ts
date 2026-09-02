@@ -2,11 +2,7 @@
  * Tests for notes primitives serializer
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { NotesPrimitivesSerializer } from '$lib/utils/notes-primitives-serializer';
 import type {
   ReferencePrimitive,
@@ -113,6 +109,71 @@ describe('NotesPrimitivesSerializer', () => {
   };
 
   describe('parseMarkdown', () => {
+    it.each([
+      ['src/main.ts#symbol:MainClass', 'symbol'],
+      ['src/main.ts#L1-16', 'file_range'],
+    ] as const)(
+      'should hoist short-form reference %s into its target',
+      (semanticId, expectedKind) => {
+        const markdown = `
+\`\`\`ws-block:reference
+${JSON.stringify({ semanticId, description: 'Referenced code' })}
+\`\`\`
+`;
+
+        const parsed = serializer.parseMarkdown(markdown);
+        const primitive = parsed[0].primitive as ReferencePrimitive;
+
+        expect(primitive.target.semanticId).toBe(semanticId);
+        expect(primitive.target.kind).toBe(expectedKind);
+        expect(primitive.description).toBe('Referenced code');
+
+        const roundTripped = serializer.parseMarkdown(
+          serializer.serializeToMarkdown([primitive]),
+        )[0].primitive as ReferencePrimitive;
+        expect(roundTripped.target.semanticId).toBe(semanticId);
+        expect(roundTripped.target.kind).toBe(expectedKind);
+      },
+    );
+
+    it('should heal an empty target from the top-level reference fields', () => {
+      const markdown = `
+\`\`\`ws-block
+${JSON.stringify({
+  type: 'reference',
+  semanticId: 'src/main.ts#symbol:MainClass',
+  target: { kind: 'symbol', semanticId: '' },
+})}
+\`\`\`
+`;
+
+      const parsed = serializer.parseMarkdown(markdown);
+      const primitive = parsed[0].primitive as ReferencePrimitive;
+
+      expect(primitive.target.semanticId).toBe('src/main.ts#symbol:MainClass');
+      expect(primitive.target.kind).toBe('symbol');
+
+      const roundTripped = serializer.parseMarkdown(serializer.serializeToMarkdown([primitive]))[0]
+        .primitive as ReferencePrimitive;
+      expect(roundTripped.target.semanticId).toBe('src/main.ts#symbol:MainClass');
+      expect(roundTripped.target.kind).toBe('symbol');
+    });
+
+    it('should hoist top-level path and line fields into the target', () => {
+      const markdown = `
+\`\`\`ws-block:reference
+${JSON.stringify({ path: 'src/main.ts', startLine: 1, endLine: 16 })}
+\`\`\`
+`;
+
+      const parsed = serializer.parseMarkdown(markdown);
+      const primitive = parsed[0].primitive as ReferencePrimitive;
+
+      expect(primitive.target.filePath).toBe('src/main.ts');
+      expect(primitive.target.range).toEqual({ startLine: 1, endLine: 16 });
+      expect(primitive.target.kind).toBe('file_range');
+    });
+
     it('should parse reference primitives from markdown', () => {
       const refPrimitive = createValidPrimitive('reference', {
         semanticId: 'src/main.ts#symbol:MainClass',
