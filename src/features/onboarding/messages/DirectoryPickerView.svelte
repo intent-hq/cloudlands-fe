@@ -91,6 +91,7 @@
   let newFolderOpen = $state(false);
   let newFolderName = $state('');
   let selectedFilePath = $state<string | null>(null);
+  let selectedFolderPath = $state<string | null>(null);
   let lastListingPath: string | null = null;
   let wasOpen = false;
 
@@ -117,6 +118,20 @@
   const displayPath = $derived(
     listing ? collapseDirectoryPickerPath(listing.path, listing.home) : '',
   );
+  const selectedFolderEntry = $derived(
+    mode === 'directory' && selectedFolderPath !== null
+      ? (visibleEntries.find((entry) => entry.isDirectory && entry.path === selectedFolderPath) ??
+          null)
+      : null,
+  );
+  const selectTargetName = $derived(
+    mode === 'directory' ? (selectedFolderEntry?.name ?? breadcrumbs.at(-1)?.label ?? null) : null,
+  );
+  const selectButtonLabel = $derived(
+    selectTargetName !== null
+      ? m.onboarding_dirPicker_selectNamed_label({ name: selectTargetName })
+      : selectLabel,
+  );
 
   function favoriteIcon(favorite: DirectoryPickerFavorite): IconDefinition {
     if (favorite.icon) return favorite.icon;
@@ -130,6 +145,7 @@
   function requestNavigation(path?: string) {
     focusedIndex = 0;
     selectedFilePath = null;
+    selectedFolderPath = null;
     onNavigate(path);
     queueMicrotask(() => listContainerRef?.scrollTo({ top: 0 }));
   }
@@ -229,7 +245,7 @@
   }
 
   function handleSelect() {
-    const path = mode === 'file' ? selectedFilePath : listing?.path;
+    const path = mode === 'file' ? selectedFilePath : (selectedFolderEntry?.path ?? listing?.path);
     if (path) onSelect(path);
   }
 
@@ -284,6 +300,7 @@
         pathEditing = false;
         sidebarHighlight = null;
         selectedFilePath = null;
+        selectedFolderPath = null;
         newFolderOpen = false;
         newFolderName = '';
       }
@@ -293,7 +310,10 @@
 
   $effect(() => {
     void visibleEntries;
-    untrack(() => (focusedIndex = 0));
+    untrack(() => {
+      focusedIndex = 0;
+      selectedFolderPath = null;
+    });
   });
 
   $effect(() => {
@@ -473,18 +493,21 @@
                 ? m.onboarding_dirPicker_noSearchResults_description()
                 : showFiles
                   ? m.onboarding_dirPicker_emptyFolder_description()
-                  : m.onboarding_dirPicker_noSubfolders_description({ label: selectLabel })}
+                  : m.onboarding_dirPicker_noSubfolders_description({ label: selectButtonLabel })}
             </div>
           {:else}
             <ul>
               {#each visibleEntries as entry, index (entry.path)}
                 {@const isFocused = index === focusedIndex}
-                {@const isSelected = mode === 'file' && entry.path === selectedFilePath}
+                {@const isSelected =
+                  mode === 'file'
+                    ? entry.path === selectedFilePath
+                    : entry.path === selectedFolderEntry?.path}
                 <li>
                   <button
                     type="button"
                     role="option"
-                    aria-selected={mode === 'file' ? isSelected : isFocused}
+                    aria-selected={mode === 'file' ? isSelected : isSelected || isFocused}
                     aria-disabled={!entry.isDirectory && mode !== 'file'}
                     data-picker-index={index}
                     class={cn(
@@ -501,6 +524,8 @@
                     onclick={() => {
                       focusedIndex = index;
                       if (!entry.isDirectory && mode === 'file') selectedFilePath = entry.path;
+                      else if (entry.isDirectory && mode === 'directory')
+                        selectedFolderPath = entry.path;
                     }}
                     ondblclick={() => navigateInto(entry)}
                   >
@@ -583,7 +608,7 @@
       <button
         type="button"
         class={cn(
-          'rounded-md px-3 py-1.5 text-sm transition-colors',
+          'max-w-56 truncate rounded-md px-3 py-1.5 text-sm transition-colors',
           canSelect && !loading
             ? 'cursor-pointer bg-foreground text-background hover:bg-foreground/90'
             : 'cursor-not-allowed bg-muted/30 text-ghost',
@@ -591,7 +616,7 @@
         disabled={!canSelect || loading}
         onclick={handleSelect}
       >
-        {selectLabel}
+        {selectButtonLabel}
       </button>
     </footer>
   </div>

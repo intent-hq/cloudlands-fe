@@ -3215,6 +3215,7 @@
   "onboarding_providerCard_installFromNodejs_label": "install from nodejs.org",
   "onboarding_providerCard_npxTooOld_label": "npm/npx too old — npm 7+ required",
   "onboarding_dirPicker_selectFolder_label": "Select folder",
+  "onboarding_dirPicker_selectNamed_label": "Select \"{name}\"",
   "onboarding_dirPicker_close_ariaLabel": "Close folder picker",
   "onboarding_dirPicker_goUp_ariaLabel": "Go up one level",
   "onboarding_dirPicker_goUp_tooltip": "Up (Backspace)",
