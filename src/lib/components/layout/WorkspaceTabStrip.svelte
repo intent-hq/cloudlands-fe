@@ -74,6 +74,7 @@
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
   let workspaceHoverCardOpenDelay = $state(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
   const openWorkspaceHoverCardIds = new Set<string>();
+  const pointerWorkspaceHoverCardIds = new Set<string>();
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -174,12 +175,17 @@
       unsubscribeHoverCardIntent();
       openWorkspaceHoverCardIds.forEach(() => workspaceHoverCardIntentSession.notifyClosed());
       openWorkspaceHoverCardIds.clear();
+      pointerWorkspaceHoverCardIds.clear();
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     };
   });
 
   function handleWorkspaceHoverCardOpenChange(workspaceId: string, open: boolean) {
-    if (open && !openWorkspaceHoverCardIds.has(workspaceId)) {
+    if (
+      open &&
+      pointerWorkspaceHoverCardIds.has(workspaceId) &&
+      !openWorkspaceHoverCardIds.has(workspaceId)
+    ) {
       openWorkspaceHoverCardIds.add(workspaceId);
       workspaceHoverCardIntentSession.notifyOpened();
     } else if (!open && openWorkspaceHoverCardIds.delete(workspaceId)) {
@@ -794,6 +800,8 @@
             use:registerTabSurface={workspaceId}
             role="presentation"
             onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
+            onmouseenter={() => pointerWorkspaceHoverCardIds.add(workspaceId)}
+            onmouseleave={() => pointerWorkspaceHoverCardIds.delete(workspaceId)}
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
             {#if isCurrent}
