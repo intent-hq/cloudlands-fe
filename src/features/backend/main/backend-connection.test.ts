@@ -31,6 +31,8 @@ import {
   PinMismatchError,
   raceDuplexSockets,
   resolveBackendConfig,
+  TUNNEL_RACE_HOST,
+  tunnelRaceAttempt,
   WebSocketDuplex,
 } from './backend-connection';
 import type { HostCertMismatch } from './backend-connection';
@@ -1408,6 +1410,47 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
     expect((await failed).message).toBe('boom');
+  });
+});
+
+describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
+  const wssConfig = {
+    transport: 'wss' as const,
+    host: '10.0.0.9',
+    port: 5181,
+    token: 't',
+    fingerprint: 'AB:CD',
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns null without a tcAddress (direct-only race unchanged)', () => {
+    expect(tunnelRaceAttempt(wssConfig)).toBeNull();
+  });
+
+  it('returns null when the tailcat binary is unavailable (fail-soft)', () => {
+    vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
+    // Force resolution away from any staged dev binary by also making the
+    // packaged/dev probes fail: an empty resourcesPath and a cwd walk from
+    // tmp never find resources/tailcat.
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
+    try {
+      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' })).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('builds a tunnel attempt labeled with the pseudo-host when binary + tcAddress exist', () => {
+    // Any existing file satisfies the TAILCAT_BIN existence probe; the
+    // attempt is not dialed in this test.
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' });
+    expect(attempt).not.toBeNull();
+    expect(attempt!.host).toBe(TUNNEL_RACE_HOST);
+    expect(typeof attempt!.create).toBe('function');
   });
 });
 

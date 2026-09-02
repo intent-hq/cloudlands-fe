@@ -46,6 +46,7 @@
     CONNECTION_ACCENT_CLASSES,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
+  import { isPairingUri, parsePairingUri } from '$lib/utils/pairing-uri';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -93,6 +94,11 @@
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
+  // tailcat tunnel address learned from a pasted pairing URI's `tc=` param
+  // (PROTOCOL §12.3) — the only pre-connect source; stored with the add so
+  // the very first connect can already race a tunnel candidate. Cleared when
+  // the host is edited by hand (the address belongs to the pasted backend).
+  let tcAddress = $state<string | null>(null);
   let detectHosts = $state(true);
   let saveToICloud = $state(true);
   let fingerprint = $state('');
@@ -135,11 +141,36 @@
     host = '';
     port = DEFAULT_WS_PORT;
     token = '';
+    tcAddress = null;
     detectHosts = true;
     saveToICloud = true;
     fingerprint = '';
     busy = false;
     error = null;
+  }
+
+  /**
+   * Pasting a full pairing URI (`intent://pair?...`, PROTOCOL §5
+   * `pairing.getInfo`) into the host field fills host/port/token from its
+   * component params — and captures the optional `tc=` tunnel address, which
+   * has no manual-entry equivalent. Non-URI pastes fall through untouched.
+   */
+  function handleHostPaste(e: ClipboardEvent) {
+    const pasted = e.clipboardData?.getData('text') ?? '';
+    if (!isPairingUri(pasted)) return;
+    const parsed = parsePairingUri(pasted);
+    if (!parsed) return;
+    e.preventDefault();
+    if (parsed.hosts.length > 0) host = parsed.hosts[0];
+    if (parsed.port !== null) port = String(parsed.port);
+    if (parsed.token) token = parsed.token;
+    tcAddress = parsed.tcAddress;
+  }
+
+  function handleHostInput() {
+    // Hand-editing the host detaches it from the pasted pairing payload; the
+    // tunnel address must not be stored against a different backend.
+    tcAddress = null;
   }
 
   function close() {
@@ -206,6 +237,7 @@
         port: portNumber,
         fingerprint,
         token: token.trim(),
+        ...(tcAddress ? { tcAddress } : {}),
         detectHosts,
         ...(syncExcluded ? { syncExcluded: true } : {}),
       });
@@ -396,6 +428,8 @@
               autocorrect="off"
               autocapitalize="off"
               spellcheck="false"
+              onpaste={handleHostPaste}
+              oninput={handleHostInput}
             />
           </div>
 

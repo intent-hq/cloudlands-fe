@@ -1048,6 +1048,89 @@ describe('connections-store', () => {
     }
   });
 
+  it('add captures the pairing tcAddress and it round-trips through disk', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    expect(rec.tcAddress).toBe('tc.example.ts.net');
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.tcAddress).toBe('tc.example.ts.net');
+  });
+
+  it('records default to a null tcAddress until one is captured', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.tcAddress).toBeNull();
+    expect((await store.list())[1].tcAddress).toBeNull();
+  });
+
+  it('re-pair keeps the known tcAddress when the new pairing URI omits tc=', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // Same host:port → same identity; an older QR without tc= must not clear it.
+    const repaired = await store.add({ ...sampleConn, token: 'token-2' });
+    expect(repaired.id).toBe(rec.id);
+    expect(repaired.tcAddress).toBe('tc.example.ts.net');
+
+    // A pairing URI that does carry tc= overwrites.
+    const updated = await store.add({ ...sampleConn, token: 'token-3', tcAddress: 'tc2.ts.net' });
+    expect(updated.tcAddress).toBe('tc2.ts.net');
+  });
+
+  it('setTcAddress refreshes/clears the stored address and reports no-ops as false', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBe('tc.example.ts.net');
+
+    // The routine every-reconnect same-address capture is a no-op.
+    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(false);
+
+    // A successful status without the field conclusively clears the address.
+    await expect(store.setTcAddress(rec.id, null)).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBeNull();
+
+    // Already-cleared (absent or null) is a no-op; unknown id is fail-soft.
+    await expect(store.setTcAddress(rec.id, null)).resolves.toBe(false);
+    await expect(store.setTcAddress('does-not-exist', 'tc.ts.net')).resolves.toBe(false);
+  });
+
+  it('setTcAddress never bumps the LWW clock or notifies keychain sync (per-machine state)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].tcAddress).toBe('tc.example.ts.net');
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+
+      // The captured address never enters the sync surface either.
+      const records = await store.listSyncRecords();
+      expect(JSON.stringify(records)).not.toContain('tcAddress');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');

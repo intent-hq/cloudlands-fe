@@ -59,8 +59,7 @@ export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null 
   const token = typeof r.token === 'string' && r.token !== '' ? r.token : null;
   const certFingerprint = nonEmptyString(r.certFingerprint);
   if (!token || !certFingerprint) return null;
-  const port =
-    typeof r.port === 'number' && Number.isInteger(r.port) && r.port > 0 ? r.port : null;
+  const port = typeof r.port === 'number' && Number.isInteger(r.port) && r.port > 0 ? r.port : null;
   const localIps = Array.isArray(r.localIps)
     ? r.localIps.map((ip) => (typeof ip === 'string' ? ip.trim() : '')).filter((ip) => ip !== '')
     : [];

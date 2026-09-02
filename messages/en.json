@@ -689,6 +689,7 @@
   "settings_footer_updateAvailable": "Update available",
   "settings_footer_upToDate": "Up to date",
   "settings_footer_support": "Support",
+  "settings_footer_tailcatAttribution": "Includes tailcat (BSD-3-Clause license)",
   "settings_models_noneAvailable": "No models available for {providerId}. Please try again.",
   "settings_models_loadError": "Failed to load models",
   "ui_agentBadge_unread_one": "1 unread response",
