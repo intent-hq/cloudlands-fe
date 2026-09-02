@@ -44,7 +44,10 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectProviderLoadingMap } from '../../agent-availability/agent-availability-selectors';
 import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
-import { selectProviderAuthFailureGuidance } from '../../provider-catalog/provider-catalog-selectors';
+import {
+  selectProviderAuthFailureGuidance,
+  type ProviderAuthFailureGuidance,
+} from '../../provider-catalog/provider-catalog-selectors';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { openPanel, setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -159,7 +162,10 @@ function* buildToastProps(
   entry: AgentFailureEntry,
   state: AgentToastState,
   emit: FailureEmitter,
-): SagaGenerator<AgentFailureToastProps> {
+): SagaGenerator<{
+  componentProps: AgentFailureToastProps;
+  authGuidance: ProviderAuthFailureGuidance | null;
+}> {
   const session = yield* selectAgentSession.effect(entry.agentId);
   const agentName = session?.name && session.name.length > 0 ? session.name : undefined;
   const workspace = yield* selectWorkspaceById.effect(entry.workspaceId);
@@ -176,7 +182,7 @@ function* buildToastProps(
     session?.model,
     entry.error,
   );
-  return {
+  const componentProps: AgentFailureToastProps = {
     title: agentName
       ? m.agent_failureToast_agentFailed_title({ name: agentName })
       : m.agent_failureToast_agentFailedUnknown_title(),
@@ -197,6 +203,7 @@ function* buildToastProps(
     onSwitchTo: () => emit({ kind: 'switch-to', agentId: entry.agentId }),
     onClose: () => emit({ kind: 'close', agentId: entry.agentId }),
   };
+  return { componentProps, authGuidance };
 }
 
 function* renderEntry(
@@ -205,7 +212,7 @@ function* renderEntry(
   emit: FailureEmitter,
 ): SagaGenerator<void> {
   const { toast, AgentFailureToast } = yield* call(loadToastArtifacts);
-  const componentProps = yield* call(buildToastProps, entry, state, emit);
+  const { componentProps, authGuidance } = yield* call(buildToastProps, entry, state, emit);
   toast.custom(AgentFailureToast, {
     id: toastId(entry.agentId),
     componentProps,
@@ -217,24 +224,16 @@ function* renderEntry(
   // settings flip to "Log in" without waiting for the next poll (the
   // checkSingleProviderRequested worker probes with force: true). One
   // refresh per failure — re-renders of the same entry don't re-probe.
-  if (state.authRefreshedAt !== entry.at) {
-    const session = yield* selectAgentSession.effect(entry.agentId);
-    const authGuidance = yield* selectProviderAuthFailureGuidance.effect(
-      session?.provider,
-      session?.model,
-      entry.error,
-    );
-    if (authGuidance) {
-      state.authRefreshedAt = entry.at;
-      // Burst guard: when several agents on the SAME provider fail together,
-      // the first dispatch flips the provider's loading flag synchronously,
-      // so the rest of the burst skips the put instead of stacking
-      // redundant concurrent probes — the in-flight probe's result covers
-      // them all.
-      const loadingMap = yield* selectProviderLoadingMap.effect();
-      if (!loadingMap[authGuidance.providerId]) {
-        yield* put(checkSingleProviderRequested(authGuidance.providerId));
-      }
+  if (state.authRefreshedAt !== entry.at && authGuidance) {
+    state.authRefreshedAt = entry.at;
+    // Burst guard: when several agents on the SAME provider fail together,
+    // the first dispatch flips the provider's loading flag synchronously,
+    // so the rest of the burst skips the put instead of stacking
+    // redundant concurrent probes — the in-flight probe's result covers
+    // them all.
+    const loadingMap = yield* selectProviderLoadingMap.effect();
+    if (!loadingMap[authGuidance.providerId]) {
+      yield* put(checkSingleProviderRequested(authGuidance.providerId));
     }
   }
 }

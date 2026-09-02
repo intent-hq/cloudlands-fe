@@ -182,7 +182,9 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     errorMessage: string | null | undefined,
   ): ProviderAuthFailureGuidance | null => {
     if (!errorMessage) return null;
-    let rawId = provider ?? '';
+    // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
+    // treat it as unset so resolution falls through to the model prefix.
+    let rawId = provider && provider !== 'acp' ? provider : '';
     if (!rawId && model?.includes(':')) {
       rawId = splitCompoundModelId(model).providerId || '';
     }

@@ -14,6 +14,7 @@ import type { StoreState } from '../../types';
 import {
   selectAllCatalogProviderIds,
   selectEffectiveDefaultProviderId,
+  selectProviderAuthFailureGuidance,
   selectProviderCatalogEntries,
   selectProviderCatalogEntry,
   selectProviderCatalogEntryOrDefault,
@@ -205,6 +206,34 @@ describe('provider-catalog selectors', () => {
     expect(
       selectProviderCatalogEntryOrDefault.select(storeWith(initialState), 'auggie'),
     ).toBeUndefined();
+  });
+
+  it('selectProviderAuthFailureGuidance treats the legacy acp provider value as unset', () => {
+    // 'acp' is the protocol name, not a provider id (mirrors getAgentProvider):
+    // resolution must fall through to the compound-model prefix instead of
+    // healing 'acp' to the default provider's row.
+    const state = storeWith(hydrated, {}, { activeProviderId: 'auggie' });
+    const viaModelPrefix = selectProviderAuthFailureGuidance.select(
+      state,
+      'acp',
+      'pi:some-model',
+      'authentication required',
+    );
+    // pi's row has no authErrorPatterns → no match; the default (auggie) row
+    // WOULD match, so guidance must be null, not auggie's login command.
+    expect(viaModelPrefix).toBeNull();
+    // With no model either, 'acp' resolves like an unset provider (default row).
+    expect(
+      selectProviderAuthFailureGuidance.select(state, 'acp', null, 'authentication required'),
+    ).toEqual({
+      providerId: 'auggie',
+      loginCommandHint: 'auggie login',
+      showClaudeDesktopNote: false,
+    });
+    // An explicit real provider id still wins.
+    expect(
+      selectProviderAuthFailureGuidance.select(state, 'auggie', null, 'auggie login'),
+    ).toMatchObject({ providerId: 'auggie' });
   });
 
   it('selectProviderEnabledFromCatalog resolves enabled state like resolveProviderEnabled', () => {
