@@ -9,6 +9,24 @@ vi.mock('$store/renderer/store', () => ({
   store: { dispatch: vi.fn() },
 }));
 
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    selectAgentSession: () => readable(undefined),
+    selectAgentIsResponding: () => readable(false),
+    selectAgentIsWaiting: () => readable(false),
+  };
+});
+
+vi.mock('$store/renderer/slices/permission/permission-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return { selectPendingCount: () => readable(0) };
+});
+
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
+  ensureAgentSessionLoaded: vi.fn(),
+}));
+
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
@@ -163,40 +181,26 @@ describe('EmbeddedBrowser', () => {
         },
       });
 
-    it('renders icon-only with no name text and no pill background', () => {
+    it('renders the owning agent avatar with its live state', () => {
       const { container } = renderWithOwner();
 
       const chip = container.querySelector('[data-browser-owner-chip="agent-1"]');
       expect(chip).not.toBeNull();
-      expect(chip!.textContent?.trim()).toBe('');
-      expect(chip!.querySelector('svg')).not.toBeNull();
-      expect(chip!.classList.contains('bg-muted')).toBe(false);
-      expect(chip!.classList.contains('rounded-full')).toBe(false);
+      expect(chip!.querySelector('[data-agent-avatar-with-state]')).not.toBeNull();
+      expect(chip!.querySelector('[data-avatar-state="idle"]')).not.toBeNull();
     });
 
     it('exposes the agent name for hover/assistive tech', () => {
       const { container } = renderWithOwner();
 
-      const chip = container.querySelector('[data-browser-owner-chip]');
-      expect(chip!.getAttribute('aria-label')).toContain('Coordinator');
-    });
-
-    it('sits in the actions group before the devtools toggle', () => {
-      const { container, getByLabelText } = renderWithOwner();
-
-      const chip = container.querySelector('[data-browser-owner-chip]')!;
-      const devtools = getByLabelText('Toggle developer tools');
-      const actions = devtools.closest('.gap-0\\.5');
-      expect(actions?.contains(chip)).toBe(true);
-      expect(
-        chip.compareDocumentPosition(devtools) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
+      const trigger = container.querySelector('[data-browser-owner-chip] button');
+      expect(trigger!.getAttribute('aria-label')).toContain('Coordinator');
     });
 
     it('navigates to the owning agent on click', async () => {
       const { container } = renderWithOwner();
 
-      await fireEvent.click(container.querySelector('[data-browser-owner-chip]')!);
+      await fireEvent.click(container.querySelector('[data-browser-owner-chip] button')!);
       expect(navigateToAgent).toHaveBeenCalledWith('agent-1');
     });
 
@@ -216,6 +220,118 @@ describe('EmbeddedBrowser', () => {
       expect(indicator!.textContent).toContain('1280×800');
       expect(indicator!.className).toContain('bg-muted');
       expect(indicator!.className).toContain('rounded-full');
+    });
+  });
+
+  describe('page identity address editing', () => {
+    const renderPage = (extraProps: Record<string, unknown> = {}) =>
+      render(EmbeddedBrowser, {
+        props: {
+          url: 'https://example.test/docs',
+          workspaceId: 'workspace-1',
+          ...extraProps,
+        },
+      });
+
+    it('switches from page identity to a prefilled address input on click', async () => {
+      const { getByRole } = renderPage();
+
+      await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+
+      expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+        'https://example.test/docs',
+      );
+    });
+
+    it('submits the edited address through the existing webview navigation path', async () => {
+      const { container, getByRole } = renderPage();
+      const webview = container.querySelector('webview') as HTMLElement & {
+        loadURL: ReturnType<typeof vi.fn>;
+        getURL: () => string;
+      };
+      webview.loadURL = vi.fn().mockResolvedValue(undefined);
+      webview.getURL = () => 'http://localhost:4173/';
+
+      await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+      const input = getByRole('textbox', { name: 'Browser address' });
+      await fireEvent.input(input, { target: { value: 'localhost:4173' } });
+      await fireEvent.submit(input.closest('form')!);
+
+      await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://localhost:4173'));
+      expect(container.querySelector('input')).toBeNull();
+    });
+
+    it('discards an edited address on Escape or blur', async () => {
+      const { getByRole, queryByRole } = renderPage();
+      const edit = () => fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+
+      await edit();
+      let input = getByRole('textbox', { name: 'Browser address' });
+      await fireEvent.input(input, { target: { value: 'https://discarded.test/' } });
+      await fireEvent.keyDown(input, { key: 'Escape' });
+      expect(queryByRole('textbox', { name: 'Browser address' })).toBeNull();
+
+      await edit();
+      input = getByRole('textbox', { name: 'Browser address' });
+      await fireEvent.input(input, { target: { value: 'https://also-discarded.test/' } });
+      await fireEvent.blur(input);
+      expect(queryByRole('textbox', { name: 'Browser address' })).toBeNull();
+
+      await edit();
+      expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+        'https://example.test/docs',
+      );
+    });
+
+    it('opens address editing with Ctrl+L while the panel is focused', async () => {
+      const { getByRole } = renderPage({ isFocused: true });
+
+      await fireEvent.keyDown(window, { key: 'l', ctrlKey: true });
+
+      await waitFor(() =>
+        expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+          'https://example.test/docs',
+        ),
+      );
+    });
+
+    it('updates the identity title and unowned favicon from webview events', async () => {
+      const { container, getByRole } = renderPage();
+      const webview = container.querySelector('webview')!;
+      expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
+        'example.test',
+      );
+
+      const titleEvent = new Event('page-title-updated');
+      Object.defineProperty(titleEvent, 'title', { value: 'Reference docs' });
+      webview.dispatchEvent(titleEvent);
+      const faviconEvent = new Event('page-favicon-updated');
+      Object.defineProperty(faviconEvent, 'favicons', {
+        value: ['https://example.test/favicon.ico'],
+      });
+      webview.dispatchEvent(faviconEvent);
+
+      await waitFor(() =>
+        expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
+          'Reference docs',
+        ),
+      );
+      expect(container.querySelector('[data-browser-page-favicon]')?.getAttribute('src')).toBe(
+        'https://example.test/favicon.ico',
+      );
+    });
+
+    it('shows the URL placeholder for a blank page and edits its full URL', async () => {
+      const { getByRole } = render(EmbeddedBrowser, {
+        props: { url: 'about:blank', workspaceId: 'workspace-1' },
+      });
+
+      const identity = getByRole('button', { name: 'Edit browser address' });
+      expect(identity.textContent).toContain('Enter URL...');
+      await fireEvent.click(identity);
+      expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+        'about:blank',
+      );
     });
   });
 });

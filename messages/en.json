@@ -4347,6 +4347,8 @@
   "browser_embedded_refresh_tooltip": "Refresh",
   "browser_embedded_refresh_ariaLabel": "Refresh page",
   "browser_embedded_url_placeholder": "Enter URL...",
+  "browser_embedded_addressInput_ariaLabel": "Browser address",
+  "browser_embedded_editAddress_ariaLabel": "Edit browser address",
   "browser_embedded_go_label": "Go",
   "browser_embedded_devtools_tooltip": "Toggle DevTools",
   "browser_embedded_devtools_ariaLabel": "Toggle developer tools",

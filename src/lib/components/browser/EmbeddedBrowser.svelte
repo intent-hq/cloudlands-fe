@@ -10,10 +10,8 @@
    */
   import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
-  import { invoke } from '$shared/generated/ipc-client';
   import type { BrowserEmulatedSize } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -34,17 +32,15 @@
   import { reportTabBounds } from './tab-bounds-action';
   import { isValidBrowserUrl } from './embedded-browser-url-validation';
   import { navigateToAgent } from '$lib/utils/workspace-navigation';
+  import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
     faArrowRight,
     faRefresh,
-    faExternalLinkAlt,
     faLock,
     faExclamationTriangle,
     faTimes,
-    faCode,
-    faRobot,
     faExpand,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
@@ -144,7 +140,7 @@
     appStore.dispatch(clearBrowserTabZoomRequest(_workspaceId, tabId));
   });
 
-  // Reference to the URL input for focusing
+  // Reference to the URL input for focusing while the identity is in edit mode.
   // The Input component exports focus, blur, select methods
   let urlInputRef: { focus: () => void; blur: () => void; select: () => void } | null =
     $state(null);
@@ -176,14 +172,19 @@
         setAudioMuted?: (muted: boolean) => void;
       })
     | null = $state(null);
-  // displayUrl tracks the URL shown in the URL bar - can differ from prop `url` after navigation
+  // displayUrl tracks the loaded URL and can differ from prop `url` after navigation.
   // Initialize from url prop so it's correct on first render (intentionally captures initial value)
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
   let displayUrl = $state(url || '');
+  let urlDraft = $state('');
+  let isEditingUrl = $state(false);
+  let pageTitle = $state('');
+  let faviconUrl = $state('');
   let canGoBack = $state(false);
   let canGoForward = $state(false);
   let isLoading = $state(false);
-  let isSecure = $state(false);
+  // svelte-ignore state_referenced_locally - intentional initial capture; navigation events keep this current
+  let isSecure = $state(url?.startsWith('https://') ?? false);
   let errorMessage = $state('');
   let webviewReady = $state(false);
 
@@ -216,16 +217,45 @@
   // svelte-ignore state_referenced_locally - intentional initial capture (see comment above)
   const navigationSync = createEmbeddedBrowserNavigationSyncState(url);
 
-  // Focus URL bar on mount if requested
-  $effect(() => {
-    if (focusUrlBarOnMount && urlInputRef) {
-      // Use a small delay to ensure the input is fully mounted
-      requestAnimationFrame(() => {
-        urlInputRef?.focus();
-        urlInputRef?.select();
-      });
+  function getHostname(value: string): string {
+    if (!value || value === 'about:blank') return '';
+    try {
+      return new URL(value).hostname;
+    } catch {
+      return '';
     }
-  });
+  }
+
+  const pageHostname = $derived(getHostname(displayUrl));
+  const identityTitle = $derived(
+    pageTitle ||
+      pageHostname ||
+      (displayUrl && displayUrl !== 'about:blank'
+        ? displayUrl
+        : m.browser_embedded_url_placeholder()),
+  );
+
+  async function focusUrlInput() {
+    urlDraft = displayUrl;
+    isEditingUrl = true;
+    await tick();
+    requestAnimationFrame(() => {
+      urlInputRef?.focus();
+      urlInputRef?.select();
+    });
+  }
+
+  function exitUrlEditMode() {
+    isEditingUrl = false;
+    urlDraft = '';
+  }
+
+  function handleUrlInputKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    exitUrlEditMode();
+  }
 
   // Check if we have a valid URL to display in the webview
   // Use currentWebviewUrl since that's what we actually load (can differ from url prop after user navigation)
@@ -281,6 +311,12 @@
           e.preventDefault();
           e.stopPropagation();
           console.log('__INTENT_REFRESH__');
+        }
+        // Cmd+L / Ctrl+L - edit the current address
+        if (isMod && !e.shiftKey && !e.altKey && (e.key === 'l' || e.key === 'L')) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('__INTENT_FOCUS_URL__');
         }
         // Forward pane and column bracket shortcuts to the panel system.
         if (isMod && !e.altKey && ['[', ']', '{', '}'].includes(e.key)) {
@@ -412,6 +448,8 @@
   });
 
   onMount(() => {
+    if (focusUrlBarOnMount) void focusUrlInput();
+
     // Keyboard shortcuts - use capture phase to intercept before panel shortcuts
     const handleKeydown = (e: KeyboardEvent) => {
       // Don't intercept shortcuts when typing in an input field
@@ -421,6 +459,21 @@
 
       const isMod = e.metaKey || e.ctrlKey;
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+
+      // Cmd+L / Ctrl+L - edit the current address when this panel is focused.
+      if (
+        focusRef.current &&
+        !isInInput &&
+        isMod &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'l'
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        void focusUrlInput();
+        return;
+      }
 
       // Cmd+Shift+C / Ctrl+Shift+C - Copy current browser URL when this panel is focused.
       if (focusRef.current && !isInInput && matchesShortcut(e, $copyBrowserUrlShortcut$, isMac)) {
@@ -507,6 +560,8 @@
     // which is exactly what the address bar shows.
     addWebviewListener('did-navigate', (e: any) => {
       displayUrl = e.url;
+      pageTitle = '';
+      faviconUrl = '';
       isSecure = e.url?.startsWith('https://');
       errorMessage = '';
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
@@ -518,6 +573,7 @@
 
     addWebviewListener('did-navigate-in-page', (e: any) => {
       displayUrl = e.url;
+      isSecure = e.url?.startsWith('https://');
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       recordEmbeddedBrowserNavigation(navigationSync, e.url);
       // Also call onNavigate for in-page navigation (e.g., clicking links that don't reload)
@@ -527,12 +583,14 @@
 
     // Title and favicon
     addWebviewListener('page-title-updated', (e: any) => {
+      pageTitle = e.title ?? '';
       appStore.dispatch(updateUrlMetadata(_workspaceId, displayUrl, e.title, undefined));
       onTitleChange?.(e.title);
     });
 
     addWebviewListener('page-favicon-updated', (e: any) => {
       if (e.favicons?.length > 0) {
+        faviconUrl = e.favicons[0];
         appStore.dispatch(updateUrlMetadata(_workspaceId, displayUrl, undefined, e.favicons[0]));
         onFaviconChange?.(e.favicons[0]);
       }
@@ -592,6 +650,8 @@
       } else if (message === '__INTENT_REFRESH__') {
         // Cmd+R/F5 was pressed inside webview - refresh the browser
         refresh();
+      } else if (message === '__INTENT_FOCUS_URL__') {
+        void focusUrlInput();
       } else if (message.startsWith('__INTENT_PANEL_BRACKET__:')) {
         const [, key, shiftKey, metaKey, ctrlKey] = message.split(':');
         window.dispatchEvent(
@@ -741,12 +801,6 @@
     }
   }
 
-  function openExternal() {
-    if (displayUrl && hasCapability('shellIntegration')) {
-      void invoke('shell:openExternal', { url: displayUrl });
-    }
-  }
-
   async function copyCurrentUrl() {
     const loadedUrl = webviewRef?.getURL?.();
     let urlToCopy = '';
@@ -784,15 +838,15 @@
   function handleFormSubmit(e: Event) {
     e.preventDefault();
     logger.info('Form submitted', {
-      displayUrl,
+      urlDraft,
       currentWebviewUrl,
       previousUrlProp: navigationSync.previousUrlProp,
       webviewReady,
       webviewRef: !!webviewRef,
     });
 
-    if (displayUrl) {
-      let urlToLoad = displayUrl.trim();
+    if (urlDraft) {
+      let urlToLoad = urlDraft.trim();
       // Only prepend a protocol if the input doesn't already have one (scheme://...).
       // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
       // loadUrl() will reject disallowed protocols with a clear error message.
@@ -809,14 +863,14 @@
         addRecentUrl(_workspaceId, urlToLoad, undefined, undefined, new Date().toISOString()),
       );
       // Blur the input to indicate the action was taken
-      urlInputRef?.blur();
+      exitUrlEditMode();
     }
   }
 </script>
 
 <div class="flex flex-col h-full bg-background">
   <!-- Browser Toolbar -->
-  <div class="flex items-center gap-1 px-2 py-1.5 border-b border-border bg-muted/30">
+  <div class="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-muted/30 px-2">
     <!-- Navigation controls -->
     <div class="flex gap-0.5">
       <Button
@@ -857,80 +911,80 @@
       </Button>
     </div>
 
-    <!-- URL bar -->
-    <form
-      onsubmit={handleFormSubmit}
-      class="flex-1 flex items-center gap-2 bg-background border border-border rounded px-2 py-1 text-sm"
-    >
-      {#if isSecure}
-        <Fa icon={faLock} class="text-emerald-500 shrink-0" size="xs" />
+    <!-- Page identity / editable address -->
+    <div class="flex min-w-0 flex-1 items-center gap-2">
+      {#if ownerAgentId}
+        <span data-browser-owner-chip={ownerAgentId} class="flex shrink-0">
+          <InlineAgentAvatar
+            agentId={ownerAgentId}
+            agentName={ownerAgentName}
+            onclick={() => void navigateToAgent(ownerAgentId)}
+          />
+        </span>
+      {:else if faviconUrl}
+        <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
-      <Input
-        bind:this={urlInputRef}
-        type="text"
-        bind:value={displayUrl}
-        class="flex-1 border-none py-0 h-auto px-0"
-        noFocusStyle
-        placeholder={m.browser_embedded_url_placeholder()}
-      />
-      <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
-    </form>
 
-    <!-- Emulated viewport indicator (monorepo#2857, §5.9) -->
-    {#if ownerAgentId && emulatedSize}
-      <span
-        class="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-        title={m.browser_embedded_viewport_tooltip({
-          width: emulatedSize.width,
-          height: emulatedSize.height,
-        })}
-        data-browser-viewport-indicator
-      >
-        <Fa icon={faExpand} size="xs" />
-        <!-- i18n-ignore (numeric dimensions, no translatable text) -->
-        <span>{emulatedSize.width}×{emulatedSize.height}</span>
-      </span>
-    {/if}
+      {#if isEditingUrl}
+        <form onsubmit={handleFormSubmit} class="flex min-w-0 flex-1 items-center">
+          <Input
+            bind:this={urlInputRef}
+            type="text"
+            bind:value={urlDraft}
+            onkeydown={handleUrlInputKeydown}
+            onblur={exitUrlEditMode}
+            class="h-8 flex-1 bg-background"
+            placeholder={m.browser_embedded_url_placeholder()}
+            aria-label={m.browser_embedded_addressInput_ariaLabel()}
+          />
+          <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
+        </form>
+      {:else}
+        <button
+          type="button"
+          class="flex min-w-0 flex-1 flex-col items-start justify-center rounded px-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring"
+          onclick={() => void focusUrlInput()}
+          aria-label={m.browser_embedded_editAddress_ariaLabel()}
+        >
+          <span class="w-full truncate text-sm font-medium text-foreground">{identityTitle}</span>
+          {#if pageHostname}
+            <span class="flex w-full items-center gap-1 text-xs text-muted-foreground">
+              {#if isSecure}
+                <Fa icon={faLock} class="shrink-0 text-emerald-500" size="xs" />
+              {/if}
+              <span class="truncate">{pageHostname}</span>
+            </span>
+          {/if}
+        </button>
+      {/if}
+    </div>
+
+    <!-- Element picker slot: populated by the element-picker task. -->
+    <div class="h-7 w-7 shrink-0" data-browser-select-element-slot></div>
+
+    <!-- Viewport-mode slot: populated by the viewport-menu task. -->
+    <div class="flex shrink-0 items-center" data-browser-viewport-slot>
+      {#if ownerAgentId && emulatedSize}
+        <span
+          class="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+          title={m.browser_embedded_viewport_tooltip({
+            width: emulatedSize.width,
+            height: emulatedSize.height,
+          })}
+          data-browser-viewport-indicator
+        >
+          <Fa icon={faExpand} size="xs" />
+          <!-- i18n-ignore (numeric dimensions, no translatable text) -->
+          <span>{emulatedSize.width}×{emulatedSize.height}</span>
+        </span>
+      {/if}
+    </div>
+
+    <!-- Overflow slot: populated by the overflow-menu task. -->
+    <div class="h-7 w-7 shrink-0" data-browser-overflow-slot></div>
 
     <!-- Actions -->
     <div class="flex gap-0.5">
-      <!-- Owner agent chip (monorepo#2857): icon-only; tooltip carries the agent name -->
-      {#if ownerAgentId}
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => void navigateToAgent(ownerAgentId)}
-          tooltip={m.browser_embedded_ownerChip_tooltip({ name: ownerAgentName ?? ownerAgentId })}
-          tooltipSide="bottom"
-          aria-label={m.browser_embedded_ownerChip_ariaLabel({
-            name: ownerAgentName ?? ownerAgentId,
-          })}
-          data-browser-owner-chip={ownerAgentId}
-        >
-          <Fa icon={faRobot} size="xs" />
-        </Button>
-      {/if}
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={toggleDevTools}
-        tooltip={m.browser_embedded_devtools_tooltip()}
-        tooltipShortcut="mod+alt+i"
-        tooltipSide="bottom"
-        aria-label={m.browser_embedded_devtools_ariaLabel()}
-      >
-        <Fa icon={faCode} size="xs" />
-      </Button>
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={openExternal}
-        tooltip={m.browser_embedded_openExternal_tooltip()}
-        tooltipSide="bottom"
-        aria-label={m.browser_embedded_openExternal_ariaLabel()}
-      >
-        <Fa icon={faExternalLinkAlt} size="xs" />
-      </Button>
       {#if onClose}
         <Button
           variant="ghost-light"
