@@ -143,7 +143,7 @@
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
-  import type { Workspace, AgentMetadata } from '$shared/types';
+  import type { Workspace, AgentMetadata, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import { createFileDropTarget } from '$lib/utils/file-drop';
@@ -178,26 +178,10 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import ProposalTray, { trayBodyMaxHeight } from './proposals/ProposalTray.svelte';
-  import {
-    derivePendingProposalRecoveryState,
-    deriveTrayPendingProposals,
-    proposalTrayVisible,
-  } from './proposals/proposal-tray-gate';
-  import { loadTrayCollapsed, saveTrayCollapsed } from './proposals/proposal-tray-storage';
-  import {
-    classifyPendingProposalRefs,
-    type PendingProposalEntry,
-  } from './proposals/pending-proposals';
-  import {
-    applyProposal,
-    dismissProposal,
-    reconcileAppliedProposals,
-    rememberProposalIdentity,
-    undoProposal,
-  } from './proposals/proposal-action-handlers';
+  import { derivePendingProposalRecoveryState } from './proposals/pending-proposal-recovery';
+  import { classifyPendingProposalRefs } from './proposals/pending-proposals';
+  import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
-  import type { ProposalActionDetail } from '$shared/types/proposal';
   import {
     initialWizardCollapsed,
     saveWizardCollapsed,
@@ -1082,25 +1066,8 @@
     void performLocalSendCleanup({ followBottom: true });
   }
 
-  // ── Pending-proposal tray (composer slot) ────────────────────────────────
-  // Derived from the daemon's `pendingProposals` session metadata (PROTOCOL
-  // §5.5) intersected with transcript resource blocks + the targeted-recovery
-  // cache. Unlike the Q&A wizard there is NO turn-active gating: proposals
-  // hold no deliveries, so the tray stays visible/actionable while the agent
-  // runs later turns. The void reads keep the $derived reactive to every
-  // store input the shared helper re-reads from state.
-  const trayPendingProposals = $derived.by(() => {
-    void $agentSession$?.metadata?.pendingProposals;
-    void $pendingProposalRecovery$;
-    void $proposalLifecycleMap$;
-    return deriveTrayPendingProposals(appStore.state, agentId, $agentMessages$);
-  });
-  const showProposalTray = $derived(
-    proposalTrayVisible({
-      hasPendingProposals: trayPendingProposals.length > 0,
-      hasPendingQuestions: !!pendingQuestions,
-      questionWizardCollapsed,
-    }),
+  const pendingProposalRefs = $derived(
+    classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals),
   );
 
   // Targeted recovery for refs whose carrying message is not hydrated
@@ -1117,7 +1084,7 @@
   });
   $effect(() => {
     if ($agentSession$?.id !== agentId) return;
-    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    const refs = pendingProposalRefs;
     const tracked = $pendingProposalRecovery$;
     const keep = [...new Set(refs.map((ref) => ref.messageId))];
     if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
@@ -1131,63 +1098,19 @@
     }
   });
 
-  // Measured panel height driving the tray body's scroll cap, so a tall
-  // proposal card in a short/narrow panel (the Chief sidebar) scrolls
-  // internally instead of pushing the composer out of reach.
-  let panelClientHeight = $state(0);
-
-  // Hide state is host-owned and persisted per agent, like the wizard's
-  // collapse flag; the initial value restores from storage (untracked so the
-  // load never re-runs on unrelated state flips).
-  let proposalTrayCollapsedOverride = $state<{ agentId: string; collapsed: boolean } | null>(null);
-  const proposalTrayCollapsed = $derived.by(() => {
-    if (proposalTrayCollapsedOverride?.agentId === agentId) {
-      return proposalTrayCollapsedOverride.collapsed;
-    }
-    return untrack(() => loadTrayCollapsed(agentId)) ?? false;
-  });
-
-  // Apply routing: workspace-create/bulk-op go through the
-  // workspace-operations saga, specialist edits through the specialist
-  // actions, everything else through the settings actions. Lifecycle success
-  // is bridged to the daemon resolution below.
-  function handleProposalTrayApply(detail: ProposalActionDetail) {
-    applyProposal(agentId, detail);
-  }
-
-  function handleProposalTrayUndo(proposalId: string) {
-    undoProposal(proposalId);
-  }
-
-  // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
-  // The wire ack reconciles lifecycle (the saga dispatches
-  // proposalResolutionReconciled), which retires the entry from the gate; a
-  // failure (middleware toasts) rethrows so the tray keeps the entry pending.
-  async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
-    if (!workspace) return;
-    await dismissProposal(agentId, workspace.id, entry);
-  }
-
   // Apply→resolve bridge. Applies key lifecycle under
   // `getProposalId(proposal)` — which can differ from the daemon's metadata
-  // ref key — and the gate retires an entry the instant its lifecycle turns
-  // 'applied', so the bridge works off a captured ref→local identity
-  // map rather than the filtered entries. Any still-pending metadata ref
+  // ref key. Inline proposal hosts capture the ref→local identity while they
+  // are rendered. Any still-pending metadata ref
   // whose lifecycle shows 'applied' under either identity gets ONE
   // resolve(applied) (daemon resolution is idempotent; first outcome wins).
   $effect(() => {
-    for (const entry of trayPendingProposals) {
-      rememberProposalIdentity(agentId, entry.proposalId, entry.proposal);
-    }
-  });
-  $effect(() => {
     const wsId = workspace?.id;
     if (!wsId || $agentSession$?.id !== agentId) return;
-    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
     reconcileAppliedProposals({
       agentId,
       workspaceId: wsId,
-      refs,
+      refs: pendingProposalRefs,
       lifecycle: $proposalLifecycleMap$ ?? {},
     });
   });
@@ -3293,6 +3216,89 @@
   // matches in virtualized message placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
 
+  let offscreenPendingProposalMessageId = $state<string | null>(null);
+
+  function findPendingProposalCard(
+    message: HTMLElement,
+    ref: PendingProposalRef,
+    claimed: Set<Element> = new Set(),
+  ): HTMLElement | null {
+    const exact = message.querySelector<HTMLElement>(
+      `[data-apply-tool-call-id="${CSS.escape(ref.proposalId)}"]`,
+    );
+    if (exact && !claimed.has(exact)) return exact;
+    return (
+      Array.from(message.querySelectorAll<HTMLElement>('[data-proposal-kind]')).find(
+        (candidate) => !claimed.has(candidate),
+      ) ?? null
+    );
+  }
+
+  // Watch pending inline cards against the transcript viewport. A virtualized
+  // off-screen card falls back to its persistent LazyTurn shell, so the hint
+  // remains available even while the card itself is dehydrated.
+  $effect(() => {
+    const refs = pendingProposalRefs;
+    const root = scrollContainer;
+    void $agentMessages$;
+    void $proposalLifecycleMap$;
+    if (!isActive || !root || refs.length === 0) {
+      offscreenPendingProposalMessageId = null;
+      return;
+    }
+
+    let disposed = false;
+    let observer: IntersectionObserver | null = null;
+    tick().then(() => {
+      if (disposed || !isActive || scrollContainer !== root) return;
+      const refKeysByTarget = new Map<Element, string[]>();
+      const visibility = new Map<string, boolean>();
+      const claimed = new Set<Element>();
+      for (const ref of refs) {
+        const refKey = `${ref.messageId}\u0000${ref.proposalId}`;
+        const message = root.querySelector<HTMLElement>(
+          `[data-message-id="${CSS.escape(ref.messageId)}"]`,
+        );
+        let target: HTMLElement | null = null;
+        if (message) target = findPendingProposalCard(message, ref, claimed);
+        if (!target && !message) {
+          const turnKey = messageIdToTurnKey.get(ref.messageId);
+          if (turnKey) {
+            target = root.querySelector<HTMLElement>(
+              `[data-lazy-turn-key="${CSS.escape(turnKey)}"]`,
+            );
+          }
+        }
+        if (!target) continue;
+        claimed.add(target);
+        refKeysByTarget.set(target, [...(refKeysByTarget.get(target) ?? []), refKey]);
+      }
+      if (refKeysByTarget.size === 0 || typeof IntersectionObserver === 'undefined') {
+        offscreenPendingProposalMessageId = null;
+        return;
+      }
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            for (const refKey of refKeysByTarget.get(entry.target) ?? []) {
+              visibility.set(refKey, entry.isIntersecting);
+            }
+          }
+          offscreenPendingProposalMessageId =
+            refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+              ?.messageId ?? null;
+        },
+        { root, threshold: 0.01 },
+      );
+      for (const target of refKeysByTarget.keys()) observer.observe(target);
+    });
+
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+    };
+  });
+
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
   let autoCommitStatuses = $state<CommitStatus[]>([]);
 
@@ -3931,6 +3937,21 @@
     return null;
   }
 
+  async function scrollToPendingProposal(): Promise<void> {
+    const messageId = offscreenPendingProposalMessageId;
+    const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
+    if (!messageId || !ref) return;
+    const message = await forceRenderAndFindMessage(messageId);
+    if (!message || !isActive) return;
+    await tick();
+    if (!isActive) return;
+    const target = findPendingProposalCard(message, ref) ?? message;
+    smoothScrollTo(target, 'center');
+    target.classList.add('highlight-flash');
+    scheduleHighlightRemoval(target, 'highlight-flash', 1500);
+    scheduleDeepOpenRelease();
+  }
+
   // Entry positioning for the unread marker: force-render the anchor message's
   // turn (it may be a virtualized LazyTurn placeholder), then decide where to
   // land. If the divider would still be visible with the viewport scrolled
@@ -4146,8 +4167,6 @@
             if (newHeight !== composerHeight) {
               composerHeight = newHeight;
             }
-          } else if (entry.target === panelElement) {
-            panelClientHeight = entry.contentRect.height;
           }
         }
         if (scrollContainerResized && scrollContainer) {
@@ -4159,9 +4178,6 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
-      // The panel root's height is layout-fixed (h-full), so observing it
-      // creates no feedback loop with the tray's capped body height.
-      if (panelElement) observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -6280,6 +6296,23 @@
               </Button>
             </div>
           {:else}
+            {#if offscreenPendingProposalMessageId}
+              <div
+                class="flex w-full justify-center px-4 pb-2"
+                data-testid="pending-proposal-chip-slot"
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 rounded-full bg-background px-3 type-caption shadow-sm"
+                  data-testid="pending-proposal-chip"
+                  onclick={scrollToPendingProposal}
+                >
+                  {m.chat_proposalTray_title()}
+                </Button>
+              </div>
+            {/if}
             {#if pendingQuestions}
               {#key pendingQuestions.messageId}
                 <div class="w-full" data-testid="question-wizard-slot">
@@ -6302,25 +6335,6 @@
                     }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
-                  />
-                </div>
-              {/key}
-            {/if}
-            {#if showProposalTray}
-              {#key agentId}
-                <div class="w-full" data-testid="proposal-tray-slot">
-                  <ProposalTray
-                    {agentId}
-                    entries={trayPendingProposals}
-                    maxBodyHeight={trayBodyMaxHeight(panelClientHeight)}
-                    collapsed={proposalTrayCollapsed}
-                    onToggleCollapsed={(collapsed) => {
-                      proposalTrayCollapsedOverride = { agentId, collapsed };
-                      saveTrayCollapsed(agentId, collapsed);
-                    }}
-                    onApply={handleProposalTrayApply}
-                    onDismiss={handleProposalTrayDismiss}
-                    onUndo={handleProposalTrayUndo}
                   />
                 </div>
               {/key}

@@ -24,7 +24,7 @@
   import SettingsChangeCard from './SettingsChangeCard.svelte';
   import SpecialistChangeCard from './SpecialistChangeCard.svelte';
   import { getProposalId } from './proposal-id';
-  import type { ProposalCardDraft } from './proposal-tray-storage';
+  import type { ProposalCardDraft } from './proposal-draft-storage';
   import { goto } from '$app/navigation';
   import {
     selectProposalError,

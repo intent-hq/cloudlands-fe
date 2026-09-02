@@ -1577,6 +1577,73 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(target.classList.contains('highlight-flash')).toBe(true);
   });
 
+  it('shows a pending-proposal chip for an off-screen inline card and scrolls to it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    const pendingSession = {
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-1', messageId: 'proposal-message' }],
+      },
+    };
+    mocks.agentSession.set(pendingSession);
+    mocks.agentMessages.set([
+      {
+        id: 'proposal-message',
+        role: 'assistant',
+        content: 'Proposal',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    const message = view.container.querySelector<HTMLElement>(
+      '[data-message-id="proposal-message"]',
+    );
+    expect(message).not.toBeNull();
+    const card = document.createElement('section');
+    card.dataset.proposalKind = 'workspace-create';
+    card.dataset.applyToolCallId = 'toolu-1';
+    message?.append(card);
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: false,
+    });
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: true,
+    });
+    await tick();
+    await tick();
+
+    const observer = MockChatIntersectionObserver.instances.find((candidate) =>
+      candidate.observed.has(card),
+    );
+    expect(observer).toBeDefined();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+
+    observer?.fire([{ target: card, isIntersecting: false }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    expect(frames.length).toBeGreaterThan(0);
+
+    observer?.fire([{ target: card, isIntersecting: true }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+  });
+
   it('cancels draftPrompt apply and focus while inactive and restores on reactivation', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSession.set({

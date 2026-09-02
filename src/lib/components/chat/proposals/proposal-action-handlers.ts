@@ -11,7 +11,7 @@ import { store as appStore } from '$store/renderer/store';
 import type { PendingProposalEntry } from './pending-proposals';
 import { pendingProposalKeyOf } from './pending-proposals';
 import { getProposalId } from './proposal-id';
-import { clearTrayDraft } from './proposal-tray-storage';
+import { clearProposalDraft } from './proposal-draft-storage';
 import { applySettingsProposal, undoSettingsProposal } from './settings-proposal-actions';
 import { applySpecialistProposal, undoSpecialistProposal } from './specialist-proposal-actions';
 
@@ -81,7 +81,7 @@ function requestResolution(input: {
   const key = proposalKey(input.agentId, input.proposalId);
   const existing = resolutionRequests.get(key);
   if (existing) return existing;
-  if (input.clearDraftBeforeRequest) clearTrayDraft(input.agentId, input.proposalId);
+  if (input.clearDraftBeforeRequest) clearProposalDraft(input.agentId, input.proposalId);
   const action = agentProposalResolveRequested(input.agentId, input.workspaceId, {
     proposalId: input.proposalId,
     outcome: input.outcome,
@@ -90,7 +90,7 @@ function requestResolution(input: {
   appStore.dispatch(action);
   const request = action.promise
     .then(() => {
-      if (!input.clearDraftBeforeRequest) clearTrayDraft(input.agentId, input.proposalId);
+      if (!input.clearDraftBeforeRequest) clearProposalDraft(input.agentId, input.proposalId);
     })
     .catch((error) => {
       resolutionRequests.delete(key);

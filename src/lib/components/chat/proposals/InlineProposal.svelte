@@ -17,7 +17,11 @@
     rememberProposalIdentity,
     undoProposal,
   } from './proposal-action-handlers';
-  import { loadTrayDraft, saveTrayDraft, type ProposalCardDraft } from './proposal-tray-storage';
+  import {
+    loadProposalDraft,
+    saveProposalDraft,
+    type ProposalCardDraft,
+  } from './proposal-draft-storage';
   import { getProposalId } from './proposal-id';
 
   interface Props {
@@ -30,7 +34,7 @@
   let { agentId, workspaceId, messageId, proposal }: Props = $props();
   const proposalId = $derived(pendingProposalKeyOf(proposal));
   const localProposalId = $derived(getProposalId(proposal));
-  const initialDraft = $derived(loadTrayDraft(agentId, proposalId));
+  const initialDraft = $derived(loadProposalDraft(agentId, proposalId));
   const agentSession$ = $derived(selectAgentSession(agentId));
   const lifecycleMap$ = selectProposalLifecycleMap();
   let confirmingDismiss = $state(false);
@@ -58,7 +62,7 @@
     if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
     draftSaveTimer = null;
     if (!pendingDraft) return;
-    saveTrayDraft(agentId, proposalId, pendingDraft);
+    saveProposalDraft(agentId, proposalId, pendingDraft);
     pendingDraft = null;
   }
 
