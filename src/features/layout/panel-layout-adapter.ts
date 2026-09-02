@@ -124,8 +124,10 @@ export class PanelLayoutAdapter {
   }
   /** User opens bypass Spec deferral while preserving explicit panel targeting. */
   openUserTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
-    if (panelId) {
-      this.dispatch(openTab(this.workspaceId, tab, panelId, undefined, true));
+    const targetPanelId =
+      panelId ?? selectFocusedPanelId.select(this.state, this.workspaceId) ?? undefined;
+    if (targetPanelId) {
+      this.dispatch(openTab(this.workspaceId, tab, targetPanelId, undefined, true));
       return;
     }
     this.dispatch(openTabInRightmostColumnRequested(this.workspaceId, tab, { force: true }));

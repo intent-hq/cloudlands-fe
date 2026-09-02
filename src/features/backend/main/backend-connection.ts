@@ -29,6 +29,14 @@ import { Logger } from '$shared/logger';
 import { describeBackendUrl } from './backend-log-descriptor';
 import { resolveIntentdSocketPath } from './intentd-data-dir';
 import { toLocalEndpoint } from './intentd-pipe-name';
+import {
+  createTailcatTunnel,
+  createTunneledSocket,
+  resolveTailcatBinaryPath,
+  type TailcatSpawn,
+  type TailcatTunnel,
+} from './tailcat-tunnel';
+import { isTcAddress } from '$shared/tc-address';
 
 const raceLogger = new Logger('BackendConnection');
 
@@ -73,6 +81,16 @@ export interface BackendConnectionConfig {
    * presented cert against this pin; a mismatch fails with {@link PinMismatchError}.
    */
   fingerprint?: string;
+  /**
+   * tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3, the
+   * pairing URI `tc=` parameter / `system.status.tcAddress`). When present and
+   * the bundled tailcat client binary is available, the connect race gains a
+   * tunnel candidate alongside the direct host candidates: the same pinned
+   * `wss` transport dialed through a local tailcat forwarder (see
+   * `tailcat-tunnel.ts`), so remote daemons stay reachable when no direct
+   * host works. Fail-soft — a missing binary just skips the candidate.
+   */
+  tcAddress?: string;
 }
 
 /** Options for [[resolveBackendConfig]]. */
@@ -168,10 +186,16 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
   }
   if (config.transport === 'wss') {
     const hosts = candidateWssHosts(config);
-    if (hosts.length > 1) {
-      return raceWssSockets(config, hosts);
+    const attempts: RaceAttempt[] = hosts.map((host) => ({
+      host,
+      create: () => createWssSocket({ ...config, host }),
+    }));
+    const tunnelAttempt = tunnelRaceAttempt(config);
+    if (tunnelAttempt) attempts.push(tunnelAttempt);
+    if (attempts.length > 1) {
+      return raceDuplexSockets(attempts);
     }
-    return createWssSocket(config);
+    return attempts[0]?.create() ?? createWssSocket(config);
   }
   throw new Error(
     // i18n-ignore (developer-facing config error naming env vars; surfaces in logs, not UI)
@@ -376,17 +400,38 @@ export interface RaceAttempt {
 /** Overall bound on the multi-host race; matches the capture timeout. */
 const RACE_TIMEOUT_MS = 10_000;
 
+/** Pseudo-host label for the tunnel candidate in race logs/events. */
+export const TUNNEL_RACE_HOST = 'tailcat-tunnel';
+
 /**
- * Race the pinned `wss` transport across all candidate hosts (#1746),
- * mirroring iOS `ConnectionManager.raceHosts`: one socket per candidate, the
- * first to complete the pin-verified connect wins and the losers are torn
- * down. Returns a facade `Duplex` the JSON-RPC client drives exactly like a
- * single-host socket.
+ * Build the tunnel race attempt for a `wss` config carrying a `tcAddress`,
+ * or `null` when the tunnel cannot be dialed (no tc address, or no bundled
+ * tailcat binary — fail-soft, the direct candidates still race). The attempt
+ * dials the SAME pinned wss transport through a local tailcat forwarder
+ * (`tailcat-tunnel.ts`), so pin + token verification are identical to the
+ * direct candidates; only the TCP path differs. The pin is fingerprint-based
+ * (`servername` is not used for verification), so the loopback hop does not
+ * weaken it. Exported for unit tests.
  */
-function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duplex {
-  return raceDuplexSockets(
-    hosts.map((host) => ({ host, create: () => createWssSocket({ ...config, host }) })),
-  );
+export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt | null {
+  const { tcAddress, port } = config;
+  if (!tcAddress || !port) return null;
+  const binaryPath = resolveTailcatBinaryPath();
+  if (!binaryPath) {
+    raceLogger.debug('tailcat binary unavailable; skipping tunnel race candidate');
+    return null;
+  }
+  return {
+    host: TUNNEL_RACE_HOST,
+    create: () =>
+      createTunneledSocket({
+        tcAddress,
+        remotePort: port,
+        binaryPath,
+        createInner: (localPort) =>
+          createWssSocket({ ...config, host: '127.0.0.1', port: localPort }),
+      }),
+  };
 }
 
 /**
@@ -694,8 +739,56 @@ export function pinnedTlsConnect(
  * leak to a swapped endpoint (TOCTOU). The mismatch is reported as a
  * structured `fingerprint-mismatch` result carrying the presented
  * fingerprint.
+ *
+ * A `host` that is a tc address (PROTOCOL §12.3, manual tunnel entry) is
+ * captured through a local tailcat forwarder: the wss dial targets the
+ * forwarder's loopback port and tailcat carries it to the daemon, so cert +
+ * token verification are identical to a direct capture. Fails structured
+ * (`connect-failed`) when the bundled tailcat binary is unavailable.
  */
-export function captureFingerprint(
+export async function captureFingerprint(
+  target: { host: string; port: number; token?: string; expectedFingerprint?: string },
+  options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
+): Promise<CaptureFingerprintResult> {
+  if (isTcAddress(target.host)) {
+    const binaryPath = resolveTailcatBinaryPath();
+    if (!binaryPath) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: 'tailcat binary unavailable; cannot capture through the tunnel',
+      };
+    }
+    let tunnel: TailcatTunnel;
+    try {
+      tunnel = await createTailcatTunnel({
+        // Lowercase like `isTcAddress` does for its check: tc addresses are
+        // daemon-minted lowercase, so a hand-typed `TC-…` still dials.
+        tcAddress: target.host.trim().toLowerCase(),
+        remotePort: target.port,
+        binaryPath,
+        ...(options.tailcatSpawn ? { spawn: options.tailcatSpawn } : {}),
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: `tailcat forwarder failed to start: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    try {
+      return await captureFingerprintDirect(
+        { ...target, host: '127.0.0.1', port: tunnel.localPort },
+        options,
+      );
+    } finally {
+      tunnel.close();
+    }
+  }
+  return captureFingerprintDirect(target, options);
+}
+
+function captureFingerprintDirect(
   target: { host: string; port: number; token?: string; expectedFingerprint?: string },
   options: { timeoutMs?: number } = {},
 ): Promise<CaptureFingerprintResult> {

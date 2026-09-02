@@ -59,4 +59,30 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('.ProseMirror')).toBeNull();
     expect(container.querySelector('pre code')?.textContent).toContain('const x = 1;');
   });
+
+  it('renders Mermaid fenced blocks as visible source when requested', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '```mermaid\nflowchart LR\n  A --> B\n```',
+        renderRichFencesAsCode: true,
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('code.language-mermaid')).toBeTruthy());
+    expect(container.querySelector('code.language-mermaid')?.textContent).toContain('A --> B');
+    expect(container.querySelector('[data-type="mermaid-block"]')).toBeNull();
+  });
+
+  it('renders diff fenced blocks as visible source when requested', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '```diff\n-old\n+new\n```',
+        renderRichFencesAsCode: true,
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('code.language-diff')).toBeTruthy());
+    expect(container.querySelector('code.language-diff')?.textContent).toContain('-old\n+new');
+    expect(container.querySelector('[data-type="diff-block"]')).toBeNull();
+  });
 });

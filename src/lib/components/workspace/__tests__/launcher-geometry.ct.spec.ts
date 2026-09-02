@@ -200,7 +200,10 @@ test('preserves semantic colors in the collapsed agent stack', async ({ mount, p
   expect(new Set(colors).size).toBe(states.length);
 });
 
-test('preserves hover, focus, click, and note open-marker behavior', async ({ mount, page }) => {
+test('preserves hover, focus, and click behavior without open-panel markers', async ({
+  mount,
+  page,
+}) => {
   await page.setViewportSize({ width: 1200, height: 1000 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(LauncherGeometryHost, {
@@ -210,10 +213,7 @@ test('preserves hover, focus, click, and note open-marker behavior', async ({ mo
   const notes = component.locator('[data-sidebar-context]');
   await expect(agents).toHaveCount(6);
   await expect(notes).toHaveCount(6);
-  await expect(notes.first().locator('[data-panel-open-marker]')).toHaveAttribute(
-    'data-panel-open-state',
-    'open',
-  );
+  await expect(component.locator('[data-panel-open-marker]')).toHaveCount(0);
 
   await agents.first().hover({ position: { x: 2, y: 18 } });
   // Launcher hover cards require a deliberate 300ms dwell before opening

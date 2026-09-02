@@ -61,7 +61,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
-  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
 
@@ -109,8 +108,6 @@
     provider?: string;
     /** Optional actions rendered beside, never inside, the row activation button. */
     headerActions?: Snippet;
-    openPanelCount?: number;
-    activeInPanel?: boolean;
     /** Optional timestamp supplied by list data before the session selector is hydrated. */
     updatedAt?: AgentSession['updatedAt'];
     /** Disable navigation, mutation, editing, and file operations in isolated previews. */
@@ -138,8 +135,6 @@
     isCompleted = false,
     provider = undefined,
     headerActions,
-    openPanelCount = 0,
-    activeInPanel = false,
     updatedAt: updatedAtProp = undefined,
     readOnly = false,
   }: Props = $props();
@@ -808,7 +803,6 @@
               class="flex shrink-0 items-center gap-1.5"
               data-agent-row-trailing={panelRow ? '' : undefined}
             >
-              <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
               {#if panelRow && isBackground}
                 <span
                   class="shrink-0 rounded bg-muted px-1 py-0.5 text-ui font-bold text-subtle"

@@ -14,6 +14,8 @@ import { isCombinedWorkspacePanelItem } from './sidebar-nav-types';
 export const PINNED_WORKSPACES_KEY = 'intent:pinned-workspaces';
 export const VIEW_MODE_KEY = 'intent:all-spaces-view-mode';
 export const SHOW_ARCHIVED_KEY = 'intent:all-spaces-show-archived';
+export const COLLAPSED_STATUS_GROUPS_KEY = 'intent:all-spaces-collapsed-status-groups';
+export const CHIEF_COLLAPSED_KEY = 'intent:sidebar-chief-collapsed';
 export const PANEL_WIDTH_KEY = 'intent:sidebar-panel-width';
 export const COMBINED_PANEL_SPLIT_KEY = 'intent:sidebar-combined-panel-split';
 export const LEGACY_HOME_PANEL_SPLIT_KEY = 'intent:sidebar-home-panel-split';
@@ -40,6 +42,8 @@ export const initialState: SidebarNavState = {
   draftPrompt: '',
   allSpacesViewMode: 'recent',
   showArchivedWorkspaces: false,
+  collapsedStatusGroupIds: [],
+  isChiefCollapsed: false,
   pinnedWorkspaceIds: [],
   multiSelectTabOrder: [],
   multiSelectSelectedTabIdsByWorkspaceId: {},
@@ -100,6 +104,17 @@ const showArchivedWorkspacesPreference = createBooleanPreference<SidebarNavState
 });
 export const setShowArchivedWorkspaces = showArchivedWorkspacesPreference.setAction;
 export const toggleShowArchivedWorkspaces = showArchivedWorkspacesPreference.toggleAction;
+export const toggleStatusGroupCollapsed = createAction<[groupId: string]>(
+  'sidebarNav/toggleStatusGroupCollapsed',
+);
+const chiefCollapsedPreference = createBooleanPreference<SidebarNavState>({
+  sliceName: 'sidebarNav',
+  field: 'isChiefCollapsed',
+  setActionName: 'setChiefCollapsed',
+  toggleActionName: 'toggleChiefCollapsed',
+});
+export const setChiefCollapsed = chiefCollapsedPreference.setAction;
+export const toggleChiefCollapsed = chiefCollapsedPreference.toggleAction;
 export const togglePinWorkspace = createAction<[id: string]>('sidebarNav/togglePinWorkspace');
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
@@ -143,6 +158,8 @@ type SidebarNavHydrationState = Partial<
       | 'combinedPanelSplit'
       | 'allSpacesViewMode'
       | 'showArchivedWorkspaces'
+      | 'collapsedStatusGroupIds'
+      | 'isChiefCollapsed'
       | 'pinnedWorkspaceIds'
       | 'multiSelectTabOrder'
       | 'chiefActiveAgentId'
@@ -171,6 +188,7 @@ function migrateLegacyPanelItem(item: SidebarNavItem | 'home' | null): SidebarNa
 export const sidebarNavReducer = createReducer<SidebarNavState>(initialState);
 cardPinnedPreference.register(sidebarNavReducer);
 showArchivedWorkspacesPreference.register(sidebarNavReducer);
+chiefCollapsedPreference.register(sidebarNavReducer);
 sidebarNavReducer.with(bumpActiveStreamsVersion, (state) => ({
   ...state,
   activeStreamsVersion: state.activeStreamsVersion + 1,
@@ -204,6 +222,12 @@ sidebarNavReducer.with(setShowCreateModal, (state, { payload: [show] }) => ({
 sidebarNavReducer.with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
   ...state,
   allSpacesViewMode: mode,
+}));
+sidebarNavReducer.with(toggleStatusGroupCollapsed, (state, { payload: [groupId] }) => ({
+  ...state,
+  collapsedStatusGroupIds: state.collapsedStatusGroupIds.includes(groupId)
+    ? state.collapsedStatusGroupIds.filter((id) => id !== groupId)
+    : [...state.collapsedStatusGroupIds, groupId],
 }));
 sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
   if (state.pinnedWorkspaceIds.includes(id)) {

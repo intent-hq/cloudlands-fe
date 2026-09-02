@@ -60,6 +60,44 @@ describe('AgentFailureToast', () => {
     expect(switchButton?.disabled).toBe(false);
   });
 
+  it('renders login guidance with a copyable command and the claude desktop caveat', () => {
+    render(AgentFailureToast, {
+      props: {
+        title: 'Coordinator failed',
+        errorSummary: 'JSON-RPC error -32000: Authentication required',
+        retryLabel: 'Retry Coordinator',
+        retrying: false,
+        loginCommandHint: 'claude /login',
+        showClaudeDesktopNote: true,
+        onRetry: vi.fn(),
+        onSwitchTo: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+
+    expect(screen.getByTestId('toast-auth-guidance')).toBeTruthy();
+    expect(screen.getByTestId('toast-auth-login-command').textContent).toBe('claude /login');
+    expect(screen.getByTestId('toast-auth-claude-desktop-note')).toBeTruthy();
+    // The raw error stays visible alongside the guidance.
+    expect(screen.getByText('JSON-RPC error -32000: Authentication required')).toBeTruthy();
+  });
+
+  it('omits login guidance when no hint is provided', () => {
+    render(AgentFailureToast, {
+      props: {
+        title: 'Implementor failed',
+        errorSummary: 'spawn failed: EPERM',
+        retryLabel: 'Retry Implementor',
+        retrying: false,
+        onRetry: vi.fn(),
+        onSwitchTo: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+
+    expect(screen.queryByTestId('toast-auth-guidance')).toBeNull();
+  });
+
   it('contains long unbroken JSON-RPC errors and keeps controls keyboard focusable', () => {
     const longError = `JSON-RPC error: ${'a'.repeat(800)}`;
     const { container } = render(AgentFailureToast, {

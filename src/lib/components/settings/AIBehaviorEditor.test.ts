@@ -528,9 +528,9 @@ describe('AIBehaviorEditor actions', () => {
       expect(textarea.value).toBe('\nOriginal instructions\n');
       // Marked clean/saved consistently: the saved indicator shows and no
       // phantom "Undo changes" button remains.
-      expect(
-        within(promptColumn).getByTestId('agent-rules-saved-indicator').className,
-      ).toContain('opacity-100');
+      expect(within(promptColumn).getByTestId('agent-rules-saved-indicator').className).toContain(
+        'opacity-100',
+      );
       expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -586,6 +586,118 @@ describe('AIBehaviorEditor actions', () => {
       expect(savedIndicator.className).toContain('opacity-100');
       // hasChanges stays consistent: content differs from the loaded original.
       expect(within(promptColumn).getByTestId('agent-rules-header')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      mocks.updateUserRule.mockReset();
+    }
+  });
+
+  it('persists the revert when Undo changes follows an auto-save', async () => {
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Original instructions');
+
+    vi.useFakeTimers();
+    try {
+      mocks.updateUserRule.mockClear();
+
+      // Edit and let the debounced auto-save persist the draft.
+      await fireEvent.input(textarea, { target: { value: 'Edited draft' } });
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(1);
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith('base-system-prompt', 'Edited draft');
+
+      // Undo must reconcile the backend with the reverted content, not just
+      // reset the textarea (intent-hq/intent#4094).
+      const header = within(promptColumn).getByTestId('agent-rules-header');
+      await fireEvent.click(within(header).getByRole('button', { name: 'Undo changes' }));
+      await vi.advanceTimersByTimeAsync(0);
+      flushSync();
+
+      expect(textarea.value).toBe('Original instructions');
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(2);
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith(
+        'base-system-prompt',
+        'Original instructions',
+      );
+      expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not persist a trim-only diff when the loaded rule carries padding whitespace', async () => {
+    mocks.getUserRule.mockResolvedValueOnce({ content: '\nPadded instructions\n' });
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('\nPadded instructions\n');
+
+    mocks.updateUserRule.mockClear();
+    // Cmd/Ctrl+S with no edit must stay a quiet no-op — not silently persist
+    // the trimmed value of a rule that was stored with padding whitespace.
+    await fireEvent.keyDown(textarea, { key: 's', ctrlKey: true });
+    flushSync();
+
+    expect(mocks.updateUserRule).not.toHaveBeenCalled();
+    expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
+  });
+
+  it('converges the backend when a revert to the original lands while a save is in flight', async () => {
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Original instructions');
+
+    vi.useFakeTimers();
+    try {
+      mocks.updateUserRule.mockClear();
+      const deferreds: Array<(result: { success: boolean }) => void> = [];
+      mocks.updateUserRule.mockImplementation(
+        () =>
+          new Promise<{ success: boolean }>((resolve) => {
+            deferreds.push(resolve);
+          }),
+      );
+
+      // The draft save starts and stays in flight.
+      await fireEvent.input(textarea, { target: { value: 'draft' } });
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(1);
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith('base-system-prompt', 'draft');
+
+      // Revert to the exact original while the save is in flight.
+      await fireEvent.input(textarea, { target: { value: 'Original instructions' } });
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(1);
+
+      // The in-flight save resolves holding the stale draft: a trailing save
+      // must re-send the reverted content instead of stranding the backend on
+      // the draft (intent-hq/intent#4094, mid-flight-revert comment).
+      deferreds[0]({ success: true });
+      await vi.advanceTimersByTimeAsync(0);
+      flushSync();
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(2);
+      expect(mocks.updateUserRule).toHaveBeenLastCalledWith(
+        'base-system-prompt',
+        'Original instructions',
+      );
+
+      // The trailing save resolves: the editor reports saved rather than
+      // sticking at 'saving'.
+      deferreds[1]({ success: true });
+      await vi.advanceTimersByTimeAsync(0);
+      flushSync();
+      expect(mocks.updateUserRule).toHaveBeenCalledTimes(2);
+      expect(textarea.value).toBe('Original instructions');
+      expect(within(promptColumn).getByTestId('agent-rules-saved-indicator').className).toContain(
+        'opacity-100',
+      );
+      expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
     } finally {
       vi.useRealTimers();
       mocks.updateUserRule.mockReset();

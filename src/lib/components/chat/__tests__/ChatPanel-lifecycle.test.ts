@@ -390,6 +390,10 @@ function latestSentAppMessageId(): string {
   return action.payload.payload.userAppMessageId as string;
 }
 
+function dispatchedTypes(): string[] {
+  return mocks.dispatch.mock.calls.map(([action]) => action?.type);
+}
+
 function optimisticUserMessage(appMessageId: string, text: string) {
   return {
     id: `optimistic-${appMessageId}`,
@@ -542,6 +546,34 @@ describe('ChatPanel mounted lifecycle', () => {
     await view.rerender({ workspace: chiefWorkspace, agentId: 'chief-agent', isActive: true });
     await tick();
     expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
+  });
+
+  it('keeps an active response running on Escape and stops it from the visible control', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(false);
+    expect(dispatchedTypes()).not.toContain('agentSessions/stopChatRequested');
+
+    await fireEvent.click(screen.getByTestId('mock-input-stop'));
+    expect(dispatchedTypes()).toContain('agentSessions/stopChatRequested');
   });
 
   it('retains user rows and newer hydrated assistant messages after the frontier passes them', async () => {
@@ -817,6 +849,8 @@ describe('ChatPanel mounted lifecycle', () => {
       target: { value: 'survive a sibling update' },
     });
 
+    expect(mocks.chatDrafts['workspace-a::agent-a']).toBeUndefined();
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
     expect(mocks.chatDrafts['workspace-a::agent-a']).toBe('survive a sibling update');
     firstView.unmount();
     render(ChatPanel, {
@@ -827,6 +861,29 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
       'survive a sibling update',
     );
+  });
+
+  it('coalesces a burst of draft changes and commits the latest value', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const editor = screen.getByTestId('mock-rich-input-editor');
+    await fireEvent.input(editor, { target: { value: 'a' } });
+    await fireEvent.input(editor, { target: { value: 'ab' } });
+    await fireEvent.input(editor, { target: { value: 'abc' } });
+
+    expect(mocks.dispatch.mock.calls).toHaveLength(0);
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
+
+    const draftActions = mocks.dispatch.mock.calls.filter(
+      ([action]) => action?.type === 'transientUi/setChatDraft',
+    );
+    expect(draftActions).toHaveLength(1);
+    expect(draftActions[0][0].payload).toEqual(['workspace-a', 'agent-a', 'abc']);
   });
 
   it('keeps the composer mounted (wizard auto-collapsed) when questions arrive mid-typing', async () => {

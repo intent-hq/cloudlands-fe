@@ -9,10 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DraftAttachment } from '$lib/client/app-client';
-import {
-  deserializeDraftAttachments,
-  serializeDraftAttachments,
-} from '../chat-draft-attachments';
+import { deserializeDraftAttachments, serializeDraftAttachments } from '../chat-draft-attachments';
 import { hasBlockingAttachments, type ContextItem } from '../input/context-api';
 
 const IMAGE_ITEM: ContextItem = {
@@ -186,6 +183,31 @@ describe('deserializeDraftAttachments', () => {
     const items = deserializeDraftAttachments(serializeDraftAttachments([placed]));
 
     expect(items).toEqual([placed]);
+  });
+
+  it('round-trips a dropped-folder item (path + label) so an onboarding reload keeps the pill', () => {
+    // Folders are never placed (the daemon rejects directories) — they
+    // persist path-only and ride contextReferences at create time.
+    const folder: ContextItem = {
+      id: 'staged-folder-/home/user/projects/my-folder',
+      type: 'folder',
+      label: 'my-folder',
+      path: '/home/user/projects/my-folder',
+    };
+
+    const attachments = serializeDraftAttachments([folder]);
+    expect(attachments).toEqual([
+      {
+        id: 'staged-folder-/home/user/projects/my-folder',
+        type: 'folder',
+        label: 'my-folder',
+        path: '/home/user/projects/my-folder',
+      },
+    ]);
+
+    const items = deserializeDraftAttachments(attachments);
+    expect(items).toEqual([folder]);
+    expect(hasBlockingAttachments(items)).toBe(false);
   });
 
   it('round-trips a staged non-image item path-only — no bytes, no placement status', () => {

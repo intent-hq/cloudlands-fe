@@ -43,6 +43,17 @@ describe("transientUiReducer", () => {
     expect(state.byWorkspaceId[WS_1].chatDrafts).toEqual({});
   });
 
+  it("returns the same state for an unchanged draft", () => {
+    const stateWithDraft = transientUiReducer(initialState, setChatDraft(WS_1, "agent-1", "draft"));
+
+    expect(transientUiReducer(stateWithDraft, setChatDraft(WS_1, "agent-1", "draft"))).toBe(
+      stateWithDraft,
+    );
+    expect(transientUiReducer(initialState, setChatDraft(WS_1, "agent-1", ""))).toBe(
+      initialState,
+    );
+  });
+
   it("toggles raw note view state", () => {
     let state = transientUiReducer(initialState, toggleRawNoteView(WS_1, "note-1"));
     expect(state.byWorkspaceId[WS_1].rawNoteViewByNoteId).toEqual({ "note-1": true });

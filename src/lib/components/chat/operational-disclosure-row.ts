@@ -28,6 +28,9 @@ export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY
 /** Nested operational rows shift right without overflowing the group. */
 export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row ml-2 min-w-0 w-[calc(100%-0.5rem)] max-w-[calc(100%-0.5rem)]`;
 
+/** Match the existing 24px editorial seam before a new nested reasoning title. */
+export const NESTED_REASONING_SECTION_SEAM_CLASS = 'pt-6';
+
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS = 'text-muted-foreground';
@@ -69,7 +72,7 @@ export function isOperationalClusterBlock(block: OperationalClusterBlock): boole
 export function getOperationalGroupContentSpacingClass<T extends OperationalClusterBlock>(
   blocks?: readonly T[],
 ): string {
-  const firstVisibleBlock = blocks?.find((block) => block.type !== 'tool_result');
+  const firstVisibleBlock = blocks?.[0];
   if (!firstVisibleBlock || isOperationalClusterBlock(firstVisibleBlock)) return '';
   return 'pt-4';
 }
@@ -107,6 +110,7 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
   const previousIsOperational = isOperationalClusterBlock(previous);
   const currentIsOperational = isOperationalClusterBlock(block);
   if (previousIsOperational && currentIsOperational) return '';
+  if (previous.type === 'thinking' && !currentIsOperational) return 'pt-6';
   if (previousIsOperational || currentIsOperational) return 'pt-4';
   return 'pt-1';
 }

@@ -97,7 +97,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).toContain('data-panel-tabless-header');
     expect(tabBar).toContain('data-panel-content-header');
     expect(tabBar).toContain('m.layout_panelTabBar_closePane_ariaLabel()');
-    expect(tabBar).toContain('{#snippet panelActionsDropdown()}');
+    expect(tabBar).toContain("{#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}");
+    expect(tabBar).toContain('bind:open={panelActionsMenuOpen[location]}');
+    expect(tabBar).toContain("{@render panelActionsDropdown('tabBar')}");
+    expect(tabBar).toContain("{@render panelActionsDropdown('compact')}");
     expect(tabBar).toContain('{#snippet panelCloseButton(tab: PanelTab | null = null)}');
     expect(tabBar).toContain('data-testid="panel-close-button"');
     expect(tabBar).toContain('data-panel-actions-section="display"');
@@ -185,16 +188,18 @@ describe('editorial workspace shell presentation contract', () => {
     const progressCard = source('../../../workspace/sidebar/WorkspaceProgressCard.svelte');
 
     expect(titlebar).toContain('grid-template-columns: minmax(0, 1fr) auto');
-    expect(titlebar).toContain(
-      'titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-hidden',
-    );
     expect(titlebar).toContain('data-titlebar-drag-handle');
     expect(titlebar).toContain('data-titlebar-left-drag-handle');
-    expect(titlebar).toContain('titlebar-left-drag-handle w-4 shrink-0 self-stretch');
-    expect(titlebar).toContain('class="flex min-w-0 items-center gap-1"');
+    expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
+    expect(titlebar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
     expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
     expect(titlebar).toContain('data-titlebar-workspace-controls');
+    expect(titlebar).toContain('--titlebar-control-shift: 0px');
+    expect(titlebar).toContain('--titlebar-control-shift: 8px');
+    expect(titlebar).toContain('padding-left: 60px');
+    expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
+    expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
     expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
     expect(titlebar).toContain('activeTabBounds.left - 6');

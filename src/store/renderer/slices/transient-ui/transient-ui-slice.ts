@@ -40,7 +40,9 @@ const updateWorkspaceState = (
   updater: (workspaceState: TransientUiWorkspaceState) => TransientUiWorkspaceState,
 ) => {
   const workspaceState = getWorkspaceState(state, workspaceId);
-  return setWorkspaceState(state, workspaceId, updater(workspaceState));
+  const nextWorkspaceState = updater(workspaceState);
+  if (nextWorkspaceState === workspaceState) return state;
+  return setWorkspaceState(state, workspaceId, nextWorkspaceState);
 };
 export const setViewedFiles = createAction<
   [workspaceId: string, viewedFiles: Record<string, string>]
@@ -84,6 +86,8 @@ transientUiReducer.with(toggleRawNoteView, (state, { payload: [workspaceId, note
 );
 transientUiReducer.with(setChatDraft, (state, { payload: [workspaceId, agentId, draft] }) =>
   updateWorkspaceState(state, workspaceId, (workspaceState) => {
+    const currentDraft = workspaceState.chatDrafts[agentId] ?? '';
+    if (currentDraft === draft) return workspaceState;
     const chatDrafts = { ...workspaceState.chatDrafts };
     if (draft) {
       chatDrafts[agentId] = draft;
@@ -95,6 +99,7 @@ transientUiReducer.with(setChatDraft, (state, { payload: [workspaceId, agentId, 
 );
 transientUiReducer.with(clearChatDraft, (state, { payload: [workspaceId, agentId] }) =>
   updateWorkspaceState(state, workspaceId, (workspaceState) => {
+    if (!(agentId in workspaceState.chatDrafts)) return workspaceState;
     const chatDrafts = { ...workspaceState.chatDrafts };
     delete chatDrafts[agentId];
     return { ...workspaceState, chatDrafts };

@@ -52,6 +52,7 @@ export interface PanelTab {
   filePath?: string;
   agentId?: string;
   terminalId?: string;
+  scriptId?: string;
   hookId?: string;
   diffPath?: string;
   browserUrl?: string;

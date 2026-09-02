@@ -895,36 +895,21 @@ describe('panel context menu routing', () => {
     expect(icon?.querySelector('path')?.getAttribute('d')).toContain('M8 2a1.5');
   });
 
-  it('portals the tabless-header menu to viewport coordinates without tab actions', async () => {
+  it('opens the shared panel actions menu from the tabless header without tab actions', async () => {
     const onMoveRight = vi.fn();
     const { container } = renderTabBar({ showTabStrip: false, onMoveRight });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
 
-    const menu = document.querySelector<HTMLElement>('[data-panel-context-menu="panel"]')!;
-    const labels = Array.from(menu.querySelectorAll('button'), (button) =>
-      button.textContent?.replace(/\s+/g, ' ').trim(),
-    );
-    expect(container.contains(menu)).toBe(false);
-    expect(menu.style.left).toBe('124px');
-    expect(menu.style.top).toBe('84px');
-    expect(labels).toContain('Close panel');
-    expect(labels).toContain('Close all others');
-    expect(labels).toContain('Move left');
-    expect(labels).toContain('Move right');
-    const moveLeft = Array.from(menu.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Move left'),
-    );
-    const moveRight = Array.from(menu.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Move right'),
-    );
-    expect(moveLeft?.disabled).toBe(true);
-    expect(moveRight?.disabled).toBe(false);
-    expect(labels).not.toContain(`Close ${formatShortcut(SHORTCUTS.CLOSE_TAB.key)}`);
-    expect(labels).not.toContain('Close other tabs in panel');
-    expect(labels).not.toContain('Close tabs to the right');
-    await fireEvent.click(moveRight!);
+    const menu = screen.getByRole('menu');
+    const moveLeft = screen.getByRole('menuitem', { name: 'Move left' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move right' });
+    expect(moveLeft.getAttribute('aria-disabled')).toBe('true');
+    expect(moveRight.getAttribute('aria-disabled')).toBe('false');
+    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /Close tabs to the right/ })).toBeNull();
+    await fireEvent.click(moveRight);
     expect(onMoveRight).toHaveBeenCalledOnce();
   });
 
@@ -935,16 +920,11 @@ describe('panel context menu routing', () => {
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
 
-    const menu = document.querySelector<HTMLElement>('[data-panel-context-menu="panel"]')!;
-    const moveLeft = Array.from(menu.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Move left'),
-    );
-    const moveRight = Array.from(menu.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Move right'),
-    );
-    expect(moveLeft?.disabled).toBe(false);
-    expect(moveRight?.disabled).toBe(true);
-    await fireEvent.click(moveLeft!);
+    const moveLeft = screen.getByRole('menuitem', { name: 'Move left' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move right' });
+    expect(moveLeft.getAttribute('aria-disabled')).toBe('false');
+    expect(moveRight.getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(moveLeft);
     expect(onMoveLeft).toHaveBeenCalledOnce();
   });
 

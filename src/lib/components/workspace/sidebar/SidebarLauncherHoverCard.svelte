@@ -14,6 +14,7 @@
     kind: 'agent' | 'note';
     status?: string;
     statusTone?: 'success' | 'warning' | 'danger' | 'muted';
+    delayDuration?: number;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     gridPosition?: 'start' | 'center' | 'end';
@@ -27,6 +28,7 @@
     kind,
     status,
     statusTone = 'success',
+    delayDuration = 400,
     open = false,
     onOpenChange,
     gridPosition = 'center',
@@ -81,7 +83,7 @@
   side="top"
   align="start"
   sideOffset={8}
-  delayDuration={300}
+  {delayDuration}
   maxWidth="20rem"
   showArrow={false}
   class={gridPosition === 'start'

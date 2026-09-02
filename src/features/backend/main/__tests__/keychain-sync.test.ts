@@ -56,6 +56,7 @@ function rec(overrides: Partial<KeychainSyncRecord> = {}): KeychainSyncRecord {
     port: 8443,
     fingerprint: 'AA:BB:CC',
     hostname: 'studio.local',
+    tcAddress: null,
     detectHosts: true,
     token: 'secret-token',
     updatedAt: NOW - 10_000,
@@ -195,7 +196,22 @@ describe('payload schema', () => {
     const parsed = parsePayload(payload);
     expect(parsed).toMatchObject({
       kind: 'record',
-      record: { accent: 'blue', hosts: ['h'], hostname: null, detectHosts: true },
+      record: { accent: 'blue', hosts: ['h'], hostname: null, tcAddress: null, detectHosts: true },
+    });
+  });
+
+  it('round-trips a tc address and defaults blank/malformed ones to null', () => {
+    const record = rec({ tcAddress: 'tc7f2a91.tailcat.net' });
+    expect(parsePayload(serializeRecord(record))).toEqual({ kind: 'record', record });
+    // Payloads from apps that predate the field (or wrote junk) parse as
+    // null — additive compatibility, never `invalid`.
+    expect(parsePayload(JSON.stringify({ ...rec(), v: 1, tcAddress: '  ' }))).toMatchObject({
+      kind: 'record',
+      record: { tcAddress: null },
+    });
+    expect(parsePayload(JSON.stringify({ ...rec(), v: 1, tcAddress: 42 }))).toMatchObject({
+      kind: 'record',
+      record: { tcAddress: null },
     });
   });
 
@@ -391,6 +407,52 @@ describe('reconcile', () => {
     expect(applied).toEqual([]);
     expect(upserts).toEqual([]);
     expect(deletes).toEqual([]);
+    expect(result.pulled).toEqual([]);
+    expect(result.pushed).toEqual([]);
+  });
+
+  it('equal clocks but only local carries a tc address: pushed re-stamped strictly newer', async () => {
+    // Additive-field upgrade: the address was captured by an app version
+    // that did not sync tcAddress, so the local record and its keychain
+    // copy share the same clock. The address-bearing side must win or the
+    // address never reaches the user's other devices.
+    const remoteRecord = rec({ updatedAt: NOW - 1000 });
+    const localRecord = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({
+      kind: 'record',
+      record: { ...localRecord, updatedAt: NOW },
+    });
+  });
+
+  it('equal clocks but only remote carries a tc address: pulled verbatim', async () => {
+    const remoteRecord = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const localRecord = rec({ updatedAt: NOW - 1000 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(upserts).toEqual([]);
+    expect(result.pulled).toEqual([ACCOUNT]);
+    expect(applied).toEqual([{ account: ACCOUNT, record: remoteRecord }]);
+  });
+
+  it('equal clocks with matching tc addresses stay in sync (no writes)', async () => {
+    const record = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const { client, upserts } = fakeClient([item(record)]);
+    const { adapter, applied } = fakeAdapter([record]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(upserts).toEqual([]);
     expect(result.pulled).toEqual([]);
     expect(result.pushed).toEqual([]);
   });

@@ -11,6 +11,7 @@
   import {
     faXmark,
     faFile,
+    faFolder,
     faImage,
     faFileCode,
     faFileAlt,
@@ -97,6 +98,9 @@
 
   // Determine icon based on file type
   const icon = $derived.by(() => {
+    // Staged folder pills (path-only references) pass the literal 'folder'
+    // marker instead of a mime type.
+    if (type === 'folder') return faFolder;
     const mimeType = type || imageMimeType || '';
     // 'image' (no subtype) is the neutral marker for an attachment-reference
     // image restored without a persisted mime (monorepo#3338).
