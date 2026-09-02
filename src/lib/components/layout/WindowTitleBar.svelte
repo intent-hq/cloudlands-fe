@@ -343,7 +343,7 @@
     <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
       {#if devTitleText}
         <span
-          class="max-w-[min(40vw,32rem)] truncate px-2 text-xs text-muted-foreground"
+          class="max-w-[min(45vw,40rem)] truncate px-2 text-xs text-muted-foreground"
           title={devTitleText}
           data-dev-instance-title
         >
