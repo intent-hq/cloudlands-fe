@@ -507,7 +507,11 @@
                   <button
                     type="button"
                     role="option"
-                    aria-selected={mode === 'file' ? isSelected : isSelected || isFocused}
+                    aria-selected={mode === 'file'
+                      ? isSelected
+                      : selectedFolderEntry
+                        ? isSelected
+                        : isFocused}
                     aria-disabled={!entry.isDirectory && mode !== 'file'}
                     data-picker-index={index}
                     class={cn(

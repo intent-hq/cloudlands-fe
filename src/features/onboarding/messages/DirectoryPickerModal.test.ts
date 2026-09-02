@@ -436,6 +436,22 @@ describe('DirectoryPickerModal directory mode (default)', () => {
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
   });
+
+  it('exposes at most one aria-selected row when a highlight and focus diverge', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+    await fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await flush();
+
+    const selectedRows = screen
+      .getAllByRole('option')
+      .filter((row) => row.getAttribute('aria-selected') === 'true');
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0].textContent).toContain('code');
+  });
 });
 
 describe('DirectoryPickerModal file mode', () => {
