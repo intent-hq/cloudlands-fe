@@ -45,6 +45,7 @@ import {
   toggleExpandPanel,
   updateTabTitle,
   updateTabBrowserUrl,
+  updateTabViewport,
   updateFileTabPath,
   setTabOwnerAgent,
   clearPanelLayout,
@@ -3292,6 +3293,49 @@ describe('panelLayoutReducer', () => {
       const hiddenTab = getItems(result.byWorkspaceId[WS].hiddenTabs)[0];
       expect(hiddenTab.ownerAgentId).toBe('agent-1');
       expect(hiddenTab.emulatedSize).toEqual({ width: 390, height: 844 });
+    });
+  });
+
+  describe('updateTabViewport', () => {
+    it('persists a preset on a visible browser tab', () => {
+      const state = stateWithPanel('p1', [{ id: 'b1', type: 'browser', title: 'Browser' }]);
+      const viewport = {
+        mode: 'preset' as const,
+        presetId: 'iphone-se',
+        width: 375,
+        height: 667,
+      };
+
+      const result = panelLayoutReducer(state, updateTabViewport(WS, 'b1', viewport));
+
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].viewport).toEqual(viewport);
+    });
+
+    it('persists a custom viewport on a hidden browser tab', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'Browser', ownerAgentId: 'agent-1' },
+        { id: 'n1', type: 'note', title: 'Note' },
+      ]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'b1', 'p1', 1000));
+
+      const result = panelLayoutReducer(
+        hidden,
+        updateTabViewport(WS, 'b1', { mode: 'custom', width: 900, height: 700 }),
+      );
+
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)[0].viewport).toEqual({
+        mode: 'custom',
+        width: 900,
+        height: 700,
+      });
+    });
+
+    it('ignores non-browser and unknown tabs', () => {
+      const state = stateWithPanel('p1', [{ id: 'n1', type: 'note', title: 'Note' }]);
+      expect(panelLayoutReducer(state, updateTabViewport(WS, 'n1', { mode: 'fit' }))).toBe(state);
+      expect(panelLayoutReducer(state, updateTabViewport(WS, 'missing', { mode: 'fit' }))).toBe(
+        state,
+      );
     });
   });
 

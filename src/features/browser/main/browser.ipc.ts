@@ -159,6 +159,25 @@ const ReportTabBoundsSchema = z.object({
   height: z.number().positive().optional(),
 });
 
+const ViewportSizeSchema = z.number().int().positive();
+const SetTabViewportSchema = z.object({
+  tabId: z.string().min(1),
+  viewport: z.discriminatedUnion('mode', [
+    z.object({ mode: z.literal('fit') }).strict(),
+    z
+      .object({
+        mode: z.literal('preset'),
+        presetId: z.string().min(1),
+        width: ViewportSizeSchema,
+        height: ViewportSizeSchema,
+      })
+      .strict(),
+    z
+      .object({ mode: z.literal('custom'), width: ViewportSizeSchema, height: ViewportSizeSchema })
+      .strict(),
+  ]),
+});
+
 const ClearAgentTabsSchema = z.object({
   agentId: z.string(),
 });
@@ -478,6 +497,18 @@ export function registerBrowserHandlers(): void {
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
+    ),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.SET_TAB_VIEWPORT,
+    createSafeValidatedHandler(
+      SetTabViewportSchema,
+      async (_event, validated) => {
+        embeddedBrowserCdp.setTabViewport(validated.tabId, validated.viewport);
+        return { success: true };
+      },
+      IPC_CHANNELS.BROWSER.SET_TAB_VIEWPORT,
     ),
   );
 

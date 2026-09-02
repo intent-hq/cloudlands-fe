@@ -1340,7 +1340,7 @@ describe('browserIpcSaga', () => {
   // Persisted emulated size (monorepo#2857): the size rides with the owner in
   // both directions — list replies carry it to main for rehydration, and
   // owner-changed events (claim / resizeTab) persist it on the layout tab.
-  it('includes the persisted emulatedSize of owned tabs in list replies (valid sizes only)', async () => {
+  it('includes persisted sizing state of owned tabs in list replies (valid sizes only)', async () => {
     const task = start();
     state = {
       panelLayout: {
@@ -1356,6 +1356,7 @@ describe('browserIpcSaga', () => {
                     title: 'A',
                     ownerAgentId: 'agent-1',
                     emulatedSize: { width: 390, height: 844 },
+                    viewport: { mode: 'custom', width: 390, height: 844 },
                   },
                   {
                     id: 'tab-bad-size',
@@ -1386,6 +1387,7 @@ describe('browserIpcSaga', () => {
           closable: true,
           ownerAgentId: 'agent-1',
           emulatedSize: { width: 390, height: 844 },
+          viewport: { mode: 'custom', width: 390, height: 844 },
         },
         {
           tabId: 'tab-bad-size',
