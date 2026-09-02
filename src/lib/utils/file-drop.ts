@@ -11,12 +11,17 @@
  * panel-system Panel for the header seam of that target.
  */
 import { isFileDragEvent } from './drop-guard';
+import { splitDroppedItems, type DropSplit } from './drop-split';
 
 export interface FileDropTargetOptions {
   /** Called when the file-drag-over-target state flips. */
   onDragChange: (dragging: boolean) => void;
-  /** Called with the dropped files (never empty). */
-  onDrop: (files: File[]) => void;
+  /**
+   * Called with the dropped payload split into files and folders (never both
+   * empty). The split is captured synchronously inside the drop event —
+   * folder detection is impossible later — so it travels with the files.
+   */
+  onDrop: (drop: DropSplit) => void;
   /**
    * When provided and returning false, all drag/drop events are ignored —
    * the target is inactive because a drop would have no consumer (e.g. the
@@ -76,9 +81,11 @@ export function createFileDropTarget(options: FileDropTargetOptions): FileDropTa
       if (!isActive(event)) return;
       event.preventDefault();
       reset();
-      const files = event.dataTransfer?.files;
-      if (files && files.length > 0) {
-        options.onDrop(Array.from(files));
+      // Folder detection must happen HERE, synchronously in the drop event —
+      // webkitGetAsEntry() returns null once the event loop turns.
+      const drop = splitDroppedItems(event.dataTransfer);
+      if (drop.files.length > 0 || drop.folderFiles.length > 0) {
+        options.onDrop(drop);
       }
     },
     reset,

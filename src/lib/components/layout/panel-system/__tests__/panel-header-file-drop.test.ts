@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import type { DropSplit } from '$lib/utils/drop-split';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -180,7 +181,8 @@ describe('panel header file drop', () => {
     await fireEvent(header, drop);
     expect(drop.defaultPrevented).toBe(true);
     expect(droppedFiles).toHaveLength(1);
-    expect(droppedFiles[0].map((file) => file.name)).toEqual(['image.png']);
+    expect(droppedFiles[0].files.map((file) => file.name)).toEqual(['image.png']);
+    expect(droppedFiles[0].folderFiles).toEqual([]);
     expect(dragChanges).toEqual([true, false]);
   });
 
@@ -220,11 +222,11 @@ describe('panel header file drop', () => {
     // before the old tab's cleanup runs: handler goes A→B without passing
     // through null (the ordering the identity-checked unregister tolerates).
     const replacementDragChanges: boolean[] = [];
-    const replacementDrops: File[][] = [];
+    const replacementDrops: DropSplit[] = [];
     flushSync(() => {
       contextRef.current!.register({
         onDragChange: (dragging) => replacementDragChanges.push(dragging),
-        onDrop: (files) => replacementDrops.push(files),
+        onDrop: (drop) => replacementDrops.push(drop),
       });
     });
 
@@ -257,13 +259,13 @@ describe('panel header file drop', () => {
   describe('handler registration identity (monorepo#3026)', () => {
     function makeHandler() {
       const changes: boolean[] = [];
-      const drops: File[][] = [];
+      const drops: DropSplit[] = [];
       return {
         changes,
         drops,
         handler: {
           onDragChange: (dragging: boolean) => changes.push(dragging),
-          onDrop: (files: File[]) => drops.push(files),
+          onDrop: (drop: DropSplit) => drops.push(drop),
         },
       };
     }

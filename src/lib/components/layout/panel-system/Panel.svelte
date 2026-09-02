@@ -147,7 +147,7 @@
   const { handler: fileDropHandler } = createPanelFileDropContext();
   const headerFileDrop = createFileDropTarget({
     onDragChange: (dragging) => fileDropHandler.current?.onDragChange(dragging),
-    onDrop: (files) => fileDropHandler.current?.onDrop(files),
+    onDrop: (drop) => fileDropHandler.current?.onDrop(drop),
   });
 
   // Clear stale drag state on any handler identity change: unregister mid-drag

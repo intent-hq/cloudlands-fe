@@ -10,12 +10,16 @@
  */
 
 import { getContext, setContext } from 'svelte';
+import type { DropSplit } from '$lib/utils/drop-split';
 
 const PANEL_FILE_DROP_CONTEXT_KEY = Symbol('panel-file-drop-context');
 
 export interface PanelFileDropHandler {
-  /** Called with the files dropped on the panel header (never empty). */
-  onDrop: (files: File[]) => void;
+  /**
+   * Called with the payload dropped on the panel header, split into files
+   * and folders at drop time (never both empty).
+   */
+  onDrop: (drop: DropSplit) => void;
   /** Called when the file-drag-over-header state flips (drives the overlay). */
   onDragChange: (dragging: boolean) => void;
 }
