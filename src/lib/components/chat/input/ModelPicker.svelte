@@ -1838,7 +1838,7 @@
     contentClass={cn(
       'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
       '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
-      showReasoning ? 'w-85 min-h-90 max-h-90 flex flex-col' : 'w-[332px]',
+      showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
     fillContentHeight={showReasoning}

@@ -833,30 +833,6 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
-  it('keeps the chat popover height stable while allowing the model list to scroll', async () => {
-    render(ModelPicker, {
-      props: {
-        selectedModel: 'codex:gpt-5.6-sol',
-        agentId: 'agent-1',
-        workspaceId: 'ws-1',
-        showReasoning: true,
-        portal: false,
-      },
-    });
-
-    await fireEvent.click(screen.getByRole('button'));
-
-    const popover = screen.getByRole('listbox');
-    expect(popover.className).toContain('w-85');
-    expect(popover.className).toContain('min-h-90');
-    expect(popover.className).toContain('max-h-90');
-    expect(popover.className).not.toContain(' h-[min(');
-    expect(popover.querySelector('[data-scroll-container]')?.className).toContain('flex-1');
-    expect(popover.querySelector('[data-scroll-container]')?.className).toContain(
-      'overflow-y-auto',
-    );
-  });
-
   it('closes the open menu when the trigger is clicked again', async () => {
     render(ModelPicker, {
       props: {

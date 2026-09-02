@@ -125,6 +125,7 @@
   const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
   let selectOpen = $state(false);
   let pickerRoot = $state<HTMLDivElement | null>(null);
+  const contentId = $props.id();
 
   $effect(() => {
     selectedOptionValue = persistedOptionValue;
@@ -195,6 +196,7 @@
         <Select.Trigger
           class="h-7 gap-1 px-2 text-xs"
           aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: selectedLabel })}
+          aria-controls={selectOpen ? contentId : undefined}
           data-testid="effort-picker-trigger"
         >
           <span class="min-w-0 flex-1 truncate text-left">
@@ -214,7 +216,16 @@
             {/if}
           </span>
         </Select.Trigger>
-        <Select.Content portal={!embedded} dropUp={!embedded}>
+        <!-- Dropdown's portal is at z-index 100; its nested popup must sit above it. -->
+        <Select.Content
+          wrapperId={contentId}
+          portal
+          dropUp={!embedded}
+          class={cn(
+            'max-h-[min(15rem,var(--bits-select-content-available-height))]!',
+            embedded && 'z-[101]!',
+          )}
+        >
           {#each options as option (option.value)}
             <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>
           {/each}
