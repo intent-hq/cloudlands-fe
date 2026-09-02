@@ -1366,7 +1366,7 @@
     </div>
   {:else if readyTasksError}
     <div
-      class="w-full px-4x pb-3 text-xs text-error-foreground mt-2"
+      class="w-full px-4x pb-3 text-xs text-danger mt-2"
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       Error: {readyTasksError}

@@ -333,7 +333,7 @@
             <span
               role="button"
               tabindex={-1}
-              class="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-destructive {highlighted
+              class="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-danger {highlighted
                 ? 'opacity-100'
                 : 'opacity-0'}"
               onclick={(e) => handleDeleteThread(e, option.value, option.label)}

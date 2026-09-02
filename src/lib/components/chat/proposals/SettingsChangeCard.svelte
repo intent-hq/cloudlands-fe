@@ -326,7 +326,7 @@
       <div
         bind:this={statusElement}
         class={isFailed
-          ? 'type-caption border-t border-border px-3 py-2 text-error-foreground focus:outline-none'
+          ? 'type-caption border-t border-border px-3 py-2 text-danger focus:outline-none'
           : 'type-caption border-t border-border px-3 py-2 text-muted-foreground focus:outline-none'}
         role="status"
         aria-live={isFailed ? 'assertive' : 'polite'}

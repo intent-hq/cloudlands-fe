@@ -233,7 +233,7 @@
 
   {#if errorMessage}
     <div
-      class="bg-destructive/10 border border-destructive/20 text-error-foreground px-4 py-2 rounded-md text-sm shrink-0"
+      class="bg-danger-background/10 border border-danger/20 text-danger px-4 py-2 rounded-md text-sm shrink-0"
     >
       {errorMessage}
     </div>
@@ -242,7 +242,7 @@
   <!-- Character limit warning/error callout -->
   {#if isOverLimit}
     <div
-      class="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-error-foreground shrink-0"
+      class="flex items-center gap-2 p-3 bg-danger-background/10 border border-danger/30 rounded-md text-danger shrink-0"
     >
       <Fa icon={faCircleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">
@@ -282,7 +282,7 @@
         oninput={handleContentChange}
         noFocusStyle
         placeholder={m.settings_agentRules_placeholder()}
-        class="text-sm leading-relaxed grow {isOverLimit ? 'border-destructive' : ''}"
+        class="text-sm leading-relaxed grow {isOverLimit ? 'border-danger' : ''}"
       />
       <!-- Saved indicator -->
       <div
@@ -299,7 +299,7 @@
     {#if isApproachingLimit || isOverLimit}
       <div
         class="flex items-center justify-end shrink-0 {isOverLimit
-          ? 'text-destructive'
+          ? 'text-danger'
           : 'text-warning'}"
       >
         <span>

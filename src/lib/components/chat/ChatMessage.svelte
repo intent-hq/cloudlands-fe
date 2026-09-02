@@ -1678,7 +1678,7 @@
               <!-- Send failure indicator for optimistic user messages -->
               {#if message?.error}
                 <div
-                  class="type-caption mt-2 flex items-center gap-2 font-medium text-destructive"
+                  class="type-caption mt-2 flex items-center gap-2 font-medium text-danger"
                   title={message.error}
                 >
                   <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />

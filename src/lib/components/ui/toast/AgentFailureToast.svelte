@@ -45,7 +45,7 @@
      the destructive border tint is passed as a wrapper class by the service. -->
 <div class="relative flex w-full min-w-0 items-start gap-3">
   <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5 text-destructive">
+  <div class="flex-shrink-0 mt-0.5 text-danger">
     <Fa icon={faExclamationCircle} class="w-5 h-5" />
   </div>
 
@@ -64,7 +64,7 @@
     {/if}
 
     {#if retryNote}
-      <p class="text-xs text-destructive mt-1.5 break-words">{retryNote}</p>
+      <p class="text-xs text-danger mt-1.5 break-words">{retryNote}</p>
     {/if}
 
     <!-- Action buttons -->

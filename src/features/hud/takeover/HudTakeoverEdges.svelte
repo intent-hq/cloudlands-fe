@@ -146,12 +146,12 @@
     stroke: hsl(var(--muted-foreground) / 0.35);
   }
   .ov-edge-conflict {
-    stroke: hsl(var(--error-foreground) / 0.55);
+    stroke: hsl(var(--danger) / 0.55);
     stroke-dasharray: 4 5;
   }
   /* Live conflict (neither endpoint complete or cancelled): full-strength red. */
   .ov-edge-conflict-live {
-    stroke: hsl(var(--error-foreground) / 0.9);
+    stroke: hsl(var(--danger) / 0.9);
   }
   /* Ready-to-start pathway: stroke comes inline (success green). The wide
      stroke is the static differentiator from a plain slot-1 (same green)

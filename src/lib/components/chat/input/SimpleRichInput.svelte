@@ -1653,7 +1653,7 @@
             onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micStop_label()}
             aria-pressed="true"
-            class="text-error-foreground animate-pulse"
+            class="text-danger animate-pulse"
             data-testid="composer-mic-button"
           >
             <Fa icon={faMicrophone} size="sm" />

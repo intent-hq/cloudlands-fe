@@ -180,7 +180,7 @@
         >
           <span>{ref.name || ref.type || m.chat_shared_context_fallback()}</span>
           <button
-            class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-error-foreground"
+            class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-danger"
             onclick={() => {
               const newRefs = contextReferences.filter((r) => r !== ref);
               onContextUpdate?.({ references: newRefs });

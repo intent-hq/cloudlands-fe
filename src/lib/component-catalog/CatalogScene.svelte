@@ -191,7 +191,7 @@
   </header>
 
   {#if status === 'error'}
-    <div class="rounded-lg border border-destructive bg-card p-4" role="alert">
+    <div class="rounded-lg border border-danger bg-card p-4" role="alert">
       <p class="font-medium">{error}</p>
       {#if availableStates.length > 0}
         <p class="mt-1 text-sm text-muted-foreground">
@@ -201,7 +201,7 @@
     </div>
   {:else}
     {#if stabilityStatus === 'error'}
-      <div class="rounded-lg border border-destructive bg-card p-4" role="alert">
+      <div class="rounded-lg border border-danger bg-card p-4" role="alert">
         <p class="font-medium">{stabilityError}</p>
       </div>
     {/if}

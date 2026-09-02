@@ -586,7 +586,7 @@ describe('DirectoryPickerModal keyboard focus indicators', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
     const input = screen.getByRole('textbox', { name: 'Path' });
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(input.className).toContain('border-destructive/60');
+    expect(input.className).toContain('border-danger/60');
     expect(input.className).not.toContain('focus-visible:border-ring');
   });
 
@@ -618,7 +618,7 @@ describe('DirectoryPickerModal keyboard focus indicators', () => {
     await flush();
     const input = screen.getByRole('textbox', { name: 'New folder name' });
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(input.className).toContain('border-destructive/60');
+    expect(input.className).toContain('border-danger/60');
     expect(input.className).not.toContain('focus-visible:border-ring');
   });
 });

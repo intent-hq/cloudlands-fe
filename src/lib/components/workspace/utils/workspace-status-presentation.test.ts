@@ -10,7 +10,7 @@ const expected: Array<
   [WorkspaceStatusPresentationState, 'dot' | 'icon', string | null, string, string]
 > = [
   ['failed', 'icon', 'triangle-exclamation', 'text-foreground', 'Failed'],
-  ['blocked', 'icon', 'xmark', 'text-destructive', 'Blocked'],
+  ['blocked', 'icon', 'xmark', 'text-danger', 'Blocked'],
   ['needs_attention', 'icon', 'circle-question', 'text-warning', 'Needs attention'],
   ['in_progress', 'dot', null, 'workspace-status-color-active', 'In progress'],
   ['waiting', 'icon', 'clock', 'text-muted-foreground', 'Waiting'],

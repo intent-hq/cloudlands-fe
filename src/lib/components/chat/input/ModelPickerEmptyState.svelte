@@ -76,7 +76,7 @@
     {/each}
   {:else if blockingLoadError}
     <div class="flex flex-col items-center gap-2.5 py-4 px-3">
-      <div class="flex items-center gap-1.5 text-error-foreground">
+      <div class="flex items-center gap-1.5 text-danger">
         <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
         <span class="type-body font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
       </div>

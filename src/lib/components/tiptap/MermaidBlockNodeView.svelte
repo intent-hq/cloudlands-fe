@@ -4,11 +4,7 @@
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import Fa from 'svelte-fa';
-  import {
-  faPencil,
-  faExpand,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPencil, faExpand, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
@@ -110,7 +106,9 @@
   let hasChanges = $derived(editCode !== originalCode);
 
   // The code to render in the diagram
-  let displayCode = $derived(showCode ? (isBase64(savedCode) ? encodeBase64(editCode) : editCode) : savedCode);
+  let displayCode = $derived(
+    showCode ? (isBase64(savedCode) ? encodeBase64(editCode) : editCode) : savedCode,
+  );
 
   // Syntax highlighted HTML
   let highlightedCode = $derived.by(() => {
@@ -220,7 +218,11 @@
 
     <!-- Code editor -->
     {#if showCode}
-      <div class="mermaid-code-section" contenteditable="false" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div
+        class="mermaid-code-section"
+        contenteditable="false"
+        transition:slide={{ axis: 'y', duration: 200 }}
+      >
         <div class="code-editor-wrapper">
           <pre class="code-highlight hljs" aria-hidden="true">{@html highlightedCode + '\n'}</pre>
           <textarea
@@ -231,15 +233,20 @@
             onkeydown={handleKeyDown}
             spellcheck="false"
             autocorrect="off"
-            autocapitalize="off"
-          ></textarea>
+            autocapitalize="off"></textarea>
         </div>
         <div class="edit-actions">
           {#if hasChanges}
-            <button type="button" class="action-btn" onclick={cancelChanges}>{m.tiptap_mermaidBlock_cancel_label()}</button>
-            <button type="button" class="action-btn primary" onclick={saveChanges}>{m.tiptap_mermaidBlock_save_label()}</button>
+            <button type="button" class="action-btn" onclick={cancelChanges}
+              >{m.tiptap_mermaidBlock_cancel_label()}</button
+            >
+            <button type="button" class="action-btn primary" onclick={saveChanges}
+              >{m.tiptap_mermaidBlock_save_label()}</button
+            >
           {:else}
-            <button type="button" class="action-btn" onclick={closeCodeView}>{m.tiptap_mermaidBlock_close_label()}</button>
+            <button type="button" class="action-btn" onclick={closeCodeView}
+              >{m.tiptap_mermaidBlock_close_label()}</button
+            >
           {/if}
         </div>
       </div>
@@ -248,10 +255,20 @@
     <!-- Action buttons (edit + expand) -->
     {#if !showCode}
       <div class="action-btns">
-        <button type="button" class="hover-btn" onclick={openCodeView} title={m.tiptap_mermaidBlock_editCode_tooltip()}>
+        <button
+          type="button"
+          class="hover-btn"
+          onclick={openCodeView}
+          title={m.tiptap_mermaidBlock_editCode_tooltip()}
+        >
           <Fa icon={faPencil} size="xs" />
         </button>
-        <button type="button" class="hover-btn" onclick={openFullscreen} title={m.tiptap_mermaidBlock_fullscreen_tooltip()}>
+        <button
+          type="button"
+          class="hover-btn"
+          onclick={openFullscreen}
+          title={m.tiptap_mermaidBlock_fullscreen_tooltip()}
+        >
           <Fa icon={faExpand} size="xs" />
         </button>
       </div>
@@ -484,12 +501,14 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .mermaid-error {
     font-size: 0.75rem;
-    color: hsl(var(--destructive));
+    color: hsl(var(--danger));
   }
 
   /* Syntax highlighting for dark mode */
@@ -497,26 +516,58 @@
     color: #d4d4d4;
   }
 
-  .dark-mode :global(.hljs-keyword) { color: #569cd6; }
-  .dark-mode :global(.hljs-string) { color: #ce9178; }
-  .dark-mode :global(.hljs-number) { color: #b5cea8; }
-  .dark-mode :global(.hljs-comment) { color: #6a9955; }
-  .dark-mode :global(.hljs-section) { color: #569cd6; }
-  .dark-mode :global(.hljs-bullet) { color: #d7ba7d; }
-  .dark-mode :global(.hljs-emphasis) { font-style: italic; }
-  .dark-mode :global(.hljs-strong) { font-weight: bold; }
+  .dark-mode :global(.hljs-keyword) {
+    color: #569cd6;
+  }
+  .dark-mode :global(.hljs-string) {
+    color: #ce9178;
+  }
+  .dark-mode :global(.hljs-number) {
+    color: #b5cea8;
+  }
+  .dark-mode :global(.hljs-comment) {
+    color: #6a9955;
+  }
+  .dark-mode :global(.hljs-section) {
+    color: #569cd6;
+  }
+  .dark-mode :global(.hljs-bullet) {
+    color: #d7ba7d;
+  }
+  .dark-mode :global(.hljs-emphasis) {
+    font-style: italic;
+  }
+  .dark-mode :global(.hljs-strong) {
+    font-weight: bold;
+  }
 
   /* Syntax highlighting for light mode */
   .mermaid-block:not(.dark-mode) .code-highlight {
     color: #1f2937;
   }
 
-  .mermaid-block:not(.dark-mode) :global(.hljs-keyword) { color: #0000ff; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-string) { color: #a31515; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-number) { color: #098658; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-comment) { color: #008000; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-section) { color: #0000ff; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-bullet) { color: #795e26; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-emphasis) { font-style: italic; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-strong) { font-weight: bold; }
+  .mermaid-block:not(.dark-mode) :global(.hljs-keyword) {
+    color: #0000ff;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-string) {
+    color: #a31515;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-number) {
+    color: #098658;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-comment) {
+    color: #008000;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-section) {
+    color: #0000ff;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-bullet) {
+    color: #795e26;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-emphasis) {
+    font-style: italic;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-strong) {
+    font-weight: bold;
+  }
 </style>

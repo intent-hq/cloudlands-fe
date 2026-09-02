@@ -160,8 +160,7 @@ const VSCODE_TO_CSS_MAP: [string, string][] = [
   ['list.activeSelectionForeground', '--secondary-foreground'],
   // --muted is derived separately in buildCSSVariables to ensure
   // a perceptible lightness difference from --background.
-  ['errorForeground', '--destructive'],
-  ['button.secondaryForeground', '--destructive-foreground'],
+  ['errorForeground', '--danger'],
 ];
 
 /**
@@ -622,8 +621,8 @@ function buildCSSVariables(
         mutedForeground: '#b8b5c2',
         accent: '#182c25',
         accentForeground: '#7de3bd',
-        destructive: '#361010',
-        destructiveForeground: '#f38b8b',
+        danger: '#f38b8b',
+        dangerBackground: '#361010',
         border: '#4d4a52',
         input: '#121217',
         ring: '#6eddb4',
@@ -649,8 +648,8 @@ function buildCSSVariables(
         mutedForeground: '#474747',
         accent: '#e7f3ee',
         accentForeground: '#00663f',
-        destructive: '#fde7e7',
-        destructiveForeground: '#930b0b',
+        danger: '#930b0b',
+        dangerBackground: '#fde7e7',
         border: '#d9d9d9',
         input: '#e6e6e6',
         ring: '#006ac2',
@@ -680,8 +679,8 @@ function buildCSSVariables(
   result['--muted-foreground'] ??= value('mutedForeground');
   result['--accent'] ??= value('accent');
   result['--accent-foreground'] ??= value('accentForeground');
-  result['--destructive'] ??= value('destructive');
-  result['--destructive-foreground'] ??= value('destructiveForeground');
+  result['--danger'] ??= value('danger');
+  result['--danger-background'] ??= value('dangerBackground');
   result['--border'] ??= value('border');
   result['--input'] ??= value('input');
   result['--ring'] ??= value('ring');
@@ -709,7 +708,7 @@ function buildCSSVariables(
     ['--secondary-foreground', '--secondary'],
     ['--accent-foreground', '--accent'],
     ['--muted-foreground', '--muted'],
-    ['--destructive-foreground', '--destructive'],
+    ['--danger', '--danger-background'],
     ['--info-foreground', '--info'],
     ['--success-foreground', '--success'],
     ['--warning-foreground', '--warning'],
@@ -718,6 +717,9 @@ function buildCSSVariables(
   ] as const;
   for (const [foreground, background] of pairs) {
     result[foreground] = ensureContrast(result[foreground], result[background]);
+  }
+  for (const surface of ['--background', '--card', '--popover', '--muted', '--sidebar'] as const) {
+    result['--danger'] = ensureContrast(result['--danger'], result[surface]);
   }
   return result;
 }

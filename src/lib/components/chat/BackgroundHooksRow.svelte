@@ -349,7 +349,7 @@
               </div>
             </dl>
             {#if hook.lastError}<div
-                class="break-words border-t border-border px-3 py-2 text-error-foreground"
+                class="break-words border-t border-border px-3 py-2 text-danger"
                 data-testid="background-hook-last-error"
               >
                 {hook.lastError}

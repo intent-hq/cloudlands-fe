@@ -59,7 +59,7 @@ export function agentAttentionToastId(agentId: string): string {
  * so the single wrapper border carries the kind-flavored tint.
  */
 function wrapperClass(kind: AgentAttentionRequest['kind']): string {
-  return kind === 'blocker' ? '!border-destructive/50' : '!border-primary/50';
+  return kind === 'blocker' ? '!border-danger/50' : '!border-primary/50';
 }
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light.

@@ -140,7 +140,7 @@ describe('agent-attention-toast-service', () => {
     const call = lastCustomCall();
     expect(call.componentProps.title).toBe('Verifier reports a blocker');
     expect(call.componentProps.kind).toBe('blocker');
-    expect(call.class).toBe('!border-destructive/50');
+    expect(call.class).toBe('!border-danger/50');
   });
 
   describe('micro key-slot badge', () => {

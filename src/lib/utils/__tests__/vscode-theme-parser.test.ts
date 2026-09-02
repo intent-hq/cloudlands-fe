@@ -252,9 +252,27 @@ describe('parseVSCodeTheme', () => {
     expect(result.cssVariables['--ring']).toBeDefined();
   });
 
-  it('maps errorForeground to --destructive', () => {
+  it('maps errorForeground to the danger foreground role', () => {
     const result = parseVSCodeTheme(MINIMAL_DARK_THEME);
-    expect(result.cssVariables['--destructive']).toBeDefined();
+    expect(result.cssVariables['--danger']).toBe(
+      hexToHSL(MINIMAL_DARK_THEME.colors.errorForeground),
+    );
+    expect(result.cssVariables['--danger-background']).toBeDefined();
+    expect(result.cssVariables).not.toHaveProperty('--destructive');
+    expect(result.cssVariables).not.toHaveProperty('--destructive-foreground');
+    expect(result.cssVariables).not.toHaveProperty('--error-foreground');
+  });
+
+  it('does not use the secondary button foreground as the danger background', () => {
+    const result = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#ffffff',
+        errorForeground: '#930b0b',
+        'button.secondaryForeground': '#00ff00',
+      },
+    });
+    expect(result.cssVariables['--danger-background']).toBe(hexToHSL('#fde7e7'));
   });
 
   it('first match wins for duplicate CSS variable targets', () => {
@@ -277,6 +295,8 @@ describe('parseVSCodeTheme', () => {
     });
     expect(result.cssVariables['--background']).toBe(hexToHSL('#1e1e2e'));
     expect(result.cssVariables['--foreground']).toBeDefined();
+    expect(result.cssVariables['--danger']).toBeDefined();
+    expect(result.cssVariables['--danger-background']).toBeDefined();
     expect(result.cssVariables['--success']).toBeDefined();
     expect(result.cssVariables['--warning']).toBeDefined();
   });

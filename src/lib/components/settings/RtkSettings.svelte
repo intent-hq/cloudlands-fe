@@ -18,13 +18,12 @@
   import { appClient } from '$lib/client';
 
   import {
-  addTerminal,
-  openTerminalOverlay,
-} from '$store/renderer/slices/terminals/terminals-slice';
+    addTerminal,
+    openTerminalOverlay,
+  } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { toast } from '$lib/components/ui/toast';
-
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
@@ -83,12 +82,17 @@
       if (!result.success || !result.id) {
         // Daemon-first invariant: never fabricate a tab without a PTY behind
         // it — surface the failure instead.
-        console.error('Failed to create install terminal:', result.success ? 'missing id' : result.error);
+        console.error(
+          'Failed to create install terminal:',
+          result.success ? 'missing id' : result.error,
+        );
         toast.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const termId = result.id;
-      appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()));
+      appStore.dispatch(
+        addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()),
+      );
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
@@ -133,7 +137,7 @@
 
 {#if loaded}
   {#if settingsError}
-    <div class="text-xs text-destructive mb-2">
+    <div class="text-xs text-danger mb-2">
       {settingsError}
     </div>
   {/if}
@@ -178,8 +182,7 @@
         href="https://github.com/rtk-ai/rtk"
         target="_blank"
         rel="noopener noreferrer"
-        class="text-primary hover:underline"
-        ><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
+        class="text-primary hover:underline"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
       >.
     </p>
   {/if}

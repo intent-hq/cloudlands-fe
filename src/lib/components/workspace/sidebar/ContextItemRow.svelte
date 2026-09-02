@@ -208,10 +208,10 @@
       <Tooltip content="Remove from context" side="top" delayDuration={300}>
         <button
           type="button"
-          class="p-1 rounded hover:bg-destructive/10 transition-colors cursor-pointer"
+          class="p-1 rounded hover:bg-danger-background/10 transition-colors cursor-pointer"
           onclick={handleDeleteClick}
         >
-          <Fa icon={faTrash} size="xs" class="text-ghost hover:text-error-foreground" />
+          <Fa icon={faTrash} size="xs" class="text-ghost hover:text-danger" />
         </button>
       </Tooltip>
     {/if} -->

@@ -530,7 +530,7 @@
 
 <div class="space-y-4">
   {#if settingsError}
-    <div class="text-xs text-destructive mb-2">
+    <div class="text-xs text-danger mb-2">
       {settingsError}
     </div>
   {/if}

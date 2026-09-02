@@ -20,7 +20,12 @@ describe('design token audit', () => {
     const aliases = audit('aliases').split('\n');
     expect(new Set(approved).size).toBe(approved.length);
     expect(approved).toContain('--background');
+    expect(approved).toContain('--danger');
+    expect(approved).toContain('--danger-background');
     expect(approved).toContain('--warning-foreground');
+    expect(approved).not.toContain('--destructive');
+    expect(approved).not.toContain('--destructive-foreground');
+    expect(approved).not.toContain('--error-foreground');
     expect(aliases.every((line) => line.split('\t').length === 4)).toBe(true);
     expect(audit('approved')).toBe(audit('approved'));
     expect(audit('aliases')).toBe(audit('aliases'));
