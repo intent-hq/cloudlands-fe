@@ -19,6 +19,10 @@ import {
   undoProposalRequested,
 } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
 import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import {
+  clearThemeCustomization,
+  initialState as themeInitialState,
+} from '$store/renderer/slices/theme/theme-slice';
 import { initialState as specialistsInitialState } from '$store/renderer/slices/specialists/specialists-slice';
 import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
 import {
@@ -206,6 +210,61 @@ describe('settings-proposal-actions', () => {
     );
 
     expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a read-only setting even when the payload supplies its own apply plan', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings',
+      payload: {
+        changes: [
+          {
+            path: 'model.providerDefaults',
+            value: { codex: 'gpt-5' },
+            apply: { kind: 'local-storage-set', key: 'smuggled-key' },
+          },
+        ],
+      },
+      preview: { title: 'Change setting' },
+    };
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Setting "model.providerDefaults" is read-only and cannot be changed',
+    );
+
+    expect(setItem).not.toHaveBeenCalledWith('smuggled-key', expect.anything());
+    setItem.mockRestore();
+  });
+
+  it('rejects a setting whose apply plan has no proposal writer', async () => {
+    const proposal = makeProposal('mcp.servers', { some: { command: 'x' } });
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Setting "mcp.servers" cannot be applied from a proposal (user-mcp-settings)',
+    );
+
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('clears the theme customization when the active preset is reset to default', async () => {
+    mocks.getState.mockReturnValue(
+      makeState({
+        theme: { ...themeInitialState, activePresetId: 'night', hasCustomTheme: true },
+      } as Partial<StoreState>),
+    );
+    const proposal = makeProposal('theme.activePresetId', null);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(clearThemeCustomization());
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'theme.activePresetId',
+        value: 'night',
+        apply: { kind: 'redux-action', action: 'theme/selectThemePreset' },
+      },
+    ]);
   });
 
   it('rolls back earlier writes when a read-only change follows in the same proposal', async () => {

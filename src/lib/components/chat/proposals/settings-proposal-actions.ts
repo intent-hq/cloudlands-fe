@@ -70,6 +70,7 @@ import {
   selectOpenAction,
 } from '$store/renderer/slices/external-editors/external-editors-selectors';
 import {
+  clearThemeCustomization,
   requestThemePreferenceChange,
   selectThemePreset,
 } from '$store/renderer/slices/theme/theme-slice';
@@ -385,9 +386,14 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(requestThemePreferenceChange(value));
       return true;
     case 'theme.activePresetId':
-      if (value !== null) {
-        appStore.dispatch(selectThemePreset(String(value)));
+      // `null` is the schema's "Default" value (nullable/nullLabel): clear the
+      // customization exactly like the Settings UI's Default choice instead of
+      // reporting success without dispatching.
+      if (value === null) {
+        appStore.dispatch(clearThemeCustomization());
+        return true;
       }
+      appStore.dispatch(selectThemePreset(String(value)));
       return true;
     case 'model.default':
       appStore.dispatch(selectModel(String(value ?? '')));
@@ -520,15 +526,22 @@ async function applyPersistedSetting(
     if (path === 'openIn.hiddenEditors' && Array.isArray(value)) {
       appStore.dispatch(setHiddenEditorIds(value.map(String)));
     }
+    return;
   }
+  // Remaining plan kinds (`user-mcp-settings`) have no writer on the proposal
+  // path, so they must fail rather than fall through as applied.
+  throw new Error(`Setting "${path}" cannot be applied from a proposal (${apply.kind})`);
 }
 
 async function prepareSettingsChange(
   change: SettingsChangePayload,
 ): Promise<PreparedSettingsChange> {
   const definition = findAppSettingDefinition(change.path);
+  // A payload-supplied plan only applies to paths outside the schema (legacy
+  // reverse changes); a known path always uses its own definition so a
+  // proposal cannot smuggle a plan past the read-only/unsupported guards.
   if (!definition) return { ...change, rollback: null };
-  const apply = change.apply ?? definition.apply;
+  const apply = definition.apply;
   const currentValue = await readCurrentSettingValue(definition);
   return {
     ...change,
