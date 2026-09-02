@@ -1695,11 +1695,16 @@ export async function buildConfigForConnection(
   if (!token) {
     throw new Error(`No stored token for connection: ${id}`);
   }
+  // The store's list() already sanitizes `hosts` (a legacy loopback primary
+  // is excluded whenever a routable candidate exists), so the race dials
+  // hosts[0] first — not the raw stored primary, which can be loopback on
+  // records synced from before self-publish filtered it out.
+  const dialHosts = record.hosts?.length ? record.hosts : [record.host];
   return {
     config: {
       transport: 'wss',
-      host: record.host,
-      hosts: record.hosts ?? [record.host],
+      host: dialHosts[0],
+      hosts: dialHosts,
       port: record.port,
       token,
       fingerprint: record.fingerprint,
@@ -2713,7 +2718,9 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
  * detection and clears the "do not auto-publish" marker — publishing is
  * explicit user intent. Rejects when the local backend is unreachable
  * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
- * no routable local IP to publish. Runs as ONE enqueued critical section,
+ * neither a routable local IP nor a tunnel tc address to publish (tunnel-only
+ * posture publishes with the tc address as host). Runs as ONE enqueued
+ * critical section,
  * serialized with `connections:unpublish-self` and every forget: a
  * rapid WSS off→on could otherwise land this upsert while the unpublish is
  * still queued, which would then delete the fresh record (PR #1781 review).
@@ -2732,8 +2739,8 @@ async function performPublishSelfBackend(): Promise<PublishSelfResult> {
   if (info.port === null) {
     throw new Error('publish-self failed: the WebSocket API is not enabled');
   }
-  if (!info.localIps[0]) {
-    throw new Error('publish-self failed: no routable local IP to publish');
+  if (!info.localIps[0] && !info.tcAddress) {
+    throw new Error('publish-self failed: no routable local IP or tunnel address to publish');
   }
   // Publishing is explicit user intent to sync this machine, so force-clear
   // any per-backend exclusion on the record (mirrors clearing the marker).
@@ -2749,19 +2756,26 @@ async function performPublishSelfBackend(): Promise<PublishSelfResult> {
  * Shared upsert of this machine's self record from validated pairing info
  * (label = hostname with `host:port` fallback, host = first local IP, hosts =
  * all local IPs, port = bound wsApi port, fingerprint = cert fingerprint,
- * token, detectHosts on). The store dedupes by fingerprint — a host/port
- * change collapses into the existing record with a fresh `updatedAt` — and
- * the mutation triggers the keychain reconcile push. `opts.syncExcluded`
- * follows the store's tri-state: publish passes `false` (explicit intent to
- * sync), refresh omits it so the store preserves an existing per-backend
- * exclusion — a freshness re-upsert must never flip the user's opt-out.
- * Callers must have validated `port` and `localIps[0]` as non-null.
+ * token, detectHosts on). In tunnel-only posture — the daemon binds loopback
+ * only, so no routable local IP exists — the tc address stands in as the
+ * host, matching the manual tunnel-entry convention (ConnectBackendModal
+ * stores the tc address as the record's host). The store dedupes by
+ * fingerprint — a host/port change collapses into the existing record with a
+ * fresh `updatedAt` — and the mutation triggers the keychain reconcile push.
+ * `opts.syncExcluded` follows the store's tri-state: publish passes `false`
+ * (explicit intent to sync), refresh omits it so the store preserves an
+ * existing per-backend exclusion — a freshness re-upsert must never flip the
+ * user's opt-out. Callers must have validated `port` as non-null and at
+ * least one of `localIps[0]` / `tcAddress` as present.
  */
 async function upsertSelfRecord(
   info: SelfPairingInfo & { port: number },
   opts: { syncExcluded?: boolean } = {},
 ): Promise<ConnectionRecord> {
-  const host = info.localIps[0];
+  const host = info.localIps[0] ?? info.tcAddress;
+  if (!host) {
+    throw new Error('upsertSelfRecord requires a routable local IP or a tc address');
+  }
   const label = info.prettyHostname ?? info.hostname ?? `${host}:${info.port}`;
   const record = await connectionsStore.add({
     label,
@@ -2800,7 +2814,8 @@ async function upsertSelfRecord(
  * Strictly a freshness path, entirely fail-soft: while the "do not
  * auto-publish" marker is set, while no published self entry exists, when the
  * app is pinned to a remote, or when the pairing info is unavailable/
- * incomplete (WSS off, no routable IP) it is a no-op (`refreshed: false`).
+ * incomplete (WSS off, neither a routable IP nor a tc address) it is a no-op
+ * (`refreshed: false`).
  * Unlike publish it NEVER sets or clears the suppression marker, and its
  * upsert omits `syncExcluded` so the store preserves a per-backend exclusion
  * — refreshing is not user intent to (re-)publish or to sync.
@@ -2819,7 +2834,7 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
     });
     return { refreshed: false } satisfies RefreshSelfResult;
   }
-  if (!info || info.port === null || !info.localIps[0]) {
+  if (!info || info.port === null || (!info.localIps[0] && !info.tcAddress)) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
   // Only refresh an entry that is actually published: a stored record whose

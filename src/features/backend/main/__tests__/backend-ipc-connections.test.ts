@@ -2157,7 +2157,7 @@ describe('self-publish IPC', () => {
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
   });
 
-  it('connections:publish-self rejects when every local IP is loopback (nothing routable)', async () => {
+  it('connections:publish-self rejects when every local IP is loopback and no tunnel exists', async () => {
     installPairingInfo({ localIps: ['127.0.0.1', '::1'] });
     store.add.mockResolvedValue(SELF_RECORD);
     installWindow();
@@ -2165,9 +2165,27 @@ describe('self-publish IPC', () => {
     mod.registerBackendHandlers();
 
     await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
-      /no routable local IP/,
+      /no routable local IP or tunnel address/,
     );
     expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('connections:publish-self publishes in tunnel-only posture (loopback bind + tcAddress)', async () => {
+    // Tunnel-only: the daemon binds loopback only, so localIps filters to
+    // empty — the dialable tc address stands in as the record's host.
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: 'tc7f2a91.tailcat.net' });
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: 'tc7f2a91.tailcat.net' });
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ host: 'tc7f2a91.tailcat.net' }),
+    );
+    // No routable IPs to persist as extras; the tc address rides its own field.
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', []);
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
   });
 
   it('connections:publish-self persists the pairingInfo tcAddress on the self record', async () => {
@@ -2519,6 +2537,39 @@ describe('self-entry refresh IPC', () => {
     expect(store.add).toHaveBeenCalledWith(
       expect.objectContaining({ host: '192.168.1.99', port: 6200, fingerprint: '11:22:33:44' }),
     );
+  });
+
+  it('refreshes in tunnel-only posture (loopback bind + tcAddress, no routable IP)', async () => {
+    // Tunnel-only: localIps filters to empty but the tunnel is dialable —
+    // the refresh must keep the entry fresh instead of no-opping, or the
+    // record goes stale on the user's other devices.
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: 'tc7f2a91.tailcat.net' });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: 'tc7f2a91.tailcat.net' });
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: true });
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ host: 'tc7f2a91.tailcat.net' }),
+    );
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+  });
+
+  it('stays a no-op when neither a routable IP nor a tcAddress exists', async () => {
+    installPairingInfo({ localIps: ['127.0.0.1'] });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(store.add).not.toHaveBeenCalled();
   });
 
   it('matches the published entry by the persisted fingerprint after a cert change', async () => {
