@@ -10,6 +10,22 @@ function makeDragEvent(types: string[] | undefined, files: File[] = []): DragEve
   } as unknown as DragEvent;
 }
 
+function makeItem(file: File, entry: { isDirectory: boolean } | null) {
+  return {
+    kind: 'file',
+    getAsFile: () => file,
+    webkitGetAsEntry: () => entry,
+  } as unknown as DataTransferItem;
+}
+
+/** Drag event whose dataTransfer carries items, so folder entries are detectable. */
+function makeItemsDropEvent(items: DataTransferItem[]): DragEvent {
+  return {
+    preventDefault: vi.fn(),
+    dataTransfer: { types: ['Files'], items, files: [] } as unknown as DataTransfer,
+  } as unknown as DragEvent;
+}
+
 const fileTypes = ['Files'];
 
 describe('createFileDropTarget (ChatPanel full-panel drop zone)', () => {
@@ -60,7 +76,7 @@ describe('createFileDropTarget (ChatPanel full-panel drop zone)', () => {
     expect(over.preventDefault).toHaveBeenCalled();
   });
 
-  it('delivers dropped files to onDrop and clears the drag state', () => {
+  it('delivers dropped files to onDrop as a DropSplit and clears the drag state', () => {
     const onDragChange = vi.fn();
     const onDrop = vi.fn();
     const target = createFileDropTarget({ onDragChange, onDrop });
@@ -69,8 +85,31 @@ describe('createFileDropTarget (ChatPanel full-panel drop zone)', () => {
     target.handleDragEnter(makeDragEvent(fileTypes));
     target.handleDrop(makeDragEvent(fileTypes, [file]));
 
-    expect(onDrop).toHaveBeenCalledWith([file]);
+    expect(onDrop).toHaveBeenCalledWith({ files: [file], folderFiles: [] });
     expect(onDragChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('splits folders from files at drop time and forwards both in the DropSplit', () => {
+    const onDrop = vi.fn();
+    const target = createFileDropTarget({ onDragChange: vi.fn(), onDrop });
+    const file = new File(['x'], 'cat.png', { type: 'image/png' });
+    const folder = new File([], 'my-folder', { type: '' });
+
+    target.handleDrop(
+      makeItemsDropEvent([makeItem(file, { isDirectory: false }), makeItem(folder, { isDirectory: true })]),
+    );
+
+    expect(onDrop).toHaveBeenCalledWith({ files: [file], folderFiles: [folder] });
+  });
+
+  it('forwards a folder-only drop (no regular files) to onDrop', () => {
+    const onDrop = vi.fn();
+    const target = createFileDropTarget({ onDragChange: vi.fn(), onDrop });
+    const folder = new File([], 'my-folder', { type: '' });
+
+    target.handleDrop(makeItemsDropEvent([makeItem(folder, { isDirectory: true })]));
+
+    expect(onDrop).toHaveBeenCalledWith({ files: [], folderFiles: [folder] });
   });
 
   it('does not call onDrop when the drop carries no files', () => {
@@ -118,7 +157,7 @@ describe('createFileDropTarget (ChatPanel full-panel drop zone)', () => {
     target.handleDragEnter(makeDragEvent(fileTypes));
     expect(onDragChange).toHaveBeenLastCalledWith(true);
     target.handleDrop(makeDragEvent(fileTypes, [file]));
-    expect(onDrop).toHaveBeenCalledWith([file]);
+    expect(onDrop).toHaveBeenCalledWith({ files: [file], folderFiles: [] });
   });
 
   it('leave without a matching enter never underflows the counter', () => {

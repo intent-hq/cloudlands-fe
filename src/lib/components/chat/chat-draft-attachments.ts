@@ -24,12 +24,18 @@ import type { ContextItem } from './input/context-api';
  * a reload) so the restore renders a blocking, retryable failed pill instead
  * of silently dropping the attachment from the send. Pre-workspace staged
  * items (modal/onboarding) carry no `placementStatus` and round-trip
- * status-free — they are placed at workspace.create redemption.
+ * status-free — they are placed at workspace.create redemption. Dropped
+ * folders (type 'folder', path-only, never placed) persist their absolute
+ * host `path` + label so an onboarding reload doesn't lose the pill.
  */
 export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment[] {
   return items
     .filter(
-      (item) => (item.imageData && item.imageMimeType) || item.attachmentId || item.sourcePath,
+      (item) =>
+        (item.imageData && item.imageMimeType) ||
+        item.attachmentId ||
+        item.sourcePath ||
+        (item.type === 'folder' && item.path),
     )
     .map((item) => ({
       id: item.id,
@@ -62,7 +68,8 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
  * placement at redemption (a stale path fails there, into a failed pill).
  * A persisted `placementStatus: 'failed'` restores as a failed pill: it
  * blocks send and its retry re-attempts placement from the `sourcePath` —
- * never a silent drop.
+ * never a silent drop. Folder items (type 'folder') rehydrate path-only —
+ * they are never placed; the path rides as a context reference at send.
  */
 export function deserializeDraftAttachments(attachments: DraftAttachment[]): ContextItem[] {
   return attachments.map((a) => ({

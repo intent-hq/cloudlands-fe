@@ -1182,7 +1182,20 @@
       const contextMentionRefs = parseContextMentions(contextMentions);
       const fileMentionRefs = parseFileMentions(richTextareaMentions);
       const runtimeMentionRefs = await parseRuntimeMentions(richTextareaMentions, logger);
-      const contextReferences = [...contextMentionRefs, ...fileMentionRefs, ...runtimeMentionRefs];
+      // Staged folder pills (dropped folders, local daemon only) ride as
+      // path context references on the initial message — never placed via
+      // file.placeAttachment (the daemon rejects directories). Same shape a
+      // folder @-mention produces in chat (type 'file' + absolute path).
+      const folderRefs = $state
+        .snapshot(onboardingStagedItems)
+        .filter((item) => item.type === 'folder' && item.path)
+        .map((item) => ({ type: 'file', path: item.path, title: item.label }));
+      const contextReferences = [
+        ...contextMentionRefs,
+        ...fileMentionRefs,
+        ...runtimeMentionRefs,
+        ...folderRefs,
+      ];
       const linearIssue = extractLinearIssue(contextReferences);
       const sentryIssue = extractSentryIssue(contextReferences);
 

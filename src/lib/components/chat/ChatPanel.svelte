@@ -148,6 +148,7 @@
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import { createFileDropTarget } from '$lib/utils/file-drop';
+  import type { DropSplit } from '$lib/utils/drop-split';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
@@ -1295,7 +1296,7 @@
   let isFileDragOverPanel = $state(false);
   const panelFileDrop = createFileDropTarget({
     onDragChange: (dragging) => (isFileDragOverPanel = dragging),
-    onDrop: (files) => void inputComponent?.handleDroppedFiles?.(files),
+    onDrop: (drop) => void inputComponent?.handleDroppedFiles?.(drop),
     isEnabled: () => !!inputComponent,
   });
 
@@ -1314,7 +1315,7 @@
   $effect(() => {
     if (!panelFileDropContext || !isActive || !inputComponent) return;
     const handler = {
-      onDrop: (files: File[]) => void inputComponent?.handleDroppedFiles?.(files),
+      onDrop: (drop: DropSplit) => void inputComponent?.handleDroppedFiles?.(drop),
       onDragChange: (dragging: boolean) => (isFileDragOverHeader = dragging),
     };
     panelFileDropContext.register(handler);

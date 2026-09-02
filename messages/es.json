@@ -2027,6 +2027,7 @@
   "chat_richInput_micCancelTranscribing_label": "Cancelar la transcripción",
   "chat_richInput_micBusy_message": "Ya hay otra grabación de voz en curso",
   "chat_richInput_fileTypeSize_description": "{type} • {size}",
+  "chat_richInput_folderDropRemote_error": "Incluir una carpeta en el mensaje de chat solo funciona con intentd local",
   "chat_richInput_unknownType_fallback": "Tipo desconocido",
   "chat_richInput_interruptAndSend_ariaLabel": "Interrumpir y enviar",
   "chat_richInput_promptEnhanced_toast": "Prompt mejorado",
