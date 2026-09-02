@@ -99,9 +99,7 @@ describe('ListenTargetSelector', () => {
 
   it('degrades gracefully on old daemons: no tunnel entry when unsupported', () => {
     const { queryByRole } = renderSelector({ tunnelSupported: false });
-    expect(
-      queryByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
-    ).toBeNull();
+    expect(queryByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() })).toBeNull();
   });
 
   it('disables all checkboxes while a save is in flight', () => {

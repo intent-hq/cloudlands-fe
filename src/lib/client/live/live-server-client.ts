@@ -13,8 +13,8 @@
  * `rotateToken` mints a new 64-hex token and persists it. When INTENTD_AUTH_TOKEN
  * env var pins the token, the daemon rejects rotation with InvalidParams error.
  */
-import type { AppClient, ServerClient, ServerPairingInfo } from "../app-client";
-import { backendRequest } from "./backend-transport";
+import type { AppClient, ServerClient, ServerPairingInfo } from '../app-client';
+import { backendRequest } from './backend-transport';
 
 export class LiveServerClient implements ServerClient {
   async pairingInfo(): Promise<ServerPairingInfo> {
@@ -26,17 +26,17 @@ export class LiveServerClient implements ServerClient {
       localIps?: string[];
       hostname?: string;
       tcAddress?: string;
-    }>("server.pairingInfo");
+    }>('server.pairingInfo');
 
     // Validate required fields
     if (
-      typeof result?.token !== "string" ||
-      typeof result?.certFingerprint !== "string" ||
-      typeof result?.path !== "string" ||
+      typeof result?.token !== 'string' ||
+      typeof result?.certFingerprint !== 'string' ||
+      typeof result?.path !== 'string' ||
       !Array.isArray(result?.localIps) ||
-      typeof result?.hostname !== "string"
+      typeof result?.hostname !== 'string'
     ) {
-      throw new Error("Invalid server.pairingInfo response shape");
+      throw new Error('Invalid server.pairingInfo response shape');
     }
 
     return {
@@ -47,17 +47,17 @@ export class LiveServerClient implements ServerClient {
       localIps: result.localIps,
       hostname: result.hostname,
       // Additive (§5.2): present only when the tunnel is enabled and up.
-      ...(typeof result.tcAddress === "string" && result.tcAddress.length > 0
+      ...(typeof result.tcAddress === 'string' && result.tcAddress.length > 0
         ? { tcAddress: result.tcAddress }
         : {}),
     };
   }
 
   async rotateToken(): Promise<{ token: string }> {
-    const result = await backendRequest<{ token?: string }>("server.rotateToken");
+    const result = await backendRequest<{ token?: string }>('server.rotateToken');
 
-    if (typeof result?.token !== "string") {
-      throw new Error("Invalid server.rotateToken response shape");
+    if (typeof result?.token !== 'string') {
+      throw new Error('Invalid server.rotateToken response shape');
     }
 
     return { token: result.token };
@@ -65,7 +65,5 @@ export class LiveServerClient implements ServerClient {
 }
 
 // Tied to AppClient["server"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["server"] | undefined = undefined as
-  | LiveServerClient
-  | undefined;
+const _interfaceCheck: AppClient['server'] | undefined = undefined as LiveServerClient | undefined;
 void _interfaceCheck;
