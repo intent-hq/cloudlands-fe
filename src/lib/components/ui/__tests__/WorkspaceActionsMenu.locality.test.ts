@@ -13,10 +13,14 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { toNativePath } from '$lib/utils/path-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 let mockStoreState: Partial<StoreState> = {};
 const mockDispatch = vi.fn();
+const electronBridgeMocks = vi.hoisted(() => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
@@ -46,7 +50,7 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 });
 
 vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn().mockResolvedValue(undefined),
+  invoke: electronBridgeMocks.invoke,
 }));
 
 vi.mock('$lib/client', () => ({
@@ -155,9 +159,16 @@ warmImport(() => import('./mocks/button.svelte'));
 warmImport(() => import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte'));
 warmImport(() => import('$features/workspace/components/WorkspaceActionsMenu.svelte'));
 
-async function renderSubmenu() {
+interface SubmenuProps {
+  filePath?: string;
+  workspaceId?: string;
+  workspaceFolderPath?: string;
+  isWorkspaceRoot?: boolean;
+}
+
+async function renderSubmenu(props: SubmenuProps = {}) {
   const Harness = (await import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte')).default;
-  render(Harness);
+  render(Harness, { props });
   await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
   const trigger = await screen.findByRole('menuitem', { name: 'Open in...' });
   trigger.focus();
@@ -259,6 +270,54 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
     expect(await screen.findByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Copy Relative Path' })).toBeTruthy();
+  });
+
+  it('resolves a workspace-root copy through the worktree path', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    electronBridgeMocks.invoke.mockResolvedValue({
+      success: true,
+      data: { worktreePath: '/abs/wt' },
+    });
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+
+    await renderSubmenu({
+      workspaceId: 'ws-root',
+      filePath: '.',
+      isWorkspaceRoot: true,
+      workspaceFolderPath: '__WORKSPACE_ROOT__',
+    });
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('workspace:get', { id: 'ws-root' }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
+
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/abs/wt')));
+  });
+
+  it('falls back to the legacy workspace path for a workspace-root copy', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    electronBridgeMocks.invoke.mockResolvedValue({
+      success: true,
+      data: { path: '/abs/legacy' },
+    });
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+
+    await renderSubmenu({
+      workspaceId: 'ws-legacy',
+      filePath: '.',
+      isWorkspaceRoot: true,
+      workspaceFolderPath: '__WORKSPACE_ROOT__',
+    });
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('workspace:get', { id: 'ws-legacy' }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
+
+    await waitFor(() =>
+      expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/abs/legacy')),
+    );
   });
 });
 

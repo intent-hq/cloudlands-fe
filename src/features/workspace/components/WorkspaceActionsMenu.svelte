@@ -154,7 +154,8 @@
           // Check if result exists and has valid data (not archived/deleted)
           if (result && result.success && result.data) {
             const workspace = result.data;
-            const workspaceRoot = workspace.worktreePath || workspace.repositoryPath;
+            const workspaceRoot =
+              workspace.worktreePath || workspace.repositoryPath || workspace.path;
             const workspacePath =
               workspaceFolderPath === '__WORKSPACE_ROOT__'
                 ? workspaceRoot
