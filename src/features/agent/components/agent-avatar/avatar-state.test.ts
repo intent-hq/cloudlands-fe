@@ -25,7 +25,12 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   },
 }));
 
-import { getAvatarState, getAvatarStateFromStore, isAgentStreamingFromStore } from './avatar-state';
+import {
+  getAvatarState,
+  getAvatarStateForSession,
+  getAvatarStateFromStore,
+  isAgentStreamingFromStore,
+} from './avatar-state';
 
 describe('avatar-state store-backed selectors', () => {
   beforeEach(() => {
@@ -128,6 +133,30 @@ describe('getAvatarState attention-request states', () => {
       'waiting',
     );
     expect(getAvatarState({ status: AgentStatus.Idle }, {})).toBe('idle');
+  });
+});
+
+describe('getAvatarStateForSession attention running-vs-idle gate', () => {
+  const pendingBlocker = {
+    id: 'a1',
+    attentionRequestKind: 'blocker',
+    attentionRequestReason: 'sandbox broken',
+  };
+
+  it('suppresses a pending attention request while a turn is live (running wins)', () => {
+    expect(
+      getAvatarStateForSession({
+        ...pendingBlocker,
+        status: AgentStatus.Active,
+        isResponding: true,
+      } as never),
+    ).toBe('running');
+  });
+
+  it('surfaces the attention badge once the agent stops streaming', () => {
+    expect(getAvatarStateForSession({ ...pendingBlocker, status: AgentStatus.Idle } as never)).toBe(
+      'attention-blocker',
+    );
   });
 });
 

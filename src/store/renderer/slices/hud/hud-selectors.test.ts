@@ -700,6 +700,20 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
+  it('does not count a pending request while the agent runs a live turn (mid-turn gate)', () => {
+    // Mid-turn rehydration can deliver the persisted attention fields while
+    // the agent is still streaming — nothing must blink until the turn ends.
+    const state = attnState({
+      root: {
+        status: 'active',
+        attentionRequestKind: 'discussion',
+        isResponding: true,
+        messages: [],
+      },
+    });
+    expect(selectHudAttnCount.select(state)).toBe(0);
+  });
+
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
     // The daemon's step-0 rollup (intentd#825) can raise needs_attention from
     // a question hold the FE never captured — the counter must still blink.
