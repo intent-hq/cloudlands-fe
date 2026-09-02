@@ -374,7 +374,10 @@ describe('ModelPicker legacy Auggie models', () => {
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
     const legacyOption = await screen.findByRole('option', { name: /Opus 4.1/ });
     await fireEvent.click(legacyOption);
-    expect(onModelChange).toHaveBeenCalledWith('legacy-opus');
+    expect(onModelChange).toHaveBeenCalledWith('legacy-opus', {
+      providerId: 'auggie',
+      modelId: 'legacy-opus',
+    });
   });
 
   it('supports keyboard expand and collapse on the legacy subgroup header', async () => {
@@ -1419,7 +1422,10 @@ describe('ModelPicker multi-provider mode', () => {
 
     await fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
 
-    expect(onModelChange).toHaveBeenCalledWith('sonnet4.6');
+    expect(onModelChange).toHaveBeenCalledWith('sonnet4.6', {
+      providerId: 'auggie',
+      modelId: 'sonnet4.6',
+    });
   });
 
   it('surfaces an empty-with-warning provider as a visible disabled row instead of hiding the group', async () => {
@@ -1773,7 +1779,10 @@ describe('ModelPicker multi-provider mode', () => {
     });
 
     await waitFor(() => {
-      expect(onModelChange).toHaveBeenCalledWith('opencode:real-model');
+      expect(onModelChange).toHaveBeenCalledWith('opencode:real-model', {
+        providerId: 'opencode',
+        modelId: 'real-model',
+      });
     });
     expect(vi.mocked(toast.info)).toHaveBeenCalled();
 
@@ -2543,7 +2552,10 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     await pickModelOne();
 
-    expect(onModelChange).toHaveBeenCalledWith('model-1');
+    expect(onModelChange).toHaveBeenCalledWith('model-1', {
+      providerId: 'auggie',
+      modelId: 'model-1',
+    });
     expect(dispatchedTypes()).not.toContain(selectModel.type);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
@@ -2726,7 +2738,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     const selectModelActions = mockSvelteDispatch.mock.calls
       .map(([action]) => action as { type?: string; payload?: unknown })
       .filter((action) => action.type === selectModel.type);
-    expect(selectModelActions[0]?.payload).toEqual(['model-1']);
+    expect(selectModelActions[0]?.payload).toEqual(['model-1', 'auggie']);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
   });
 });
@@ -2769,7 +2781,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
 
     await waitFor(() => {
-      expect(onModelChange).toHaveBeenCalledWith('model-2');
+      expect(onModelChange).toHaveBeenCalledWith('model-2', {
+        providerId: 'auggie',
+        modelId: 'model-2',
+      });
     });
     expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
   });
@@ -2870,7 +2885,10 @@ describe('ModelPicker confirmModelChange gate', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(confirmModelChange).not.toHaveBeenCalled();
-    expect(onModelChange).toHaveBeenCalledWith('model-1');
+    expect(onModelChange).toHaveBeenCalledWith('model-1', {
+      providerId: 'auggie',
+      modelId: 'model-1',
+    });
   });
 });
 
@@ -2997,7 +3015,10 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
     await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
 
     await waitFor(() => {
-      expect(onModelChange).toHaveBeenCalledWith('model-2');
+      expect(onModelChange).toHaveBeenCalledWith('model-2', {
+        providerId: 'auggie',
+        modelId: 'model-2',
+      });
     });
   });
 });

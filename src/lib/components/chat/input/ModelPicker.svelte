@@ -152,7 +152,15 @@
 
   interface Props {
     selectedModel?: string | null;
-    onModelChange?: (model: string) => void;
+    /**
+     * Called on every user pick. `model` keeps the picked row's raw value for
+     * backward compatibility (bare for the default provider, legacy
+     * `provider:model` otherwise); `pick` carries the resolved triple legs —
+     * the bare model id and its owning provider — so consumers never parse
+     * the model string for a provider. Absent on the "use default" pick
+     * (`model === ''`).
+     */
+    onModelChange?: (model: string, pick?: { providerId: string; modelId: string }) => void;
     /**
      * Optional go/no-go gate invoked before a user-picked model change is
      * applied. Called with the current and target model ids when they differ;
@@ -749,11 +757,15 @@
       return;
     }
 
-    onModelChange?.(model);
+    // Resolve the pick's triple legs once at the emit boundary: the compound
+    // prefix for legacy non-default-provider rows, else the effective default
+    // provider (bare rows only exist for it).
+    const { providerId: pickedProviderId, modelId: pickedModelId } = parseCompoundModelId(model);
+    onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
     await tick();
 
-    if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+    if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {

@@ -20,7 +20,7 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import {
     getProviderAvailability,
     type ProviderAvailabilityResult,
@@ -113,8 +113,10 @@
     if (!selectedReasoningEffort || !model) return;
     let levels = selectModelEffortLevels.select(appStore.state, model);
     if (levels === undefined) {
+      // Bare ids (explicit picks and daemon resolvedModel previews) belong to
+      // the form's selected provider; only a legacy compound id carries its own.
       const split = splitLegacyCompoundId(model);
-      const providerId = split.providerId ?? $defaultProviderId$;
+      const providerId = split.providerId ?? (selectedProvider || $defaultProviderId$);
       const modelId = split.modelId;
       const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
       const cachedModels = selectProviderModelsCacheEntry.select(
@@ -138,21 +140,19 @@
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
 
   // Map provider IDs to keys used in ProviderAvailabilityResult
-  const providerAvailabilityKeyMap: Record<
-    string,
-    keyof ProviderAvailabilityResult['providers']
-  > = {
-    auggie: 'auggie',
-    'claude-code': 'claudeCode',
-    codex: 'codex',
-    mock: 'mock',
-    opencode: 'opencode',
-    droid: 'droid',
-    grok: 'grok',
-    unsloth: 'unsloth',
-    cortex: 'cortex',
-    pi: 'pi',
-  };
+  const providerAvailabilityKeyMap: Record<string, keyof ProviderAvailabilityResult['providers']> =
+    {
+      auggie: 'auggie',
+      'claude-code': 'claudeCode',
+      codex: 'codex',
+      mock: 'mock',
+      opencode: 'opencode',
+      droid: 'droid',
+      grok: 'grok',
+      unsloth: 'unsloth',
+      cortex: 'cortex',
+      pi: 'pi',
+    };
 
   // The availability entry for a provider, or undefined when the check has
   // not completed or the result carries no entry for it (unknown provider).
@@ -205,6 +205,23 @@
   // Session overrides are genuine and must never be cleared by the stale-override check.
   let modelOverriddenThisSession = $state(false);
 
+  // Provider the current explicit model override belongs to. In-session picks
+  // record the picker-reported provider; a model arriving from restored state
+  // pairs with the provider it was persisted (and restore-validated) with —
+  // its legacy compound prefix when present, else the current selectedProvider.
+  let overrideProvider = $state<string | undefined>(undefined);
+  $effect(() => {
+    const model = selectedModel;
+    if (!model) {
+      overrideProvider = undefined;
+      return;
+    }
+    if (overrideProvider === undefined) {
+      overrideProvider =
+        splitLegacyCompoundId(model).providerId ?? untrack(() => selectedProvider || undefined);
+    }
+  });
+
   onMount(async () => {
     // Fetch provider availability — the $effect above handles auto-selection
     // once providerAvailability is set. This avoids duplicating fallback logic
@@ -222,19 +239,17 @@
   // (e.g., from provider availability auto-selection).
   $effect(() => {
     const provider = selectedProvider;
-    if (selectedModel) {
-      const modelProvider = splitLegacyCompoundId(selectedModel).providerId ?? $defaultProviderId$;
-      if (modelProvider !== provider) {
-        logger.debug('Clearing stale model override (provider mismatch):', {
-          selectedModel,
-          modelProvider,
-          currentProvider: provider,
-        });
-        selectedModel = undefined;
-        modelWasOverridden = false;
-        onModelChange?.(undefined);
-        reconcileReasoningEffort(resolveEffectiveModel(selectedSpecialist));
-      }
+    if (selectedModel && overrideProvider && overrideProvider !== provider) {
+      logger.debug('Clearing stale model override (provider mismatch):', {
+        selectedModel,
+        modelProvider: overrideProvider,
+        currentProvider: provider,
+      });
+      selectedModel = undefined;
+      modelWasOverridden = false;
+      overrideProvider = undefined;
+      onModelChange?.(undefined);
+      reconcileReasoningEffort(resolveEffectiveModel(selectedSpecialist));
     }
   });
 
@@ -429,7 +444,8 @@
   // result, no catalog loaded for the provider) the override is kept.
   function isRestoredOverrideInvalid(model: string): boolean {
     const split = splitLegacyCompoundId(model);
-    const providerId = split.providerId ?? $defaultProviderId$;
+    const providerId =
+      overrideProvider ?? split.providerId ?? (selectedProvider || $defaultProviderId$);
     const modelId = split.modelId;
     if (providerAvailabilityEntry(providerId)?.available === false) return true;
     const knownModels = knownModelsForProvider(providerId);
@@ -532,6 +548,7 @@
     // Restore provider BEFORE model to prevent the provider-mismatch $effect from clearing it
     selectedProvider = lastTeamMode.provider;
     selectedModel = lastTeamMode.modelOverridden ? lastTeamMode.model : undefined;
+    overrideProvider = lastTeamMode.modelOverridden ? lastTeamMode.provider : undefined;
     modelWasOverridden = lastTeamMode.modelOverridden;
     onTeamModeChange?.(true);
     onSpecialistChange?.(orchestratorId);
@@ -557,6 +574,7 @@
       // Restore provider BEFORE model
       selectedProvider = lastSingleAgent.provider;
       selectedModel = lastSingleAgent.model;
+      overrideProvider = lastSingleAgent.modelOverridden ? lastSingleAgent.provider : undefined;
       modelWasOverridden = lastSingleAgent.modelOverridden;
       onTeamModeChange?.(false);
       onSpecialistChange?.(selectedSpecialist);
@@ -589,19 +607,22 @@
     specialistDropdownOpen = false;
   }
 
-  function handleModelChange(model: string | undefined) {
-    const explicitModel = model || undefined;
+  function handleModelChange(
+    model: string | undefined,
+    pick?: { providerId: string; modelId: string },
+  ) {
+    // The picker reports the resolved triple legs on every pick: store the
+    // bare model id paired with its provider (no model-string parsing here).
+    const explicitModel = (pick?.modelId ?? model) || undefined;
     selectedModel = explicitModel;
     modelWasOverridden = !!explicitModel;
     modelOverriddenThisSession = !!explicitModel;
+    overrideProvider = explicitModel ? (pick?.providerId ?? selectedProvider) : undefined;
 
     // Update provider to match the selected model's provider
-    if (explicitModel) {
-      const providerId = splitLegacyCompoundId(explicitModel).providerId ?? $defaultProviderId$;
-      if (providerId !== selectedProvider) {
-        selectedProvider = providerId;
-        onProviderChange?.(providerId);
-      }
+    if (explicitModel && pick?.providerId && pick.providerId !== selectedProvider) {
+      selectedProvider = pick.providerId;
+      onProviderChange?.(pick.providerId);
     }
 
     reconcileReasoningEffort(
@@ -640,11 +661,21 @@
         {m.workspace_initialAgentPicker_teamMode_label()}
       </div>
       <div class="flex items-center gap-1 py-1.5">
-        <AgentAvatar agentId="blank" size={22} specialist={orchestrator.id} icon={orchestrator.icon} />
+        <AgentAvatar
+          agentId="blank"
+          size={22}
+          specialist={orchestrator.id}
+          icon={orchestrator.icon}
+        />
         {#if teamAgentAvatars.length > 0}
           <span class="text-subtle text-xs mx-0.5">→</span>
           {#each teamAgentAvatars as teamAgent (teamAgent.id)}
-            <AgentAvatar agentId="blank" size={22} specialist={teamAgent.id} icon={teamAgent.icon} />
+            <AgentAvatar
+              agentId="blank"
+              size={22}
+              specialist={teamAgent.id}
+              icon={teamAgent.icon}
+            />
           {/each}
         {/if}
       </div>

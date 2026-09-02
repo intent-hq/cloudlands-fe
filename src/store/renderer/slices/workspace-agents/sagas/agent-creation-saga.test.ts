@@ -126,7 +126,7 @@ describe('agentCreationSaga', () => {
   it('pairs a blank agent model with its selected Claude provider', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() =>
-      state('', [], 'claude-code', { 'claude-code': 'claude-code:opus-4-1' }),
+      state('', [], 'claude-code', { 'claude-code': 'opus-4-1' }),
     );
     channel.put(createAgentRequested(WS));
     await settle();
@@ -134,7 +134,7 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        model: 'claude-code:opus-4-1',
+        model: 'opus-4-1',
         provider: 'claude-code',
       }),
     );
@@ -145,7 +145,7 @@ describe('agentCreationSaga', () => {
   it('pairs General specialist-picker creation with the selected Claude provider', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() =>
-      state('', [], 'claude-code', { 'claude-code': 'claude-code:opus-4-1' }),
+      state('', [], 'claude-code', { 'claude-code': 'opus-4-1' }),
     );
     channel.put(createAgentWithSpecialistRequested(WS, null));
     await settle();
@@ -153,7 +153,7 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        model: 'claude-code:opus-4-1',
+        model: 'opus-4-1',
         provider: 'claude-code',
       }),
     );
@@ -187,7 +187,7 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('pairs a compound specialist model with its owning provider', async () => {
+  it('splits a legacy compound specialist model into a bare model + owning provider', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const pinned: FileSpecialist = {
       id: 'claude-reviewer',
@@ -207,7 +207,34 @@ describe('agentCreationSaga', () => {
       expect.anything(),
       expect.objectContaining({
         provider: 'claude-code',
-        model: 'claude-code:opus-4-1',
+        model: 'opus-4-1',
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('passes a bare specialist frontmatter model through with its coding agent', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'claude-reviewer',
+      name: 'Claude Reviewer',
+      description: 'Pinned to Claude Opus',
+      codingAgent: 'claude-code',
+      model: 'opus-4-1',
+      behaviorPrompt: 'Review changes.',
+      filePath: '/tmp/claude-reviewer.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('', [pinned]));
+    channel.put(createAgentWithSpecialistRequested(WS, 'claude-reviewer'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'claude-code',
+        model: 'opus-4-1',
       }),
     );
     task.cancel();
