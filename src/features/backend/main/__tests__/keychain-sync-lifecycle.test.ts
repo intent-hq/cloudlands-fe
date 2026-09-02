@@ -483,7 +483,9 @@ describe('pulled self-tombstone (suppression, no auto-re-publish)', () => {
   it('a marker write failure never aborts the reconcile apply (fail-soft)', async () => {
     localPrefs.values.set('selfBackendFingerprint', 'AA:BB:CC');
     localPrefs.setLocalPref.mockRejectedValueOnce(new Error('disk full'));
-    await expect(storeSyncAdapter.applyRemote('h:1', tombstone('AA:BB:CC'))).resolves.toBeUndefined();
+    await expect(
+      storeSyncAdapter.applyRemote('h:1', tombstone('AA:BB:CC')),
+    ).resolves.toBeUndefined();
   });
 });
 
