@@ -55,11 +55,14 @@ function getAgentRecency(agent: AgentSession): number {
 }
 
 /**
- * Idle classification for sibling ordering, mirroring the HUD card's live
- * buckets (running / needs-attention / failed): a live turn per the shared
+ * Idle classification for sibling ordering, mirroring the HUD card's
+ * running / failed / attention-request buckets: a live turn per the shared
  * runtime-state predicates, a failed status, or a pending attention request
  * keeps the row in the non-idle partition; everything else (waiting,
- * completed, genuinely idle) sorts after it.
+ * completed, genuinely idle) sorts after it. Known gap vs the HUD: its
+ * `needs-attention` bucket also covers an outstanding §7.1 question, but
+ * `AgentSession` carries no pending-question field, so a
+ * question-pending-but-otherwise-idle agent sorts idle here.
  */
 function isIdleForOrdering(agent: AgentSession): boolean {
   if (isAgentRunningState(toAgentRuntimeStateInput(agent))) return false;
@@ -68,21 +71,39 @@ function isIdleForOrdering(agent: AgentSession): boolean {
   return getAgentAttentionRequest(agent) === null;
 }
 
+/** Per-agent ordering keys, precomputed once per sort (matches the HUD's precomputed buckets). */
+interface AgentSortKey {
+  coordinator: boolean;
+  idle: boolean;
+  recency: number;
+}
+
+function getAgentSortKey(agent: AgentSession): AgentSortKey {
+  return {
+    coordinator: isCoordinatorAgentSession(agent),
+    idle: isIdleForOrdering(agent),
+    recency: getAgentRecency(agent),
+  };
+}
+
 /**
  * Sibling comparator: coordinator first, then non-idle agents by recency
  * descending, idle agents last (also by recency descending), with a stable
- * agent-id tiebreak so rows don't jump between refreshes.
+ * agent-id tiebreak so rows don't jump between refreshes. Keys are read from
+ * the precomputed map so comparisons stay allocation-free.
  */
-function sortAgents(a: AgentSession, b: AgentSession): number {
-  const aIsCoordinator = isCoordinatorAgentSession(a);
-  const bIsCoordinator = isCoordinatorAgentSession(b);
-  if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
-  const idleDelta = Number(isIdleForOrdering(a)) - Number(isIdleForOrdering(b));
-  if (idleDelta !== 0) return idleDelta;
-  const aRecency = getAgentRecency(a);
-  const bRecency = getAgentRecency(b);
-  if (aRecency !== bRecency) return bRecency - aRecency;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+function makeAgentComparator(
+  keyById: ReadonlyMap<string, AgentSortKey>,
+): (a: AgentSession, b: AgentSession) => number {
+  return (a, b) => {
+    const aKey = keyById.get(a.id) ?? getAgentSortKey(a);
+    const bKey = keyById.get(b.id) ?? getAgentSortKey(b);
+    if (aKey.coordinator !== bKey.coordinator) return aKey.coordinator ? -1 : 1;
+    const idleDelta = Number(aKey.idle) - Number(bKey.idle);
+    if (idleDelta !== 0) return idleDelta;
+    if (aKey.recency !== bKey.recency) return bKey.recency - aKey.recency;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  };
 }
 
 export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspaceAgentRow[] {
@@ -109,6 +130,9 @@ export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspace
       childrenByParent.set(parentId, children);
     }
   }
+
+  const keyById = new Map(dedupedAgents.map((agent) => [agent.id, getAgentSortKey(agent)]));
+  const sortAgents = makeAgentComparator(keyById);
 
   for (const children of childrenByParent.values()) children.sort(sortAgents);
 

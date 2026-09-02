@@ -2536,6 +2536,57 @@ describe('selectHudWorkspaceCards', () => {
     ]);
   });
 
+  it('pins an idle coordinator root above active peer roots (agents-list parity)', () => {
+    // Spec ordering rule 1: the coordinator keeps the top row on both
+    // surfaces even when idle — an active, more recent top-level peer must
+    // not displace it.
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 2,
+            agentIds: ['coord', 'peer'],
+            agents: [
+              {
+                id: 'coord',
+                name: 'Coordinator',
+                status: 'idle',
+                specialist: 'spec-writer',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+              {
+                id: 'peer',
+                name: 'Peer Root',
+                status: 'active',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            coord: {
+              status: 'idle',
+              isWaitingForOtherAgents: true,
+              waitingForAgentIds: [],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => [a.id, a.bucket])).toEqual([
+      ['coord', 'idle'],
+      ['peer', 'running'],
+    ]);
+  });
+
   it('keeps idle ancestors of live agents so the tree stays connected', () => {
     const state = cardState([
       makeWorkspace('ws-1', {
@@ -3073,6 +3124,64 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('wait');
     expect(card.attentionSnippet).toEqual({ kind: 'pending', text: '' });
+  });
+
+  it('with multiple raisers the snippet follows the recency-first row order', () => {
+    // cardAttentionSnippet scans the tree-ordered rows for the first gated
+    // raiser — since rows sort non-idle-first by recency, the most-recently
+    // active raiser's reason wins over an older one listed first on the wire.
+    const state = mockState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'needs_attention',
+          agentSummary: {
+            count: 2,
+            agentIds: ['older', 'newer'],
+            agents: [
+              {
+                id: 'older',
+                name: 'Older',
+                status: 'active',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+              {
+                id: 'newer',
+                name: 'Newer',
+                status: 'active',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      [],
+      [],
+    );
+    const withSessions = {
+      ...state,
+      agentSessions: {
+        byAgentId: {
+          older: {
+            status: 'active',
+            attentionRequestKind: 'blocker',
+            attentionRequestReason: 'Older reason',
+            messages: [],
+          },
+          newer: {
+            status: 'active',
+            attentionRequestKind: 'blocker',
+            attentionRequestReason: 'Newer reason',
+            messages: [],
+          },
+        },
+        agentIdsByWorkspace: {},
+      },
+    } as StoreState;
+    const [card] = selectHudWorkspaceCards.select(withSessions);
+    expect(card.stateKey).toBe('wait');
+    expect(card.agents.map((a) => a.id)).toEqual(['newer', 'older']);
+    expect(card.attentionSnippet).toEqual({ kind: 'blocker', text: 'Newer reason' });
   });
 
   it('failed card snippet carries the failing agent stopReason', () => {

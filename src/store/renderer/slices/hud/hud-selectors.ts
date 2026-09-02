@@ -692,10 +692,13 @@ function lastActivityMs(info: WorkspaceAgentInfo): number {
 }
 
 /**
- * Sibling-group comparator for the card's delegation tree: non-idle agents
- * (LIVE_BUCKETS — running/needs-attention/failed) first, each partition
- * ordered by last activity descending (missing timestamps last), with a
- * stable agent-id tiebreak so rows don't jump between refreshes.
+ * Sibling-group comparator for the card's delegation tree: the coordinator
+ * (`specialist: 'spec-writer'` on the wire summary) first even when idle —
+ * matching the agents list's coordinator-first rule so both surfaces agree
+ * on the top row — then non-idle agents (LIVE_BUCKETS —
+ * running/needs-attention/failed), each partition ordered by last activity
+ * descending (missing timestamps last), with a stable agent-id tiebreak so
+ * rows don't jump between refreshes.
  */
 function siblingOrderComparator(
   bucketById: ReadonlyMap<string, HudAgentBucketInfo>,
@@ -705,6 +708,9 @@ function siblingOrderComparator(
     return bucket !== undefined && LIVE_BUCKETS.has(bucket) ? 0 : 1;
   };
   return (a, b) => {
+    const aIsCoordinator = a.specialist === 'spec-writer';
+    const bIsCoordinator = b.specialist === 'spec-writer';
+    if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
     const idleDelta = isIdle(a) - isIdle(b);
     if (idleDelta !== 0) return idleDelta;
     const aMs = lastActivityMs(a);
