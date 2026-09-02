@@ -237,6 +237,32 @@ describe('settings-proposal-actions', () => {
     setItem.mockRestore();
   });
 
+  it('rejects an unknown setting path even when the payload supplies its own apply plan', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings',
+      payload: {
+        changes: [
+          {
+            path: 'no.such.setting',
+            value: 'value',
+            apply: { kind: 'local-storage-set', key: 'smuggled-key' },
+          },
+        ],
+      },
+      preview: { title: 'Change setting' },
+    };
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Unknown or unsupported setting "no.such.setting"',
+    );
+
+    expect(setItem).not.toHaveBeenCalledWith('smuggled-key', expect.anything());
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
   it('rejects a setting whose apply plan has no proposal writer', async () => {
     const proposal = makeProposal('mcp.servers', { some: { command: 'x' } });
 

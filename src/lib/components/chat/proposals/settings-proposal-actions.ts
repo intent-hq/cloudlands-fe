@@ -499,10 +499,10 @@ async function applyPersistedSetting(
   // lifecycle) record the change as applied without writing anything, so
   // unsupported changes must fail loudly instead.
   if (!apply) {
-    throw new Error(`Unknown or unsupported setting "${path}"`);
+    throw new Error(m.chat_settingsProposalActions_unknownSetting_error({ path }));
   }
   if (apply.kind === 'read-only') {
-    throw new Error(`Setting "${path}" is read-only and cannot be changed`);
+    throw new Error(m.chat_settingsProposalActions_readOnlySetting_error({ path }));
   }
   if (dispatchReduxAction(path, value)) return;
   if (apply.kind === 'redux-action') {
@@ -530,7 +530,9 @@ async function applyPersistedSetting(
   }
   // Remaining plan kinds (`user-mcp-settings`) have no writer on the proposal
   // path, so they must fail rather than fall through as applied.
-  throw new Error(`Setting "${path}" cannot be applied from a proposal (${apply.kind})`);
+  throw new Error(
+    m.chat_settingsProposalActions_unsupportedPlan_error({ path, kind: apply.kind }),
+  );
 }
 
 async function prepareSettingsChange(
@@ -614,9 +616,13 @@ export async function applySettingsProposalWork(
     throw new Error('applySettingsProposalWork requires a settings-change proposal');
   }
   const changes = getPayload(detail.proposal).changes;
+  // Drop any payload-supplied apply plan: incoming proposals must resolve
+  // their plan from the schema (unknown paths then fail loudly), so proposal
+  // data cannot direct writes at arbitrary persistence targets. Stored
+  // reverse changes keep their plan via undoSettingsProposalChanges.
   const reverseChanges = await applySettingsTransaction(
     changes.map((change) => ({
-      ...change,
+      path: change.path,
       value: parseEditedValue(detail, change),
     })),
     m.chat_settingsProposalActions_applyFailed_label(),
