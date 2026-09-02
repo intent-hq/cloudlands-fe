@@ -15,7 +15,7 @@
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 
   let { testId }: { testId?: string } = $props();
 
@@ -26,7 +26,9 @@
 
   function handleModelChange(compoundModelId: string) {
     if (!compoundModelId) return;
-    const { providerId, modelId } = parseCompoundModelId(compoundModelId, $defaultProviderId$);
+    const split = splitLegacyCompoundId(compoundModelId);
+    const providerId = split.providerId ?? $defaultProviderId$;
+    const modelId = split.modelId;
     const currentEffort = $defaultReasoningEffort$;
     const isKnownModel =
       selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;

@@ -143,8 +143,14 @@ export interface UnifiedAgentConfig {
 
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID
-  model?: string;
+  model?: string; // Bare model id (no provider prefix) — see ModelTriple in $shared/types/model-triple
   provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
+  /**
+   * Reasoning-effort level for the model (the triple's optional third leg;
+   * provider-interpreted string, e.g. "low"/"medium"/"high"). Omitted ⇒ the
+   * model's default effort.
+   */
+  reasoningEffort?: string;
   systemPrompt?: string; // System prompt for the agent (built from agentType)
   initialMessage?: string;
   /**

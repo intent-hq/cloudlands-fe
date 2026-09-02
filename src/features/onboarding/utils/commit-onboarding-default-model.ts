@@ -18,7 +18,7 @@
  * concrete id to pin. The provider commit still applies.
  */
 import { selectModel } from '$store/renderer/slices/model/model-slice';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   commitOnboardingProviderSelection,
   type CommitOnboardingProviderSelectionAction,
@@ -65,7 +65,7 @@ export function commitOnboardingDefaultModel(input: CommitOnboardingDefaultModel
     // to the resolved provider: a bare preview id gets the provider prefix,
     // an already-compound id keeps its own (an empty `:model` prefix falls
     // back to the resolved provider too).
-    const { providerId, modelId } = splitCompoundModelId(effectiveDefaultModel);
+    const { providerId, modelId } = splitLegacyCompoundId(effectiveDefaultModel);
     const compoundProvider = providerId || provider;
     if (compoundProvider && modelId) {
       committedModel = `${compoundProvider}:${modelId}`;

@@ -8,7 +8,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
@@ -102,7 +102,8 @@
     providerId: string;
     modelId: string;
   } {
-    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
   type MainPanelContext = {

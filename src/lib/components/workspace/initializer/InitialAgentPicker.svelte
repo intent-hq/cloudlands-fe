@@ -25,7 +25,7 @@
     getProviderAvailability,
     type ProviderAvailabilityResult,
   } from '$features/providers/provider-availability.client';
-  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
@@ -113,7 +113,9 @@
     if (!selectedReasoningEffort || !model) return;
     let levels = selectModelEffortLevels.select(appStore.state, model);
     if (levels === undefined) {
-      const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
+      const split = splitLegacyCompoundId(model);
+      const providerId = split.providerId ?? $defaultProviderId$;
+      const modelId = split.modelId;
       const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
       const cachedModels = selectProviderModelsCacheEntry.select(
         appStore.state,
@@ -221,10 +223,7 @@
   $effect(() => {
     const provider = selectedProvider;
     if (selectedModel) {
-      const { providerId: modelProvider } = parseCompoundModelId(
-        selectedModel,
-        $defaultProviderId$,
-      );
+      const modelProvider = splitLegacyCompoundId(selectedModel).providerId ?? $defaultProviderId$;
       if (modelProvider !== provider) {
         logger.debug('Clearing stale model override (provider mismatch):', {
           selectedModel,
@@ -429,7 +428,9 @@
   // way (availability check pending, provider absent from the availability
   // result, no catalog loaded for the provider) the override is kept.
   function isRestoredOverrideInvalid(model: string): boolean {
-    const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
+    const split = splitLegacyCompoundId(model);
+    const providerId = split.providerId ?? $defaultProviderId$;
+    const modelId = split.modelId;
     if (providerAvailabilityEntry(providerId)?.available === false) return true;
     const knownModels = knownModelsForProvider(providerId);
     if (!knownModels) return false;
@@ -596,7 +597,7 @@
 
     // Update provider to match the selected model's provider
     if (explicitModel) {
-      const { providerId } = parseCompoundModelId(explicitModel, $defaultProviderId$);
+      const providerId = splitLegacyCompoundId(explicitModel).providerId ?? $defaultProviderId$;
       if (providerId !== selectedProvider) {
         selectedProvider = providerId;
         onProviderChange?.(providerId);
