@@ -5938,5 +5938,12 @@
   "workspace_agentsList_noSearchResults_label": "検索に一致するエージェントはありません。",
   "workspace_contextPanel_noSearchResults_label": "検索に一致するコンテキストはありません。",
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
-  "layout_allCard_archived_label": "アーカイブ済み"
+  "layout_allCard_archived_label": "アーカイブ済み",
+  "providers_antigravity_setup": "agy とは別に公式 ACP サーバーをインストールしてください。agy_acp_server.par と localharness_external は同じフォルダーに配置してください。実行ファイルのパスにはサーバーまたは antigravity-acp ランチャーを指定してください。",
+  "providers_antigravity_summary": "agy とは別の公式 ACP サーバーが必要です。Apple Silicon 搭載の macOS で個人の Google アカウントによるログインを確認済みです。トークン使用量は報告されません。",
+  "providers_antigravity_limits": "Apple Silicon 搭載の macOS と個人の Google アカウントで確認済みです。この ACP ビルドはトークン使用量を報告しません。データがないことは使用量ゼロを意味しません。",
+  "providers_antigravity_loginHost": "デーモンのホスト上のターミナルからログインしてください：",
+  "providers_antigravity_missing": "公式 ACP サーバーが検出されません",
+  "providers_antigravity_authUnknown": "ログイン状態が不明です。更新して再確認してください。",
+  "providers_antigravity_discoveryUnavailable": "プロバイダーを検出できません。デーモンに再接続して、もう一度お試しください。"
 }

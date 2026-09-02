@@ -105,6 +105,17 @@ function authOne(id: string, authenticated: boolean | null) {
 type Envelope<T> = { success: boolean; data?: T; error?: string };
 
 describe("provider-status-bridge-seeder", () => {
+  it.each([true, false, null])("uses daemon discovery and preserves Antigravity auth=%s in the renderer bridge", async (authenticated) => {
+    routeDaemon({
+      "host.providerDiscovery": { providers: [{ id: "antigravity", installed: true, resolvedPath: "/configured/agy_acp_server.par" }] },
+      "host.providerAuthStatus": authOne("antigravity", authenticated),
+    });
+    const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(PROVIDERS_CHANNELS.CHECK_SINGLE, { providerId: "antigravity", force: true });
+    expect(response).toMatchObject({ success: true, data: { available: true, hasNpxFallback: false } });
+    expect(response.data?.authenticated).toBe(authenticated ?? undefined);
+    expect(mockedRequest).not.toHaveBeenCalledWith("host.findBinary", expect.anything());
+    expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+  });
   beforeAll(async () => {
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
     await import("./provider-status-bridge-seeder");

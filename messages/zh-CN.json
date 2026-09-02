@@ -5938,5 +5938,12 @@
   "workspace_agentsList_noSearchResults_label": "没有与搜索匹配的智能体。",
   "workspace_contextPanel_noSearchResults_label": "没有与搜索匹配的上下文。",
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜索",
-  "layout_allCard_archived_label": "已归档"
+  "layout_allCard_archived_label": "已归档",
+  "providers_antigravity_setup": "请在 agy 之外单独安装官方 ACP 服务器。将 agy_acp_server.par 和 localharness_external 放在同一文件夹中。将可执行文件路径设为服务器或 antigravity-acp 启动器。",
+  "providers_antigravity_summary": "需要单独安装官方 ACP 服务器，不能用 agy 替代。已在 Apple Silicon macOS 上通过个人 Google 账号登录验证。不报告 token 使用量。",
+  "providers_antigravity_limits": "已在 Apple Silicon macOS 上使用个人 Google 账号验证。此 ACP 版本不报告 token 使用量。缺少使用量数据不代表使用量为零。",
+  "providers_antigravity_loginHost": "请在守护进程主机的终端中登录：",
+  "providers_antigravity_missing": "未检测到官方 ACP 服务器",
+  "providers_antigravity_authUnknown": "登录状态未知。请刷新以重新检查。",
+  "providers_antigravity_discoveryUnavailable": "无法发现提供商。请重新连接守护进程后再试。"
 }

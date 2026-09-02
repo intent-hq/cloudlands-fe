@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
@@ -70,15 +71,13 @@ function getProviderStatus(
     unsloth: availability.providers.unsloth,
     mock: availability.providers.mock,
     pi: availability.providers.pi,
+    antigravity: availability.providers.antigravity,
   };
   return map[providerId];
 }
 
 /** A provider is usable if it is installed AND authenticated. */
-function isProviderUsable(
-  availability: ProviderAvailabilityResult,
-  providerId: string,
-): boolean {
+function isProviderUsable(availability: ProviderAvailabilityResult, providerId: string): boolean {
   const status = getProviderStatus(availability, providerId);
   return !!status && status.available && status.authenticated === true;
 }
@@ -90,8 +89,13 @@ function isProviderUsable(
  * `authenticated === false`. Only intended for the user-explicit path, not
  * the auto-pick fallback chain.
  */
-function isProviderUserExplicitUsable(status: ProviderStatus | undefined): boolean {
-  return !!status && status.available && status.authenticated !== false;
+function isProviderUserExplicitUsable(
+  status: ProviderStatus | undefined,
+  providerId: string,
+): boolean {
+  return (
+    !!status && status.available && isProviderAuthenticationReady(providerId, status.authenticated)
+  );
 }
 
 /** Compute the ordered list of usable provider IDs. */
@@ -106,6 +110,7 @@ function getUsableProviderIds(availability: ProviderAvailabilityResult): string[
   if (isProviderUsable(availability, 'cortex')) ids.push('cortex');
   if (isProviderUsable(availability, 'pi')) ids.push('pi');
   if (isProviderUsable(availability, 'unsloth')) ids.push('unsloth');
+  if (isProviderUsable(availability, 'antigravity')) ids.push('antigravity');
   return ids;
 }
 
@@ -170,7 +175,7 @@ export async function resolveOnboardingModel(
   if (userSelectedModel) {
     const pickedProvider = getProviderForModel(userSelectedModel, defaultProviderId);
     const pickedStatus = getProviderStatus(availability, pickedProvider);
-    if (!isProviderUserExplicitUsable(pickedStatus)) {
+    if (!isProviderUserExplicitUsable(pickedStatus, pickedProvider)) {
       throw new Error(
         m.onboarding_resolveModel_providerUnavailable_error({ provider: pickedProvider }),
       );
@@ -208,7 +213,7 @@ export async function resolveOnboardingModel(
 
   if (userExplicit) {
     const activeStatus = getProviderStatus(availability, activeProvider);
-    if (isProviderUserExplicitUsable(activeStatus)) {
+    if (isProviderUserExplicitUsable(activeStatus, activeProvider)) {
       provider = activeProvider;
       logger.info('Honoring user-explicit provider selection', {
         activeProvider,

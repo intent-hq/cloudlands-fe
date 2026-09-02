@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROVIDERS_CHANNELS } from '../../../../shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../../shared/constants/claude-code';
 
@@ -59,22 +53,21 @@ const EMPTY_DISCOVERY = {
     'droid',
     'grok',
     'unsloth',
-  ].map(
-    (id) => ({
-      id,
-      displayName: id,
-      command: id,
-      installed: false,
-      resolvedPath: null,
-      gatedOff: null,
-      hasNpxFallback: false,
-    }),
-  ),
+  ].map((id) => ({
+    id,
+    displayName: id,
+    command: id,
+    installed: false,
+    resolvedPath: null,
+    gatedOff: null,
+    hasNpxFallback: false,
+  })),
   npx: { resolvedPath: null, version: null, versionOk: false },
 };
 
 /** Provider ids the daemon's providerAuthStatus sweep covers. */
 const AUTH_PROVIDER_IDS = [
+  'antigravity',
   'auggie',
   'claude-code',
   'codex',
@@ -109,6 +102,55 @@ function routeBackend(responses: Record<string, unknown | ((params: unknown) => 
 }
 
 describe('provider availability service', () => {
+  it.each([true, false, null])(
+    'reads Antigravity discovery and auth=%s from the daemon without local probes',
+    async (authenticated) => {
+      routeBackend({
+        'host.providerDiscovery': {
+          ...EMPTY_DISCOVERY,
+          providers: [
+            {
+              id: 'antigravity',
+              installed: true,
+              hasNpxFallback: false,
+              resolvedPath: '/configured/agy_acp_server.par',
+            },
+          ],
+        },
+        'host.providerAuthStatus': authSweep({ antigravity: authenticated }),
+      });
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
+        {},
+        { providerId: 'antigravity', force: true },
+      );
+      expect(result).toMatchObject({
+        success: true,
+        data: { available: true, hasNpxFallback: false, authenticated: authenticated ?? undefined },
+      });
+      expect(mocks.findBinary).not.toHaveBeenCalled();
+      expect(mocks.hostExec).not.toHaveBeenCalled();
+      expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'antigravity',
+        force: true,
+      });
+    },
+  );
+
+  it('does not treat agy presence as an installed Antigravity ACP server', async () => {
+    routeBackend({ 'host.providerDiscovery': EMPTY_DISCOVERY });
+    mocks.findBinary.mockResolvedValue('/usr/bin/agy');
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'antigravity');
+    expect(result).toMatchObject({ success: true, data: { available: false } });
+    expect(mocks.findBinary).not.toHaveBeenCalled();
+    expect(mocks.backendRequest).not.toHaveBeenCalledWith(
+      'host.providerAuthStatus',
+      expect.anything(),
+    );
+  });
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -401,9 +443,7 @@ describe('provider availability service', () => {
     const { getProviderAvailability } = await import('../provider-availability.service');
     const result = await getProviderAvailability();
 
-    expect(result.providers.codex).toEqual(
-      expect.objectContaining({ available: false }),
-    );
+    expect(result.providers.codex).toEqual(expect.objectContaining({ available: false }));
     expect(result.providers.codex.authenticated).toBeUndefined();
   });
 
@@ -644,10 +684,7 @@ describe('provider availability service', () => {
 
   describe('hiddenProviders gating verdict', () => {
     /** Schema-valid `providers.catalog` row (PROTOCOL §5.38). */
-    const catalogEntry = (
-      id: string,
-      overrides: Record<string, unknown> = {},
-    ) => ({
+    const catalogEntry = (id: string, overrides: Record<string, unknown> = {}) => ({
       id,
       displayName: id,
       shortName: id,

@@ -171,7 +171,7 @@ function withAuth(status: ProviderStatus, authenticated: boolean | undefined): P
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const hiddenProviders = computeHiddenProviders();
-  const [auggieCheck, toolsResult, authVerdicts] = await Promise.all([
+  const [auggieCheck, toolsResult, authVerdicts, antigravity] = await Promise.all([
     checkAuggie(),
     backendRequest<HostToolAvailabilityResult>("host.toolAvailability", {
       // `codex-acp` (the adapter) rides along for the codex warning —
@@ -181,6 +181,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, "npx"],
     }),
     getAuthVerdicts(),
+    // Older daemons can lack this provider. Do not fall back to finding agy.
+    checkAntigravityAvailability().catch(() => ({ available: false } as ProviderStatus)),
   ]);
   const tools = toolsResult?.tools ?? {};
   const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
@@ -230,6 +232,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   withAuth(pi, authVerdicts["pi"]);
   withAuth(droid, authVerdicts["droid"]);
   withAuth(grok, authVerdicts["grok"]);
+  withAuth(antigravity, authVerdicts["antigravity"]);
 
   return {
     hasAnyProvider:
@@ -241,8 +244,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       pi.available ||
       droid.available ||
       grok.available ||
-      unsloth.available,
-    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid, grok, unsloth },
+      unsloth.available || antigravity.available,
+    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid, grok, unsloth, antigravity },
     hiddenProviders,
   };
 }
@@ -251,9 +254,19 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
  * above, defaulting to `force: true` so a login that just completed bypasses
  * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
  * the daemon's cache instead. */
+async function checkAntigravityAvailability(): Promise<ProviderStatus> {
+  const discovery = await backendRequest<{ providers: { id: string; installed: boolean }[] }>("host.providerDiscovery", {});
+  return { available: discovery.providers.some((row) => row.id === "antigravity" && row.installed), hasNpxFallback: false };
+}
+
 async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
   const checkAuth = async (): Promise<boolean | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
+
+  if (providerId === "antigravity") {
+    const status = await checkAntigravityAvailability();
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
 
   if (providerId === "auggie") {
     const check = await checkAuggie();

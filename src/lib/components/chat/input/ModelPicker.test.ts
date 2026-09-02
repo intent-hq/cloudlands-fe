@@ -3002,6 +3002,20 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
 });
 
 describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
+  it('uses live Antigravity labels and preserves exact compound ids without effort controls', async () => {
+    enabledProviderIds$.set(['antigravity']);
+    activeProviderId$.set('antigravity');
+    const model = { value: 'antigravity:gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' };
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [model] });
+    const onModelChange = vi.fn();
+    render(ModelPicker, { props: { selectedModel: undefined, onModelChange, portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Gemini 3.7 Flash \(High\)/ }));
+    await waitFor(() =>
+      expect(onModelChange).toHaveBeenCalledWith('antigravity:gemini-3.7-flash-high'),
+    );
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockModelState.selectedModel = 'sonnet4.6';

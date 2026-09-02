@@ -21,6 +21,8 @@
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
   import { stableShuffleOrder, type StableShuffleCache } from '../utils/stable-shuffle-order';
+  import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -72,6 +74,7 @@
    *  from full opacity at the top to transparent at the bottom so the
    *  dark card background shows through — matching the reference design. */
   const PROVIDER_BRAND_COLORS: Record<string, ProviderBrandColors> = {
+    antigravity: { color1: '#4285F4', color2: '#8AB4F8' },
     auggie: { color1: '#8B8BF8cc', color2: '#8B8BF8' },
     'claude-code': { color1: '#D97757', color2: '#D97757' },
     codex: { color1: '#CBE6FF', color2: '#DDBEFC', isLight: true },
@@ -97,6 +100,11 @@
     string,
     { installCommand: string; loginCommand?: string; docsUrl: string }
   > = {
+    antigravity: {
+      installCommand: '',
+      loginCommand: 'intentd provider login antigravity',
+      docsUrl: 'https://antigravity.google/docs/ide/extensions/zed',
+    },
     auggie: {
       installCommand: 'npm install -g @augmentcode/auggie',
       loginCommand: 'auggie login',
@@ -211,7 +219,10 @@
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
-          description: PROVIDER_DESCRIPTIONS[p.id] ?? '',
+          description:
+            p.id === 'antigravity'
+              ? m.providers_antigravity_summary()
+              : (PROVIDER_DESCRIPTIONS[p.id] ?? ''),
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,
@@ -225,7 +236,7 @@
    *  and is the gate for both "clickable to select" and "counts as available". */
   function isProviderReady(p: (typeof visibleProviders)[number]): boolean {
     if (!p.available || p.statusLoading) return false;
-    return p.authenticated !== false;
+    return isProviderAuthenticationReady(p.id, p.authenticated);
   }
 
   const readyProviderIds = $derived(visibleProviders.filter(isProviderReady).map((p) => p.id));

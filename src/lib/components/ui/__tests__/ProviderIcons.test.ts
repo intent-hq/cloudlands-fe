@@ -6,6 +6,14 @@ import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svel
 afterEach(() => cleanup());
 
 describe('domain provider icon contracts', () => {
+  it('renders the official Antigravity provider icon', () => {
+    const { container } = render(AgentProviderIcon, {
+      props: { providerId: 'antigravity', size: 20 },
+    });
+    const icon = container.querySelector('svg[aria-label="Antigravity"]');
+    expect(icon?.getAttribute('viewBox')).toBe('0 0 16 16');
+    expect(icon?.getAttribute('width')).toBe('20');
+  });
   it('renders an ACP agent-provider icon from providerId', () => {
     const { container } = render(AgentProviderIcon, {
       props: { providerId: 'codex', class: 'agent-provider', size: 20 },
