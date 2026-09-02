@@ -17,36 +17,15 @@ import { z } from 'zod';
 export const PROVIDER_TEST_PROMPT_METHOD = 'host.providerTestPrompt';
 
 /**
- * The documented failure `reason` vocabulary. `busy` is pre-spawn queueing
- * pressure (no provider was launched — back off and retry), kept distinct
- * from `timeout` (the provider itself blew a setup/prompt budget).
- */
-export const PROVIDER_TEST_PROMPT_FAILURE_REASONS = [
-  'unsupported',
-  'not-installed',
-  'spawn-failed',
-  'auth-required',
-  'busy',
-  'timeout',
-  'error',
-] as const;
-
-export type ProviderTestPromptFailureReason = (typeof PROVIDER_TEST_PROMPT_FAILURE_REASONS)[number];
-
-/** `host.providerTestPrompt` request — `{ providerId, model? }` (§5.14). */
-export const ProviderTestPromptRequestSchema = z
-  .object({
-    providerId: z.string().min(1),
-    model: z.string().min(1).optional(),
-  })
-  .strict();
-
-/**
- * `host.providerTestPrompt` response. `reason` is validated as a non-empty
- * string (not an enum) so a future additive reason survives parsing — the
- * FE maps unknown reasons to generic copy instead of rejecting the payload.
- * `.passthrough()` preserves unknown fields per the PROTOCOL additive
- * compatibility policy.
+ * `host.providerTestPrompt` response. The documented failure `reason`
+ * vocabulary is `unsupported | not-installed | spawn-failed | auth-required |
+ * busy | timeout | error` (§5.14; `busy` is pre-spawn queueing pressure —
+ * no provider was launched, back off and retry — kept distinct from
+ * `timeout`, the provider itself blowing a setup/prompt budget), but
+ * `reason` is validated as a non-empty string (not an enum) so a future
+ * additive reason survives parsing — the FE maps unknown reasons to generic
+ * copy instead of rejecting the payload. `.passthrough()` preserves unknown
+ * fields per the PROTOCOL additive compatibility policy.
  */
 export const ProviderTestPromptResponseSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).passthrough(),
@@ -60,4 +39,3 @@ export const ProviderTestPromptResponseSchema = z.discriminatedUnion('ok', [
 ]);
 
 export type ProviderTestPromptResult = z.infer<typeof ProviderTestPromptResponseSchema>;
-export type ProviderTestPromptFailure = Extract<ProviderTestPromptResult, { ok: false }>;
