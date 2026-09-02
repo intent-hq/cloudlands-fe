@@ -331,6 +331,8 @@
   "settings_tunnel_derpUrl_placeholder": "https://derp.example.com",
   "settings_tunnel_derpUrl_saved": "DERP リレー URL を保存しました",
   "settings_tunnel_derpUrl_saveError": "DERP リレー URL の保存に失敗しました:{error}",
+  "settings_tunnel_derpUrl_save": "保存",
+  "settings_tunnel_derpUrl_saving": "保存中...",
   "settings_tunnel_unsupported_description": "このデーモンのバージョンは tailcat トンネルをサポートしていません。",
   "settings_wsApi_publishSelf_label": "iCloudキーチェーンに公開",
   "settings_wsApi_publishSelf_description": "他のデバイスがこのバックエンドを自動的に検出して接続できるようにします。",

@@ -331,6 +331,8 @@
   "settings_tunnel_derpUrl_placeholder": "https://derp.example.com",
   "settings_tunnel_derpUrl_saved": "DERP 中继 URL 已保存",
   "settings_tunnel_derpUrl_saveError": "保存 DERP 中继 URL 失败:{error}",
+  "settings_tunnel_derpUrl_save": "保存",
+  "settings_tunnel_derpUrl_saving": "保存中…",
   "settings_tunnel_unsupported_description": "此守护进程版本不支持 tailcat 隧道。",
   "settings_wsApi_publishSelf_label": "发布到 iCloud 钥匙串",
   "settings_wsApi_publishSelf_description": "让您的其他设备自动发现并连接此后端。",

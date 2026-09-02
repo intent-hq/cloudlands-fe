@@ -331,6 +331,8 @@
   "settings_tunnel_derpUrl_placeholder": "https://derp.example.com",
   "settings_tunnel_derpUrl_saved": "URL del relé DERP guardada",
   "settings_tunnel_derpUrl_saveError": "No se pudo guardar la URL del relé DERP: {error}",
+  "settings_tunnel_derpUrl_save": "Guardar",
+  "settings_tunnel_derpUrl_saving": "Guardando...",
   "settings_tunnel_unsupported_description": "Esta versión del daemon no admite el túnel tailcat.",
   "settings_wsApi_publishSelf_label": "Publicar en el llavero de iCloud",
   "settings_wsApi_publishSelf_description": "Permite que tus otros dispositivos descubran este backend y se conecten automáticamente.",

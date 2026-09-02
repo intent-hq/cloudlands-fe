@@ -720,7 +720,9 @@
                     disabled={derpSaving}
                     class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {derpSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+                    {derpSaving
+                      ? m.settings_tunnel_derpUrl_saving()
+                      : m.settings_tunnel_derpUrl_save()}
                   </button>
                 {/if}
               </div>

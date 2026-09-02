@@ -331,6 +331,8 @@
   "settings_tunnel_derpUrl_placeholder": "https://derp.example.com",
   "settings_tunnel_derpUrl_saved": "DERP 릴레이 URL이 저장되었습니다",
   "settings_tunnel_derpUrl_saveError": "DERP 릴레이 URL 저장 실패: {error}",
+  "settings_tunnel_derpUrl_save": "저장",
+  "settings_tunnel_derpUrl_saving": "저장 중...",
   "settings_tunnel_unsupported_description": "이 데몬 버전은 tailcat 터널을 지원하지 않습니다.",
   "settings_wsApi_publishSelf_label": "iCloud 키체인에 게시",
   "settings_wsApi_publishSelf_description": "다른 기기에서 이 백엔드를 자동으로 검색하고 연결할 수 있도록 합니다.",

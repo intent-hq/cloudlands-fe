@@ -331,6 +331,8 @@
   "settings_tunnel_derpUrl_placeholder": "https://derp.example.com",
   "settings_tunnel_derpUrl_saved": "DERP relay URL saved",
   "settings_tunnel_derpUrl_saveError": "Failed to save DERP relay URL: {error}",
+  "settings_tunnel_derpUrl_save": "Save",
+  "settings_tunnel_derpUrl_saving": "Saving...",
   "settings_tunnel_unsupported_description": "This daemon version does not support the tailcat tunnel.",
   "settings_wsApi_publishSelf_label": "Publish to iCloud Keychain",
   "settings_wsApi_publishSelf_description": "Let your other devices discover and connect to this backend automatically.",

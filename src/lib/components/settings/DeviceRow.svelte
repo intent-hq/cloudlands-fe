@@ -348,7 +348,6 @@
     if (!device.tcAddress) return;
     try {
       await navigator.clipboard.writeText(device.tcAddress);
-      feedback = null;
       const { toast } = await import('$lib/components/ui/toast');
       toast.success(m.settings_devices_tcAddress_copied());
     } catch {

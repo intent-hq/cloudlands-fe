@@ -33,6 +33,7 @@ import {
   createTailcatTunnel,
   createTunneledSocket,
   resolveTailcatBinaryPath,
+  type TailcatSpawn,
   type TailcatTunnel,
 } from './tailcat-tunnel';
 import { isTcAddress } from '$shared/tc-address';
@@ -747,7 +748,7 @@ export function pinnedTlsConnect(
  */
 export async function captureFingerprint(
   target: { host: string; port: number; token?: string; expectedFingerprint?: string },
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
 ): Promise<CaptureFingerprintResult> {
   if (isTcAddress(target.host)) {
     const binaryPath = resolveTailcatBinaryPath();
@@ -761,9 +762,12 @@ export async function captureFingerprint(
     let tunnel: TailcatTunnel;
     try {
       tunnel = await createTailcatTunnel({
-        tcAddress: target.host.trim(),
+        // Lowercase like `isTcAddress` does for its check: tc addresses are
+        // daemon-minted lowercase, so a hand-typed `TC-…` still dials.
+        tcAddress: target.host.trim().toLowerCase(),
         remotePort: target.port,
         binaryPath,
+        ...(options.tailcatSpawn ? { spawn: options.tailcatSpawn } : {}),
       });
     } catch (error) {
       return {

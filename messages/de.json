@@ -331,6 +331,8 @@
   "settings_tunnel_derpUrl_placeholder": "https://derp.example.com",
   "settings_tunnel_derpUrl_saved": "DERP-Relay-URL gespeichert",
   "settings_tunnel_derpUrl_saveError": "DERP-Relay-URL konnte nicht gespeichert werden: {error}",
+  "settings_tunnel_derpUrl_save": "Speichern",
+  "settings_tunnel_derpUrl_saving": "Wird gespeichert...",
   "settings_tunnel_unsupported_description": "Diese Daemon-Version unterstützt den Tailcat-Tunnel nicht.",
   "settings_wsApi_publishSelf_label": "Im iCloud-Schlüsselbund veröffentlichen",
   "settings_wsApi_publishSelf_description": "Lass deine anderen Geräte dieses Backend automatisch finden und sich verbinden.",
