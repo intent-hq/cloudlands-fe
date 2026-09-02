@@ -4,7 +4,6 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Mention from '@tiptap/extension-mention';
-import Image from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
@@ -61,6 +60,7 @@ import { handleLink } from '$features/navigation/link-handler';
 import { isCmdClickModifier } from '$shared/utils/link-helpers';
 import { FilePathDecorations } from '$lib/components/tiptap/FilePathDecorations';
 import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton';
+import { NoteImage } from '$lib/components/tiptap/NoteImage';
 import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
 import { store as appStore } from '$store/renderer/store';
 const lowlight = safeLowlight;
@@ -450,7 +450,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         FilePathDecorations.configure({
           onFilePathClick,
         }),
-        Image.configure({
+        NoteImage.configure({
           inline: false,
           allowBase64: true,
           HTMLAttributes: {
@@ -863,7 +863,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         FilePathDecorations.configure({
           onFilePathClick,
         }),
-        Image.configure({
+        NoteImage.configure({
           inline: false,
           allowBase64: true,
           HTMLAttributes: {

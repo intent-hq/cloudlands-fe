@@ -2093,7 +2093,6 @@
         <div
           bind:this={element}
           class="tiptap-editor-wrapper justify-center pb-32!"
-          class:pointer-events-none={!editable}
           class:with-comments={hasActiveComments}
           class:is-dragging={isDragging}
           class:opacity-0={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
