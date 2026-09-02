@@ -154,6 +154,37 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.apply).not.toHaveBeenCalled();
   });
 
+  it('discards an in-flight snapshot when the backend changes and reads the new backend', async () => {
+    let resolveOldSnapshot!: (value: unknown) => void;
+    mocks.listSnapshot = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOldSnapshot = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ settings: [{ path: 'backend', value: 'new' }], revision: 1 });
+    const input = stdChannel();
+    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    await settle();
+
+    input.put({
+      type: 'connections/listReceived',
+      payload: [{ connections: [], activeId: 'new', windowBackendId: 'new' }],
+    });
+    await settle();
+
+    expect(mocks.listSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'backend', value: 'new' }]);
+
+    resolveOldSnapshot({ settings: [{ path: 'backend', value: 'old' }], revision: 99 });
+    await settle();
+    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'backend', value: 'new' }]);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('buffers changes during boot hydration and applies each bundle atomically in order', async () => {
     let resolveList!: (value: unknown[]) => void;
     mocks.list.mockReturnValue(

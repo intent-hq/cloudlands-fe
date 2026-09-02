@@ -7,6 +7,7 @@ import {
   activeProviderReconciled,
   hydrateActiveProvider,
   setActiveProvider,
+  setAtomicDefaultModel,
 } from '../provider-settings/provider-settings-slice';
 import {
   initialState as bareInitialState,
@@ -228,6 +229,26 @@ describe('modelReducer', () => {
       loadProviderModelsFromStorage({ auggie: 'gpt5.4', codex: 'gpt-5.4-codex' }),
     );
     expect(external.providerModels.codex).toBe('gpt-5.4-codex');
+  });
+
+  it('normalizes an atomic cross-provider pick against the newly active provider', () => {
+    const picked = modelReducer(
+      initialState,
+      setAtomicDefaultModel({ providerId: 'codex', model: 'codex:gpt-5.3-codex/high' }),
+    );
+
+    expect(picked.defaultProviderId).toBe('codex');
+    expect(picked.providerModels.codex).toBe('gpt-5.3-codex/high');
+    expect(picked.pendingProviderModels.codex).toBe('gpt-5.3-codex/high');
+
+    const confirmed = modelReducer(
+      picked,
+      loadProviderModelsFromStorage({
+        [defaultProviderId]: 'auggie:gpt5.4',
+        codex: 'gpt-5.3-codex/high',
+      }),
+    );
+    expect(confirmed.pendingProviderModels).toEqual({});
   });
 
   it('retires a rejected local model intent so later hydration can win', () => {

@@ -70,6 +70,8 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
  */
 export const PROVIDER_DEFAULTS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
+type PersistenceResult = 'persisted' | 'rejected' | 'retry';
+
 /**
  * Persist the session's picks to `model.providerDefaults` (PROTOCOL §5.12).
  * The payload is the current provider map with EVERY pick made this session
@@ -78,9 +80,9 @@ export const PROVIDER_DEFAULTS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const
  * `model.providerDefaults` is one shared map across providers, so when picks
  * for providers A and then B queue behind an in-flight write and a stale
  * hydration echo resets the map in between, a B-only overlay would spread the
- * stale map and silently drop A's pick. Returns whether the write landed —
- * a structured daemon error response is a rejection of the payload (not a
- * transient transport failure) and reports as landed so it is not retried.
+ * stale map and silently drop A's pick. Returns the write outcome so a
+ * structured daemon rejection is not retried and its session overlay can be
+ * retired before the next valid pick.
  */
 export function* persistSelectedModelsWorker(
   sessionPicks: Record<string, string>,
@@ -110,19 +112,19 @@ export function* persistSelectedModelsWorker(
     if (atomicProviderId && hasRevisionClient && result.applied.length !== 2) {
       yield* put(providerModelsPersistRejected({ ...sessionPicks }));
       yield* put(activeProviderPersistRejected(atomicProviderId));
-      return true;
+      return 'rejected' satisfies PersistenceResult;
     }
     if (hasRevisionClient) yield* put(settingsChangesReceived(result.applied, result.revision));
-    return true;
+    return 'persisted' satisfies PersistenceResult;
   } catch (error) {
     if (isDaemonErrorResponse(error)) {
       logger.warn('Daemon rejected model.providerDefaults write', { error });
       yield* put(providerModelsPersistRejected({ ...sessionPicks }));
       if (atomicProviderId) yield* put(activeProviderPersistRejected(atomicProviderId));
-      return true;
+      return 'rejected' satisfies PersistenceResult;
     }
     logger.error('Failed to persist model.providerDefaults', { error });
-    return false;
+    return 'retry' satisfies PersistenceResult;
   }
 }
 
@@ -142,12 +144,17 @@ function* watchSelectedModelPersistence() {
     while (true) {
       const { providerId, model } = action.payload[0];
       sessionPicks[providerId] = model;
-      const persisted = yield* call(
+      const result = yield* call(
         persistSelectedModelsWorker,
         sessionPicks,
         action.type === setAtomicDefaultModel.type ? providerId : undefined,
       );
-      if (persisted) {
+      if (result !== 'retry') {
+        if (result === 'rejected') {
+          for (const rejectedProviderId of Object.keys(sessionPicks)) {
+            delete sessionPicks[rejectedProviderId];
+          }
+        }
         action = yield* take(channel);
         attempt = 0;
         continue;

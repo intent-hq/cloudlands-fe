@@ -147,7 +147,7 @@ describe('modelSelectionSaga', () => {
       { codex: 'codex:gpt-5' },
     ).toPromise();
 
-    expect(landed).toBe(true);
+    expect(landed).toBe('persisted');
     expect(mocks.update.mock.calls).toEqual([
       [
         [
@@ -177,7 +177,7 @@ describe('modelSelectionSaga', () => {
       'codex',
     ).toPromise();
 
-    expect(landed).toBe(true);
+    expect(landed).toBe('persisted');
     expect(mocks.updateSnapshot).toHaveBeenCalledWith([
       { path: 'providers.active', value: 'codex' },
       {
@@ -352,6 +352,42 @@ describe('modelSelectionSaga', () => {
     await settle();
 
     expect(mocks.update).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not resend a rejected session pick with the next valid write', async () => {
+    mocks.update
+      .mockRejectedValueOnce(
+        new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
+      )
+      .mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      modelSelectionSaga,
+    );
+
+    current.model.providerModels = { auggie: 'invalid' };
+    channel.put(setSelectedModel({ providerId: 'auggie', model: 'invalid' }));
+    await settle();
+
+    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'codex:gpt-5' };
+    channel.put(setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5' }));
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'model.providerDefaults', value: { auggie: 'invalid' } }]],
+      [
+        [
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+          },
+        ],
+      ],
+    ]);
     task.cancel();
     await task.toPromise();
   });

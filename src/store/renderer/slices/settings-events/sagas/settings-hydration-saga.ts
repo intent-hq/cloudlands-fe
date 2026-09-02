@@ -74,41 +74,52 @@ export function* hydrateSettingsOnceSaga() {
 
 export function* settingsHydrationSaga() {
   const channel = yield* actionChannel(settingsChangesReceived, buffers.expanding());
+  const lifecycleChannel = yield* actionChannel(
+    [connectionsListReceived, backendReconnected],
+    buffers.expanding(),
+  );
   try {
     // Install the ordered event channel before the boot read so changes racing
     // settings.list are retained and applied after its older snapshot.
     let backendId: string | undefined;
     let revision = -1;
-    const snapshot = yield* call(readSettingsSnapshotSaga);
-    if (snapshot) {
-      yield* call(applySettingsChanges, snapshot.changes);
-      revision = snapshot.revision;
-    }
+    let needsSnapshot = true;
     while (true) {
-      const { settings, connections, reconnected } = yield* race({
-        settings: take(channel),
-        connections: take(connectionsListReceived),
-        reconnected: take(backendReconnected),
-      });
-      if (reconnected) {
-        revision = -1;
-        const nextSnapshot = yield* call(readSettingsSnapshotSaga);
-        if (nextSnapshot) {
-          yield* call(applySettingsChanges, nextSnapshot.changes);
-          revision = nextSnapshot.revision;
+      if (needsSnapshot) {
+        const { snapshot, lifecycle } = yield* race({
+          snapshot: call(readSettingsSnapshotSaga),
+          lifecycle: take(lifecycleChannel),
+        });
+        if (lifecycle) {
+          if (lifecycle.type === connectionsListReceived.type) {
+            backendId = lifecycle.payload[0].windowBackendId;
+          }
+          revision = -1;
+          continue;
         }
+        if (snapshot) {
+          yield* call(applySettingsChanges, snapshot.changes);
+          revision = snapshot.revision;
+        }
+        needsSnapshot = false;
         continue;
       }
-      if (connections) {
-        const nextBackendId = connections.payload[0].windowBackendId;
+
+      const { settings, lifecycle } = yield* race({
+        settings: take(channel),
+        lifecycle: take(lifecycleChannel),
+      });
+      if (lifecycle?.type === backendReconnected.type) {
+        revision = -1;
+        needsSnapshot = true;
+        continue;
+      }
+      if (lifecycle?.type === connectionsListReceived.type) {
+        const nextBackendId = lifecycle.payload[0].windowBackendId;
         if (nextBackendId === backendId) continue;
         backendId = nextBackendId;
         revision = -1;
-        const nextSnapshot = yield* call(readSettingsSnapshotSaga);
-        if (nextSnapshot) {
-          yield* call(applySettingsChanges, nextSnapshot.changes);
-          revision = nextSnapshot.revision;
-        }
+        needsSnapshot = true;
         continue;
       }
       if (!settings) continue;
@@ -121,5 +132,6 @@ export function* settingsHydrationSaga() {
     }
   } finally {
     channel.close();
+    lifecycleChannel.close();
   }
 }

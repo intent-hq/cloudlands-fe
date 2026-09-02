@@ -215,17 +215,21 @@ modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }
     [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
   },
 }));
-modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model }] }) => ({
-  ...state,
-  providerModels: {
-    ...state.providerModels,
-    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
-  },
-  pendingProviderModels: {
-    ...state.pendingProviderModels,
-    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
-  },
-}));
+modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model }] }) => {
+  const normalizedModel = normalizeModelForProvider(providerId, model, providerId);
+  return {
+    ...state,
+    defaultProviderId: providerId,
+    providerModels: {
+      ...normalizeProviderModels(state.providerModels, providerId),
+      [providerId]: normalizedModel,
+    },
+    pendingProviderModels: {
+      ...normalizeProviderModels(state.pendingProviderModels, providerId),
+      [providerId]: normalizedModel,
+    },
+  };
+});
 modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
   ...state,
   availableModels: createCollection<AuggieModel, 'value'>('value', models),
