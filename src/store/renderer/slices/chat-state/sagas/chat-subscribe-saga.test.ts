@@ -1068,7 +1068,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   });
 
   it('corrects the skewed-clock inversion once the terminal frame stamps the daemon timestamp', () => {
-    // Companion to the it.fails repro above: the terminal §7.1 reconcile
+    // Companion to the skew regression test above: the terminal §7.1 reconcile
     // stamps the assistant row with the authoritative daemon timestamp
     // (later than the user row's), so the sort self-corrects — the
     // "briefly, then corrects itself" half of the symptom.
