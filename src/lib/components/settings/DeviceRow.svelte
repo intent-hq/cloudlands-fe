@@ -401,7 +401,7 @@
             <button
               type="button"
               onclick={() => void copyTcAddress()}
-              class="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              class="rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               aria-label={m.settings_devices_tcAddress_copy()}
               data-tc-address-chip
             >
