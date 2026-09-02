@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.126.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.126.0...v2.126.1) (2026-09-02)
+
+
+### 🐛 Bug Fixes
+
+* **titlebar:** Preserve Mac sidebar clearance when zooming ([#2060](https://github.com/intent-hq/cloudlands-fe/issues/2060)) ([fc832bc](https://github.com/intent-hq/cloudlands-fe/commit/fc832bcee63af6b56502028c11b6ab81e766cdeb))
+
 ## [2.126.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.125.0...v2.126.0) (2026-09-02)
 
 
