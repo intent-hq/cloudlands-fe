@@ -95,6 +95,7 @@
     const html = await processMarkdownToHTML(value, {
       preserveAnchors: false,
       processPrimitives: false,
+      workspaceId,
     });
 
     lastMarkdownFromParent = value;
@@ -182,6 +183,7 @@
       processMarkdownToHTML(currentValue, {
         preserveAnchors: false,
         processPrimitives: false,
+        workspaceId,
       })
         .then((html) => {
           if (syncSequence !== externalContentSyncSequence) return;

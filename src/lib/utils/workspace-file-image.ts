@@ -101,6 +101,37 @@ export function intentFileImageUrlToWorkspaceFileUrl(
   return `workspace-file://${workspaceId}/${encodedPath}`;
 }
 
+/** Convert a rendered workspace image URL back to its portable markdown form. */
+export function workspaceFileImageUrlToIntentFileUrl(workspaceFileUrl: string): string | null {
+  if (!workspaceFileUrl.startsWith('workspace-file://')) return null;
+
+  const rawPath = workspaceFileUrl.slice('workspace-file://'.length).split(/[?#]/)[0];
+  const [workspaceId, ...pathSegments] = rawPath.split('/');
+  if (!workspaceId || !isValidWorkspaceId(workspaceId) || pathSegments.length === 0) return null;
+
+  const decodedSegments: string[] = [];
+  for (const segment of pathSegments) {
+    const decoded = decodeSegment(segment);
+    if (
+      decoded === null ||
+      decoded.length === 0 ||
+      decoded === '.' ||
+      decoded === '..' ||
+      decoded.includes('/') ||
+      decoded.includes('\\')
+    ) {
+      return null;
+    }
+    decodedSegments.push(decoded);
+  }
+
+  if (/^[A-Za-z]:/.test(decodedSegments[0])) return null;
+  if (!IMAGE_EXTENSION_RE.test(decodedSegments[decodedSegments.length - 1])) return null;
+
+  const encodedPath = decodedSegments.map((segment) => encodeURIComponent(segment)).join('/');
+  return `intent://local/file/${encodedPath}`;
+}
+
 /** Escape a value for interpolation into a double-quoted HTML attribute. */
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 

@@ -3,7 +3,10 @@ import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
 import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extension';
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
-import { rewriteIntentFileImageSrcs } from './workspace-file-image';
+import {
+  rewriteIntentFileImageSrcs,
+  workspaceFileImageUrlToIntentFileUrl,
+} from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
@@ -1168,7 +1171,8 @@ export function processHTMLToMarkdown(
           }
         } else if (childEl.tagName === 'IMG') {
           // Handle inline images
-          const src = childEl.getAttribute('src') || '';
+          const rawSrc = childEl.getAttribute('src') || '';
+          const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
           const alt = childEl.getAttribute('alt') || '';
           const title = childEl.getAttribute('title');
           if (title) {
@@ -1436,7 +1440,8 @@ export function processHTMLToMarkdown(
   const convertElement = (el: Element): string => {
     if (el.tagName === 'IMG') {
       // Handle image elements
-      const src = el.getAttribute('src') || '';
+      const rawSrc = el.getAttribute('src') || '';
+      const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
       const alt = el.getAttribute('alt') || '';
       const title = el.getAttribute('title');
       if (title) {

@@ -66,6 +66,10 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice'
   openWorkspaceFile: vi.fn(),
 }));
 
+vi.mock('$lib/utils/workspace-route-context', () => ({
+  getWorkspaceRouteContext: () => ({ workspaceId: 'workspace-1' }),
+}));
+
 import MarkdownFileEditor from './MarkdownFileEditor.svelte';
 import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
 
@@ -127,6 +131,7 @@ describe('MarkdownFileEditor external content sync', () => {
     expect(processMarkdownToHTML).toHaveBeenCalledWith('# Project\n\nexternal marker', {
       preserveAnchors: false,
       processPrimitives: false,
+      workspaceId: 'workspace-1',
     });
     expect(processHTMLToMarkdown).not.toHaveBeenCalled();
   });
@@ -178,6 +183,7 @@ describe('MarkdownFileEditor external content sync', () => {
       expect(processMarkdownToHTML).toHaveBeenCalledWith('# Project\n\nfirst marker', {
         preserveAnchors: false,
         processPrimitives: false,
+        workspaceId: 'workspace-1',
       }),
     );
 
@@ -186,6 +192,7 @@ describe('MarkdownFileEditor external content sync', () => {
       expect(processMarkdownToHTML).toHaveBeenCalledWith('# Project\n\nsecond marker', {
         preserveAnchors: false,
         processPrimitives: false,
+        workspaceId: 'workspace-1',
       }),
     );
 

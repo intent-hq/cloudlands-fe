@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-  faArrowUp,
-  faAt,
-  faPaperclip,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faArrowUp, faAt, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import AgentPeekCard from './AgentPeekCard.svelte';
   import Comment from './Comment.svelte';
   import Fa from 'svelte-fa';
@@ -13,10 +9,7 @@
   import { Button } from '$lib/components/ui/button';
   import { slide } from 'svelte/transition';
 
-  import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '$lib/utils/markdown-processor';
+  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
@@ -113,7 +106,10 @@
     editingReplyId = replyId;
     const reply = replies.find((r) => r.id === replyId);
     const html = await Promise.resolve(
-      processMarkdownToHTML(reply?.content || '', { allowEmpty: true }),
+      processMarkdownToHTML(reply?.content || '', {
+        allowEmpty: true,
+        workspaceId: workspace?.id,
+      }),
     );
     replyEditHTML = html || '';
   }
@@ -146,7 +142,9 @@
   $effect(() => {
     let destroyed = false;
     const content = comment.content || '';
-    Promise.resolve(processMarkdownToHTML(content, { allowEmpty: true })).then((h) => {
+    Promise.resolve(
+      processMarkdownToHTML(content, { allowEmpty: true, workspaceId: workspace?.id }),
+    ).then((h) => {
       if (destroyed) return;
       try {
         const d = document.createElement('div');
@@ -164,7 +162,12 @@
   $effect(() => {
     let destroyed = false;
     replies?.forEach((r) => {
-      Promise.resolve(processMarkdownToHTML(r.content || '', { allowEmpty: true })).then((h) => {
+      Promise.resolve(
+        processMarkdownToHTML(r.content || '', {
+          allowEmpty: true,
+          workspaceId: workspace?.id,
+        }),
+      ).then((h) => {
         if (destroyed) return;
         replyHtmls[r.id] = h || '';
       });
@@ -248,7 +251,8 @@
         <div class="ml-8">
           <span
             class="text-xs text-amber-600 mt-1 inline-block"
-            title={m.tiptap_commentThread_unlinked_tooltip()}>{m.tiptap_commentThread_unlinked_label()}</span
+            title={m.tiptap_commentThread_unlinked_tooltip()}
+            >{m.tiptap_commentThread_unlinked_label()}</span
           >
         </div>
       {/if}
@@ -301,7 +305,11 @@
               onSubmit={() => submitReply()}
             />
           </div>
-          <Button variant="ghost-light" size="icon-sm" tooltip={m.tiptap_commentThread_attach_tooltip()}>
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            tooltip={m.tiptap_commentThread_attach_tooltip()}
+          >
             <Fa icon={faPaperclip} size="sm" class="text-ghost" />
           </Button>
           <Button
