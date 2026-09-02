@@ -432,13 +432,14 @@
     setupScript: { name: string; description: string; content: string } | null;
   };
 
-  // Cache for parsed text blocks - keyed by text content
+  // Cache for parsed text blocks - parsing also resolves workspace-relative media.
   let parsedTextCache = new Map<string, ParsedTextResult>();
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
+    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
     // Check cache first
-    const cached = parsedTextCache.get(text);
+    const cached = parsedTextCache.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -454,7 +455,7 @@
     const result = { blocks: grouped, setupScript };
 
     // Cache the result (flatten accumulated streaming text so the Map retains flat strings)
-    parsedTextCache.set(flatstr(text), result);
+    parsedTextCache.set(cacheKey, result);
 
     // Limit cache size (LRU-style: remove oldest entries)
     if (parsedTextCache.size > MAX_CACHE_SIZE) {

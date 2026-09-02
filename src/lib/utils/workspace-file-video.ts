@@ -12,7 +12,7 @@ export type WorkspaceVideoMarkdownSegment =
     };
 
 const IMAGE_LINE_RE = /^\s*!\[([^\]\n]*)\]\((?:<)?(intent:\/\/local\/[^)\s>]+)(?:>)?\)\s*$/;
-const VIDEO_FENCE_RE = /^\s*(`{3,}|~{3,})ws-block:video\s*$/;
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 function resolveVideoPath(path: unknown, workspaceId?: string) {
   if (typeof path !== 'string' || !path || path !== path.trim()) return null;
@@ -25,6 +25,18 @@ function isParagraphBoundary(lines: string[], index: number): boolean {
     (index === 0 || !lines[index - 1].trim()) &&
     (index === lines.length - 1 || !lines[index + 1].trim())
   );
+}
+
+function findFenceClose(lines: string[], index: number, openingFence: string): number {
+  const marker = openingFence[0];
+  return lines.findIndex((line, candidate) => {
+    if (candidate <= index) return false;
+    const closingFence = line.trim();
+    return (
+      closingFence.length >= openingFence.length &&
+      closingFence.split('').every((character) => character === marker)
+    );
+  });
 }
 
 /** Split standalone workspace video markdown into Svelte-renderable segments. */
@@ -43,37 +55,44 @@ export function splitWorkspaceVideoMarkdown(
   };
 
   for (let index = 0; index < lines.length; index += 1) {
-    const fence = lines[index].match(VIDEO_FENCE_RE);
+    const fence = lines[index].match(FENCE_RE);
     if (fence) {
-      const closeIndex = lines.findIndex(
-        (line, candidate) => candidate > index && line.trim() === fence[1],
-      );
+      const closeIndex = findFenceClose(lines, index, fence[1]);
       if (closeIndex > index) {
         const rawBlock = lines.slice(index, closeIndex + 1);
-        try {
-          const payload = JSON.parse(lines.slice(index + 1, closeIndex).join('\n'));
-          const source = resolveVideoPath(payload?.path, workspaceId);
-          if (source) {
-            flushMarkdown();
-            segments.push({
-              type: 'video',
-              source,
-              name: typeof payload.path === 'string' ? payload.path : undefined,
-              poster: typeof payload.poster === 'string' ? payload.poster : undefined,
-            });
-            index = closeIndex;
-            continue;
+        if (fence[2].trim() === 'ws-block:video') {
+          try {
+            const payload = JSON.parse(lines.slice(index + 1, closeIndex).join('\n'));
+            const source = resolveVideoPath(payload?.path, workspaceId);
+            if (source) {
+              flushMarkdown();
+              segments.push({
+                type: 'video',
+                source,
+                name: typeof payload.path === 'string' ? payload.path : undefined,
+                poster: typeof payload.poster === 'string' ? payload.poster : undefined,
+              });
+              index = closeIndex;
+              continue;
+            }
+          } catch {
+            // Invalid rich blocks remain visible as markdown source.
           }
-        } catch {
-          // Invalid rich blocks remain visible as markdown source.
         }
         markdownLines.push(...rawBlock);
         index = closeIndex;
         continue;
       }
+
+      markdownLines.push(...lines.slice(index));
+      break;
     }
 
-    const image = isParagraphBoundary(lines, index) ? lines[index].match(IMAGE_LINE_RE) : null;
+    const isIndentedCode = /^(?: {4}|\t)/.test(lines[index]);
+    const image =
+      !isIndentedCode && isParagraphBoundary(lines, index)
+        ? lines[index].match(IMAGE_LINE_RE)
+        : null;
     if (!image) {
       markdownLines.push(lines[index]);
       continue;

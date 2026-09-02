@@ -53,6 +53,11 @@
 
   const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
   const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
+  const markdownContent = $derived(
+    !hasVideoSegments && mediaSegments.length === 1 && mediaSegments[0].type === 'markdown'
+      ? mediaSegments[0].content
+      : content,
+  );
 
   // PERF: Detect content complexity to choose rendering strategy
   // - Simple: plain text, no markdown - render as <p>
@@ -95,9 +100,9 @@
   ];
 
   const contentComplexity = $derived.by(() => {
-    if (!content) return 'simple';
+    if (!markdownContent) return 'simple';
     // Check if needs markdown processing
-    if (needsProcessingPatterns.some((pattern) => pattern.test(content))) {
+    if (needsProcessingPatterns.some((pattern) => pattern.test(markdownContent))) {
       return 'static';
     }
     return 'simple';
@@ -266,14 +271,14 @@
 
     if (isStreaming) {
       // Use throttled streaming update
-      scheduleStreamingUpdate(content);
+      scheduleStreamingUpdate(markdownContent);
     } else {
       // Clean up pending updates when streaming ends
       if (wasStreaming) {
         cancelPendingUpdates();
       }
       // Direct update when not streaming
-      updateContentFull(content);
+      updateContentFull(markdownContent);
     }
   });
 
@@ -492,7 +497,7 @@
 {:else if contentComplexity === 'simple'}
   <!-- PERF: Simple text - render directly without any processing -->
   <div class="markdown-viewer simple-content {className}">
-    <p class="whitespace-pre-wrap">{content}</p>
+    <p class="whitespace-pre-wrap">{markdownContent}</p>
   </div>
 {:else}
   <!-- PERF: Static content - use processed HTML without TipTap -->

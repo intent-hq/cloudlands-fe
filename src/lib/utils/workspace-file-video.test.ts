@@ -61,4 +61,34 @@ describe('splitWorkspaceVideoMarkdown', () => {
       },
     ]);
   });
+
+  it.each([
+    ['fenced code', '```markdown\n![demo](intent://local/file/demo.webm)\n```'],
+    ['indented code', '    ![demo](intent://local/file/demo.webm)'],
+    [
+      'a rich block documented inside a longer fence',
+      '````markdown\n```ws-block:video\n{"path":"demo.webm"}\n```\n````',
+    ],
+  ])('leaves video markdown in %s unchanged', (_description, markdown) => {
+    expect(splitWorkspaceVideoMarkdown(markdown, WS)).toEqual([
+      { type: 'markdown', content: markdown },
+    ]);
+  });
+
+  it('resolves a top-level fenced video block', () => {
+    expect(splitWorkspaceVideoMarkdown('```ws-block:video\n{"path":"demo.webm"}\n```', WS)).toEqual(
+      [
+        {
+          type: 'video',
+          name: 'demo.webm',
+          poster: undefined,
+          source: {
+            kind: 'workspace',
+            url: `workspace-file://${WS}/demo.webm`,
+            mimeType: 'video/webm',
+          },
+        },
+      ],
+    );
+  });
 });

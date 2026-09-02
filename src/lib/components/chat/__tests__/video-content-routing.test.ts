@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -51,6 +51,20 @@ describe('agent video renderer routing', () => {
     });
 
     expect(container.querySelector('[data-chat-video]')).toBeTruthy();
+  });
+
+  it('reparses streaming video markdown when the workspace becomes available', async () => {
+    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
+    const content = [
+      block({ type: 'text', text: '![demo](intent://local/file/.demo-artifacts/demo.webm)' }),
+    ];
+    const { container, rerender } = render(StreamingMessageContent, {
+      props: { content, role: 'assistant', isStreaming: true },
+    });
+
+    expect(container.querySelector('[data-chat-video]')).toBeNull();
+    await rerender({ content, role: 'assistant', isStreaming: true, workspaceId: 'workspace-1' });
+    await waitFor(() => expect(container.querySelector('[data-chat-video]')).toBeTruthy());
   });
 
   it.each([true, false])(
