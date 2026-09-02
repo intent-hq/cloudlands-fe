@@ -331,7 +331,11 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
-  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectEffectiveDefaultProviderId,
+    selectProviderAuthFailureGuidance,
+    selectProviderCatalogLoaded,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -2166,11 +2170,30 @@
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
   const catalogDefaultProviderId$ = selectEffectiveDefaultProviderId();
+  const providerCatalogLoaded$ = selectProviderCatalogLoaded();
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
     if (!$agentSession$) return undefined;
     return getAgentProvider($agentSession$, $catalogDefaultProviderId$);
+  });
+
+  // Provider auth-failure login guidance: when the chat error matches the
+  // provider's catalog auth-error patterns, StreamingStatus shows the login
+  // command hint (and the claude-code desktop-app caveat) alongside the error.
+  const chatAuthGuidance = $derived.by(() => {
+    if (!effectiveError) return null;
+    // Depend on the loaded flag (false → true on hydration): an error
+    // rendered before `providers.catalog` lands recomputes once it does —
+    // the default-provider-id string alone may not change on hydration.
+    void $providerCatalogLoaded$;
+    void $catalogDefaultProviderId$;
+    return selectProviderAuthFailureGuidance.select(
+      appStore.state,
+      $agentSession$?.provider,
+      $agentSession$?.model,
+      effectiveError,
+    );
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
@@ -5578,6 +5601,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -5604,6 +5628,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -5688,6 +5713,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -5714,6 +5740,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -5745,6 +5772,7 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
+                  authGuidance={chatAuthGuidance}
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
@@ -6077,6 +6105,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -6161,6 +6190,7 @@
                                 receivedFirstChunk={$chatReceivedFirstChunk$}
                                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                                 error={effectiveError}
+                                authGuidance={chatAuthGuidance}
                                 sessionCorrupted={effectiveSessionCorrupted}
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
@@ -6239,6 +6269,7 @@
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
                     error={effectiveError}
+                    authGuidance={chatAuthGuidance}
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}

@@ -1,4 +1,4 @@
-import { runSaga } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -30,7 +30,13 @@ import {
 import type { AgentSession, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from '../../provider-catalog/provider-catalog-slice';
 import { openPanel, setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
 import { agentFailureToastSaga } from './agent-failure-toast-saga';
 
@@ -41,13 +47,34 @@ const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-function state() {
+const catalogPayload = {
+  providers: [
+    {
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      shortName: 'Claude',
+      command: 'claude',
+      canBeDisabled: true,
+      loginCommandHint: 'claude /login',
+      authErrorPatterns: ['authentication required'],
+      visible: true,
+    },
+  ],
+};
+
+const hydratedProviderCatalog = providerCatalogReducer(
+  providerCatalogInitialState,
+  providerCatalogLoaded(catalogPayload),
+);
+
+function state(overrides: Record<string, unknown> = {}) {
   const first = {
     id: 'agent-1',
     workspaceId: 'ws-1',
     name: 'Implementor',
     status: AgentStatus.Error,
     messages: [],
+    provider: 'claude-code',
   } as AgentSession;
   const second = { ...first, id: 'agent-2', workspaceId: 'ws-2', name: 'Verifier' };
   const chief = { ...first, id: 'agent-chief', workspaceId: CHIEF_WORKSPACE_ID, name: 'Chief' };
@@ -63,6 +90,11 @@ function state() {
         map: { 'ws-1': firstWorkspace, 'ws-2': secondWorkspace },
       },
     },
+    providerCatalog: hydratedProviderCatalog,
+    providerSettings: { enabledProviders: {}, activeProviderId: '' },
+    model: { providerModels: {} },
+    agentAvailability: { providerLoadingMap: {} },
+    ...overrides,
   };
 }
 
@@ -98,6 +130,9 @@ describe('agentFailureToastSaga', () => {
       }),
     );
     expect(first?.componentProps).not.toHaveProperty('detailLines');
+    // Non-auth failure: no login guidance, no forced auth-status refresh.
+    expect(first?.componentProps.loginCommandHint).toBeUndefined();
+    expect(first?.componentProps.showClaudeDesktopNote).toBe(false);
     // Same error text still renders a SECOND toast — one per agent.
     expect(lastToast('agent-failure:agent-2')?.componentProps).toEqual(
       expect.objectContaining({
@@ -107,6 +142,154 @@ describe('agentFailureToastSaga', () => {
         keySlot: null,
       }),
     );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('auth failure carries login guidance and dispatches ONE forced auth-status refresh', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      error: 'JSON-RPC error -32000: Authentication required',
+      at: 1000,
+    });
+    await settle();
+
+    // The toast renders the catalog login hint + the claude desktop caveat
+    // alongside (not instead of) the raw error summary.
+    expect(lastToast('agent-failure:agent-1').componentProps).toEqual(
+      expect.objectContaining({
+        errorSummary: 'JSON-RPC error -32000: Authentication required',
+        loginCommandHint: 'claude /login',
+        showClaudeDesktopNote: true,
+      }),
+    );
+    // Forced provider auth-status refresh — the worker probes with force:true.
+    expect(dispatch).toHaveBeenCalledWith(checkSingleProviderRequested('claude-code'));
+
+    // A re-render of the SAME failure (manual close) must not re-probe.
+    lastToast('agent-failure:agent-1').componentProps.onClose();
+    await settle();
+    const refreshCalls = () =>
+      dispatch.mock.calls.filter(
+        ([action]) => action?.type === checkSingleProviderRequested('claude-code').type,
+      ).length;
+    expect(refreshCalls()).toBe(1);
+
+    // A NEWER auth failure refreshes again.
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      error: 'JSON-RPC error -32000: Authentication required',
+      at: 2000,
+    });
+    await settle();
+    expect(refreshCalls()).toBe(2);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('a same-provider failure burst dispatches ONE refresh, not one per agent', async () => {
+    // Mirrors the real store: the first checkSingleProviderRequested flips
+    // the provider's loading flag synchronously, so the second agent's
+    // render sees it and skips the redundant concurrent probe.
+    const loadingMap: Record<string, boolean> = {};
+    const dispatch = vi.fn((action: { type?: string; payload?: [string] }) => {
+      if (action?.type === checkSingleProviderRequested('x').type) {
+        loadingMap[action.payload![0]] = true;
+      }
+      return action;
+    });
+    const getState = () => state({ agentAvailability: { providerLoadingMap: loadingMap } });
+    const task = runSaga({ dispatch, getState }, agentFailureToastSaga);
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      error: 'JSON-RPC error -32000: Authentication required',
+      at: 1000,
+    });
+    recordAgentFailure({
+      agentId: 'agent-2',
+      workspaceId: 'ws-2',
+      error: 'JSON-RPC error -32000: Authentication required',
+      at: 1000,
+    });
+    await settle();
+
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action?.type === checkSingleProviderRequested('claude-code').type,
+      ),
+    ).toHaveLength(1);
+    // Both toasts still carry the login guidance.
+    expect(lastToast('agent-failure:agent-1').componentProps.loginCommandHint).toBe(
+      'claude /login',
+    );
+    expect(lastToast('agent-failure:agent-2').componentProps.loginCommandHint).toBe(
+      'claude /login',
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('a failure rendered before catalog hydration gains guidance once the catalog lands', async () => {
+    let providerCatalog = providerCatalogInitialState;
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => state({ providerCatalog }) },
+      agentFailureToastSaga,
+    );
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      error: 'JSON-RPC error -32000: Authentication required',
+      at: 1000,
+    });
+    await settle();
+
+    // Pre-hydration: no rows to match against — no guidance, no refresh.
+    expect(lastToast('agent-failure:agent-1').componentProps.loginCommandHint).toBeUndefined();
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action?.type === checkSingleProviderRequested('claude-code').type,
+      ),
+    ).toHaveLength(0);
+
+    // Catalog hydration re-renders the unchanged entry with guidance and
+    // fires the deferred forced refresh.
+    providerCatalog = hydratedProviderCatalog;
+    channel.put(providerCatalogLoaded(catalogPayload));
+    await settle();
+
+    expect(lastToast('agent-failure:agent-1').componentProps).toEqual(
+      expect.objectContaining({
+        loginCommandHint: 'claude /login',
+        showClaudeDesktopNote: true,
+      }),
+    );
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action?.type === checkSingleProviderRequested('claude-code').type,
+      ),
+    ).toHaveLength(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('non-auth failures dispatch no provider refresh', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'spawn failed: EPERM' });
+    await settle();
+
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action?.type === checkSingleProviderRequested('claude-code').type,
+      ),
+    ).toHaveLength(0);
     task.cancel();
     await task.toPromise();
   });

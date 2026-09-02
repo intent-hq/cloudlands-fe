@@ -155,3 +155,46 @@ export const selectIsProviderAuthenticationError = store.createSelector(
       errorMessage,
     ),
 );
+
+/** Login guidance for a provider authentication failure. */
+export interface ProviderAuthFailureGuidance {
+  /** Canonical id of the provider whose auth failed (refresh target). */
+  providerId: string;
+  /** Login command to surface (catalog hint, else `<command> login`). */
+  loginCommandHint: string;
+  /** claude-code only: desktop-app sign-in does not carry over to the CLI. */
+  showClaudeDesktopNote: boolean;
+}
+
+/**
+ * Login guidance for an agent failure: when `errorMessage` matches the
+ * provider's catalog `authErrorPatterns`, return the actionable login
+ * command (and the claude-code desktop-app caveat). The provider resolves
+ * from the session's explicit provider id, else the compound model prefix,
+ * else the effective default (via the EntryOrDefault fallback). `null` when
+ * there is no error or it is not an authentication failure.
+ */
+export const selectProviderAuthFailureGuidance = store.createSelector(
+  (
+    state,
+    provider: string | null | undefined,
+    model: string | null | undefined,
+    errorMessage: string | null | undefined,
+  ): ProviderAuthFailureGuidance | null => {
+    if (!errorMessage) return null;
+    // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
+    // treat it as unset so resolution falls through to the model prefix.
+    let rawId = provider && provider !== 'acp' ? provider : '';
+    if (!rawId && model?.includes(':')) {
+      rawId = splitCompoundModelId(model).providerId || '';
+    }
+    const entry = selectProviderCatalogEntryOrDefault.select(state, rawId);
+    if (!isProviderAuthenticationErrorForEntry(entry, errorMessage)) return null;
+    const providerId = entry?.id ?? rawId;
+    return {
+      providerId,
+      loginCommandHint: entry?.loginCommandHint || `${entry?.command ?? providerId} login`,
+      showClaudeDesktopNote: providerId === 'claude-code',
+    };
+  },
+);
