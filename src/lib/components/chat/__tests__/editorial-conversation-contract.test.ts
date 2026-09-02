@@ -244,7 +244,7 @@ describe('editorial conversation presentation contract', () => {
     expect(responseGroup).not.toContain('pl-4.5');
     expect(staticContent).toMatch(/nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
     expect(streamingContent).toMatch(
-      /nested,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/,
+      /nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
     );
   });
 
