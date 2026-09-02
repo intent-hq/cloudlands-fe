@@ -220,14 +220,20 @@ function localRecord(): ConnectionRecord {
 /**
  * Candidate-host list for a stored record: the primary `host` first, then the
  * stored extras (deduplicated). Records written before `hosts` existed migrate
- * to the one-element `[host]` list. Loopback extras are dropped on read — a
- * record synced from before self-publish filtered loopback out of `localIps`
- * may still carry one, and racing it would connect the dialing machine to its
- * OWN local daemon. The primary `host` is kept as-is even when loopback: it
- * is the record's identity, and rewriting it is a store mutation, not a read.
+ * to the one-element `[host]` list. Loopback entries — extras AND a legacy
+ * loopback primary — are dropped on read: a record synced from before
+ * self-publish filtered loopback out of `localIps` may still carry them, and
+ * racing one would connect the dialing machine to its OWN local daemon. The
+ * on-disk `stored.host` is untouched (it is the record's identity, and
+ * rewriting it is a store mutation, not a read); when EVERY host is loopback
+ * the primary is kept as the sole candidate so the record stays dialable on
+ * the machine it names.
  */
 function candidateHosts(stored: Pick<StoredConnection, 'host' | 'hosts'>): string[] {
-  return dedupeHosts([stored.host, ...(stored.hosts ?? []).filter((h) => !isLoopbackHost(h))]);
+  const routable = dedupeHosts(
+    [stored.host, ...(stored.hosts ?? [])].filter((h) => !isLoopbackHost(h)),
+  );
+  return routable.length > 0 ? routable : dedupeHosts([stored.host]);
 }
 
 /** Trim, drop empties, and deduplicate while preserving order. */

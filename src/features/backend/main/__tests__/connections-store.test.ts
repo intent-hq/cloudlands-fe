@@ -1306,13 +1306,25 @@ describe('connections-store', () => {
     expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5']);
   });
 
-  it('a loopback PRIMARY host survives the read sanitize (record identity)', async () => {
+  it('a loopback PRIMARY is dropped from candidates but keeps the record identity', async () => {
+    // Legacy synced records can carry a loopback primary — dialing it from
+    // another device races that device's OWN daemon, so reads exclude it
+    // whenever a routable candidate exists. The on-disk host is untouched.
     const store = await import('../connections-store');
     const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
     await store.setHosts(rec.id, ['192.168.1.10']);
     const remote = (await store.list()).find((c) => c.id === rec.id);
     expect(remote?.host).toBe('127.0.0.1');
-    expect(remote?.hosts).toEqual(['127.0.0.1', '192.168.1.10']);
+    expect(remote?.hosts).toEqual(['192.168.1.10']);
+  });
+
+  it('an all-loopback record keeps the primary as its sole candidate (stays dialable)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['::1']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['127.0.0.1']);
   });
 
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
