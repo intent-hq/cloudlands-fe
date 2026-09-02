@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => {
     initializerHydrated: false,
     persistedOnboardingFormState: null as Record<string, unknown> | null,
     // Store-visible active provider for the submit-time default commit
-    // (selectActiveProviderId reads state.providerSettings.activeProviderId).
+    // (selectActiveProviderId reads state.model.defaultProviderId).
     activeProviderId: '',
   };
 });
@@ -71,7 +71,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ providerSettings: { activeProviderId: mocks.activeProviderId } }),
+    state: () => ({ model: { defaultProviderId: mocks.activeProviderId } }),
     dispatch: mocks.dispatch,
   });
 });

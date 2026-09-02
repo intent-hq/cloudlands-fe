@@ -78,8 +78,11 @@ function storeWith(
 ): StoreState {
   return {
     providerCatalog,
-    providerSettings: { enabledProviders, activeProviderId: extra.activeProviderId ?? '' },
-    model: { providerModels: extra.providerModels ?? {} },
+    providerSettings: { enabledProviders },
+    model: {
+      defaultProviderId: extra.activeProviderId ?? '',
+      providerModels: extra.providerModels ?? {},
+    },
   } as unknown as StoreState;
 }
 

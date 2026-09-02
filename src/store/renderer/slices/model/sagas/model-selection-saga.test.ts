@@ -15,15 +15,14 @@ vi.mock('$lib/client', () => ({
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import {
-  hydrateActiveProvider,
-  initialState as providerSettingsInitialState,
-  providerSettingsReducer,
-} from '../../provider-settings/provider-settings-slice';
+import { initialState as providerSettingsInitialState } from '../../provider-settings/provider-settings-slice';
 
 import {
+  hydrateDefaultProvider,
+  initialState as modelInitialState,
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
+  modelReducer,
   selectModel,
   setDefaultReasoningEffort,
   setSelectedModel,
@@ -44,7 +43,7 @@ const settle = async () => {
 
 function state() {
   return {
-    providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
+    providerSettings: { ...providerSettingsInitialState },
     providerCatalog: {
       providers: createCollection('id', [{ id: 'codex', canBeDisabled: true }]),
       loaded: true,
@@ -83,13 +82,14 @@ describe('modelSelectionSaga', () => {
   it('keeps a compound Claude model pick authoritative over stale provider hydration', async () => {
     const current = {
       ...state(),
+      model: { ...modelInitialState },
       providerCatalog: {
         providers: createCollection('id', [{ id: 'claude-code', canBeDisabled: true }]),
         loaded: true,
       },
     };
     const dispatch = vi.fn((action) => {
-      current.providerSettings = providerSettingsReducer(current.providerSettings, action);
+      current.model = modelReducer(current.model, action);
       return action;
     });
 
@@ -98,13 +98,10 @@ describe('modelSelectionSaga', () => {
       handleSelectModel,
       selectModel('claude-code:opus-4-1'),
     ).toPromise();
-    current.providerSettings = providerSettingsReducer(
-      current.providerSettings,
-      hydrateActiveProvider('auggie'),
-    );
+    current.model = modelReducer(current.model, hydrateDefaultProvider('auggie'));
 
-    expect(current.providerSettings.activeProviderId).toBe('claude-code');
-    expect(current.providerSettings.pendingActiveProviderId).toBe('claude-code');
+    expect(current.model.defaultProviderId).toBe('claude-code');
+    expect(current.model.pendingDefaultProviderId).toBe('claude-code');
   });
 
   it('does not switch for an unknown compound provider once the catalog is loaded', async () => {
@@ -163,7 +160,7 @@ describe('modelSelectionSaga', () => {
   it('persists a cross-provider default as one revision-bearing atomic batch', async () => {
     mocks.updateSnapshot = vi.fn().mockResolvedValue({
       applied: [
-        { path: 'providers.active', value: 'codex' },
+        { path: 'model.defaultProvider', value: 'codex' },
         { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' } },
       ],
       revision: 7,
@@ -179,7 +176,7 @@ describe('modelSelectionSaga', () => {
 
     expect(landed).toBe('persisted');
     expect(mocks.updateSnapshot).toHaveBeenCalledWith([
-      { path: 'providers.active', value: 'codex' },
+      { path: 'model.defaultProvider', value: 'codex' },
       {
         path: 'model.providerDefaults',
         value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
@@ -189,7 +186,7 @@ describe('modelSelectionSaga', () => {
       type: 'settings/changesReceived',
       payload: [
         [
-          { path: 'providers.active', value: 'codex' },
+          { path: 'model.defaultProvider', value: 'codex' },
           {
             path: 'model.providerDefaults',
             value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },

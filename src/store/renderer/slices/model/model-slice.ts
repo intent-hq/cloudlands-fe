@@ -4,7 +4,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
-  activeProviderReconciled,
+  activeProviderPersistRejected,
   setAtomicDefaultModel,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
@@ -75,6 +75,7 @@ export const initialState: ModelState = {
   fallbackInfoByAgentId: {},
   defaultReasoningEffort: '',
   defaultProviderId: '',
+  pendingDefaultProviderId: null,
   catalogProviderIds: [],
 };
 
@@ -125,6 +126,16 @@ export const setDefaultReasoningEffort = createAction<[effort: string]>(
  */
 export const loadDefaultReasoningEffortFromStorage = createAction<[effort: string]>(
   'model/loadDefaultReasoningEffortFromStorage',
+);
+
+/**
+ * Hydration echo of `model.defaultProvider` (boot snapshot or
+ * `settings:changed`). Guarded: a value conflicting with a still-pending
+ * local pick is an older snapshot/echo and is ignored until the pick is
+ * confirmed or its persistence write is rejected.
+ */
+export const hydrateDefaultProvider = createAction<[providerId: string]>(
+  'model/hydrateDefaultProvider',
 );
 
 export const setModelPickerGroupCollapsed = createAction<[groupKey: string, collapsed: boolean]>(
@@ -189,10 +200,23 @@ modelReducer.with(setActiveProvider, (state, { payload: [providerId] }) => {
   return {
     ...state,
     defaultProviderId,
+    // The pending guard tracks the raw pick — the value the persistence saga
+    // writes and the daemon echoes back — not the catalog-validated one.
+    pendingDefaultProviderId: providerId || null,
     providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
   };
 });
-modelReducer.with(activeProviderReconciled, (state, { payload: [providerId] }) => {
+modelReducer.with(hydrateDefaultProvider, (state, { payload: [providerId] }) => {
+  // Hydration never clobbers a newer local pick: a conflicting value is an
+  // older snapshot/echo, ignored until the pick is confirmed (matching echo)
+  // or its persistence write is rejected.
+  if (state.pendingDefaultProviderId && providerId !== state.pendingDefaultProviderId) {
+    return state;
+  }
+  // An empty payload (unset model.defaultProvider) must not clobber the
+  // first-row fallback installed at catalog hydration — that would
+  // re-normalize every persisted pick and break bare-id validation.
+  if (!providerId && state.catalogProviderIds.length > 0) return state;
   const defaultProviderId = validatedDefaultProviderId(
     providerId,
     state.catalogProviderIds,
@@ -200,9 +224,14 @@ modelReducer.with(activeProviderReconciled, (state, { payload: [providerId] }) =
   );
   return {
     ...state,
-    defaultProviderId,
+    defaultProviderId: providerId ? defaultProviderId : '',
+    pendingDefaultProviderId: null,
     providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
   };
+});
+modelReducer.with(activeProviderPersistRejected, (state, { payload: [providerId] }) => {
+  if (state.pendingDefaultProviderId !== providerId) return state;
+  return { ...state, pendingDefaultProviderId: null };
 });
 modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
   ...state,
@@ -220,6 +249,7 @@ modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model
   return {
     ...state,
     defaultProviderId: providerId,
+    pendingDefaultProviderId: providerId,
     providerModels: {
       ...normalizeProviderModels(state.providerModels, providerId),
       [providerId]: normalizedModel,

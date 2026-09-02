@@ -35,9 +35,10 @@ export const selectAllCatalogProviderIds = store.createSelector(
 /**
  * The effective default provider id, derived from user settings (the
  * registry carries no default designation): the provider prefix of the
- * global default model when it is a compound id, else the active provider
- * (`providers.active`). '' when neither resolves — an honestly unresolved
- * state (fresh state, settings not hydrated, or `providers.active` unset).
+ * global default model when it is a compound id, else the default provider
+ * (`model.defaultProvider`). '' when neither resolves — an honestly
+ * unresolved state (fresh state, settings not hydrated, or
+ * `model.defaultProvider` unset).
  * The FE never fabricates a default from the catalog: falling through to
  * the first catalog row would functionally reinstate the removed hardcoded
  * auggie default. Mirrors the daemon's `derived_default_provider`, which
@@ -50,10 +51,10 @@ export const selectAllCatalogProviderIds = store.createSelector(
  *
  * Known divergences from the spec's ideal ordering (accepted, documented on
  * the PR #759 review):
- * - The model lookup is keyed by `activeProviderId`, so when
- *   `providers.active` is unset the persisted global model is never
+ * - The model lookup is keyed by the default provider id, so when
+ *   `model.defaultProvider` is unset the persisted global model is never
  *   consulted — a daemon-persisted compound `model.default` without
- *   `providers.active` (older FE / another client) resolves to ''
+ *   `model.defaultProvider` (older FE / another client) resolves to ''
  *   (unresolved) rather than the model's provider.
  * - In steady state the compound branch is a legacy/transient-state guard,
  *   not the primary path: `providerModels[activeProviderId]` is
@@ -64,7 +65,7 @@ export const selectAllCatalogProviderIds = store.createSelector(
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
   const catalogLoaded = state.providerCatalog?.loaded ?? false;
   const catalogIds = state.providerCatalog?.providers.ids ?? [];
-  const activeProviderId = state.providerSettings?.activeProviderId ?? '';
+  const activeProviderId = state.model?.defaultProviderId ?? '';
   const globalModel = activeProviderId
     ? state.model?.providerModels?.[activeProviderId]
     : undefined;

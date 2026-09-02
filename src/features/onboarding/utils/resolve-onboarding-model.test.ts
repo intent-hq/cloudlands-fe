@@ -126,14 +126,15 @@ import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.f
 // The resolver reads the default provider + tier tables straight off
 // state.providerCatalog (real selectors, not mocked) — hydrate it. The
 // effective default provider is settings-derived (never fabricated from the
-// catalog), so providerSettings mirrors the mocked active provider.
+// catalog), so model.defaultProviderId mirrors the mocked active provider.
 const fakeState = {
   providerCatalog: providerCatalogReducer(
     providerCatalogInitialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   ),
-  get providerSettings() {
-    return { activeProviderId: mockState.activeProviderId, enabledProviders: {} };
+  providerSettings: { enabledProviders: {} },
+  get model() {
+    return { defaultProviderId: mockState.activeProviderId };
   },
 } as unknown as StoreState;
 

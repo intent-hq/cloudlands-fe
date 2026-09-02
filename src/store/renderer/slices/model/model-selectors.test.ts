@@ -20,12 +20,19 @@ const defaultProviderId = 'auggie';
 
 function mockState(
   model: Partial<ModelState> = {},
-  providerSettings: Partial<ProviderSettingsState> = {},
+  // `activeProviderId` seeds `model.defaultProviderId` — the default provider
+  // lives in the model slice now that `providers.active` is retired.
+  providerSettings: Partial<ProviderSettingsState> & { activeProviderId?: string } = {},
   providerStatusMap: Record<string, ProviderStatus> = {},
 ): StoreState {
+  const { activeProviderId, ...settings } = providerSettings;
   return {
-    model: { ...modelInitialState, ...model },
-    providerSettings: { ...providerSettingsInitialState, ...providerSettings },
+    model: {
+      ...modelInitialState,
+      ...(activeProviderId !== undefined ? { defaultProviderId: activeProviderId } : {}),
+      ...model,
+    },
+    providerSettings: { ...providerSettingsInitialState, ...settings },
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap: {},

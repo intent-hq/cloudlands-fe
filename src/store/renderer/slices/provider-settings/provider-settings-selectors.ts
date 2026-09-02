@@ -4,15 +4,20 @@ import { store } from "../../store";
 import { selectProviderStatusMap } from "../agent-availability/agent-availability-selectors";
 import { selectProviderCatalogEntry } from "../provider-catalog/provider-catalog-selectors";
 
+/**
+ * Default provider id — the provider leg of the default model triple
+ * (`model.defaultProvider`). The standalone `providers.active` concept is
+ * retired; the state lives in the model slice ('' before hydration).
+ */
 export const selectActiveProviderId = store.createSelector(
   (state): string => {
-    return state.providerSettings.activeProviderId;
+    return state.model.defaultProviderId;
   }
 );
 
 export const selectIsProviderActive = store.createSelector(
   (state, providerId: string): boolean => {
-    return state.providerSettings.activeProviderId === providerId;
+    return state.model.defaultProviderId === providerId;
   }
 );
 

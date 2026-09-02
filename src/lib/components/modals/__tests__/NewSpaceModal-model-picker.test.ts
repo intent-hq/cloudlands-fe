@@ -33,7 +33,8 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: { auggie: true } },
+      providerSettings: { enabledProviders: { auggie: true } },
+      model: { defaultProviderId: 'auggie' },
       providerModels: { byProviderId: {}, clearEpoch: 0 },
       hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     }),

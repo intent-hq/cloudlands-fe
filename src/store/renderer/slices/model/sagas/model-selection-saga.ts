@@ -97,7 +97,7 @@ export function* persistSelectedModelsWorker(
   try {
     const changes = atomicProviderId
       ? [
-          { path: 'providers.active', value: atomicProviderId },
+          { path: 'model.defaultProvider', value: atomicProviderId },
           { path: 'model.providerDefaults', value },
         ]
       : [{ path: 'model.providerDefaults', value }];

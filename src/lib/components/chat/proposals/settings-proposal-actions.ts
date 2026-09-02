@@ -288,7 +288,7 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectActiveThemePresetId.select(state);
     case 'model.default':
       return selectSelectedModel.select(state);
-    case 'providers.active':
+    case 'model.defaultProvider':
       return selectActiveProviderId.select(state);
     case 'providers.enabled':
       return selectEnabledProviders.select(state);
@@ -392,7 +392,7 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'model.default':
       appStore.dispatch(selectModel(String(value ?? '')));
       return true;
-    case 'providers.active':
+    case 'model.defaultProvider':
       appStore.dispatch(setActiveProvider(String(value ?? '')));
       return true;
     case 'providers.enabled': {

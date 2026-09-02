@@ -64,12 +64,10 @@ async function buildState(fileSpecialists: object[]) {
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
     ),
     providerSettings: {
-      activeProviderId: 'auggie',
       enabledProviders: { 'claude-code': true, codex: true },
-      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
     },
-    model: { ...modelInitialState, providerModels: {} },
+    model: { ...modelInitialState, defaultProviderId: 'auggie', providerModels: {} },
     specialists: {
       ...specialistsInitialState,
       fileSpecialists: createCollection('id', fileSpecialists as never[]),
@@ -218,9 +216,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     mocks.state.current = {
       ...base,
       providerSettings: {
-        activeProviderId: 'codex',
         enabledProviders: { 'claude-code': true, codex: true },
       },
+      model: { ...base.model, defaultProviderId: 'codex' },
       agentAvailability: {
         ...base.agentAvailability,
         providerStatusMap: {
@@ -263,9 +261,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     mocks.state.current = {
       ...base,
       providerSettings: {
-        activeProviderId: 'auggie',
         enabledProviders: { 'claude-code': true, codex: true },
       },
+      model: { ...base.model, defaultProviderId: 'auggie' },
       agentAvailability: {
         ...base.agentAvailability,
         providerStatusMap: {

@@ -78,7 +78,8 @@ vi.mock('$store/renderer/store', async () => {
       providerCatalog,
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+      providerSettings: { enabledProviders: {} },
+      model: { defaultProviderId: 'auggie' },
       providerModels: {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,

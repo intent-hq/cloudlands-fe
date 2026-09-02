@@ -68,8 +68,8 @@ function state(
     workspace: { workspaces: { ids: [WS], map: { [WS]: workspace } } },
     workspaceAgents: { byWorkspaceId: { [WS]: { agentIds: [] } } },
     agentSessions: { byAgentId: {} },
-    model: { providerModels },
-    providerSettings: { activeProviderId },
+    model: { providerModels, defaultProviderId: activeProviderId },
+    providerSettings: {},
     specialists: {
       ...specialistsInitialState,
       defaultSpecialistId,
