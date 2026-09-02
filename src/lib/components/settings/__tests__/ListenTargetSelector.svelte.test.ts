@@ -85,16 +85,49 @@ describe('ListenTargetSelector', () => {
     expect(getByText(m.settings_listenTargets_tunnelOnly_note())).toBeTruthy();
   });
 
-  it('never allows zero targets: the sole selected entry is disabled', () => {
-    const { getByRole } = renderSelector({});
-    expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).disabled).toBe(true);
+  it('all-interfaces is deselectable when another target is selected', async () => {
+    // Regression: 0.0.0.0 rendered disabled when it was the sole IP, so it
+    // could never be unchecked — e.g. to switch to tunnel-only.
+    const { getByRole, onchange } = renderSelector({
+      selectedIps: ['0.0.0.0'],
+      tunnelSelected: true,
+    });
+    const allInterfaces = asInput(
+      getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+    );
+    expect(allInterfaces.disabled).toBe(false);
+    await fireEvent.click(allInterfaces);
+    expect(onchange).toHaveBeenCalledWith({ ips: [], tunnel: true });
   });
 
-  it('tunnel-only state: the tunnel checkbox is disabled as the sole target', () => {
-    const { getByRole } = renderSelector({ selectedIps: [], tunnelSelected: true });
-    expect(
-      asInput(getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() })).disabled,
-    ).toBe(true);
+  it('never allows zero targets: unchecking the sole entry is refused and snaps back', async () => {
+    const { getByRole, onchange } = renderSelector({});
+    const sole = asInput(getByRole('checkbox', { name: '192.168.1.10' }));
+    expect(sole.disabled).toBe(false);
+    await fireEvent.click(sole);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(sole.checked).toBe(true);
+  });
+
+  it('never allows zero targets: unchecking all-interfaces as the sole target is refused', async () => {
+    const { getByRole, onchange } = renderSelector({ selectedIps: ['0.0.0.0'] });
+    const allInterfaces = asInput(
+      getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+    );
+    await fireEvent.click(allInterfaces);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(allInterfaces.checked).toBe(true);
+  });
+
+  it('tunnel-only state: unchecking the tunnel as the sole target is refused', async () => {
+    const { getByRole, onchange } = renderSelector({ selectedIps: [], tunnelSelected: true });
+    const tunnel = asInput(
+      getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
+    );
+    expect(tunnel.disabled).toBe(false);
+    await fireEvent.click(tunnel);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(tunnel.checked).toBe(true);
   });
 
   it('degrades gracefully on old daemons: no tunnel entry when unsupported', () => {

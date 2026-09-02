@@ -50,9 +50,13 @@
   ]);
 
   const selection = $derived(new Set(selectedIps));
-  const selectionCount = $derived(selectedIps.length + (tunnelSelected ? 1 : 0));
 
-  function toggleIp(ip: string): void {
+  // At least one target must stay selected overall. Enforced as a refusal
+  // (the checkbox snaps back) rather than disabling the sole entry, so every
+  // entry — including all-interfaces — stays clickable and deselectable
+  // whenever another target is selected (intent-hq/monorepo bug report:
+  // 0.0.0.0 rendered disabled and could not be unchecked).
+  function toggleIp(ip: string, input: HTMLInputElement): void {
     let ips: string[];
     if (selection.has(ip)) {
       ips = selectedIps.filter((v) => v !== ip);
@@ -62,12 +66,18 @@
     } else {
       ips = [...selectedIps.filter((v) => v !== ALL_INTERFACES), ip];
     }
-    if (ips.length === 0 && !tunnelSelected) return; // never allow zero targets
+    if (ips.length === 0 && !tunnelSelected) {
+      input.checked = true; // refuse: never allow zero targets
+      return;
+    }
     onchange({ ips, tunnel: tunnelSelected });
   }
 
-  function toggleTunnel(): void {
-    if (tunnelSelected && selectedIps.length === 0) return; // never allow zero targets
+  function toggleTunnel(input: HTMLInputElement): void {
+    if (tunnelSelected && selectedIps.length === 0) {
+      input.checked = true; // refuse: never allow zero targets
+      return;
+    }
     onchange({ ips: selectedIps, tunnel: !tunnelSelected });
   }
 </script>
@@ -87,8 +97,8 @@
           <input
             type="checkbox"
             {checked}
-            disabled={saving || (checked && selectionCount <= 1)}
-            onchange={() => toggleIp(ip)}
+            disabled={saving}
+            onchange={(e) => toggleIp(ip, e.currentTarget)}
             class="accent-primary"
           />
           <span class="font-mono text-xs">
@@ -108,8 +118,8 @@
           <input
             type="checkbox"
             checked={tunnelSelected}
-            disabled={saving || (tunnelSelected && selectionCount <= 1)}
-            onchange={toggleTunnel}
+            disabled={saving}
+            onchange={(e) => toggleTunnel(e.currentTarget)}
             class="accent-primary"
           />
           <span class="text-xs">{m.settings_listenTargets_tunnel_label()}</span>
