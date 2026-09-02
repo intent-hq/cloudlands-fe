@@ -72,7 +72,8 @@
             <p class="text-xs leading-5 text-muted-foreground">{card.expected}</p>
           </div>
           <div
-            class="flex min-h-52 min-w-0 justify-center bg-muted/20 p-3 {layout === 'narrow'
+            class="flex min-h-52 min-w-0 items-start justify-center bg-muted/20 p-3 {layout ===
+            'narrow'
               ? 'max-w-[300px]'
               : ''}"
             data-preview-layout={layout}

@@ -16,10 +16,10 @@ function fixture(stateName: string, cardKey?: string): WorkspaceHoverCardPreview
 }
 
 const landscapeRows = [
-  { count: 1, state: 'attention', card: 'attention-four-questions' },
-  { count: 2, state: 'working', card: 'working' },
-  { count: 3, state: 'attention', card: 'attention-priority' },
-  { count: 4, state: 'agents', card: 'agents-active' },
+  { count: 1, state: 'attention', card: 'attention-four-questions', hasPr: false },
+  { count: 2, state: 'working', card: 'working', hasPr: true },
+  { count: 3, state: 'attention', card: 'attention-priority', hasPr: false },
+  { count: 4, state: 'agents', card: 'agents-active', hasPr: false },
 ] as const;
 
 for (const scene of landscapeRows) {
@@ -40,6 +40,7 @@ for (const scene of landscapeRows) {
     const rows = card.locator('[data-workspace-hover-card-agent-row]');
 
     await expect(rows).toHaveCount(scene.count);
+    await expect(pullRequests).toHaveCount(scene.hasPr ? 1 : 0);
     const [cardBox, activityBox, pullRequestsBox, titleBox, statusBox] = await Promise.all([
       card.boundingBox(),
       activity.boundingBox(),
@@ -49,14 +50,20 @@ for (const scene of landscapeRows) {
     ]);
     expect(cardBox).not.toBeNull();
     expect(activityBox).not.toBeNull();
-    expect(pullRequestsBox).not.toBeNull();
     expect(cardBox!.width).toBeCloseTo(640, 0);
     expect(titleBox).not.toBeNull();
     expect(statusBox).not.toBeNull();
     expect(cardBox!.width / cardBox!.height).toBeGreaterThanOrEqual(1.4);
     expect(cardBox!.x).toBeGreaterThanOrEqual(8);
     expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(712);
-    expect(activityBox!.width).toBeCloseTo(pullRequestsBox!.width, 0);
+    if (scene.hasPr) {
+      expect(pullRequestsBox).not.toBeNull();
+      expect(activityBox!.width).toBeCloseTo(pullRequestsBox!.width, 0);
+      expect(activityBox!.y).toBeCloseTo(pullRequestsBox!.y, 0);
+      expect(activityBox!.height).toBeCloseTo(pullRequestsBox!.height, 0);
+    } else {
+      expect(pullRequestsBox).toBeNull();
+    }
     expect(Math.abs(titleBox!.y - statusBox!.y)).toBeLessThanOrEqual(3);
     expect(await header.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
     expect(
@@ -143,7 +150,7 @@ test('keeps the landscape loading skeleton at the target width', async ({ mount,
   });
   const card = preview.locator('[data-workspace-hover-card]');
 
-  await expect(card.locator('[data-slot="skeleton"]')).toHaveCount(8);
+  await expect(card.locator('[data-slot="skeleton"]')).toHaveCount(6);
   expect((await card.boundingBox())?.width).toBeCloseTo(640, 0);
   await expect(card.locator('[data-workspace-hover-card-title]')).toHaveCount(0);
 });
@@ -191,18 +198,21 @@ test('shows the real first question and its total count in the landscape activit
   expect(await question.evaluate((node) => getComputedStyle(node).whiteSpace)).toBe('nowrap');
 });
 
-test('uses flat column headings and no internal row dividers', async ({ mount, page }) => {
+test('keeps sections accessible without visible headings or internal row dividers', async ({
+  mount,
+  page,
+}) => {
   await page.setViewportSize({ width: 720, height: 520 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('landscape-wide'),
   });
-  const heading = preview.locator('[data-workspace-hover-card-agent-heading]');
-
-  await expect(heading).toBeVisible();
-  expect(await heading.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
-    'rgba(0, 0, 0, 0)',
+  await expect(preview.locator('h3')).toHaveCount(0);
+  await expect(preview.locator('[data-workspace-hover-card-activity]')).toHaveAccessibleName(
+    'Agents',
   );
-  expect(await heading.evaluate((node) => getComputedStyle(node).borderBottomWidth)).toBe('0px');
+  await expect(preview.locator('[data-workspace-hover-card-pr-column]')).toHaveAccessibleName(
+    'Pull requests',
+  );
   await expect(preview.locator('[data-agent-group]')).toHaveCount(0);
   const rowBorders = await preview
     .locator('[data-workspace-hover-card-agent-row]')

@@ -174,7 +174,7 @@ describe('WorkspaceHoverCard', () => {
   });
 
   it('keeps pull request numbers and status visible in the pull request column', async () => {
-    await renderHoverCard({
+    const { container } = await renderHoverCard({
       activePullRequest: {
         id: 'pr-42',
         number: 42,
@@ -191,6 +191,11 @@ describe('WorkspaceHoverCard', () => {
     expect(row.textContent).toContain('#42');
     expect(row.textContent).toContain('Open');
     expect(row.getAttribute('data-pr-status')).toBe('open');
+    expect(Array.from(row.children).map(text)).toEqual(['', 'Refine hover card', 'Open', '#42']);
+    expect(container.querySelector('[data-workspace-hover-card-activity]')).toBeNull();
+    expect(
+      container.querySelector('[data-workspace-hover-card-pr-column]')?.getAttribute('aria-label'),
+    ).toBe('Pull requests');
   });
 
   it('preserves the public loading and data-loading behavior', async () => {
@@ -214,7 +219,7 @@ describe('WorkspaceHoverCard', () => {
     expect(sessionLoads()).toHaveLength(2);
 
     await rerender({ workspace: null, isLoading: true, loadWorkspaceData: false });
-    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(8);
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(6);
     expect(container.querySelector('[data-workspace-hover-card-title]')).toBeNull();
   });
 
@@ -237,8 +242,20 @@ describe('WorkspaceHoverCard', () => {
     );
   });
 
-  it('keeps identity in the header above the summary and two activity columns', async () => {
-    const { container } = await renderHoverCard();
+  it('keeps identity in the header above two accessible non-empty activity sections', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+    const { container } = await renderHoverCard({
+      agentSummary: { agentIds: ['active'] },
+      activePullRequest: {
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/augment/intent/pull/42',
+        title: 'Refine hover card',
+        status: PullRequestStatus.Open,
+        createdAt: baseWorkspace.createdAt,
+        updatedAt: baseWorkspace.updatedAt,
+      },
+    });
     const root = container.querySelector('[data-workspace-hover-card]')!;
     const header = container.querySelector('[data-workspace-hover-card-header]')!;
     const columns = container.querySelector('[data-workspace-hover-card-columns]')!;
@@ -248,9 +265,6 @@ describe('WorkspaceHoverCard', () => {
     const summary = container.querySelector('[data-workspace-hover-card-summary]')!;
 
     expect(root.getAttribute('data-workspace-hover-card-layout')).toBe('landscape');
-    expect(root.className).toContain('rounded-2xl');
-    expect(root.className).toContain('overflow-hidden');
-    expect(root.className).toContain('bg-background');
     expect(header.parentElement).toBe(root);
     expect(identity.parentElement).toBe(header);
     expect(summary.parentElement).toBe(identity);
@@ -269,16 +283,34 @@ describe('WorkspaceHoverCard', () => {
     );
     expect(identity.querySelector('[data-workspace-hover-card-branch]')).toBeNull();
     expect(text(summary)).toBe('Preparing the landscape hover card for review.');
-    expect(text(activity.querySelector('[data-workspace-hover-card-agent-heading]')!)).toBe(
-      'Agents',
-    );
-    expect(text(pullRequests.querySelector('[data-workspace-hover-card-pr-heading]')!)).toBe(
-      'Pull requests',
-    );
-    expect(within(pullRequests as HTMLElement).getByText('No pull requests')).toBeTruthy();
+    expect(activity.getAttribute('aria-label')).toBe('Agents');
+    expect(pullRequests.getAttribute('aria-label')).toBe('Pull requests');
+    expect(container.querySelector('h3')).toBeNull();
     expect(identity.querySelector('[data-workspace-hover-card-agent-stack]')).toBeNull();
     expect(identity.querySelector('[data-workspace-hover-card-agent-count]')).toBeNull();
     expect(container.querySelector('.font-mono')).toBeNull();
+  });
+
+  it('omits the description and bottom section when the workspace has no message or rows', async () => {
+    const { container } = await renderHoverCard({ statusMessage: '   ' });
+
+    expect(container.querySelector('[data-workspace-hover-card-summary]')).toBeNull();
+    expect(container.querySelector('[data-workspace-hover-card-divider]')).toBeNull();
+    expect(container.querySelector('[data-workspace-hover-card-columns]')).toBeNull();
+    expect(text(container.querySelector('[data-workspace-hover-card-status]')!)).toBe('Idle');
+  });
+
+  it('renders an agents-only body without a pull request section', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+    const { container } = await renderHoverCard({ agentSummary: { agentIds: ['active'] } });
+
+    const columns = container.querySelector('[data-workspace-hover-card-columns]')!;
+    const activity = container.querySelector('[data-workspace-hover-card-activity]')!;
+    expect(container.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
+    expect(columns.children).toHaveLength(1);
+    expect(columns.children[0]).toBe(activity);
+    expect(activity.getAttribute('aria-label')).toBe('Agents');
+    expect(container.querySelector('[data-workspace-hover-card-pr-column]')).toBeNull();
   });
 
   it('orders blocker, real question, active, and waiting rows without group headings', async () => {
