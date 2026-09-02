@@ -828,13 +828,18 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
           height: savedBounds.height,
         };
         // Validate against the display the saved bounds land on, not the
-        // primary display, so bounds saved on a secondary monitor survive.
-        const validated = validateBounds(resolved, screen.getDisplayMatching(resolved).workArea);
-        if (validated === resolved) {
-          windowBounds = resolved;
+        // primary display, so bounds saved on a secondary monitor survive. In
+        // the fallback case validateBounds() returns that matched display's
+        // work area, so use its result either way instead of snapping back to
+        // the primary display.
+        windowBounds = validateBounds(resolved, screen.getDisplayMatching(resolved).workArea);
+        if (windowBounds === resolved) {
           logger.info('Using saved window bounds:', windowBounds);
         } else {
-          logger.info('Saved window bounds not reasonable for current display, using defaults');
+          logger.info(
+            'Saved window bounds not reasonable, using matched display work area:',
+            windowBounds,
+          );
         }
       }
     }

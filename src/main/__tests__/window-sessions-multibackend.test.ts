@@ -580,6 +580,22 @@ describe('multi-backend window sessions', () => {
       expect(window.bounds).toEqual(saved);
     });
 
+    it('createWindow falls back to the matched display work area for off-screen legacy bounds', () => {
+      // Bounds near a since-disconnected secondary display: getDisplayMatching
+      // picks the nearest live display, whose work area they no longer
+      // intersect. The fallback must land on THAT display's work area, not
+      // reset to the primary display.
+      const matchedWorkArea = { x: 1920, y: 0, width: 2560, height: 1415 };
+      mockGetDisplayMatching.mockReturnValue({ workArea: matchedWorkArea });
+      const saved = { x: 99999, y: 99999, width: 1400, height: 900 };
+      fs.writeFileSync(path.join(tmpDir, 'window-bounds.json'), JSON.stringify(saved), 'utf-8');
+
+      createWindow();
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(window.bounds).toEqual(matchedWorkArea);
+    });
+
     it('captures isFullScreen in the saved session', async () => {
       const bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
       const window = seedLiveWindow('app://workspaces/work/fs', bounds);
