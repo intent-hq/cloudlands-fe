@@ -736,6 +736,26 @@ Prompt.`;
       expect(loaded?.frontmatter.codingAgent).toBe('opencode');
     });
 
+    it('should drop unusable compound entries (empty prefix or rest) on write', async () => {
+      await writeSpecialistFile({
+        id: 'options-malformed-write',
+        name: 'Options Malformed Write',
+        description: 'Malformed compound entries never persist',
+        modelOptions: [
+          { model: 'opencode:', hint: 'no rest' },
+          { model: ':kimi-k3', hint: 'no prefix' },
+          { model: 'sonnet-4.5', hint: 'kept' },
+        ],
+        behaviorPrompt: 'Prompt',
+      });
+
+      const loaded = await loadSpecialistFile('options-malformed-write');
+      expect(loaded?.rawContent).toContain(
+        `modelOptions: ${JSON.stringify([{ model: 'sonnet-4.5', hint: 'kept' }])}`,
+      );
+      expect(loaded?.frontmatter.modelOptions).toEqual([{ model: 'sonnet-4.5', hint: 'kept' }]);
+    });
+
     it('should omit the modelOptions key when undefined and write [] verbatim', async () => {
       await writeSpecialistFile({
         id: 'no-options',
