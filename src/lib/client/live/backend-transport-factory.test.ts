@@ -76,6 +76,21 @@ describe("resolveBackendTransport", () => {
     expect(transport.isAvailable()).toBe(true);
   });
 
+  it("picks the browser WebSocket transport for a same-origin bridge path", async () => {
+    vi.stubGlobal("window", {
+      ...window,
+      electronAPI: {
+        ...window.electronAPI,
+        versions: { node: "20.0.0", chrome: "120.0.0", electron: "0.0.0-browser" },
+      },
+    });
+    vi.stubGlobal("location", { protocol: "http:", host: "127.0.0.1:64197" });
+    vi.stubEnv("VITE_INTENTD_WS_URL", "/intentd/ws");
+    const { transport, BrowserWebSocketTransport } = await resolveFreshTransport();
+    expect(transport).toBeInstanceOf(BrowserWebSocketTransport);
+    expect(transport.isAvailable()).toBe(true);
+  });
+
   it("falls back to the IPC transport (mock-backed) when the mock is installed and no WS URL is set", async () => {
     vi.stubGlobal("window", {
       ...window,
