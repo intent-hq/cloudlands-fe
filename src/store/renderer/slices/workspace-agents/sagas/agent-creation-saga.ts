@@ -372,13 +372,18 @@ function* launchAgent(
   try {
     const model = config.model ?? (yield* selectSelectedModel.effect());
     const activeProvider = yield* selectActiveProviderId.effect();
+    const provider = config.provider ?? providerForModel(model, activeProvider);
+    const modelProvider = providerForModel(model, provider);
+    if (model && provider && modelProvider !== provider) {
+      throw new Error(`model ${model} does not belong to provider ${provider}`);
+    }
     const request = createAgentFromConfigRequested(
       wsId,
       {
         ...config,
         workspaceId: WorkspaceId(wsId),
         model,
-        provider: config.provider ?? providerForModel(model, activeProvider),
+        provider,
       },
       options,
     );

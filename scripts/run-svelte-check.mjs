@@ -15,8 +15,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -191,25 +192,24 @@ async function main() {
     'error',
     ...process.argv.slice(2),
   ];
+  const outputDir = mkdtempSync(path.join(tmpdir(), 'cloudlands-svelte-check-'));
+  const outputPath = path.join(outputDir, 'output.ndjson');
+  const outputFd = openSync(outputPath, 'w');
   const child = spawn(process.execPath, [resolveBin('svelte-check', 'svelte-check'), ...args], {
-    stdio: ['inherit', 'pipe', 'inherit'],
+    stdio: ['inherit', outputFd, 'inherit'],
     env: syncEnv(),
   });
 
+  const exitCode = await new Promise((resolve) => {
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+  closeSync(outputFd);
+  const lines = readFileSync(outputPath, 'utf8').split(/\r?\n/);
+  rmSync(outputDir, { recursive: true });
   const collector = createOutputCollector();
-  const rl = createInterface({ input: child.stdout });
-  rl.on('line', (line) => collector.handleLine(line));
-
-  // Wait for the child to exit AND readline to drain the full stream, so a
-  // COMPLETED line delivered around process close is never missed (#4111).
-  const [exitCode] = await Promise.all([
-    new Promise((resolve) => {
-      child.on('close', (code) => resolve(code ?? 1));
-    }),
-    new Promise((resolve) => {
-      rl.once('close', resolve);
-    }),
-  ]);
+  for (const line of lines) {
+    if (line) collector.handleLine(line);
+  }
 
   const completed = collector.completed;
   if (completed) {
