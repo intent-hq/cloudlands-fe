@@ -15,8 +15,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,27 +25,45 @@ import { pathToFileURL } from 'node:url';
 export const MIN_FILES = 500;
 
 const MACHINE_LINE = /^\d+ (.*)$/;
+/**
+ * The COMPLETED record. Tolerated variants beyond the exact current format
+ * (intent-hq/monorepo#4111): trailing whitespace/CR (stripped before this
+ * regex runs) and the legacy form that omits the FILES_WITH_PROBLEMS clause.
+ * The tail is otherwise anchored: a line cut off after the WARNINGS clause
+ * (e.g. `… 2 WARNINGS 1 FI`) is rejected, not read as a completion.
+ */
 const COMPLETED_LINE =
-  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS (\d+) FILES_WITH_PROBLEMS$/;
+  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS(?: (\d+) FILES_WITH_PROBLEMS)?$/;
+
+/** Parse a COMPLETED record body (the line minus any timestamp prefix). */
+function parseCompletedBody(body) {
+  const completed = COMPLETED_LINE.exec(body);
+  if (!completed) return null;
+  return {
+    kind: 'completed',
+    files: Number(completed[1]),
+    errors: Number(completed[2]),
+    warnings: Number(completed[3]),
+    filesWithProblems: Number(completed[4] ?? 0),
+  };
+}
 
 /**
  * Parse one machine-verbose output line into a structured event.
  * Returns null for lines that are not machine-format lines.
  */
 export function parseMachineLine(line) {
-  const match = MACHINE_LINE.exec(line);
-  if (!match) return null;
-  const body = match[1];
-  const completed = COMPLETED_LINE.exec(body);
-  if (completed) {
-    return {
-      kind: 'completed',
-      files: Number(completed[1]),
-      errors: Number(completed[2]),
-      warnings: Number(completed[3]),
-      filesWithProblems: Number(completed[4]),
-    };
+  const trimmed = line.replace(/\s+$/, '');
+  const match = MACHINE_LINE.exec(trimmed);
+  if (!match) {
+    // Recognize the guard-relevant COMPLETED record even without the epoch-ms
+    // prefix, in case svelte-check drops or reformats the timestamp. All other
+    // prefix-less lines stay passthrough.
+    return parseCompletedBody(trimmed);
   }
+  const body = match[1];
+  const completed = parseCompletedBody(body);
+  if (completed) return completed;
   if (body.startsWith('START ')) return { kind: 'start' };
   if (body.startsWith('FAILURE '))
     return { kind: 'failure', message: body.slice('FAILURE '.length) };
@@ -129,6 +148,39 @@ async function syncSvelteKitTypes() {
   }
 }
 
+/**
+ * Line consumer for the machine-verbose stream: re-prints diagnostics and
+ * passthrough lines, and records the COMPLETED summary when one is seen.
+ */
+export function createOutputCollector({
+  print = console.log,
+  printError = console.error,
+  workspaceDir = process.cwd(),
+} = {}) {
+  const state = { completed: null };
+  return {
+    get completed() {
+      return state.completed;
+    },
+    handleLine(line) {
+      const event = parseMachineLine(line);
+      if (!event) {
+        print(line);
+        return;
+      }
+      if (event.kind === 'diagnostic') {
+        print(formatDiagnostic(event.diagnostic, workspaceDir));
+      } else if (event.kind === 'completed') {
+        state.completed = event;
+      } else if (event.kind === 'failure') {
+        printError(`svelte-check failure: ${event.message}`);
+      } else if (event.kind === 'unknown') {
+        print(event.body);
+      }
+    },
+  };
+}
+
 async function main() {
   await syncSvelteKitTypes();
   const args = [
@@ -140,34 +192,26 @@ async function main() {
     'error',
     ...process.argv.slice(2),
   ];
+  const outputDir = mkdtempSync(path.join(tmpdir(), 'cloudlands-svelte-check-'));
+  const outputPath = path.join(outputDir, 'output.ndjson');
+  const outputFd = openSync(outputPath, 'w');
   const child = spawn(process.execPath, [resolveBin('svelte-check', 'svelte-check'), ...args], {
-    stdio: ['inherit', 'pipe', 'inherit'],
+    stdio: ['inherit', outputFd, 'inherit'],
     env: syncEnv(),
-  });
-
-  let completed = null;
-  const rl = createInterface({ input: child.stdout });
-  rl.on('line', (line) => {
-    const event = parseMachineLine(line);
-    if (!event) {
-      console.log(line);
-      return;
-    }
-    if (event.kind === 'diagnostic') {
-      console.log(formatDiagnostic(event.diagnostic));
-    } else if (event.kind === 'completed') {
-      completed = event;
-    } else if (event.kind === 'failure') {
-      console.error(`svelte-check failure: ${event.message}`);
-    } else if (event.kind === 'unknown') {
-      console.log(event.body);
-    }
   });
 
   const exitCode = await new Promise((resolve) => {
     child.on('close', (code) => resolve(code ?? 1));
   });
+  closeSync(outputFd);
+  const lines = readFileSync(outputPath, 'utf8').split(/\r?\n/);
+  rmSync(outputDir, { recursive: true });
+  const collector = createOutputCollector();
+  for (const line of lines) {
+    if (line) collector.handleLine(line);
+  }
 
+  const completed = collector.completed;
   if (completed) {
     console.log(
       `svelte-check found ${completed.errors} errors and ${completed.warnings} warnings ` +

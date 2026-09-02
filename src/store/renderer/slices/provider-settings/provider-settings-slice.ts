@@ -41,6 +41,11 @@ export const initialState: ProviderSettingsState = {
   pendingEnablementOverrides: {},
 };
 
+/** Optimistically applies one provider/model default pair; persistence is one atomic batch. */
+export const setAtomicDefaultModel = createAction<[payload: { providerId: string; model: string }]>(
+  'providerSettings/setAtomicDefaultModel',
+);
+
 function canBeDisabled(state: ProviderSettingsState, providerId: string): boolean {
   return !state.nonDisableableProviderIds.includes(providerId);
 }
@@ -104,6 +109,11 @@ providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog]
   // it stays '' — never silently adopted from the catalog.
 }));
 providerSettingsReducer.with(setActiveProvider, (state, { payload: [providerId] }) => ({
+  ...state,
+  activeProviderId: providerId,
+  pendingActiveProviderId: providerId,
+}));
+providerSettingsReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId }] }) => ({
   ...state,
   activeProviderId: providerId,
   pendingActiveProviderId: providerId,

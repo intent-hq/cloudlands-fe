@@ -57,13 +57,18 @@
     faStop,
     faRotateRight,
     faSpinner,
+    faTableColumns,
     faArrowUpRightFromSquare,
     faCircle,
     faPencil,
   } from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
-  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
+  import {
+    getScriptStatusKind,
+    isLiveScriptStatus,
+    type ScriptStatusKind,
+  } from '$features/scripts/utils/script-status';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
   import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
@@ -85,6 +90,7 @@
   import Header from '../ui/Header.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { createTerminalOverlayResize } from './terminal-overlay-resize';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   // ============================================================================
   // Props & State
@@ -227,29 +233,64 @@
   }
 
   // Script Actions
-  function getStatusColor(script: ScriptWithState): string {
-    const { status, exitCode } = script.runtime;
-    // Live statuses (running/restarting) reuse the running treatment.
-    if (isLiveScriptStatus(status)) return 'bg-green-500';
-    if (status === 'idle') return 'bg-muted-foreground/40';
-    if (exitCode === 0 || exitCode === null || exitCode === undefined)
-      return 'bg-muted-foreground/40';
-    if (exitCode >= 128) return 'bg-muted-foreground/60';
-    return 'bg-red-500';
-  }
-
-  function getStatusLabel(script: ScriptWithState): string {
-    const { status, exitCode } = script.runtime;
-    // Live statuses (running/restarting) reuse the running treatment.
-    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
-    if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
-    if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
-    if (exitCode !== null && exitCode !== undefined) {
-      if (exitCode >= 128)
-        return m.terminal_quakeOverlay_status_stoppedSignal({ signal: exitCode - 128 });
-      return m.terminal_quakeOverlay_status_errorCode({ code: exitCode });
+  const STATUS_CONFIG: Record<
+    ScriptStatusKind,
+    {
+      label: (script: ScriptWithState) => string;
+      dotClass: string;
+      textClass: string;
     }
-    return m.terminal_quakeOverlay_status_exited();
+  > = {
+    running: {
+      label: () => m.terminal_quakeOverlay_status_running(),
+      dotClass: 'bg-green-500',
+      textClass: 'text-green-500',
+    },
+    restarting: {
+      label: () => m.workspace_devScripts_restarting_label(),
+      dotClass: 'bg-amber-500',
+      textClass: 'text-amber-500',
+    },
+    idle: {
+      label: () => m.terminal_quakeOverlay_status_idle(),
+      dotClass: 'bg-muted-foreground/40',
+      textClass: 'text-zinc-400',
+    },
+    succeeded: {
+      label: () => m.terminal_quakeOverlay_status_exitedZero(),
+      dotClass: 'bg-green-500',
+      textClass: 'text-green-500',
+    },
+    failed: {
+      label: (script) =>
+        m.terminal_quakeOverlay_status_errorCode({ code: script.runtime.exitCode ?? 1 }),
+      dotClass: 'bg-red-500',
+      textClass: 'text-red-400',
+    },
+    stopped: {
+      label: (script) =>
+        m.terminal_quakeOverlay_status_stoppedSignal({
+          signal: (script.runtime.exitCode ?? 128) - 128,
+        }),
+      dotClass: 'bg-muted-foreground/60',
+      textClass: 'text-zinc-400',
+    },
+    exited: {
+      label: () => m.terminal_quakeOverlay_status_exited(),
+      dotClass: 'bg-muted-foreground/40',
+      textClass: 'text-zinc-400',
+    },
+  };
+
+  function getStatusInfo(script: ScriptWithState) {
+    const config = STATUS_CONFIG[getScriptStatusKind(script.runtime)];
+    return {
+      dotClass: config.dotClass,
+      textClass: config.textClass,
+      get label() {
+        return config.label(script);
+      },
+    };
   }
 
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
@@ -368,32 +409,7 @@
     });
   });
 
-  const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
-    idle: {
-      get label() {
-        return m.terminal_quakeOverlay_status_idle();
-      },
-      colorClass: 'text-zinc-400',
-    },
-    running: {
-      get label() {
-        return m.terminal_quakeOverlay_status_running();
-      },
-      colorClass: 'text-green-500',
-    },
-    exited: {
-      get label() {
-        return m.terminal_quakeOverlay_status_exited();
-      },
-      colorClass: 'text-red-400',
-    },
-  };
-
-  const selectedScriptStatusInfo = $derived(
-    selectedScriptRuntime
-      ? (STATUS_CONFIG[selectedScriptRuntime.status] ?? STATUS_CONFIG.idle)
-      : null,
-  );
+  const selectedScriptStatusInfo = $derived(selectedScript ? getStatusInfo(selectedScript) : null);
 
   function startEditingScriptName(): void {
     if (!selectedScript) return;
@@ -506,6 +522,31 @@
   function handleScriptOpenUrl(): void {
     if (!selectedScriptRuntime?.detectedUrl) return;
     openScriptUrl(selectedScriptRuntime.detectedUrl);
+  }
+
+  function moveSelectionToPanel(): void {
+    if (!workspaceId) return;
+    const activeTerminal = $terminals.find((terminal) => terminal.id === $activeTerminalId);
+    if (selectedScript) {
+      getPanelLayoutManager(workspaceId).openUserTab({
+        type: 'terminal',
+        title: selectedScript.name,
+        scriptId: selectedScript.id,
+        workspaceId,
+        closable: true,
+      });
+    } else if (activeTerminal) {
+      getPanelLayoutManager(workspaceId).openUserTab({
+        type: 'terminal',
+        title: terminalDisplayName(activeTerminal),
+        terminalId: activeTerminal.id,
+        workspaceId,
+        closable: true,
+      });
+    } else {
+      return;
+    }
+    appStore.dispatch(closeTerminalOverlay(workspaceId));
   }
 
   // Live and previously-running scripts shown as tabs in the bottom bar.
@@ -1004,7 +1045,8 @@
 
               <!-- Status badge -->
               <span
-                class="{selectedScriptStatusInfo.colorClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+                class="{selectedScriptStatusInfo.textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+                title={selectedScriptStatusInfo.label}
               >
                 <Fa icon={faCircle} size="0.45em" />
                 {selectedScriptStatusInfo.label}
@@ -1027,6 +1069,16 @@
 
             <!-- Script Controls -->
             <div class="flex items-center gap-0.5 flex-shrink-0">
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={moveSelectionToPanel}
+                tooltip={m.workspace_shell_showInPanel_tooltip()}
+                aria-label={m.workspace_shell_showInPanel_tooltip()}
+                data-move-to-panel
+              >
+                <Fa icon={faTableColumns} size="xs" />
+              </Button>
               {#if isLiveScriptStatus(selectedScriptRuntime.status)}
                 <Button
                   variant="ghost-light"
@@ -1121,6 +1173,16 @@
 
             <!-- Clear and Collapse Buttons -->
             <div class="flex items-center gap-0.5">
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={moveSelectionToPanel}
+                tooltip={m.workspace_shell_showInPanel_tooltip()}
+                aria-label={m.workspace_shell_showInPanel_tooltip()}
+                data-move-to-panel
+              >
+                <Fa icon={faTableColumns} size="xs" />
+              </Button>
               <!-- Clear Button -->
               <Button
                 variant="ghost-light"
@@ -1282,6 +1344,7 @@
           <!-- Running Script Tabs -->
           {#each runningScripts as script (script.id)}
             {@const isScriptActive = selectedScriptId === script.id && $isOpen}
+            {@const scriptStatusInfo = getStatusInfo(script)}
             {@const isPreviouslyRunningOnly =
               script.runtime.previouslyRunning === true &&
               !isLiveScriptStatus(script.runtime.status)}
@@ -1311,7 +1374,12 @@
               tabindex="0"
               aria-selected={isScriptActive}
             >
-              <div class="w-2 h-2 rounded-full bg-green-500 shrink-0"></div>
+              <div
+                class={cn('w-2 h-2 rounded-full shrink-0', scriptStatusInfo.dotClass)}
+                role="img"
+                aria-label={scriptStatusInfo.label}
+                title={scriptStatusInfo.label}
+              ></div>
               {#if editingScriptTabId === script.id}
                 <input
                   type="text"
@@ -1445,6 +1513,7 @@
                   {#if $scriptEntries$.length > 0}
                     <ListContainer spacing="compact" class="py-0! px-0">
                       {#each sortScripts($scriptEntries$) as script (script.id)}
+                        {@const scriptStatusInfo = getStatusInfo(script)}
                         <ListItem
                           size="sm"
                           class="gap-0.5!"
@@ -1465,8 +1534,10 @@
                           {#snippet iconSnippet()}
                             <div class="flex items-center justify-center w-2">
                               <div
-                                class={cn('w-2 h-2 rounded-full', getStatusColor(script))}
-                                title={getStatusLabel(script)}
+                                class={cn('w-2 h-2 rounded-full', scriptStatusInfo.dotClass)}
+                                role="img"
+                                aria-label={scriptStatusInfo.label}
+                                title={scriptStatusInfo.label}
                               ></div>
                             </div>
                           {/snippet}

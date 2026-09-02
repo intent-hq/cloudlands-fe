@@ -34,6 +34,8 @@ export type ModelState = {
   availableModelsProviderId: string;
   loadingState: Record<string, ModelLoadingState>;
   providerModels: Record<string, string>;
+  /** Newest local per-provider model picks awaiting matching daemon hydration. */
+  pendingProviderModels: Record<string, string>;
   /**
    * Reasoning-effort level paired with the default-model setting
    * (`model.defaultReasoningEffort`, PROTOCOL §5.12). '' means unset — the

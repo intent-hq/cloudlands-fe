@@ -112,8 +112,9 @@
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
         <div
-          class="main-content-area flex h-full min-w-0 z-10 bg-sidebar"
-          class:pl-2={$sidebarIsCollapsed}
+          class="main-content-area flex h-full min-w-0 z-10 bg-sidebar {$sidebarIsCollapsed
+            ? 'pl-2 sm:pl-3'
+            : ''}"
         >
           {@render content()}
         </div>

@@ -35,6 +35,10 @@
     createProgressLabel,
     formatCreateProgressPercent,
   } from '$lib/components/workspace/initializer/create-progress-label';
+  import {
+    CHAT_OPERATIONAL_SUMMARY_TONE_CLASS,
+    OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
 
   type StepStatus = 'pending' | 'active' | 'done';
 
@@ -161,9 +165,14 @@
   }
 </script>
 
-<div class="w-full overflow-hidden transition-all duration-500">
+<div
+  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-500"
+>
   <!-- Header -->
-  <div class="px-4 pt-3 pb-2 flex items-baseline gap-2.5">
+  <div
+    class="flex items-baseline gap-2.5 pt-3 pb-2"
+    style:padding-inline="var(--operational-row-inline-padding)"
+  >
     <div class="inline-grid *:[grid-area:1/1]">
       {#key allDone}
         <h3
@@ -198,7 +207,7 @@
   </div>
 
   <!-- Steps -->
-  <div class="px-4 pb-4 space-y-0.5">
+  <div class="space-y-0.5 pb-4">
     {#snippet stepRow(
       status: StepStatus,
       icon: typeof faFolderOpen,
@@ -207,7 +216,9 @@
       doneContent: import('svelte').Snippet,
     )}
       <div
-        class="flex items-start gap-2.5 text-base leading-relaxed py-0.75 px-2 -mx-1 rounded-md relative overflow-hidden"
+        class="relative flex items-start overflow-hidden rounded-md py-0.75 text-base leading-relaxed"
+        style:gap="var(--operational-leading-gap)"
+        style:padding-inline="var(--operational-row-inline-padding)"
         transition:slide={{ duration: 300, easing: cubicOut }}
       >
         {#if status === 'active'}
@@ -215,7 +226,9 @@
             <ShimmerOverlay />
           </div>
         {/if}
-        <span class="mt-1 shrink-0 w-4 opacity-30 text-center relative z-10">
+        <span
+          class="{CHAT_OPERATIONAL_SUMMARY_TONE_CLASS} relative z-10 mt-1 flex size-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center"
+        >
           <Fa {icon} size={14} class={iconClass} />
         </span>
         <span class="text-muted-foreground font-normal leading-snug relative z-10">
@@ -266,9 +279,7 @@
             percent: formatCreateProgressPercent(maxPercent),
           })}
         </span>
-        <div
-          class="mt-1 h-[2px] w-full max-w-64 rounded-full bg-secondary overflow-hidden"
-        >
+        <div class="mt-1 h-[2px] w-full max-w-64 rounded-full bg-secondary overflow-hidden">
           <div
             class="h-full bg-foreground/60 transition-[width] duration-300 ease-out"
             style="width: {maxPercent}%"

@@ -45,6 +45,7 @@ import {
   updateTabFavicon,
   updateTabTitle,
 } from './panel-layout-slice';
+import { removeScript } from '../scripts/scripts-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 
 export const TAB_REMOVAL_ACTIONS = [
@@ -68,6 +69,7 @@ export const TAB_REMOVAL_ACTIONS = [
   goBack,
   goForward,
   reconcileStaleAgentTabs,
+  removeScript,
   clearPanelLayout,
 ];
 

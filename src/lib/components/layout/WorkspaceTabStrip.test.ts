@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -436,52 +437,116 @@ describe('WorkspaceTabStrip', () => {
   });
 
   it('renders accessible tabs with delayed shared workspace hover cards', async () => {
+    vi.useFakeTimers();
+    const view = render(WorkspaceTabStrip);
+
+    try {
+      const tablist = screen.getByRole('tablist', {
+        name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+      });
+      expect(tablist.className).toContain('pl-7');
+      expect(tablist.className).toContain('pr-3');
+      expect(tablist.className).toContain('-ml-1');
+      expect(tablist.className).not.toContain('-ml-3');
+      expect(tablist.className).toContain('-mr-2.5');
+      expect(screen.getAllByRole('tab')).toHaveLength(3);
+      const alpha = screen.getByRole('tab', { name: /Alpha/ });
+      expect(alpha.getAttribute('aria-selected')).toBe('true');
+      expect(document.querySelector('[data-tooltip-delay="400"]')).toBeTruthy();
+      const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
+      await fireEvent.mouseEnter(tooltipRoot);
+      vi.advanceTimersByTime(399);
+      await tick();
+      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
+      vi.advanceTimersByTime(1);
+      await tick();
+      const alphaHover = document.querySelector('[data-workspace-tab-hover-content="ws-1"]')!;
+      expect(alphaHover.querySelector('[data-workspace-hover-card]')).toBeTruthy();
+      expect(alphaHover.querySelector('[data-workspace-hover-card-title]')?.textContent).toBe(
+        'Alpha',
+      );
+      expect(alphaHover.querySelector('[data-workspace-hover-card-status]')?.textContent).toBe(
+        'Polishing the workspace navigation experience.',
+      );
+      expect(alphaHover.querySelector('[data-workspace-hover-card-progress]')).toBeTruthy();
+      expect(alphaHover.querySelector('[data-workspace-hover-card-agents]')?.textContent).toBe(
+        'agent-1,agent-2',
+      );
+      expect(document.querySelector('[data-workspace-tab-progress]')).toBeNull();
+      expect(document.querySelector('[data-workspace-tab-description]')).toBeNull();
+      expect(
+        document
+          .querySelector('[data-tooltip-content-class]')
+          ?.getAttribute('data-tooltip-content-class'),
+      ).toContain('bg-transparent');
+      expect(screen.queryByText('feature/alpha')).toBeNull();
+      expect(screen.queryByText('Ctrl Tab')).toBeNull();
+
+      await fireEvent.mouseLeave(tooltipRoot);
+      await tick();
+      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels and restarts the full hover delay when the pointer switches tabs', async () => {
+    vi.useFakeTimers();
+    const view = render(WorkspaceTabStrip);
+    try {
+      const alphaRoot = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      const betaRoot = screen
+        .getByRole('tab', { name: /Beta/ })
+        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+
+      await fireEvent.mouseEnter(alphaRoot);
+      vi.advanceTimersByTime(200);
+      await fireEvent.mouseLeave(alphaRoot);
+      await fireEvent.mouseEnter(betaRoot);
+      vi.advanceTimersByTime(399);
+      await tick();
+      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
+
+      vi.advanceTimersByTime(1);
+      await tick();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeNull();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens tab hover content immediately on keyboard focus', async () => {
     render(WorkspaceTabStrip);
-
-    const tablist = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
-    expect(tablist.className).toContain('pl-7');
-    expect(tablist.className).toContain('pr-3');
-    expect(tablist.className).toContain('-ml-1');
-    expect(tablist.className).not.toContain('-ml-3');
-    expect(tablist.className).toContain('-mr-2.5');
-    expect(screen.getAllByRole('tab')).toHaveLength(3);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
-    expect(alpha.getAttribute('aria-selected')).toBe('true');
-    expect(document.querySelector('[data-tooltip-delay="500"]')).toBeTruthy();
-    const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-    expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
-    await fireEvent.mouseEnter(tooltipRoot);
-    const alphaHover = document.querySelector('[data-workspace-tab-hover-content="ws-1"]')!;
-    expect(alphaHover.querySelector('[data-workspace-hover-card]')).toBeTruthy();
-    expect(alphaHover.querySelector('[data-workspace-hover-card-title]')?.textContent).toBe(
-      'Alpha',
-    );
-    expect(alphaHover.querySelector('[data-workspace-hover-card-status]')?.textContent).toBe(
-      'Polishing the workspace navigation experience.',
-    );
-    expect(alphaHover.querySelector('[data-workspace-hover-card-progress]')).toBeTruthy();
-    expect(alphaHover.querySelector('[data-workspace-hover-card-agents]')?.textContent).toBe(
-      'agent-1,agent-2',
-    );
-    expect(document.querySelector('[data-workspace-tab-progress]')).toBeNull();
-    expect(document.querySelector('[data-workspace-tab-description]')).toBeNull();
-    expect(
-      document
-        .querySelector('[data-tooltip-content-class]')
-        ?.getAttribute('data-tooltip-content-class'),
-    ).toContain('bg-transparent');
-    expect(screen.queryByText('feature/alpha')).toBeNull();
-    expect(screen.queryByText('Ctrl Tab')).toBeNull();
 
-    await fireEvent.mouseLeave(tooltipRoot);
-    await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
+    await fireEvent.focusIn(alpha);
+    await tick();
 
-    await fireEvent.mouseEnter(tooltipRoot);
-    expect(screen.getByTestId('workspace-tab-preview')).toBeTruthy();
-    await fireEvent.mouseLeave(tooltipRoot);
-    await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
+    expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
+  });
+
+  it('clears a pending tab hover open when the strip is destroyed', async () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(WorkspaceTabStrip);
+      const alphaRoot = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      const timerCountBeforeHover = vi.getTimerCount();
+      await fireEvent.mouseEnter(alphaRoot);
+      expect(vi.getTimerCount()).toBe(timerCountBeforeHover + 1);
+
+      view.unmount();
+      expect(vi.getTimerCount()).toBeLessThanOrEqual(timerCountBeforeHover);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the normal first-tab curve, flares, and strip gutter across switching', async () => {

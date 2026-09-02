@@ -26,9 +26,19 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
-import { getWindowIdForWorkspace } from '../../system/main/system.ipc';
+import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserActionExecutor');
+
+/**
+ * Registration-wait budget for the capture-path mount-on-demand
+ * (intent-hq/monorepo#4103). Deliberately shorter than the service default:
+ * intentd caps a browser.exec batch containing a screenshot at 20s
+ * (SCREENSHOT_REVERSE_TIMEOUT), so the mount wait must leave room for the
+ * CDP capture itself — otherwise a slow-but-successful mount would surface
+ * as a generic transport timeout instead of a structured result.
+ */
+const CAPTURE_MOUNT_TIMEOUT_MS = 10_000;
 
 // ============================================================================
 // Action Schemas
@@ -322,6 +332,97 @@ function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?
 }
 
 /**
+ * Ensure a capture op's target tab has a mounted, CDP-addressable webview,
+ * mounting it on demand when possible (intent-hq/monorepo#4103).
+ *
+ * A tab opened while its workspace is not visible (or whose hosting window
+ * never visited the workspace this session) has no mounted webview, so
+ * capture ops would fail with a "not mounted" error whose focusTab guidance
+ * is a dead end for hidden tabs. Requesting a fresh tab list hydrates the
+ * workspace's persisted panel layout in every hosting window, which puts the
+ * tab into OffscreenWebviewHost's candidate set — the webview mounts
+ * offscreen and registers. The bounded registration wait below then settles
+ * the outcome truthfully instead of letting the capture op hang.
+ *
+ * Returns `{}` to proceed unchanged (tab already mounted, or no target/
+ * workspace context — the action fails with its own descriptive error), a
+ * `warning` to merge into the success result when the tab was mounted on
+ * demand for a not-visible workspace, or a structured `failure` result when
+ * the mount is impossible (workspace open nowhere, tab gone, or the webview
+ * never registered).
+ */
+async function ensureCaptureTabMounted(
+  actionName: string,
+  tabId: string | undefined,
+  workspaceId: string | undefined,
+): Promise<{ failure?: ActionResult; warning?: string }> {
+  if (!tabId || !workspaceId || embeddedBrowserCdp.isTabMounted(tabId)) return {};
+
+  let listed: Awaited<ReturnType<typeof embeddedBrowserCdp.listAllTabs>>;
+  try {
+    listed = await embeddedBrowserCdp.listAllTabs(workspaceId);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        ...(notVisible ? { errorCode: 'workspace-not-visible' as const } : {}),
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and it cannot be mounted on demand (${detail}). Open workspace ${workspaceId} in a window and retry.`,
+      },
+    };
+  }
+  if (!listed.stale && !listed.tabs.some((t) => t.tabId === tabId)) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Tab ${tabId} not found in workspace ${workspaceId} — check { action: "listTabs" }.`,
+      },
+    };
+  }
+  // A stale (cached) list with no window hosting the workspace means the
+  // hydration nudge reached no renderer — a mount can never happen, so fail
+  // fast instead of burning the full registration wait.
+  if (listed.stale && getWindowIdsForWorkspace(workspaceId).length === 0) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'workspace-not-visible' as const,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and workspace ${workspaceId} is not open in any window, so it cannot be mounted on demand. Open the workspace in a window and retry.`,
+      },
+    };
+  }
+
+  // The tab-list request hydrated the layout; the offscreen host mounts the
+  // tab and its registerTab settles this bounded wait (never rejects).
+  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, CAPTURE_MOUNT_TIMEOUT_MS);
+  if (!mounted) {
+    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        ...(notVisible ? { errorCode: 'workspace-not-visible' as const } : {}),
+        error: notVisible
+          ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+      },
+    };
+  }
+  // Mounted on demand: when the workspace is not displayed, surface the
+  // standard not-visible caveat so the caller knows the capture ran against
+  // an offscreen webview (a hidden tab in a displayed workspace mounts with
+  // no warning).
+  return { ...workspaceNotVisibleWarning(workspaceId) };
+}
+
+/**
  * Echo fields merged into an action's result when its URL was rewritten by
  * the loopback-hostname table (intent-hq/monorepo#2323). Empty for
  * non-rewritten URLs so their result shape is unchanged. `tunneled` adds a
@@ -358,8 +459,12 @@ interface ActionResult {
   error?: string;
   /** Successful result with a caveat (e.g. listTabs answered from a stale cache). */
   warning?: string;
-  /** Structured ownership error code (monorepo#2857). */
-  errorCode?: 'not-owner' | 'already-claimed';
+  /**
+   * Structured error code: ownership errors (monorepo#2857), or a capture op
+   * whose target tab could not be mounted because its workspace is not
+   * visible in the app (monorepo#4103).
+   */
+  errorCode?: 'not-owner' | 'already-claimed' | 'workspace-not-visible';
   /** Owning agent for ownership errors; null when the tab is unowned. */
   ownerAgentId?: string | null;
   /** Owning agent's display name for ownership errors, when resolvable. */
@@ -675,18 +780,39 @@ async function executeAction(
       }
 
       case 'getAccessibilityTree': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        if (mount.failure) return mount.failure;
         const result = await embeddedBrowserCdp.getAccessibilityTree(tabId);
-        return { action: 'getAccessibilityTree', success: true, result };
+        return {
+          action: 'getAccessibilityTree',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'screenshot': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        if (mount.failure) return mount.failure;
         const result = await embeddedBrowserCdp.screenshot(tabId);
-        return { action: 'screenshot', success: true, result };
+        return {
+          action: 'screenshot',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'evaluate': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        if (mount.failure) return mount.failure;
         const result = await embeddedBrowserCdp.evaluate(tabId, action.expression);
-        return { action: 'evaluate', success: true, result };
+        return {
+          action: 'evaluate',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'snapshot': {
@@ -1218,6 +1344,11 @@ async function executeAction(
           };
         }
 
+        // Navigate runs through evaluate(), so it needs a mounted webview too
+        // (intent-hq/monorepo#4103).
+        const mount = await ensureCaptureTabMounted(action.action, resolvedTabId, workspaceId);
+        if (mount.failure) return mount.failure;
+
         // Loopback-hostname rewrite (daemon.localhost / client.localhost /
         // bare loopback) — a no-op for non-loopback URLs and local daemons.
         const rewrite = rewriteLoopbackUrl(
@@ -1267,6 +1398,7 @@ async function executeAction(
             url: navigateTarget.rewrite.url,
             ...rewriteEcho(navigateTarget.rewrite, navigateTarget.tunneled),
           },
+          ...(mount.warning ? { warning: mount.warning } : {}),
         };
       }
 

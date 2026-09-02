@@ -17,6 +17,8 @@ import {
   getResponseGroupCurrentBlockIndex,
   getResponseGroupCurrentChildIndex,
   getResponseGroupPreviewBlock,
+  isNestedReasoningSectionBoundary,
+  isNestedReasoningSectionStart,
   isReasoningPhaseGroupName,
   normalizeResponseGroup,
   normalizeResponseGroups,
@@ -926,6 +928,48 @@ describe('ResponseGroup - block identity', () => {
     expect(shouldRenderResponseGroupInline({ ...group, isStreaming: true })).toBe(false);
     expect(shouldRenderResponseGroupInline({ ...group, name: 'Model heading' })).toBe(false);
     expect(shouldRenderResponseGroupInline({ ...group, isReasoningPhase: false })).toBe(false);
+  });
+
+  it('identifies only titled nested reasoning as explicit section starts and boundaries', () => {
+    const group = {
+      type: 'content_group' as const,
+      name: 'Reasoning',
+      isStreaming: false,
+      isReasoningPhase: true,
+      children: [
+        { type: 'text', text: 'Review the input.' },
+        { type: 'thinking', text: '**Evaluating user feedback mechanisms**\n\nReview input.' },
+        { type: 'tool_result', output: 'hidden' },
+        { type: 'thinking', text: '**Specifying task requirements**\n\nDefine scope.' },
+        { type: 'tool_use', name: 'view' },
+      ] as ContentBlock[],
+    };
+    const visible = (block: ContentBlock) => block.type !== 'tool_result';
+
+    expect(group.children.map((_, index) => isNestedReasoningSectionStart(group, index))).toEqual([
+      false,
+      true,
+      false,
+      true,
+      false,
+    ]);
+    expect(
+      group.children.map((_, index) => isNestedReasoningSectionBoundary(group, index, visible)),
+    ).toEqual([false, true, false, true, false]);
+    expect(
+      isNestedReasoningSectionBoundary(
+        { ...group, children: group.children.slice(1), name: 'Reasoning' },
+        0,
+        visible,
+      ),
+    ).toBe(false);
+    expect(isNestedReasoningSectionStart({ ...group, isReasoningPhase: false }, 1)).toBe(false);
+    expect(
+      isNestedReasoningSectionStart(
+        { ...group, children: [{ type: 'thinking', text: 'Long body sentence with no title.' }] },
+        0,
+      ),
+    ).toBe(false);
   });
 
   it('does not pair ordinary authored groups or adjacent prose', () => {

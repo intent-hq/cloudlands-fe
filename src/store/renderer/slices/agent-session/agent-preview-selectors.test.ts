@@ -45,13 +45,11 @@ describe('selectAgentPreview', () => {
     expect(selectAgentPreview.select(stateWith(session()), AGENT)).toBeNull();
   });
 
-  it('attention outranks every other source', () => {
+  it('attention outranks every other source once the turn has ended', () => {
     const state = stateWith(
       session({
         attentionRequestKind: 'blocker',
         attentionRequestReason: 'sandbox broken',
-        isResponding: true,
-        isStreaming: true,
         lastAgentResponse: 'live text',
         lastToolUse: { name: 'view' },
         lastMessageRole: 'user',
@@ -63,6 +61,27 @@ describe('selectAgentPreview', () => {
     expect(selectAgentPreview.select(state, AGENT)).toEqual({
       kind: 'attention',
       attention: { kind: 'blocker', reason: 'sandbox broken', timestamp: undefined },
+      isLive: false,
+    });
+  });
+
+  it('gates a pending attention request while the turn is live (live text wins)', () => {
+    // Mid-turn rehydration can deliver the persisted attention fields while
+    // the agent is still streaming — the preview must not surface them until
+    // the turn ends.
+    const state = stateWith(
+      session({
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'sandbox broken',
+        isResponding: true,
+        isStreaming: true,
+        lastAgentResponse: 'live text',
+      }),
+      { receivedFirstChunk: true },
+    );
+    expect(selectAgentPreview.select(state, AGENT)).toEqual({
+      kind: 'live-text',
+      text: 'live text',
       isLive: true,
     });
   });
@@ -248,9 +267,7 @@ describe('selectAgentPreview', () => {
   });
 
   it('falls back to the persisted user message last (prefixes stripped)', () => {
-    const state = stateWith(
-      session({ lastUserMessage: '[Currently viewing: x] hello there' }),
-    );
+    const state = stateWith(session({ lastUserMessage: '[Currently viewing: x] hello there' }));
     expect(selectAgentPreview.select(state, AGENT)).toEqual({
       kind: 'last-user',
       text: 'hello there',

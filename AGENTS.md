@@ -243,7 +243,13 @@ and embedded tabs — is a target) and attach CDP locally. See
 builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
 `gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
 `build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
-notarization, Windows DigiCert). Output is installers + blockmaps only, uploaded as
+notarization, Windows DigiCert). Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
+ref — full 40-char commit SHA, branch, or tag; `actions/checkout` cannot resolve an
+abbreviated SHA from `git log --oneline`) to build the intentd sidecar from source at
+that ref instead of fetching the pinned release (all legs: macOS, Windows, and both
+Linux arches); the run summary reports the resolved intentd SHA. Empty/omitted
+`intentd_ref` keeps today's pinned-release fetch.
+Output is installers + blockmaps only, uploaded as
 short-lived workflow artifacts (7-day retention), version-suffixed `-manual.<run_number>`.
 Nothing publishes to intent-hq/cloudlands-releases and no auto-updater manifest is
 produced — manual install/testing only.

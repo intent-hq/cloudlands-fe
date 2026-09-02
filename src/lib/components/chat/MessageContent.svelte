@@ -56,6 +56,7 @@
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
+    NESTED_REASONING_SECTION_SEAM_CLASS,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
@@ -64,6 +65,8 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupCurrentChildIndex,
+    isNestedReasoningSectionBoundary,
+    isNestedReasoningSectionStart,
     normalizeResponseGroups,
     shouldRenderResponseGroupInline,
   } from './response-group-blocks';
@@ -669,36 +672,49 @@
   childBlock: ContentBlock,
   childIndex: number,
   suppressSpacing: boolean = false,
+  nested: boolean = true,
 )}
+  {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
+  {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
+    group,
+    childIndex,
+    isVisibleGroupChild,
+  )}
   <div
     class={`${
       suppressSpacing
         ? ''
-        : getOperationalClusterSpacingClass(
-            group.children,
-            childIndex,
-            isVisibleGroupChild,
-            group.isReasoningPhase,
-          )
+        : reasoningSectionBoundary
+          ? NESTED_REASONING_SECTION_SEAM_CLASS
+          : getOperationalClusterSpacingClass(
+              group.children,
+              childIndex,
+              isVisibleGroupChild,
+              group.isReasoningPhase,
+            )
     } ${
-      isOperationalClusterBlock(childBlock)
-        ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-        : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+      nested
+        ? isOperationalClusterBlock(childBlock)
+          ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+          : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+        : ''
     }`}
-    style:padding-left={isOperationalClusterBlock(childBlock)
-      ? undefined
-      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+    style:padding-left={nested && !isOperationalClusterBlock(childBlock)
+      ? 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'
+      : undefined}
     data-message-content-block={childBlock.type}
     data-chat-search-block-path={childBlock.type === 'tool_result'
       ? undefined
       : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
+    data-reasoning-section-start={reasoningSectionStart || undefined}
+    data-reasoning-section-boundary={reasoningSectionBoundary || undefined}
   >
     {@render renderContentBlock(
       childBlock,
       `${groupIndex}-${childIndex}`,
       groupIndex,
-      true,
+      nested,
       isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
       chatSearchBlockPath(groupIndex, childIndex),
@@ -714,7 +730,14 @@
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+            {@render renderResponseGroupChild(
+              group,
+              blockIndex,
+              childBlock,
+              childIndex,
+              false,
+              false,
+            )}
           {/if}
         {/each}
       {:else}

@@ -1,0 +1,1 @@
+export const WORKSPACE_HOVER_CARD_OPEN_DELAY_MS = 400;

@@ -68,7 +68,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
 
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -317,6 +317,13 @@
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
   let openLauncherHoverKey = $state<string | null>(null);
+  const LAUNCHER_HOVER_INITIAL_DELAY_MS = 400;
+  const LAUNCHER_HOVER_SESSION_RESET_DELAY_MS = 300;
+  let launcherHoverSessionActive = $state(false);
+  let launcherHoverSessionResetTimer: ReturnType<typeof setTimeout> | null = null;
+  const launcherHoverDelay = $derived(
+    launcherHoverSessionActive ? 0 : LAUNCHER_HOVER_INITIAL_DELAY_MS,
+  );
   const launcherRects = new Map<LauncherTabId, DOMRect>();
   const expandedCardRects = new Map<LauncherTabId, DOMRect>();
   // svelte-ignore state_referenced_locally - intentional initial capture for change detection
@@ -332,11 +339,26 @@
 
   function handleLauncherHoverOpenChange(key: string, open: boolean) {
     if (open) {
+      clearLauncherHoverSessionResetTimer();
+      launcherHoverSessionActive = true;
       openLauncherHoverKey = key;
     } else if (openLauncherHoverKey === key) {
       openLauncherHoverKey = null;
+      clearLauncherHoverSessionResetTimer();
+      launcherHoverSessionResetTimer = setTimeout(() => {
+        launcherHoverSessionResetTimer = null;
+        launcherHoverSessionActive = false;
+      }, LAUNCHER_HOVER_SESSION_RESET_DELAY_MS);
     }
   }
+
+  function clearLauncherHoverSessionResetTimer() {
+    if (launcherHoverSessionResetTimer === null) return;
+    clearTimeout(launcherHoverSessionResetTimer);
+    launcherHoverSessionResetTimer = null;
+  }
+
+  onDestroy(clearLauncherHoverSessionResetTimer);
 
   function cardMorph(
     node: HTMLElement,
@@ -867,6 +889,7 @@
       emptyText={m.layout_sidebarNav_noMessages_label()}
       kind="agent"
       gridPosition="start"
+      delayDuration={launcherHoverDelay}
       open={openLauncherHoverKey === `agent:${agent.id}`}
       onOpenChange={(open) => {
         handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
@@ -1013,7 +1036,7 @@
                             >.
                           {:else if tabId === 'context' && $workspace?.path}
                             {tab.description}
-                            {m.workspace_multiSelectSidebar_notesLiveIn_before()}
+                            {m.workspace_multiSelectSidebar_contextAndMetadataLiveIn_before()}
                             <span class="inline-flex items-baseline gap-1">
                               <OpenComboButton
                                 filePath={$workspace.path + '/.workspace'}
@@ -1292,6 +1315,7 @@
                             emptyText="Empty note"
                             kind="note"
                             gridPosition="start"
+                            delayDuration={launcherHoverDelay}
                             open={openLauncherHoverKey === `note:${note.id}`}
                             onOpenChange={(open) =>
                               handleLauncherHoverOpenChange(`note:${note.id}`, open)}

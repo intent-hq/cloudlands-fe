@@ -11,6 +11,7 @@
   import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
+  import { WORKSPACE_HOVER_CARD_OPEN_DELAY_MS } from '$lib/components/workspace/utils/workspace-hover-card-intent';
   import { formatWorkspaceTabStatusSummary } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
   import {
     getWorkspaceStatusPresentation,
@@ -810,7 +811,7 @@
             <TooltipRich
               side="bottom"
               align="start"
-              delayDuration={500}
+              delayDuration={WORKSPACE_HOVER_CARD_OPEN_DELAY_MS}
               disableHoverableContent={true}
               disabled={draggedWorkspaceId !== null}
               showArrow={false}

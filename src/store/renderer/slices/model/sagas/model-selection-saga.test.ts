@@ -2,8 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
-const mocks = vi.hoisted(() => ({ update: vi.fn() }));
-vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } } }));
+const mocks = vi.hoisted(() => ({ update: vi.fn(), updateSnapshot: undefined as any }));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    settings: {
+      update: mocks.update,
+      get updateSnapshot() {
+        return mocks.updateSnapshot;
+      },
+    },
+  },
+}));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
@@ -49,7 +58,10 @@ function state() {
 }
 
 describe('modelSelectionSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.updateSnapshot = undefined;
+  });
 
   it('switches a known compound provider before reload and selection', async () => {
     const dispatch = vi.fn();
@@ -60,10 +72,9 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'providerSettings/setActiveProvider', payload: ['codex'] },
       { type: 'model/reloadModelsForProvider', payload: [] },
       {
-        type: 'model/setSelectedModel',
+        type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'codex', model: 'codex:gpt-5' }],
       },
     ]);
@@ -104,12 +115,7 @@ describe('modelSelectionSaga', () => {
       selectModel('unknown:model'),
     ).toPromise();
 
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      {
-        type: 'model/setSelectedModel',
-        payload: [{ providerId: 'unknown', model: 'unknown:model' }],
-      },
-    ]);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('adopts the picked compound provider before catalog hydration (onboarding race)', async () => {
@@ -125,10 +131,9 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'providerSettings/setActiveProvider', payload: ['claude-code'] },
       { type: 'model/reloadModelsForProvider', payload: [] },
       {
-        type: 'model/setSelectedModel',
+        type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'claude-code', model: 'claude-code:fable5' }],
       },
     ]);
@@ -142,7 +147,7 @@ describe('modelSelectionSaga', () => {
       { codex: 'codex:gpt-5' },
     ).toPromise();
 
-    expect(landed).toBe(true);
+    expect(landed).toBe('persisted');
     expect(mocks.update.mock.calls).toEqual([
       [
         [
@@ -153,6 +158,46 @@ describe('modelSelectionSaga', () => {
         ],
       ],
     ]);
+  });
+
+  it('persists a cross-provider default as one revision-bearing atomic batch', async () => {
+    mocks.updateSnapshot = vi.fn().mockResolvedValue({
+      applied: [
+        { path: 'providers.active', value: 'codex' },
+        { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' } },
+      ],
+      revision: 7,
+    });
+    const dispatch = vi.fn();
+
+    const landed = await runSaga(
+      { dispatch, getState: state },
+      persistSelectedModelsWorker,
+      { codex: 'codex:gpt-5' },
+      'codex',
+    ).toPromise();
+
+    expect(landed).toBe('persisted');
+    expect(mocks.updateSnapshot).toHaveBeenCalledWith([
+      { path: 'providers.active', value: 'codex' },
+      {
+        path: 'model.providerDefaults',
+        value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+      },
+    ]);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'settings/changesReceived',
+      payload: [
+        [
+          { path: 'providers.active', value: 'codex' },
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+          },
+        ],
+        7,
+      ],
+    });
   });
 
   it('serializes writes and retains only the latest queued snapshot', async () => {
@@ -311,12 +356,46 @@ describe('modelSelectionSaga', () => {
     await task.toPromise();
   });
 
+  it('does not resend a rejected session pick with the next valid write', async () => {
+    mocks.update
+      .mockRejectedValueOnce(
+        new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
+      )
+      .mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      modelSelectionSaga,
+    );
+
+    current.model.providerModels = { auggie: 'invalid' };
+    channel.put(setSelectedModel({ providerId: 'auggie', model: 'invalid' }));
+    await settle();
+
+    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'codex:gpt-5' };
+    channel.put(setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5' }));
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'model.providerDefaults', value: { auggie: 'invalid' } }]],
+      [
+        [
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+          },
+        ],
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('retries a failed providerDefaults write until it lands (daemon not ready at pick time)', async () => {
     vi.useFakeTimers();
     try {
-      mocks.update
-        .mockRejectedValueOnce(new Error('backend unavailable'))
-        .mockResolvedValue([]);
+      mocks.update.mockRejectedValueOnce(new Error('backend unavailable')).mockResolvedValue([]);
       const current = state();
       const channel = stdChannel();
       const task = runSaga(
@@ -345,9 +424,7 @@ describe('modelSelectionSaga', () => {
   it('lets a newer pick supersede a failed write instead of waiting out the backoff', async () => {
     vi.useFakeTimers();
     try {
-      mocks.update
-        .mockRejectedValueOnce(new Error('backend unavailable'))
-        .mockResolvedValue([]);
+      mocks.update.mockRejectedValueOnce(new Error('backend unavailable')).mockResolvedValue([]);
       const current = state();
       const channel = stdChannel();
       const task = runSaga(

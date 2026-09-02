@@ -576,7 +576,7 @@ describe('daemonEventsSaga', () => {
     await settle();
 
     expect(dispatch).toHaveBeenCalledWith(
-      settingsChangesReceived([{ path: 'providers.active', value: 'auggie' }]),
+      settingsChangesReceived([{ path: 'providers.active', value: 'auggie' }], undefined),
     );
     task.cancel();
     await task.toPromise();

@@ -28,6 +28,7 @@
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -138,7 +139,7 @@
       data-testid="agent-message-attribution"
     >
       <span
-        class="shrink-0"
+        class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
         aria-hidden="true"
         data-testid="agent-message-avatar-column"
         data-agent-message-leading-identity
@@ -162,7 +163,7 @@
       data-testid="agent-message-attribution"
     >
       <span
-        class="shrink-0"
+        class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
         aria-hidden="true"
         data-testid="agent-message-avatar-column"
         data-agent-message-leading-identity
@@ -190,7 +191,7 @@
       data-testid="agent-message-attribution"
     >
       <span
-        class="shrink-0"
+        class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
         aria-hidden="true"
         data-testid="agent-message-avatar-column"
         data-agent-message-leading-identity

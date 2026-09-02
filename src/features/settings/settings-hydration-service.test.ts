@@ -33,7 +33,10 @@ import {
   loadEnabledProvidersFromStorage,
   setActiveProvider,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { loadProviderModelsFromStorage } from '$store/renderer/slices/model/model-slice';
+import {
+  loadProviderModelsFromStorage,
+  setSelectedModel,
+} from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   beforeAll(() => {
@@ -89,6 +92,42 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(state().providerSettings.activeProviderId).toBe('auggie');
     expect(state().providerSettings.pendingActiveProviderId).toBeNull();
     expect(state().model.defaultProviderId).toBe('auggie');
+  });
+
+  it('reconciles a cross-provider default selection through stale settings echoes', () => {
+    applySettingsChanges([
+      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
+    ]);
+
+    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(
+      setSelectedModel({ providerId: 'claude-code', model: 'claude-code:sonnet-4.8' }),
+    );
+    applySettingsChanges([
+      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
+    ]);
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe('claude-code');
+    expect(appStore.state.model.providerModels['claude-code']).toBe('sonnet-4.8');
+
+    applySettingsChanges([
+      { path: 'providers.active', value: 'claude-code' },
+      {
+        path: 'model.providerDefaults',
+        value: { auggie: 'opus-4.8', 'claude-code': 'sonnet-4.8' },
+      },
+    ]);
+    expect(appStore.state.providerSettings.pendingActiveProviderId).toBeNull();
+    expect(appStore.state.model.pendingProviderModels).toEqual({});
+
+    applySettingsChanges([
+      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.9' } },
+    ]);
+    expect(appStore.state.providerSettings.activeProviderId).toBe('auggie');
+    expect(appStore.state.model.providerModels.auggie).toBe('opus-4.9');
   });
 
   it('hydrates the mcp-settings slice from mcp.servers + mcp.disabledServers + mcp.enableUserServers', async () => {
@@ -318,7 +357,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
       // connections:list resolves on a remote backend — the re-run gate must
       // reject the seed instead of writing stale local state to the remote.
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }));
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
       for (let i = 0; i < 5; i++) await Promise.resolve();
       expect(catalogSpy).not.toHaveBeenCalled();
       expect(updateSpy).not.toHaveBeenCalled();
@@ -373,7 +418,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       appStore.dispatch(hydrateActiveProvider(''));
       appStore.dispatch(loadEnabledProvidersFromStorage({}));
       appStore.dispatch(loadProviderModelsFromStorage({}));
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }));
+      appStore.dispatch(
+        connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+      );
     });
 
     it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
@@ -532,7 +579,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     });
 
     it('never seeds on a remote backend, even when stale local state names a candidate', async () => {
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }));
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
       try {
         // Stale renderer state from the local session: active provider set,
         // no enablement entry — the exact shape that would seed locally.
@@ -546,7 +599,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
         expect(catalogSpy).not.toHaveBeenCalled();
         expect(updateSpy).not.toHaveBeenCalled();
       } finally {
-        appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }));
+        appStore.dispatch(
+          connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+        );
       }
     });
   });

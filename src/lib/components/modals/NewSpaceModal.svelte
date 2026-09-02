@@ -61,7 +61,7 @@
       </Dialog.Description>
     </div>
 
-    <div class="min-h-0 overflow-y-auto overscroll-contain bg-card px-6 py-6 sm:px-8">
+    <div class="min-h-0 overflow-y-auto overscroll-contain bg-background px-6 py-6 sm:px-8">
       <CompactWorkspaceInitializer bind:this={initializerRef} bind:isExpanded oncreate={close} />
     </div>
   </Dialog.Content>
