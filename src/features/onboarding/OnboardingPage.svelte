@@ -25,7 +25,10 @@
     EnhancePromptUnavailableError,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
-  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
   import { toast } from 'svelte-sonner';
@@ -74,7 +77,10 @@
     selectProviderStatusMap,
     selectHasCheckedOnce as selectProvidersCheckedOnce,
   } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-  import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import {
+    checkSingleProviderRequested,
+    ensureProvidersChecked,
+  } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
   import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -85,6 +91,15 @@
   } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { shell } from '$lib/electron-bridge';
+  import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
+  import {
+    mapTestPromptFailure,
+    providerSupportsTestPrompt,
+    type TestPromptFailureGuidance,
+  } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
@@ -180,6 +195,7 @@
   const providerStatusMap$ = selectProviderStatusMap();
   const providersCheckedOnce$ = selectProvidersCheckedOnce();
   const workspaceItems$ = selectWorkspaceItems();
+  const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
   let projectName = $derived.by(() => {
@@ -633,11 +649,72 @@
   let agentGridRef: AgentGrid | null = $state(null);
   let onboardingSkipIsolation = $state(false);
 
+  // "Send a test prompt" opt-out: one live end-to-end prompt against the
+  // selected provider before advancing (host.providerTestPrompt, §5.14).
+  // Checked by default; hidden when the provider's catalog row does not
+  // support the test (supportsTestPrompt false/absent — e.g. unsloth).
+  let onboardingSendTestPrompt = $state(true);
+  let onboardingTestPromptRunning = $state(false);
+  let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
+  let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
+  const onboardingSelectedCatalogEntry = $derived(
+    $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
+  );
+  const onboardingTestPromptSupported = $derived(
+    providerSupportsTestPrompt(onboardingSelectedCatalogEntry),
+  );
+
   /** Advance from the welcome step, first committing the grid's resolved
    *  provider selection so a no-click advance still enables/activates the
-   *  visually-selected provider (D1(B): commit only on explicit advance). */
-  function advanceFromWelcomeStep() {
-    agentGridRef?.commitSelection();
+   *  visually-selected provider (D1(B): commit only on explicit advance).
+   *  With the test-prompt box checked (and the provider supporting it), one
+   *  live test prompt runs first: success advances, a structured failure
+   *  keeps the user on the step with actionable guidance. */
+  async function advanceFromWelcomeStep() {
+    if (onboardingTestPromptRunning) return;
+    const committed = agentGridRef?.commitSelection();
+    const providerId = committed ?? onboardingGridSelectedProviderId;
+    if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
+      onboardingTestPromptFailure = null;
+      onboardingTestPromptRunning = true;
+      try {
+        // No explicit model: the daemon applies its resolved default for the
+        // provider (the welcome step precedes any model pick).
+        const result = await runProviderTestPrompt({ providerId });
+        // Provider switched mid-test: the result belongs to the previous
+        // selection — drop it (neither advance nor show stale guidance).
+        if (providerId !== onboardingGridSelectedProviderId) return;
+        if (!result.ok) {
+          const entry = selectProviderCatalogEntries
+            .select(appStore.state)
+            .find((e) => e.id === providerId);
+          const guidance = mapTestPromptFailure(result, entry, providerId);
+          onboardingTestPromptFailure = guidance;
+          if (guidance.isAuthRequired) {
+            // Re-sync the card's auth badge with the demoted daemon verdict.
+            appStore.dispatch(checkSingleProviderRequested(providerId));
+          }
+          return;
+        }
+      } catch (err) {
+        if (providerId !== onboardingGridSelectedProviderId) return;
+        // Transport/wire error (daemon unreachable, divergent payload). The
+        // raw message can be a multi-line ZodError dump — log the full detail
+        // and surface only the first line.
+        logger.error('Onboarding test prompt failed', { providerId, error: err });
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        onboardingTestPromptFailure = {
+          message: m.onboarding_testPrompt_generic_error({
+            message: rawMessage.split('\n', 1)[0],
+          }),
+          showClaudeDesktopNote: false,
+          isAuthRequired: false,
+        };
+        return;
+      } finally {
+        onboardingTestPromptRunning = false;
+      }
+    }
     appStore.dispatch(goToStep('github'));
   }
 
@@ -1681,26 +1758,98 @@
                               onAvailabilityChange={(hasAny) => {
                                 hasConnectedProvider = hasAny;
                               }}
+                              onSelectionChange={(providerId) => {
+                                // Guard on actual change: AgentGrid's $effect tracks
+                                // this callback prop, so a parent re-render re-invokes
+                                // it with an unchanged selection — which must not
+                                // clear a just-assigned failure panel.
+                                if (providerId !== onboardingGridSelectedProviderId) {
+                                  onboardingGridSelectedProviderId = providerId;
+                                  onboardingTestPromptFailure = null;
+                                }
+                              }}
                             />
                           </div>
                         </div>
                         <div class="max-w-5xl mx-auto flex flex-col items-start gap-2 mt-9">
+                          {#if hasConnectedProvider && onboardingTestPromptSupported}
+                            <div class="flex flex-col gap-1 mb-2">
+                              <label
+                                class="flex items-center gap-2 text-sm cursor-pointer"
+                                data-testid="onboarding-test-prompt-checkbox"
+                              >
+                                <Checkbox
+                                  bind:checked={onboardingSendTestPrompt}
+                                  disabled={onboardingTestPromptRunning}
+                                />
+                                {m.onboarding_testPrompt_checkbox_label()}
+                              </label>
+                              <p class="text-xs text-muted-foreground pl-6">
+                                {m.onboarding_testPrompt_finePrint_label()}
+                              </p>
+                            </div>
+                          {/if}
                           <Button
                             class="group/button"
                             size="xl"
                             variant={!hasConnectedProvider ? 'outline' : 'default'}
                             disabled={!hasConnectedProvider}
+                            loading={onboardingTestPromptRunning}
                             onclick={advanceFromWelcomeStep}
                           >
-                            {m.onboarding_page_letsGo_label()}
-                            {#if hasConnectedProvider}
-                              <span class="ml-1 opacity-50">⌘↵</span>
+                            {#if onboardingTestPromptRunning}
+                              {m.onboarding_testPrompt_running_label()}
+                            {:else}
+                              {m.onboarding_page_letsGo_label()}
+                              {#if hasConnectedProvider}
+                                <span class="ml-1 opacity-50">⌘↵</span>
+                              {/if}
                             {/if}
                           </Button>
                           {#if !hasConnectedProvider}
                             <p class="text-xs text-muted-foreground">
                               {m.onboarding_page_connectAgent_description()}
                             </p>
+                          {/if}
+                          {#if onboardingTestPromptFailure}
+                            <div
+                              data-testid="onboarding-test-prompt-failure"
+                              class="mt-2 max-w-xl rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
+                            >
+                              <p>{onboardingTestPromptFailure.message}</p>
+                              {#if onboardingTestPromptFailure.loginCommandHint}
+                                <div class="mt-2 text-xs">
+                                  <span class="opacity-70"
+                                    >{m.onboarding_testPrompt_runToLogIn_label()}</span
+                                  >
+                                  <div class="mt-1 flex items-center gap-1">
+                                    <code
+                                      class="min-w-0 flex-1 truncate rounded bg-background/60 px-1.5 py-0.5 font-mono text-foreground"
+                                      >{onboardingTestPromptFailure.loginCommandHint}</code
+                                    >
+                                    <CopyButton
+                                      text={onboardingTestPromptFailure.loginCommandHint}
+                                      class="hover:bg-background/60"
+                                    />
+                                  </div>
+                                </div>
+                              {/if}
+                              {#if onboardingTestPromptFailure.showClaudeDesktopNote}
+                                <p class="mt-2 text-xs opacity-70">
+                                  {m.onboarding_testPrompt_claudeDesktopNote_label()}
+                                </p>
+                              {/if}
+                              {#if onboardingTestPromptFailure.loginDocsUrl}
+                                {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}
+                                <button
+                                  type="button"
+                                  class="mt-2 text-xs underline hover:no-underline"
+                                  onclick={() => shell.open(docsUrl)}
+                                >
+                                  {m.chat_modelPicker_setupDocs_label()}
+                                </button>
+                              {/if}
+                            </div>
                           {/if}
                         </div>
                       {:else if isGitHubStep}
