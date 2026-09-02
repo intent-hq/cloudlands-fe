@@ -296,23 +296,6 @@
 {:else}
   <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
     <div class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2">
-      {#if ontoggle}
-        <button
-          type="button"
-          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          aria-label={m.layout_chiefCard_title()}
-          aria-expanded={!collapsed}
-          aria-controls="combined-panel-chief-content"
-          data-chief-section-toggle
-          onclick={ontoggle}
-        >
-          <Fa
-            icon={faChevronDown}
-            size="xs"
-            class="shrink-0 transition-transform {collapsed ? '-rotate-90' : ''}"
-          />
-        </button>
-      {/if}
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <Dropdown
           value={selectedAgentId ?? undefined}
@@ -327,7 +310,7 @@
           contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
         >
           {#snippet trigger()}
-            <span class="type-caption min-w-0 flex-1 truncate text-left font-medium">
+            <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
           {/snippet}
@@ -383,6 +366,23 @@
           />
         </button>
       </div>
+      {#if ontoggle}
+        <button
+          type="button"
+          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          aria-label={m.layout_chiefCard_title()}
+          aria-expanded={!collapsed}
+          aria-controls="combined-panel-chief-content"
+          data-chief-section-toggle
+          onclick={ontoggle}
+        >
+          <Fa
+            icon={faChevronDown}
+            size="xs"
+            class="shrink-0 transition-transform {collapsed ? '-rotate-90' : ''}"
+          />
+        </button>
+      {/if}
     </div>
 
     <!-- Clip on the padded wrapper (not the inner section) with an 8px clip

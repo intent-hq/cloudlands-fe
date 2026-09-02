@@ -37,8 +37,8 @@ describe('Chief card migration contract', () => {
     expect(source).not.toContain('[clip-path:');
   });
 
-  it('keeps the compact thread picker trigger at caption scale', () => {
-    expect(source).toContain('class="type-caption min-w-0 flex-1 truncate text-left font-medium"');
+  it('matches the thread picker trigger to the panel title scale', () => {
+    expect(source).toContain('class="text-ui min-w-0 flex-1 truncate text-left font-medium"');
     expect(source).not.toContain('class="type-title min-w-0 flex-1 truncate text-left"');
   });
 

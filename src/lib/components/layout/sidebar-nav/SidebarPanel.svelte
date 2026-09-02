@@ -6,12 +6,8 @@
   import SettingsCard from './cards/SettingsCard.svelte';
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
-  import {
-    faXmark,
-    faEllipsisVertical,
-    faMagnifyingGlass,
-    faPlus,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faMagnifyingGlass, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import * as Menu from '$lib/components/ui/menu';
 
@@ -302,7 +298,7 @@
                with a draggable horizontal divider between them. -->
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
-                <h2 class="panel-title text-ui font-semibold text-foreground truncate">
+                <h2 class="panel-title text-ui font-medium text-foreground truncate">
                   {m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
@@ -339,7 +335,7 @@
                           aria-expanded={spacesOptionsOpen}
                           data-spaces-options-trigger
                         >
-                          <Fa icon={faEllipsisVertical} size="xs" />
+                          <KebabIcon class="size-3.5" />
                         </button>
                       </Tooltip>
                     {/snippet}
