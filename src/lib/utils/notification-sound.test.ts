@@ -98,8 +98,12 @@ describe('notification audio playback', () => {
     expect(gains[0].gain.value).toBe(0.3);
     expect(sources[0].start).toHaveBeenCalledOnce();
     expect(sources[0].buffer).toEqual({ duration: 1 });
+    const updatedBuffer = { duration: 2 };
+    decode.mockResolvedValueOnce(updatedBuffer);
     await playNotificationSound(2, '/Users/me/custom.mp3');
-    expect(nativeInvoke).toHaveBeenCalledTimes(1);
+    expect(nativeInvoke).toHaveBeenCalledTimes(2);
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(sources[1].buffer).toBe(updatedBuffer);
     expect(gains[1].gain.value).toBe(1);
     expect(sources[0].stop).toHaveBeenCalledOnce();
   });
@@ -143,6 +147,45 @@ describe('notification audio playback', () => {
         path: '/saved.mp3',
       });
       expect(sources.at(-1)?.start).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['missing', 'unreadable', 'corrupt'])(
+    'rechecks a previously played path when it becomes %s and recovers after restoration',
+    async (failure) => {
+      await playNotificationSound(0.7, '/saved.mp3');
+      expect(sources[0].start).toHaveBeenCalledOnce();
+      expect(fallback()?.play.mock.calls.length ?? 0).toBe(0);
+
+      if (failure === 'missing')
+        registerMockIpcHandler('notification:read-sound', () => ({ success: false }));
+      if (failure === 'unreadable') nativeInvoke.mockRejectedValueOnce(new Error('EACCES'));
+      if (failure === 'corrupt') decode.mockRejectedValueOnce(new Error('invalid MP3'));
+      await playNotificationSound(0.7, '/saved.mp3');
+
+      expect(fallback()?.play.mock.calls.length ?? 0).toBe(1);
+      expect(fallback().src).toBe(bundledUrl);
+      expect(fallback().volume).toBe(0.7);
+      expect(sources).toHaveLength(1);
+      expect(sources[0].stop).toHaveBeenCalledOnce();
+
+      registerMockIpcHandler('notification:read-sound', () => ({
+        success: true,
+        data: '/+OQAA==',
+      }));
+      const restoredBuffer = { duration: 2 };
+      decode.mockResolvedValueOnce(restoredBuffer);
+      await playNotificationSound(0.7, '/saved.mp3');
+
+      expect(nativeInvoke.mock.calls).toEqual([
+        ['notification:read-sound', { path: '/saved.mp3' }],
+        ['notification:read-sound', { path: '/saved.mp3' }],
+        ['notification:read-sound', { path: '/saved.mp3' }],
+      ]);
+      expect(sources).toHaveLength(2);
+      expect(sources[1].buffer).toBe(restoredBuffer);
+      expect(sources[1].start).toHaveBeenCalledOnce();
+      expect(fallback().play).toHaveBeenCalledOnce();
     },
   );
 

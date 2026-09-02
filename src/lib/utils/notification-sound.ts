@@ -8,7 +8,6 @@ let bundledAudio: HTMLAudioElement | null = null;
 let context: AudioContext | null = null;
 let source: AudioBufferSourceNode | null = null;
 let gain: GainNode | null = null;
-let customBuffer: AudioBuffer | null = null;
 let loading: Promise<AudioBuffer | null> | null = null;
 
 function releaseNodes() {
@@ -52,12 +51,11 @@ export function setNotificationSoundPath(path: string): void {
   stopPlayback();
   soundPath = path;
   pathVersion += 1;
-  customBuffer = null;
   loading = null;
 }
 
 async function loadCustomSound(): Promise<AudioBuffer | null> {
-  if (customBuffer) return customBuffer;
+  // Share only in-flight work: a saved path can be removed or replaced between plays.
   if (loading) return loading;
   const version = pathVersion;
   const path = soundPath;
@@ -75,7 +73,6 @@ async function loadCustomSound(): Promise<AudioBuffer | null> {
         5000,
       );
       if (version !== pathVersion) return null;
-      customBuffer = decoded;
       return decoded;
     } catch {
       return null;
@@ -130,7 +127,6 @@ export async function playNotificationSound(
           // A decoder/device failure must not prevent the bundled fallback.
           if (!current()) return;
           releaseNodes();
-          customBuffer = null;
         }
       }
     }
