@@ -31,6 +31,7 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -500,6 +501,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
       resolveBinding: getEffectiveShortcut,
     });
 

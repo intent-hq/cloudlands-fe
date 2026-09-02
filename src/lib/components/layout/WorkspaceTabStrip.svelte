@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -41,8 +41,15 @@
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
+  import {
+    WORKSPACE_TAB_MOVED_EVENT,
+    type WorkspaceTabMovedEventDetail,
+  } from '$features/workspace/utils/workspace-tab-move-event';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
 
   interface Props {
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
@@ -111,10 +118,53 @@
   const activeTabBoundsPollers = new Set<() => void>();
   const ACTIVE_TAB_TRACKING_DURATION_MS = 240;
   let autoScrollFrame: number | null = null;
+  let layoutTracking = false;
+  let dragTracking = false;
+  let tabContextMenu = $state<{ workspaceId: string; x: number; y: number } | null>(null);
+  const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
+    if (!tabContextMenu) return [];
+    const { workspaceId } = tabContextMenu;
+    const closeOthers = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'others');
+    const closeRight = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'right');
+    return [
+      {
+        id: 'close',
+        label: m.layout_panelTabBar_close_label(),
+        icon: faXmark,
+        onClick: () => closeWorkspace(workspaceId),
+      },
+      { type: 'separator' },
+      {
+        id: 'close-others',
+        label: m.layout_panelTabBar_closeAllOthers_label(),
+        icon: faLayerGroup,
+        disabled: closeOthers.length === 0,
+        onClick: () => closeWorkspaceTabs(closeOthers, workspaceId),
+      },
+      {
+        id: 'close-right',
+        label: m.layout_panelTabBar_closeTabsToRight_label(),
+        icon: faArrowRight,
+        disabled: closeRight.length === 0,
+        onClick: () => closeWorkspaceTabs(closeRight),
+      },
+    ];
+  });
+
+  function reportActiveTabTracking() {
+    onActiveTabTrackingChange?.(layoutTracking || dragTracking);
+  }
 
   onMount(() => {
     activeStreamsTracker.startPolling();
-    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const handleMoved = (event: Event) =>
+      handleGlobalWorkspaceTabMoved(event as CustomEvent<WorkspaceTabMovedEventDetail>);
+    window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+    return () => {
+      unsubscribe();
+      window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+    };
   });
 
   // Overflow detection drives the strip's right margin: while tabs are
@@ -139,7 +189,8 @@
     void renderedTabOrder;
     void horizontalPositionTrackingKey;
     if (activeTabBoundsPollers.size === 0) return;
-    onActiveTabTrackingChange?.(true);
+    layoutTracking = true;
+    reportActiveTabTracking();
     let startedAt: number | null = null;
     let frame: number | null = null;
     let cancelled = false;
@@ -151,15 +202,35 @@
       if (timestamp - startedAt < ACTIVE_TAB_TRACKING_DURATION_MS) {
         frame = requestAnimationFrame(tick);
       } else {
-        onActiveTabTrackingChange?.(false);
+        layoutTracking = false;
+        reportActiveTabTracking();
       }
     };
     frame = requestAnimationFrame(tick);
     return () => {
       cancelled = true;
       if (frame !== null) cancelAnimationFrame(frame);
-      onActiveTabTrackingChange?.(false);
+      layoutTracking = false;
+      reportActiveTabTracking();
     };
+  });
+
+  $effect(() => {
+    dragTracking = draggedWorkspaceId !== null;
+    reportActiveTabTracking();
+    return () => {
+      dragTracking = false;
+      reportActiveTabTracking();
+    };
+  });
+
+  $effect(() => {
+    if (!draggedWorkspaceId) return;
+    void dragClientX;
+    const frame = requestAnimationFrame(() => {
+      activeTabBoundsPollers.forEach((poll) => poll());
+    });
+    return () => cancelAnimationFrame(frame);
   });
 
   function getRunningAgentIds(workspaceId: string) {
@@ -324,6 +395,25 @@
     );
   }
 
+  function closeWorkspaceTabs(workspaceIds: string[], focusWorkspaceId?: string) {
+    if (workspaceIds.length === 0) return;
+    if (focusWorkspaceId) appStore.dispatch(openWorkspaceTab(focusWorkspaceId));
+    workspaceIds.forEach((workspaceId) => appStore.dispatch(closeWorkspaceTab(workspaceId)));
+    const nextWorkspaceId = focusWorkspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state);
+    void goto(
+      nextWorkspaceId
+        ? `/workspace/${nextWorkspaceId}`
+        : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
+    );
+  }
+
+  function handleWorkspaceTabContextMenu(event: MouseEvent, workspaceId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelPointerDrag();
+    tabContextMenu = { workspaceId, x: event.clientX, y: event.clientY };
+  }
+
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
     const currentIndex = visibleTabIds.indexOf(workspaceId);
     const targetIndex = currentIndex + direction;
@@ -336,6 +426,21 @@
       position: targetIndex + 1,
     });
     requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
+  }
+
+  function handleGlobalWorkspaceTabMoved(event: CustomEvent<WorkspaceTabMovedEventDetail>) {
+    const { workspaceId, position } = event.detail;
+    if (!visibleTabIds.includes(workspaceId) || position < 1) return;
+    reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
+      name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
+      position,
+    });
+    requestAnimationFrame(() => {
+      const tab = tabButtons.get(workspaceId);
+      if (!tab) return;
+      tab.focus();
+      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
   }
 
   function handleTabKeydown(event: KeyboardEvent, workspaceId: string) {
@@ -587,9 +692,8 @@
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
-       so overflow-x-auto does not clip it. The normal -ml-1 offset preserves
-       the first tab's 8px clearance from the workspace/sidebar boundary.
+  <!-- pl-7 keeps the active tab's 12px corner-flare SVG inside the padding box
+       and gives the first tab 24px of clearance after the -ml-1 strip offset.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -599,8 +703,9 @@
        intent-hq/monorepo#2400; rules in app.css). -->
   <div
     bind:this={stripElement}
+    data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 pr-3 -ml-1 scrollbar-none',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pl-7 pr-3 -ml-1 scrollbar-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
@@ -647,7 +752,9 @@
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
-              isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing' : 'relative',
+              isDragged
+                ? 'pointer-events-none fixed z-50 cursor-grabbing'
+                : 'relative cursor-pointer',
             )}
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
@@ -655,13 +762,14 @@
             style:left={isDragged && dragSession
               ? `${dragClientX - dragSession.pointerOffsetX}px`
               : undefined}
-            style:top={isDragged && dragSession ? `${dragSession.origin.top}px` : undefined}
+            style:top={isDragged && dragSession ? `${dragSession.origin.top - 2}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
             style:height={isDragged && dragSession ? `${dragSession.origin.height}px` : undefined}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
             onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
+            oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
             {#if isCurrent}
               <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
@@ -720,7 +828,7 @@
               <button
                 type="button"
                 use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 touch-none cursor-grab select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => handleTabClick(event, workspaceId)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 role="tab"
@@ -778,6 +886,7 @@
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
+            oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
             {#if isCurrent}
               <svg
@@ -846,6 +955,15 @@
   </div>
 {/if}
 
+{#if tabContextMenu}
+  <SidebarContextMenu
+    x={tabContextMenu.x}
+    y={tabContextMenu.y}
+    items={tabContextMenuItems}
+    onClickOutside={() => (tabContextMenu = null)}
+  />
+{/if}
+
 <style>
   [data-workspace-tab][data-active='true'] {
     border-bottom-width: 0;
@@ -853,11 +971,7 @@
   }
 
   button[data-workspace-tab-hover-trigger] {
-    cursor: grab;
-  }
-
-  button[data-workspace-tab-hover-trigger]:active {
-    cursor: grabbing;
+    cursor: pointer;
   }
 
   button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title] {

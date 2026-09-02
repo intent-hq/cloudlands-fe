@@ -24,8 +24,6 @@
     WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   interface Props {
     agents?: AgentSession[];
@@ -36,9 +34,6 @@
     onRestoreRetired?: (detail: { agentId: string }) => void;
     runningAgentIds?: string[];
     loading?: boolean;
-    workspaceId?: string;
-    openPanelTabs?: PanelTab[];
-    activePanelTab?: PanelTab | null;
     searchQuery?: string;
     /** Daemon-served retired-row count (§5.5 v8.2) — renders the collapsed bin before rows load. */
     retiredCount?: number;
@@ -59,9 +54,6 @@
     onRestoreRetired,
     runningAgentIds = [],
     loading = false,
-    workspaceId = '',
-    openPanelTabs = [],
-    activePanelTab,
     searchQuery = '',
     retiredCount = 0,
     retiredAgentsLoaded = false,
@@ -184,27 +176,16 @@
   function handleAgentClick(agentId: string, event: MouseEvent | KeyboardEvent) {
     onSelect?.({ agentId, event });
   }
-
-  function getAgentPanelState(agentId: string) {
-    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
-      type: 'agent',
-      agentId,
-      workspaceId,
-    });
-  }
 </script>
 
 {#snippet agentTree(agentList: AgentSession[])}
   {#each agentList as agent (agent.id)}
-    {@const panelState = getAgentPanelState(agent.id)}
     <LazyAgentCard
       cacheKey={agent.id}
       agentId={agent.id}
       agentName={agent.name}
       isBackground={isBackgroundAgent(agent)}
       selected={agent.id === selectedAgentId}
-      openPanelCount={panelState.count}
-      activeInPanel={panelState.isActive}
       updatedAt={agent.updatedAt}
       hidePreview
       panelRow
@@ -293,15 +274,12 @@
       getKey={(agent: AgentSession) => agent.id}
     >
       {#snippet children({ item: agent }: { item: AgentSession })}
-        {@const panelState = getAgentPanelState(agent.id)}
         <div class="w-full">
           <AgentCard
             agentId={agent.id}
             agentName={agent.name}
             isBackground={false}
             selected={agent.id === selectedAgentId}
-            openPanelCount={panelState.count}
-            activeInPanel={panelState.isActive}
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
@@ -368,7 +346,6 @@
 
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
-      {@const panelState = getAgentPanelState(agent.id)}
       {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
         <div transition:slide={{ axis: 'y', duration: 150 }}>
           <LazyAgentCard
@@ -377,8 +354,6 @@
             agentName={agent.name}
             isBackground
             selected={agent.id === selectedAgentId}
-            openPanelCount={panelState.count}
-            activeInPanel={panelState.isActive}
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
@@ -438,15 +413,12 @@
           getKey={(agent: AgentSession) => agent.id}
         >
           {#snippet children({ item: agent }: { item: AgentSession })}
-            {@const panelState = getAgentPanelState(agent.id)}
             <div class="w-full opacity-70">
               <AgentCard
                 agentId={agent.id}
                 agentName={agent.name}
                 isBackground={isBackgroundAgent(agent)}
                 selected={agent.id === selectedAgentId}
-                openPanelCount={panelState.count}
-                activeInPanel={panelState.isActive}
                 updatedAt={agent.updatedAt}
                 hidePreview
                 panelRow
@@ -464,7 +436,6 @@
   {:else}
     <div class="flex flex-col gap-0.5 pt-1" data-agent-retired-section>
       {#each retiredAgents as agent (agent.id)}
-        {@const panelState = getAgentPanelState(agent.id)}
         {#if hasActiveSearch || showRetiredAgents}
           {#snippet rowActions()}
             {@render retiredActions(agent.id)}
@@ -476,8 +447,6 @@
               agentName={agent.name}
               isBackground={isBackgroundAgent(agent)}
               selected={agent.id === selectedAgentId}
-              openPanelCount={panelState.count}
-              activeInPanel={panelState.isActive}
               updatedAt={agent.updatedAt}
               hidePreview
               panelRow

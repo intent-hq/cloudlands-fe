@@ -208,12 +208,29 @@ async function mountStrip(
     ]);
     document.body.replaceChildren();
     const target = document.createElement('div');
+    target.className = 'window-title-bar';
     document.body.append(target);
+    const mask = document.createElement('div');
+    mask.dataset.activeTabBorderMask = '';
+    mask.style.cssText = 'position:absolute;height:1px;';
+    target.append(mask);
+    const stripProps = {
+      onActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
+        mask.style.left = bounds ? `${bounds.left - 6}px` : '';
+        mask.style.width = bounds ? `${Math.max(0, bounds.width + 13)}px` : '';
+      },
+      onActiveTabTrackingChange(tracking: boolean) {
+        mask.dataset.tracking = String(tracking);
+        mask.style.transition = tracking
+          ? 'none'
+          : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+      },
+    };
     if (panelOpen === undefined || panelWidth === undefined) {
-      target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
-      mount(Strip, { target });
+      target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
+      mount(Strip, { target, props: stripProps });
     } else {
-      target.style.cssText = `width:100%; zoom:${zoom};`;
+      target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;
       const controls = document.createElement('div');
       controls.dataset.titlebarWorkspaceControls = '';
       controls.style.cssText = 'display:flex;min-width:0;align-items:center;gap:4px;';
@@ -249,6 +266,7 @@ async function mountStrip(
         if (component) await unmount(component);
         component = mount(Strip, {
           target: controls,
+          props: stripProps,
         });
         controls.append(launcher);
         await tick();
@@ -312,11 +330,11 @@ async function expectPanelGutter(page: Page, zoom: number) {
   const tab = page.locator('[data-workspace-tab="active"]');
   const panel = page.locator('.workspace-main');
   const [tabBox, panelBox] = await Promise.all([box(tab), box(panel)]);
-  expect(tabBox.x - panelBox.x).toBeCloseTo(8 * zoom, 0);
+  expect(tabBox.x - panelBox.x).toBeCloseTo(24 * zoom, 0);
   expect(tabBox.y + tabBox.height).toBeCloseTo(panelBox.y, 0);
 }
 
-test('keeps the normal first-tab curve, both flares, and 8px panel gutter across the geometry matrix', async ({
+test('keeps the normal first-tab curve, both flares, and 24px panel gutter across the geometry matrix', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -347,7 +365,7 @@ test('keeps the normal first-tab curve, both flares, and 8px panel gutter across
           box(page.locator('[data-workspace-tab]').first()),
           box(page.locator('.workspace-main')),
         ]);
-        expect(firstTab.x - workspaceMain.x).toBeCloseTo(8 * scenario.zoom, 0);
+        expect(firstTab.x - workspaceMain.x).toBeCloseTo(24 * scenario.zoom, 0);
         await expectNormalActiveShape(page, 'active', scenario.zoom);
         await expectPanelGutter(page, scenario.zoom);
       }
@@ -476,7 +494,7 @@ test('preserves the collapsed-sidebar first-tab clearance across zoom', async ({
       box(page.locator('[data-workspace-tab]').first()),
       box(page.locator('[data-titlebar-workspace-controls]')),
     ]);
-    expect(firstTab.x - controls.x).toBeCloseTo(8 * zoom, 0);
+    expect(firstTab.x - controls.x).toBeCloseTo(24 * zoom, 0);
   }
 });
 
@@ -729,19 +747,35 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
   const pointerY = origin.y + origin.height / 2;
   const strip = page.locator('[data-workspace-tab-strip]');
   const close = active.locator('[data-workspace-tab-close]');
+  const mask = page.locator('[data-active-tab-border-mask]');
+  const titlebar = page.locator('.window-title-bar');
 
-  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(activeTab).toHaveCSS('cursor', 'pointer');
   await expect(close).toHaveCSS('cursor', 'pointer');
 
   await page.mouse.move(startX, pointerY);
   await page.mouse.down();
+  await expect(activeTab).toHaveCSS('cursor', 'pointer');
   const dragOver = async (x: number) => page.mouse.move(x, pointerY + 200, { steps: 4 });
 
   for (const pointerX of [startX + 44, startX - 16, dragX]) {
     await dragOver(pointerX);
     const tracked = await box(active);
+    const titlebarBounds = await box(titlebar);
     expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
-    expect(tracked.y).toBeCloseTo(origin.y, 1);
+    expect(tracked.y).toBeCloseTo(origin.y - 2, 1);
+    await expect(mask).toHaveAttribute('data-tracking', 'true');
+    expect(
+      await mask.evaluate((node) => ({
+        left: Number.parseFloat((node as HTMLElement).style.left),
+        transition: (node as HTMLElement).style.transition,
+        width: Number.parseFloat((node as HTMLElement).style.width),
+      })),
+    ).toEqual({
+      left: expect.closeTo(tracked.x - titlebarBounds.x - 6, 1),
+      transition: 'none',
+      width: expect.closeTo(tracked.width + 13, 1),
+    });
   }
 
   const reservedSlot = page.locator('[data-workspace-tab-placeholder="active"]');
@@ -753,6 +787,10 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
   await expect(active).toHaveCSS('border-bottom-width', '0px');
   await expect(active).toHaveCSS('box-shadow', 'none');
   const dragged = await box(active);
+  const [leadingFlare, trailingFlare] = await Promise.all([
+    box(active.locator('[data-workspace-tab-leading-flare]')),
+    box(active.locator('[data-workspace-tab-trailing-flare]')),
+  ]);
   const proposed = await box(reservedSlot);
   expect({ width: proposed.width, height: proposed.height }).toEqual({
     width: origin.width,
@@ -773,7 +811,9 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     outlineStyle: 'none',
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
-  expect(dragged.y).toBeCloseTo(origin.y, 1);
+  expect(dragged.y).toBeCloseTo(origin.y - 2, 1);
+  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
+  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
   expect(
     await page
       .locator('[data-workspace-tab-motion]')
@@ -782,6 +822,10 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
   await expect(page.locator('[data-workspace-stack-preview]')).toHaveCount(0);
 
   await page.mouse.up();
+  await expect.poll(() => mask.getAttribute('data-tracking')).toBe('false');
+  await expect
+    .poll(() => mask.evaluate((node) => (node as HTMLElement).style.transition))
+    .toContain('left 200ms');
 
   expect(
     await page.evaluate(() =>
@@ -804,7 +848,7 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
 
   await expect(reservedSlot).toHaveCount(0);
   await expect(strip).toHaveCSS('cursor', 'auto');
-  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(activeTab).toHaveCSS('cursor', 'pointer');
   await expect(close).toHaveCSS('cursor', 'pointer');
   await expect(active).toHaveCSS('position', 'relative');
   await expect(active).toHaveCSS('z-index', 'auto');

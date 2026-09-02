@@ -803,7 +803,6 @@
                         active={isFileActive(file.path, false)}
                         selected={isFileSelected(file.path, false)}
                         focused={isFileFocused(file.path, false)}
-                        openPanelCount={panelState.count}
                         activeInPanel={panelState.isActive}
                         onFileClick={(path, commitHash, _staged, event) => {
                           trackLastClicked(path, false);
@@ -839,7 +838,6 @@
                 active={isFileActive(change.relativePath, false)}
                 selected={isFileSelected(change.relativePath, false)}
                 focused={isFileFocused(change.relativePath, false)}
-                openPanelCount={panelState.count}
                 activeInPanel={panelState.isActive}
                 onFileClick={(path, commitHash, _staged, event) => {
                   trackLastClicked(path, false);
@@ -1017,7 +1015,6 @@
                         active={isFileActive(file.path, true)}
                         selected={isFileSelected(file.path, true)}
                         focused={isFileFocused(file.path, true)}
-                        openPanelCount={panelState.count}
                         activeInPanel={panelState.isActive}
                         onFileClick={(path, commitHash, _staged, event) => {
                           trackLastClicked(path, true);
@@ -1050,7 +1047,6 @@
                 active={isFileActive(change.relativePath, true)}
                 selected={isFileSelected(change.relativePath, true)}
                 focused={isFileFocused(change.relativePath, true)}
-                openPanelCount={panelState.count}
                 activeInPanel={panelState.isActive}
                 onFileClick={(path, commitHash, _staged, event) => {
                   trackLastClicked(path, true);

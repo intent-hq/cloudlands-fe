@@ -7,13 +7,16 @@ import { listFixtures } from './list.fixtures';
 import { listMetadata } from './list.meta';
 
 describe('List', () => {
-  it('renders thin-bordered rows with soft selected and functional focus states', async () => {
+  it('renders borderless selected rows with functional focus states', async () => {
     const { container, getByRole } = render(ListHarness);
     const list = container.querySelector('[data-slot="list-container"]');
     const selected = getByRole('button', { name: /A long list title/ });
+    const active = getByRole('button', { name: /Active row/ });
     expect(list?.className).toContain('gap-px');
     expect(selected.className).toContain('rounded-md');
     expect(selected.className).toContain('border-transparent');
+    expect(active.className).not.toContain('border-input');
+    expect(active.className).not.toContain('shadow-');
     expect(selected.className).toContain('focus-visible:border-ring');
     expect(selected.className).toContain('focus-visible:ring-2');
     expect(selected.className).toContain('bg-accent');

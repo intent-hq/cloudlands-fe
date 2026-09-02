@@ -69,4 +69,16 @@ describe('shortcut registry', () => {
       ]),
     );
   });
+
+  it('lists global workspace tab movement commands', () => {
+    const navigation = SHORTCUT_CATEGORIES.navigation.shortcuts;
+    expect(SHORTCUTS.MOVE_SPACE_TAB_LEFT.key).toBe('mod+alt+shift+left');
+    expect(SHORTCUTS.MOVE_SPACE_TAB_RIGHT.key).toBe('mod+alt+shift+right');
+    expect(navigation).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'mod+alt+shift+left', contexts: ['global'] }),
+        expect.objectContaining({ key: 'mod+alt+shift+right', contexts: ['global'] }),
+      ]),
+    );
+  });
 });

@@ -6,9 +6,9 @@ export interface AvatarStackFitOptions {
   surface: number;
   /** Stack overlap in px (see `agentAvatarGeometry[variant].overlap`). */
   overlap: number;
-  /** Gap between the avatar track and the overflow label in px. */
-  overflowGap: number;
-  /** Measured width in px of the `+N` overflow label for `remaining` items. */
+  /** Amount the overflow tile overlaps the final visible avatar in px. */
+  overflowOverlap: number;
+  /** Measured total width in px of the `+N` overflow tile for `remaining` items. */
   measureOverflowText: (remaining: number) => number;
 }
 
@@ -19,7 +19,7 @@ export interface AvatarStackFitOptions {
  * forced-layout reads.
  */
 export function computeAdaptiveVisibleCount(options: AvatarStackFitOptions): number {
-  const { itemCount, maxVisible, availableWidth, surface, overlap, overflowGap } = options;
+  const { itemCount, maxVisible, availableWidth, surface, overlap, overflowOverlap } = options;
   if (availableWidth <= 0) return 0;
   const step = surface - overlap;
   const cap = Math.min(itemCount, Math.max(0, maxVisible));
@@ -32,7 +32,9 @@ export function computeAdaptiveVisibleCount(options: AvatarStackFitOptions): num
     const remaining = itemCount - count;
     const requiredWidth =
       avatarsWidth(count) +
-      (remaining > 0 ? (count > 0 ? overflowGap : 0) + options.measureOverflowText(remaining) : 0);
+      (remaining > 0
+        ? options.measureOverflowText(remaining) - (count > 0 ? overflowOverlap : 0)
+        : 0);
     if (requiredWidth <= availableWidth) {
       return count;
     }

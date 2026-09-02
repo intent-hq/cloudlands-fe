@@ -44,6 +44,10 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+const noFocusedPanelState = {
+  panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: null } } },
+};
+
 function reducePanelAction(state: PanelLayoutSliceState, action: any): PanelLayoutSliceState {
   if (action.type !== 'panelLayout/openTabInRightmostColumnRequested') {
     return panelLayoutReducer(state, action);
@@ -63,7 +67,10 @@ describe('workspaceNavigationTabSaga', () => {
   it('opens the sidebar all-changes request as a local-changes panel tab', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
 
     channel.put(openWorkspaceLocalChanges('ws-1'));
     await settle();
@@ -90,10 +97,13 @@ describe('workspaceNavigationTabSaga', () => {
   it('threads gitRootId into a secondary-root all-changes tab', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
 
     channel.put(openWorkspaceLocalChanges('ws-1', { gitRootId: 'root-9' }));
-    await settle();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
 
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -138,7 +148,12 @@ describe('workspaceNavigationTabSaga', () => {
   it('routes other panel-backed workspace navigation actions through the panel layout', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const state = {
+      panelLayout: {
+        byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
+      },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, workspaceNavigationTabSaga);
     const event = { id: 'event-1', type: 'file:changed', timestamp: 42 } as never;
 
     channel.put(openWorkspaceBrowser('ws-1', 'https://example.com'));
@@ -155,13 +170,14 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
-      'panelLayout/openTabInRightmostColumnRequested',
       'panelLayout/openTab',
-      'panelLayout/openTabInRightmostColumnRequested',
-      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTab',
+      'panelLayout/openTab',
+      'panelLayout/openTab',
     ]);
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
       payload: {
+        panelId: 'panel-focused',
         tab: { type: 'browser', browserUrl: 'https://example.com' },
       },
     });
@@ -181,10 +197,14 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[2]?.[0]).toMatchObject({
-      payload: { tab: { type: 'activity-changes', data: { event } } },
+      payload: {
+        panelId: 'panel-focused',
+        tab: { type: 'activity-changes', data: { event } },
+      },
     });
     expect(dispatch.mock.calls[3]?.[0]).toMatchObject({
       payload: {
+        panelId: 'panel-focused',
         tab: { type: 'code-review', data: { status: 'completed', result: 'Looks good' } },
       },
     });
@@ -500,7 +520,10 @@ describe('workspaceNavigationTabSaga', () => {
     } as TrackedChange;
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(
       openWorkspaceCommitChangeset('ws-1', 'abcdef123456', 'feat: exact shape', {
         sourcePanelId: 'panel-a',
@@ -563,16 +586,19 @@ describe('workspaceNavigationTabSaga', () => {
   it('threads gitRootId into the commit changeset tab data and omits it when absent', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
 
     channel.put(
       openWorkspaceCommitChangeset('ws-1', 'abcdef123456', 'feat: scoped', {
         gitRootId: 'root-1',
       }),
     );
-    await settle();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
     channel.put(openWorkspaceCommitChangeset('ws-1', 'abcdef123456', 'feat: primary'));
-    await settle();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
       type: 'panelLayout/openTabInRightmostColumnRequested',
@@ -602,7 +628,10 @@ describe('workspaceNavigationTabSaga', () => {
   it('supports an options-only runtime diff and preserves the undefined change field', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(
       openWorkspaceDiff('ws-1', undefined as never, {
         filePath: 'overrides/runtime.ts',
@@ -638,7 +667,10 @@ describe('workspaceNavigationTabSaga', () => {
     ];
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(
       openWorkspaceChatChanges('ws-1', changes, '2 files changed', {
         messageId: 'msg-1',
@@ -677,7 +709,10 @@ describe('workspaceNavigationTabSaga', () => {
     const changes: JsonValue[] = [{ file: 'src/a.ts' }];
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(openWorkspaceChatChanges('ws-1', changes, '1 file changed'));
     await settle();
     const payload = dispatch.mock.calls[0]?.[0]?.payload as {
@@ -694,7 +729,10 @@ describe('workspaceNavigationTabSaga', () => {
     const changes: JsonValue[] = [{ file: 'src/a.ts' }];
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(
       openWorkspaceChatChanges('ws-1', changes, '1 file changed', {
         isAggregate: true,
@@ -724,7 +762,10 @@ describe('workspaceNavigationTabSaga', () => {
     const changes: JsonValue[] = [{ file: 'src/a.ts' }];
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(
       openWorkspaceChatChanges('ws-1', changes, 'Changes from Task A', {
         isAggregate: true,
@@ -928,7 +969,10 @@ describe('workspaceNavigationTabSaga', () => {
   it('opens the singleton local-changes tab with the i18n title', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
     channel.put(openWorkspaceLocalChanges('ws-1'));
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({

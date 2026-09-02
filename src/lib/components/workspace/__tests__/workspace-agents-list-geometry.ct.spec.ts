@@ -143,7 +143,7 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
     'data-selected-agent',
     'long-name',
   );
-  await expect(longRow.locator('[data-panel-open-state="active"]')).toHaveCount(1);
+  await expect(longRow.locator('[data-panel-open-state]')).toHaveCount(0);
   await expect(longRow.locator('[data-agent-row-time]')).toHaveCount(1);
   await expect(
     component.locator('[data-agent-panel-row="background-active"] [data-agent-background-badge]'),
@@ -177,7 +177,7 @@ test('keeps every Agents-panel row and disclosure transparent with accessible st
     'data-avatar-state',
     /.+/,
   );
-  await expect(active.locator('[data-panel-open-state="active"]')).toHaveCount(1);
+  await expect(active.locator('[data-panel-open-state]')).toHaveCount(0);
 
   for (const theme of ['light', 'dark'] as const) {
     await page.evaluate((value) => {

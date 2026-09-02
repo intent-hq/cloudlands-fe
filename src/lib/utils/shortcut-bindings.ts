@@ -13,6 +13,8 @@ export const SHORTCUT_DEFAULTS = {
   'navigation.close-tab': 'mod+w',
   'navigation.close-space-tab': 'mod+shift+w',
   'navigation.reopen-tab': 'mod+shift+t',
+  'navigation.move-space-tab-left': 'mod+alt+shift+left',
+  'navigation.move-space-tab-right': 'mod+alt+shift+right',
   'chat.send': 'enter',
   'chat.force-send': 'mod+enter',
   'chat.new-line': 'shift+enter',

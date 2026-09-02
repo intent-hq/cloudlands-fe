@@ -165,8 +165,18 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_prevSpace_label();
     },
   },
-  MOVE_SPACE_TAB_LEFT: { key: 'alt+shift+left', label: 'Move Space Tab Left' },
-  MOVE_SPACE_TAB_RIGHT: { key: 'alt+shift+right', label: 'Move Space Tab Right' },
+  MOVE_SPACE_TAB_LEFT: {
+    key: 'mod+alt+shift+left',
+    get label() {
+      return m.ui_shortcuts_moveSpaceTabLeft_label();
+    },
+  },
+  MOVE_SPACE_TAB_RIGHT: {
+    key: 'mod+alt+shift+right',
+    get label() {
+      return m.ui_shortcuts_moveSpaceTabRight_label();
+    },
+  },
   SEARCH: {
     key: 'mod+f',
     get label() {
@@ -546,6 +556,8 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'navigation.close-tab',
     'navigation.close-space-tab',
     'navigation.reopen-tab',
+    'navigation.move-space-tab-left',
+    'navigation.move-space-tab-right',
   ],
   chat: [
     'chat.send',
@@ -713,6 +725,8 @@ export const SHORTCUT_CATEGORIES: Record<
         },
         contexts: ['global'],
       },
+      { ...SHORTCUTS.MOVE_SPACE_TAB_LEFT, contexts: ['global'] },
+      { ...SHORTCUTS.MOVE_SPACE_TAB_RIGHT, contexts: ['global'] },
     ],
   },
   chat: {

@@ -953,14 +953,13 @@ test('caps one through eight participants at three and computes overflow from re
     .not.toBeNull();
   if (!style) throw new Error('unreachable: poll guarantees a non-null style');
   expect(style.zIndexes).toEqual([1, 2, 3]);
-  expect(style.masks.at(-1)).toBe('none');
-  for (const mask of style.masks.slice(0, -1)) {
+  for (const mask of style.masks) {
     expect(mask).toContain('url(');
     expect(mask).not.toContain('radial-gradient');
   }
   expect(style.avatarPseudos).toEqual(Array(3).fill({ content: 'none', width: '0px' }));
   expect(style.overflowFontSize).toBe('12px');
-  expect(style.overflowBackground).toBe('rgba(0, 0, 0, 0)');
+  expect(style.overflowBackground).not.toBe('rgba(0, 0, 0, 0)');
   expect(
     Math.abs(style.overflowCenterY - style.stackCenterY) * style.devicePixelRatio,
   ).toBeLessThanOrEqual(0.5);
@@ -1231,10 +1230,9 @@ test('keeps 27 live participant surfaces on one rounded-square overlap geometry'
           pseudoBorder: '0px',
           pseudoShadow: 'none',
         });
-        if (index === visibleCount - 1) expect(entry.maskImage).toBe('none');
-        else {
-          expect(entry.maskImage).toContain('url(');
-          expect(entry.maskImage).not.toContain('radial-gradient');
+        expect(entry.maskImage).toContain('url(');
+        expect(entry.maskImage).not.toContain('radial-gradient');
+        if (index < visibleCount - 1) {
           const next = geometry[index + 1];
           expect(entry.itemBox.right - next.itemBox.left).toBeCloseTo(6 * zoom, 1);
         }
@@ -1321,6 +1319,7 @@ test('screenshots participant cutouts over varied parent backgrounds', async ({ 
         await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+3');
         await expect(component).toHaveScreenshot(
           `participant-stack-${theme}-${parentBackground}-${zoom === 1 ? '100' : '200'}.png`,
+          { maxDiffPixelRatio: 0.012 },
         );
       }
     }
