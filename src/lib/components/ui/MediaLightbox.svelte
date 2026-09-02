@@ -35,7 +35,7 @@
   let closeButtonElement: HTMLButtonElement | null = $state(null);
   let prefersReducedMotion = $state(
     typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
+      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
   );
 
   function close() {

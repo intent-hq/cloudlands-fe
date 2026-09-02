@@ -59,4 +59,17 @@ describe('MediaLightbox', () => {
       expect.anything(),
     );
   });
+
+  it('uses the standard fade when matchMedia returns no value', async () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue(undefined as unknown as MediaQueryList);
+
+    render(MediaLightboxHarness, { props: { initialOpen: true } });
+    await screen.findByRole('dialog', { name: 'Media preview' });
+
+    expect(transitionMocks.fade).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ duration: 200 }),
+      expect.anything(),
+    );
+  });
 });
