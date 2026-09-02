@@ -94,6 +94,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import { commitOnboardingDefaultModel } from '$features/onboarding/utils/commit-onboarding-default-model';
+  import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     parseContextMentions,
@@ -1090,13 +1091,13 @@
     // Existing repositories cannot be created until BranchSelector resolves
     // (or the user manually enters) a branch. Snapshot the effective branch
     // before the prompt step unmounts so workspace.create never receives ''.
-    const isNewRepo = projectSelection.type === 'new';
+    const treatAsNewRepo = shouldTreatAsNewRepo(projectSelection);
     const currentBranch = projectSelection.branch;
     const effectiveBranch =
-      selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
+      selectedPRBranch && currentBranch !== selectedPRBranch && !treatAsNewRepo
         ? selectedPRBranch
         : currentBranch;
-    if (!isNewRepo && !effectiveBranch.trim()) {
+    if (!treatAsNewRepo && !effectiveBranch.trim()) {
       toast.error(m.onboarding_page_branchRequired_toast());
       return;
     }
@@ -1204,7 +1205,7 @@
         shouldPullSourceRepositoryBeforeCreate({
           branchBehind: onboardingBranchBehind,
           isLocalRepository: projectSelection.type === 'local',
-          isNewRepository: projectSelection.type === 'new',
+          isNewRepository: treatAsNewRepo,
           skipIsolation: onboardingSkipIsolation,
           pullEnabled: onboardingShouldPullBeforeCreate,
         })
@@ -1280,7 +1281,7 @@
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
         githubUrl: projectSelection.githubUrl,
         baseRef: effectiveBranch,
-        isNewRepo,
+        isNewRepo: treatAsNewRepo,
         skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,
         setupScript: setupScriptParam,
