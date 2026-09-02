@@ -630,19 +630,19 @@ describe('settings tab route and focus behavior', () => {
 
   it('keeps Providers and Global Instructions default-model entry points on shared state', async () => {
     appStore.dispatch(hydrateDefaultProvider('codex'));
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:shared-fixture' }));
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
     await screen.findByTestId('global-instructions-default-model-row');
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
 
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:updated-fixture' }));
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'updated-fixture' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:updated-fixture');
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('updated-fixture');
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {

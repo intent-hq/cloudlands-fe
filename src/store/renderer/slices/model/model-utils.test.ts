@@ -48,13 +48,13 @@ describe('model-utils', () => {
     await expect(getModelsForProvider('auggie')).rejects.toThrow('Auggie: CLI not found');
   });
 
-  it('prefixes non-default provider models after a successful fetch', async () => {
+  it('keeps bare daemon-served ids for non-default provider models', async () => {
     vi.mocked(getProviderModels).mockResolvedValue({
       models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
     });
 
     await expect(getModelsForProvider('codex')).resolves.toEqual([
-      { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
+      { value: 'gpt-5-codex', label: 'GPT-5 Codex' },
     ]);
     expect(vi.mocked(getProviderModels)).toHaveBeenCalledWith('codex', {});
   });
@@ -67,7 +67,7 @@ describe('model-utils', () => {
     });
 
     await expect(getModelsForProviderForLoadingState('codex')).resolves.toEqual({
-      models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' }],
+      models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
       warning: 'Codex not installed; using static model list',
       stale: true,
     });
@@ -88,13 +88,13 @@ describe('model-utils', () => {
     expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
   });
 
-  it('routes grok through the daemon-backed provider models client with prefixing', async () => {
+  it('routes grok through the daemon-backed provider models client with bare ids', async () => {
     vi.mocked(getProviderModels).mockResolvedValue({
       models: [{ value: 'grok-4-1-fast', label: 'Grok 4.1 Fast' }],
     });
 
     await expect(getModelsForProviderForLoadingState('grok')).resolves.toEqual({
-      models: [{ value: 'grok:grok-4-1-fast', label: 'Grok 4.1 Fast' }],
+      models: [{ value: 'grok-4-1-fast', label: 'Grok 4.1 Fast' }],
       warning: undefined,
       stale: undefined,
     });

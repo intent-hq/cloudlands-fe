@@ -8,7 +8,8 @@ import {
   setAtomicDefaultModel,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
-import { normalizeModelForProvider, normalizeProviderModels } from './model-selection-utils';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { toBareProviderModels } from './model-selection-utils';
 import type {
   ModelFallbackInfo,
   ModelLoadingState,
@@ -149,7 +150,13 @@ export const setModelFallbackInfo = createAction<[agentId: string, info: ModelFa
 export const clearModelFallbackInfo = createAction<[agentId: string]>(
   'model/clearModelFallbackInfo',
 );
-export const selectModel = createAction<[model: string]>('model/selectModel');
+/**
+ * User pick of the global default model. `providerId` names the provider the
+ * pick belongs to; when omitted (legacy callers, persisted `model.default`
+ * echoes) the saga attributes a lenient legacy compound prefix, else the
+ * current default provider.
+ */
+export const selectModel = createAction<[model: string, providerId?: string]>('model/selectModel');
 export const reloadModelsForProvider = createAction('model/reloadModelsForProvider');
 
 // ============================================================================
@@ -188,7 +195,6 @@ modelReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
     ...state,
     catalogProviderIds,
     defaultProviderId,
-    providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
   };
 });
 modelReducer.with(setActiveProvider, (state, { payload: [providerId] }) => {
@@ -203,7 +209,6 @@ modelReducer.with(setActiveProvider, (state, { payload: [providerId] }) => {
     // The pending guard tracks the raw pick — the value the persistence saga
     // writes and the daemon echoes back — not the catalog-validated one.
     pendingDefaultProviderId: providerId || null,
-    providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
   };
 });
 modelReducer.with(hydrateDefaultProvider, (state, { payload: [providerId] }) => {
@@ -214,8 +219,7 @@ modelReducer.with(hydrateDefaultProvider, (state, { payload: [providerId] }) => 
     return state;
   }
   // An empty payload (unset model.defaultProvider) must not clobber the
-  // first-row fallback installed at catalog hydration — that would
-  // re-normalize every persisted pick and break bare-id validation.
+  // first-row fallback installed at catalog hydration.
   if (!providerId && state.catalogProviderIds.length > 0) return state;
   const defaultProviderId = validatedDefaultProviderId(
     providerId,
@@ -226,38 +230,28 @@ modelReducer.with(hydrateDefaultProvider, (state, { payload: [providerId] }) => 
     ...state,
     defaultProviderId: providerId ? defaultProviderId : '',
     pendingDefaultProviderId: null,
-    providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
   };
 });
 modelReducer.with(activeProviderPersistRejected, (state, { payload: [providerId] }) => {
   if (state.pendingDefaultProviderId !== providerId) return state;
   return { ...state, pendingDefaultProviderId: null };
 });
-modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
-  ...state,
-  providerModels: {
-    ...state.providerModels,
-    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
-  },
-  pendingProviderModels: {
-    ...state.pendingProviderModels,
-    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
-  },
-}));
+modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => {
+  const bareModel = splitLegacyCompoundId(model).modelId;
+  return {
+    ...state,
+    providerModels: { ...state.providerModels, [providerId]: bareModel },
+    pendingProviderModels: { ...state.pendingProviderModels, [providerId]: bareModel },
+  };
+});
 modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model }] }) => {
-  const normalizedModel = normalizeModelForProvider(providerId, model, providerId);
+  const bareModel = splitLegacyCompoundId(model).modelId;
   return {
     ...state,
     defaultProviderId: providerId,
     pendingDefaultProviderId: providerId,
-    providerModels: {
-      ...normalizeProviderModels(state.providerModels, providerId),
-      [providerId]: normalizedModel,
-    },
-    pendingProviderModels: {
-      ...normalizeProviderModels(state.pendingProviderModels, providerId),
-      [providerId]: normalizedModel,
-    },
+    providerModels: { ...state.providerModels, [providerId]: bareModel },
+    pendingProviderModels: { ...state.pendingProviderModels, [providerId]: bareModel },
   };
 });
 modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
@@ -282,23 +276,23 @@ modelReducer.with(
   }),
 );
 modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => {
-  const normalized = normalizeProviderModels(models, state.defaultProviderId);
+  // Rehydrate boundary: legacy persisted values may be compound — split to
+  // bare ids here so nothing compound ever enters the store.
+  const bare = toBareProviderModels(models);
   const pending: Record<string, string> = {};
   for (const [providerId, model] of Object.entries(state.pendingProviderModels)) {
-    if (normalized[providerId] !== model) pending[providerId] = model;
+    if (bare[providerId] !== model) pending[providerId] = model;
   }
   return {
     ...state,
-    providerModels: { ...normalized, ...pending },
+    providerModels: { ...bare, ...pending },
     pendingProviderModels: pending,
   };
 });
 modelReducer.with(providerModelsPersistRejected, (state, { payload: [models] }) => {
   const pending = { ...state.pendingProviderModels };
   for (const [providerId, model] of Object.entries(models)) {
-    if (
-      pending[providerId] === normalizeModelForProvider(providerId, model, state.defaultProviderId)
-    ) {
+    if (pending[providerId] === splitLegacyCompoundId(model).modelId) {
       delete pending[providerId];
     }
   }

@@ -69,7 +69,7 @@ describe('modelReducer', () => {
     expect(initialState.defaultProviderId).toBe(defaultProviderId);
   });
 
-  it('adopts a picked default provider and re-normalizes picks', () => {
+  it('adopts a picked default provider and keeps picks bare', () => {
     const withActive = modelReducer(bareInitialState, setActiveProvider('codex'));
     expect(withActive.defaultProviderId).toBe('codex');
     // A picked default provider survives catalog hydration (no first-row clobber).
@@ -83,11 +83,11 @@ describe('modelReducer', () => {
       hydrated,
       loadProviderModelsFromStorage({ codex: 'codex:gpt-5.3-codex/high', auggie: 'gpt5.4' }),
     );
-    // Switching the active provider re-normalizes: codex picks become bare,
-    // other providers' picks become prefixed.
+    // Values are bare model ids keyed by provider — a legacy compound prefix
+    // in a persisted value is split away at the rehydrate boundary.
     expect(withPicks.providerModels).toEqual({
       codex: 'gpt-5.3-codex/high',
-      auggie: 'auggie:gpt5.4',
+      auggie: 'gpt5.4',
     });
   });
 
@@ -166,7 +166,7 @@ describe('modelReducer', () => {
     expect(afterEmptySet.defaultProviderId).toBe(defaultProviderId);
   });
 
-  it('re-normalizes persisted picks that landed before catalog hydration', () => {
+  it('splits legacy compound picks to bare ids at the rehydrate boundary', () => {
     const preCatalog = modelReducer(
       bareInitialState,
       loadProviderModelsFromStorage({
@@ -174,16 +174,16 @@ describe('modelReducer', () => {
         codex: 'gpt-5.3-codex/high',
       }),
     );
-    // Before hydration defaultProviderId is '' — everything stays prefixed.
+    // Bare regardless of catalog hydration — the map key carries provenance.
     expect(preCatalog.providerModels).toEqual({
-      auggie: 'auggie:gpt5.4',
-      codex: 'codex:gpt-5.3-codex/high',
+      auggie: 'gpt5.4',
+      codex: 'gpt-5.3-codex/high',
     });
 
     const hydrated = modelReducer(preCatalog, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
     expect(hydrated.providerModels).toEqual({
       auggie: 'gpt5.4',
-      codex: 'codex:gpt-5.3-codex/high',
+      codex: 'gpt-5.3-codex/high',
     });
   });
 
@@ -209,7 +209,7 @@ describe('modelReducer', () => {
     expect(state.availableModelsProviderId).toBe('codex');
   });
 
-  it('stores selected models in providerModels using provider normalization', () => {
+  it('stores selected models in providerModels as bare ids', () => {
     const defaultState = modelReducer(
       initialState,
       setSelectedModel({
@@ -224,7 +224,7 @@ describe('modelReducer', () => {
 
     expect(nonDefaultState.providerModels).toEqual({
       [defaultProviderId]: 'gpt5.4',
-      codex: 'codex:gpt-5.3-codex/high',
+      codex: 'gpt-5.3-codex/high',
     });
   });
 
@@ -385,7 +385,7 @@ describe('modelReducer', () => {
     });
   });
 
-  it('normalizes provider models loaded from storage', () => {
+  it('loads provider models from storage as bare ids', () => {
     const state = modelReducer(
       initialState,
       loadProviderModelsFromStorage({
@@ -396,7 +396,7 @@ describe('modelReducer', () => {
 
     expect(state.providerModels).toEqual({
       [defaultProviderId]: 'gpt5.4',
-      codex: 'codex:gpt-5.3-codex/high',
+      codex: 'gpt-5.3-codex/high',
     });
   });
 });

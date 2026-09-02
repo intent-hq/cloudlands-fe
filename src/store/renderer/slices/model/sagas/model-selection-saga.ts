@@ -15,8 +15,7 @@ import {
   activeProviderPersistRejected,
   setAtomicDefaultModel,
 } from '../../provider-settings/provider-settings-slice';
-import { selectDefaultProviderId, selectProviderModels } from '../model-selectors';
-import { normalizeModelForProvider } from '../model-selection-utils';
+import { selectProviderModels } from '../model-selectors';
 import {
   providerModelsPersistRejected,
   reloadModelsForProvider,
@@ -29,31 +28,28 @@ import { settingsChangesReceived } from '../../settings-events/settings-events-s
 const logger = createLogger('ModelSelectionSaga');
 
 export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
-  const model = action.payload[0];
-  if (!model) return;
+  const [rawModel, explicitProviderId] = action.payload;
+  if (!rawModel) return;
 
   const activeProviderId = yield* selectActiveProviderId.effect();
-  const compoundProviderId = model.includes(':')
-    ? (splitLegacyCompoundId(model).providerId ?? '')
-    : '';
-  const providerId = compoundProviderId || activeProviderId;
+  // Explicit providerId from the pick wins; a legacy compound prefix in the
+  // model string is honored as a fallback for old callers/persisted echoes.
+  const { providerId: legacyPrefix, modelId: model } = splitLegacyCompoundId(rawModel);
+  const providerId = explicitProviderId || legacyPrefix || activeProviderId;
 
-  if (compoundProviderId && compoundProviderId !== activeProviderId) {
-    const provider = yield* selectProviderCatalogEntry.effect(compoundProviderId);
+  if (providerId && providerId !== activeProviderId) {
+    const provider = yield* selectProviderCatalogEntry.effect(providerId);
     const catalogLoaded = yield* selectProviderCatalogLoaded.effect();
     // Before the catalog hydrates (fresh install, onboarding racing the boot
     // reads — intent-hq/monorepo#1924) the pick's provider is adopted
     // optimistically, mirroring the model slice's pre-hydration handling
     // (`validatedDefaultProviderId`): the picker only offers real providers,
     // and the mirrored id is re-validated at `providerCatalogLoaded`. Once
-    // the catalog is loaded, unknown prefixes are still rejected.
+    // the catalog is loaded, unknown providers are still rejected.
     if (provider || !catalogLoaded) {
       yield* put(reloadModelsForProvider());
     } else {
-      logger.warn('Ignoring model selection for unknown provider', {
-        model,
-        providerId: compoundProviderId,
-      });
+      logger.warn('Ignoring model selection for unknown provider', { model, providerId });
       return;
     }
   }
@@ -89,10 +85,11 @@ export function* persistSelectedModelsWorker(
   atomicProviderId?: string,
 ) {
   const providerModels = yield* selectProviderModels.effect();
-  const defaultProviderId = yield* selectDefaultProviderId.effect();
+  // Store values and session picks are bare model ids keyed by provider —
+  // persisted as-is; the daemon rejects compound ids on the wire (-32602).
   const value = { ...providerModels };
   for (const [providerId, model] of Object.entries(sessionPicks)) {
-    value[providerId] = normalizeModelForProvider(providerId, model, defaultProviderId);
+    value[providerId] = splitLegacyCompoundId(model).modelId;
   }
   try {
     const changes = atomicProviderId
