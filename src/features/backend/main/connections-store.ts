@@ -504,6 +504,27 @@ export async function list(): Promise<ConnectionRecord[]> {
 }
 
 /**
+ * Find the stored connection matching a pairing identity (deep-link/QR
+ * connect flows): the cert fingerprint is canonical — a match means the same
+ * machine even under a different host:port — with normalized `host:port` as
+ * the fallback, same semantics as add()'s live dedupe (`sameBackend`). Each
+ * candidate host from the pairing URI is tried against the stored primary
+ * host. Returns the token-free record of the first match, or null.
+ */
+export async function findMatching(identity: {
+  hosts: string[];
+  port: number;
+  fingerprint: string | null;
+}): Promise<ConnectionRecord | null> {
+  const state = await readState();
+  const probe = { port: identity.port, fingerprint: identity.fingerprint ?? '' };
+  const match = state.connections.find((c) =>
+    identity.hosts.some((host) => sameBackend(c, { ...probe, host })),
+  );
+  return match ? toRecord(match) : null;
+}
+
+/**
  * Register a remote connection, deduplicating by backend identity (upsert):
  * the cert fingerprint is canonical (a matching fingerprint is the same
  * machine even under a different host:port), with normalized `host:port` as

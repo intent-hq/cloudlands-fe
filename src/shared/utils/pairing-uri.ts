@@ -30,7 +30,12 @@ const PAIRING_PREFIX = 'intent://pair';
 
 /** Whether the text looks like a pairing URI (cheap pre-check for paste handlers). */
 export function isPairingUri(text: string): boolean {
-  return text.trim().toLowerCase().startsWith(PAIRING_PREFIX);
+  const normalized = text.trim().toLowerCase();
+  if (!normalized.startsWith(PAIRING_PREFIX)) return false;
+  // The action must be exactly `pair` — reject e.g. `intent://pairing?...`,
+  // which the deep-link protocol does not define.
+  const next = normalized.charAt(PAIRING_PREFIX.length);
+  return next === '' || next === '?' || next === '/' || next === '#';
 }
 
 /** Parse a pairing URI; `null` when the text is not one. */
