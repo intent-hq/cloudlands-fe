@@ -228,14 +228,27 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('[data-browser-owner-chip]')).toBeNull();
     });
 
-    it('keeps the viewport indicator pill unchanged', () => {
-      const { container } = renderWithOwner({ emulatedSize: { width: 1280, height: 800 } });
+    it('shows no device frame or dimensions in fit mode', () => {
+      const { container } = renderWithOwner({ viewport: { mode: 'fit' } });
 
-      const indicator = container.querySelector('[data-browser-viewport-indicator]');
-      expect(indicator).not.toBeNull();
-      expect(indicator!.textContent).toContain('1280×800');
-      expect(indicator!.className).toContain('bg-muted');
-      expect(indicator!.className).toContain('rounded-full');
+      expect(screen.getByTestId('browser-viewport-trigger').textContent).toContain('Fit panel');
+      expect(container.querySelector('[data-browser-device-frame]')).toBeNull();
+      expect(container.querySelector('[data-browser-viewport-readout]')).toBeNull();
+      expect(container.querySelector('webview')?.className).toContain('w-full');
+    });
+
+    it('wraps a fixed viewport in a device frame with exact dimensions', () => {
+      const { container } = renderWithOwner({
+        viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
+      });
+
+      expect(screen.getByTestId('browser-viewport-trigger').textContent).toContain('iPhone SE');
+      expect(
+        container.querySelector('[data-browser-device-frame]')?.getAttribute('data-width'),
+      ).toBe('375');
+      expect(container.querySelector('[data-browser-viewport-readout]')?.textContent).toContain(
+        '375 × 667',
+      );
     });
   });
 

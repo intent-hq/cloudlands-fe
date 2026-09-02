@@ -5,6 +5,7 @@
   "agentOverview_hierarchyGraph_reviewCorral_label": ["de"],
   "agentOverview_timeScrubber_live_label": ["de"],
   "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "browser_viewport_dimensions_label": "*",
   "chat_agentCard_background_badge": ["ja", "ko", "de"],
   "chat_agentCard_menu_harnessVersion_label": ["zh-CN", "zh-TW", "de", "fr", "es"],
   "chat_harnessFeaturesModal_title": ["zh-CN", "zh-TW", "de", "fr", "es"],

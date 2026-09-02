@@ -4,6 +4,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  updateTabViewport,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { updateContextItem } from '$store/renderer/slices/context/context-slice';
 
@@ -21,7 +22,9 @@ vi.mock('$store/renderer/store', async () => {
 import BrowserTabType from '../BrowserTabType.svelte';
 
 describe('BrowserTabType panel layout routing', () => {
-  beforeEach(() => dispatch.mockClear());
+  beforeEach(() => {
+    dispatch.mockClear();
+  });
   afterEach(cleanup);
 
   it('persists browser metadata to the workspace panel layout and context scope', async () => {
@@ -95,4 +98,36 @@ describe('BrowserTabType panel layout routing', () => {
       ).toBe(expected);
     },
   );
+
+  it('passes persisted viewport state through and routes viewport changes', async () => {
+    render(BrowserTabType, {
+      props: {
+        tab: {
+          id: 'browser-tab',
+          type: 'browser',
+          title: 'Browser',
+          closable: true,
+          browserUrl: 'https://initial.example/',
+          viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
+        },
+        workspaceId: 'workspace-1',
+        layoutId: 'layout-1',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+
+    expect(screen.getByTestId('embedded-browser').getAttribute('data-viewport-mode')).toBe(
+      'preset',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Change viewport' }));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      updateTabViewport('layout-1', 'browser-tab', {
+        mode: 'custom',
+        width: 412,
+        height: 915,
+      }),
+    );
+  });
 });

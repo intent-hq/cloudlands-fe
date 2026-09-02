@@ -12,7 +12,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
-  import type { BrowserEmulatedSize } from '$shared/ipc/workspace-command-payloads';
+  import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
 
@@ -41,7 +41,6 @@
     faLock,
     faExclamationTriangle,
     faTimes,
-    faExpand,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -50,6 +49,8 @@
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
   import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
+  import BrowserViewportMenu from './BrowserViewportMenu.svelte';
+  import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
 
   const logger = createLogger('EmbeddedBrowser');
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
@@ -77,8 +78,9 @@
     ownerAgentId?: string;
     /** Resolved display name of the owning agent for the toolbar chip. */
     ownerAgentName?: string;
-    /** Emulated viewport size of an owned tab (docs/protocol §5.9). */
-    emulatedSize?: BrowserEmulatedSize;
+    /** Persisted viewport mode for this tab; legacy tabs default to fit. */
+    viewport?: BrowserTabViewport;
+    onViewportChange?: (viewport: BrowserTabViewport) => void;
   }
 
   let {
@@ -95,7 +97,8 @@
     isActive = true,
     ownerAgentId,
     ownerAgentName,
-    emulatedSize,
+    viewport = { mode: 'fit' },
+    onViewportChange,
   }: Props = $props();
 
   // Reactive readable for per-tab pending zoom requests dispatched by the
@@ -927,6 +930,22 @@
   }
 </script>
 
+{#snippet browserWebview()}
+  <!--
+    Workaround for Electron bug #43314: Hide webview during URL switch.
+    When isRecreatingWebview is true, the webview is removed from DOM.
+    When it becomes false, a fresh webview is created with the new URL.
+  -->
+  <webview
+    bind:this={webviewRef}
+    class="w-full h-full border-none"
+    src={currentWebviewUrl}
+    partition={BROWSER_PANEL_PARTITION}
+    allowpopups
+    use:reportTabBounds={tabId}
+  ></webview>
+{/snippet}
+
 <div class="flex flex-col h-full bg-background">
   <!-- Browser Toolbar -->
   <div class="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-muted/30 px-2">
@@ -1021,22 +1040,12 @@
     <!-- Element picker slot: populated by the element-picker task. -->
     <div class="h-7 w-7 shrink-0" data-browser-select-element-slot></div>
 
-    <!-- Viewport-mode slot: populated by the viewport-menu task. -->
+    <!-- Viewport mode -->
     <div class="flex shrink-0 items-center" data-browser-viewport-slot>
-      {#if ownerAgentId && emulatedSize}
-        <span
-          class="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-          title={m.browser_embedded_viewport_tooltip({
-            width: emulatedSize.width,
-            height: emulatedSize.height,
-          })}
-          data-browser-viewport-indicator
-        >
-          <Fa icon={faExpand} size="xs" />
-          <!-- i18n-ignore (numeric dimensions, no translatable text) -->
-          <span>{emulatedSize.width}×{emulatedSize.height}</span>
-        </span>
-      {/if}
+      <BrowserViewportMenu
+        {viewport}
+        onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
+      />
     </div>
 
     <div class="flex h-7 w-7 shrink-0 items-center" data-browser-overflow-slot>
@@ -1084,19 +1093,16 @@
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
     {#if isUrlValid && !isRecreatingWebview}
-      <!--
-        Workaround for Electron bug #43314: Hide webview during URL switch.
-        When isRecreatingWebview is true, the webview is removed from DOM.
-        When it becomes false, a fresh webview is created with the new URL.
-      -->
-      <webview
-        bind:this={webviewRef}
-        class="w-full h-full border-none"
-        src={currentWebviewUrl}
-        partition={BROWSER_PANEL_PARTITION}
-        allowpopups
-        use:reportTabBounds={tabId}
-      ></webview>
+      {#if viewport.mode === 'fit'}
+        {@render browserWebview()}
+      {:else}
+        <BrowserDeviceFrame
+          {viewport}
+          onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
+        >
+          {@render browserWebview()}
+        </BrowserDeviceFrame>
+      {/if}
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->
       <div class="flex items-center justify-center h-full text-subtle">
