@@ -657,40 +657,6 @@
         </section>
 
         {#if tunnelSupported && tunnelEnabled}
-          <!-- This daemon's own tunnel address (copyable) -->
-          <section data-tunnel-address-row>
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <p class="text-sm font-medium text-foreground">
-                  {m.settings_tunnel_tcAddress_label()}
-                </p>
-                <p class="text-xs text-subtle mt-1">
-                  {m.settings_tunnel_tcAddress_description()}
-                </p>
-              </div>
-              {#if tcAddress}
-                <div class="flex items-center gap-2 shrink-0">
-                  <code
-                    class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded break-all select-all"
-                    title={tcAddress}>{tcAddress}</code
-                  >
-                  <button
-                    type="button"
-                    onclick={handleCopyTcAddress}
-                    class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-                    title={m.settings_tunnel_tcAddress_copy()}
-                  >
-                    <Fa icon={faCopy} size="sm" />
-                  </button>
-                </div>
-              {:else}
-                <p class="text-xs text-subtle shrink-0">
-                  {m.settings_tunnel_tcAddress_pending()}
-                </p>
-              {/if}
-            </div>
-          </section>
-
           <!-- DERP relay URL -->
           <section data-tunnel-derp-row>
             <div class="flex items-center justify-between gap-3">
@@ -770,6 +736,38 @@
                   ? m.settings_wsApi_publishSelf_republish_label()
                   : m.settings_wsApi_publishSelf_button_label()}
               </Button>
+            </div>
+          </section>
+        {/if}
+
+        <!-- This daemon's own tailcat tunnel address (copyable) — surfaced
+             here, where pairing happens, whenever the daemon reports one;
+             absent on old daemons or with the tunnel down. -->
+        {#if tcAddress}
+          <section data-tunnel-address-row>
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <p class="text-sm font-medium text-foreground">
+                  {m.settings_tunnel_tcAddress_label()}
+                </p>
+                <p class="text-xs text-subtle mt-1">
+                  {m.settings_tunnel_tcAddress_description()}
+                </p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <code
+                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                  title={tcAddress}>{tcAddress}</code
+                >
+                <button
+                  type="button"
+                  onclick={handleCopyTcAddress}
+                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                  title={m.settings_tunnel_tcAddress_copy()}
+                >
+                  <Fa icon={faCopy} size="sm" />
+                </button>
+              </div>
             </div>
           </section>
         {/if}

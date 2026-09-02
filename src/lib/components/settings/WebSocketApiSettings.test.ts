@@ -924,5 +924,46 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => expect(qrMocks.toDataURL).toHaveBeenCalled());
       expect(qrMocks.toDataURL.mock.calls[0][0]).not.toContain('tc=');
     });
+
+    it('shows the Tailcat address row before the TLS fingerprint when the daemon reports one', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+
+      await waitFor(() => expect(screen.getByText('tc-key-abc')).toBeTruthy());
+      expect(screen.getByText(m.settings_tunnel_tcAddress_label())).toBeTruthy();
+      // Positioned before the TLS Fingerprint row (where pairing happens).
+      const row = screen.getByText('tc-key-abc').closest('section') as HTMLElement;
+      const fingerprintRow = screen
+        .getByText(m.settings_wsApi_tlsFingerprint_label())
+        .closest('section') as HTMLElement;
+      expect(row.compareDocumentPosition(fingerprintRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+
+    it('copies the Tailcat address from the row copy button', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, { clipboard: { writeText } });
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByText('tc-key-abc')).toBeTruthy());
+
+      await fireEvent.click(screen.getByTitle(m.settings_tunnel_tcAddress_copy()));
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('tc-key-abc'));
+    });
+
+    it('hides the Tailcat address row when the daemon reports none', async () => {
+      // Old daemons (no tcAddress in pairing info) and tunnel-down states
+      // render no row at all.
+      mocks.mockSettingsList.mockResolvedValue(settingsRows());
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+
+      await waitFor(() =>
+        expect(screen.getByText(m.settings_wsApi_tlsFingerprint_label())).toBeTruthy(),
+      );
+      expect(screen.queryByText(m.settings_tunnel_tcAddress_label())).toBeNull();
+    });
   });
 });
