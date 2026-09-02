@@ -682,14 +682,57 @@ const LIVE_BUCKETS: ReadonlySet<HudAgentStateBucket> = new Set([
 ]);
 
 /**
- * Depth-first delegation-tree order over the summary agents: roots in wire
- * order, each followed by its children (`parentAgentId`, PROTOCOL §5.1 v2.9).
- * Agents with no / unknown / self parent are roots (flat fallback when
- * parentage is absent); parent cycles degrade to flat roots via the seen
- * guard.
+ * Epoch-ms recency key for sibling ordering: lenient `Date.parse` of the
+ * summary `lastActivity`; missing/unparseable timestamps yield -Infinity so
+ * they sort last within their partition under descending recency.
+ */
+function lastActivityMs(info: WorkspaceAgentInfo): number {
+  const ms = typeof info.lastActivity === 'string' ? Date.parse(info.lastActivity) : NaN;
+  return Number.isFinite(ms) ? ms : -Infinity;
+}
+
+/**
+ * Sibling-group comparator for the card's delegation tree: the coordinator
+ * (`specialist: 'spec-writer'` on the wire summary) first even when idle —
+ * matching the agents list's coordinator-first rule so both surfaces agree
+ * on the top row — then non-idle agents (LIVE_BUCKETS —
+ * running/needs-attention/failed), each partition ordered by last activity
+ * descending (missing timestamps last), with a stable agent-id tiebreak so
+ * rows don't jump between refreshes.
+ */
+function siblingOrderComparator(
+  bucketById: ReadonlyMap<string, HudAgentBucketInfo>,
+): (a: WorkspaceAgentInfo, b: WorkspaceAgentInfo) => number {
+  const isIdle = (info: WorkspaceAgentInfo): number => {
+    const bucket = bucketById.get(info.id)?.bucket;
+    return bucket !== undefined && LIVE_BUCKETS.has(bucket) ? 0 : 1;
+  };
+  return (a, b) => {
+    const aIsCoordinator = a.specialist === 'spec-writer';
+    const bIsCoordinator = b.specialist === 'spec-writer';
+    if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
+    const idleDelta = isIdle(a) - isIdle(b);
+    if (idleDelta !== 0) return idleDelta;
+    const aMs = lastActivityMs(a);
+    const bMs = lastActivityMs(b);
+    // Strict inequality (not subtraction): two -Infinity keys must fall
+    // through to the id tiebreak, not yield a NaN delta.
+    if (aMs !== bMs) return bMs - aMs;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  };
+}
+
+/**
+ * Depth-first delegation-tree order over the summary agents: each parent
+ * followed by its children (`parentAgentId`, PROTOCOL §5.1 v2.9), with roots
+ * and every sibling group ordered by `compare` — a child never moves above
+ * its parent. Agents with no / unknown / self parent are roots (flat
+ * fallback when parentage is absent); parent cycles degrade to flat roots
+ * via the seen guard.
  */
 function orderAgentTree(
   infos: WorkspaceAgentInfo[],
+  compare: (a: WorkspaceAgentInfo, b: WorkspaceAgentInfo) => number,
 ): Array<{ info: WorkspaceAgentInfo; depth: number; parentAgentId: string | null }> {
   const ids = new Set(infos.map((info) => info.id));
   const childrenByParent = new Map<string, WorkspaceAgentInfo[]>();
@@ -709,6 +752,8 @@ function orderAgentTree(
       roots.push(info);
     }
   }
+  roots.sort(compare);
+  for (const siblings of childrenByParent.values()) siblings.sort(compare);
   const ordered: Array<{ info: WorkspaceAgentInfo; depth: number; parentAgentId: string | null }> =
     [];
   const seen = new Set<string>();
@@ -899,12 +944,21 @@ function previewLineText(preview: AgentPreview | null): string | null {
   }
 }
 
-/** Tree-ordered card agent rows for a workspace (prefixes empty until kept). */
+/**
+ * Tree-ordered card agent rows for a workspace (prefixes empty until kept):
+ * buckets are computed up front so the sibling ordering (non-idle by
+ * recency first, idle last — `siblingOrderComparator`) and the rows share
+ * one `agentBucketOf` evaluation per agent.
+ */
 function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
-  return orderAgentTree(agentInfosOf(workspace)).map(({ info, depth, parentAgentId }) => {
+  const infos = agentInfosOf(workspace);
+  const bucketById = new Map(infos.map((info) => [info.id, agentBucketOf(state, info)] as const));
+  const tree = orderAgentTree(infos, siblingOrderComparator(bucketById));
+  return tree.map(({ info, depth, parentAgentId }) => {
     const session = state.agentSessions?.byAgentId[info.id];
     const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
-    const { bucket, attentionKind, hasQuestion } = agentBucketOf(state, info);
+    const { bucket, attentionKind, hasQuestion } =
+      bucketById.get(info.id) ?? agentBucketOf(state, info);
     const waitingForAgentIds = Array.isArray(session?.waitingForAgentIds)
       ? session.waitingForAgentIds.filter((id): id is string => typeof id === 'string')
       : [];
