@@ -21,6 +21,7 @@
   import {
     setChiefActiveAgentId,
     openPanel,
+    setChiefCollapsed,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
@@ -69,9 +70,11 @@
     /** Rendered inside the combined Home panel: the panel owns the close
         button and height, so hide the close X and don't force a min height. */
     embedded?: boolean;
+    collapsed?: boolean;
+    ontoggle?: () => void;
   }
 
-  let { expanded = false, embedded = false }: Props = $props();
+  let { expanded = false, embedded = false, collapsed = false, ontoggle }: Props = $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -195,6 +198,7 @@
 
   function handleThreadChange(value: string | string[]) {
     if (typeof value === 'string') {
+      if (collapsed) appStore.dispatch(setChiefCollapsed(false));
       selectedAgentId = value;
       appStore.dispatch(setChiefActiveAgentId(value));
       appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, value));
@@ -209,6 +213,7 @@
 
   async function createNewThread() {
     if (isCreatingThread) return;
+    if (collapsed) appStore.dispatch(setChiefCollapsed(false));
     ensureChiefWorkspaceRegistered();
 
     const reduxState = appStore.state;
@@ -291,6 +296,23 @@
 {:else}
   <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
     <div class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2">
+      {#if ontoggle}
+        <button
+          type="button"
+          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          aria-label={m.layout_chiefCard_title()}
+          aria-expanded={!collapsed}
+          aria-controls="combined-panel-chief-content"
+          data-chief-section-toggle
+          onclick={ontoggle}
+        >
+          <Fa
+            icon={faChevronDown}
+            size="xs"
+            class="shrink-0 transition-transform {collapsed ? '-rotate-90' : ''}"
+          />
+        </button>
+      {/if}
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <Dropdown
           value={selectedAgentId ?? undefined}
@@ -304,15 +326,10 @@
           triggerClass="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
           contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
         >
-          {#snippet trigger({ open }: { open: boolean; value: string | string[] | undefined })}
+          {#snippet trigger()}
             <span class="type-caption min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
-            <Fa
-              icon={faChevronDown}
-              size="xs"
-              class="shrink-0 text-muted-foreground transition-transform {open ? 'rotate-180' : ''}"
-            />
           {/snippet}
 
           {#snippet item({ option, selected, highlighted }: DropdownItemProps)}
@@ -375,7 +392,11 @@
          per-side form exists, and a clip-path here would clip fixed-position
          dialogs rendered in this subtree), so a very short pane can overdraw
          up to 8px above — accepted as cosmetic. -->
-    <div class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]">
+    <div
+      id={ontoggle ? 'combined-panel-chief-content' : undefined}
+      class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]"
+      hidden={Boolean(ontoggle && collapsed)}
+    >
       <section class="flex h-full min-h-0 flex-col">
         {#if activeAgentId}
           {#key activeAgentId}

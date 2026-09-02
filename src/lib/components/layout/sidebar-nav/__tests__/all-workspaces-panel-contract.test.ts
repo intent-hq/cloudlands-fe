@@ -15,11 +15,13 @@ describe('All Workspaces panel presentation', () => {
   it('keeps Spaces and Chief mounted without root-route special casing', () => {
     expect(panelSource).not.toContain("page.url.pathname === '/'");
     expect(panelSource).toContain('data-combined-panel-spaces');
-    expect(panelSource).toContain('data-chief-section-toggle');
+    expect(chiefSource).toContain('data-chief-section-toggle');
     expect(panelSource).toContain('style:height={$isChiefCollapsed$');
     expect(panelSource).toContain('height var(--motion-slow) var(--ease-emphasized-out)');
-    expect(panelSource.match(/<ChiefCard expanded=\{true\}/g)).toHaveLength(1);
-    expect(panelSource).toContain('<ChiefCard expanded={true} embedded={true} />');
+    expect(panelSource.match(/<ChiefCard\s+expanded=\{true\}/g)).toHaveLength(1);
+    expect(panelSource).toContain('collapsed={$isChiefCollapsed$}');
+    expect(panelSource).toContain('ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}');
+    expect(chiefSource.match(/icon=\{faChevronDown\}/g)).toHaveLength(1);
     expect(panelSource).not.toMatch(
       /function handleExpandHome\(\) \{\s*appStore\.dispatch\(closePanel\(\)\)/,
     );
