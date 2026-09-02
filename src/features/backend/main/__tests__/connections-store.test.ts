@@ -640,6 +640,7 @@ describe('connections-store', () => {
       port: sampleConn.port,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: Date.now() + 60_000,
@@ -1101,7 +1102,7 @@ describe('connections-store', () => {
     await expect(store.setTcAddress('does-not-exist', 'tc.ts.net')).resolves.toBe(false);
   });
 
-  it('setTcAddress never bumps the LWW clock or notifies keychain sync (per-machine state)', async () => {
+  it('setTcAddress bumps the LWW clock and notifies keychain sync (synced state)', async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
@@ -1119,16 +1120,118 @@ describe('connections-store', () => {
       const file = path.join(tmpDir, 'backend-connections.json');
       const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
       expect(parsed.connections[0].tcAddress).toBe('tc.example.ts.net');
-      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
-      expect(listener).not.toHaveBeenCalled();
+      // A tc address change is a syncable edit: the LWW clock advances so the
+      // rotation propagates to the user's other devices.
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_001_000);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // The unchanged every-reconnect case skips the write: no clock bump,
+      // no sync notification.
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+      expect(listener).toHaveBeenCalledTimes(1);
       unsubscribe();
 
-      // The captured address never enters the sync surface either.
+      // The captured address is part of the sync surface.
       const records = await store.listSyncRecords();
-      expect(JSON.stringify(records)).not.toContain('tcAddress');
+      const synced = records.find((r) => r.host === sampleConn.host);
+      expect(synced?.tcAddress).toBe('tc.example.ts.net');
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('setTcAddress out-clocks an add landing in the same millisecond', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      // Same-millisecond capture (the routine post-connect case): the stamp
+      // is forced strictly past the record's clock, or reconcile would treat
+      // equal live clocks as in-sync and never propagate the address.
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_001);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sync records carry tcAddress and applyRemoteSyncRecord round-trips it', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    const records = await store.listSyncRecords();
+    const synced = records.find((r) => r.host === sampleConn.host);
+    expect(synced?.tcAddress).toBe('tc.example.ts.net');
+
+    // A newer remote copy updates the stored address in place…
+    await store.applyRemoteSyncRecord({ ...synced!, tcAddress: 'tc2.ts.net', updatedAt: 9e12 });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+
+    // …and a remote copy without one (older app / tunnel down) clears it.
+    await store.applyRemoteSyncRecord({ ...synced!, tcAddress: null, updatedAt: 9e12 + 1 });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('applyRemoteSyncRecord inserts a new record with the synced tcAddress', async () => {
+    const store = await import('../connections-store');
+    await store.applyRemoteSyncRecord({
+      label: 'Studio',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AA:BB',
+      hostname: null,
+      tcAddress: 'tc.example.ts.net',
+      detectHosts: true,
+      token: 'tok',
+      updatedAt: 1_700_000_000_000,
+    });
+    const pulled = (await store.list()).find((c) => c.host === '10.0.0.9');
+    expect(pulled?.tcAddress).toBe('tc.example.ts.net');
+  });
+
+  it('an identity change via updateMetadata clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // A metadata-only edit keeps the address…
+    await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'blue' });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc.example.ts.net');
+
+    // …but a new endpoint may be a different machine: the old daemon's tunnel
+    // address must not sync fleet-wide under the new identity.
+    await store.updateMetadata(rec.id, {
+      label: 'Renamed',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('a fingerprint change via updateMetadata or replaceSecret clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    await store.updateMetadata(rec.id, {
+      label: sampleConn.label,
+      accent: 'blue',
+      fingerprint: 'DD:EE:FF',
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+
+    await store.setTcAddress(rec.id, 'tc2.ts.net');
+    // A same-fingerprint token rotation keeps the address…
+    await store.replaceSecret(rec.id, 'rotated-token', 'DD:EE:FF');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+    // …a cert change clears it.
+    await store.replaceSecret(rec.id, 'rotated-again', '11:22:33');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
   });
 
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
@@ -1405,6 +1508,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'NEW:FP',
       hostname: 'studio.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'rotated-token',
       updatedAt: 42,
@@ -1434,6 +1538,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9000,
       fingerprint: 'FP',
       hostname: null,
+      tcAddress: null,
       detectHosts: false,
       token: 'laptop-token',
       updatedAt: 7,
@@ -1459,6 +1564,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1491,6 +1597,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9443,
       fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
       hostname: 'studio.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'rotated-token',
       updatedAt: 42,
@@ -1518,6 +1625,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1576,6 +1684,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9000,
       fingerprint: 'FP',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 't',
       updatedAt: 7,
@@ -1758,6 +1867,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: 'twin.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000, // newer than the local record
@@ -1782,6 +1892,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9443,
       fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1809,6 +1920,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: '',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1834,6 +1946,7 @@ describe('connections-store keychain sync surface', () => {
       port: 7443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1868,6 +1981,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1895,6 +2009,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: '',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1923,6 +2038,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1978,6 +2094,7 @@ describe('connections-store keychain sync surface', () => {
         port: 8443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: 'stale-token',
         updatedAt: Date.now() - 60_000,
@@ -2059,6 +2176,7 @@ describe('connections-store keychain sync surface', () => {
         port: 9443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: 'remote-token',
         updatedAt: Date.now() + 60_000,
@@ -2091,6 +2209,7 @@ describe('connections-store keychain sync surface', () => {
         port: 9443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: '',
         updatedAt: tombClock,

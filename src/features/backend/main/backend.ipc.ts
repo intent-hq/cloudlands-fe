@@ -1237,15 +1237,21 @@ function extractUpdateSupported(result: unknown): boolean | null {
 
 /**
  * Pull the daemon's tailcat tunnel endpoint (`tcAddress`, PROTOCOL §12.3) out
- * of a `system.status` result. Returns `null` when the field is absent, empty,
- * or malformed — a conclusive "no tunnel" for a successful response.
+ * of a `system.status` or `server.pairingInfo` result (both carry the same
+ * field with the same semantics). Returns `null` when the field is absent,
+ * empty, or malformed — a conclusive "no tunnel" for a successful response.
  *
  * Known trade-off: the wire shape cannot distinguish "tunnel disabled" from
  * "tunnel sidecar momentarily down" — `system.status` omits the field in both
  * cases (including the daemon's restart-backoff window after an unexpected
  * sidecar exit). A reconnect landing in that window therefore clears a stored
  * address that would have come back on its own; it is re-learned from the
- * next post-connect status once the sidecar recovers. Deliberately accepted
+ * next post-connect status once the sidecar recovers. Now that the address is
+ * keychain-synced, the blast radius is fleet-wide: the clear bumps the LWW
+ * clock and propagates, so a device that can ONLY dial through the tunnel
+ * loses its route until any directly-connected device reconnects after the
+ * sidecar recovers and re-captures the address (the tunnel-only device cannot
+ * rediscover it on its own). Deliberately accepted
  * over retaining stale values: a kept address whose tunnel was genuinely
  * disabled would add a perpetually-failing race candidate to every connect,
  * and the field's contract ("never advertises a route nothing is serving")
@@ -1416,7 +1422,12 @@ function extractLocalIps(result: unknown): string[] | null {
  * until the daemon relaxes that gating this refresh quietly no-ops; the stored
  * host list keeps whatever candidates it already has, and the multi-host
  * reconnect racing still applies. When the daemon does answer, the persisted
- * list tracks the backend's current interfaces on every connect.
+ * list tracks the backend's current interfaces on every connect, and the same
+ * response also refreshes the stored tunnel tc address (PROTOCOL §12.3) —
+ * conclusively, so a successful answer without the field clears a stale
+ * address; the every-connect `system.status` capture
+ * ({@link captureRemoteUpdateSupported}) covers records whose detectHosts is
+ * off (this path early-returns for those).
  */
 async function refreshRemoteHosts(id: string): Promise<void> {
   try {
@@ -1429,9 +1440,10 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
-    if (ips && backendClients.get(id) === client) {
-      await connectionsStore.setHosts(id, ips);
-      await broadcastConnectionsChanged();
+    if (backendClients.get(id) === client) {
+      if (ips) await connectionsStore.setHosts(id, ips);
+      const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
+      if (ips || tcChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.debug('Could not refresh candidate hosts from server.pairingInfo (fail-soft)', {
@@ -2770,6 +2782,10 @@ async function upsertSelfRecord(
   if (hostname) {
     await connectionsStore.setHostname(record.id, hostname);
   }
+  // Persist the daemon's tunnel tc address conclusively: pairingInfo omits
+  // it whenever the tunnel is down, so `null` clears a stale address and a
+  // rotation propagates to the user's other devices via keychain sync.
+  await connectionsStore.setTcAddress(record.id, info.tcAddress);
   return record;
 }
 
