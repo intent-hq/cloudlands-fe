@@ -1,5 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "sandbox_catalogScene_allStates_label": "Alle",
+  "sandbox_catalogScene_stateHeading_title": "Status: {state}",
   "error_page_title": "Etwas ist schiefgelaufen",
   "error_page_reload_button": "Seite neu laden",
   "error_recovery_success": "Erfolgreich vom Fehler wiederhergestellt",

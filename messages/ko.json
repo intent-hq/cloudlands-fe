@@ -1,5 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "sandbox_catalogScene_allStates_label": "모두",
+  "sandbox_catalogScene_stateHeading_title": "상태: {state}",
   "error_page_title": "문제가 발생했습니다",
   "error_page_reload_button": "페이지 새로고침",
   "error_recovery_success": "오류에서 성공적으로 복구되었습니다",

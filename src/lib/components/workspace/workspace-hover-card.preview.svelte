@@ -64,7 +64,7 @@
       </HoverCard>
     </div>
   {:else}
-    <div class="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
+    <div class="grid items-start gap-5">
       {#each cards as card (card.key)}
         <article class="grid min-w-0 gap-2" data-preview-scenario={card.key}>
           <div>

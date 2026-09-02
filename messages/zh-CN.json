@@ -1,5 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "sandbox_catalogScene_allStates_label": "全部",
+  "sandbox_catalogScene_stateHeading_title": "状态：{state}",
   "error_page_title": "出错了",
   "error_page_reload_button": "重新加载页面",
   "error_recovery_success": "已成功从错误中恢复",

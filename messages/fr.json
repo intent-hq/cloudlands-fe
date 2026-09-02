@@ -1,5 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "sandbox_catalogScene_allStates_label": "Tous",
+  "sandbox_catalogScene_stateHeading_title": "État : {state}",
   "error_page_title": "Une erreur s'est produite",
   "error_page_reload_button": "Recharger la page",
   "error_recovery_success": "Récupération après l'erreur réussie",

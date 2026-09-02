@@ -78,6 +78,88 @@ describe('CatalogScene', () => {
     expect(screen.getByRole('button', { name: 'Unavailable' })).not.toBeNull();
   });
 
+  it('renders every state in declaration order and publishes all-states readiness', async () => {
+    const setupDefault = vi.fn();
+    const setupLoading = vi.fn();
+    const disposeDefault = vi.fn();
+    const disposeLoading = vi.fn();
+    mocks.loadPreview.mockResolvedValueOnce({
+      component: Button,
+      definition: {
+        ...buttonPreview,
+        states: {
+          default: {
+            props: buttonPreview.states.default.props,
+            setup: () => {
+              setupDefault();
+              return disposeDefault;
+            },
+          },
+          loading: {
+            props: buttonPreview.states.loading.props,
+            setup: () => {
+              setupLoading();
+              return disposeLoading;
+            },
+          },
+        },
+      },
+    });
+
+    const scene = render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'all', requestedWidth: 420 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getAllByTestId('catalog-scene-focus')).toHaveLength(2);
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual(['State: default', 'State: loading']);
+    expect(screen.getByRole('button', { name: 'Continue' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Saving' })).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'All' }).getAttribute('aria-current')).toBe('page');
+    expect(setupDefault).toHaveBeenCalledTimes(1);
+    expect(setupLoading).toHaveBeenCalledTimes(1);
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'all',
+      width: 420,
+      status: 'ready',
+    });
+
+    scene.unmount();
+    expect(disposeDefault).toHaveBeenCalledTimes(1);
+    expect(disposeLoading).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports all-states mode for a preview with one state', async () => {
+    mocks.loadPreview.mockResolvedValueOnce({
+      component: Button,
+      definition: {
+        ...buttonPreview,
+        states: { default: buttonPreview.states.default },
+      },
+    });
+
+    render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'all', requestedWidth: 420 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getAllByTestId('catalog-scene-focus')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Continue' })).not.toBeNull();
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'all',
+      width: 420,
+      status: 'ready',
+    });
+  });
+
   it('does not publish DOM or API readiness before capture stability resolves', async () => {
     const stability = deferred<{ imageCount: number; reducedMotion: boolean }>();
     mocks.waitForCaptureStability.mockReturnValueOnce(stability.promise);

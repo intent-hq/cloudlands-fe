@@ -1,5 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "sandbox_catalogScene_allStates_label": "Todos",
+  "sandbox_catalogScene_stateHeading_title": "Estado: {state}",
   "error_page_title": "Algo salió mal",
   "error_page_reload_button": "Recargar página",
   "error_recovery_success": "Recuperación del error exitosa",
