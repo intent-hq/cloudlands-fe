@@ -2420,6 +2420,7 @@
   "chat_shared_after_label": "After:",
   "chat_shared_actionFailed_label": "Action failed",
   "chat_shared_discarded_label": "Discarded:",
+  "chat_shared_dismissedStatus_label": "Dismissed.",
   "chat_shared_discard_label": "Discard",
   "chat_shared_tool_title": "Tool {id}",
   "chat_shared_appliedTimeAgo_label": "Applied {timeAgo}",

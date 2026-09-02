@@ -51,7 +51,6 @@
     saveAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
-    agentProposalResolveRequested,
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
@@ -185,27 +184,19 @@
     deriveTrayPendingProposals,
     proposalTrayVisible,
   } from './proposals/proposal-tray-gate';
-  import {
-    clearTrayDraft,
-    loadTrayCollapsed,
-    saveTrayCollapsed,
-  } from './proposals/proposal-tray-storage';
+  import { loadTrayCollapsed, saveTrayCollapsed } from './proposals/proposal-tray-storage';
   import {
     classifyPendingProposalRefs,
     type PendingProposalEntry,
   } from './proposals/pending-proposals';
-  import { getProposalId } from './proposals/proposal-id';
   import {
-    applySpecialistProposal,
-    undoSpecialistProposal,
-  } from './proposals/specialist-proposal-actions';
-  import {
-    applySettingsProposal,
-    undoSettingsProposal,
-  } from './proposals/settings-proposal-actions';
-  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+    applyProposal,
+    dismissProposal,
+    reconcileAppliedProposals,
+    rememberProposalIdentity,
+    undoProposal,
+  } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
-  import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
   import type { ProposalActionDetail } from '$shared/types/proposal';
   import {
     initialWizardCollapsed,
@@ -1161,24 +1152,11 @@
   // actions, everything else through the settings actions. Lifecycle success
   // is bridged to the daemon resolution below.
   function handleProposalTrayApply(detail: ProposalActionDetail) {
-    const { proposal } = detail;
-    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
-      appStore.dispatch(
-        applyWorkspaceProposal({
-          proposal,
-          editedFields: detail.editedFields,
-          selectedBulkItemIds: detail.selectedBulkItemIds,
-        }),
-      );
-      return;
-    }
-    if (applySpecialistProposal(detail)) return;
-    applySettingsProposal(detail);
+    applyProposal(agentId, detail);
   }
 
   function handleProposalTrayUndo(proposalId: string) {
-    if (undoSpecialistProposal(proposalId)) return;
-    undoSettingsProposal(proposalId);
+    undoProposal(proposalId);
   }
 
   // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
@@ -1187,19 +1165,7 @@
   // failure (middleware toasts) rethrows so the tray keeps the entry pending.
   async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
     if (!workspace) return;
-    proposalResolveSent.add(entry.proposalId);
-    const action = agentProposalResolveRequested(agentId, workspace.id, {
-      proposalId: entry.proposalId,
-      outcome: 'dismissed',
-    });
-    appStore.dispatch(action);
-    try {
-      await action.promise;
-      clearTrayDraft(agentId, entry.proposalId);
-    } catch (error) {
-      proposalResolveSent.delete(entry.proposalId);
-      throw error;
-    }
+    await dismissProposal(agentId, workspace.id, entry);
   }
 
   // Apply→resolve bridge. Applies key lifecycle under
@@ -1209,49 +1175,21 @@
   // map rather than the filtered entries. Any still-pending metadata ref
   // whose lifecycle shows 'applied' under either identity gets ONE
   // resolve(applied) (daemon resolution is idempotent; first outcome wins).
-  const trayProposalIdentities = new Map<string, string>();
-  const proposalResolveSent = new Set<string>();
   $effect(() => {
     for (const entry of trayPendingProposals) {
-      trayProposalIdentities.set(entry.proposalId, getProposalId(entry.proposal));
+      rememberProposalIdentity(agentId, entry.proposalId, entry.proposal);
     }
   });
   $effect(() => {
     const wsId = workspace?.id;
     if (!wsId || $agentSession$?.id !== agentId) return;
-    const lifecycle = $proposalLifecycleMap$ ?? {};
     const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
-    for (const ref of refs) {
-      if (proposalResolveSent.has(ref.proposalId)) continue;
-      const localId = trayProposalIdentities.get(ref.proposalId);
-      const scopedEntry = lifecycle[agentScopedProposalKey(agentId, ref.proposalId)];
-      const localEntry = localId !== undefined ? lifecycle[localId] : undefined;
-      const appliedEntry =
-        scopedEntry?.status === 'applied'
-          ? scopedEntry
-          : localEntry?.status === 'applied'
-            ? localEntry
-            : undefined;
-      if (!appliedEntry) continue;
-      proposalResolveSent.add(ref.proposalId);
-      clearTrayDraft(agentId, ref.proposalId);
-      // Workspace-create applies carry the created workspace id in the
-      // lifecycle result; forward it as the resolution detail so the
-      // daemon's applied notice gives the model the created-workspace
-      // context (PROTOCOL §5.5).
-      const createdWorkspaceId = appliedEntry.result?.workspaceId;
-      // i18n-ignore (wire detail appended to the model notice, not UI copy)
-      const detail = createdWorkspaceId ? `Created workspace ${createdWorkspaceId}.` : undefined;
-      const action = agentProposalResolveRequested(agentId, wsId, {
-        proposalId: ref.proposalId,
-        outcome: 'applied',
-        ...(detail ? { detail } : {}),
-      });
-      appStore.dispatch(action);
-      // A wire failure (middleware toasts) drops the sent mark so a later
-      // pass retries the resolution — mirrors the dismiss path.
-      action.promise.catch(() => proposalResolveSent.delete(ref.proposalId));
-    }
+    reconcileAppliedProposals({
+      agentId,
+      workspaceId: wsId,
+      refs,
+      lifecycle: $proposalLifecycleMap$ ?? {},
+    });
   });
 
   // Search state

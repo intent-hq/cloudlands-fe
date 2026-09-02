@@ -2419,6 +2419,7 @@
   "chat_shared_after_label": "変更後:",
   "chat_shared_actionFailed_label": "操作に失敗しました",
   "chat_shared_discarded_label": "破棄済み:",
+  "chat_shared_dismissedStatus_label": "破棄しました。",
   "chat_shared_discard_label": "破棄",
   "chat_shared_tool_title": "ツール {id}",
   "chat_shared_appliedTimeAgo_label": "{timeAgo}に適用",

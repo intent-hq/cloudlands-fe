@@ -2419,6 +2419,7 @@
   "chat_shared_after_label": "이후:",
   "chat_shared_actionFailed_label": "작업 실패",
   "chat_shared_discarded_label": "취소됨:",
+  "chat_shared_dismissedStatus_label": "취소됨.",
   "chat_shared_discard_label": "취소",
   "chat_shared_tool_title": "도구 {id}",
   "chat_shared_appliedTimeAgo_label": "{timeAgo}에 적용됨",

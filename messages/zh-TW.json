@@ -2419,6 +2419,7 @@
   "chat_shared_after_label": "之後：",
   "chat_shared_actionFailed_label": "操作失敗",
   "chat_shared_discarded_label": "已放棄：",
+  "chat_shared_dismissedStatus_label": "已放棄。",
   "chat_shared_discard_label": "放棄",
   "chat_shared_tool_title": "工具 {id}",
   "chat_shared_appliedTimeAgo_label": "套用於 {timeAgo}",
