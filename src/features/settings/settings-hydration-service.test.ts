@@ -1,4 +1,4 @@
-import { runSaga } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { updateSpy, catalogSpy, listSpy } = vi.hoisted(() => ({
@@ -28,7 +28,11 @@ const testStore = appStore as typeof appStore & {
 testStore.getExistingStoreContext = function () {
   return this.storeContext;
 };
-import { hydrateSettingsOnceSaga } from '$store/renderer/slices/settings-events/sagas/settings-hydration-saga';
+import {
+  hydrateSettingsOnceSaga,
+  settingsHydrationSaga,
+} from '$store/renderer/slices/settings-events/sagas/settings-hydration-saga';
+import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { applySettingsChanges, BG_MODEL_MIGRATION_MARKER_KEY } from './settings-hydration-service';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import {
@@ -103,6 +107,53 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(appStore.state.userPreferences.soundPath).toBe('');
     expect(updateSpy).not.toHaveBeenCalled();
   });
+
+  it.each(['/Users/me/new.mp3', ''])(
+    'preserves a soundPath change to %j arriving during the initial snapshot',
+    async (soundPath) => {
+      applySettingsChanges([{ path: 'notifications.soundPath', value: '/Users/me/before.mp3' }]);
+      const snapshot = {
+        revision: 1,
+        settings: [
+          {
+            path: 'notifications.soundPath',
+            value: '/Users/me/stale.mp3',
+            label: 'Notification sound path',
+            description: 'Desktop MP3 path',
+            category: 'notifications',
+            type: 'string',
+            defaultValue: '',
+          },
+        ],
+      };
+      let resolveSnapshot!: (value: typeof snapshot) => void;
+      listSpy.mockReturnValue(
+        new Promise<typeof snapshot>((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+      );
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: appStore.dispatch.bind(appStore) },
+        settingsHydrationSaga,
+      );
+      try {
+        expect(listSpy).toHaveBeenCalledExactlyOnceWith('settings.list', undefined);
+        channel.put(
+          settingsChangesReceived([{ path: 'notifications.soundPath', value: soundPath }], 2),
+        );
+        resolveSnapshot(snapshot);
+        await vi.waitFor(() => {
+          expect(appStore.state.userPreferences.soundPath).toBe(soundPath);
+        });
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        task.cancel();
+        await task.toPromise();
+        channel.close();
+      }
+    },
+  );
 
   it('hydrates the provider-settings slice from providers.active / providers.enabled', async () => {
     applySettingsChanges([
