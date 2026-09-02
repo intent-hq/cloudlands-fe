@@ -93,6 +93,10 @@ const WINDOW_OPEN_REQUEST_RETENTION_MS = 5 * 60 * 1000;
 const MAX_TRACKED_WINDOW_OPEN_REQUESTS = 256;
 
 type WindowOpenResult = { success: true; windowId: number } | { success: false; error: string };
+type WindowOpenRequestEntry = {
+  result: Promise<WindowOpenResult>;
+  settledAt?: number;
+};
 
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
@@ -566,10 +570,7 @@ export async function autoRepairCliSymlink(): Promise<void> {
 
 export function setupSystemIPC() {
   installNativeThemeBackgroundSync();
-  const handledWindowOpenRequests = new Map<
-    string,
-    { expiresAt: number; result: Promise<WindowOpenResult> }
-  >();
+  const handledWindowOpenRequests = new Map<string, WindowOpenRequestEntry>();
 
   // App info
   ipcMain.handle(
@@ -1028,23 +1029,43 @@ export function setupSystemIPC() {
 
         const now = Date.now();
         for (const [requestId, entry] of handledWindowOpenRequests) {
-          if (entry.expiresAt <= now) handledWindowOpenRequests.delete(requestId);
+          if (
+            entry.settledAt !== undefined &&
+            entry.settledAt + WINDOW_OPEN_REQUEST_RETENTION_MS <= now
+          ) {
+            handledWindowOpenRequests.delete(requestId);
+          }
         }
 
         const existing = handledWindowOpenRequests.get(validated.requestId);
         if (existing) return existing.result;
 
         while (handledWindowOpenRequests.size >= MAX_TRACKED_WINDOW_OPEN_REQUESTS) {
-          const oldestRequestId = handledWindowOpenRequests.keys().next().value;
-          if (typeof oldestRequestId !== 'string') break;
+          let oldestRequestId: string | undefined;
+          let oldestSettledAt = Number.POSITIVE_INFINITY;
+          for (const [requestId, entry] of handledWindowOpenRequests) {
+            if (entry.settledAt !== undefined && entry.settledAt < oldestSettledAt) {
+              oldestRequestId = requestId;
+              oldestSettledAt = entry.settledAt;
+            }
+          }
+          if (!oldestRequestId) {
+            return { success: false, error: m.system_ipc_openNewWindowFailed_error() };
+          }
           handledWindowOpenRequests.delete(oldestRequestId);
         }
 
         const result = openWindow();
-        handledWindowOpenRequests.set(validated.requestId, {
-          expiresAt: now + WINDOW_OPEN_REQUEST_RETENTION_MS,
-          result,
-        });
+        const entry: WindowOpenRequestEntry = { result };
+        handledWindowOpenRequests.set(validated.requestId, entry);
+        void result.then(
+          () => {
+            entry.settledAt = Date.now();
+          },
+          () => {
+            entry.settledAt = Date.now();
+          },
+        );
         return result;
       },
       WINDOW_CHANNELS.OPEN_NEW,
