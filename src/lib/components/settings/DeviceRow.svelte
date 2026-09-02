@@ -343,6 +343,19 @@
     if (operation === 'update') void updateDevice(actual);
     else void updateDevice(undefined, actual);
   }
+
+  async function copyTcAddress() {
+    if (!device.tcAddress) return;
+    try {
+      await navigator.clipboard.writeText(device.tcAddress);
+      feedback = null;
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.success(m.settings_devices_tcAddress_copied());
+    } catch {
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.error(m.settings_devices_tcAddress_copyError());
+    }
+  }
 </script>
 
 <article aria-labelledby={`device-${device.id}-name`} aria-busy={busy !== null}>
@@ -377,6 +390,24 @@
               role="img"
               aria-label={daemonBehindTooltip}
             ></span>
+          </Tooltip>
+        {/if}
+        {#if device.tcAddress}
+          <!-- Tunnel reachability chip: the record carries a tailcat address,
+               so connects race a tunnel candidate. Click copies the address. -->
+          <Tooltip
+            content={m.settings_devices_tcAddress_tooltip({ address: device.tcAddress })}
+            class="shrink-0 self-center"
+          >
+            <button
+              type="button"
+              onclick={() => void copyTcAddress()}
+              class="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              aria-label={m.settings_devices_tcAddress_copy()}
+              data-tc-address-chip
+            >
+              {m.settings_devices_tunnel_badge()}
+            </button>
           </Tooltip>
         {/if}
       </div>

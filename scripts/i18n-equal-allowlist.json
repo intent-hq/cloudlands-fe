@@ -323,5 +323,6 @@
   "workspace_transfer_gitBranch_label": ["de"],
   "workspace_transfer_tableName_label": ["fr"],
   "settings_section_git": "*",
-  "settings_tunnel_derpUrl_placeholder": "*"
+  "settings_tunnel_derpUrl_placeholder": "*",
+  "settings_devices_tunnel_badge": ["fr"]
 }
