@@ -40,6 +40,8 @@
     imageFilesToContextItems,
     REFERENCE_IMAGE_MAX_BYTES,
   } from '$lib/components/chat/input/image-context-items';
+  import { splitDroppedItems } from '$lib/utils/drop-split';
+  import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
 
   const COORDINATOR_SPECIALIST_ID = 'spec-writer';
 
@@ -403,10 +405,50 @@
     isDragging = false;
     dragCounter = 0;
 
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
+    // Folder detection must happen HERE, synchronously in the drop event —
+    // webkitGetAsEntry() returns null once the event loop turns.
+    const { files, folderFiles } = splitDroppedItems(e.dataTransfer);
+    if (files.length === 0 && folderFiles.length === 0) return;
 
-    await processImageFiles(Array.from(files));
+    if (folderFiles.length > 0) {
+      // Folders are path-only references — the agent reads them off the
+      // host filesystem, which a remote daemon cannot do. Any folder in the
+      // drop rejects the WHOLE drop when remote (files included). Mirrors
+      // SimpleRichInput's folder-drop behavior.
+      if (isRemoteBackend()) {
+        toast.error(m.chat_richInput_folderDropRemote_error());
+        return;
+      }
+      for (const folder of folderFiles) {
+        stageFolderReference(folder);
+      }
+    }
+    if (files.length > 0) {
+      await processImageFiles(files);
+    }
+  }
+
+  /**
+   * Stage a dropped folder as a path-only context item (local daemon only).
+   * Never placed via `file.placeAttachment` (the daemon rejects directories)
+   * — the submit path carries the absolute host path as a context reference
+   * on the initial message instead.
+   */
+  function stageFolderReference(folder: File) {
+    const absolutePath =
+      (
+        window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+      ).electronAPI?.getPathForFile?.(folder) ?? '';
+    const label = folder.name || absolutePath.split('/').pop() || absolutePath;
+    stagedContextItems = [
+      ...stagedContextItems,
+      {
+        id: `staged-folder-${Date.now()}-${stagedContextItems.length}`,
+        type: 'folder',
+        label,
+        path: absolutePath || label,
+      },
+    ];
   }
 
   /**
