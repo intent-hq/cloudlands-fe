@@ -1355,6 +1355,66 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('clears a crash-leftover in-flight pair when the list snapshot reports the agent idle (monorepo#4135)', async () => {
+    const current = state();
+    current.agentSessions.byAgentId['agent-stale'] = agent('agent-stale', {
+      isStreaming: true,
+      isProcessing: true,
+    });
+    // The fresh daemon rows: agent-stale is idle (crash leftover — no event
+    // will ever clear the stored pair), agent-normal has no stored session.
+    const staleRow = agent('agent-stale');
+    const normalRow = agent('agent-normal');
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [staleRow, normalRow],
+      retiredCount: 0,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The stale agent is upserted separately with the stale-clear options so
+    // the snapshot's idle flags win over the pair-guard; the rest keep the
+    // default preservation semantics.
+    expect(run.actions).toContainEqual({
+      type: 'agentSessions/bulkUpsertSessions',
+      payload: [[normalRow]],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'agentSessions/bulkUpsertSessions',
+      payload: [
+        [staleRow],
+        { preserveExplicitRuntimeFlags: false, allowActiveTurnRuntimeFlagClear: true },
+      ],
+    });
+    await stop(run.task);
+  });
+
+  it('keeps the pair-guard for a live in-flight pair the fresh snapshot still reports busy', async () => {
+    const current = state();
+    current.agentSessions.byAgentId['agent-live'] = agent('agent-live', {
+      isStreaming: true,
+      isProcessing: true,
+    });
+    const liveRow = agent('agent-live', { isStreaming: true });
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [liveRow], retiredCount: 0 });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The daemon reports the turn in flight, so the single optionless bulk
+    // upsert keeps the default preservation semantics (monorepo#1250).
+    const bulkUpserts = run.actions.filter(
+      (action) => action.type === 'agentSessions/bulkUpsertSessions',
+    );
+    expect(bulkUpserts).toEqual([
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[liveRow]] },
+    ]);
+    await stop(run.task);
+  });
+
   // The two tests below stub the seam (appClient.agents.listWithMeta), not the
   // wire. On an 8.2+ daemon the default read excludes retired rows, but the saga
   // must stay agnostic to row provenance: retired rows re-enter state via the
