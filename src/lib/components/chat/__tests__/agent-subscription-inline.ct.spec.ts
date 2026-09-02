@@ -112,7 +112,7 @@ test('keeps peek text and timestamp on the shared secondary primitive', async ({
           if (interaction === 'rest') expect(value.previewStyle).toEqual(value.timestampStyle);
           expect(value.peekIconCount).toBe(0);
           expect(value.peekAriaLabelCount).toBe(0);
-          expect(value.nameStyle.color).not.toBe(value.previewStyle.color);
+          expect(value.nameStyle.color).toBe(value.previewStyle.color);
         }
       }
     }
@@ -244,8 +244,8 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
 
           const deviceDelta = (left: number, right: number) =>
             Math.abs(left - right) * expanded.devicePixelRatio;
-          expect(expanded.slot.width).toBeCloseTo(14 * zoom, 1);
-          expect(expanded.slot.height).toBeCloseTo(14 * zoom, 1);
+          expect(expanded.slot.width).toBeCloseTo(20 * zoom, 1);
+          expect(expanded.slot.height).toBeCloseTo(20 * zoom, 1);
           expect(deviceDelta(expanded.slot.left, expanded.avatar.left)).toBeLessThanOrEqual(0.5);
           expect(deviceDelta(expanded.slot.centerX, expanded.icon.centerX)).toBeLessThanOrEqual(
             0.5,
@@ -262,13 +262,13 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
               expanded.avatar.centerY - expanded.agentRow.top,
             ),
           ).toBeLessThanOrEqual(0.5);
-          expect(expanded.title.left - expanded.icon.right).toBeCloseTo(6 * zoom, 1);
-          // The icon and summary title share one opaque muted secondary tone.
-          // The agent name remains the opaque primary tone.
+          expect(expanded.title.left - expanded.slot.right).toBeCloseTo(8 * zoom, 1);
+          expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
+          // All summary labels share one opaque muted tone; avatars retain semantic colors.
           expect(expanded.iconStyle.opacity).toBe('1');
           expect(expanded.iconStyle.color).toBe(expanded.titleStyle.color);
           expect(expanded.titleStyle.opacity).toBe('1');
-          expect(expanded.titleStyle.color).not.toBe(expanded.nameColor);
+          expect(expanded.titleStyle.color).toBe(expanded.nameColor);
 
           await summary.click();
           await expect(summary).toHaveAttribute('aria-expanded', 'false');
@@ -777,6 +777,7 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
             const iconBox = icon.getBoundingClientRect();
             return {
               slotWidth: slotBox.width,
+              slotRight: slotBox.right,
               slotCenterX: (slotBox.left + slotBox.right) / 2,
               slotCenterY: (slotBox.top + slotBox.bottom) / 2,
               iconWidth: iconBox.width,
@@ -789,11 +790,11 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
               titleColor: getComputedStyle(title).color,
             };
           });
-          expect(geometry.slotWidth).toBeCloseTo(14 * zoom, 1);
+          expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
           expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
           expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
           expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
-          expect(geometry.titleLeft - geometry.iconRight).toBeCloseTo(6 * zoom, 1);
+          expect(geometry.titleLeft - geometry.slotRight).toBeCloseTo(8 * zoom, 1);
           expect(geometry.iconOpacity).toBe('1');
           expect(geometry.iconColor).toBe(geometry.titleColor);
           await expect(

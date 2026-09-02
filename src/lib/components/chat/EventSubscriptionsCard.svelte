@@ -177,7 +177,7 @@
           aria-controls={bodyId}
           onclick={toggleCollapsed}
         >
-          <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+          <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
             <span
               class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
               data-testid="event-subscriptions-leading-column"
@@ -190,7 +190,7 @@
               />
             </span>
             <span
-              class="whitespace-nowrap text-muted-foreground"
+              class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
               data-testid="event-subscriptions-summary-title"
             >
               {heading}

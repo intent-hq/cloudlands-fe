@@ -255,5 +255,8 @@ describe('subscription row typography', () => {
       expect(tone(icon)).toEqual(tone(label));
       expect(tone(icon).opacity).toBe('1');
     }
+    expect(tone(screen.getAllByTestId('agent-card-name')[0])).toEqual(
+      tone(screen.getByTestId('one-shot-summary-title')),
+    );
   });
 });

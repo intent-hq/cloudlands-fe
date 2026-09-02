@@ -345,8 +345,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     );
     expect(screen.getByRole('button', { name: 'Waiting for 7 agents' })).toBe(summary);
     const title = screen.getByTestId('one-shot-summary-title');
-    expect(title.classList.contains('truncate')).toBe(false);
-    expect(title.parentElement?.classList.contains('shrink-0')).toBe(true);
+    expect(title.classList.contains('truncate')).toBe(true);
+    expect(title.parentElement?.classList.contains('min-w-0')).toBe(true);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
     const stack = screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]');
@@ -582,11 +582,11 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
       const finishedIcon = finishedSummary.querySelector('[data-icon="circle-check"]');
 
-      expect(finishedSummary.classList).toContain('inline-flex');
-      expect(finishedSummary.classList).toContain('gap-1.5');
+      expect(finishedSummary.classList).toContain('flex');
+      expect(finishedSummary.classList).toContain('gap-2');
       expect(finishedSummary.classList).not.toContain('px-2');
-      expect(waitingLeadingColumn.classList).not.toContain('size-5');
-      expect(finishedLeadingColumn.classList).not.toContain('size-5');
+      expect(waitingLeadingColumn.className).toContain('--agent-avatar-standard-surface-size');
+      expect(finishedLeadingColumn.className).toContain('--agent-avatar-standard-surface-size');
       expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
       expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
       expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
