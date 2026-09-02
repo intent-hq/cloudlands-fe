@@ -5,7 +5,7 @@ import { appClient } from '$lib/client';
 import type { SettingsUpdateResult } from '$lib/client/app-client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectProviderCatalogEntry,
   selectProviderCatalogLoaded,
@@ -34,7 +34,7 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
 
   const activeProviderId = yield* selectActiveProviderId.effect();
   const compoundProviderId = model.includes(':')
-    ? (splitCompoundModelId(model).providerId ?? '')
+    ? (splitLegacyCompoundId(model).providerId ?? '')
     : '';
   const providerId = compoundProviderId || activeProviderId;
 

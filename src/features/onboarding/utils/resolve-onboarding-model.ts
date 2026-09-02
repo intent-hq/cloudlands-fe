@@ -29,7 +29,7 @@ import {
   selectUserOverrides,
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
@@ -51,7 +51,7 @@ export interface ResolvedModelConfig {
 }
 
 function getProviderForModel(model: string, fallbackProvider: string): string {
-  return splitCompoundModelId(model).providerId || fallbackProvider;
+  return splitLegacyCompoundId(model).providerId || fallbackProvider;
 }
 
 /** Map a provider ID to its status within a ProviderAvailabilityResult. */

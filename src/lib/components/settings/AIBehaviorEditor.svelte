@@ -46,7 +46,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
-  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     generateUniqueSpecialistId,
@@ -81,7 +81,8 @@
     providerId: string;
     modelId: string;
   } {
-    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
   // Show the reset-all button when any specialist pins an explicit

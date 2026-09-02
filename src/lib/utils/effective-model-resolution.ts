@@ -8,18 +8,18 @@
  * `specialist.get`/`specialist.list`. The former client-side tier/preference
  * fallback logic that lived here was removed with that change.
  */
-import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 
 /**
  * Derive the provider to submit alongside an explicit user-picked model so FE
  * intent and daemon spawn can never diverge. Mirrors the daemon's
- * resolve_provider_id precedence: a non-empty compound model prefix wins, and
- * with no explicit model (or an empty prefix like ':sonnet', which the daemon
- * also filters) the form's selected provider is kept. Note the daemon resolves
- * a bare model id to the submitted provider field — it is this function that
- * pre-resolves the provider field for bare ids (parseCompoundModelId maps them
- * to the default provider), so FE intent and daemon spawn agree on the default
- * provider for bare model ids.
+ * resolve_provider_id precedence: a non-empty legacy compound model prefix
+ * (persisted pre-triple state) wins, and with no explicit model (or an empty
+ * prefix like ':sonnet', which the daemon also filters) the form's selected
+ * provider is kept. Note the daemon resolves a bare model id to the submitted
+ * provider field — it is this function that pre-resolves the provider field
+ * for bare ids (they attribute to the default provider), so FE intent and
+ * daemon spawn agree on the default provider for bare model ids.
  */
 export function resolveSubmitProvider(
   resolvedModel: string | undefined,
@@ -27,5 +27,5 @@ export function resolveSubmitProvider(
   defaultProviderId: string,
 ): string {
   if (!resolvedModel) return selectedProvider;
-  return parseCompoundModelId(resolvedModel, defaultProviderId).providerId || selectedProvider;
+  return (splitLegacyCompoundId(resolvedModel).providerId ?? defaultProviderId) || selectedProvider;
 }
