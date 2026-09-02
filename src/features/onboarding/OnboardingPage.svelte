@@ -795,7 +795,8 @@
       projectIdentityChanged ||
       previous?.branch !== selection.branch ||
       previous?.scope !== selection.scope ||
-      previous?.isValid !== selection.isValid;
+      previous?.isValid !== selection.isValid ||
+      previous?.initGit !== selection.initGit;
 
     if (!selectionChanged) return;
 
@@ -1280,7 +1281,7 @@
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
         githubUrl: projectSelection.githubUrl,
-        baseRef: effectiveBranch,
+        baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
         isNewRepo: treatAsNewRepo,
         skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,

@@ -224,6 +224,29 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     expect(screen.getByRole('status')).toBeTruthy();
   });
 
+  it('rejects a local path that is a regular file', async () => {
+    mocks.localDirectoryStatus = {
+      exists: true,
+      isDirectory: false,
+      isGitRepo: false,
+      isSubdirectoryOfGitRepo: false,
+      path: LOCAL_PATH,
+    };
+    mockDaemon();
+    const onProjectChange = vi.fn();
+    render(ProjectPickerMessage, { props: { onProjectChange } });
+    await waitFor(() => expect(onProjectChange).toHaveBeenCalled());
+    onProjectChange.mockClear();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Browse for a folder' }));
+
+    await waitFor(() => expect(onProjectChange).toHaveBeenCalled());
+    const selection = onProjectChange.mock.calls.at(-1)?.[0] as ProjectSelection;
+    expect(selection).toEqual(expect.objectContaining({ repoPath: '', isValid: false }));
+    expect(selection).not.toHaveProperty('initGit');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('does not mark a Git repository for initialization', async () => {
     const selections = await pickLocalFolder({
       exists: true,

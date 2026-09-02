@@ -37,6 +37,7 @@
 
   interface DirectoryStatus {
     exists?: boolean;
+    isDirectory?: boolean;
     isGitRepo?: boolean;
     relativePathFromGitRoot?: string;
     isSubdirectoryOfGitRepo?: boolean;
@@ -152,9 +153,18 @@
     const advanceCb = onSelectAndAdvance;
     const selectCb = onSelect;
     const status = await getDirectoryStatus(path);
+    if (status?.isDirectory === false) {
+      initGitPath = '';
+      selectCb('');
+      return;
+    }
     const scope = status?.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : undefined;
     const initGit =
-      !!status && !!status.exists && !status.isGitRepo && !status.isSubdirectoryOfGitRepo;
+      !!status &&
+      !!status.exists &&
+      !!status.isDirectory &&
+      !status.isGitRepo &&
+      !status.isSubdirectoryOfGitRepo;
     initGitPath = initGit ? path : '';
     if (advance && advanceCb) {
       if (initGit) advanceCb(path, scope, true);

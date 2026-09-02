@@ -652,10 +652,31 @@ describe('onboarding repo-config setup script detection', () => {
     expect(mocks.workspaceCreate.mock.calls[0][0].baseRef).toBe('master');
   });
 
-  it('initializes a non-git local folder through workspace.create', async () => {
+  it('applies initGit when it is the only change to the selected local folder', async () => {
     mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
     renderPage();
+    selectLocalRepo('/repo/plain-folder', { branch: '' });
     selectLocalRepo('/repo/plain-folder', { branch: '', initGit: true });
+
+    const promptStep = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          setInputValue: (value: string) => void;
+          onSubmit: () => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    promptStep.setInputValue('build the thing');
+    promptStep.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.workspaceCreate.mock.calls[0][0].isNewRepo).toBe(true);
+  });
+
+  it('initializes a non-git local folder from main despite a stale branch', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    renderPage();
+    selectLocalRepo('/repo/plain-folder', { branch: 'develop', initGit: true });
 
     const promptStep = (
       window as unknown as {
@@ -672,7 +693,7 @@ describe('onboarding repo-config setup script detection', () => {
     expect(mocks.workspaceCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         repositoryPath: '/repo/plain-folder',
-        baseRef: '',
+        baseRef: 'main',
         isNewRepo: true,
       }),
     );
