@@ -49,7 +49,6 @@ import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-p
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
-import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
@@ -182,7 +181,6 @@ export const sagas = [
   linearAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
-  legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
   gitRootsSaga,

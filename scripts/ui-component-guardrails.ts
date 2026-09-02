@@ -1,6 +1,6 @@
 export const uiComponentGuardrails = {
   internalImports: {
-    '$lib/components/ui/button/button.svelte': 34,
+    '$lib/components/ui/button/button.svelte': 33,
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 3,
     '$lib/components/ui/dropdown/Dropdown.svelte': 1,
@@ -19,7 +19,7 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/toast/AgentFailureToast.svelte': 1,
     '$lib/components/ui/toast/Toast.svelte': 1,
     '$lib/components/ui/toast/UpdateToast.svelte': 1,
-    '$lib/components/ui/toggle/toggle.svelte': 8,
+    '$lib/components/ui/toggle/toggle.svelte': 7,
     '$lib/components/ui/tooltip/LinkTooltip.svelte': 1,
     '$lib/components/ui/tooltip/Tooltip.svelte': 5,
     '$lib/components/ui/tooltip/TooltipRich.svelte': 1,
