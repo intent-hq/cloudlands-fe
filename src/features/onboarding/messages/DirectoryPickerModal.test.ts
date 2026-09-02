@@ -685,6 +685,38 @@ describe('DirectoryPickerModal New Folder', () => {
     // The mock store never updates, so the input survives with its value.
     expect(nameInput().value).toBe('denied');
   });
+
+  it('Backspace and arrow keys inside the input do not drive list navigation', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    // With no folder highlighted, aria-selected tracks the focused row — the
+    // first option carries it before any key is pressed.
+    const selectedRows = () =>
+      screen.getAllByRole('option').filter((row) => row.getAttribute('aria-selected') === 'true');
+    expect(selectedRows()[0].textContent).toContain('code');
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: 'ab' } });
+    await fireEvent.keyDown(input, { key: 'Backspace' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await flush();
+
+    // Only the load-on-open request — Backspace in the input must not
+    // navigate up to the parent (the listing has one).
+    expect(loadCalls()).toHaveLength(1);
+    expect(createCalls()).toHaveLength(0);
+    expect(nameInput()).toBeTruthy();
+    // And the focused row did not move: the first option still carries
+    // aria-selected (ArrowDown from index 0 would have moved it to "repo").
+    const selected = selectedRows();
+    expect(selected).toHaveLength(1);
+    expect(selected[0].textContent).toContain('code');
+  });
 });
 
 describe('DirectoryPickerModal keyboard focus indicators', () => {

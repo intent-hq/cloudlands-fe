@@ -20,7 +20,7 @@
  * observe THREE calls (home, folder, home) instead of the expected two.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -263,5 +263,169 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
       ['host.listDirectory', {}],
       ['host.listDirectory', { path: '/Users/me/src' }],
     ]);
+  });
+});
+
+describe('DirectoryPickerModal — New Folder create → reload → select (real store + saga)', () => {
+  it('creates the folder, reloads the listing, drops the stale highlight, and selects the new folder', async () => {
+    const freshListing = (): DirectoryPickerListing => ({
+      path: '/Users/me/fresh',
+      parent: '/Users/me',
+      home: '/Users/me',
+      entries: [],
+    });
+
+    // The saga reloads the created path directly (it never re-requests home),
+    // so the mock only answers the created path once the create has landed —
+    // any other request order trips the unexpected-path rejection.
+    let created = false;
+    backendRequestMock.mockImplementation(((method: string, params: unknown) => {
+      const path = (params as { path?: string } | undefined)?.path;
+      if (method === 'host.createDirectory') {
+        created = true;
+        return Promise.resolve(undefined);
+      }
+      if (method !== 'host.listDirectory') return Promise.resolve(undefined);
+      if (path === undefined) return Promise.resolve(homeListing());
+      if (path === '/Users/me/fresh' && created) return Promise.resolve(freshListing());
+      return Promise.reject(new Error(`unexpected path ${String(path)}`));
+    }) as never);
+
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, {
+      props: { open: true, initialPath: '', onSelect, onClose: vi.fn() },
+    });
+
+    await waitFor(() => {
+      expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me');
+    });
+
+    // Highlight an existing folder first — a successful create must not leave
+    // this stale highlight in place after the listing reloads.
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    expect(screen.getByRole('button', { name: 'Select "code"' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New Folder' }));
+    const input = (await screen.findByRole('textbox', {
+      name: 'New folder name',
+    })) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'fresh' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    // The saga creates then reloads into the new folder.
+    await waitFor(() => {
+      expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me/fresh');
+      expect(appStore.state.directoryPicker.loading).toBe(false);
+    });
+
+    // Exact wire order: initial home load, create, reload of the created path.
+    expect(backendRequestMock.mock.calls).toEqual([
+      ['host.listDirectory', {}],
+      ['host.createDirectory', { path: '/Users/me/fresh' }],
+      ['host.listDirectory', { path: '/Users/me/fresh' }],
+    ]);
+
+    // The stale "code" highlight is dropped: Select now targets the newly
+    // created (open) directory, so the picker cannot submit the old path.
+    const select = (await screen.findByRole('button', {
+      name: 'Select "fresh"',
+    })) as HTMLButtonElement;
+
+    // No create error and the inline input is gone after the path change.
+    expect(appStore.state.directoryPicker.createError).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'New folder name' })).toBeNull();
+    expect(select.disabled).toBe(false);
+    await fireEvent.click(select);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/fresh');
+  });
+
+  it('joins the folder name onto a trailing-slash root path without a double slash', async () => {
+    const rootListing = (): DirectoryPickerListing => ({
+      path: '/',
+      parent: null,
+      home: '/Users/me',
+      entries: [],
+    });
+    const folderListing = (): DirectoryPickerListing => ({
+      path: '/folder',
+      parent: '/',
+      home: '/Users/me',
+      entries: [],
+    });
+    backendRequestMock.mockImplementation(((method: string, params: unknown) => {
+      const path = (params as { path?: string } | undefined)?.path;
+      if (method === 'host.createDirectory') return Promise.resolve(undefined);
+      if (method !== 'host.listDirectory') return Promise.resolve(undefined);
+      if (path === undefined) return Promise.resolve(rootListing());
+      if (path === '/folder') return Promise.resolve(folderListing());
+      return Promise.reject(new Error(`unexpected path ${String(path)}`));
+    }) as never);
+
+    render(DirectoryPickerModal, {
+      props: { open: true, initialPath: '', onSelect: vi.fn(), onClose: vi.fn() },
+    });
+
+    await waitFor(() => {
+      expect(appStore.state.directoryPicker.listing?.path).toBe('/');
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New Folder' }));
+    const input = (await screen.findByRole('textbox', {
+      name: 'New folder name',
+    })) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'folder' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    // `/` already ends with a slash — the join must not produce `//folder`.
+    await waitFor(() => {
+      const createCalls = backendRequestMock.mock.calls.filter(
+        ([method]) => method === 'host.createDirectory',
+      );
+      expect(createCalls).toEqual([['host.createDirectory', { path: '/folder' }]]);
+    });
+  });
+
+  it('a failed create keeps the listing, surfaces the error, and does not reload', async () => {
+    backendRequestMock.mockImplementation(((method: string, params: unknown) => {
+      const path = (params as { path?: string } | undefined)?.path;
+      if (method === 'host.createDirectory') {
+        return Promise.reject(new Error('Permission denied (os error 13)'));
+      }
+      if (method !== 'host.listDirectory') return Promise.resolve(undefined);
+      if (path === undefined) return Promise.resolve(homeListing());
+      return Promise.reject(new Error(`unexpected path ${String(path)}`));
+    }) as never);
+
+    render(DirectoryPickerModal, {
+      props: { open: true, initialPath: '', onSelect: vi.fn(), onClose: vi.fn() },
+    });
+
+    await waitFor(() => {
+      expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me');
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New Folder' }));
+    const input = (await screen.findByRole('textbox', {
+      name: 'New folder name',
+    })) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'denied' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(appStore.state.directoryPicker.createError).toBe('Permission denied (os error 13)');
+    });
+
+    // The listing survives, the inline error renders, the input stays open
+    // with the typed name so the user can correct it, and no reload happened.
+    expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Permission denied (os error 13)');
+    expect(
+      (screen.getByRole('textbox', { name: 'New folder name' }) as HTMLInputElement).value,
+    ).toBe('denied');
+    const listCalls = backendRequestMock.mock.calls.filter(
+      ([method]) => method === 'host.listDirectory',
+    );
+    expect(listCalls).toEqual([['host.listDirectory', {}]]);
   });
 });
