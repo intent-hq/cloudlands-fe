@@ -11,6 +11,7 @@
     contentContainerClass,
     disableHoverableContent = false,
     disabled = false,
+    onOpenChange,
   }: any = $props();
   let open = $state(false);
   let openTimer: ReturnType<typeof setTimeout> | null = null;
@@ -23,26 +24,32 @@
     openTimer = null;
   }
 
+  function setOpen(nextOpen: boolean) {
+    if (open === nextOpen) return;
+    open = nextOpen;
+    onOpenChange?.(open);
+  }
+
   function handleMouseEnter() {
     pointerWithin = true;
     if (disabled || focusWithin) return;
     clearOpenTimer();
     openTimer = setTimeout(() => {
       openTimer = null;
-      open = true;
+      setOpen(true);
     }, delayDuration);
   }
 
   function handleMouseLeave() {
     pointerWithin = false;
     clearOpenTimer();
-    if (!focusWithin) open = false;
+    if (!focusWithin) setOpen(false);
   }
 
   function handleFocusIn() {
     focusWithin = true;
     clearOpenTimer();
-    if (!disabled) open = true;
+    if (!disabled) setOpen(true);
   }
 
   function handleFocusOut(event: FocusEvent) {
@@ -55,10 +62,13 @@
       return;
     }
     focusWithin = false;
-    if (!pointerWithin) open = false;
+    if (!pointerWithin) setOpen(false);
   }
 
-  onDestroy(clearOpenTimer);
+  onDestroy(() => {
+    clearOpenTimer();
+    setOpen(false);
+  });
 </script>
 
 <div

@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
+import { workspaceHoverCardIntentSession } from '$lib/components/workspace/utils/workspace-hover-card-intent';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -164,6 +165,7 @@ function renderedTabOrder() {
 
 describe('WorkspaceTabStrip', () => {
   beforeEach(() => {
+    workspaceHoverCardIntentSession.reset();
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
     mocks.nextCurrentId = 'ws-2';
@@ -484,6 +486,7 @@ describe('WorkspaceTabStrip', () => {
       expect(screen.queryByText('Ctrl Tab')).toBeNull();
 
       await fireEvent.mouseLeave(tooltipRoot);
+      vi.advanceTimersByTime(300);
       await tick();
       expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
     } finally {
@@ -515,6 +518,36 @@ describe('WorkspaceTabStrip', () => {
       await tick();
       expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeNull();
       expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens the next tab immediately during a hover session', async () => {
+    vi.useFakeTimers();
+    const view = render(WorkspaceTabStrip);
+    try {
+      const alphaRoot = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      const betaRoot = screen
+        .getByRole('tab', { name: /Beta/ })
+        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+
+      await fireEvent.mouseEnter(alphaRoot);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
+
+      await fireEvent.mouseLeave(alphaRoot);
+      await fireEvent.mouseEnter(betaRoot);
+      vi.advanceTimersByTime(0);
+      await tick();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
+
+      await fireEvent.mouseLeave(betaRoot);
+      vi.advanceTimersByTime(300);
     } finally {
       view.unmount();
       vi.useRealTimers();

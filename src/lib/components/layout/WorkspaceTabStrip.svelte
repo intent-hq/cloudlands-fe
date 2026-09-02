@@ -11,7 +11,10 @@
   import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
-  import { WORKSPACE_HOVER_CARD_OPEN_DELAY_MS } from '$lib/components/workspace/utils/workspace-hover-card-intent';
+  import {
+    WORKSPACE_HOVER_CARD_OPEN_DELAY_MS,
+    workspaceHoverCardIntentSession,
+  } from '$lib/components/workspace/utils/workspace-hover-card-intent';
   import { formatWorkspaceTabStatusSummary } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
   import {
     getWorkspaceStatusPresentation,
@@ -69,6 +72,8 @@
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
+  let workspaceHoverCardOpenDelay = $state(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+  const openWorkspaceHoverCardIds = new Set<string>();
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -158,14 +163,29 @@
   onMount(() => {
     activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const unsubscribeHoverCardIntent = workspaceHoverCardIntentSession.subscribe(
+      (delay) => (workspaceHoverCardOpenDelay = delay),
+    );
     const handleMoved = (event: Event) =>
       handleGlobalWorkspaceTabMoved(event as CustomEvent<WorkspaceTabMovedEventDetail>);
     window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     return () => {
       unsubscribe();
+      unsubscribeHoverCardIntent();
+      openWorkspaceHoverCardIds.forEach(() => workspaceHoverCardIntentSession.notifyClosed());
+      openWorkspaceHoverCardIds.clear();
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     };
   });
+
+  function handleWorkspaceHoverCardOpenChange(workspaceId: string, open: boolean) {
+    if (open && !openWorkspaceHoverCardIds.has(workspaceId)) {
+      openWorkspaceHoverCardIds.add(workspaceId);
+      workspaceHoverCardIntentSession.notifyOpened();
+    } else if (!open && openWorkspaceHoverCardIds.delete(workspaceId)) {
+      workspaceHoverCardIntentSession.notifyClosed();
+    }
+  }
 
   // Overflow detection drives the strip's right margin: while tabs are
   // clipped, the clipped tab edge (not the pr-3 padding) sits at the strip's
@@ -816,7 +836,8 @@
             <TooltipRich
               side="bottom"
               align="start"
-              delayDuration={WORKSPACE_HOVER_CARD_OPEN_DELAY_MS}
+              delayDuration={workspaceHoverCardOpenDelay}
+              onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
               disableHoverableContent={true}
               disabled={draggedWorkspaceId !== null}
               showArrow={false}
