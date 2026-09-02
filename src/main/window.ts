@@ -216,6 +216,9 @@ function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
 export interface WindowSession {
   route: string;
   bounds: { x: number; y: number; width: number; height: number };
+  // Optional for backward compat: legacy session entries carry no flag
+  // (missing → windowed restore, exactly as before).
+  isFullScreen?: boolean;
 }
 
 /**
@@ -385,7 +388,12 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
       } catch {
         // Fall back to the workspace bootstrap route.
       }
-      return { route, bounds };
+      const session: WindowSession = { route, bounds };
+      // Persist fullscreen so restore can re-enter it. getBounds() during
+      // fullscreen returns that display's bounds, which is exactly what lets
+      // restore land on the right monitor via getDisplayMatching().
+      if (w.isFullScreen()) session.isFullScreen = true;
+      return session;
     });
 }
 
@@ -543,6 +551,7 @@ export function isValidWindowSession(s: unknown): s is WindowSession {
   if (typeof s !== 'object' || s === null) return false;
   const obj = s as Record<string, unknown>;
   if (typeof obj.route !== 'string') return false;
+  if (obj.isFullScreen !== undefined && typeof obj.isFullScreen !== 'boolean') return false;
   if (typeof obj.bounds !== 'object' || obj.bounds === null) return false;
   const b = obj.bounds as Record<string, unknown>;
   return (
@@ -583,7 +592,12 @@ export function createWindowForSession(
   backendId: string = LOCAL_CONNECTION_ID,
 ): void {
   const iconPath = resolveIcon(setAsMain);
-  const { workArea } = screen.getPrimaryDisplay();
+  // Validate against the display the saved bounds actually land on, not the
+  // primary display — otherwise a layout saved on a secondary monitor fails
+  // the visibility check and is reset to the primary work area. For bounds on
+  // a disconnected monitor, getDisplayMatching() returns the nearest display
+  // and validateBounds() then clamps/falls back within it.
+  const { workArea } = screen.getDisplayMatching(session.bounds);
   const bounds = validateBounds(session.bounds, workArea);
 
   const window = new BrowserWindow(
@@ -613,6 +627,13 @@ export function createWindowForSession(
       .catch((error: unknown) =>
         logger.error('Failed to clear cache for session-restored window:', error as Error),
       );
+  }
+
+  // Re-enter fullscreen on the display the validated bounds landed on — a
+  // session saved fullscreen restores fullscreen, not windowed at
+  // screen-sized bounds.
+  if (session.isFullScreen) {
+    window.setFullScreen(true);
   }
 
   const route = session.route === '/' ? DEFAULT_WINDOW_ROUTE : session.route;
@@ -806,12 +827,19 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
           width: savedBounds.width,
           height: savedBounds.height,
         };
-        const validated = validateBounds(resolved, workArea);
-        if (validated === resolved) {
-          windowBounds = resolved;
+        // Validate against the display the saved bounds land on, not the
+        // primary display, so bounds saved on a secondary monitor survive. In
+        // the fallback case validateBounds() returns that matched display's
+        // work area, so use its result either way instead of snapping back to
+        // the primary display.
+        windowBounds = validateBounds(resolved, screen.getDisplayMatching(resolved).workArea);
+        if (windowBounds === resolved) {
           logger.info('Using saved window bounds:', windowBounds);
         } else {
-          logger.info('Saved window bounds not reasonable for current display, using defaults');
+          logger.info(
+            'Saved window bounds not reasonable, using matched display work area:',
+            windowBounds,
+          );
         }
       }
     }

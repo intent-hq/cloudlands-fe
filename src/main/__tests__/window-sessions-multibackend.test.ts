@@ -17,6 +17,7 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetPath = vi.fn();
+const mockGetDisplayMatching = vi.fn();
 
 /** A live BrowserWindow test double: constructable + destroyable + URL-bearing. */
 const { FakeBrowserWindow } = vi.hoisted(() => {
@@ -25,6 +26,7 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
     static focused: FakeBrowserWindow | null = null;
     backendId = 'local';
     destroyed = false;
+    fullScreen = false;
     bounds: { x: number; y: number; width: number; height: number };
     handlers = new Map<string, (...args: unknown[]) => void>();
     private url = 'about:blank';
@@ -81,8 +83,11 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
       return false;
     }
     isFullScreen() {
-      return false;
+      return this.fullScreen;
     }
+    setFullScreen = vi.fn((flag: boolean) => {
+      this.fullScreen = flag;
+    });
     restore = vi.fn();
     show = vi.fn();
     focus = vi.fn(() => {
@@ -103,6 +108,7 @@ vi.mock('electron', () => ({
   BrowserWindow: FakeBrowserWindow,
   screen: {
     getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
+    getDisplayMatching: (bounds: unknown) => mockGetDisplayMatching(bounds),
   },
   nativeTheme: { shouldUseDarkColors: false },
   nativeImage: { createFromPath: vi.fn() },
@@ -133,6 +139,7 @@ import {
   getWindowSessionsPath,
   getBackendIdForWebContents,
   getFocusedWindowBackendId,
+  isValidWindowSession,
   listSavedSessionBackendIds,
   loadWindowSessions,
   markWindowSessionTeardown,
@@ -168,6 +175,8 @@ describe('multi-backend window sessions', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'window-sessions-mb-'));
     mockGetPath.mockReset();
     mockGetPath.mockReturnValue(tmpDir);
+    mockGetDisplayMatching.mockReset();
+    mockGetDisplayMatching.mockReturnValue({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } });
     FakeBrowserWindow.instances = [];
     FakeBrowserWindow.focused = null;
     _resetWindowSessionsCacheForTests();
@@ -517,6 +526,127 @@ describe('multi-backend window sessions', () => {
         local: [{ route: '/work/legacy', bounds: legacyBounds }],
         'remote-1': [{ route: '/work/remote', bounds: remoteBounds }],
       });
+    });
+  });
+
+  describe('display-aware validation + fullscreen (multi-monitor restore)', () => {
+    it('restores a session onto its own display instead of resetting to primary', () => {
+      // Bounds on a secondary monitor to the right of the primary — they fail
+      // the primary-workArea visibility check, so this regresses if validation
+      // goes back to screen.getPrimaryDisplay().
+      const secondaryWorkArea = { x: 1920, y: 0, width: 2560, height: 1415 };
+      mockGetDisplayMatching.mockReturnValue({ workArea: secondaryWorkArea });
+      const bounds = { x: 2000, y: 100, width: 1200, height: 800 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ local: [{ route: '/work/second', bounds }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('local');
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(mockGetDisplayMatching).toHaveBeenCalledWith(bounds);
+      expect(window.bounds).toEqual(bounds);
+    });
+
+    it('falls back to the matched display work area for off-screen bounds', () => {
+      // A disconnected monitor: getDisplayMatching returns the nearest live
+      // display, whose work area the saved bounds no longer intersect.
+      const nearestWorkArea = { x: 0, y: 0, width: 1920, height: 1080 };
+      mockGetDisplayMatching.mockReturnValue({ workArea: nearestWorkArea });
+      const bounds = { x: 99999, y: 99999, width: 1200, height: 800 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ local: [{ route: '/work/gone', bounds }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('local');
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(window.bounds).toEqual(nearestWorkArea);
+    });
+
+    it('createWindow keeps legacy saved bounds that land on a secondary display', () => {
+      const secondaryWorkArea = { x: 1920, y: 0, width: 2560, height: 1415 };
+      mockGetDisplayMatching.mockReturnValue({ workArea: secondaryWorkArea });
+      const saved = { x: 2100, y: 50, width: 1400, height: 900 };
+      fs.writeFileSync(path.join(tmpDir, 'window-bounds.json'), JSON.stringify(saved), 'utf-8');
+
+      createWindow();
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(window.bounds).toEqual(saved);
+    });
+
+    it('createWindow falls back to the matched display work area for off-screen legacy bounds', () => {
+      // Bounds near a since-disconnected secondary display: getDisplayMatching
+      // picks the nearest live display, whose work area they no longer
+      // intersect. The fallback must land on THAT display's work area, not
+      // reset to the primary display.
+      const matchedWorkArea = { x: 1920, y: 0, width: 2560, height: 1415 };
+      mockGetDisplayMatching.mockReturnValue({ workArea: matchedWorkArea });
+      const saved = { x: 99999, y: 99999, width: 1400, height: 900 };
+      fs.writeFileSync(path.join(tmpDir, 'window-bounds.json'), JSON.stringify(saved), 'utf-8');
+
+      createWindow();
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(window.bounds).toEqual(matchedWorkArea);
+    });
+
+    it('captures isFullScreen in the saved session', async () => {
+      const bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
+      const window = seedLiveWindow('app://workspaces/work/fs', bounds);
+      window.fullScreen = true;
+
+      await saveWindowSessions('local');
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/fs', bounds, isFullScreen: true }],
+      });
+    });
+
+    it('restores a fullscreen session via setFullScreen(true)', () => {
+      const bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
+      mockGetDisplayMatching.mockReturnValue({
+        workArea: { x: 1920, y: 0, width: 2560, height: 1415 },
+      });
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ local: [{ route: '/work/fs', bounds, isFullScreen: true }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('local');
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(window.setFullScreen).toHaveBeenCalledWith(true);
+      expect(window.isFullScreen()).toBe(true);
+    });
+
+    it('does not enter fullscreen for legacy sessions without the flag', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ local: [{ route: '/work/plain', bounds }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('local');
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(window.setFullScreen).not.toHaveBeenCalled();
+      expect(window.isFullScreen()).toBe(false);
+    });
+
+    it('isValidWindowSession accepts the flag, its absence, and rejects non-booleans', () => {
+      const bounds = { x: 0, y: 0, width: 1200, height: 800 };
+      expect(isValidWindowSession({ route: '/a', bounds })).toBe(true);
+      expect(isValidWindowSession({ route: '/a', bounds, isFullScreen: true })).toBe(true);
+      expect(isValidWindowSession({ route: '/a', bounds, isFullScreen: false })).toBe(true);
+      expect(isValidWindowSession({ route: '/a', bounds, isFullScreen: 'yes' })).toBe(false);
     });
   });
 
