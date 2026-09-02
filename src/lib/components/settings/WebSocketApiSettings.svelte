@@ -774,16 +774,18 @@
           </section>
         {/if}
 
-        <!-- TLS Certificate Fingerprint -->
+        <!-- TLS Certificate Fingerprint (truncated single line by user
+             preference — reverses cloudlands-fe#1979's full-width display;
+             the full value stays available via the title tooltip) -->
         {#if certFingerprint}
           <section>
-            <div class="flex items-start justify-between gap-2">
-              <span class="text-sm text-muted-foreground shrink-0"
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-muted-foreground"
                 >{m.settings_wsApi_tlsFingerprint_label()}</span
               >
               <code
-                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded break-all"
-                title={certFingerprint}>{certFingerprint}</code
+                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
               >
             </div>
           </section>

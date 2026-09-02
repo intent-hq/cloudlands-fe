@@ -253,8 +253,9 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
-  it('renders the full TLS fingerprint without truncation', async () => {
-    // Arrange: WSS enabled with a realistic SHA-256 fingerprint (95 chars)
+  it('renders the TLS fingerprint truncated with the full value on the title tooltip', async () => {
+    // User decision reversing cloudlands-fe#1979: the fingerprint shows as a
+    // truncated single line; the full value stays reachable via the tooltip.
     const fullFingerprint =
       'AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89';
     mocks.mockSettingsList.mockResolvedValue([
@@ -271,11 +272,11 @@ describe('WebSocketApiSettings', () => {
 
     render(WebSocketApiSettings);
 
-    // Assert: the complete fingerprint value is rendered (regression: it was
-    // previously sliced to 23 chars with a literal ellipsis)
     await waitFor(() => {
-      expect(screen.getByText(fullFingerprint)).toBeTruthy();
+      expect(screen.getByText(`${fullFingerprint.slice(0, 23)}…`)).toBeTruthy();
     });
+    expect(screen.getByTitle(fullFingerprint)).toBeTruthy();
+    expect(screen.queryByText(fullFingerprint)).toBeNull();
   });
 
   describe('self-entry refresh triggers (token rotation, port change)', () => {
