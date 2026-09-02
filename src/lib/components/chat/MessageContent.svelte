@@ -251,7 +251,7 @@
         const contentBlock = block as ContentBlock;
         if (contentBlock.text) {
           const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
-          const parsed = parseAgentMessage(cleanedContent);
+          const parsed = parseAgentMessage(cleanedContent, workspaceId);
           map.set(
             String(index),
             filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
@@ -262,7 +262,7 @@
         group.children.forEach((child, childIndex) => {
           if (child.type === 'text' && child.text) {
             const { cleanedContent } = parseSuggestedPrompts(child.text);
-            const parsed = parseAgentMessage(cleanedContent);
+            const parsed = parseAgentMessage(cleanedContent, workspaceId);
             map.set(
               `${index}-${childIndex}`,
               filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
@@ -486,6 +486,9 @@
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
     />
+  {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
+    {@const video = parsedBlock.metadata.videoData}
+    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
   {:else if parsedBlock.type === 'digest'}
     <DigestCard digest={parsedBlock.content || ''} />
   {:else if parsedBlock.type === 'mermaid'}

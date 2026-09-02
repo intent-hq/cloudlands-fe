@@ -448,7 +448,7 @@
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
@@ -683,6 +683,9 @@
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
     />
+  {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
+    {@const video = parsedBlock.metadata.videoData}
+    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}

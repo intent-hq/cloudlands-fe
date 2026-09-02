@@ -6,6 +6,9 @@
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
+  import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
+  import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
+  import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
 
   import {
     openWorkspaceFile,
@@ -47,6 +50,9 @@
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
   }: Props = $props();
+
+  const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
+  const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
 
   // PERF: Detect content complexity to choose rendering strategy
   // - Simple: plain text, no markdown - render as <p>
@@ -448,7 +454,27 @@
   {/if}
 {/snippet}
 
-{#if isStreaming}
+{#if hasVideoSegments}
+  <div class="markdown-video-segments {className}">
+    {#each mediaSegments as segment}
+      {#if segment.type === 'video'}
+        <ChatVideoBlock source={segment.source} name={segment.name} poster={segment.poster} />
+      {:else}
+        <RecursiveMarkdownViewer
+          content={segment.content}
+          {isStreaming}
+          {workspaceId}
+          onCodeBlockAction={_onCodeBlockAction}
+          {onFileClick}
+          {taskBlockRenderMode}
+          {chatImageThumbnails}
+          {forceExternalLinks}
+          {renderRichFencesAsCode}
+        />
+      {/if}
+    {/each}
+  </div>
+{:else if isStreaming}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
   <div
     role="group"

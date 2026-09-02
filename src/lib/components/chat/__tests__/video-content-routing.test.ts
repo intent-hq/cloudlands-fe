@@ -35,6 +35,24 @@ describe('agent video renderer routing', () => {
     expect(screen.getAllByTestId('chat-video-snapshot')).toHaveLength(1);
   });
 
+  it('mounts the internal video block for standalone video markdown', async () => {
+    const MessageContent = (await import('../MessageContent.svelte')).default;
+    const { container } = render(MessageContent, {
+      props: {
+        content: [
+          block({
+            type: 'text',
+            text: '![demo](intent://local/file/.demo-artifacts/demo.webm)',
+          }),
+        ],
+        role: 'assistant',
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    expect(container.querySelector('[data-chat-video]')).toBeTruthy();
+  });
+
   it.each([true, false])(
     'routes streaming renderer output when isStreaming=%s',
     async (isStreaming) => {
