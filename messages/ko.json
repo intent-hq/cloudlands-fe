@@ -3214,6 +3214,7 @@
   "onboarding_providerCard_installFromNodejs_label": "nodejs.org에서 설치",
   "onboarding_providerCard_npxTooOld_label": "npm/npx가 너무 오래됨 — npm 7 이상 필요",
   "onboarding_dirPicker_selectFolder_label": "폴더 선택",
+  "onboarding_dirPicker_selectNamed_label": "\"{name}\" 선택",
   "onboarding_dirPicker_close_ariaLabel": "폴더 선택기 닫기",
   "onboarding_dirPicker_goUp_ariaLabel": "한 수준 위로 이동",
   "onboarding_dirPicker_goUp_tooltip": "위로(Backspace)",

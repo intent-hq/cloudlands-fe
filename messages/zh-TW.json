@@ -3214,6 +3214,7 @@
   "onboarding_providerCard_installFromNodejs_label": "從 nodejs.org 安裝",
   "onboarding_providerCard_npxTooOld_label": "npm/npx 版本過舊——需要 npm 7 及以上",
   "onboarding_dirPicker_selectFolder_label": "選擇資料夾",
+  "onboarding_dirPicker_selectNamed_label": "選擇「{name}」",
   "onboarding_dirPicker_close_ariaLabel": "關閉資料夾選擇器",
   "onboarding_dirPicker_goUp_ariaLabel": "向上一級",
   "onboarding_dirPicker_goUp_tooltip": "向上（Backspace）",
