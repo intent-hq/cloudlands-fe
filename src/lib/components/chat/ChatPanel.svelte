@@ -3343,6 +3343,7 @@
     const refs = pendingProposalRefs;
     const root = scrollContainer;
     void $agentMessages$;
+    void $pendingProposalRecovery$;
     void $proposalLifecycleMap$;
     if (!isActive || !root || refs.length === 0) {
       offscreenPendingProposalMessageId = null;
@@ -3356,6 +3357,7 @@
       const refKeysByTarget = new Map<Element, string[]>();
       const visibility = new Map<string, boolean>();
       const claimed = new Set<Element>();
+      const recovered = $pendingProposalRecovery$;
       for (const ref of refs) {
         const refKey = `${ref.messageId}\u0000${ref.proposalId}`;
         const message = root.querySelector<HTMLElement>(
@@ -3371,14 +3373,28 @@
             );
           }
         }
-        if (!target) continue;
+        if (!target) {
+          const recoveredEntry = recovered?.[ref.messageId];
+          if (
+            recoveredEntry?.status === 'found' &&
+            recoveredEntry.proposals?.some((entry) => entry.proposalId === ref.proposalId)
+          ) {
+            visibility.set(refKey, false);
+          }
+          continue;
+        }
         claimed.add(target);
         refKeysByTarget.set(target, [...(refKeysByTarget.get(target) ?? []), refKey]);
       }
       if (refKeysByTarget.size === 0 || typeof IntersectionObserver === 'undefined') {
-        offscreenPendingProposalMessageId = null;
+        offscreenPendingProposalMessageId =
+          refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+            ?.messageId ?? null;
         return;
       }
+      offscreenPendingProposalMessageId =
+        refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+          ?.messageId ?? null;
       observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
@@ -4043,6 +4059,10 @@
     const messageId = offscreenPendingProposalMessageId;
     const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
     if (!messageId || !ref) return;
+    if (!messageIdToTurnKey.has(messageId)) {
+      if (!(await seekConversationToMessage(agentId, messageId)) || !isActive) return;
+      await tick();
+    }
     const message = await forceRenderAndFindMessage(messageId);
     if (!message || !isActive) return;
     await tick();

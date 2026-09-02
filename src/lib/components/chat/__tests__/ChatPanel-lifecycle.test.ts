@@ -47,6 +47,16 @@ const mocks = vi.hoisted(() => {
     agentMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
     agentSessionIsStreaming: mutableReadable(false),
+    pendingProposalRecovery: mutableReadable<
+      | Record<
+          string,
+          {
+            status: 'loading' | 'found' | 'not-found' | 'error';
+            proposals?: Array<{ proposalId: string; proposal: unknown }>;
+          }
+        >
+      | undefined
+    >(undefined),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -79,6 +89,7 @@ const mocks = vi.hoisted(() => {
       enabled: boolean;
       onChange: (prompt: { id: string; message: unknown } | null) => void;
     } | null,
+    seekConversationToMessage: vi.fn(),
     selector,
   };
 });
@@ -151,7 +162,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   }),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
-  selectPendingProposalRecovery: mocks.selector(undefined),
+  selectPendingProposalRecovery: () => mocks.pendingProposalRecovery,
   selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
@@ -296,6 +307,9 @@ vi.mock('$features/agent/services/consolidated-backend.service', () => ({
   unifiedOrchestrator: { editQueuedMessage: vi.fn() },
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
+vi.mock('$lib/utils/open-message', () => ({
+  seekConversationToMessage: mocks.seekConversationToMessage,
+}));
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
@@ -478,6 +492,7 @@ beforeEach(() => {
   mocks.agentMessages.set([]);
   mocks.agentSession.set(null);
   mocks.agentSessionIsStreaming.set(false);
+  mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -1703,6 +1718,64 @@ describe('ChatPanel mounted lifecycle', () => {
     observer?.fire([{ target: card, isIntersecting: true }]);
     await tick();
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+  });
+
+  it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-far', messageId: 'proposal-message-far' }],
+      },
+    });
+    mocks.agentMessages.set([
+      {
+        id: 'tail-message',
+        role: 'assistant',
+        content: 'Tail',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mocks.pendingProposalRecovery.set({
+      'proposal-message-far': {
+        status: 'found',
+        proposals: [
+          {
+            proposalId: 'toolu-far',
+            proposal: { kind: 'workspace-create', applyToolCallId: 'toolu-far' },
+          },
+        ],
+      },
+    });
+    mocks.seekConversationToMessage.mockImplementation(async () => {
+      mocks.agentMessages.set([
+        {
+          id: 'proposal-message-far',
+          role: 'assistant',
+          content: 'Recovered proposal',
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      return true;
+    });
+
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    flushFrame();
+    await tick();
+
+    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith('agent-a', 'proposal-message-far');
+    expect(view.container.querySelector('[data-message-id="proposal-message-far"]')).not.toBeNull();
   });
 
   it('cancels draftPrompt apply and focus while inactive and restores on reactivation', async () => {

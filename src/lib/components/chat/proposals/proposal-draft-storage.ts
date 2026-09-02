@@ -1,6 +1,7 @@
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 
 const KEY_PREFIX = 'chat.proposalDraft/';
+const LEGACY_KEY_PREFIX = 'chat.proposalTray/';
 const RECORD_VERSION = 1;
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -21,8 +22,8 @@ interface StoredRecord<T> {
   value: T;
 }
 
-function draftKey(agentId: string, proposalId: string): string {
-  return `${KEY_PREFIX}${agentId}/draft/${encodeURIComponent(proposalId)}`;
+function draftKey(agentId: string, proposalId: string, prefix = KEY_PREFIX): string {
+  return `${prefix}${agentId}/draft/${encodeURIComponent(proposalId)}`;
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
@@ -69,7 +70,10 @@ function pruneStaleEntries(skipKey: string): void {
 
 export function loadProposalDraft(agentId: string, proposalId: string): ProposalCardDraft | null {
   const key = draftKey(agentId, proposalId);
-  const raw = safeLocalStorage.getItem(key);
+  const legacyKey = draftKey(agentId, proposalId, LEGACY_KEY_PREFIX);
+  let raw = safeLocalStorage.getItem(key);
+  const loadedFromLegacy = raw === null;
+  if (loadedFromLegacy) raw = safeLocalStorage.getItem(legacyKey);
   if (raw === null) return null;
   try {
     const record = JSON.parse(raw) as Partial<StoredRecord<unknown>> | null;
@@ -79,12 +83,16 @@ export function loadProposalDraft(agentId: string, proposalId: string): Proposal
       typeof record.savedAt !== 'number' ||
       !isCardDraft(record.value)
     ) {
-      safeLocalStorage.removeItem(key);
+      safeLocalStorage.removeItem(loadedFromLegacy ? legacyKey : key);
       return null;
+    }
+    if (loadedFromLegacy) {
+      safeLocalStorage.setItem(key, raw);
+      safeLocalStorage.removeItem(legacyKey);
     }
     return record.value;
   } catch {
-    safeLocalStorage.removeItem(key);
+    safeLocalStorage.removeItem(loadedFromLegacy ? legacyKey : key);
     return null;
   }
 }
