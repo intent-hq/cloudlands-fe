@@ -262,6 +262,19 @@ jobs:
       - name: Generate i18n catalog
         run: pnpm run generate:i18n
 
+      # dist:mac runs scripts/fetch-tailcat.cjs --targets=darwin-arm64, which
+      # builds the tailcat tunnel client from source (tailcat publishes no
+      # prebuilt macOS assets) and needs a Go toolchain — the hosted
+      # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
+      # legs stage checksum-verified prebuilt assets. Version must satisfy
+      # tailcat v0.4.0's go.mod (go 1.27.0); mirrors intentd's macOS source
+      # build of the same pinned tag.
+      - name: Install Go (tailcat macOS source build)
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+          cache: false
+
       - name: Build and package macOS app
         run: pnpm run dist:mac
         env:
