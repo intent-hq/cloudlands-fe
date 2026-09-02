@@ -352,6 +352,7 @@ const ALLOWED_CHANNELS = [
   'browser:unregister-tab',
   'browser:report-tab-bounds',
   'browser:set-tab-viewport',
+  'browser:open-devtools-panel',
   'browser:exec',
   'browser:resolve-url',
   'browser:focus-tab',

@@ -457,6 +457,48 @@ class EmbeddedBrowserCdpService {
     }
   }
 
+  /** Open DevTools for a mounted tab and select the requested built-in panel. */
+  async openDevToolsPanel(tabId: string, panel: 'console' | 'sources' | 'elements'): Promise<void> {
+    const webContentsId = this.resolveTabId(tabId);
+    if (webContentsId === undefined) {
+      throw new Error(`Browser tab ${tabId} is not mounted`);
+    }
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`WebContents ${webContentsId} not found or destroyed`);
+    }
+
+    const selectPanel = async () => {
+      const devTools = wc.devToolsWebContents;
+      if (!devTools || devTools.isDestroyed()) return;
+      await devTools.executeJavaScript(`DevToolsAPI.showPanel(${JSON.stringify(panel)})`);
+    };
+
+    wc.openDevTools();
+    if (wc.devToolsWebContents) {
+      try {
+        await selectPanel();
+      } catch (error) {
+        logger.warn('Failed to select DevTools panel; leaving plain DevTools open', {
+          tabId,
+          panel,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    wc.once('devtools-opened', () => {
+      void selectPanel().catch((error) => {
+        logger.warn('Failed to select DevTools panel; leaving plain DevTools open', {
+          tabId,
+          panel,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    });
+  }
+
   /**
    * Get all browser tabs (discovers all webviews, not just registered ones)
    *

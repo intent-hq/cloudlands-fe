@@ -178,6 +178,11 @@ const SetTabViewportSchema = z.object({
   ]),
 });
 
+const OpenDevToolsPanelSchema = z.object({
+  tabId: z.string().min(1),
+  panel: z.enum(['console', 'sources', 'elements']),
+});
+
 const ClearAgentTabsSchema = z.object({
   agentId: z.string(),
 });
@@ -509,6 +514,18 @@ export function registerBrowserHandlers(): void {
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.SET_TAB_VIEWPORT,
+    ),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.OPEN_DEVTOOLS_PANEL,
+    createSafeValidatedHandler(
+      OpenDevToolsPanelSchema,
+      async (_event, validated) => {
+        await embeddedBrowserCdp.openDevToolsPanel(validated.tabId, validated.panel);
+        return { success: true };
+      },
+      IPC_CHANNELS.BROWSER.OPEN_DEVTOOLS_PANEL,
     ),
   );
 

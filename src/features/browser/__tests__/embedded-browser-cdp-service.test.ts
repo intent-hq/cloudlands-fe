@@ -166,6 +166,29 @@ describe('focusTab', () => {
   });
 });
 
+describe('openDevToolsPanel', () => {
+  it('opens DevTools and selects the requested built-in panel', async () => {
+    const service = await loadService();
+    const executeJavaScript = vi.fn().mockResolvedValue(undefined);
+    const wc = {
+      ...fakeWebview(43, 'http://a/'),
+      openDevTools: vi.fn(),
+      devToolsWebContents: {
+        isDestroyed: () => false,
+        executeJavaScript,
+      },
+    };
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-devtools', 43);
+
+    await service.openDevToolsPanel('tab-devtools', 'console');
+
+    expect(wc.openDevTools).toHaveBeenCalledTimes(1);
+    expect(executeJavaScript).toHaveBeenCalledWith('DevToolsAPI.showPanel("console")');
+    service.unregisterTab('tab-devtools');
+  });
+});
+
 describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
   it('excludes a UI-closed tab whose webview is still alive', async () => {
     const service = await loadService();

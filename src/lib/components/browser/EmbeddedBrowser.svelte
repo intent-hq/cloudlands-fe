@@ -48,6 +48,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
+  import { invoke } from '$lib/electron-bridge';
+  import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
 
   const logger = createLogger('EmbeddedBrowser');
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
@@ -170,6 +172,8 @@
         getZoomFactor: () => number;
         setZoomFactor: (factor: number) => void;
         setAudioMuted?: (muted: boolean) => void;
+        reloadIgnoringCache?: () => void;
+        capturePage?: () => Promise<{ toDataURL: () => string }>;
       })
     | null = $state(null);
   // displayUrl tracks the loaded URL and can differ from prop `url` after navigation.
@@ -187,6 +191,7 @@
   let isSecure = $state(url?.startsWith('https://') ?? false);
   let errorMessage = $state('');
   let webviewReady = $state(false);
+  let consoleErrorCount = $state(0);
 
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
@@ -559,6 +564,7 @@
     // Navigation events - the webview reports the URL it actually loaded,
     // which is exactly what the address bar shows.
     addWebviewListener('did-navigate', (e: any) => {
+      consoleErrorCount = 0;
       displayUrl = e.url;
       pageTitle = '';
       faviconUrl = '';
@@ -635,6 +641,7 @@
     // The keyboard interceptor script injected on dom-ready logs special messages
     // when keyboard shortcuts are pressed inside the webview
     addWebviewListener('console-message', (e: any) => {
+      if (e.level === 3) consoleErrorCount += 1;
       const message = e.message;
       if (message === '__INTENT_CLOSE_TAB__') {
         // Cmd+W was pressed - dispatch synthetic event for the panel system to handle
@@ -801,14 +808,14 @@
     }
   }
 
-  async function copyCurrentUrl() {
+  function currentLoadedUrl(): string {
     const loadedUrl = webviewRef?.getURL?.();
-    let urlToCopy = '';
-    if (loadedUrl && loadedUrl !== 'about:blank') {
-      urlToCopy = loadedUrl;
-    } else if (currentWebviewUrl !== 'about:blank') {
-      urlToCopy = currentWebviewUrl;
-    }
+    if (loadedUrl && loadedUrl !== 'about:blank') return loadedUrl;
+    return currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : '';
+  }
+
+  async function copyCurrentUrl() {
+    const urlToCopy = currentLoadedUrl();
     if (!urlToCopy) {
       toast.error(m.browser_embedded_noUrlToCopy_error());
       return;
@@ -819,6 +826,58 @@
     } catch (error) {
       logger.error('Failed to copy browser URL', error, { url: urlToCopy });
       toast.error(m.browser_embedded_copyFailed_error());
+    }
+  }
+
+  async function openInExternalBrowser() {
+    const targetUrl = currentLoadedUrl();
+    if (!targetUrl) {
+      toast.error(m.browser_embedded_noUrlToOpen_error());
+      return;
+    }
+    try {
+      await invoke('shell:openExternal', { url: targetUrl });
+    } catch (error) {
+      logger.error('Failed to open browser URL externally', error, { url: targetUrl });
+      toast.error(m.browser_embedded_openExternalFailed_error());
+    }
+  }
+
+  async function captureScreenshotToClipboard() {
+    if (!webviewRef?.capturePage || !webviewReady) return;
+    try {
+      const image = await webviewRef.capturePage();
+      const response = await fetch(image.toDataURL());
+      const blob = await response.blob();
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast.success(m.browser_embedded_screenshotCopied_label());
+    } catch (error) {
+      logger.error('Failed to capture browser screenshot', error);
+      toast.error(m.browser_embedded_screenshotFailed_error());
+    }
+  }
+
+  async function openDevToolsPanel(panel: 'console' | 'sources' | 'elements') {
+    if (!webviewRef || !webviewReady) return;
+    if (!tabId) {
+      webviewRef.openDevTools?.();
+      return;
+    }
+    try {
+      await window.electronAPI?.invoke('browser:open-devtools-panel', { tabId, panel });
+    } catch (error) {
+      logger.warn('Failed to select DevTools panel; opening plain DevTools', { panel, error });
+      webviewRef.openDevTools?.();
+    }
+  }
+
+  function reloadWithoutCache() {
+    if (!webviewRef || !webviewReady) return;
+    try {
+      webviewRef.reloadIgnoringCache?.();
+      webviewRef.focus?.();
+    } catch {
+      // WebView not yet attached to DOM
     }
   }
 
@@ -980,8 +1039,19 @@
       {/if}
     </div>
 
-    <!-- Overflow slot: populated by the overflow-menu task. -->
-    <div class="h-7 w-7 shrink-0" data-browser-overflow-slot></div>
+    <div class="flex h-7 w-7 shrink-0 items-center" data-browser-overflow-slot>
+      <BrowserOverflowMenu
+        errorCount={consoleErrorCount}
+        disabled={!webviewReady}
+        onOpenExternal={openInExternalBrowser}
+        onCopyUrl={copyCurrentUrl}
+        onScreenshot={captureScreenshotToClipboard}
+        onOpenConsole={() => openDevToolsPanel('console')}
+        onOpenSource={() => openDevToolsPanel('sources')}
+        onOpenInspector={() => openDevToolsPanel('elements')}
+        onReloadWithoutCache={reloadWithoutCache}
+      />
+    </div>
 
     <!-- Actions -->
     <div class="flex gap-0.5">

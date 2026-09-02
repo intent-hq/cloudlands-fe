@@ -1,5 +1,16 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+  writeTextToClipboard: vi.fn().mockResolvedValue(undefined),
+  electronInvoke: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
+vi.mock('$lib/utils/clipboard', () => ({
+  writeTextToClipboard: mocks.writeTextToClipboard,
+}));
 
 vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
   selectPendingBrowserZoom: () => null,
@@ -40,7 +51,12 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { navigateToAgent } from '$lib/utils/workspace-navigation';
 
-afterEach(cleanup);
+beforeEach(() => vi.clearAllMocks());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  delete (window as { electronAPI?: unknown }).electronAPI;
+});
 
 describe('EmbeddedBrowser', () => {
   it('mounts a blank webview for about:blank', () => {
@@ -332,6 +348,133 @@ describe('EmbeddedBrowser', () => {
       expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
         'about:blank',
       );
+    });
+  });
+
+  describe('overflow tools', () => {
+    async function renderReadyBrowser() {
+      (window as unknown as { electronAPI: { invoke: typeof mocks.electronInvoke } }).electronAPI =
+        {
+          invoke: mocks.electronInvoke,
+        };
+      const rendered = render(EmbeddedBrowser, {
+        props: {
+          url: 'https://example.test/docs',
+          workspaceId: 'workspace-1',
+          tabId: 'tab-1',
+        },
+      });
+      const webview = rendered.container.querySelector('webview') as HTMLElement & {
+        executeJavaScript: ReturnType<typeof vi.fn>;
+        getWebContentsId: () => number;
+        getURL: () => string;
+        capturePage: ReturnType<typeof vi.fn>;
+        reloadIgnoringCache: ReturnType<typeof vi.fn>;
+      };
+      webview.executeJavaScript = vi.fn().mockResolvedValue(undefined);
+      webview.getWebContentsId = () => 10;
+      webview.getURL = () => 'https://loaded.test/page';
+      webview.capturePage = vi.fn().mockResolvedValue({
+        toDataURL: () => 'data:image/png;base64,cG5n',
+      });
+      webview.reloadIgnoringCache = vi.fn();
+      webview.dispatchEvent(new Event('dom-ready'));
+      await waitFor(() =>
+        expect((screen.getByTestId('browser-overflow-trigger') as HTMLButtonElement).disabled).toBe(
+          false,
+        ),
+      );
+      return { ...rendered, webview };
+    }
+
+    async function openOverflow() {
+      await fireEvent.click(screen.getByTestId('browser-overflow-trigger'));
+      await screen.findByRole('menu');
+    }
+
+    function dispatchConsoleMessage(webview: Element, level: number, message = 'page message') {
+      const event = new Event('console-message');
+      Object.defineProperties(event, {
+        level: { value: level },
+        message: { value: message },
+      });
+      webview.dispatchEvent(event);
+    }
+
+    it('counts only error-level console messages and resets on top-level navigation', async () => {
+      const { webview } = await renderReadyBrowser();
+
+      dispatchConsoleMessage(webview, 2);
+      dispatchConsoleMessage(webview, 3);
+      dispatchConsoleMessage(webview, 3);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('browser-console-error-badge').textContent?.trim()).toBe('2'),
+      );
+      expect(screen.getByTestId('browser-overflow-trigger').getAttribute('aria-label')).toContain(
+        '2',
+      );
+
+      const navigation = new Event('did-navigate');
+      Object.defineProperty(navigation, 'url', { value: 'https://next.test/' });
+      webview.dispatchEvent(navigation);
+      await waitFor(() => expect(screen.queryByTestId('browser-console-error-badge')).toBeNull());
+      expect(
+        screen.getByTestId('browser-overflow-trigger').getAttribute('aria-label'),
+      ).not.toContain('2');
+    });
+
+    it('routes URL, reload, and DevTools menu actions to their expected APIs', async () => {
+      const { webview } = await renderReadyBrowser();
+
+      await openOverflow();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in external browser' }));
+      expect(mocks.invoke).toHaveBeenCalledWith('shell:openExternal', {
+        url: 'https://loaded.test/page',
+      });
+
+      await openOverflow();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy URL' }));
+      expect(mocks.writeTextToClipboard).toHaveBeenCalledWith('https://loaded.test/page');
+
+      await openOverflow();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Reload without cache' }));
+      expect(webview.reloadIgnoringCache).toHaveBeenCalledTimes(1);
+
+      for (const [name, panel] of [
+        ['Console', 'console'],
+        ['Source', 'sources'],
+        ['Inspector', 'elements'],
+      ] as const) {
+        await openOverflow();
+        await fireEvent.click(screen.getByRole('menuitem', { name }));
+        expect(mocks.electronInvoke).toHaveBeenCalledWith('browser:open-devtools-panel', {
+          tabId: 'tab-1',
+          panel,
+        });
+      }
+    });
+
+    it('captures the visible page as PNG and writes it to the clipboard', async () => {
+      const { webview } = await renderReadyBrowser();
+      const write = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } });
+      vi.stubGlobal(
+        'ClipboardItem',
+        class ClipboardItem {
+          constructor(public data: Record<string, Blob>) {}
+        },
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ blob: () => Promise.resolve(new Blob()) }),
+      );
+
+      await openOverflow();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Screenshot' }));
+
+      await waitFor(() => expect(webview.capturePage).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
     });
   });
 });

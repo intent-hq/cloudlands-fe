@@ -497,6 +497,8 @@ export const IPC_CHANNELS = {
     REPORT_TAB_BOUNDS: 'browser:report-tab-bounds',
     /** Set a browser tab's persisted viewport mode */
     SET_TAB_VIEWPORT: 'browser:set-tab-viewport',
+    /** Open DevTools for a browser tab and select a panel */
+    OPEN_DEVTOOLS_PANEL: 'browser:open-devtools-panel',
     /** Execute code with access to browser CDP API */
     EXEC: 'browser:exec',
     /** Resolve a URL through the loopback rewrite → probe → tunnel pipeline */
