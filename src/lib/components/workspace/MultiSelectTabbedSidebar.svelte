@@ -170,7 +170,7 @@
   const LAUNCHER_GLYPH_CLASS = 'launcher-glyph relative flex size-5 items-center justify-center';
   const LAUNCHER_OVERFLOW_BUTTON_CLASS =
     // i18n-ignore (Tailwind utility classes)
-    'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 min-w-5 w-auto shrink-0 cursor-pointer items-center justify-center rounded-[6px]! border-0! bg-muted! px-1.5! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-muted/80! hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
+    'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 min-w-5 w-auto shrink-0 cursor-pointer items-center justify-center rounded-md! border-0! bg-muted! px-1.5! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-muted/80! hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_OVERFLOW_STYLE =
     'min-width: 20px; line-height: 12px; font-weight: 500; border-radius: 6px; padding: 0 6px; background: hsl(var(--muted)); box-shadow: none;';
   $effect.pre(() => {

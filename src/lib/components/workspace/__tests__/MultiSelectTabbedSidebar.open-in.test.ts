@@ -566,7 +566,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(overflow.className).toContain('px-1.5!');
       expect(overflow.className).toContain('shadow-none!');
       expect(overflow.className).toContain('min-w-5');
-      expect(overflow.className).toContain('rounded-[6px]!');
+      expect(overflow.className).toContain('rounded-md!');
       expect(overflow.className).toContain('hover:bg-muted\/80!');
       expect(overflow.className).toContain('hover:text-foreground');
       expect(overflow.className).toContain('focus-visible:text-foreground');

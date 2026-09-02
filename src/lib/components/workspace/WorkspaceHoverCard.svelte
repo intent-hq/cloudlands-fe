@@ -471,7 +471,7 @@
                           specialist={row.specialist ?? null}
                         /></span
                       ><span
-                        class="max-w-[5.75rem] truncate text-sm font-medium text-foreground"
+                        class="max-w-24 truncate text-sm font-medium text-foreground"
                         data-workspace-hover-card-agent-name>{row.name}</span
                       ><time
                         class="whitespace-nowrap text-xs text-subtle"
