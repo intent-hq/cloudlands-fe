@@ -22,6 +22,8 @@
     seamOnly = false,
     detachedStatus = false,
     reasoningSearchOnly = false,
+    groupedOrphanSearchOnly = false,
+    terminalStatusOnly = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -29,6 +31,8 @@
     seamOnly?: boolean;
     detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
+    groupedOrphanSearchOnly?: boolean;
+    terminalStatusOnly?: boolean;
   } = $props();
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
@@ -291,7 +295,7 @@
         tool_use_id: `${prefix}-tool`,
         output: `${prefix} complete`,
       },
-    ] as AgentMessage['contentBlocks'];
+    ] as NonNullable<AgentMessage['contentBlocks']>;
   const productionWrapperMessages = [
     {
       ...message('assistant-production-search', 'assistant', [
@@ -361,6 +365,33 @@
     message('user-streaming', 'user', [{ type: 'text', text: 'Render the streaming rows' }]),
     message('assistant-streaming', 'assistant', operationalContent('streaming', true)),
   ];
+  const terminalStatusMessages = [
+    message('user-stopped', 'user', [{ type: 'text', text: 'Render the stopped row' }]),
+    {
+      ...message('assistant-stopped', 'assistant', toolOnlyContent('stopped-reference')),
+      metadata: {
+        interrupted: true,
+        stopReason: 'interrupted',
+        interruptReason: 'user_stop',
+      },
+    } as AgentMessage,
+    message('user-abnormal-finish', 'user', [
+      { type: 'text', text: 'Render the abnormal finish row' },
+    ]),
+    {
+      ...message('assistant-abnormal-finish', 'assistant', [
+        ...toolOnlyContent('finish-reference'),
+        { type: 'text', text: '<group:Prepping>' },
+        {
+          type: 'thinking',
+          id: 'finish-reasoning-group',
+          text: 'Thinking\n\nInspect the terminal row geometry.',
+        },
+        { type: 'text', text: '</group:Prepping>' },
+      ]),
+      metadata: { finishReason: 'max_tokens' },
+    } as AgentMessage,
+  ];
   const reasoningSearchMessages = [
     message('user-inline-search', 'user', [
       { type: 'text', text: 'Check inline reasoning search' },
@@ -404,6 +435,38 @@
       },
     ]),
   ];
+  const groupedOrphanSearchMessages = [
+    message('user-grouped-orphan-search', 'user', [
+      { type: 'text', text: 'Check grouped orphan search' },
+    ]),
+    message('assistant-grouped-orphan-search', 'assistant', [
+      { type: 'text', text: '<group:Grouped result search>Visible group summary.' },
+      {
+        type: 'tool_use',
+        id: 'grouped-search-tool',
+        toolCallId: 'grouped-search-call',
+        name: 'view',
+        input: { path: 'src/grouped-search.ts' },
+      },
+      {
+        type: 'tool_result',
+        id: 'grouped-search-paired-result',
+        tool_use_id: 'grouped-search-call',
+        output: 'grouped-search-paired-marker',
+      },
+      { type: 'text', text: 'Visible middle content.' },
+      {
+        type: 'tool_result',
+        id: 'grouped-search-orphan-result',
+        tool_use_id: 'missing-grouped-search-call',
+        output: { output: 'grouped-search-orphan-tool-marker' },
+      },
+      { type: 'text', text: 'Visible ending content.</group:Grouped result search>' },
+    ]),
+    message('user-after-grouped-orphan-search', 'user', [
+      { type: 'text', text: 'Continue after grouped orphan search' },
+    ]),
+  ];
   const seamMessages = [
     {
       ...message('assistant-orphan-tool-a', 'assistant', toolOnlyContent('orphan-a')),
@@ -443,13 +506,18 @@
     message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = reasoningSearchOnly
-    ? reasoningSearchMessages
-    : seamOnly
-      ? seamMessages
-      : alignmentMessages;
+  const messages = terminalStatusOnly
+    ? terminalStatusMessages
+    : groupedOrphanSearchOnly
+      ? groupedOrphanSearchMessages
+      : reasoningSearchOnly
+        ? reasoningSearchMessages
+        : seamOnly
+          ? seamMessages
+          : alignmentMessages;
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const fixtureIsStreaming = !reasoningSearchOnly && !detachedStatus;
+  const fixtureIsStreaming =
+    !terminalStatusOnly && !reasoningSearchOnly && !groupedOrphanSearchOnly && !detachedStatus;
   const session = {
     id: agentId,
     workspaceId,
@@ -514,7 +582,7 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
-  <div class="h-[900px]" style:width="{width}px">
+  <div style:height="900px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
 </section>

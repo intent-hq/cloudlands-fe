@@ -37,7 +37,7 @@ export function getWindowTitleBarOptions(
   return {
     titleBarStyle: 'hiddenInset',
     frame: false,
-    trafficLightPosition: { x: 9, y: 11 },
+    trafficLightPosition: { x: 12, y: 13 },
     tabbingIdentifier: 'intent',
   };
 }

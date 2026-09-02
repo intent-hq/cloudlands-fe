@@ -214,21 +214,9 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent).toMatch(
-      /getOperationalClusterSpacingClass\(\s+groupedBlocks,\s+blockIndex,\s+isVisibleOperationalBlock,/,
-    );
-    expect(staticContent).toContain(
-      'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
-    );
-    expect(staticContent).toMatch(
-      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
-    );
     expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toMatch(
-      /suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+\(candidate\) => candidate\.type !== 'tool_result',/,
-    );
     expect(staticContent).toContain('suppressSpacing: boolean = false,');
     expect(streamingContent).toContain('suppressSpacing: boolean = false,');
     expect(staticContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
@@ -254,9 +242,9 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
-    expect(staticContent).toMatch(/true,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
+    expect(staticContent).toMatch(/nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
     expect(streamingContent).toMatch(
-      /true,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/,
+      /nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
     );
   });
 

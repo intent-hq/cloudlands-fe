@@ -63,6 +63,7 @@ import {
   setPanelPinned,
 } from './panel-layout-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
+import { removeScript } from '../scripts/scripts-slice';
 import {
   workspaceDeleted,
   workspaceUnmounted,
@@ -4548,6 +4549,158 @@ describe('panelLayoutReducer', () => {
       if (root.type !== 'split') throw new Error('Expected horizontal split');
       expect((root.sizes[0] / 100) * 1042).toBeCloseTo(745);
       expect((root.sizes[1] / 100) * 1042).toBeCloseTo(297);
+    });
+  });
+
+  describe('cross-slice: removeScript destroys script-backed tabs', () => {
+    it('removes selected script tabs across panels and keeps unrelated terminal and script tabs', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'script-selected',
+                type: 'terminal',
+                title: 'Selected script',
+                scriptId: 'shared-id',
+              },
+              { id: 'note', type: 'note', title: 'Note', noteId: 'n1' },
+              {
+                id: 'terminal-same-id',
+                type: 'terminal',
+                title: 'Terminal',
+                terminalId: 'shared-id',
+              },
+              {
+                id: 'other-script',
+                type: 'terminal',
+                title: 'Other script',
+                scriptId: 'other-id',
+              },
+            ],
+            activeTabId: 'script-selected',
+          },
+          p2: {
+            id: 'p2',
+            tabs: [
+              {
+                id: 'script-duplicate',
+                type: 'terminal',
+                title: 'Duplicate script',
+                scriptId: 'shared-id',
+              },
+            ],
+            activeTabId: 'script-duplicate',
+          },
+        },
+        focusedPanelId: 'p2',
+        columnCount: 2,
+      };
+
+      const workspace = panelLayoutReducer(state, removeScript(WS, 'shared-id')).byWorkspaceId[WS];
+
+      expect(Object.keys(workspace.panels)).toEqual(['p1']);
+      expect(workspace.panels.p1.tabs.map((tab) => tab.id)).toEqual([
+        'note',
+        'terminal-same-id',
+        'other-script',
+      ]);
+      expect(workspace.panels.p1.activeTabId).toBe('note');
+      expect(workspace.focusedPanelId).toBe('p1');
+      expect(workspace.columnCount).toBe(1);
+    });
+
+    it('keeps the current selection when a nonselected script tab is removed', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'note', type: 'note', title: 'Note', noteId: 'n1' } as any,
+        {
+          id: 'script',
+          type: 'terminal',
+          title: 'Script',
+          scriptId: 'script-1',
+        } as any,
+      ]);
+
+      const workspace = panelLayoutReducer(state, removeScript(WS, 'script-1')).byWorkspaceId[WS];
+
+      expect(workspace.panels.p1.tabs.map((tab) => tab.id)).toEqual(['note']);
+      expect(workspace.panels.p1.activeTabId).toBe('note');
+    });
+
+    it('prunes recently closed script tabs so they cannot reopen', () => {
+      const state = stateWithPanel('p1', [
+        {
+          id: 'script',
+          type: 'terminal',
+          title: 'Script',
+          scriptId: 'script-1',
+        } as any,
+        { id: 'note', type: 'note', title: 'Note', noteId: 'n1' } as any,
+      ]);
+      const closed = panelLayoutReducer(state, closeTab(WS, 'script', 'p1', 1000));
+      const removed = panelLayoutReducer(closed, removeScript(WS, 'script-1'));
+
+      expect(removed.byWorkspaceId[WS].recentlyClosed).toEqual([]);
+      const reopened = panelLayoutReducer(removed, reopenClosedTab(WS, 1001, 'script'));
+      expect(reopened.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['note']);
+      const back = panelLayoutReducer(removed, goBack(WS, 1002));
+      expect(back.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['note']);
+    });
+
+    it('prunes script tabs from recently closed panel columns', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'script',
+                type: 'terminal',
+                title: 'Script',
+                scriptId: 'script-1',
+                closable: true,
+              },
+              { id: 'note', type: 'note', title: 'Note', noteId: 'n1', closable: true },
+            ],
+            activeTabId: 'script',
+          },
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+        },
+        focusedPanelId: 'p1',
+        columnCount: 2,
+      };
+      const closed = panelLayoutReducer(state, closePanel(WS, 'p1', 2000));
+      const removed = panelLayoutReducer(closed, removeScript(WS, 'script-1'));
+      const restored = panelLayoutReducer(
+        removed,
+        reopenClosedPanelColumn(WS, 2001, 'restore-script-column'),
+      ).byWorkspaceId[WS];
+
+      expect(restored.panels.p1.tabs.map((tab) => tab.id)).toEqual(['note']);
+      expect(restored.panels.p1.activeTabId).toBe('note');
     });
   });
 

@@ -162,7 +162,7 @@ describe('sidebar launcher hover previews', () => {
   it('delays launcher hover cards so a mouse pass-over never opens them', async () => {
     // Perf invariant (Trace-20260831T161502): opening a tooltip triggers
     // floating-ui measurement, so switch-path sidebar rows must require a
-    // deliberate >=300ms hover before opening.
+    // deliberate 400ms hover before opening.
     const { render, cleanup } = await import('@testing-library/svelte');
     const { default: SidebarLauncherHoverCard } =
       await import('../sidebar/SidebarLauncherHoverCard.svelte');
@@ -172,7 +172,7 @@ describe('sidebar launcher hover previews', () => {
       });
       const trigger = container.querySelector('[data-tooltip-trigger]');
       expect(trigger).not.toBeNull();
-      expect(trigger!.getAttribute('data-delay-duration')).toBe('300');
+      expect(trigger!.getAttribute('data-delay-duration')).toBe('400');
     } finally {
       cleanup();
     }

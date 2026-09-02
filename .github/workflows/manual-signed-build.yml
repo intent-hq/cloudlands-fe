@@ -23,6 +23,10 @@ name: Manual Signed Build
 #   - the Windows leg gains integrated DigiCert signing (release-alpha's
 #     Windows leg is still unsigned; the signing steps come from
 #     intent-manual-windows-build.yml)
+#   - an optional intentd_ref input: empty (default) fetches the pinned
+#     intentd release exactly like release-alpha.yml; non-empty builds the
+#     intentd sidecar from source at that intent-hq/intentd git ref
+#     (SHA/branch/tag) and stages it at the same resources/sidecar path
 
 on:
   workflow_dispatch:
@@ -47,6 +51,11 @@ on:
         required: false
         type: boolean
         default: true
+      intentd_ref:
+        description: 'intent-hq/intentd git ref (full 40-char commit SHA, branch, or tag — actions/checkout cannot resolve abbreviated SHAs) to build the sidecar from source. Empty = fetch the pinned intentd release.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -64,7 +73,9 @@ jobs:
   build-macos:
     if: ${{ inputs.build_macos }}
     runs-on: macos-15-xlarge
-    timeout-minutes: 90
+    # 120 min: 90 covered the packaging job alone; a from-source intentd
+    # sidecar build (intentd_ref set) adds a cold ~15-min cargo build.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout dispatched ref
@@ -116,10 +127,83 @@ jobs:
       # the pinned release or its per-target assets don't exist on intent-hq/intentd.
       # intent-hq/intentd is public: the default token covers the release reads
       # (no PAT needed) while keeping the API calls authenticated for rate limits.
+      # Skipped when intentd_ref is set — the from-source steps below stage the
+      # sidecar at the same path instead.
       - name: Fetch pinned intentd sidecar
+        if: ${{ inputs.intentd_ref == '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/fetch-sidecar.cjs
+
+      # ── From-source intentd sidecar (all steps gated on intentd_ref) ─────
+      # Builds intentd from source at the dispatched ref and stages the binary
+      # at resources/sidecar/intentd — the same path fetch-sidecar.cjs stages
+      # to and INTENTD_BIN (below) points at, so packaging needs no change.
+      # intent-hq/intentd is public: the default token covers the checkout.
+      # Trust boundary: `cargo build` executes the ref's build scripts/proc
+      # macros in this job. That matches the trust already extended to the
+      # dispatched FE ref itself (pnpm install lifecycle scripts, node
+      # scripts) — dispatching requires write access, and the checkout is
+      # pinned to the org-owned intent-hq/intentd repo, never a fork.
+      - name: Checkout intentd at intentd_ref
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intentd
+          ref: ${{ inputs.intentd_ref }}
+          path: intentd-src
+
+      - name: Resolve intentd SHA
+        if: ${{ inputs.intentd_ref != '' }}
+        id: intentd_sha
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+        run: |
+          sha=$(git -C intentd-src rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      # Bare `rustup toolchain install` inside intentd-src reads the channel
+      # pinned by its rust-toolchain.toml, so the toolchain always matches the
+      # checked-out intentd ref (the runner's preinstalled default may drift).
+      # The aarch64-apple-darwin target is the arm64 host's default, but add
+      # it explicitly so the build is self-documenting and resilient to a
+      # runner-arch change.
+      - name: Install pinned Rust toolchain (intentd)
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        run: |
+          rustup toolchain install --no-self-update
+          rustup target add aarch64-apple-darwin
+          rustup show active-toolchain
+
+      # Keyed per target so a cache saved by another leg's target can never be
+      # restored here; scoped to the intentd-src workspace (the FE checkout has
+      # no Cargo workspace). cache-on-failure keeps the compiled deps when a
+      # later step (packaging/notarization) fails after a completed cold
+      # ~15-min cargo build, so the next dispatch doesn't pay it again.
+      - name: Cache intentd cargo build
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: intentd-src
+          key: aarch64-apple-darwin
+          cache-on-failure: true
+
+      # Native build on the arm64 host (no --target), so the binary lands at
+      # target/release/intentd.
+      - name: Build intentd from source
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        run: cargo build --release -p intentd
+
+      - name: Stage from-source intentd sidecar
+        if: ${{ inputs.intentd_ref != '' }}
+        run: |
+          mkdir -p resources/sidecar
+          cp intentd-src/target/release/intentd resources/sidecar/intentd
+          chmod +x resources/sidecar/intentd
+          ls -l resources/sidecar/intentd
 
       # Written for the non-ephemeral m1mac runner (and equally valid on an
       # ephemeral hosted one): signing must never touch the login
@@ -307,9 +391,24 @@ jobs:
               echo "✅ Signed build completed (Developer ID + notarization)."
             fi
             echo ""
+            if [ -n "$INTENTD_REF" ]; then
+              # ${INTENTD_SHA:-unresolved}: this step is always() — a run that
+              # fails before "Resolve intentd SHA" (e.g. a bad ref failing the
+              # intentd checkout) has no SHA output to report.
+              echo "intentd sidecar: built from source at \`$INTENTD_REF\` (${INTENTD_SHA:-unresolved})"
+            else
+              # intentd.version holds comment lines above the version; take
+              # the first non-comment, non-empty line (fetch-sidecar-lib does
+              # the same when resolving the pin).
+              echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
+            fi
+            echo ""
             echo "Artifacts (manual-macos-dmg):"
             find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+          INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
 
       # Always delete the temporary signing keychain, restore the pre-job
       # keychain search list, and shred the decoded certificate so no
@@ -346,11 +445,13 @@ jobs:
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
     runs-on: gh-windows-16x
-    # 120 min: the hosted Windows runner is far slower than the old
+    # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
-    # electron-builder packaging even started (run 31302887167).
-    timeout-minutes: 120
+    # electron-builder packaging even started (run 31302887167); 120 covered
+    # that packaging job alone, and a from-source intentd sidecar build
+    # (intentd_ref set) adds a cold cargo build on top.
+    timeout-minutes: 150
 
     steps:
       - name: Checkout dispatched ref
@@ -402,11 +503,85 @@ jobs:
       # step so bash keeps resolving to Git Bash (see PATH workaround above).
       # Also load-bearing for workflow_dispatch rebuilds of tags whose checked
       # -out fetch-sidecar.cjs predates the relative-path tar fix.
+      # Skipped when intentd_ref is set — the from-source steps below stage
+      # the sidecar at the same path instead.
       - name: Fetch pinned intentd sidecar
+        if: ${{ inputs.intentd_ref == '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
+
+      # ── From-source intentd sidecar (all steps gated on intentd_ref) ─────
+      # Builds intentd from source at the dispatched ref and stages the
+      # binary at resources/sidecar/intentd.exe — the same path
+      # fetch-sidecar.cjs stages to and INTENTD_BIN (below) points at, so
+      # packaging needs no change. Same trust boundary as the macOS leg's
+      # from-source block: the checkout is pinned to the org-owned
+      # intent-hq/intentd repo (never a fork), and dispatching this workflow
+      # already requires write access.
+      - name: Checkout intentd at intentd_ref
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intentd
+          ref: ${{ inputs.intentd_ref }}
+          path: intentd-src
+
+      - name: Resolve intentd SHA
+        if: ${{ inputs.intentd_ref != '' }}
+        id: intentd_sha
+        shell: bash
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+        run: |
+          sha=$(git -C intentd-src rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      # Bare `rustup toolchain install` inside intentd-src reads the channel
+      # pinned by its rust-toolchain.toml, so the toolchain always matches
+      # the checked-out intentd ref (see the macOS leg). The
+      # x86_64-pc-windows-msvc target is the x64 host's default, but add it
+      # explicitly so the build is self-documenting and resilient to a
+      # runner-arch change.
+      - name: Install pinned Rust toolchain (intentd)
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        shell: bash
+        run: |
+          rustup toolchain install --no-self-update
+          rustup target add x86_64-pc-windows-msvc
+          rustup show active-toolchain
+
+      # Keyed per target so a cache saved by another leg's target can never
+      # be restored here; cache-on-failure keeps the compiled deps when a
+      # later step fails after a completed cold cargo build (see the macOS
+      # leg for the full rationale).
+      - name: Cache intentd cargo build
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: intentd-src
+          key: x86_64-pc-windows-msvc
+          cache-on-failure: true
+
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
+      - name: Build intentd from source
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        shell: bash
+        run: cargo build --release -p intentd
+
+      - name: Stage from-source intentd sidecar
+        if: ${{ inputs.intentd_ref != '' }}
+        shell: bash
+        run: |
+          mkdir -p resources/sidecar
+          cp intentd-src/target/release/intentd.exe resources/sidecar/intentd.exe
+          ls -l resources/sidecar/intentd.exe
 
       # ── DigiCert signing setup (official action; pattern from ────────────
       # ── intent-manual-windows-build.yml, gated on the `sign` input) ──────
@@ -556,9 +731,24 @@ jobs:
               echo "✅ Signed build completed (DigiCert Authenticode)."
             fi
             echo ""
+            if [ -n "$INTENTD_REF" ]; then
+              # ${INTENTD_SHA:-unresolved}: this step is always() — a run
+              # that fails before "Resolve intentd SHA" (e.g. a bad ref
+              # failing the intentd checkout) has no SHA output to report.
+              echo "intentd sidecar: built from source at \`$INTENTD_REF\` (${INTENTD_SHA:-unresolved})"
+            else
+              # intentd.version holds comment lines above the version; take
+              # the first non-comment, non-empty line (fetch-sidecar-lib does
+              # the same when resolving the pin).
+              echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
+            fi
+            echo ""
             echo "Artifacts (manual-windows-exe):"
             find dist-electron -maxdepth 1 -type f -name "*Setup*.exe" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+          INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
 
   # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
@@ -608,7 +798,9 @@ jobs:
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # 90 min: 60 covered the packaging job alone; a from-source intentd
+    # sidecar build (intentd_ref set) adds a cold cargo build.
+    timeout-minutes: 90
 
     steps:
       - name: Checkout dispatched ref
@@ -630,8 +822,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # intent-hq/intentd is public: the default token covers the release reads
-      # (no PAT needed).
+      # (no PAT needed). Skipped when intentd_ref is set — the from-source
+      # steps below stage the sidecar at the same path instead.
       - name: Fetch pinned intentd sidecar
+        if: ${{ inputs.intentd_ref == '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           # Always pass the explicit target (rather than deriving it from the
@@ -639,6 +833,96 @@ jobs:
           # when cross-building.
           INTENTD_TARGET: ${{ matrix.intentd_target }}
         run: node scripts/fetch-sidecar.cjs
+
+      # ── From-source intentd sidecar (all steps gated on intentd_ref) ─────
+      # Builds intentd from source at the dispatched ref and stages the
+      # binary at resources/sidecar/intentd — the same path fetch-sidecar.cjs
+      # stages to and INTENTD_BIN (below) points at, so packaging needs no
+      # change. Same trust boundary as the macOS leg's from-source block: the
+      # checkout is pinned to the org-owned intent-hq/intentd repo (never a
+      # fork), and dispatching this workflow already requires write access.
+      - name: Checkout intentd at intentd_ref
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intentd
+          ref: ${{ inputs.intentd_ref }}
+          path: intentd-src
+
+      - name: Resolve intentd SHA
+        if: ${{ inputs.intentd_ref != '' }}
+        id: intentd_sha
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+        run: |
+          sha=$(git -C intentd-src rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      # Target the same static-musl triple the pinned release ships for this
+      # arch (matrix.intentd_target), so a from-source sidecar keeps the
+      # release binary's no-glibc-dependency runtime behavior. musl-tools
+      # provides the native-arch musl-gcc wrapper used as C compiler and
+      # linker driver — the same strategy intentd's release pipeline uses for
+      # x86_64 musl (dist-workspace.toml); its aarch64 musl release leg
+      # cross-builds from x64 via cargo-zigbuild instead, which isn't needed
+      # here because this job runs natively on arm64 hardware. The rustup
+      # bootstrap guards against a runner image that ships without rustup
+      # (same fallback as intentd's dist-build-setup.yml). Bare `rustup
+      # toolchain install` inside intentd-src reads the channel pinned by its
+      # rust-toolchain.toml (see the macOS leg).
+      - name: Install pinned Rust toolchain and musl tools (intentd)
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain none -y
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install --no-self-update
+          rustup target add ${{ matrix.intentd_target }}
+          rustup show active-toolchain
+
+      # Keyed per target so a cache saved by another leg's target can never
+      # be restored here; cache-on-failure keeps the compiled deps when a
+      # later step fails after a completed cold cargo build (see the macOS
+      # leg for the full rationale).
+      - name: Cache intentd cargo build
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: intentd-src
+          key: ${{ matrix.intentd_target }}
+          cache-on-failure: true
+
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
+      - name: Build intentd from source
+        if: ${{ inputs.intentd_ref != '' }}
+        working-directory: intentd-src
+        env:
+          INTENTD_TARGET: ${{ matrix.intentd_target }}
+        run: |
+          target_env=$(echo "$INTENTD_TARGET" | tr 'a-z-' 'A-Z_')
+          export "CC_${INTENTD_TARGET//-/_}=musl-gcc"
+          export "CARGO_TARGET_${target_env}_LINKER=musl-gcc"
+          cargo build --release -p intentd --target "$INTENTD_TARGET"
+
+      - name: Stage from-source intentd sidecar
+        if: ${{ inputs.intentd_ref != '' }}
+        env:
+          INTENTD_TARGET: ${{ matrix.intentd_target }}
+        run: |
+          mkdir -p resources/sidecar
+          cp "intentd-src/target/$INTENTD_TARGET/release/intentd" resources/sidecar/intentd
+          chmod +x resources/sidecar/intentd
+          ls -l resources/sidecar/intentd
 
       # Both legs run on ephemeral GH-hosted runners now, so this is a
       # harmless no-op — kept so a future move back to a persistent runner
@@ -756,6 +1040,21 @@ jobs:
               echo "✅ Build completed (Linux packages are unsigned by design; the sign input does not apply)."
             fi
             echo ""
+            if [ -n "$INTENTD_REF" ]; then
+              # ${INTENTD_SHA:-unresolved}: this step is always() — a run
+              # that fails before "Resolve intentd SHA" (e.g. a bad ref
+              # failing the intentd checkout) has no SHA output to report.
+              echo "intentd sidecar: built from source at \`$INTENTD_REF\` (${INTENTD_SHA:-unresolved})"
+            else
+              # intentd.version holds comment lines above the version; take
+              # the first non-comment, non-empty line (fetch-sidecar-lib does
+              # the same when resolving the pin).
+              echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
+            fi
+            echo ""
             echo "Artifacts (manual-linux-appimage-${{ matrix.arch }}, manual-linux-deb-${{ matrix.arch }}):"
             find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+          INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}

@@ -58,6 +58,7 @@ import {
 
 interface FakeWindow {
   isDestroyed: () => boolean;
+  isFullScreen: () => boolean;
   webContents: { getURL: () => string };
   getBounds: () => { x: number; y: number; width: number; height: number };
 }
@@ -73,6 +74,7 @@ function makeWindow(
 ): FakeWindow {
   return {
     isDestroyed: () => false,
+    isFullScreen: () => false,
     webContents: { getURL: () => url },
     getBounds: () => bounds,
   };

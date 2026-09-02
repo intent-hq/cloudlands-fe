@@ -38,6 +38,14 @@
   let originalContent = '';
   let saveStatus = $state<'idle' | 'saving' | 'saved'>('idle');
 
+  // Single-flight save with trailing coalesce: never run two rules.update
+  // requests concurrently (they could resolve out of order and leave the
+  // backend with a stale payload), and re-save after completion if the text
+  // changed while the request was in flight.
+  let saveInFlight = false;
+  let trailingSaveNeeded = false;
+  let lastSavedContent = '';
+
   // Derived character limit state
   let charCount = $derived(rulesContent.length);
   let isOverLimit = $derived(charCount > MAX_RULES_LENGTH);
@@ -85,6 +93,10 @@
       }
       rulesContent = rule.content;
       originalContent = rulesContent;
+      // Trimmed, like every payload saveRules persists: all drift
+      // comparisons are trimmed-vs-trimmed, so padding whitespace in a rule
+      // set outside this editor cannot register as unsaved drift.
+      lastSavedContent = rulesContent.trim();
       hasChanges = false;
     } catch (error) {
       logger.error('Failed to load rules', error instanceof Error ? error : undefined);
@@ -95,10 +107,23 @@
   }
 
   async function saveRules() {
-    if (!hasChanges) return;
+    if (saveInFlight) {
+      trailingSaveNeeded = true;
+      return;
+    }
 
-    // Block saving if over limit
+    const trimmedContent = rulesContent.trim();
+
+    // Gate on drift from the persisted value (lastSavedContent), not on
+    // hasChanges (which tracks the loaded original for "Undo changes"): a
+    // revert back to the original must still reconcile a persisted draft
+    // (intent-hq/intent#4094).
+    if (!hasChanges && trimmedContent === lastSavedContent) return;
+
+    // Block saving if over limit; never leave saveStatus stuck at 'saving'
+    // when a trailing save bails out here.
     if (isOverLimit) {
+      saveStatus = 'idle';
       showError(
         m.settings_agentRules_overLimitError({
           max: formatInteger(MAX_RULES_LENGTH),
@@ -108,25 +133,47 @@
       return;
     }
 
+    // The backend already holds this exact value: skip the redundant wire
+    // call and mark the clean/saved state directly.
+    if (trimmedContent === lastSavedContent) {
+      hasChanges = trimmedContent !== originalContent;
+      saveStatus = 'saved';
+      if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
+      savedStatusTimeout = setTimeout(() => {
+        saveStatus = 'idle';
+      }, 2000);
+      return;
+    }
+
+    saveInFlight = true;
+    let saveSucceeded = false;
     try {
       saveStatus = 'saving';
       errorMessage = null;
 
-      const trimmedContent = rulesContent.trim();
       const result = await appClient.settings.updateUserRule(RULE_TYPE, trimmedContent);
 
       if (result.success) {
-        rulesContent = trimmedContent;
+        saveSucceeded = true;
+        lastSavedContent = trimmedContent;
+        // Don't rewrite rulesContent with the trimmed value - reassigning it
+        // mid-edit clobbers the textarea and swallows leading/trailing
+        // newlines the user just typed
         // Don't update originalContent - we want to keep track of what was loaded
         // so "Undo changes" can revert to the initial state
-        hasChanges = rulesContent !== originalContent;
-        saveStatus = 'saved';
+        hasChanges = rulesContent.trim() !== originalContent;
 
-        // Clear saved status after 2 seconds
-        if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
-        savedStatusTimeout = setTimeout(() => {
-          saveStatus = 'idle';
-        }, 2000);
+        // Only show "saved" when the persisted value matches the live text;
+        // otherwise the trailing save below re-runs and reports instead.
+        if (rulesContent.trim() === lastSavedContent) {
+          saveStatus = 'saved';
+
+          // Clear saved status after 2 seconds
+          if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
+          savedStatusTimeout = setTimeout(() => {
+            saveStatus = 'idle';
+          }, 2000);
+        }
       } else {
         saveStatus = 'idle';
         showError(result.error || m.settings_agentRules_saveErrorShort());
@@ -135,15 +182,28 @@
       logger.error('Failed to save rules', error instanceof Error ? error : undefined);
       saveStatus = 'idle';
       showError(m.settings_agentRules_saveError());
+    } finally {
+      saveInFlight = false;
+    }
+
+    // Trailing coalesce: if the text changed while the request was in flight
+    // (or another save was requested), save again immediately so the backend
+    // converges to the latest text.
+    const trailing = trailingSaveNeeded;
+    trailingSaveNeeded = false;
+    if (trailing || (saveSucceeded && rulesContent.trim() !== lastSavedContent)) {
+      void saveRules();
     }
   }
 
   function handleContentChange() {
     hasChanges = rulesContent !== originalContent;
 
-    // Debounced auto-save
+    // Debounced auto-save: schedule on drift from the persisted value too,
+    // so retyping the exact original after an auto-save still reconciles
+    // the backend.
     if (debounceTimeout) clearTimeout(debounceTimeout);
-    if (hasChanges) {
+    if (hasChanges || rulesContent.trim() !== lastSavedContent) {
       debounceTimeout = setTimeout(() => {
         saveRules();
       }, DEBOUNCE_MS);
@@ -155,6 +215,13 @@
     hasChanges = false;
     saveStatus = 'idle';
     if (debounceTimeout) clearTimeout(debounceTimeout);
+    // Undo persists the revert: when an auto-save already stored a draft,
+    // run the normal save flow so the backend converges to the original
+    // (intent-hq/intent#4094). A revert during an in-flight save is covered
+    // by the trailing coalesce in saveRules.
+    if (rulesContent.trim() !== lastSavedContent) {
+      void saveRules();
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -237,6 +304,7 @@
       />
       <!-- Saved indicator -->
       <div
+        data-testid="agent-rules-saved-indicator"
         class="absolute top-2 right-2 transition-opacity duration-200 {saveStatus === 'saved'
           ? 'opacity-100'
           : 'opacity-0'}"

@@ -157,6 +157,8 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: testState.selector(''),
+  selectProviderCatalogLoaded: testState.selector(false),
+  selectProviderAuthFailureGuidance: { select: () => null },
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
@@ -309,5 +311,41 @@ describe('ChatPanel multi-panel context ownership', () => {
     const nextPanels = updatePanelActions()[1].payload[0];
     expect(nextPanels).not.toBe(firstPanels);
     expect(nextPanels[0].label).toBe('renamed.ts');
+  });
+
+  it('coalesces dense editor selection events and keeps the latest selection', async () => {
+    await renderChatPanel(true);
+    await waitFor(() => expect(dispatchedTypes()).toContain('multiPanelContext/setWorkspace'));
+    testState.dispatch.mockClear();
+    const pendingFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      pendingFrames.push(callback);
+      return pendingFrames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+
+    const emitSelection = (text: string) => {
+      window.dispatchEvent(
+        new CustomEvent('editor:selection-change', {
+          detail: { text, file: 'src/app.ts', language: 'typescript', source: 'editor' },
+        }),
+      );
+    };
+    emitSelection('first');
+    emitSelection('second');
+    emitSelection('latest');
+
+    expect(dispatchedTypes()).not.toContain('multiPanelContext/setSelection');
+    pendingFrames.splice(0).forEach((callback) => callback(0));
+
+    const selectionActions = testState.dispatch.mock.calls.filter(
+      ([action]) => action?.type === 'multiPanelContext/setSelection',
+    );
+    expect(selectionActions).toHaveLength(1);
+    expect(selectionActions[0][0].payload[0]).toMatchObject({
+      panelId: 'src/app.ts',
+      tabId: 'src/app.ts',
+      text: 'latest',
+    });
   });
 });

@@ -187,8 +187,10 @@
   import {
     extractPlacementErrorDetail,
     isPlacementCancellation,
+    isRemoteBackend,
     placeAttachmentViaTransport,
   } from './attachment-placement';
+  import { splitDroppedItems } from '$lib/utils/drop-split';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -952,18 +954,82 @@
     isDragging = false;
     dragCounter = 0;
 
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
+    // Folder detection must happen HERE, synchronously in the drop event —
+    // webkitGetAsEntry() returns null once the event loop turns.
+    const { files, folderFiles } = splitDroppedItems(e.dataTransfer);
+    if (files.length === 0 && folderFiles.length === 0) return;
 
-    await processImageFiles(Array.from(files));
+    await handleDroppedFiles({ files, folderFiles });
   }
 
   // Export for parents that own the drop target (externalDropTarget, e.g.
   // ChatPanel's full-panel drop zone) — forwards dropped files into the same
-  // attach pipeline as a direct drop on the input.
-  export async function handleDroppedFiles(files: File[]) {
-    if (files.length === 0) return;
-    await processImageFiles(files);
+  // attach pipeline as a direct drop on the input. Accepts either a plain
+  // File[] (legacy callers, no folder info) or a DropSplit captured at drop
+  // time — folder entries are only detectable inside the drop event, so the
+  // split travels with the files.
+  export async function handleDroppedFiles(
+    dropped: File[] | { files: File[]; folderFiles: File[] },
+  ) {
+    const { files, folderFiles } = Array.isArray(dropped)
+      ? { files: dropped, folderFiles: [] }
+      : dropped;
+    if (files.length === 0 && folderFiles.length === 0) return;
+
+    if (folderFiles.length > 0) {
+      // Folders are path-only references — the agent reads them off the
+      // host filesystem, which a remote daemon cannot do. Any folder in the
+      // drop rejects the WHOLE drop when remote (files included).
+      if (isRemoteBackend()) {
+        toast.error(m.chat_richInput_folderDropRemote_error());
+        return;
+      }
+      for (const folder of folderFiles) {
+        addFolderReference(folder);
+      }
+    }
+    if (files.length > 0) {
+      await processImageFiles(files);
+    }
+  }
+
+  /**
+   * Add a dropped folder as a path-only reference (local daemon only) —
+   * the same folder-mention chip an @-mention inserts, so the send path
+   * serializes the absolute host path into the message the same way
+   * (`toPromptToken` folder case) and `getMentionContextItems()` carries it
+   * as a context item. Never placed via `file.placeAttachment` (the daemon
+   * rejects directories).
+   *
+   * The whole feature is predicated on the absolute host path: when the
+   * Electron `getPathForFile` bridge is unavailable or returns '' (e.g.
+   * dev:web), the folder is SKIPPED with a toast — a bare folder name would
+   * serialize as a workspace-relative-looking mention that silently resolves
+   * to the wrong directory (or nothing) on the daemon side.
+   */
+  function addFolderReference(folder: File) {
+    const absolutePath =
+      (
+        window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+      ).electronAPI?.getPathForFile?.(folder) ?? '';
+    if (!absolutePath) {
+      logger.warn('Dropped folder has no resolvable absolute path; skipping', {
+        name: folder.name,
+      });
+      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      return;
+    }
+    // Windows-aware basename fallback ('\' or '/' separators).
+    const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
+    tiptap?.insertMention?.({
+      // Same id convention as folder @-mentions (mention-system providers):
+      // path-keyed, so two dropped folders sharing a basename stay distinct.
+      id: `folder-${absolutePath}`,
+      label,
+      type: 'folder',
+      uri: `devspace://folder/${encodeURIComponent(absolutePath)}`,
+      meta: { path: absolutePath, fullPath: absolutePath },
+    });
   }
 
   // Handle clipboard paste for files (images and non-images alike)
@@ -1499,13 +1565,7 @@
       }}
       onSubmit={handleSubmit}
       onForceSubmit={handleForceSubmit}
-      onEscape={isEnhancing
-        ? handleCancelEnhance
-        : editMode
-          ? oncancel
-          : showStopButton
-            ? onstop
-            : undefined}
+      onEscape={isEnhancing ? handleCancelEnhance : editMode ? oncancel : undefined}
       {onHistoryPrev}
       {onHistoryNext}
       onSelectionChange={(selectedText) => (editorSelection = selectedText)}
@@ -1680,7 +1740,7 @@
         <!-- Stop button — visible whenever the agent is responding/running,
              mirroring the Thinking indicator so users can interrupt across
              the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
-        <TooltipShortcut label={m.chat_richInput_stop_label()} shortcut="Escape" side="top">
+        <TooltipShortcut label={m.chat_richInput_stop_label()} side="top">
           <Button
             variant="ghost-light"
             size="icon-sm"

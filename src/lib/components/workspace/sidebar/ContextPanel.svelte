@@ -329,8 +329,6 @@
       {onReorderNotes}
       onCreateNote={undefined}
       {loading}
-      {openPanelTabs}
-      {activePanelTab}
       flush
     />
 
@@ -341,7 +339,6 @@
         <ContextItemRow
           {item}
           isActive={panelState.isActive || isItemActive(item)}
-          openPanelCount={panelState.count}
           onClick={handleContextItemClick}
           onExternalOpen={handleExternalOpen}
           onDelete={(item) => appStore.dispatch(removeContextItem(workspaceId, item.id))}

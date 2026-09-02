@@ -49,4 +49,18 @@ describe('shared title-bar geometry', () => {
     expect(titlebar).not.toContain('35 / $zoomFactor');
     expect(titlebar).not.toContain('height: 35px');
   });
+
+  it('keeps macOS clearance separate from the fixed-control optical shift', () => {
+    const titlebar = source('./WindowTitleBar.svelte');
+
+    expect(titlebar).toContain('--titlebar-control-shift: 0px');
+    expect(titlebar).toMatch(
+      /\.window-title-bar:global\(\.window-title-bar-mac\)[^{]*\{[^}]*--titlebar-control-shift:\s*8px;[^}]*padding-left:\s*60px;/s,
+    );
+    expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
+    expect(titlebar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
+    expect(titlebar).toContain('data-titlebar-workspace-controls');
+    expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
+    expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
+  });
 });

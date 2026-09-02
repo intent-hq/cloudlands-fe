@@ -16,7 +16,6 @@
     selectActiveTab,
     selectAllTabs,
     selectFocusedPanelId,
-    getPanelTabOpenState,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
@@ -69,7 +68,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
 
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -127,7 +126,6 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import OpenPanelIndicator from './sidebar/OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -163,6 +161,7 @@
   const LAUNCHER_TARGET_SIZE = 36;
   const LAUNCHER_VISIBLE_SIZE = 20;
   const LAUNCHER_STEP_SIZE = 15;
+  const LAUNCHER_VISIBLE_OFFSET = (LAUNCHER_TARGET_SIZE - LAUNCHER_VISIBLE_SIZE) / 2;
   let launcherIconLimit = $state(LAUNCHER_ICON_LIMIT);
   const LAUNCHER_ICON_STACK_CLASS =
     'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
@@ -171,9 +170,9 @@
   const LAUNCHER_GLYPH_CLASS = 'launcher-glyph relative flex size-5 items-center justify-center';
   const LAUNCHER_OVERFLOW_BUTTON_CLASS =
     // i18n-ignore (Tailwind utility classes)
-    'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 w-auto shrink-0 cursor-pointer items-center justify-center border-0! bg-transparent! px-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
+    'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 min-w-5 w-auto shrink-0 cursor-pointer items-center justify-center rounded-md! border-0! bg-muted! px-1.5! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-muted/80! hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_OVERFLOW_STYLE =
-    'line-height: 12px; font-weight: 500; border-radius: 0; padding: 0; background: transparent; box-shadow: none;';
+    'min-width: 20px; line-height: 12px; font-weight: 500; border-radius: 6px; padding: 0 6px; background: hsl(var(--muted)); box-shadow: none;';
   $effect.pre(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -291,8 +290,8 @@
     }
     if (hasOverflow) {
       return itemCount > 2
-        ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px max-content`
-        : `${LAUNCHER_TARGET_SIZE}px max-content`;
+        ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_OFFSET + LAUNCHER_STEP_SIZE}px max-content`
+        : `${LAUNCHER_VISIBLE_OFFSET + LAUNCHER_STEP_SIZE}px max-content`;
     }
     return itemCount > 1
       ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
@@ -318,6 +317,13 @@
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
   let openLauncherHoverKey = $state<string | null>(null);
+  const LAUNCHER_HOVER_INITIAL_DELAY_MS = 400;
+  const LAUNCHER_HOVER_SESSION_RESET_DELAY_MS = 300;
+  let launcherHoverSessionActive = $state(false);
+  let launcherHoverSessionResetTimer: ReturnType<typeof setTimeout> | null = null;
+  const launcherHoverDelay = $derived(
+    launcherHoverSessionActive ? 0 : LAUNCHER_HOVER_INITIAL_DELAY_MS,
+  );
   const launcherRects = new Map<LauncherTabId, DOMRect>();
   const expandedCardRects = new Map<LauncherTabId, DOMRect>();
   // svelte-ignore state_referenced_locally - intentional initial capture for change detection
@@ -333,11 +339,26 @@
 
   function handleLauncherHoverOpenChange(key: string, open: boolean) {
     if (open) {
+      clearLauncherHoverSessionResetTimer();
+      launcherHoverSessionActive = true;
       openLauncherHoverKey = key;
     } else if (openLauncherHoverKey === key) {
       openLauncherHoverKey = null;
+      clearLauncherHoverSessionResetTimer();
+      launcherHoverSessionResetTimer = setTimeout(() => {
+        launcherHoverSessionResetTimer = null;
+        launcherHoverSessionActive = false;
+      }, LAUNCHER_HOVER_SESSION_RESET_DELAY_MS);
     }
   }
+
+  function clearLauncherHoverSessionResetTimer() {
+    if (launcherHoverSessionResetTimer === null) return;
+    clearTimeout(launcherHoverSessionResetTimer);
+    launcherHoverSessionResetTimer = null;
+  }
+
+  onDestroy(clearLauncherHoverSessionResetTimer);
 
   function cardMorph(
     node: HTMLElement,
@@ -524,13 +545,6 @@
     return null;
   });
   const effectiveIsAllChangesViewActive = $derived(focusedContentType === 'local-changes');
-  function getNotePanelState(noteId: string) {
-    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
-      type: 'note',
-      noteId,
-      workspaceId,
-    });
-  }
 
   type PaneOpenEvent = MouseEvent | KeyboardEvent;
 
@@ -875,6 +889,7 @@
       emptyText={m.layout_sidebarNav_noMessages_label()}
       kind="agent"
       gridPosition="start"
+      delayDuration={launcherHoverDelay}
       open={openLauncherHoverKey === `agent:${agent.id}`}
       onOpenChange={(open) => {
         handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
@@ -1021,7 +1036,7 @@
                             >.
                           {:else if tabId === 'context' && $workspace?.path}
                             {tab.description}
-                            {m.workspace_multiSelectSidebar_notesLiveIn_before()}
+                            {m.workspace_multiSelectSidebar_contextAndMetadataLiveIn_before()}
                             <span class="inline-flex items-baseline gap-1">
                               <OpenComboButton
                                 filePath={$workspace.path + '/.workspace'}
@@ -1087,9 +1102,6 @@
                             searchQuery={agentSearchQuery}
                             runningAgentIds={runningLauncherAgents.map((agent) => agent.id)}
                             selectedAgentId={effectiveSelectedAgentId}
-                            {workspaceId}
-                            openPanelTabs={$allPanelTabs$}
-                            activePanelTab={$activeTab$}
                             retiredCount={$retiredCount$}
                             retiredAgentsLoaded={$retiredAgentsLoaded$}
                             loadingRetired={$loadingRetired$}
@@ -1213,8 +1225,6 @@
                             onSelectAgent={handleOpenAgentInPanel}
                             showOnlyChanged={showOnlyChangedFiles}
                             searchQuery={fileSearchQuery}
-                            openPanelTabs={$allPanelTabs$}
-                            activePanelTab={$activeTab$}
                           />
                         </div>
                       {:else if tabId === 'browser'}
@@ -1279,8 +1289,7 @@
                       : LAUNCHER_TARGET_SIZE}
                     data-launcher-visible-size={LAUNCHER_VISIBLE_SIZE}
                     data-launcher-step-size={LAUNCHER_STEP_SIZE}
-                    data-launcher-visible-offset={(LAUNCHER_TARGET_SIZE - LAUNCHER_VISIBLE_SIZE) /
-                      2}
+                    data-launcher-visible-offset={LAUNCHER_VISIBLE_OFFSET}
                   >
                     {#if tab.id === 'agents'}
                       <AgentAvatarStack
@@ -1295,7 +1304,6 @@
                       />
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
-                        {@const panelState = getNotePanelState(note.id as string)}
                         {@const isSpec = isSpecNote(note.id as string)}
                         <div
                           class={isSpec ? 'flex h-9 items-center' : 'contents'}
@@ -1307,6 +1315,7 @@
                             emptyText="Empty note"
                             kind="note"
                             gridPosition="start"
+                            delayDuration={launcherHoverDelay}
                             open={openLauncherHoverKey === `note:${note.id}`}
                             onOpenChange={(open) =>
                               handleLauncherHoverOpenChange(`note:${note.id}`, open)}
@@ -1325,13 +1334,6 @@
                                   kind="note"
                                   class="transition-colors group-hover/preview:bg-background/70! group-focus-visible/preview:bg-background/80!"
                                 />
-                                {#if !isSpec}
-                                  <OpenPanelIndicator
-                                    count={panelState.count}
-                                    active={panelState.isActive}
-                                    overlay
-                                  />
-                                {/if}
                               </span>
                             </Button>
                           </SidebarLauncherHoverCard>

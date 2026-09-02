@@ -54,6 +54,14 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'features/workspace/utils/workspace-tab-navigation.ts',
     handler: 'keyboard manager',
   },
+  'navigation.move-space-tab-left': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
+  'navigation.move-space-tab-right': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
   'chat.send': {
     source: 'lib/components/chat/input/TipTapEditor.svelte',
     handler: 'editor keydown',
@@ -66,7 +74,6 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'lib/components/chat/input/TipTapEditor.svelte',
     handler: 'editor keydown',
   },
-  'chat.stop': { source: 'lib/components/chat/ChatPanel.svelte', handler: 'panel keydown' },
   'chat.focus-input': { source: 'lib/components/chat/ChatPanel.svelte', handler: 'panel keydown' },
   'chat.mention-context': {
     source: 'lib/components/chat/input/TipTapEditor.svelte',

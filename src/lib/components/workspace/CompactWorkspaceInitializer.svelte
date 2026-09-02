@@ -126,6 +126,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
+  import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
+  import { splitDroppedItems } from '$lib/utils/drop-split';
   import {
     imageFilesToContextItems,
     REFERENCE_IMAGE_MAX_BYTES,
@@ -1933,6 +1935,16 @@
         }
       }
 
+      // Staged folder pills (dropped folders, local daemon only) ride as
+      // path context references on the initial message — never placed via
+      // file.placeAttachment (the daemon rejects directories). Same shape a
+      // folder @-mention produces in chat (type 'file' + absolute path).
+      for (const item of $state.snapshot(contextItems)) {
+        if (item.type === 'folder' && item.path) {
+          contextReferences.push({ type: 'file', path: item.path, title: item.label });
+        }
+      }
+
       // Extract imageBlocks from ALL context items with imageData/imageMimeType
       // (includes attachment items created by processImageFiles)
       const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = [];
@@ -2405,10 +2417,59 @@
     e.stopPropagation();
     isDraggingOver = false;
 
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
+    // Folder detection must happen HERE, synchronously in the drop event —
+    // webkitGetAsEntry() returns null once the event loop turns.
+    const { files, folderFiles } = splitDroppedItems(e.dataTransfer);
+    if (files.length === 0 && folderFiles.length === 0) return;
 
-    await processImageFiles(Array.from(files));
+    if (folderFiles.length > 0) {
+      // Folders are path-only references — the agent reads them off the
+      // host filesystem, which a remote daemon cannot do. Any folder in the
+      // drop rejects the WHOLE drop when remote (files included). Mirrors
+      // OnboardingPromptStep's folder-drop behavior.
+      if (isRemoteBackend()) {
+        toast.error(m.chat_richInput_folderDropRemote_error());
+        return;
+      }
+      for (const folder of folderFiles) {
+        stageFolderReference(folder);
+      }
+    }
+    if (files.length > 0) {
+      await processImageFiles(files);
+    }
+  }
+
+  /**
+   * Stage a dropped folder as a path-only context item (local daemon only).
+   * Never placed via `file.placeAttachment` (the daemon rejects directories)
+   * — the submit path carries the absolute host path as a context reference
+   * on the initial message instead.
+   *
+   * When the Electron `getPathForFile` bridge is unavailable or returns ''
+   * the folder is SKIPPED with a toast: a bare folder name would ride
+   * `contextReferences` as if it were an absolute host path the agent
+   * cannot resolve. Mirrors OnboardingPromptStep.stageFolderReference.
+   */
+  function stageFolderReference(folder: File) {
+    const absolutePath = (window as any).electronAPI?.getPathForFile?.(folder) || '';
+    if (!absolutePath) {
+      logger.warn('Dropped folder has no resolvable absolute path; skipping', {
+        name: folder.name,
+      });
+      toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName: folder.name }));
+      return;
+    }
+    // Path-keyed like folder @-mentions, so two dropped folders sharing a
+    // basename stay distinct. Re-dropping the SAME folder is a no-op: the
+    // strip is keyed by item.id, so a duplicate id would break keyed
+    // rendering and make one remove drop both pills while both references
+    // still ride the submit.
+    const id = `staged-folder-${absolutePath}`;
+    if (contextItems.some((item) => item.id === id)) return;
+    // Windows-aware basename fallback ('\' or '/' separators).
+    const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
+    contextItems = [...contextItems, { id, type: 'folder', label, path: absolutePath }];
   }
 
   // Handle clipboard paste for images
@@ -2512,8 +2573,9 @@
 
   // A context item the attachment strip should render: image attachments
   // (thumbnails) plus staged/placed/failed non-image files (chips with
-  // placement state).
+  // placement state) and staged folder references (path-only chips).
   function isPreviewableAttachment(item: ContextItem): boolean {
+    if (item.type === 'folder') return true;
     if (item.type !== 'file') return false;
     if (item.imageData && item.imageMimeType) return true;
     if (item.file && item.file.type?.startsWith('image/')) return true;
@@ -2944,7 +3006,9 @@
           <AttachmentPreview
             id={item.id}
             name={item.label}
-            type={item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
+            type={item.type === 'folder'
+              ? 'folder'
+              : item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
             size={item.file?.size ?? item.attachmentSize}
             file={item.file}
             imageData={item.imageData}

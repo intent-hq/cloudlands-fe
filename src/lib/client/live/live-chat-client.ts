@@ -489,9 +489,7 @@ export class ChatTranscriptReconciler {
     };
     // Adopt the authoritative terminal-frame fields when carried (§7.1).
     if (entity.timestamp) next.timestamp = entity.timestamp;
-    if (entity.messageSeq !== undefined) {
-      (next as AgentMessage & { seq?: number }).seq = entity.messageSeq;
-    }
+    if (entity.messageSeq !== undefined) next.seq = entity.messageSeq;
     if (entity.metadata) next.metadata = entity.metadata;
     if (entity.appMessageId) next.appMessageId = entity.appMessageId;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];

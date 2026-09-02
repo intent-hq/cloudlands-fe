@@ -33,7 +33,7 @@ describe('PanelLayoutAdapter', () => {
     mocks.panels = {};
   });
 
-  it('routes untargeted content to the rightmost configured column', () => {
+  it('falls back to the rightmost configured column without panel focus', () => {
     new PanelLayoutAdapter('ws-1').openTab(tab);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
@@ -70,7 +70,7 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('routes untargeted content right even when the focused panel is empty', () => {
+  it('keeps generic untargeted content in the rightmost panel when focus exists', () => {
     mocks.focusedPanelId = 'working';
     mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
 
@@ -93,6 +93,24 @@ describe('PanelLayoutAdapter', () => {
       expect.objectContaining({
         type: 'panelLayout/openTabInAdjacentOrSplit',
         payload: expect.objectContaining({ wsId: 'ws-1', sourcePanelId: 'working', tab }),
+      }),
+    );
+  });
+
+  it('forces untargeted user tabs into the focused panel', () => {
+    mocks.focusedPanelId = 'working';
+
+    new PanelLayoutAdapter('ws-1').openUserTab(tab);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTab',
+        payload: expect.objectContaining({
+          wsId: 'ws-1',
+          panelId: 'working',
+          tab,
+          force: true,
+        }),
       }),
     );
   });

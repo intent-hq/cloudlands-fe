@@ -32,6 +32,59 @@ test('keeps one current row until click opens the full live history', async ({ m
   await expect(component.getByTestId('response-group-snippet')).toContainText('earlier chunk');
 });
 
+test('caps and follows a tall current row as a streaming cylinder', async ({ mount, page }) => {
+  const component = await mount(LiveResponseGroupHost, {
+    props: { chunk: 'streaming line', lineCount: 12, isStreaming: true },
+  });
+  const trigger = component.getByTestId('response-group-disclosure');
+  const scroller = component.locator('.cylinder-scroller');
+  const currentLine = component.getByTestId('live-stream-line').first();
+  const summary = component.getByTestId('response-group-name');
+  const groupContent = component.locator('[data-response-group-content]');
+
+  for (const width of [800, 320]) {
+    await page.setViewportSize({ width, height: 480 });
+    const [lineBox, summaryBox] = await Promise.all([
+      currentLine.boundingBox(),
+      summary.boundingBox(),
+    ]);
+    expect(lineBox!.x).toBeCloseTo(summaryBox!.x, 0);
+  }
+
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(scroller).toHaveCSS('max-height', '100px');
+  expect((await scroller.boundingBox())!.height).toBeLessThanOrEqual(100);
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await expect
+    .poll(() => scroller.evaluate((node) => node.style.maskImage))
+    .toContain('linear-gradient');
+
+  await scroller.evaluate((node) => {
+    node.scrollTop = 0;
+    node.dispatchEvent(new Event('scroll'));
+  });
+  await expect.poll(() => scroller.evaluate((node) => node.style.maskImage)).toBe('');
+  await page.waitForTimeout(200);
+
+  await component.update({
+    props: { chunk: 'latest streaming line', lineCount: 14, isStreaming: true },
+  });
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await expect
+    .poll(() => scroller.evaluate((node) => node.style.maskImage))
+    .toContain('linear-gradient');
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(scroller).not.toHaveCSS('max-height', '100px');
+  await expect(component.getByTestId('live-history-child')).toHaveCount(2);
+  const [contentBox, guideBox] = await Promise.all([
+    groupContent.boundingBox(),
+    component.locator('.pointer-events-none.absolute.inset-y-0').boundingBox(),
+  ]);
+  expect(guideBox!.x + guideBox!.width / 2 - contentBox!.x).toBeCloseTo(18, 0);
+});
+
 test('settles a keyed current-child swap on the new child', async ({ mount }) => {
   const component = await mount(LiveResponseGroupHost, {
     props: { chunk: 'first chunk', chunkKey: 'child-a' },

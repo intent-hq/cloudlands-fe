@@ -6,10 +6,12 @@
     normalizeAgentVideoContentBlocks,
   } from '$shared/types';
   import {
-    buildToolResultsMap,
+    classifyToolResults,
     findToolResult,
+    getStandaloneToolResultPresentation,
     getToolResultPayload,
     getToolResultText,
+    isStandaloneToolResult,
   } from './tool-result-pairing';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -54,6 +56,7 @@
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
+    NESTED_REASONING_SECTION_SEAM_CLASS,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
@@ -62,6 +65,8 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupCurrentChildIndex,
+    isNestedReasoningSectionBoundary,
+    isNestedReasoningSectionStart,
     normalizeResponseGroups,
     shouldRenderResponseGroupInline,
   } from './response-group-blocks';
@@ -187,14 +192,15 @@
     normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
   );
 
-  function isVisibleOperationalBlock(block: RenderContentBlock): boolean {
-    return block.type !== 'tool_result';
+  function isVisibleGroupChild(block: RenderContentBlock): boolean {
+    return (
+      block.type !== 'tool_result' ||
+      isStandaloneToolResult(toolResultClassification, block as ContentBlock)
+    );
   }
 
-  // Build a map of tool results from tool_result blocks, paired by
-  // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
-  // fallback for error results with empty tool_use_id
-  const toolResultsMap = $derived.by(() => buildToolResultsMap(blocks));
+  const toolResultClassification = $derived.by(() => classifyToolResults(groupedBlocks));
+  const toolResultsMap = $derived(toolResultClassification.resultsMap);
 
   // Compute tool states based on results
   const toolStates = $derived.by(() => {
@@ -403,7 +409,10 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
-    return ['tool_use', 'tool_result', 'thinking'].includes(contentBlock.type);
+    if (contentBlock.type === 'tool_result') {
+      return isStandaloneToolResult(toolResultClassification, contentBlock);
+    }
+    return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
 
   const lastVisibleTopLevelBlockIndex = $derived.by(() => {
@@ -509,6 +518,7 @@
   nested = false,
   adjacentOperationalRow = false,
   reasoningHistory = false,
+  searchPath: string | undefined = undefined,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -586,18 +596,18 @@
         {messageId}
       />
     </div>
-  {:else if block.type === 'tool_result'}
-    {@const resultPayload = getToolResultPayload(block)}
+  {:else if block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)}
+    {@const resultPresentation = getStandaloneToolResultPresentation(block)}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
         <span class="type-caption text-subtle">{m.chat_messageContent_toolResult_label()}</span>
       </div>
-      <div class="p-3">
-        {#if typeof resultPayload === 'string'}
-          <CodeBlock code={resultPayload} />
-        {:else if Array.isArray(resultPayload)}
+      <div class="p-3" data-tool-result-payload data-chat-search-block-path={searchPath}>
+        {#if typeof resultPresentation.payload === 'string'}
+          <CodeBlock code={resultPresentation.payload} />
+        {:else if Array.isArray(resultPresentation.payload)}
           <!-- Recursively render nested content blocks -->
-          {#each resultPayload as any[] as nestedBlock, nestedIndex (`nested-${blockIndex}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
+          {#each resultPresentation.payload as any[] as nestedBlock, nestedIndex (`nested-${blockIndex}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
@@ -662,36 +672,52 @@
   childBlock: ContentBlock,
   childIndex: number,
   suppressSpacing: boolean = false,
+  nested: boolean = true,
 )}
+  {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
+  {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
+    group,
+    childIndex,
+    isVisibleGroupChild,
+  )}
   <div
     class={`${
       suppressSpacing
         ? ''
-        : getOperationalClusterSpacingClass(
-            group.children,
-            childIndex,
-            isVisibleOperationalBlock,
-            group.isReasoningPhase,
-          )
+        : reasoningSectionBoundary
+          ? NESTED_REASONING_SECTION_SEAM_CLASS
+          : getOperationalClusterSpacingClass(
+              group.children,
+              childIndex,
+              isVisibleGroupChild,
+              group.isReasoningPhase,
+            )
     } ${
-      isOperationalClusterBlock(childBlock)
-        ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-        : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+      nested
+        ? isOperationalClusterBlock(childBlock)
+          ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+          : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+        : ''
     }`}
-    style:padding-left={isOperationalClusterBlock(childBlock)
-      ? undefined
-      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+    style:padding-left={nested && !isOperationalClusterBlock(childBlock)
+      ? 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'
+      : undefined}
     data-message-content-block={childBlock.type}
-    data-chat-search-block-path={chatSearchBlockPath(groupIndex, childIndex)}
+    data-chat-search-block-path={childBlock.type === 'tool_result'
+      ? undefined
+      : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
+    data-reasoning-section-start={reasoningSectionStart || undefined}
+    data-reasoning-section-boundary={reasoningSectionBoundary || undefined}
   >
     {@render renderContentBlock(
       childBlock,
       `${groupIndex}-${childIndex}`,
       groupIndex,
-      true,
-      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleOperationalBlock),
+      nested,
+      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
+      chatSearchBlockPath(groupIndex, childIndex),
     )}
   </div>
 {/snippet}
@@ -703,8 +729,15 @@
       {@const childKeys = getResponseGroupBlockKeys(group.children)}
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-          {#if childBlock.type !== 'tool_result'}
-            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+          {#if isVisibleGroupChild(childBlock)}
+            {@render renderResponseGroupChild(
+              group,
+              blockIndex,
+              childBlock,
+              childIndex,
+              false,
+              false,
+            )}
           {/if}
         {/each}
       {:else}
@@ -723,7 +756,7 @@
           class={getOperationalClusterSpacingClass(
             groupedBlocks,
             blockIndex,
-            isVisibleOperationalBlock,
+            isVisibleTopLevelBlock,
           )}
           data-operational-cluster-row={block.type}
           data-message-content-block={block.type}
@@ -733,7 +766,7 @@
             isStreaming={group.isStreaming}
             isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
             {isLastConversationMessage}
-            blocks={group.children}
+            blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
             currentChild={currentChildIndex >= 0 ? currentChild : undefined}
@@ -741,12 +774,12 @@
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,
-              isVisibleOperationalBlock,
+              isVisibleTopLevelBlock,
             )}
           >
             {#snippet children()}
               {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-                {#if childBlock.type !== 'tool_result'}
+                {#if isVisibleGroupChild(childBlock)}
                   {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
                 {/if}
               {/each}
@@ -754,13 +787,9 @@
           </ResponseGroup>
         </div>
       {/if}
-    {:else}
+    {:else if block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block)}
       <div
-        class={getOperationalClusterSpacingClass(
-          groupedBlocks,
-          blockIndex,
-          isVisibleOperationalBlock,
-        )}
+        class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
         data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
         data-message-content-block={block.type}
         data-chat-search-block-path={block.type === 'text'
@@ -772,7 +801,9 @@
           String(blockIndex),
           blockIndex,
           false,
-          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock),
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
+          false,
+          chatSearchBlockPath(blockIndex),
         )}
       </div>
     {/if}

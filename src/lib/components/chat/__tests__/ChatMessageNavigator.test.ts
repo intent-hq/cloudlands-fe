@@ -14,11 +14,21 @@ const messages = [
   },
 ];
 
-function renderNavigator(isAtBottom = false, navigationMessages = messages) {
+function renderNavigator(
+  isAtBottom = false,
+  navigationMessages = messages,
+  isLoadingIndex = false,
+) {
   const onSelectMessage = vi.fn().mockResolvedValue(true);
   const onScrollToBottom = vi.fn();
   const view = render(ChatMessageNavigator, {
-    props: { messages: navigationMessages, isAtBottom, onSelectMessage, onScrollToBottom },
+    props: {
+      messages: navigationMessages,
+      isAtBottom,
+      isLoadingIndex,
+      onSelectMessage,
+      onScrollToBottom,
+    },
   });
   return { ...view, onSelectMessage, onScrollToBottom };
 }
@@ -63,7 +73,7 @@ describe('ChatMessageNavigator', () => {
     );
     expect(results.every((result) => !result.hasAttribute('data-message-id'))).toBe(true);
     expect(input.getAttribute('aria-controls')).toBe(listbox.id);
-    expect(input.getAttribute('aria-activedescendant')).toBe(results[0].id);
+    expect(input.getAttribute('aria-activedescendant')).toBe(results.at(-1)!.id);
     expect(input.className).toContain('h-(--control-height-medium)');
     expect(input.className).toContain('outline-none');
     expect(input.className).toContain('caret-foreground');
@@ -82,8 +92,8 @@ describe('ChatMessageNavigator', () => {
 
     const longResult = results.at(-1)!;
     expect(longResult.getAttribute('title')).toBeNull();
-    expect(results[0].className).toContain('bg-accent');
-    expect(results[0].className).toContain('text-accent-foreground');
+    expect(longResult.className).toContain('bg-accent');
+    expect(longResult.className).toContain('text-accent-foreground');
     expect(longResult.className).toContain('type-caption');
     expect(longResult.className).toContain('font-normal');
     expect(longResult.className).toContain('h-(--control-height-large)');
@@ -125,7 +135,7 @@ describe('ChatMessageNavigator', () => {
     const options = screen.getAllByRole('option');
     await waitFor(() => expect(document.activeElement).toBe(input));
     await fireEvent.keyDown(input, { key: 'ArrowDown' });
-    expect(input.getAttribute('aria-activedescendant')).toBe(options[1].id);
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id);
     expect(document.activeElement).toBe(input);
     await fireEvent.keyDown(input, { key: 'End' });
     expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
@@ -274,6 +284,116 @@ describe('ChatMessageNavigator', () => {
     expect(screen.getByTestId('chat-message-navigator-empty')).toBeTruthy();
     expect(screen.getByTestId('chat-message-navigator-empty').className).toContain('type-caption');
     expect(screen.getByTestId('chat-message-navigator-search')).toBeTruthy();
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('starts with the most recent message active on open and after filtering', async () => {
+    renderNavigator();
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    let options = screen.getAllByRole('option');
+    expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
+    expect(options.at(-1)!.getAttribute('aria-selected')).toBe('true');
+
+    await fireEvent.input(input, { target: { value: 'user message' } });
+    options = screen.getAllByRole('option');
+    expect(options.length).toBeGreaterThan(1);
+    expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
+  });
+
+  it('keeps the newest message active while index items are prepended', async () => {
+    const view = renderNavigator(false, messages.slice(3));
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+
+    await view.rerender({ messages });
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(messages.length);
+    expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
+    expect(options.at(-1)!.getAttribute('data-navigation-message-id')).toBe('long');
+  });
+
+  it('keeps the same message active by identity after the user moved and items are prepended', async () => {
+    const view = renderNavigator(false, messages.slice(3));
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    const before = screen.getAllByRole('option');
+    expect(input.getAttribute('aria-activedescendant')).toBe(before[0].id);
+    expect(before[0].getAttribute('data-navigation-message-id')).toBe('azure');
+
+    await view.rerender({ messages });
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(messages.length);
+    const active = options.find((option) => option.getAttribute('aria-selected') === 'true');
+    expect(active?.getAttribute('data-navigation-message-id')).toBe('azure');
+    expect(input.getAttribute('aria-activedescendant')).toBe(active!.id);
+  });
+
+  it('releases the end anchor on user scroll but not on programmatic scroll', async () => {
+    const newerA = { id: 'newer-a', text: 'Newer message a' };
+    const newerB = { id: 'newer-b', text: 'Newer message b' };
+    const view = renderNavigator();
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    const listbox = screen.getByRole('listbox');
+
+    // The scroll-into-view effect has just run for the open: a scroll event
+    // inside its suppression window (before the next animation frame) must
+    // not release the anchor, so a new last item still becomes active.
+    await fireEvent.scroll(listbox);
+    await view.rerender({ messages: [...messages, newerA] });
+    let options = screen.getAllByTestId('chat-message-navigator-result');
+    expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
+    expect(options.at(-1)!.getAttribute('data-navigation-message-id')).toBe('newer-a');
+
+    // After the suppression window closes, a scroll is user intent and
+    // releases the anchor: the active option no longer follows the end.
+    await afterAnimationFrame();
+    await afterAnimationFrame();
+    await fireEvent.scroll(listbox);
+    await view.rerender({ messages: [...messages, newerA, newerB] });
+    options = screen.getAllByTestId('chat-message-navigator-result');
+    const active = options.find((option) => option.getAttribute('aria-selected') === 'true');
+    expect(active?.getAttribute('data-navigation-message-id')).toBe('newer-a');
+    expect(active).not.toBe(options.at(-1));
+    expect(input.getAttribute('aria-activedescendant')).toBe(active!.id);
+  });
+
+  it('shows a loading row while the index fetch is in flight and removes it after', async () => {
+    const view = renderNavigator(false, messages, true);
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const loading = screen.getByTestId('chat-message-navigator-loading');
+    expect(loading.querySelector('[data-slot="spinner"]')).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(messages.length);
+
+    await view.rerender({ isLoadingIndex: false });
+    expect(screen.queryByTestId('chat-message-navigator-loading')).toBeNull();
+  });
+
+  it('announces loading through a persistent live region that outlives the loader', async () => {
+    const view = renderNavigator(false, messages, false);
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    const region = screen.getByTestId('chat-message-navigator-loading-region');
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(screen.queryByTestId('chat-message-navigator-loading')).toBeNull();
+
+    await view.rerender({ isLoadingIndex: true });
+    expect(screen.getByTestId('chat-message-navigator-loading-region')).toBe(region);
+    expect(region.contains(screen.getByTestId('chat-message-navigator-loading'))).toBe(true);
+
+    await view.rerender({ isLoadingIndex: false });
+    expect(screen.getByTestId('chat-message-navigator-loading-region')).toBe(region);
+    expect(screen.queryByTestId('chat-message-navigator-loading')).toBeNull();
+  });
+
+  it('shows the loader instead of the empty state when no items are cached yet', async () => {
+    renderNavigator(false, [], true);
+    await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
+    expect(screen.getByTestId('chat-message-navigator-loading')).toBeTruthy();
+    expect(screen.queryByTestId('chat-message-navigator-empty')).toBeNull();
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 });

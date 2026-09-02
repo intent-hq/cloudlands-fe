@@ -39,6 +39,16 @@ export function hasAgentActiveTurnEvidence(input: AgentRuntimeStateInput): boole
   );
 }
 
+/**
+ * A live turn is in flight right now: active turn evidence on a non-terminal
+ * status. Narrower than `isAgentRunningState` (a bare `active` status without
+ * evidence does not count) — used to gate idle-only affordances (e.g. pending
+ * attention-request indicators) that must not render mid-turn.
+ */
+export function isAgentTurnLive(input: AgentRuntimeStateInput): boolean {
+  return !isTerminalStatus(input.status) && hasAgentActiveTurnEvidence(input);
+}
+
 /** Purple waiting requires an explicit wait and no active turn evidence. */
 export function isAgentBlockedWaitingState(input: AgentRuntimeStateInput): boolean {
   if (isTerminalStatus(input.status) || hasAgentActiveTurnEvidence(input)) return false;

@@ -166,6 +166,7 @@
   let chatNavigationState = $state<ChatNavigationState>({
     isAtBottom: true,
     userMessages: [],
+    isLoadingUserMessageIndex: false,
   });
 
   onDestroy(() => {
@@ -239,6 +240,7 @@
   <ChatMessageNavigator
     messages={chatNavigationState.userMessages}
     isAtBottom={chatNavigationState.isAtBottom}
+    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
     onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
     onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
     onOpen={() => chatPanelRef?.refreshUserMessageIndex()}

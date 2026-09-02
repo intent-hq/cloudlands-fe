@@ -1,6 +1,7 @@
 import type { StoreState } from '$store/renderer/types';
 import {
   closeWorkspaceTab,
+  moveWorkspace,
   reopenLastClosedWorkspaceTab,
   switchToWorkspaceTabByIndex,
   switchToNextWorkspaceTab,
@@ -32,6 +33,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
 import type { ShortcutId } from '$lib/utils/shortcut-bindings';
 import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
+import type { WorkspaceTabMovedEventDetail } from './workspace-tab-move-event';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
 
@@ -43,6 +45,7 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof switchToPreviousWorkspaceTab>
       | ReturnType<typeof switchToWorkspaceTabByIndex>
       | ReturnType<typeof closeWorkspaceTab>
+      | ReturnType<typeof moveWorkspace>
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
       | ReturnType<typeof closeFocusedPanelTab>
       | ReturnType<typeof openBlankWorkingPanel>
@@ -54,6 +57,25 @@ interface WorkspaceTabNavigationStore {
 
 type RegisterShortcut = (shortcut: KeyboardShortcut) => void;
 
+export type WorkspaceTabMoveDirection = 'left' | 'right';
+
+export function moveActiveWorkspaceTab(
+  store: WorkspaceTabNavigationStore,
+  direction: WorkspaceTabMoveDirection,
+): string | null {
+  const order = selectWorkspaceTabOrder.select(store.state);
+  const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
+  if (!workspaceId) return null;
+  const currentIndex = order.indexOf(workspaceId);
+  const targetIndex = currentIndex + (direction === 'left' ? -1 : 1);
+  const targetWorkspaceId = order[targetIndex];
+  if (currentIndex < 0 || !targetWorkspaceId) return null;
+  store.dispatch(
+    moveWorkspace(workspaceId, targetWorkspaceId, direction === 'left' ? 'before' : 'after'),
+  );
+  return workspaceId;
+}
+
 interface RegisterWorkspaceTabShortcutsOptions {
   isMac: boolean;
   register: RegisterShortcut;
@@ -61,6 +83,7 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  onWorkspaceTabMoved?: (detail: WorkspaceTabMovedEventDetail) => void;
   resolveBinding?: (id: ShortcutId) => string;
 }
 
@@ -245,6 +268,7 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  onWorkspaceTabMoved,
   resolveBinding,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
@@ -301,6 +325,41 @@ export function registerWorkspaceTabShortcuts({
     global: true,
     description: m.workspace_shortcuts_reopenClosedTabOrSpace_description(),
     action: withRoute((path) => reopenPanelOrWorkspaceTab(store, path, navigate)),
+  });
+
+  register({
+    ...effective('navigation.move-space-tab-left'),
+    ...mod,
+    key: 'ArrowLeft',
+    alt: true,
+    shift: true,
+    global: true,
+    description: SHORTCUTS.MOVE_SPACE_TAB_LEFT.label,
+    action: () => {
+      const workspaceId = moveActiveWorkspaceTab(store, 'left');
+      if (!workspaceId) return;
+      onWorkspaceTabMoved?.({
+        workspaceId,
+        position: selectWorkspaceTabOrder.select(store.state).indexOf(workspaceId) + 1,
+      });
+    },
+  });
+  register({
+    ...effective('navigation.move-space-tab-right'),
+    ...mod,
+    key: 'ArrowRight',
+    alt: true,
+    shift: true,
+    global: true,
+    description: SHORTCUTS.MOVE_SPACE_TAB_RIGHT.label,
+    action: () => {
+      const workspaceId = moveActiveWorkspaceTab(store, 'right');
+      if (!workspaceId) return;
+      onWorkspaceTabMoved?.({
+        workspaceId,
+        position: selectWorkspaceTabOrder.select(store.state).indexOf(workspaceId) + 1,
+      });
+    },
   });
 
   for (const [direction, shift] of [
