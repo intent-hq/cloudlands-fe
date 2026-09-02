@@ -47,6 +47,7 @@
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
   import { isPairingUri, parsePairingUri } from '$shared/utils/pairing-uri';
+  import { isTcAddress } from '$shared/tc-address';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -169,8 +170,10 @@
 
   function handleHostInput() {
     // Hand-editing the host detaches it from the pasted pairing payload; the
-    // tunnel address must not be stored against a different backend.
-    tcAddress = null;
+    // tunnel address must not be stored against a different backend. A host
+    // that IS a tc address (manual tunnel entry, PROTOCOL §12.3) re-attaches
+    // itself: the capture and every connect then dial through the tunnel.
+    tcAddress = isTcAddress(host) ? host.trim() : null;
   }
 
   function close() {
