@@ -15,7 +15,15 @@
  * `attentionRequestCleared: true`; automatic deliveries (A2A sends,
  * parent/subscription wakes) do not clear them. An absent kind means no
  * pending request and the indicator retires.
+ *
+ * The daemon defers *emitting* a mid-turn request until the turn ends, but a
+ * mid-turn rehydration/list read can still deliver the persisted fields while
+ * the agent is streaming. Defensively, the derivation returns null while a
+ * live turn is in flight (`isAgentTurnLive`) — the indicator appears once the
+ * agent stops streaming.
  */
+
+import { isAgentTurnLive, type AgentRuntimeStateInput } from './agent-runtime-state';
 
 export type AgentAttentionKind = 'discussion' | 'blocker';
 
@@ -26,7 +34,7 @@ export interface AgentAttentionRequest {
 }
 
 /** Structural subset of AgentSession/AgentLite this derivation reads. */
-export interface AgentAttentionFieldsLike {
+export interface AgentAttentionFieldsLike extends AgentRuntimeStateInput {
   attentionRequestKind?: unknown;
   attentionRequestReason?: unknown;
   attentionRequestTimestamp?: unknown;
@@ -41,12 +49,15 @@ function isAttentionKind(value: unknown): value is AgentAttentionKind {
  * Derive the pending attention request for a session, or null when none is
  * pending. Reads the top-level fields first (full `AgentSession` projection),
  * falling back to `metadata` (the `AgentLite` list/get projection). Unknown
- * kinds are treated as no pending request rather than guessed at.
+ * kinds are treated as no pending request rather than guessed at. While the
+ * session shows a live turn in flight (activity flags on a non-terminal
+ * status), the request is suppressed — it surfaces when the turn ends.
  */
 export function getAgentAttentionRequest(
   session?: AgentAttentionFieldsLike | null,
 ): AgentAttentionRequest | null {
   if (!session) return null;
+  if (isAgentTurnLive(session)) return null;
   const metadata = session.metadata ?? {};
   const kind = session.attentionRequestKind ?? metadata.attentionRequestKind;
   if (!isAttentionKind(kind)) return null;

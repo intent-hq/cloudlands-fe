@@ -167,6 +167,17 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toEqual({ kind: 'blocked' });
   });
 
+  it('a pending request on an agent mid-turn stays running until the turn ends', () => {
+    // Mid-turn rehydration defense: the persisted attention fields do not
+    // flip the key while the raising agent is still streaming.
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1', { activity: 'agent_running' })],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [makeSession('agent-1', { attentionRequestKind: 'blocker', isResponding: true })],
+    });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('running');
+  });
+
   it('pending wizard question counts as attention', () => {
     const state = makeState({
       workspaces: [makeWorkspace('ws-1')],
