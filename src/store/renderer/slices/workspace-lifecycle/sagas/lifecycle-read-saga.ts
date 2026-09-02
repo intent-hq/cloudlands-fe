@@ -2,6 +2,7 @@ import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
 import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
@@ -16,8 +17,15 @@ import {
   takeLeadingInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
-import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import {
+  bulkUpsertSessions,
+  upsertSession,
+  type BulkUpsertSessionsOptions,
+} from '../../agent-session/agent-session-slice';
+import {
+  selectAgentSession,
+  selectAgentSessionsById,
+} from '../../agent-session/agent-session-selectors';
 import {
   agentLineStatsRequestFailed,
   agentLineStatsRequestStarted,
@@ -285,6 +293,20 @@ function* filterPendingDeletions(
 }
 
 function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
+  // Crash-leftover runtime-flag convergence (monorepo#4135): snapshot which
+  // stored sessions hold the both-true isStreaming/isProcessing pair BEFORE
+  // any daemon read starts. A pair set while the reads below are in flight
+  // (chatSendStarted racing this hydration — the designed #1250 race case)
+  // must NOT count as pre-existing, or an older idle list row would clear a
+  // genuinely live turn. Mirrors the per-agent fetch path's storedBefore read
+  // in agent-read-service.
+  const sessionsBeforeFetch = yield* selectAgentSessionsById.effect();
+  const inFlightPairIdsBeforeFetch = new Set<string>();
+  for (const [id, session] of Object.entries(sessionsBeforeFetch)) {
+    if (session.isStreaming === true && session.isProcessing === true) {
+      inFlightPairIdsBeforeFetch.add(id);
+    }
+  }
   // Default read (§5.5 soft retire): retired rows are excluded daemon-side
   // and no longer ride every hydration frame; the sidebar's Retired bin
   // renders its collapsed toggle from `retiredCount` (v8.2, served on every
@@ -319,13 +341,30 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   yield* put(setRetiredCount(workspaceId, retiredCount));
 
   const agents = [] as typeof fetched;
+  // Crash-leftover runtime-flag convergence (monorepo#4135): a stored session
+  // whose both-true isStreaming/isProcessing pair predates this read (the
+  // pre-fetch snapshot above) and whose fresh list row reports the turn idle
+  // is a crash leftover no event will ever clear — upsert it with the
+  // stale-clear options so the list refresh converges it, matching the
+  // per-agent fetch path (agent-read-service). A genuinely live turn returns
+  // undefined options and keeps the default pair-guard preservation
+  // semantics (monorepo#1250). The per-agent `existing` read stays post-fetch
+  // on purpose: the message merge wants the latest stored transcript.
+  const staleClearAgents = [] as typeof fetched;
+  let staleClearOptions: BulkUpsertSessionsOptions | undefined;
   for (const agent of fetched) {
     const existing = yield* selectAgentSession.effect(String(agent.id));
-    agents.push(
+    const hadInFlightPairBeforeFetch = inFlightPairIdsBeforeFetch.has(String(agent.id));
+    const merged =
       agent.messages.length === 0 && existing && existing.messages.length > 0
         ? { ...agent, messages: existing.messages }
-        : agent,
-    );
+        : agent;
+    agents.push(merged);
+    const clearOptions = staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, agent);
+    if (clearOptions) {
+      staleClearOptions = clearOptions;
+      staleClearAgents.push(merged);
+    }
   }
   yield* put(setAgents(workspaceId, agents));
   if (!retiredLoadedAtRead && (yield* selectRetiredAgentsLoaded.effect(workspaceId))) {
@@ -337,7 +376,14 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     yield* put(fetchRetiredAgentsRequested(workspaceId));
   }
   if (agents.length > 0) {
-    yield* put(bulkUpsertSessions(agents));
+    if (staleClearAgents.length > 0) {
+      const staleClearIds = new Set(staleClearAgents.map((agent) => String(agent.id)));
+      const preserved = agents.filter((agent) => !staleClearIds.has(String(agent.id)));
+      if (preserved.length > 0) yield* put(bulkUpsertSessions(preserved));
+      yield* put(bulkUpsertSessions(staleClearAgents, staleClearOptions));
+    } else {
+      yield* put(bulkUpsertSessions(agents));
+    }
     for (const agent of agents) yield* put(upsertSession(agent));
   }
 
