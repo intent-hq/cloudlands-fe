@@ -31,6 +31,7 @@ import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
 import { normalizeFingerprint } from './backend-connection';
 import { Logger } from '../../../shared/logger';
+import { isLoopbackHost } from '../../../shared/loopback-host';
 import {
   DEFAULT_CONNECTION_ACCENT,
   LOCAL_CONNECTION_ID,
@@ -219,10 +220,14 @@ function localRecord(): ConnectionRecord {
 /**
  * Candidate-host list for a stored record: the primary `host` first, then the
  * stored extras (deduplicated). Records written before `hosts` existed migrate
- * to the one-element `[host]` list.
+ * to the one-element `[host]` list. Loopback extras are dropped on read — a
+ * record synced from before self-publish filtered loopback out of `localIps`
+ * may still carry one, and racing it would connect the dialing machine to its
+ * OWN local daemon. The primary `host` is kept as-is even when loopback: it
+ * is the record's identity, and rewriting it is a store mutation, not a read.
  */
 function candidateHosts(stored: Pick<StoredConnection, 'host' | 'hosts'>): string[] {
-  return dedupeHosts([stored.host, ...(stored.hosts ?? [])]);
+  return dedupeHosts([stored.host, ...(stored.hosts ?? []).filter((h) => !isLoopbackHost(h))]);
 }
 
 /** Trim, drop empties, and deduplicate while preserving order. */

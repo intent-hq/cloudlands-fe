@@ -2141,6 +2141,35 @@ describe('self-publish IPC', () => {
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10']);
   });
 
+  it('connections:publish-self filters loopback entries out of the published hosts', async () => {
+    // Loopback is only reachable from THIS machine — publishing it hands
+    // other devices a candidate that dials their own local daemon.
+    installPairingInfo({
+      localIps: ['127.0.0.1', '192.168.1.10', '::1', 'localhost', '10.0.0.5'],
+    });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ host: '192.168.1.10' }));
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
+  });
+
+  it('connections:publish-self rejects when every local IP is loopback (nothing routable)', async () => {
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'] });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
+      /no routable local IP/,
+    );
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
   it('connections:publish-self persists the pairingInfo tcAddress on the self record', async () => {
     installPairingInfo({ tcAddress: 'tc7f2a91.tailcat.net' });
     store.add.mockResolvedValue(SELF_RECORD);
