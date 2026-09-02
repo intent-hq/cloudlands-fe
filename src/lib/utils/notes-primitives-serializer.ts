@@ -224,7 +224,9 @@ function parseMarkdownToPrimitives(
           }
 
           // Match the daemon's reference kind rule for hoisted or incomplete targets
-          if (hoistedShortFormField || !parsed.target.kind) {
+          const hasValidKind =
+            parsed.target.kind === 'symbol' || parsed.target.kind === 'file_range';
+          if (hoistedShortFormField || !hasValidKind) {
             parsed.target.kind = parsed.target.semanticId?.includes('#symbol:')
               ? 'symbol'
               : 'file_range';
