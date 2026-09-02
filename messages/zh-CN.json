@@ -537,6 +537,8 @@
   "settings_aiBehavior_modelOptions_hint_placeholder": "何时使用此模型（可选）",
   "settings_aiBehavior_modelOptions_remove_ariaLabel": "移除模型选项",
   "settings_aiBehavior_modelOptions_add": "添加模型选项",
+  "settings_aiBehavior_modelOptions_effort_label": "推理力度：{level}",
+  "settings_aiBehavior_modelOptions_effortDefault_label": "默认",
   "settings_aiBehavior_reset": "重置",
   "settings_aiBehavior_systemPrompt_placeholder": "输入此专家的行为指令…",
   "settings_aiBehavior_deleteSpecialist": "删除专家",

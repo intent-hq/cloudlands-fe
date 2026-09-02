@@ -27,6 +27,7 @@ import {
   parseModelOptionsScalar,
   parseRoleScalar,
   parseTeamAgentsScalar,
+  splitCompoundModelScalar,
   writeSpecialistFile,
   loadSpecialistFile,
   loadProjectSpecialistFiles,
@@ -444,7 +445,7 @@ Body`;
       const content = `---
 name: "With Options"
 description: "Has model options"
-modelOptions: [{"model":"opencode:kimi-k3","hint":"cheap"},{"model":"opus4.5","hint":""}]
+modelOptions: [{"provider":"opencode","model":"kimi-k3","hint":"cheap"},{"model":"opus4.5","hint":""}]
 ---
 
 Prompt.`;
@@ -453,10 +454,42 @@ Prompt.`;
       expect('error' in result).toBe(false);
       if (!('error' in result)) {
         expect(result.frontmatter.modelOptions).toEqual([
-          { model: 'opencode:kimi-k3', hint: 'cheap' },
+          { provider: 'opencode', model: 'kimi-k3', hint: 'cheap' },
           { model: 'opus4.5', hint: '' },
         ]);
       }
+    });
+
+    it('should split legacy compound model ids into provider + bare model', () => {
+      expect(
+        parseModelOptionsScalar('[{"model":"opencode:kimi-k3","hint":"cheap"}]'),
+      ).toEqual([{ provider: 'opencode', model: 'kimi-k3', hint: 'cheap' }]);
+      // The compound prefix wins over an entry-level provider field.
+      expect(
+        parseModelOptionsScalar('[{"provider":"auggie","model":"opencode:kimi-k3","hint":""}]'),
+      ).toEqual([{ provider: 'opencode', model: 'kimi-k3', hint: '' }]);
+      // Both halves are trimmed.
+      expect(parseModelOptionsScalar('[{"model":" opencode : kimi-k3 ","hint":""}]')).toEqual([
+        { provider: 'opencode', model: 'kimi-k3', hint: '' },
+      ]);
+    });
+
+    it('should treat a compound id with an empty prefix or rest as unusable', () => {
+      expect(parseModelOptionsScalar('[{"model":":kimi-k3","hint":""}]')).toBeUndefined();
+      expect(parseModelOptionsScalar('[{"model":"opencode:","hint":""}]')).toBeUndefined();
+      expect(parseModelOptionsScalar('[{"model":" : ","hint":""}]')).toBeUndefined();
+    });
+
+    it('should carry provider only when it is a non-empty string', () => {
+      expect(parseModelOptionsScalar('[{"provider":"","model":"opus4.5","hint":""}]')).toEqual([
+        { model: 'opus4.5', hint: '' },
+      ]);
+      expect(parseModelOptionsScalar('[{"provider":"  ","model":"opus4.5","hint":""}]')).toEqual([
+        { model: 'opus4.5', hint: '' },
+      ]);
+      expect(parseModelOptionsScalar('[{"provider":42,"model":"opus4.5","hint":""}]')).toEqual([
+        { model: 'opus4.5', hint: '' },
+      ]);
     });
 
     it('should treat an unparseable scalar as an omitted key', () => {
@@ -481,8 +514,72 @@ Prompt.`;
       ]);
     });
 
+    it('should read a whitespace-only model or reasoningEffort as unusable/omitted', () => {
+      expect(parseModelOptionsScalar('[{"model":"  ","hint":""}]')).toBeUndefined();
+      expect(
+        parseModelOptionsScalar('[{"model":"opus4.5","hint":"","reasoningEffort":"  "}]'),
+      ).toEqual([{ model: 'opus4.5', hint: '' }]);
+    });
+
     it('should treat a non-empty array of all-unusable entries as omitted (inherits)', () => {
       expect(parseModelOptionsScalar('[{"hint":"no model"},"junk"]')).toBeUndefined();
+    });
+  });
+
+  describe('legacy compound model frontmatter scalar (PROTOCOL §5.11 lenient reads)', () => {
+    it('should split a compound model into bare model + codingAgent, the prefix winning', () => {
+      expect(splitCompoundModelScalar('opencode:kimi-k3', undefined)).toEqual({
+        model: 'kimi-k3',
+        codingAgent: 'opencode',
+      });
+      expect(splitCompoundModelScalar('opencode:kimi-k3', 'auggie')).toEqual({
+        model: 'kimi-k3',
+        codingAgent: 'opencode',
+      });
+      expect(splitCompoundModelScalar(' opencode : kimi-k3 ', undefined)).toEqual({
+        model: 'kimi-k3',
+        codingAgent: 'opencode',
+      });
+    });
+
+    it('should pass bare models through untouched', () => {
+      expect(splitCompoundModelScalar('opus4.5', 'auggie')).toEqual({
+        model: 'opus4.5',
+        codingAgent: 'auggie',
+      });
+      expect(splitCompoundModelScalar(undefined, 'auggie')).toEqual({
+        model: undefined,
+        codingAgent: 'auggie',
+      });
+    });
+
+    it('should read a compound with an empty prefix or rest as an omitted model', () => {
+      expect(splitCompoundModelScalar(':kimi-k3', 'auggie')).toEqual({
+        model: undefined,
+        codingAgent: 'auggie',
+      });
+      expect(splitCompoundModelScalar('opencode:', 'auggie')).toEqual({
+        model: undefined,
+        codingAgent: 'auggie',
+      });
+    });
+
+    it('should apply the split when parsing a specialist file', () => {
+      const content = `---
+name: "Legacy"
+description: "Compound model id"
+codingAgent: "auggie"
+model: "opencode:kimi-k3"
+---
+
+Prompt.`;
+
+      const result = parseSpecialistFile('/path/to/legacy.md', content);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.model).toBe('kimi-k3');
+        expect(result.frontmatter.codingAgent).toBe('opencode');
+      }
     });
   });
 
@@ -597,7 +694,7 @@ Prompt.`;
 
     it('should round-trip modelOptions when writing and loading a specialist file', async () => {
       const modelOptions = [
-        { model: 'opencode:kimi-k3', hint: 'cheap' },
+        { provider: 'opencode', model: 'kimi-k3', hint: 'cheap' },
         { model: 'opus4.5', hint: '' },
       ];
       await writeSpecialistFile({
@@ -613,6 +710,30 @@ Prompt.`;
       expect(loaded).not.toBeNull();
       expect(loaded?.rawContent).toContain(`modelOptions: ${JSON.stringify(modelOptions)}`);
       expect(loaded?.frontmatter.modelOptions).toEqual(modelOptions);
+    });
+
+    it('should normalize legacy compound entries to the triple shape on write', async () => {
+      await writeSpecialistFile({
+        id: 'options-compound-write',
+        name: 'Options Compound Write',
+        description: 'Legacy compound entry normalization',
+        model: 'opencode:kimi-k3',
+        codingAgent: 'auggie',
+        modelOptions: [{ provider: 'auggie', model: 'opencode:kimi-k3', hint: 'cheap' }],
+        behaviorPrompt: 'Prompt',
+      });
+
+      const loaded = await loadSpecialistFile('options-compound-write');
+      expect(loaded?.rawContent).toContain(
+        `modelOptions: ${JSON.stringify([{ provider: 'opencode', model: 'kimi-k3', hint: 'cheap' }])}`,
+      );
+      expect(loaded?.rawContent).toContain('model: "kimi-k3"');
+      expect(loaded?.rawContent).toContain('codingAgent: "opencode"');
+      expect(loaded?.frontmatter.modelOptions).toEqual([
+        { provider: 'opencode', model: 'kimi-k3', hint: 'cheap' },
+      ]);
+      expect(loaded?.frontmatter.model).toBe('kimi-k3');
+      expect(loaded?.frontmatter.codingAgent).toBe('opencode');
     });
 
     it('should omit the modelOptions key when undefined and write [] verbatim', async () => {
@@ -643,9 +764,12 @@ Prompt.`;
         id: 'effort-round-trip',
         name: 'Effort Round Trip',
         description: 'Reasoning effort round-trip test specialist',
-        model: 'codex:gpt-5.3-codex',
+        codingAgent: 'codex',
+        model: 'gpt-5.3-codex',
         reasoningEffort: 'high',
-        modelOptions: [{ model: 'codex:gpt-5.3-codex', hint: 'deep', reasoningEffort: 'xhigh' }],
+        modelOptions: [
+          { provider: 'codex', model: 'gpt-5.3-codex', hint: 'deep', reasoningEffort: 'xhigh' },
+        ],
         behaviorPrompt: 'Effort prompt',
       });
 
@@ -653,7 +777,7 @@ Prompt.`;
       expect(loaded?.rawContent).toContain('reasoningEffort: "high"');
       expect(loaded?.frontmatter.reasoningEffort).toBe('high');
       expect(loaded?.frontmatter.modelOptions).toEqual([
-        { model: 'codex:gpt-5.3-codex', hint: 'deep', reasoningEffort: 'xhigh' },
+        { provider: 'codex', model: 'gpt-5.3-codex', hint: 'deep', reasoningEffort: 'xhigh' },
       ]);
 
       await writeSpecialistFile({

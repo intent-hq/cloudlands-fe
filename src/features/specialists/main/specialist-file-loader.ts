@@ -332,10 +332,18 @@ function parseFrontmatter(content: string): {
  * Parse a frontmatter `modelOptions` scalar (single-line JSON array) with the
  * daemon's lenient read semantics (PROTOCOL §5.11): an unparseable scalar or
  * non-array is treated as an omitted key (undefined ⇒ inherits); unusable
- * entries — non-objects, or no non-empty string `model` — are skipped
- * individually; a non-string/empty `reasoningEffort` reads as omitted on the
+ * entries — non-objects, or no non-empty (non-whitespace) string `model` —
+ * are skipped individually; `provider` is carried when it is a non-empty
+ * string; a non-string/empty `reasoningEffort` reads as omitted on the
  * entry; only a literal `[]` yields an explicit empty list, and a non-empty
  * array whose entries are ALL unusable is treated as omitted.
+ *
+ * Legacy compound `model` ids split on read: `provider:model` becomes the
+ * explicit `provider` plus the bare `model` (both halves trimmed), the
+ * prefix winning over an entry-level `provider` field (mirroring the spawn
+ * precedence compound ids had). A compound id with an empty prefix or an
+ * empty rest is unusable. Writes emit the triple shape only, and a bare
+ * model id never contains a colon, so the re-split on every read is safe.
  * Exported for testing purposes.
  */
 export function parseModelOptionsScalar(
@@ -353,17 +361,41 @@ export function parseModelOptionsScalar(
   const options: SpecialistModelOption[] = [];
   for (const entry of parsed) {
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
-    const { model, hint, reasoningEffort } = entry as {
+    const {
+      provider: rawProvider,
+      model: rawModel,
+      hint,
+      reasoningEffort,
+    } = entry as {
+      provider?: unknown;
       model?: unknown;
       hint?: unknown;
       reasoningEffort?: unknown;
     };
-    if (typeof model !== 'string' || model === '') continue;
+    if (typeof rawModel !== 'string' || rawModel.trim() === '') continue;
+    let provider: string | undefined;
+    let model: string;
+    const colonIndex = rawModel.indexOf(':');
+    if (colonIndex >= 0) {
+      const prefix = rawModel.slice(0, colonIndex).trim();
+      const rest = rawModel.slice(colonIndex + 1).trim();
+      // A compound with an empty prefix or empty rest is unusable.
+      if (prefix === '' || rest === '') continue;
+      provider = prefix;
+      model = rest;
+    } else {
+      provider =
+        typeof rawProvider === 'string' && rawProvider.trim() !== '' ? rawProvider : undefined;
+      model = rawModel;
+    }
     options.push({
+      ...(provider !== undefined ? { provider } : {}),
       model,
       hint: typeof hint === 'string' ? hint : '',
       // A non-string or empty level reads as an omitted key (inherits).
-      ...(typeof reasoningEffort === 'string' && reasoningEffort !== '' ? { reasoningEffort } : {}),
+      ...(typeof reasoningEffort === 'string' && reasoningEffort.trim() !== ''
+        ? { reasoningEffort }
+        : {}),
     });
   }
   // All entries unusable ⇒ treated as omitted (inherits), never a clear.
@@ -406,6 +438,29 @@ export function parseTeamAgentsScalar(raw: string | undefined): string[] | undef
 }
 
 /**
+ * Lenient read normalization of a legacy compound frontmatter `model` scalar
+ * (PROTOCOL §5.11): `model: "provider:model"` splits into the bare `model`
+ * plus a `codingAgent` set to the prefix — the prefix WINS over any
+ * `codingAgent` the same file declares, preserving the spawn precedence
+ * compound ids had. A compound with an empty prefix or empty rest is
+ * unusable and reads as an omitted key (which inherits). Writes emit bare
+ * model ids only, and a bare id never contains a colon, so the re-split on
+ * every read is safe. Exported for testing purposes.
+ */
+export function splitCompoundModelScalar(
+  model: string | undefined,
+  codingAgent: string | undefined,
+): { model: string | undefined; codingAgent: string | undefined } {
+  if (model === undefined) return { model, codingAgent };
+  const colonIndex = model.indexOf(':');
+  if (colonIndex < 0) return { model, codingAgent };
+  const prefix = model.slice(0, colonIndex).trim();
+  const rest = model.slice(colonIndex + 1).trim();
+  if (prefix === '' || rest === '') return { model: undefined, codingAgent };
+  return { model: rest, codingAgent: prefix };
+}
+
+/**
  * Parse a specialist file from its content.
  * Exported for testing purposes.
  */
@@ -440,13 +495,19 @@ export function parseSpecialistFile(
 
   const { frontmatter, body } = parsed;
 
+  // Legacy compound `model` ids split into bare model + codingAgent on read.
+  const { model, codingAgent } = splitCompoundModelScalar(
+    frontmatter.model,
+    frontmatter.codingAgent,
+  );
+
   // Retired `modelTier:` keys in existing files are tolerated and ignored
   // (dropped on the next rewrite) — never rejected.
   const specialistFrontmatter: SpecialistFileFrontmatter = {
     name: frontmatter.name || nameFromFilename,
     description: frontmatter.description || '',
-    codingAgent: frontmatter.codingAgent,
-    model: frontmatter.model,
+    codingAgent,
+    model,
     roleReminder: frontmatter.roleReminder,
     agentType: frontmatter.agentType,
     hidden: frontmatter.hidden === 'true' ? true : undefined,
@@ -603,18 +664,26 @@ export async function writeSpecialistFile(specialist: {
     const filename = specialistIdToFilename(specialist.id);
     const filePath = path.join(dir, filename);
 
+    // Writes emit the triple shape only (PROTOCOL §5.11): a legacy compound
+    // `model` id from a stale caller is split into bare model + codingAgent
+    // (the prefix winning) so a compound id never persists to disk.
+    const { model, codingAgent } = splitCompoundModelScalar(
+      specialist.model,
+      specialist.codingAgent,
+    );
+
     // Build frontmatter with properly escaped values
     const frontmatterParts = [
       `name: "${escapeYamlValue(specialist.name)}"`,
       `description: "${escapeYamlValue(specialist.description)}"`,
     ];
 
-    if (specialist.codingAgent) {
-      frontmatterParts.push(`codingAgent: "${escapeYamlValue(specialist.codingAgent)}"`);
+    if (codingAgent) {
+      frontmatterParts.push(`codingAgent: "${escapeYamlValue(codingAgent)}"`);
     }
 
-    if (specialist.model) {
-      frontmatterParts.push(`model: "${escapeYamlValue(specialist.model)}"`);
+    if (model) {
+      frontmatterParts.push(`model: "${escapeYamlValue(model)}"`);
     }
 
     if (specialist.roleReminder) {
@@ -627,8 +696,20 @@ export async function writeSpecialistFile(specialist: {
 
     // Single-line JSON-array scalar (PROTOCOL §5.11). An explicit [] is the
     // inherit-clearing form and is written verbatim; undefined writes no key.
+    // Entries are normalized to the triple shape (compound ids split, the
+    // prefix winning over the entry-level provider) so writes never persist a
+    // compound `model`.
     if (specialist.modelOptions !== undefined) {
-      frontmatterParts.push(`modelOptions: ${JSON.stringify(specialist.modelOptions)}`);
+      const normalizedOptions = specialist.modelOptions.map((opt) => {
+        const colonIndex = opt.model.indexOf(':');
+        if (colonIndex < 0) return opt;
+        const prefix = opt.model.slice(0, colonIndex).trim();
+        const rest = opt.model.slice(colonIndex + 1).trim();
+        if (prefix === '' || rest === '') return opt;
+        const { provider: _provider, ...restFields } = opt;
+        return { provider: prefix, ...restFields, model: rest };
+      });
+      frontmatterParts.push(`modelOptions: ${JSON.stringify(normalizedOptions)}`);
     }
 
     if (specialist.reasoningEffort) {
