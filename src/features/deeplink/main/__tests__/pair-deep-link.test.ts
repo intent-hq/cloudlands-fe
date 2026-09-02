@@ -151,6 +151,25 @@ describe('handlePairDeepLink', () => {
     openBackendWindow.mockRejectedValue(new Error('probe failed'));
     await expect(handlePairDeepLink(LINK)).resolves.toBeUndefined();
   });
+
+  it('drops a concurrent pair link while one is in flight (single dialog)', async () => {
+    let resolveDialog!: (v: { response: number }) => void;
+    showMessageBox.mockReturnValue(new Promise((resolve) => (resolveDialog = resolve)));
+    const first = handlePairDeepLink(LINK);
+    const second = handlePairDeepLink(LINK);
+    await second;
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    resolveDialog({ response: 0 });
+    await first;
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(openBackendWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles a subsequent link after the previous one settles', async () => {
+    await handlePairDeepLink(LINK);
+    await handlePairDeepLink(LINK);
+    expect(showMessageBox).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('routePairLinkFromOs', () => {

@@ -29,11 +29,26 @@ import { scrubToken } from '../utils/scrub-token';
 const logger = new Logger('PairDeepLink');
 
 /**
+ * In-flight guard: a pair link arriving while another is being handled is
+ * dropped. Without it, two rapid clicks (or a spammed `second-instance`) run
+ * the flow concurrently — both `findMatching` calls miss the same new server
+ * and stack two confirm dialogs. `add()` is an identity-keyed upsert so the
+ * outcome is benign either way; this just avoids the double dialog.
+ */
+let pairLinkInFlight = false;
+
+/**
  * Handle an `intent://pair?...` deep link end to end. Resolves once the flow
  * completes (window opened, dialog cancelled, or link rejected); never
- * rejects — all failures are logged (scrubbed) and swallowed.
+ * rejects — all failures are logged (scrubbed) and swallowed. Concurrent
+ * calls are dropped while one is in flight (see `pairLinkInFlight`).
  */
 export async function handlePairDeepLink(url: string): Promise<void> {
+  if (pairLinkInFlight) {
+    logger.info('Ignoring pairing link while another is being handled');
+    return;
+  }
+  pairLinkInFlight = true;
   try {
     const parsed = parsePairingUri(url);
     if (!parsed) {
@@ -82,6 +97,8 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     logger.warn('Pair deep link handling failed', {
       error: scrubToken(error instanceof Error ? error.message : String(error)),
     });
+  } finally {
+    pairLinkInFlight = false;
   }
 }
 
