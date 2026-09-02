@@ -2460,19 +2460,16 @@
       toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName: folder.name }));
       return;
     }
+    // Path-keyed like folder @-mentions, so two dropped folders sharing a
+    // basename stay distinct. Re-dropping the SAME folder is a no-op: the
+    // strip is keyed by item.id, so a duplicate id would break keyed
+    // rendering and make one remove drop both pills while both references
+    // still ride the submit.
+    const id = `staged-folder-${absolutePath}`;
+    if (contextItems.some((item) => item.id === id)) return;
     // Windows-aware basename fallback ('\' or '/' separators).
     const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
-    contextItems = [
-      ...contextItems,
-      {
-        // Path-keyed like folder @-mentions, so two dropped folders sharing
-        // a basename stay distinct.
-        id: `staged-folder-${absolutePath}`,
-        type: 'folder',
-        label,
-        path: absolutePath,
-      },
-    ];
+    contextItems = [...contextItems, { id, type: 'folder', label, path: absolutePath }];
   }
 
   // Handle clipboard paste for images

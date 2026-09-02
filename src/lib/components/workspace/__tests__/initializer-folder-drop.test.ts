@@ -42,6 +42,8 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
+    placeAttachment: vi.fn(),
+    backendRequest: vi.fn(),
     hydrated$: writable(false),
     compactFormState$: writable<Record<string, unknown> | null>(null),
     isRemote: false,
@@ -213,6 +215,16 @@ vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
 
 vi.mock('$lib/components/chat/input/attachment-placement', () => ({
   isRemoteBackend: () => mocks.isRemote,
+  placeAttachmentViaTransport: (...args: unknown[]) => mocks.placeAttachment(...args),
+  extractPlacementErrorDetail: (error: unknown) => String(error),
+}));
+
+// staged-attachments sends the held first message through `backendRequest`
+// ('agent.sendMessage') — capture it so the pendingFirstMessage path can be
+// asserted on the wire.
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  backendRequest: (...args: unknown[]) => mocks.backendRequest(...args),
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -367,6 +379,114 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       expect.arrayContaining([
         { type: 'file', path: '/home/user/projects/my-folder', title: 'my-folder' },
       ]),
+    );
+  });
+
+  it('re-dropping the same folder is a no-op (one pill, one reference)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    const result = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const dropEvent = () => makeItemsDropEvent([{ file: folder, isDirectory: true }]);
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+
+    // One pill — a duplicate path-derived id would break keyed rendering
+    // and make one remove drop both pills.
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(1);
+    });
+
+    seedAutoCreatePrefill();
+    await (result.component as { applyPrefill: () => Promise<void> }).applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    const refs = mocks.create.mock.calls[0][0].initialAgent.contextReferences as Array<{
+      path?: string;
+    }>;
+    expect(refs.filter((r) => r.path === '/home/user/projects/my-folder')).toHaveLength(1);
+  });
+
+  it('mixed folder + staged file: references survive into the held first message sent after placement', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(
+      (f: File) => `/home/user/projects/${f.name}`,
+    );
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+    mocks.placeAttachment.mockResolvedValue({
+      ok: true,
+      path: '.intent/attachments/notes.txt',
+      fileName: 'notes.txt',
+      size: 1,
+      attachmentId: 'att-1',
+      mimeType: 'text/plain',
+    });
+    mocks.backendRequest.mockResolvedValue({ success: true });
+
+    const result = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const file = new File(['y'], 'notes.txt', { type: 'text/plain' });
+    await fireEvent.drop(
+      dropTarget(result.container),
+      makeItemsDropEvent([
+        { file, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(2);
+    });
+
+    seedAutoCreatePrefill();
+    await (result.component as { applyPrefill: () => Promise<void> }).applyPrefill();
+    await waitFor(() => expect(mocks.backendRequest).toHaveBeenCalledTimes(1));
+
+    // The staged file holds back the first message from workspace.create...
+    const initialAgent = mocks.create.mock.calls[0][0].initialAgent;
+    expect(initialAgent.prompt).toBeUndefined();
+    expect(initialAgent.contextReferences).toBeUndefined();
+    // ...the file is placed into the created workspace from its sourcePath...
+    expect(mocks.placeAttachment).toHaveBeenCalledWith(
+      'ws-created',
+      'notes.txt',
+      expect.objectContaining({ sourcePath: '/home/user/projects/notes.txt' }),
+    );
+    // ...and the folder reference rides the held agent.sendMessage alongside
+    // the attachment-reference file block.
+    const [method, params] = mocks.backendRequest.mock.calls[0] as [
+      string,
+      {
+        agentId: string;
+        workspaceId: string;
+        content: string;
+        contextReferences?: unknown[];
+        fileBlocks?: unknown[];
+      },
+    ];
+    expect(method).toBe('agent.sendMessage');
+    expect(params.agentId).toBe('agent-created');
+    expect(params.workspaceId).toBe('ws-created');
+    expect(params.content).toBe('Build the thing');
+    expect(params.contextReferences).toEqual(
+      expect.arrayContaining([
+        { type: 'file', path: '/home/user/projects/my-folder', title: 'my-folder' },
+      ]),
+    );
+    expect(params.fileBlocks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'file', attachmentId: 'att-1' })]),
     );
   });
 });
