@@ -1,7 +1,9 @@
 import { BrowserWindow } from 'electron';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
+import { isPairingUri } from '$lib/utils/pairing-uri';
 import type { Workspace } from '../../shared/types';
 import { Logger } from '../../shared/logger';
+import { scrubToken } from './utils/scrub-token';
 
 const mainLogger = new Logger('DeepLinkHandler');
 
@@ -27,7 +29,7 @@ export class DeepLinkHandler {
   parseDeepLink(url: string): DeepLinkAction | null {
     try {
       // i18n-ignore (developer log message)
-      mainLogger.info('[DeepLinkHandler] Parsing URL:', { url });
+      mainLogger.info('[DeepLinkHandler] Parsing URL:', { url: scrubToken(url) });
 
       // Remove the protocol prefix
       const urlWithoutProtocol = url.replace('intent://', 'http://');
@@ -79,11 +81,29 @@ export class DeepLinkHandler {
    * Handle a deep link URL
    */
   async handleDeepLink(url: string, mainWindow: BrowserWindow | null): Promise<void> {
+    // Pair links are handled entirely in the main process: the bearer token in
+    // the URL must never reach the renderer (IPC payload or load URL query).
+    if (isPairingUri(url)) {
+      if (!mainWindow) {
+        // Cold start — park until startup finishes (processPendingUrl), when
+        // the connections store and backend IPC are available.
+        // i18n-ignore (developer log message)
+        mainLogger.info('[DeepLinkHandler] App not ready, storing pair URL for later');
+        this.pendingUrl = url;
+        return;
+      }
+      // Dynamic import: pair-deep-link reaches backend.ipc → main/window,
+      // which imports this module — a static import would create a cycle.
+      const { handlePairDeepLink } = await import('./main/pair-deep-link');
+      await handlePairDeepLink(url);
+      return;
+    }
+
     const action = this.parseDeepLink(url);
 
     if (!action) {
       // i18n-ignore (developer log message)
-      mainLogger.warn('[DeepLinkHandler] Could not parse deep link:', { url });
+      mainLogger.warn('[DeepLinkHandler] Could not parse deep link:', { url: scrubToken(url) });
       return;
     }
 
@@ -112,7 +132,7 @@ export class DeepLinkHandler {
     if (this.pendingUrl) {
       // i18n-ignore (developer log message)
       mainLogger.info('[DeepLinkHandler] Processing pending URL:', {
-        url: this.pendingUrl,
+        url: scrubToken(this.pendingUrl),
       });
       const url = this.pendingUrl;
       this.pendingUrl = null;

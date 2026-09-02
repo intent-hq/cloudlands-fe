@@ -6,6 +6,8 @@ import fsAsync from 'fs/promises';
 import { Logger } from '../shared/logger';
 import { resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
+import { scrubToken } from '../features/deeplink/utils/scrub-token';
+import { isPairingUri } from '../lib/utils/pairing-uri';
 import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
@@ -886,11 +888,14 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
       .catch((error: unknown) => logger.error('Failed to clear cache:', error as Error));
   }
 
-  // Check process.argv for intent:// URL on cold start
+  // Check process.argv for intent:// URL on cold start. Pair links are
+  // excluded: they are handled fully in the main process (parked at startup,
+  // processed once the window is ready) and must never be embedded in the
+  // renderer load URL — the pairing bearer token would leak to the renderer.
   const intentUrl = process.argv.find((arg: string) => arg.startsWith('intent://'));
   let loadUrl = buildLoadUrl();
 
-  if (intentUrl) {
+  if (intentUrl && !isPairingUri(intentUrl)) {
     const deepLinkHandler = new DeepLinkHandler();
     const action = deepLinkHandler.parseDeepLink(intentUrl);
     if (action) {
@@ -919,7 +924,16 @@ export async function createWindowForDeepLink(
   deepLinkUrl: string,
   deepLinkHandler: DeepLinkHandler,
 ) {
-  logger.info('Creating window for deep link:', { url: deepLinkUrl });
+  logger.info('Creating window for deep link:', { url: scrubToken(deepLinkUrl) });
+
+  // Pair links never touch the renderer (no window, no IPC): route straight
+  // to the main-process pair handler. Dynamic import — pair-deep-link reaches
+  // backend.ipc, which imports this module (a static import would cycle).
+  if (isPairingUri(deepLinkUrl)) {
+    const { handlePairDeepLink } = await import('../features/deeplink/main/pair-deep-link');
+    await handlePairDeepLink(deepLinkUrl);
+    return;
+  }
 
   // Parse the deep link to extract action and params
   const action = deepLinkHandler.parseDeepLink(deepLinkUrl);

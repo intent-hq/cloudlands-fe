@@ -371,6 +371,9 @@ import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
+import { handlePairDeepLink } from '../features/deeplink/main/pair-deep-link';
+import { scrubToken } from '../features/deeplink/utils/scrub-token';
+import { isPairingUri } from '../lib/utils/pairing-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
@@ -1741,6 +1744,13 @@ app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = process.argv.find((arg: string) => arg.startsWith('intent://'));
 
+    // A pair link is handled fully in the main process: park it now and let
+    // the pending-URL pass after window creation route it to the pair handler.
+    // It is never embedded in the renderer load URL — createWindow skips it.
+    if (intentUrlArg && isPairingUri(intentUrlArg)) {
+      await deepLinkHandler.handleDeepLink(intentUrlArg, null);
+    }
+
     // Try to restore saved window sessions (unless we have a deep link to
     // process, which keeps its single-window bypass). EVERY backend with a
     // saved session bucket is restored, each bucket's windows stamped with its
@@ -2012,7 +2022,19 @@ app.on('window-all-closed', async () => {
 // This is called when the user opens an intent:// URL (e.g., from a link or command line)
 app.on('open-url', async (event: Electron.Event, url: string) => {
   event.preventDefault();
-  logger.info('Received open-url event:', { url });
+  logger.info('Received open-url event:', { url: scrubToken(url) });
+
+  // Pair links bypass the renderer/window pipeline entirely: handled in the
+  // main process when the app is warm, parked as pending on cold start.
+  if (isPairingUri(url)) {
+    const pairMainWindow = getMainWindow();
+    if (pairMainWindow && !pairMainWindow.isDestroyed()) {
+      await handlePairDeepLink(url);
+    } else {
+      await deepLinkHandler.handleDeepLink(url, null);
+    }
+    return;
+  }
 
   // If app is ready and has a main window, create a new window for the deep link
   const mainWindow = getMainWindow();
@@ -2047,16 +2069,22 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', async (_event: Electron.Event, commandLine: string[]) => {
-    logger.info('Received second-instance event:', { commandLine });
+    logger.info('Received second-instance event:', { commandLine: commandLine.map(scrubToken) });
 
     // Look for intent:// URL in command line arguments
     const deepLinkUrl = commandLine.find((arg: string) => arg.startsWith('intent://'));
 
     if (deepLinkUrl) {
-      logger.info('Found deep link URL in second instance:', { url: deepLinkUrl });
-      const mainWindow = getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        await createWindowForDeepLink(deepLinkUrl, deepLinkHandler);
+      logger.info('Found deep link URL in second instance:', { url: scrubToken(deepLinkUrl) });
+      if (isPairingUri(deepLinkUrl)) {
+        // Pair links go straight to the main-process handler — the first
+        // instance is already running, so no parking or window is needed.
+        await handlePairDeepLink(deepLinkUrl);
+      } else {
+        const mainWindow = getMainWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          await createWindowForDeepLink(deepLinkUrl, deepLinkHandler);
+        }
       }
     } else {
       // No deep link, just focus the existing window

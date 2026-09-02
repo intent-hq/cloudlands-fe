@@ -2168,3 +2168,51 @@ describe('connections-store keychain sync surface', () => {
     expect(remotes[0]).toMatchObject({ port: 6200 });
   });
 });
+
+describe('findMatching (pairing identity lookup)', () => {
+  it('matches by fingerprint even under a different host:port', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.99'],
+      port: 9999,
+      fingerprint: 'aa:bb:cc', // case-insensitive
+    });
+    expect(found).toMatchObject({ id: rec.id });
+    expect(found).not.toHaveProperty('token');
+    expect(found).not.toHaveProperty('encToken');
+  });
+
+  it('falls back to normalized host:port when fingerprints are unusable', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['  192.168.1.10 '],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('tries every candidate host from the pairing URI', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['10.9.9.9', '192.168.1.10'],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('returns null when nothing matches', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.1'],
+      port: 1234,
+      fingerprint: 'DD:EE:FF',
+    });
+    expect(found).toBeNull();
+  });
+});
