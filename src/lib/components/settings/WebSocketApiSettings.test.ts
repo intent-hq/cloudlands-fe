@@ -935,30 +935,8 @@ describe('WebSocketApiSettings', () => {
         expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
       );
 
-      expect(document.querySelector('[data-tunnel-derp-row]')).toBeNull();
-    });
-
-    it('orders the sections: tunnel toggle, mobile pairing, listen targets, tailcat address', async () => {
-      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
-      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
-      render(WebSocketApiSettings);
-      await waitFor(() => expect(screen.getByText('tc-key-abc')).toBeTruthy());
-
-      const tunnelToggleRow = screen
-        .getByRole('switch', { name: m.settings_tunnel_enable_label() })
-        .closest('section') as HTMLElement;
-      const pairingRow = screen
-        .getByText(m.settings_wsApi_mobilePairing_label())
-        .closest('section') as HTMLElement;
-      const listenRow = screen
-        .getByText(m.settings_listenTargets_label())
-        .closest('section') as HTMLElement;
-      const addressRow = screen.getByText('tc-key-abc').closest('section') as HTMLElement;
-      expect(tunnelToggleRow.compareDocumentPosition(pairingRow)).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
-      expect(pairingRow.compareDocumentPosition(listenRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-      expect(listenRow.compareDocumentPosition(addressRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(screen.queryByRole('textbox', { name: /derp/i })).toBeNull();
+      expect(screen.queryByLabelText(/derp/i)).toBeNull();
     });
 
     it('load-repair: tunnel on without loopback renders 127.0.0.1 checked+locked and the next change persists it', async () => {

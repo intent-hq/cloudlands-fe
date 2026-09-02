@@ -658,8 +658,7 @@
                   {m.settings_tunnel_enable_label()}
                 </p>
                 <p class="text-xs text-subtle mt-1">
-                  {m.settings_tunnel_enable_description()}
-                  <a
+                  {m.settings_tunnel_enable_description()}{' '}<a
                     href="https://github.com/tailscale/tailcat"
                     target="_blank"
                     rel="noopener noreferrer"
