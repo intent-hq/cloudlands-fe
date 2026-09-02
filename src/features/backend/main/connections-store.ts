@@ -661,7 +661,14 @@ export async function updateMetadata(
     conn.port = nextPort;
     conn.fingerprint = nextFingerprint;
     if (addressChanged) conn.hosts = [];
-    if (addressChanged || fingerprintChanged) conn.hostname = null;
+    // A new identity may be a different machine: the captured hostname and
+    // tunnel address describe the OLD daemon and would otherwise sync
+    // fleet-wide under the new identity (tcAddress rides the same record).
+    // Clear both; the next successful connect re-captures them.
+    if (addressChanged || fingerprintChanged) {
+      conn.hostname = null;
+      conn.tcAddress = null;
+    }
     const now = Math.max(
       Date.now(),
       ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
@@ -712,14 +719,16 @@ export async function replaceSecret(
     conn.encToken = encryptToken(token);
     if (fingerprintKey(conn.fingerprint) !== fingerprintKey(normalizedFingerprint)) {
       conn.fingerprint = normalizedFingerprint;
-      // The cert changed, so the captured hostname may describe a different
-      // machine. A label auto-captured from it (see setHostname) resets to
-      // the address default so it stays recognizably uncustomized and the
-      // next connect re-captures the pretty name.
+      // The cert changed, so the captured hostname and tunnel address may
+      // describe a different machine — and tcAddress would sync fleet-wide
+      // under the new identity. A label auto-captured from the hostname (see
+      // setHostname) resets to the address default so it stays recognizably
+      // uncustomized; the next connect re-captures both.
       if (conn.hostname != null && conn.label.trim() === conn.hostname.trim()) {
         conn.label = `${conn.host.trim()}:${conn.port}`;
       }
       conn.hostname = null;
+      conn.tcAddress = null;
     }
     conn.updatedAt = Date.now();
     await writeState(state);

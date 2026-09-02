@@ -1196,6 +1196,44 @@ describe('connections-store', () => {
     expect(pulled?.tcAddress).toBe('tc.example.ts.net');
   });
 
+  it('an identity change via updateMetadata clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // A metadata-only edit keeps the address…
+    await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'blue' });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc.example.ts.net');
+
+    // …but a new endpoint may be a different machine: the old daemon's tunnel
+    // address must not sync fleet-wide under the new identity.
+    await store.updateMetadata(rec.id, {
+      label: 'Renamed',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('a fingerprint change via updateMetadata or replaceSecret clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    await store.updateMetadata(rec.id, {
+      label: sampleConn.label,
+      accent: 'blue',
+      fingerprint: 'DD:EE:FF',
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+
+    await store.setTcAddress(rec.id, 'tc2.ts.net');
+    // A same-fingerprint token rotation keeps the address…
+    await store.replaceSecret(rec.id, 'rotated-token', 'DD:EE:FF');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+    // …a cert change clears it.
+    await store.replaceSecret(rec.id, 'rotated-again', '11:22:33');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');
