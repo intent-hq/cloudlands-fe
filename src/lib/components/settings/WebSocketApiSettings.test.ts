@@ -874,22 +874,18 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
-    it('selecting the tunnel persists a bindAddress that includes 127.0.0.1', async () => {
+    it('enabling the tunnel toggle persists a bindAddress that includes 127.0.0.1', async () => {
       // The tailcat sidecar forwards tunnel connections to 127.0.0.1, so
       // turning the tunnel on must write loopback into server.bindAddress.
       mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
       mocks.mockPairingInfo.mockResolvedValue(PAIRING);
       render(WebSocketApiSettings);
       await waitFor(() =>
-        expect(
-          screen.getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
-        ).toBeTruthy(),
+        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
       );
 
       mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
-      await fireEvent.click(
-        screen.getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
-      );
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() }));
 
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
@@ -898,6 +894,71 @@ describe('WebSocketApiSettings', () => {
           { path: 'server.tunnel.only', value: false },
         ]);
       });
+    });
+
+    it('disabling the tunnel toggle from tunnel-only restores the persisted bind IPs', async () => {
+      // Tunnel-only has no direct listeners; toggling the tunnel off must
+      // re-activate the persisted bindAddress so zero targets never persist.
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: true }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() }));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['192.168.1.2'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+    });
+
+    it('hides the tunnel toggle on daemons without tunnel support', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows());
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
+
+      expect(screen.queryByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeNull();
+    });
+
+    it('renders no DERP relay URL field (config.toml only)', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
+      );
+
+      expect(document.querySelector('[data-tunnel-derp-row]')).toBeNull();
+    });
+
+    it('orders the sections: tunnel toggle, mobile pairing, listen targets, tailcat address', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByText('tc-key-abc')).toBeTruthy());
+
+      const tunnelToggleRow = screen
+        .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+        .closest('section') as HTMLElement;
+      const pairingRow = screen
+        .getByText(m.settings_wsApi_mobilePairing_label())
+        .closest('section') as HTMLElement;
+      const listenRow = screen
+        .getByText(m.settings_listenTargets_label())
+        .closest('section') as HTMLElement;
+      const addressRow = screen.getByText('tc-key-abc').closest('section') as HTMLElement;
+      expect(tunnelToggleRow.compareDocumentPosition(pairingRow)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(pairingRow.compareDocumentPosition(listenRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(listenRow.compareDocumentPosition(addressRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     });
 
     it('load-repair: tunnel on without loopback renders 127.0.0.1 checked+locked and the next change persists it', async () => {
@@ -945,12 +1006,10 @@ describe('WebSocketApiSettings', () => {
         (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
       ).toBe(false);
       expect(
-        (
-          screen.getByRole('checkbox', {
-            name: m.settings_listenTargets_tunnel_label(),
-          }) as HTMLInputElement
-        ).checked,
-      ).toBe(true);
+        screen
+          .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('true');
     });
 
     it('includes tc= in the QR pairing URI when the daemon reports a tunnel address', async () => {

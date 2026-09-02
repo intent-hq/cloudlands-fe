@@ -1,13 +1,12 @@
 /**
  * @vitest-environment jsdom
  *
- * ListenTargetSelector — the unified listen-target picker (bind IPs + the
- * tailcat tunnel entry). Covers the selection semantics the Advanced page
- * persists from: exclusive all-interfaces, tunnel-only, the never-zero-targets
- * guard, the loopback lock while the tunnel is selected (the tailcat sidecar
- * forwards to 127.0.0.1, so loopback must stay bound), and graceful
- * degradation when the daemon predates the tunnel settings
- * (tunnelSupported=false hides the tunnel entry).
+ * ListenTargetSelector — the listen-target picker (bind IPs; the tailcat
+ * tunnel is toggled by the parent, mirrored in via `tunnelSelected`). Covers
+ * the selection semantics the Advanced page persists from: exclusive
+ * all-interfaces, the never-zero-targets guard, and the loopback lock while
+ * the tunnel is on (the tailcat sidecar forwards to 127.0.0.1, so loopback
+ * must stay bound).
  */
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,7 +20,6 @@ function renderSelector(props: Partial<Parameters<typeof render>[1]> & Record<st
       availableIps: ['192.168.1.10', '10.0.0.5'],
       selectedIps: ['192.168.1.10'],
       tunnelSelected: false,
-      tunnelSupported: true,
       onchange,
       ...props,
     },
@@ -32,7 +30,7 @@ function renderSelector(props: Partial<Parameters<typeof render>[1]> & Record<st
 const asInput = (el: HTMLElement): HTMLInputElement => el as HTMLInputElement;
 
 describe('ListenTargetSelector', () => {
-  it('renders available IPs with the bound ones checked, plus all-interfaces and the tunnel entry', () => {
+  it('renders available IPs with the bound ones checked, plus all-interfaces', () => {
     const { getByRole } = renderSelector({});
     expect(
       asInput(getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }))
@@ -40,9 +38,6 @@ describe('ListenTargetSelector', () => {
     ).toBe(false);
     expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).checked).toBe(true);
     expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).checked).toBe(false);
-    expect(
-      asInput(getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() })).checked,
-    ).toBe(false);
   });
 
   it('always lists the loopback entry, unchecked and enabled without the tunnel', () => {
@@ -92,20 +87,6 @@ describe('ListenTargetSelector', () => {
     expect(onchange).toHaveBeenCalledWith({ ips: ['10.0.0.5'], tunnel: false });
   });
 
-  it('selecting the tunnel keeps the IPs, adds loopback, and flips tunnel on', async () => {
-    // The tailcat sidecar forwards tunnel connections to 127.0.0.1, so a
-    // specific-IPs selection gains loopback the moment the tunnel goes on.
-    const { getByRole, onchange } = renderSelector({});
-    await fireEvent.click(getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }));
-    expect(onchange).toHaveBeenCalledWith({ ips: ['192.168.1.10', '127.0.0.1'], tunnel: true });
-  });
-
-  it('selecting the tunnel with all-interfaces bound adds no loopback (already covered)', async () => {
-    const { getByRole, onchange } = renderSelector({ selectedIps: ['0.0.0.0'] });
-    await fireEvent.click(getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }));
-    expect(onchange).toHaveBeenCalledWith({ ips: ['0.0.0.0'], tunnel: true });
-  });
-
   it('locks loopback checked while the tunnel is selected alongside specific IPs', () => {
     const { getByRole, getByText } = renderSelector({
       selectedIps: ['192.168.1.10', '127.0.0.1'],
@@ -147,15 +128,10 @@ describe('ListenTargetSelector', () => {
     });
   });
 
-  it('deselecting the tunnel unlocks loopback but keeps it selected', async () => {
-    const { getByRole, onchange, rerender } = renderSelector({
-      selectedIps: ['192.168.1.10'],
+  it('turning the tunnel off (parent toggle) unlocks loopback but keeps it selected', async () => {
+    const { getByRole, rerender } = renderSelector({
+      selectedIps: ['192.168.1.10', '127.0.0.1'],
       tunnelSelected: true,
-    });
-    await fireEvent.click(getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }));
-    expect(onchange).toHaveBeenCalledWith({
-      ips: ['192.168.1.10', '127.0.0.1'],
-      tunnel: false,
     });
     await rerender({ selectedIps: ['192.168.1.10', '127.0.0.1'], tunnelSelected: false });
     const loopback = asInput(
@@ -207,22 +183,6 @@ describe('ListenTargetSelector', () => {
     expect(allInterfaces.checked).toBe(true);
   });
 
-  it('tunnel-only state: unchecking the tunnel as the sole target is refused', async () => {
-    const { getByRole, onchange } = renderSelector({ selectedIps: [], tunnelSelected: true });
-    const tunnel = asInput(
-      getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
-    );
-    expect(tunnel.disabled).toBe(false);
-    await fireEvent.click(tunnel);
-    expect(onchange).not.toHaveBeenCalled();
-    expect(tunnel.checked).toBe(true);
-  });
-
-  it('degrades gracefully on old daemons: no tunnel entry when unsupported', () => {
-    const { queryByRole } = renderSelector({ tunnelSupported: false });
-    expect(queryByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() })).toBeNull();
-  });
-
   it('tunnel-only posture: loopback stays unchecked and unlocked (daemon binds it itself)', () => {
     const { getByRole } = renderSelector({ selectedIps: [], tunnelSelected: true });
     const loopback = asInput(
@@ -235,8 +195,6 @@ describe('ListenTargetSelector', () => {
   it('disables all checkboxes while a save is in flight', () => {
     const { getByRole } = renderSelector({ saving: true });
     expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
-    expect(
-      asInput(getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() })).disabled,
-    ).toBe(true);
+    expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).disabled).toBe(true);
   });
 });

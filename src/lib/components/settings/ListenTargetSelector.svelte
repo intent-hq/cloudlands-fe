@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
    * Listen-target selector (mirrors the `intentd pair` picker): the daemon's
-   * available IP addresses with the currently bound ones selected, plus a
-   * "Tailcat tunnel" entry. Presentational — the parent owns fetching and
-   * persistence (`server.bindAddress`, `server.tunnel.enabled`,
-   * `server.tunnel.only`).
+   * available IP addresses with the currently bound ones selected.
+   * Presentational — the parent owns fetching and persistence
+   * (`server.bindAddress`, `server.tunnel.enabled`, `server.tunnel.only`)
+   * and hosts the tunnel on/off toggle; `tunnelSelected` mirrors it here.
    *
    * Selection semantics:
    * - IPs only            → bindAddress=[ips], tunnel.enabled=false
@@ -12,7 +12,7 @@
    * - "All interfaces" (0.0.0.0) is exclusive with specific IPs (daemon
    *   validation: unspecified-only-alone).
    * - tunnel only         → tunnel.enabled=true, tunnel.only=true (no direct listeners)
-   * - "127.0.0.1 (localhost)" is always listed; while the tunnel is selected
+   * - "127.0.0.1 (localhost)" is always listed; while the tunnel is enabled
    *   alongside specific IPs it is auto-selected and locked (the tailcat
    *   sidecar forwards tunnel connections to 127.0.0.1:<port>, so loopback
    *   must stay bound). All-interfaces already covers loopback, and in
@@ -34,17 +34,14 @@
     availableIps: string[];
     /** Currently selected bind IPs (from `server.bindAddress`). */
     selectedIps: string[];
-    /** `server.tunnel.enabled` — tunnel entry selected. */
+    /** `server.tunnel.enabled` — the parent's tunnel toggle state. */
     tunnelSelected: boolean;
-    /** Daemon supports the tunnel settings (degradation gate). */
-    tunnelSupported: boolean;
     /** Persist in flight — disables the checkboxes. */
     saving?: boolean;
     onchange: (selection: ListenTargetSelection) => void;
   }
 
-  const { availableIps, selectedIps, tunnelSelected, tunnelSupported, saving, onchange }: Props =
-    $props();
+  const { availableIps, selectedIps, tunnelSelected, saving, onchange }: Props = $props();
 
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
@@ -70,13 +67,6 @@
   // binds loopback daemon-side, so the lock applies in neither posture.
   const loopbackLocked = $derived(
     tunnelSelected && !selection.has(ALL_INTERFACES) && selectedIps.some((ip) => ip !== LOOPBACK),
-  );
-
-  // Selection with the forced loopback applied, so a daemon state missing
-  // loopback (tunnel enabled before this rule, or configured out-of-band) is
-  // repaired by the next persisted change.
-  const effectiveIps = $derived(
-    loopbackLocked && !selection.has(LOOPBACK) ? [...selectedIps, LOOPBACK] : selectedIps,
   );
 
   /** Force loopback into an emission when the lock applies to it. */
@@ -111,22 +101,6 @@
       return;
     }
     onchange({ ips, tunnel: tunnelSelected });
-  }
-
-  function toggleTunnel(input: HTMLInputElement): void {
-    if (!tunnelSelected) {
-      // Selecting the tunnel locks loopback in (unless all-interfaces
-      // already covers it, or nothing is bound — tunnel-only).
-      onchange({ ips: withLoopbackLock(selectedIps, true), tunnel: true });
-      return;
-    }
-    // Deselecting the tunnel unlocks loopback but keeps it selected —
-    // including a lock-forced loopback, so the repair persists.
-    if (effectiveIps.length === 0) {
-      input.checked = true; // refuse: never allow zero targets
-      return;
-    }
-    onchange({ ips: effectiveIps, tunnel: false });
   }
 </script>
 
@@ -164,27 +138,8 @@
         {/if}
       </li>
     {/each}
-    {#if tunnelSupported}
-      <li>
-        <label
-          class="flex items-center gap-2 py-1 text-sm text-foreground cursor-pointer {saving
-            ? 'opacity-50'
-            : ''}"
-          data-listen-target-tunnel
-        >
-          <input
-            type="checkbox"
-            checked={tunnelSelected}
-            disabled={saving}
-            onchange={(e) => toggleTunnel(e.currentTarget)}
-            class="accent-primary"
-          />
-          <span class="text-xs">{m.settings_listenTargets_tunnel_label()}</span>
-        </label>
-        {#if tunnelSelected && selectedIps.length === 0}
-          <p class="text-xs text-subtle ml-6">{m.settings_listenTargets_tunnelOnly_note()}</p>
-        {/if}
-      </li>
-    {/if}
   </ul>
+  {#if tunnelSelected && selectedIps.length === 0}
+    <p class="text-xs text-subtle">{m.settings_listenTargets_tunnelOnly_note()}</p>
+  {/if}
 </div>
