@@ -8,7 +8,6 @@
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
-  import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
 
   import {
     openWorkspaceFile,
@@ -465,7 +464,7 @@
       {#if segment.type === 'video'}
         <ChatVideoBlock source={segment.source} name={segment.name} poster={segment.poster} />
       {:else}
-        <RecursiveMarkdownViewer
+        <svelte:self
           content={segment.content}
           {isStreaming}
           {workspaceId}
