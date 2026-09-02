@@ -29,7 +29,13 @@ import { Logger } from '$shared/logger';
 import { describeBackendUrl } from './backend-log-descriptor';
 import { resolveIntentdSocketPath } from './intentd-data-dir';
 import { toLocalEndpoint } from './intentd-pipe-name';
-import { createTunneledSocket, resolveTailcatBinaryPath } from './tailcat-tunnel';
+import {
+  createTailcatTunnel,
+  createTunneledSocket,
+  resolveTailcatBinaryPath,
+  type TailcatTunnel,
+} from './tailcat-tunnel';
+import { isTcAddress } from '$shared/tc-address';
 
 const raceLogger = new Logger('BackendConnection');
 
@@ -732,8 +738,53 @@ export function pinnedTlsConnect(
  * leak to a swapped endpoint (TOCTOU). The mismatch is reported as a
  * structured `fingerprint-mismatch` result carrying the presented
  * fingerprint.
+ *
+ * A `host` that is a tc address (PROTOCOL §12.3, manual tunnel entry) is
+ * captured through a local tailcat forwarder: the wss dial targets the
+ * forwarder's loopback port and tailcat carries it to the daemon, so cert +
+ * token verification are identical to a direct capture. Fails structured
+ * (`connect-failed`) when the bundled tailcat binary is unavailable.
  */
-export function captureFingerprint(
+export async function captureFingerprint(
+  target: { host: string; port: number; token?: string; expectedFingerprint?: string },
+  options: { timeoutMs?: number } = {},
+): Promise<CaptureFingerprintResult> {
+  if (isTcAddress(target.host)) {
+    const binaryPath = resolveTailcatBinaryPath();
+    if (!binaryPath) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: 'tailcat binary unavailable; cannot capture through the tunnel',
+      };
+    }
+    let tunnel: TailcatTunnel;
+    try {
+      tunnel = await createTailcatTunnel({
+        tcAddress: target.host.trim(),
+        remotePort: target.port,
+        binaryPath,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: `tailcat forwarder failed to start: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    try {
+      return await captureFingerprintDirect(
+        { ...target, host: '127.0.0.1', port: tunnel.localPort },
+        options,
+      );
+    } finally {
+      tunnel.close();
+    }
+  }
+  return captureFingerprintDirect(target, options);
+}
+
+function captureFingerprintDirect(
   target: { host: string; port: number; token?: string; expectedFingerprint?: string },
   options: { timeoutMs?: number } = {},
 ): Promise<CaptureFingerprintResult> {
