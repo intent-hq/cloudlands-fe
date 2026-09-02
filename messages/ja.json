@@ -2024,6 +2024,7 @@
   "chat_richInput_micCancelTranscribing_label": "文字起こしをキャンセル",
   "chat_richInput_micBusy_message": "別の音声録音がすでに進行中です",
   "chat_richInput_fileTypeSize_description": "{type} • {size}",
+  "chat_richInput_folderDropRemote_error": "チャットメッセージへのフォルダーの追加はローカルの intentd でのみ機能します",
   "chat_richInput_unknownType_fallback": "不明な種類",
   "chat_richInput_interruptAndSend_ariaLabel": "中断して送信",
   "chat_richInput_promptEnhanced_toast": "プロンプトを強化しました",

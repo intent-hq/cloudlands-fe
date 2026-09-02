@@ -2514,3 +2514,167 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     expect(sendButton!.disabled).toBe(true);
   });
 });
+
+describe('SimpleRichInput folder drop (path references, local daemon only)', () => {
+  const baseProps = () => ({
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  function makeFile(name: string, type: string, size = 16): File {
+    const file = new File(['x'], name, { type });
+    Object.defineProperty(file, 'size', { value: size });
+    return file;
+  }
+
+  /** Drop with a DataTransferItem list carrying folder-detection entries. */
+  function makeItemsDropEvent(entries: Array<{ file: File; isDirectory: boolean }>) {
+    return {
+      dataTransfer: {
+        types: ['Files'],
+        files: entries.map((e) => e.file),
+        items: entries.map((e) => ({
+          kind: 'file',
+          getAsFile: () => e.file,
+          webkitGetAsEntry: () => ({ isDirectory: e.isDirectory }),
+        })),
+      },
+    };
+  }
+
+  function insertMentionCalls(): Array<Record<string, unknown>> {
+    return ((window as any).__tiptapInsertMentionCalls ?? []) as Array<Record<string, unknown>>;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (window as any).__tiptapInsertMentionCalls = [];
+    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    delete (window as any).__tiptapInsertMentionCalls;
+    document.body.innerHTML = '';
+  });
+
+  it('local folder drop inserts a folder mention chip with the absolute host path — no placement', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    const mention = insertMentionCalls()[0];
+    expect(mention.type).toBe('folder');
+    expect(mention.label).toBe('my-folder');
+    expect((mention.meta as any).fullPath).toBe('/home/user/projects/my-folder');
+    // Folders are never placed as attachments.
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    const { toast } = await import('svelte-sonner');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    const image = makeFile('photo.png', 'image/png');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([
+        { file: image, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    // Nothing attaches — not even the file in the same drop.
+    expect(insertMentionCalls()).toHaveLength(0);
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('img', { name: 'photo.png' })).toBeNull();
+  });
+
+  it('mixed local drop: folder becomes a path reference, image attaches as today', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    const image = makeFile('photo.png', 'image/png');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([
+        { file: image, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    expect(insertMentionCalls()[0].type).toBe('folder');
+    expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy();
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it('file-only drops behave exactly as before when remote (no folder involved)', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+
+    render(SimpleRichInput, { props: baseProps() });
+    const image = makeFile('photo.png', 'image/png');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([{ file: image, isDirectory: false }]),
+    );
+
+    expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy();
+    const { toast } = await import('svelte-sonner');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('handleDroppedFiles still accepts a plain File[] (legacy external callers)', async () => {
+    const { component } = render(SimpleRichInput, { props: baseProps() });
+    const image = new File(['image-bytes'], 'ext.png', { type: 'image/png' });
+
+    await component.handleDroppedFiles([image]);
+
+    expect(await screen.findByRole('img', { name: 'ext.png' })).toBeTruthy();
+  });
+
+  it('handleDroppedFiles accepts the DropSplit shape from external drop targets', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/ext-folder');
+    const { component } = render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('ext-folder', '');
+
+    await component.handleDroppedFiles({ files: [], folderFiles: [folder] });
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    expect(insertMentionCalls()[0].label).toBe('ext-folder');
+    expect((insertMentionCalls()[0].meta as any).path).toBe('/home/user/ext-folder');
+  });
+});
+
