@@ -99,7 +99,7 @@ function readMenuContentRule() {
   const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
   if (!width || !viewportInset) {
     throw new Error(
-      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width'
+      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width',
     );
   }
   return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };
@@ -194,6 +194,12 @@ describe('MonitoredPrsRow', () => {
     expect(line?.className).toContain('min-h-9');
     expect(line?.className).toContain('gap-2');
     expect(line?.className).toContain('px-3');
+    const icon = screen.getByTestId('monitored-pr-icon').querySelector('svg');
+    expect(icon?.getAttribute('width')).toBe('14px');
+    expect(icon?.getAttribute('height')).toBe('14px');
+    expect(screen.getByTestId('monitored-pr-label').className).toContain('text-muted-foreground');
+    expect(screen.getByTestId('monitored-pr-chip').className).toContain('h-6');
+    expect(screen.getByTestId('monitored-pr-disclosure').className).toContain('h-6');
   });
 
   it('renders selector data without dispatching lifecycle actions on mount', () => {

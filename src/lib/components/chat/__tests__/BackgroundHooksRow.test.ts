@@ -107,8 +107,11 @@ describe('BackgroundHooksRow', () => {
       'font-medium',
     );
     expect(icon?.getAttribute('data-icon')).toBe('hourglass-medium');
-    expect(icon?.getAttribute('width')).toBe('16');
-    expect(icon?.getAttribute('height')).toBe('16');
+    expect(icon?.getAttribute('width')).toBe('14');
+    expect(icon?.getAttribute('height')).toBe('14');
+    const title = screen.getByTestId('background-hook-title');
+    expect(title.className).toContain('text-muted-foreground');
+    expect(title.className).not.toContain('text-foreground');
   });
 
   it('renders embedded hooks as full-width flat rows with one shared divider', () => {
@@ -265,7 +268,7 @@ describe('BackgroundHooksRow', () => {
     });
 
     const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
-    expect(icon?.getAttribute('class')?.trim()).toBe('h-4 w-4');
+    expect(icon?.getAttribute('class')?.trim()).toBe('h-3.5 w-3.5');
     expect(icon?.classList.contains('animate-spin')).toBe(false);
     expect(icon?.classList.contains('motion-reduce:animate-none')).toBe(false);
     expect(screen.getByTestId('background-hook-summary').textContent).toContain(

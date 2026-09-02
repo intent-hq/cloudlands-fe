@@ -51,12 +51,14 @@
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
-    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
+    SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
   import { getExpandedPrMonitorId, setExpandedPrMonitorId } from './agent-subscriptions-view-state';
@@ -280,20 +282,30 @@
         transition:safeSubscriptionRowTransition
       >
         <div
-          class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-muted-foreground"
+          class="{SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+          data-testid="monitored-pr-summary-row"
         >
           <Button
             variant="plain"
             type="button"
-            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} focus-visible:ring-1"
+            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink justify-start overflow-hidden whitespace-nowrap rounded border-0 p-0! text-left {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="monitored-pr-summary"
             data-subscription-row="pr-monitor"
             aria-expanded={expandedMonitorId === monitor.monitorId}
             aria-controls={detailsId}
             onclick={() => toggleMonitorDetails(monitor.monitorId)}
           >
-            <Fa icon={faCodePullRequest} class="h-3.5 w-3.5 shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
-            <span class="min-w-0 flex-1 truncate">{monitorLabel(monitor)}</span>
+            <span
+              class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+              data-testid="monitored-pr-icon"
+              aria-hidden="true"
+            >
+              <Fa icon={faCodePullRequest} size={14} class="h-3.5 w-3.5 shrink-0" />
+            </span>
+            <span
+              class="min-w-0 flex-1 truncate text-muted-foreground"
+              data-testid="monitored-pr-label">{monitorLabel(monitor)}</span
+            >
             {#if monitor.hasPendingChanges}
               <span
                 class="block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/80"
@@ -317,7 +329,7 @@
                   event.stopPropagation();
                   (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
                 }}
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="monitored-pr-chip"
                 aria-label={m.chat_monitoredPrs_row_ariaLabel()}
               >
@@ -385,7 +397,7 @@
             variant="plain"
             size="icon-xs"
             type="button"
-            class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+            class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="monitored-pr-disclosure"
             aria-label={monitorLabel(monitor)}
             aria-expanded={expandedMonitorId === monitor.monitorId}

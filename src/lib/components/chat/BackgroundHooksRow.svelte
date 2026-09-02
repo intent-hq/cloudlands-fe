@@ -41,11 +41,13 @@
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
-    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
+    SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
 
@@ -211,12 +213,13 @@
         transition:safeSubscriptionRowTransition
       >
         <div
-          class="flex min-h-10 min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-muted-foreground"
+          class="{SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+          data-testid="background-hook-summary-row"
         >
           <Button
             variant="plain"
             type="button"
-            class="h-auto min-h-7 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 px-1.5 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink justify-start overflow-hidden whitespace-nowrap rounded border-0 p-0! text-left {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="background-hook-summary"
             data-subscription-row="event-subscription"
             aria-expanded={expandedHookId === hook.hookId}
@@ -224,27 +227,36 @@
             onclick={() => toggleHookDetails(hook.hookId)}
           >
             <span
-              class="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none {SUBSCRIPTION_ICON_CLASS}"
+              class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               data-testid="background-hook-icon"
               aria-hidden="true"
             >
               <HourglassMedium
-                size={16}
+                size={14}
                 weight="regular"
-                class="h-4 w-4"
+                class="h-3.5 w-3.5"
                 data-icon="hourglass-medium"
               />
             </span>
             <span
               id={titleId}
-              class="min-w-0 flex-1 truncate text-foreground {embedded
+              class="min-w-0 flex-1 truncate text-muted-foreground {embedded
                 ? 'font-normal'
-                : 'font-medium'}">{hook.name}</span
+                : 'font-medium'}"
+              data-testid="background-hook-title">{hook.name}</span
             >
-            <span class="min-w-0 shrink truncate text-muted-foreground">{stateLabel(hook)}</span>
-            {#if hook.nextRunAt}<span class="shrink-0 text-muted-foreground">{nextRunIn(hook)}</span
+            <span
+              class="min-w-0 shrink truncate text-muted-foreground"
+              data-testid="background-hook-state">{stateLabel(hook)}</span
+            >
+            {#if hook.nextRunAt}<span
+                class="min-w-0 shrink truncate text-muted-foreground"
+                data-testid="background-hook-next-run">{nextRunIn(hook)}</span
               >{/if}
-            <span class="shrink-0" data-testid="background-hook-chevron">
+            <span
+              class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+              data-testid="background-hook-chevron"
+            >
               <Fa
                 icon={faChevronDown}
                 size={16}
@@ -262,7 +274,7 @@
                 variant="plain"
                 size="icon-xs"
                 type="button"
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="background-hook-chip"
                 aria-label={m.chat_backgroundHooks_row_ariaLabel()}
               >

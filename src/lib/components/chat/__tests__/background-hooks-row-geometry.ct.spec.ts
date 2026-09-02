@@ -110,8 +110,61 @@ for (const theme of ['light', 'dark'] as const) {
             .getByTestId('background-hook-icon')
             .locator('svg')
             .boundingBox();
-          expect(iconBox?.width).toBeCloseTo(16 * zoom, 1);
-          expect(iconBox?.height).toBeCloseTo(16 * zoom, 1);
+          expect(iconBox?.width).toBeCloseTo(14 * zoom, 1);
+          expect(iconBox?.height).toBeCloseTo(14 * zoom, 1);
+
+          const summaryGeometry = await component
+            .getByTestId('background-hook-summary-row')
+            .evaluate((row) => {
+              const bounds = row.getBoundingClientRect();
+              const leading = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-icon"]')!
+                .getBoundingClientRect();
+              const title = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-title"]')!
+                .getBoundingClientRect();
+              const chevron = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-chevron"]')!
+                .getBoundingClientRect();
+              const kebab = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-chip"]')!
+                .getBoundingClientRect();
+              const mutedProbe = document.createElement('span');
+              mutedProbe.style.color = 'hsl(var(--muted-foreground))';
+              row.append(mutedProbe);
+              const titleColor = getComputedStyle(
+                row.querySelector<HTMLElement>('[data-testid="background-hook-title"]')!,
+              ).color;
+              const iconColor = getComputedStyle(
+                row.querySelector<HTMLElement>('[data-testid="background-hook-icon"]')!,
+              ).color;
+              const kebabColor = getComputedStyle(
+                row.querySelector<HTMLElement>('[data-testid="background-hook-chip"]')!,
+              ).color;
+              const mutedColor = getComputedStyle(mutedProbe).color;
+              mutedProbe.remove();
+              return {
+                row: [bounds.left, bounds.right, bounds.height],
+                leading: [leading.left, leading.width],
+                titleLeft: title.left,
+                chevronWidth: chevron.width,
+                kebab: [kebab.right, kebab.width],
+                overflow: [row.scrollWidth, row.clientWidth],
+                colors: [titleColor, iconColor, kebabColor, mutedColor],
+              };
+            });
+          expect(summaryGeometry.row[2]).toBeCloseTo(36 * zoom, 1);
+          expect(summaryGeometry.leading[1]).toBeCloseTo(20 * zoom, 1);
+          expect(summaryGeometry.titleLeft - summaryGeometry.row[0]).toBeCloseTo(40 * zoom, 1);
+          expect(summaryGeometry.chevronWidth).toBeCloseTo(24 * zoom, 1);
+          expect(summaryGeometry.kebab[1]).toBeCloseTo(24 * zoom, 1);
+          expect(summaryGeometry.row[1] - summaryGeometry.kebab[0]).toBeCloseTo(12 * zoom, 1);
+          expect(summaryGeometry.overflow[0]).toBeLessThanOrEqual(summaryGeometry.overflow[1]);
+          expect(summaryGeometry.colors.slice(0, -1)).toEqual([
+            summaryGeometry.colors.at(-1),
+            summaryGeometry.colors.at(-1),
+            summaryGeometry.colors.at(-1),
+          ]);
 
           const boxes = await metrics.evaluateAll((nodes) =>
             nodes.map((node) => {
