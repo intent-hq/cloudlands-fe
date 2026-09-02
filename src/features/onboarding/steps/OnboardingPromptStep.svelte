@@ -433,20 +433,35 @@
    * Never placed via `file.placeAttachment` (the daemon rejects directories)
    * — the submit path carries the absolute host path as a context reference
    * on the initial message instead.
+   *
+   * When the Electron `getPathForFile` bridge is unavailable or returns ''
+   * the folder is SKIPPED with a toast: a bare folder name would ride
+   * `contextReferences` as if it were an absolute host path the agent
+   * cannot resolve. Mirrors SimpleRichInput.addFolderReference.
    */
   function stageFolderReference(folder: File) {
     const absolutePath =
       (
         window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
       ).electronAPI?.getPathForFile?.(folder) ?? '';
-    const label = folder.name || absolutePath.split('/').pop() || absolutePath;
+    if (!absolutePath) {
+      logger.warn('Dropped folder has no resolvable absolute path; skipping', {
+        name: folder.name,
+      });
+      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      return;
+    }
+    // Windows-aware basename fallback ('\' or '/' separators).
+    const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
     stagedContextItems = [
       ...stagedContextItems,
       {
-        id: `staged-folder-${Date.now()}-${stagedContextItems.length}`,
+        // Path-keyed like folder @-mentions, so two dropped folders sharing
+        // a basename stay distinct.
+        id: `staged-folder-${absolutePath}`,
         type: 'folder',
         label,
-        path: absolutePath || label,
+        path: absolutePath,
       },
     ];
   }

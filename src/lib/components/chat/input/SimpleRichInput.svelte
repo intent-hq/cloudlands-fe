@@ -1000,20 +1000,35 @@
    * (`toPromptToken` folder case) and `getMentionContextItems()` carries it
    * as a context item. Never placed via `file.placeAttachment` (the daemon
    * rejects directories).
+   *
+   * The whole feature is predicated on the absolute host path: when the
+   * Electron `getPathForFile` bridge is unavailable or returns '' (e.g.
+   * dev:web), the folder is SKIPPED with a toast — a bare folder name would
+   * serialize as a workspace-relative-looking mention that silently resolves
+   * to the wrong directory (or nothing) on the daemon side.
    */
   function addFolderReference(folder: File) {
     const absolutePath =
       (
         window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
       ).electronAPI?.getPathForFile?.(folder) ?? '';
-    const label = folder.name || absolutePath.split('/').pop() || absolutePath;
-    const path = absolutePath || label;
+    if (!absolutePath) {
+      logger.warn('Dropped folder has no resolvable absolute path; skipping', {
+        name: folder.name,
+      });
+      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      return;
+    }
+    // Windows-aware basename fallback ('\' or '/' separators).
+    const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
     tiptap?.insertMention?.({
-      id: `folder-drop-${Date.now()}-${label}`,
+      // Same id convention as folder @-mentions (mention-system providers):
+      // path-keyed, so two dropped folders sharing a basename stay distinct.
+      id: `folder-${absolutePath}`,
       label,
       type: 'folder',
-      uri: `devspace://folder/${encodeURIComponent(path)}`,
-      meta: { path, fullPath: path },
+      uri: `devspace://folder/${encodeURIComponent(absolutePath)}`,
+      meta: { path: absolutePath, fullPath: absolutePath },
     });
   }
 

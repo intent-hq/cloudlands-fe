@@ -32,15 +32,19 @@ export function splitDroppedItems(dataTransfer: DataTransfer | null): DropSplit 
       sawFileItem = true;
       const file = item.getAsFile();
       if (!file) continue;
-      const entry =
-        typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
+      const entry = typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
       if (entry?.isDirectory) {
         folderFiles.push(file);
       } else {
         files.push(file);
       }
     }
-    if (sawFileItem) return { files, folderFiles };
+    // Fall through to the `dataTransfer.files` fallback when every
+    // `getAsFile()` returned null (e.g. the split ran after the event loop
+    // turned) — otherwise the drop would be silently swallowed.
+    if (sawFileItem && (files.length > 0 || folderFiles.length > 0)) {
+      return { files, folderFiles };
+    }
   }
 
   // Fallback: no usable items list (e.g. synthetic events) — treat

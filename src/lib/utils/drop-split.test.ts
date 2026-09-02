@@ -60,4 +60,18 @@ describe('splitDroppedItems', () => {
 
     expect(splitDroppedItems(dt)).toEqual({ files: [regular], folderFiles: [] });
   });
+
+  it('falls back to dataTransfer.files when every getAsFile() returns null (deferred call)', () => {
+    // e.g. the split is invoked after the event loop turns — the items are
+    // still listed but getAsFile() yields null; the drop must not be
+    // silently swallowed while dataTransfer.files still holds the files.
+    const deadItem = {
+      kind: 'file',
+      getAsFile: () => null,
+      webkitGetAsEntry: () => null,
+    } as unknown as DataTransferItem;
+    const dt = makeDataTransfer([deadItem], [regular]);
+
+    expect(splitDroppedItems(dt)).toEqual({ files: [regular], folderFiles: [] });
+  });
 });

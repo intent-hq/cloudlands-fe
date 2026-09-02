@@ -2676,5 +2676,48 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
     expect(insertMentionCalls()[0].label).toBe('ext-folder');
     expect((insertMentionCalls()[0].meta as any).path).toBe('/home/user/ext-folder');
   });
-});
 
+  it('skips the folder with an error toast when no absolute path is resolvable', async () => {
+    // dev:web / missing bridge: a bare folder name must never ride as a
+    // mention that looks like a workspace-relative path.
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('keys folder mention ids by resolved path so same-basename folders stay distinct', async () => {
+    const folderA = makeFile('src', '');
+    const folderB = makeFile('src', '');
+    // Two distinct File objects share the basename; resolve by identity.
+    (window as any).electronAPI.getPathForFile = vi.fn((f: File) =>
+      f === folderA ? '/home/user/a/src' : '/home/user/b/src',
+    );
+
+    render(SimpleRichInput, { props: baseProps() });
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([
+        { file: folderA, isDirectory: true },
+        { file: folderB, isDirectory: true },
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(2);
+    });
+    const ids = insertMentionCalls().map((c) => c.id);
+    expect(ids).toEqual(['folder-/home/user/a/src', 'folder-/home/user/b/src']);
+    expect(new Set(ids).size).toBe(2);
+  });
+});

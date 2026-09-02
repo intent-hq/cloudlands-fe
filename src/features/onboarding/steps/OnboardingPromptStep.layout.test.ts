@@ -327,4 +327,23 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
     expect(names).toContain('my-folder');
     expect(names).toContain('notes.txt');
   });
+
+  it('skips the folder with an error toast when no absolute path is resolvable', async () => {
+    // Missing/empty getPathForFile bridge (e.g. dev:web): a bare folder
+    // name must never be staged as if it were an absolute host path.
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    await fireEvent.drop(
+      dropTarget(result.container),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(pills(result.container)).toHaveLength(0);
+  });
 });
