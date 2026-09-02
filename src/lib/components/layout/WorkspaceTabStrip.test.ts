@@ -660,10 +660,18 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
-  it('keeps the normal first-tab curve, flares, and strip gutter across switching', async () => {
+  it('keeps every flare mounted and synchronizes its visibility across switching', async () => {
+    mocks.loadedWorkspaceIds.delete('ws-3');
     const { rerender } = render(WorkspaceTabStrip, {
       props: { activeWorkspaceId: 'ws-1' },
     });
+
+    const flareOpacity = (tab: Element) =>
+      Array.from(
+        tab.querySelectorAll<SVGElement>(
+          '[data-workspace-tab-leading-flare], [data-workspace-tab-trailing-flare]',
+        ),
+      ).map((flare) => getComputedStyle(flare).opacity);
 
     const tablist = screen.getByRole('tablist', {
       name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
@@ -674,21 +682,33 @@ describe('WorkspaceTabStrip', () => {
     expect(tablist.className).not.toContain('-ml-3');
     expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(firstTab.classList).toContain('rounded-t-md');
-    expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
-    expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
+    expect(flareOpacity(firstTab)).toEqual(['1', '1']);
+    expect(flareOpacity(document.querySelector('[data-workspace-tab="ws-2"]')!)).toEqual([
+      '0',
+      '0',
+    ]);
+    expect(flareOpacity(document.querySelector('[data-workspace-tab="ws-3"]')!)).toEqual([
+      '0',
+      '0',
+    ]);
 
     await rerender({ activeWorkspaceId: 'ws-2' });
     const secondTab = document.querySelector('[data-workspace-tab="ws-2"]')!;
     expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(secondTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(secondTab.classList).toContain('rounded-t-md');
-    expect(secondTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
-    expect(secondTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
+    expect(flareOpacity(firstTab)).toEqual(['0', '0']);
+    expect(flareOpacity(secondTab)).toEqual(['1', '1']);
+
+    await rerender({ activeWorkspaceId: 'ws-3' });
+    const loadingTab = document.querySelector('[data-workspace-tab="ws-3"]')!;
+    expect(flareOpacity(secondTab)).toEqual(['0', '0']);
+    expect(flareOpacity(loadingTab)).toEqual(['1', '1']);
 
     await rerender({ activeWorkspaceId: 'ws-1' });
     expect(firstTab.classList).toContain('rounded-t-md');
-    expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
-    expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
+    expect(flareOpacity(firstTab)).toEqual(['1', '1']);
+    expect(flareOpacity(loadingTab)).toEqual(['0', '0']);
   });
 
   it('refreshes the active-tab border bounds when title-bar positioning changes', async () => {

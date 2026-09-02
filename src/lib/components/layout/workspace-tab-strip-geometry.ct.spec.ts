@@ -53,10 +53,12 @@ async function expectVisibleThroughAncestorClipping(target: Locator) {
   ).toBe(true);
 }
 
-test('keeps active flares visible through titlebar clipping while only scrolling horizontally', async ({
+test('keeps flares mounted and synchronizes visibility through activation and clipping', async ({
   mount,
 }) => {
-  const component = await mount(WorkspaceTabStripGeometryPreview);
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { activeWorkspaceId: 'geometry-alpha' },
+  });
   const strip = component.locator('[data-workspace-tab-strip]');
   const leftSurface = component.locator('[data-titlebar-left-drag-surface]');
 
@@ -69,10 +71,25 @@ test('keeps active flares visible through titlebar clipping while only scrolling
   );
   await expect(leftSurface).toHaveCSS('overflow-y', 'visible');
 
+  const firstFlares = component.locator(
+    '[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare], [data-workspace-tab="geometry-alpha"] [data-workspace-tab-trailing-flare]',
+  );
+  const middleFlares = component.locator(
+    '[data-workspace-tab="geometry-beta"] [data-workspace-tab-leading-flare], [data-workspace-tab="geometry-beta"] [data-workspace-tab-trailing-flare]',
+  );
+  await expect(firstFlares).toHaveCount(2);
+  await expect(middleFlares).toHaveCount(2);
+  for (const flare of await firstFlares.all()) await expect(flare).toHaveCSS('opacity', '1');
+  for (const flare of await middleFlares.all()) await expect(flare).toHaveCSS('opacity', '0');
+
   await expectVisibleThroughAncestorClipping(
-    component.locator('[data-workspace-tab-leading-flare]'),
+    component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
   );
   await expectVisibleThroughAncestorClipping(
-    component.locator('[data-workspace-tab-trailing-flare]'),
+    component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-trailing-flare]'),
   );
+
+  await component.update({ props: { activeWorkspaceId: 'geometry-beta' } });
+  for (const flare of await firstFlares.all()) await expect(flare).toHaveCSS('opacity', '0');
+  for (const flare of await middleFlares.all()) await expect(flare).toHaveCSS('opacity', '1');
 });

@@ -4,7 +4,6 @@
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { cubicOut } from 'svelte/easing';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
@@ -53,6 +52,18 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+  import {
+    WORKSPACE_TAB_BORDER_WIDTH_PX,
+    WORKSPACE_TAB_FLARE_BOTTOM_PX,
+    WORKSPACE_TAB_FLARE_INNER_PX,
+    WORKSPACE_TAB_FLARE_OFFSET_PX,
+    WORKSPACE_TAB_FLARE_OUTER_PX,
+    WORKSPACE_TAB_FLARE_RADIUS_PX,
+    WORKSPACE_TAB_FLARE_SIZE_PX,
+    WORKSPACE_TAB_MOTION_DURATION_MS,
+    WORKSPACE_TAB_MOTION_EASING,
+    workspaceTabMotionEasing,
+  } from './titlebar-geometry';
 
   interface Props {
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
@@ -116,6 +127,10 @@
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
+  const leadingFlareFillPath = `M 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} H ${WORKSPACE_TAB_FLARE_SIZE_PX} V ${WORKSPACE_TAB_FLARE_INNER_PX} H ${WORKSPACE_TAB_FLARE_OUTER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 1 ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX} Z`;
+  const leadingFlareStrokePath = `M ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 1 ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX}`;
+  const trailingFlareFillPath = `M ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX} H 0 V ${WORKSPACE_TAB_FLARE_INNER_PX} H ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 0 ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX} Z`;
+  const trailingFlareStrokePath = `M ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 0 ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX}`;
   // Active tab bounds drive the parent border mask that hides the sidebar
   // border under the active tab. Svelte's animate:flip moves tabs via CSS
   // transform, which ResizeObserver does not fire on, so during the flip the
@@ -761,7 +776,10 @@
         data-workspace-tab-motion={workspaceId}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 32}px` : undefined}
-        animate:flip={{ duration: isDragged ? 0 : 180, easing: cubicOut }}
+        animate:flip={{
+          duration: isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
+          easing: workspaceTabMotionEasing,
+        }}
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
@@ -796,6 +814,8 @@
             style:top={isDragged && dragSession ? `${dragSession.origin.top - 2}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
             style:height={isDragged && dragSession ? `${dragSession.origin.height}px` : undefined}
+            style:transition-duration={isDragged ? '0ms' : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+            style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
@@ -804,43 +824,54 @@
             onmouseleave={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
-            {#if isCurrent}
-              <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
-                     so the active tab appears to flow into the panel below (Chrome-tab style).
-                     Uses a 12x12 quarter-arc dropped 2px past the tab bottom so the concave
-                     curve terminates on the panel's top border. The right flare's `-12.5px`
-                     offset + 1px seam-fill rect compensates for the arc-stroke straddling the
-                     right-edge pixel boundary so no gap shows between flare and tab side. -->
-              <svg
-                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-                data-workspace-tab-leading-flare
-              >
-                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                <path
-                  class="stroke-border"
-                  d="M 12 0 A 12 12 0 0 1 0 12"
-                  fill="none"
-                  stroke-width="1"
-                />
-              </svg>
-              <svg
-                class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-                data-workspace-tab-trailing-flare
-              >
-                <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
-                <rect x="-1" width="1" height="100%" fill="currentColor" />
-                <path
-                  class="stroke-border"
-                  d="M 0 0 A 12 12 0 0 0 12 12"
-                  fill="none"
-                  stroke-width="1"
-                />
-              </svg>
-            {/if}
+            <!-- The 13px canvas contains the 12px radius plus both half-stroke edges.
+                 Its arc starts on the tab border centre and ends on the title-bar border centre. -->
+            <svg
+              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
+              style:left={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
+              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
+              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:opacity={isCurrent ? 1 : 0}
+              style:transition-duration={isDragged
+                ? '0ms'
+                : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
+              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
+              aria-hidden="true"
+              data-workspace-tab-leading-flare
+            >
+              <path d={leadingFlareFillPath} fill="currentColor" />
+              <path
+                class="stroke-border"
+                d={leadingFlareStrokePath}
+                fill="none"
+                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
+              />
+            </svg>
+            <svg
+              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
+              style:right={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
+              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
+              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:opacity={isCurrent ? 1 : 0}
+              style:transition-duration={isDragged
+                ? '0ms'
+                : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
+              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
+              aria-hidden="true"
+              data-workspace-tab-trailing-flare
+            >
+              <path d={trailingFlareFillPath} fill="currentColor" />
+              <path
+                class="stroke-border"
+                d={trailingFlareStrokePath}
+                fill="none"
+                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
+              />
+            </svg>
             <TooltipRich
               side="bottom"
               align="start"
@@ -918,42 +949,55 @@
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
+            style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+            style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
-            {#if isCurrent}
-              <svg
-                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-                data-workspace-tab-leading-flare
-              >
-                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                <path
-                  class="stroke-border"
-                  d="M 12 0 A 12 12 0 0 1 0 12"
-                  fill="none"
-                  stroke-width="1"
-                />
-              </svg>
-              <svg
-                class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-                data-workspace-tab-trailing-flare
-              >
-                <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
-                <rect x="-1" width="1" height="100%" fill="currentColor" />
-                <path
-                  class="stroke-border"
-                  d="M 0 0 A 12 12 0 0 0 12 12"
-                  fill="none"
-                  stroke-width="1"
-                />
-              </svg>
-            {/if}
+            <svg
+              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
+              style:left={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
+              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
+              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:opacity={isCurrent ? 1 : 0}
+              style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
+              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
+              aria-hidden="true"
+              data-workspace-tab-leading-flare
+            >
+              <path d={leadingFlareFillPath} fill="currentColor" />
+              <path
+                class="stroke-border"
+                d={leadingFlareStrokePath}
+                fill="none"
+                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
+              />
+            </svg>
+            <svg
+              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
+              style:right={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
+              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
+              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
+              style:opacity={isCurrent ? 1 : 0}
+              style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
+              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
+              aria-hidden="true"
+              data-workspace-tab-trailing-flare
+            >
+              <path d={trailingFlareFillPath} fill="currentColor" />
+              <path
+                class="stroke-border"
+                d={trailingFlareStrokePath}
+                fill="none"
+                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
+              />
+            </svg>
             <button
               type="button"
               use:registerTabButton={workspaceId}

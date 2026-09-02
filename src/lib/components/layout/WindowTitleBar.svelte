@@ -40,6 +40,9 @@
     getCounterScaledTitlebarHeight,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
+    WORKSPACE_TAB_FLARE_RADIUS_PX,
+    WORKSPACE_TAB_MOTION_DURATION_MS,
+    WORKSPACE_TAB_MOTION_EASING,
   } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
@@ -355,11 +358,11 @@
     {#if activeTabBounds}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left - 6}px`}
-        style:width={`${Math.max(0, activeTabBounds.width + 13)}px`}
+        style:left={`${activeTabBounds.left - WORKSPACE_TAB_FLARE_RADIUS_PX}px`}
+        style:width={`${Math.max(0, activeTabBounds.width + 2 * WORKSPACE_TAB_FLARE_RADIUS_PX)}px`}
         style:transition={activeTabTracking
           ? 'none'
-          : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)'}
+          : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask
         aria-hidden="true"
       ></div>

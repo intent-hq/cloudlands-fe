@@ -1,3 +1,23 @@
+<script lang="ts" module>
+  import { definePreview } from '$lib/component-catalog/preview-definition';
+
+  export interface WorkspaceTabStripGeometryPreviewProps {
+    activeWorkspaceId?: string;
+  }
+
+  const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
+
+  export const preview = definePreview<WorkspaceTabStripGeometryPreviewProps>({
+    id: 'workspace-tab-strip-geometry',
+    title: 'Workspace tab-strip geometry',
+    defaultState: 'first-tab',
+    states: {
+      'first-tab': { props: { activeWorkspaceId: ids[0] } },
+      'middle-tab': { props: { activeWorkspaceId: ids[1] } },
+    },
+  });
+</script>
+
 <script lang="ts">
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -7,8 +27,8 @@
   import { TITLEBAR_LEFT_DRAG_SURFACE_CLASS, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
 
-  const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
   const timestamp = '2026-09-01T12:00:00.000Z';
+  let { activeWorkspaceId = ids[0] }: WorkspaceTabStripGeometryPreviewProps = $props();
 
   for (const [index, id] of ids.entries()) {
     const workspace: Workspace = {
@@ -45,7 +65,7 @@
     <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
       <div class="fixed-controls"></div>
       <div class="workspace-controls" data-titlebar-workspace-controls>
-        <WorkspaceTabStrip activeWorkspaceId={ids[0]} />
+        <WorkspaceTabStrip {activeWorkspaceId} />
       </div>
       <div class="drag-handle"></div>
     </div>
