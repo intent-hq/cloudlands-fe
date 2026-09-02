@@ -83,6 +83,7 @@
         // Daemon-first invariant: never fabricate a tab without a PTY behind
         // it — surface the failure instead.
         console.error(
+          // i18n-ignore (developer log)
           'Failed to create install terminal:',
           result.success ? 'missing id' : result.error,
         );
@@ -113,6 +114,7 @@
     } catch (error) {
       // Daemon-first invariant: no fabricated fallback tab — surface the
       // failure instead.
+      // i18n-ignore (developer log)
       console.error('Failed to create install terminal:', error);
       toast.error(m.terminal_adapter_openFailed_error());
     }

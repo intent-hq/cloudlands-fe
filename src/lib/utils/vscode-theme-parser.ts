@@ -161,6 +161,7 @@ const VSCODE_TO_CSS_MAP: [string, string][] = [
   // --muted is derived separately in buildCSSVariables to ensure
   // a perceptible lightness difference from --background.
   ['errorForeground', '--danger'],
+  ['inputValidation.errorBackground', '--danger-background'],
 ];
 
 /**
@@ -261,6 +262,49 @@ function ensureContrast(foreground: string, background: string): string {
     if (contrastRatio(candidate, backgroundRGB) >= 4.55) return hexToHSL(rgbToHex(...candidate));
   }
   return hexToHSL(rgbToHex(...target));
+}
+
+/** Select one source-hue color that has the best joint contrast across all supplied surfaces. */
+function ensureContrastAgainstSurfaces(foreground: string, backgrounds: string[]): string {
+  const foregroundRGB = hslToRGB(foreground);
+  const backgroundRGBs = backgrounds.map(hslToRGB);
+  const minimumRatio = (candidate: [number, number, number]) =>
+    Math.min(...backgroundRGBs.map((background) => contrastRatio(candidate, background)));
+  const MIN_CONTRAST = 4.55;
+
+  if (minimumRatio(foregroundRGB) >= MIN_CONTRAST) return foreground;
+
+  const match = foreground.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
+  if (!match) return foreground;
+
+  const hue = Number(match[1]);
+  let bestPassing: { value: string; distance: number } | undefined;
+  let bestFallback = { value: foreground, ratio: minimumRatio(foregroundRGB), distance: 0 };
+
+  for (let saturation = 0; saturation <= 100; saturation++) {
+    for (let lightness = 0; lightness <= 100; lightness++) {
+      const value = `${hue} ${saturation}% ${lightness}%`;
+      const candidate = hslToRGB(value);
+      const ratio = minimumRatio(candidate);
+      const distance = candidate.reduce(
+        (total, channel, index) => total + (channel - foregroundRGB[index]) ** 2,
+        0,
+      );
+
+      if (ratio >= MIN_CONTRAST) {
+        if (!bestPassing || distance < bestPassing.distance) {
+          bestPassing = { value, distance };
+        }
+      } else if (
+        ratio > bestFallback.ratio ||
+        (ratio === bestFallback.ratio && distance < bestFallback.distance)
+      ) {
+        bestFallback = { value, ratio, distance };
+      }
+    }
+  }
+
+  return bestPassing?.value ?? bestFallback.value;
 }
 
 /**
@@ -708,7 +752,6 @@ function buildCSSVariables(
     ['--secondary-foreground', '--secondary'],
     ['--accent-foreground', '--accent'],
     ['--muted-foreground', '--muted'],
-    ['--danger', '--danger-background'],
     ['--info-foreground', '--info'],
     ['--success-foreground', '--success'],
     ['--warning-foreground', '--warning'],
@@ -718,9 +761,18 @@ function buildCSSVariables(
   for (const [foreground, background] of pairs) {
     result[foreground] = ensureContrast(result[foreground], result[background]);
   }
-  for (const surface of ['--background', '--card', '--popover', '--muted', '--sidebar'] as const) {
-    result['--danger'] = ensureContrast(result['--danger'], result[surface]);
-  }
+  const dangerSurfaces = [
+    '--danger-background',
+    '--background',
+    '--card',
+    '--popover',
+    '--muted',
+    '--sidebar',
+  ] as const;
+  result['--danger'] = ensureContrastAgainstSurfaces(
+    result['--danger'],
+    dangerSurfaces.map((surface) => result[surface]),
+  );
   return result;
 }
 
