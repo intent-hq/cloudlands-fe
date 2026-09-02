@@ -146,84 +146,57 @@
   // Resolve the absolute path
   $effect(() => {
     if (filePath && workspaceId) {
-      // Check if workspaceFolderPath is a special marker for workspace root
-      if (workspaceFolderPath === '__WORKSPACE_ROOT__') {
-        // For notes, resolve the workspace root path via IPC
-        invoke<any>('workspace:get-root', { workspaceId })
-          .then((rootPath) => {
-            if (rootPath) {
-              const normalizedRoot = rootPath.replace(/\\/g, '/');
-              if (isAbsolutePath(filePath)) {
+      invoke<any>('workspace:get', { id: workspaceId })
+        .then((result) => {
+          // Check if result exists and has valid data (not archived/deleted)
+          if (result && result.success && result.data) {
+            const workspace = result.data;
+            const workspaceRoot = workspace.worktreePath || workspace.repositoryPath;
+            const workspacePath =
+              workspaceFolderPath === '__WORKSPACE_ROOT__'
+                ? workspaceRoot
+                : workspaceFolderPath || workspaceRoot;
+
+            if (workspacePath) {
+              const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
+              if (isWorkspaceRoot) {
+                resolvedPath = normalizedWorkspacePath;
+              } else if (isAbsolutePath(filePath)) {
                 resolvedPath = filePath.replace(/\\/g, '/');
               } else {
-                resolvedPath = `${normalizedRoot}/${filePath}`.replace(/\/+/g, '/');
+                resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
               }
-              resolvedFolderPath = normalizedRoot;
-              logger.info('[WorkspaceActionsMenu] Resolved note path:', {
+              resolvedFolderPath = normalizedWorkspacePath;
+              logger.info('[WorkspaceActionsMenu] Resolved file path:', {
                 filePath,
-                rootPath,
+                workspacePath,
                 resolvedPath,
               });
             } else {
               resolvedPath = filePath;
               resolvedFolderPath = '';
-              logger.warn('[WorkspaceActionsMenu] No workspace root found');
-            }
-          })
-          .catch((error) => {
-            resolvedPath = filePath;
-            resolvedFolderPath = '';
-            logger.error('[WorkspaceActionsMenu] Failed to get workspace root:', error);
-          });
-      } else {
-        // For code files, use the provided path or fall back to repository/worktree path
-        invoke<any>('workspace:get', { id: workspaceId })
-          .then((result) => {
-            // Check if result exists and has valid data (not archived/deleted)
-            if (result && result.success && result.data) {
-              const workspace = result.data;
-              const workspacePath =
-                workspaceFolderPath || workspace.worktreePath || workspace.repositoryPath;
-
-              if (workspacePath) {
-                const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
-                if (isAbsolutePath(filePath)) {
-                  resolvedPath = filePath.replace(/\\/g, '/');
-                } else {
-                  resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
-                }
-                resolvedFolderPath = normalizedWorkspacePath;
-                logger.info('[WorkspaceActionsMenu] Resolved file path:', {
-                  filePath,
-                  workspacePath,
-                  resolvedPath,
-                });
-              } else {
-                resolvedPath = filePath;
-                resolvedFolderPath = '';
-                // Only warn if workspace exists but has no path (not for deleted workspaces)
-                if (workspace.status !== 'archived' && workspace.status !== 'deleted') {
-                  logger.warn('[WorkspaceActionsMenu] No workspace path found:', workspace);
-                }
-              }
-            } else {
-              resolvedPath = filePath;
-              resolvedFolderPath = '';
-              // Don't warn for archived/deleted workspaces
-              if (result?.error && !result.error.includes('not found')) {
-                logger.warn('[WorkspaceActionsMenu] Workspace not available:', result);
+              // Only warn if workspace exists but has no path (not for deleted workspaces)
+              if (workspace.status !== 'archived' && workspace.status !== 'deleted') {
+                logger.warn('[WorkspaceActionsMenu] No workspace path found:', workspace);
               }
             }
-          })
-          .catch((error) => {
+          } else {
             resolvedPath = filePath;
             resolvedFolderPath = '';
-            // Only log error if it's not a "not found" error (which is expected for deleted workspaces)
-            if (!error?.message?.includes('not found')) {
-              logger.error('[WorkspaceActionsMenu] Failed to resolve path:', error);
+            // Don't warn for archived/deleted workspaces
+            if (result?.error && !result.error.includes('not found')) {
+              logger.warn('[WorkspaceActionsMenu] Workspace not available:', result);
             }
-          });
-      }
+          }
+        })
+        .catch((error) => {
+          resolvedPath = filePath;
+          resolvedFolderPath = '';
+          // Only log error if it's not a "not found" error (which is expected for deleted workspaces)
+          if (!error?.message?.includes('not found')) {
+            logger.error('[WorkspaceActionsMenu] Failed to resolve path:', error);
+          }
+        });
     } else {
       resolvedPath = filePath;
       logger.info('[WorkspaceActionsMenu] Using filePath directly:', {
