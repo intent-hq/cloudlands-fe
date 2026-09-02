@@ -505,6 +505,11 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // a bridge the slice default `isConsoleOwner: true` stands and no IPC is
   // attempted). A mock bridge would shadow the main-process tracker.
   'hardware-console:get-owner-status',
+  // Desktop-only notification MP3 picker/read: local-notification-audio.ts
+  // calls the real preload directly and gates unsupported browser capability.
+  // Routing these through daemon/workspace IPC could read the wrong machine.
+  'notification:pick-sound',
+  'notification:read-sound',
 ]);
 
 /**
@@ -717,9 +722,9 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
   it('scanner sanity: recognizes imported saga listenSync wrappers and aliases', () => {
     const source =
       'import { createListenSyncChannel, takeEveryFromListenSync as watch } from "../../../utils/ipc-channel";';
-    expect(
-      collectAliases(source, SAGA_LISTENER_IMPORT_CLAUSE_RE, SAGA_LISTENER_NAME_RE),
-    ).toEqual(new Set(['createListenSyncChannel', 'watch']));
+    expect(collectAliases(source, SAGA_LISTENER_IMPORT_CLAUSE_RE, SAGA_LISTENER_NAME_RE)).toEqual(
+      new Set(['createListenSyncChannel', 'watch']),
+    );
   });
 
   it('resolves every listener channel argument (no unaudited dynamic listeners)', () => {
@@ -731,9 +736,7 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
   });
 
   it('keeps the explicit generic listener-forwarder model exact and non-stale', () => {
-    expect(genericListenerForwarderSites).toEqual(
-      new Set(GENERIC_LISTENER_FORWARDER_SITES.keys()),
-    );
+    expect(genericListenerForwarderSites).toEqual(new Set(GENERIC_LISTENER_FORWARDER_SITES.keys()));
   });
 
   it('every listened channel has a production emitter or a justified allowlist entry', () => {
@@ -984,4 +987,3 @@ describe('Retired file-tracking / line-attribution / file-attribution channels s
     ).toEqual([]);
   });
 });
-

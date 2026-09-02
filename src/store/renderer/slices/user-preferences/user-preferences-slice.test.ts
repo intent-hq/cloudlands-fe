@@ -21,6 +21,8 @@ import {
   setShowReasoningBlocks,
   setShortcutOverride,
   setSoundEnabled,
+  setSoundPath,
+  hydrateNotificationSettings,
   setSoundOnlyWhenUnfocused,
   setSystemFonts,
   setVolume,
@@ -265,6 +267,25 @@ describe('userPreferencesReducer', () => {
       expect(state.soundOnlyWhenUnfocused).toBe(false);
     });
 
+    it('sets, hydrates and clears a sound path without changing mute or volume', () => {
+      let state = userPreferencesReducer(initialState, setSoundEnabled(false));
+      state = userPreferencesReducer(state, setSoundPath('/Users/me/音声.MP3'));
+      expect(state).toMatchObject({
+        soundPath: '/Users/me/音声.MP3',
+        soundEnabled: false,
+        volume: 0.5,
+      });
+      state = userPreferencesReducer(
+        state,
+        hydrateNotificationSettings({ soundPath: '/tmp/external.mp3' }),
+      );
+      expect(state).toMatchObject({ soundPath: '/tmp/external.mp3', soundEnabled: false });
+      expect(userPreferencesReducer(state, setSoundPath(''))).toMatchObject({
+        soundPath: '',
+        soundEnabled: false,
+      });
+    });
+
     it('clamps notification volume', () => {
       expect(userPreferencesReducer(initialState, setVolume(-0.5)).volume).toBe(0);
       expect(userPreferencesReducer(initialState, setVolume(1.5)).volume).toBe(1);
@@ -279,6 +300,7 @@ describe('userPreferencesReducer', () => {
           soundEnabled: false,
           soundOnlyWhenUnfocused: false,
           volume: 0.2,
+          soundPath: '/tmp/custom.mp3',
           noteFontStyle: 'monospace',
         },
         resetNotificationSettings(),
@@ -288,6 +310,7 @@ describe('userPreferencesReducer', () => {
       expect(modified.soundEnabled).toBe(true);
       expect(modified.soundOnlyWhenUnfocused).toBe(true);
       expect(modified.volume).toBe(0.5);
+      expect(modified.soundPath).toBe('');
       expect(modified.noteFontStyle).toBe('monospace');
     });
   });

@@ -5911,5 +5911,11 @@
   "workspace_agentsList_noSearchResults_label": "没有与搜索匹配的智能体。",
   "workspace_contextPanel_noSearchResults_label": "没有与搜索匹配的上下文。",
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜索",
-  "layout_allCard_archived_label": "已归档"
+  "layout_allCard_archived_label": "已归档",
+  "settings_notifications_customSound_label": "自定义通知音",
+  "settings_notifications_customSound_description": "本地 MP3 路径；留空以使用内置提示音。",
+  "settings_notifications_chooseSound_ariaLabel": "选择 MP3 通知音",
+  "settings_notifications_mp3Files_label": "MP3 音频文件",
+  "settings_notifications_chooseSound_error": "无法选择此提示音。请选择小于 5 MB 的可读取 MP3 文件。",
+  "settings_notifications_clearSound_ariaLabel": "恢复内置通知音"
 }

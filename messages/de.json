@@ -5911,5 +5911,11 @@
   "workspace_agentsList_noSearchResults_label": "Keine Agenten entsprechen Ihrer Suche.",
   "workspace_contextPanel_noSearchResults_label": "Kein Kontext entspricht Ihrer Suche.",
   "workspace_sidebarSearch_clear_ariaLabel": "Suche löschen",
-  "layout_allCard_archived_label": "Archiviert"
+  "layout_allCard_archived_label": "Archiviert",
+  "settings_notifications_customSound_label": "Eigener Benachrichtigungston",
+  "settings_notifications_customSound_description": "Lokaler MP3-Pfad; leer lassen, um den integrierten Ton zu verwenden.",
+  "settings_notifications_chooseSound_ariaLabel": "MP3-Benachrichtigungston auswählen",
+  "settings_notifications_mp3Files_label": "MP3-Audiodateien",
+  "settings_notifications_chooseSound_error": "Dieser Ton konnte nicht ausgewählt werden. Wähle eine lesbare MP3-Datei unter 5 MB.",
+  "settings_notifications_clearSound_ariaLabel": "Integrierten Benachrichtigungston wiederherstellen"
 }

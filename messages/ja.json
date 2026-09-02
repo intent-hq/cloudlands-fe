@@ -5911,5 +5911,11 @@
   "workspace_agentsList_noSearchResults_label": "検索に一致するエージェントはありません。",
   "workspace_contextPanel_noSearchResults_label": "検索に一致するコンテキストはありません。",
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
-  "layout_allCard_archived_label": "アーカイブ済み"
+  "layout_allCard_archived_label": "アーカイブ済み",
+  "settings_notifications_customSound_label": "カスタム通知音",
+  "settings_notifications_customSound_description": "ローカルMP3のパス。空欄にすると標準の通知音を使用します。",
+  "settings_notifications_chooseSound_ariaLabel": "MP3の通知音を選択",
+  "settings_notifications_mp3Files_label": "MP3音声ファイル",
+  "settings_notifications_chooseSound_error": "この通知音を選択できませんでした。5 MB未満の読み取り可能なMP3ファイルを選択してください。",
+  "settings_notifications_clearSound_ariaLabel": "標準の通知音に戻す"
 }

@@ -8,6 +8,15 @@ import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from '../theme-presets-manife
 import { UPDATE_CHANNELS } from '../../features/auto-update/types';
 
 describe('app settings schema', () => {
+  it('exposes custom sound as a daemon-persisted string with the built-in default', () => {
+    expect(findAppSettingDefinition('notifications.soundPath')).toMatchObject({
+      type: 'string',
+      source: 'daemon-settings',
+      storageKey: 'notifications.soundPath',
+      defaultValue: '',
+      apply: { kind: 'redux-action', action: 'notificationSettings/setSoundPath' },
+    });
+  });
   it('defines the persisted GitHub link default action choices', () => {
     expect(findAppSettingDefinition('githubLinks.defaultAction')).toMatchObject({
       type: 'enum',

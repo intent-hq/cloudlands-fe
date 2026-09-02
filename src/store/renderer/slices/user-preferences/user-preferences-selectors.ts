@@ -126,6 +126,8 @@ export const selectSoundEnabled = store.createSelector((state) => {
   return state.userPreferences.soundEnabled;
 });
 
+export const selectSoundPath = store.createSelector((state) => state.userPreferences.soundPath);
+
 export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
   return state.userPreferences.soundOnlyWhenUnfocused;
 });

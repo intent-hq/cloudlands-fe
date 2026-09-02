@@ -5911,5 +5911,11 @@
   "workspace_agentsList_noSearchResults_label": "검색과 일치하는 에이전트가 없습니다.",
   "workspace_contextPanel_noSearchResults_label": "검색과 일치하는 컨텍스트가 없습니다.",
   "workspace_sidebarSearch_clear_ariaLabel": "검색 지우기",
-  "layout_allCard_archived_label": "보관됨"
+  "layout_allCard_archived_label": "보관됨",
+  "settings_notifications_customSound_label": "사용자 지정 알림음",
+  "settings_notifications_customSound_description": "로컬 MP3 경로입니다. 기본 알림음을 사용하려면 비워 두세요.",
+  "settings_notifications_chooseSound_ariaLabel": "MP3 알림음 선택",
+  "settings_notifications_mp3Files_label": "MP3 오디오 파일",
+  "settings_notifications_chooseSound_error": "이 알림음을 선택할 수 없습니다. 읽을 수 있는 5 MB 미만의 MP3 파일을 선택하세요.",
+  "settings_notifications_clearSound_ariaLabel": "기본 알림음 복원"
 }

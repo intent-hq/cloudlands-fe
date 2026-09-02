@@ -46,6 +46,7 @@ import {
   selectNoteFontStyle,
   selectShowArchived,
   selectSoundEnabled,
+  selectSoundPath,
   selectSoundOnlyWhenUnfocused,
   selectSpellcheckEnabled,
   selectUpdateChannel,
@@ -93,6 +94,7 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setSoundEnabled,
+  setSoundPath,
   setSoundOnlyWhenUnfocused,
   setSpellcheckEnabled,
   setUpdateChannel,
@@ -296,6 +298,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectNotificationEnabled.select(state);
     case 'notifications.soundEnabled':
       return selectSoundEnabled.select(state);
+    case 'notifications.soundPath':
+      return selectSoundPath.select(state);
     case 'notifications.soundOnlyWhenUnfocused':
       return selectSoundOnlyWhenUnfocused.select(state);
     case 'notifications.volume':
@@ -411,6 +415,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'notifications.soundEnabled':
       appStore.dispatch(setSoundEnabled(Boolean(value)));
+      return true;
+    case 'notifications.soundPath':
+      if (typeof value !== 'string') return false;
+      appStore.dispatch(setSoundPath(value));
       return true;
     case 'notifications.soundOnlyWhenUnfocused':
       appStore.dispatch(setSoundOnlyWhenUnfocused(Boolean(value)));

@@ -1,4 +1,5 @@
 import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from './theme-presets-manifest';
+import { m } from './paraglide/messages.js';
 import { locales } from './paraglide/runtime.js';
 import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
 import { GITHUB_LINK_DEFAULT_ACTIONS } from './utils/link-helpers';
@@ -397,6 +398,21 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'notifications.soundEnabled',
     defaultValue: true,
     apply: { kind: 'redux-action', action: 'notificationSettings/setSoundEnabled' },
+  },
+  {
+    path: 'notifications.soundPath',
+    get label() {
+      return m.settings_notifications_customSound_label();
+    },
+    get description() {
+      return m.settings_notifications_customSound_description();
+    },
+    category: 'notifications',
+    type: 'string',
+    source: 'daemon-settings',
+    storageKey: 'notifications.soundPath',
+    defaultValue: '',
+    apply: { kind: 'redux-action', action: 'notificationSettings/setSoundPath' },
   },
   {
     path: 'notifications.soundOnlyWhenUnfocused',

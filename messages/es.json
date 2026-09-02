@@ -5911,5 +5911,11 @@
   "workspace_agentsList_noSearchResults_label": "Ningún agente coincide con tu búsqueda.",
   "workspace_contextPanel_noSearchResults_label": "Ningún contexto coincide con tu búsqueda.",
   "workspace_sidebarSearch_clear_ariaLabel": "Borrar búsqueda",
-  "layout_allCard_archived_label": "Archivados"
+  "layout_allCard_archived_label": "Archivados",
+  "settings_notifications_customSound_label": "Sonido de notificación personalizado",
+  "settings_notifications_customSound_description": "Ruta de un MP3 local; déjala vacía para usar el sonido integrado.",
+  "settings_notifications_chooseSound_ariaLabel": "Elegir un sonido de notificación MP3",
+  "settings_notifications_mp3Files_label": "Archivos de audio MP3",
+  "settings_notifications_chooseSound_error": "No se pudo seleccionar este sonido. Elige un archivo MP3 legible de menos de 5 MB.",
+  "settings_notifications_clearSound_ariaLabel": "Restaurar el sonido de notificación integrado"
 }

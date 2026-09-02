@@ -1,123 +1,145 @@
-/**
- * Utility functions for playing notification sounds
- *
- * This module handles browser autoplay restrictions gracefully by:
- * 1. Attempting to play the notification sound
- * 2. Silently failing if audio cannot be played due to browser policies
- * 3. Providing a simple, focused API for notification sounds
- *
- * Usage:
- * - Use `playNotificationSound(volume)` to play the notification sound
- * - The function returns a Promise that resolves when playback completes or fails
- */
-
 import agentCompleteSound from '../../assets/sounds/agent-complete.mp3?url';
+import { readLocalNotificationSound } from './local-notification-audio';
 
-/**
- * Extended HTMLAudioElement with unlock state
- */
-interface AudioElementWithState extends HTMLAudioElement {
-  _isUnlocked?: boolean;
-}
+let soundPath = '';
+let pathVersion = 0;
+let playbackVersion = 0;
+let bundledAudio: HTMLAudioElement | null = null;
+let context: AudioContext | null = null;
+let source: AudioBufferSourceNode | null = null;
+let gain: GainNode | null = null;
+let customBuffer: AudioBuffer | null = null;
+let loading: Promise<AudioBuffer | null> | null = null;
 
-/**
- * Singleton class for managing notification sounds
- */
-class NotificationSoundManager {
-  private static _instance: NotificationSoundManager;
-  private audioElement: AudioElementWithState | null = null;
-
-  private constructor() {
-    // Private constructor to prevent direct instantiation
-  }
-
-  /**
-   * Get the singleton instance
-   */
-  public static getInstance(): NotificationSoundManager {
-    if (!NotificationSoundManager._instance) {
-      NotificationSoundManager._instance = new NotificationSoundManager();
-    }
-    return NotificationSoundManager._instance;
-  }
-
-  /**
-   * Get or create the audio element
-   */
-  private getAudioElement(): AudioElementWithState {
-    if (!this.audioElement) {
-      this.audioElement = new Audio() as AudioElementWithState;
-      this.audioElement.src = agentCompleteSound;
-      this.audioElement.preload = 'auto';
-      this.audioElement._isUnlocked = false;
-    }
-    return this.audioElement;
-  }
-
-  /**
-   * Play the notification sound with the specified volume
-   * Gracefully handles browser autoplay restrictions by silently failing
-   *
-   * @param volume - Volume level (0.0 to 1.0)
-   * @returns Promise that resolves when playback completes or fails
-   */
-  public async playNotificationSound(volume: number): Promise<void> {
+function releaseNodes() {
+  if (source) {
+    source.onended = null;
     try {
-      const audio = this.getAudioElement();
-
-      // Clamp volume to valid range
-      audio.volume = Math.max(0, Math.min(1, volume));
-
-      // Reset the audio to the beginning in case it was played before
-      audio.currentTime = 0;
-
-      // Attempt to play the sound
-      await audio.play();
-    } catch (error) {
-      // Silently fail if audio cannot be played due to browser autoplay restrictions
-      // This is expected behavior - the browser requires user interaction to play audio
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        // Browser autoplay policy prevents playback - this is normal
-        return;
-      }
-
-      // For other errors, also silently fail to avoid disrupting the application
-      // Log only in development if needed
-      if (typeof window !== 'undefined' && (window as any).__DEV__) {
-        console.debug('Failed to play notification sound:', error);
-      }
+      source.stop();
+    } catch {
+      /* A failed start has no active source to stop. */
     }
+    source.disconnect();
+    source = null;
   }
+  gain?.disconnect();
+  gain = null;
+}
 
-  /**
-   * Dispose of the audio element and cleanup resources
-   */
-  public dispose(): void {
-    if (this.audioElement) {
-      this.audioElement.pause();
-      this.audioElement.src = '';
-      this.audioElement._isUnlocked = false;
-      this.audioElement = null;
-    }
+function stopPlayback() {
+  playbackVersion += 1;
+  bundledAudio?.pause();
+  releaseNodes();
+}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-/**
- * Get the singleton instance of NotificationSoundManager
- */
-const notificationSoundManager = NotificationSoundManager.getInstance();
-
-/**
- * Play a notification sound with the specified volume
- * Handles browser autoplay restrictions gracefully (silent fail)
- *
- * @param volume - Volume level (0.0 to 1.0), defaults to 0.5
- * @returns Promise that resolves when playback completes or fails
- */
-export async function playNotificationSound(volume: number = 0.5): Promise<void> {
-  return notificationSoundManager.playNotificationSound(volume);
+/** Called by preference sagas, including external settings changes and resets. */
+export function setNotificationSoundPath(path: string): void {
+  if (soundPath === path) return;
+  stopPlayback();
+  soundPath = path;
+  pathVersion += 1;
+  customBuffer = null;
+  loading = null;
 }
 
-/**
- * Export the singleton instance for advanced use cases
- */
+async function loadCustomSound(): Promise<AudioBuffer | null> {
+  if (customBuffer) return customBuffer;
+  if (loading) return loading;
+  const version = pathVersion;
+  const path = soundPath;
+  const pending = (async () => {
+    let active = true;
+    try {
+      // Bound both a disconnected local mount and a stalled decoder.
+      const decoded = await withTimeout(
+        (async () => {
+          const bytes = await readLocalNotificationSound(path);
+          if (!active || !bytes || version !== pathVersion) return null;
+          context ??= new AudioContext();
+          return await context.decodeAudioData(bytes);
+        })(),
+        5000,
+      );
+      if (version !== pathVersion) return null;
+      customBuffer = decoded;
+      return decoded;
+    } catch {
+      return null;
+    } finally {
+      active = false;
+    }
+  })();
+  loading = pending;
+  try {
+    return await pending;
+  } finally {
+    if (loading === pending) loading = null;
+  }
+}
+
+/** Best-effort playback; preview deliberately bypasses mute/focus, as before. */
+export async function playNotificationSound(
+  volume = 0.5,
+  path = '',
+  canPlay: () => boolean = () => true,
+): Promise<void> {
+  setNotificationSoundPath(path);
+  stopPlayback();
+  const version = playbackVersion;
+  const current = () => version === playbackVersion && canPlay();
+  const level = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.5;
+  try {
+    if (path) {
+      const buffer = await loadCustomSound();
+      if (!current()) return;
+      if (buffer && context) {
+        try {
+          // resume() may remain pending under autoplay/device restrictions.
+          const resumed = await withTimeout(
+            context.resume().then(() => true),
+            1000,
+          );
+          if (!resumed) throw new Error('Audio device unavailable');
+          if (!current()) return;
+          source = context.createBufferSource();
+          gain = context.createGain();
+          source.buffer = buffer;
+          gain.gain.value = level;
+          source.connect(gain);
+          gain.connect(context.destination);
+          source.onended = () => {
+            if (version === playbackVersion) stopPlayback();
+          };
+          source.start();
+          return;
+        } catch {
+          // A decoder/device failure must not prevent the bundled fallback.
+          if (!current()) return;
+          releaseNodes();
+          customBuffer = null;
+        }
+      }
+    }
+    if (!current()) return;
+    bundledAudio ??= new Audio(agentCompleteSound);
+    bundledAudio.volume = level;
+    bundledAudio.currentTime = 0;
+    await bundledAudio.play();
+  } catch {
+    // Autoplay policies and unavailable audio devices never disrupt delivery.
+  }
+}

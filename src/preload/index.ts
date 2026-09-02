@@ -326,6 +326,8 @@ const ALLOWED_CHANNELS = [
   'user-mcp:check-auth',
   'user-mcp:test-connection',
   'notification:test',
+  'notification:pick-sound',
+  'notification:read-sound',
   'notification:requestPermission',
   'notification:show',
   'dialog:message',

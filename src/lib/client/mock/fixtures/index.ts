@@ -249,6 +249,7 @@ export const mockUserPreferences: UserPreferencesState = {
   systemFonts: ['JetBrains Mono', 'Fira Code', 'SF Mono', 'Menlo', 'Monaco'],
   enabled: true,
   soundEnabled: true,
+  soundPath: '',
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
   activityLogPresets: [],

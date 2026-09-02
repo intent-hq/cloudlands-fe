@@ -1,4 +1,4 @@
-import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
+import { call, cancelled, delay, put, takeEvery, takeLatest } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -6,15 +6,22 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectSoundEnabled,
+  selectSoundPath,
   selectSoundOnlyWhenUnfocused,
 } from '../user-preferences-selectors';
 import {
+  pickNotificationSoundRequested,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
+  setSoundPath,
+  hydrateNotificationSettings,
   setSoundOnlyWhenUnfocused,
   setVolume,
 } from '../user-preferences-slice';
+
+import { pickLocalNotificationSound } from '$lib/utils/local-notification-audio';
+import { setNotificationSoundPath } from '$lib/utils/notification-sound';
 
 const logger = createLogger('NotificationSettingsSaga');
 const NOTIFICATION_PATHS = {
@@ -22,59 +29,8 @@ const NOTIFICATION_PATHS = {
   soundEnabled: 'notifications.soundEnabled',
   soundOnlyWhenUnfocused: 'notifications.soundOnlyWhenUnfocused',
   volume: 'notifications.volume',
+  soundPath: 'notifications.soundPath',
 } as const;
-
-type SettingResponse = { value?: unknown };
-
-export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
-  try {
-    const [enabled, soundEnabled, soundOnlyWhenUnfocused, volume] = yield* all([
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.enabled }),
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.soundEnabled }),
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused }),
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.volume }),
-    ]);
-    if (typeof (enabled as SettingResponse).value === 'boolean') {
-      const action = setNotificationEnabled((enabled as { value: boolean }).value);
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-    if (typeof (soundEnabled as SettingResponse).value === 'boolean') {
-      const action = setSoundEnabled((soundEnabled as { value: boolean }).value);
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-    if (typeof (soundOnlyWhenUnfocused as SettingResponse).value === 'boolean') {
-      const action = setSoundOnlyWhenUnfocused(
-        (soundOnlyWhenUnfocused as { value: boolean }).value,
-      );
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-    if (typeof (volume as SettingResponse).value === 'number') {
-      const action = setVolume((volume as { value: number }).value);
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-  } catch (error) {
-    logger.warn('Failed to hydrate notification settings from daemon', { error });
-  }
-}
-
-type NotificationAction =
-  | ReturnType<typeof setNotificationEnabled>
-  | ReturnType<typeof setSoundEnabled>
-  | ReturnType<typeof setSoundOnlyWhenUnfocused>
-  | ReturnType<typeof setVolume>
-  | ReturnType<typeof resetNotificationSettings>;
-
-function* persistNotificationAction(
-  suppressedActions: WeakSet<object>,
-  action: NotificationAction,
-) {
-  if (suppressedActions.delete(action)) return;
-  yield* call(persistNotificationSettingsWorker);
-}
 
 export function* persistNotificationSettingsWorker() {
   yield* delay(100);
@@ -82,6 +38,7 @@ export function* persistNotificationSettingsWorker() {
   const soundEnabled = yield* selectSoundEnabled.effect();
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
+  const soundPath = yield* selectSoundPath.effect();
   try {
     yield* call(backendRequest, 'settings.update', {
       changes: [
@@ -92,6 +49,7 @@ export function* persistNotificationSettingsWorker() {
           value: soundOnlyWhenUnfocused ?? false,
         },
         { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
+        { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
       ],
     });
   } catch (error) {
@@ -99,19 +57,43 @@ export function* persistNotificationSettingsWorker() {
   }
 }
 
-/** Unregistered until the S20 middleware cutover. */
+export function* pickNotificationSoundWorker(
+  action: ReturnType<typeof pickNotificationSoundRequested>,
+) {
+  try {
+    const path = yield* call(pickLocalNotificationSound);
+    if (path !== null) yield* put(setSoundPath(path));
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  } finally {
+    if (yield* cancelled()) yield* put(action.failure(new Error('Sound picker cancelled')));
+  }
+}
+
+function* syncSoundPath() {
+  const path = yield* selectSoundPath.effect();
+  yield* call(setNotificationSoundPath, path);
+}
+
+/** Root-owned persistence and local playback invalidation. */
 export function* notificationSettingsSaga() {
-  const suppressedActions = new WeakSet<object>();
+  yield* takeEvery(pickNotificationSoundRequested, pickNotificationSoundWorker);
+  yield* takeEvery(
+    [setSoundPath, hydrateNotificationSettings, resetNotificationSettings],
+    syncSoundPath,
+  );
   yield* takeLatest(
     [
       setNotificationEnabled,
       setSoundEnabled,
+      setSoundPath,
       setSoundOnlyWhenUnfocused,
       setVolume,
       resetNotificationSettings,
     ],
-    persistNotificationAction,
-    suppressedActions,
+    persistNotificationSettingsWorker,
   );
-  yield* call(hydrateNotificationSettingsWorker, suppressedActions);
+  // The root settingsHydrationSaga owns ordered boot snapshots and external deltas.
+  // Do not race it with a separate settings.get snapshot here.
 }

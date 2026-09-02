@@ -8,6 +8,7 @@ const { mockAppStore, mockState, mockPlayNotificationSound, mockBackendRequest }
       userPreferences: {
         enabled: true,
         soundEnabled: true,
+        soundPath: '',
         soundOnlyWhenUnfocused: false,
         volume: 0.5,
       },
@@ -597,12 +598,32 @@ describe('web-notification-service', () => {
   });
 
   describe('sound settings matrix', () => {
+    it('passes the selected sound to the shared playback path and rechecks delayed mute/focus', async () => {
+      mockState.userPreferences.soundPath = '/Users/me/custom.mp3';
+      await handleWebAgentIdle(makeIdleEvent());
+      await flushAsync();
+      expect(mockPlayNotificationSound).toHaveBeenCalledWith(
+        0.5,
+        '/Users/me/custom.mp3',
+        expect.any(Function),
+      );
+      const canPlay = (
+        mockPlayNotificationSound.mock.calls[0] as unknown as [number, string, () => boolean]
+      )[2];
+      mockState.userPreferences.soundEnabled = false;
+      expect(canPlay()).toBe(false);
+      mockState.userPreferences.soundEnabled = true;
+      mockState.userPreferences.soundOnlyWhenUnfocused = true;
+      hasFocusSpy.mockReturnValue(true);
+      expect(canPlay()).toBe(false);
+      mockState.userPreferences.soundPath = '';
+    });
     it('plays at the configured volume', async () => {
       mockState.userPreferences.volume = 0.8;
       await handleWebAgentIdle(makeIdleEvent());
       await flushAsync();
 
-      expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.8);
+      expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.8, '', expect.any(Function));
     });
 
     it('does not play when soundEnabled is off (banner still shows)', async () => {
@@ -629,7 +650,7 @@ describe('web-notification-service', () => {
       await handleWebAgentIdle(makeIdleEvent());
       await flushAsync();
 
-      expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.5);
+      expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.5, '', expect.any(Function));
     });
   });
 

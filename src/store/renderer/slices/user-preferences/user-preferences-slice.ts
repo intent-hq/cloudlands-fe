@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean-preference';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
@@ -59,6 +59,7 @@ export type UserPreferencesState = {
   systemFonts: string[];
   enabled: boolean;
   soundEnabled: boolean;
+  soundPath: string;
   soundOnlyWhenUnfocused: boolean;
   volume: number;
   activityLogPresets: ActivityLogPresetPreference[];
@@ -75,7 +76,7 @@ type FontSettingsState = Pick<
 
 type NotificationSettingsState = Pick<
   UserPreferencesState,
-  'enabled' | 'soundEnabled' | 'soundOnlyWhenUnfocused' | 'volume'
+  'enabled' | 'soundEnabled' | 'soundPath' | 'soundOnlyWhenUnfocused' | 'volume'
 >;
 
 const fontSettingsInitialState: FontSettingsState = {
@@ -88,6 +89,7 @@ const fontSettingsInitialState: FontSettingsState = {
 const notificationSettingsInitialState: NotificationSettingsState = {
   enabled: true,
   soundEnabled: true,
+  soundPath: '',
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
 };
@@ -148,6 +150,18 @@ export const setNotificationEnabled = createAction<[value: boolean]>(
 export const setSoundEnabled = createAction<[value: boolean]>(
   'notificationSettings/setSoundEnabled',
 );
+
+export const pickNotificationSoundRequested = createAsyncAction<[], void>(
+  'notificationSettings/pickSound',
+  'notificationSettings/pickSoundRequested',
+);
+
+export const setSoundPath = createAction<[path: string]>('notificationSettings/setSoundPath');
+
+// Daemon snapshots/deltas must never echo back into persistence.
+export const hydrateNotificationSettings = createAction<
+  [settings: Partial<NotificationSettingsState>]
+>('notificationSettings/hydrate');
 
 export const setSoundOnlyWhenUnfocused = createAction<[value: boolean]>(
   'notificationSettings/setSoundOnlyWhenUnfocused',
@@ -280,6 +294,14 @@ userPreferencesReducer.with(setNotificationEnabled, (state, { payload: [value] }
 userPreferencesReducer.with(setSoundEnabled, (state, { payload: [value] }) => ({
   ...state,
   soundEnabled: value,
+}));
+userPreferencesReducer.with(setSoundPath, (state, { payload: [soundPath] }) => ({
+  ...state,
+  soundPath,
+}));
+userPreferencesReducer.with(hydrateNotificationSettings, (state, { payload: [settings] }) => ({
+  ...state,
+  ...settings,
 }));
 userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value] }) => ({
   ...state,

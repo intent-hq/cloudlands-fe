@@ -12,12 +12,15 @@
   import {
     selectNotificationEnabled,
     selectSoundEnabled,
+    selectSoundPath,
     selectSoundOnlyWhenUnfocused,
     selectNotificationVolume,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     setNotificationEnabled,
     setSoundEnabled,
+    setSoundPath,
+    pickNotificationSoundRequested,
     setSoundOnlyWhenUnfocused,
     setVolume,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -26,13 +29,33 @@
   import { formatNumber } from '$lib/i18n/format';
   import { Toggle } from '$lib/components/ui/toggle';
   import { playNotificationSound } from '$lib/utils/notification-sound';
-  import { faPlay } from '@fortawesome/free-solid-svg-icons';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
+  import { faPlay, faFolderOpen, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
   const notificationEnabled = selectNotificationEnabled();
   const soundEnabled = selectSoundEnabled();
+  const soundPath = selectSoundPath();
+  const canPickSound = hasCapability('nativeDialogs');
+  const soundFilename = $derived($soundPath.split(/[\\/]/).pop());
+  let pickerLoading = $state(false);
+  let pickerFailed = $state(false);
+
+  async function handlePickSound() {
+    pickerLoading = true;
+    pickerFailed = false;
+    try {
+      const action = pickNotificationSoundRequested();
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      pickerFailed = true;
+    } finally {
+      pickerLoading = false;
+    }
+  }
   const soundOnlyWhenUnfocused = selectSoundOnlyWhenUnfocused();
   const notificationVolume = selectNotificationVolume();
 
@@ -41,7 +64,7 @@
   async function handleTestSound() {
     testSoundLoading = true;
     try {
-      await playNotificationSound($notificationVolume);
+      await playNotificationSound($notificationVolume, $soundPath);
     } catch {
       // Silently fail
     } finally {
@@ -81,19 +104,58 @@
   </div>
 
   <!-- Sound notifications -->
-  <div class="flex justify-between">
-    <div>
+  <div class="flex justify-between gap-3">
+    <div class="min-w-0">
       <p class="text-sm font-medium text-foreground">{m.settings_notifications_sound_label()}</p>
       <p class="text-xs text-subtle">{m.settings_notifications_sound_description()}</p>
+      {#if $soundPath}
+        <p class="text-xs text-subtle truncate" title={$soundPath}>
+          <span aria-hidden="true">{soundFilename}</span>
+          <span class="sr-only">{$soundPath}</span>
+        </p>
+      {/if}
+      {#if pickerFailed}
+        <p role="alert" class="text-xs text-destructive">
+          {m.settings_notifications_chooseSound_error()}
+        </p>
+      {/if}
     </div>
-    <Toggle
-      pressed={$soundEnabled}
-      onclick={() => appStore.dispatch(setSoundEnabled(!$soundEnabled))}
-      variant="indicator"
-      size="xs"
-      class="mb-auto"
-      ariaLabel={m.settings_notifications_sound_label()}
-    />
+    <div class="flex items-start gap-1 shrink-0">
+      <Toggle
+        pressed={$soundEnabled}
+        onclick={() => appStore.dispatch(setSoundEnabled(!$soundEnabled))}
+        variant="indicator"
+        size="xs"
+        ariaLabel={m.settings_notifications_sound_label()}
+      />
+      {#if canPickSound}
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          aria-label={m.settings_notifications_chooseSound_ariaLabel()}
+          title={m.settings_notifications_chooseSound_ariaLabel()}
+          onclick={handlePickSound}
+          disabled={pickerLoading}
+        >
+          <Fa icon={faFolderOpen} size={12} />
+        </Button>
+      {/if}
+      {#if $soundPath}
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          aria-label={m.settings_notifications_clearSound_ariaLabel()}
+          title={m.settings_notifications_clearSound_ariaLabel()}
+          disabled={pickerLoading}
+          onclick={() => {
+            pickerFailed = false;
+            appStore.dispatch(setSoundPath(''));
+          }}
+        >
+          <Fa icon={faRotateLeft} size={10} />
+        </Button>
+      {/if}
+    </div>
   </div>
 
   <!-- Sound only when unfocused -->

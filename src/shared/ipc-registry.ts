@@ -429,6 +429,8 @@ export const IPC_CHANNELS = {
   // Notifications
   NOTIFICATION: {
     TEST: 'notification:test',
+    PICK_SOUND: 'notification:pick-sound',
+    READ_SOUND: 'notification:read-sound',
     REQUEST_PERMISSION: 'notification:requestPermission',
     SHOW: 'notification:show',
   },
