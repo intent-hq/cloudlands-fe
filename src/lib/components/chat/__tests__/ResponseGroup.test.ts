@@ -1191,7 +1191,7 @@ describe('MessageContent - top-level response rows', () => {
       expect(container.textContent?.match(/orphan-output/g)).toHaveLength(1);
       expect(
         container.querySelector('[data-message-content-block="tool_result"]')?.className,
-      ).toContain('pt-4');
+      ).toContain('pt-6');
     },
   );
 
