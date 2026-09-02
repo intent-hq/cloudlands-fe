@@ -95,11 +95,8 @@
     {/each}
     <div class="h-16 px-4 py-3" data-testid="disclosure-visible-anchor">Visible anchor</div>
     <ResponseGroup name="Prepared response group" {blocks} isStreaming={responseStreaming}>
-      {#snippet currentChild()}
-        <p data-testid="prepared-response-current">{responseText}</p>
-      {/snippet}
       <div class="flex flex-col gap-1.5 pb-4" data-testid="prepared-response-body">
-        <p>{responseText}</p>
+        <p data-testid="prepared-response-current">{responseText}</p>
         <p>Second measured response line keeps the intrinsic destination non-trivial.</p>
         <button type="button" data-testid="prepared-response-focus"
           >Focusable response action</button

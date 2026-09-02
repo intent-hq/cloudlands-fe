@@ -214,13 +214,11 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
+    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(staticContent).toContain('suppressSpacing: boolean = false,');
-    expect(streamingContent).toContain('suppressSpacing: boolean = false,');
-    expect(staticContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
-    expect(streamingContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
+    expect(staticContent).not.toContain('getResponseGroupCurrentChildIndex');
+    expect(streamingContent).not.toContain('getResponseGroupCurrentChildIndex');
     expect(streamingContent).toContain(
       '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );
