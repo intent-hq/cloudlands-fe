@@ -182,6 +182,53 @@ describe('settings-proposal-actions', () => {
     );
   });
 
+  // Regression pin for intent-hq/monorepo#4188: read-only settings (e.g.
+  // model.providerDefaults) and unknown paths used to no-op silently, letting
+  // the proposal lifecycle record a fake "Applied" without writing anything.
+  it('rejects a read-only setting instead of reporting success', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const proposal = makeProposal('model.providerDefaults', { codex: 'gpt-5' });
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Setting "model.providerDefaults" is read-only and cannot be changed',
+    );
+
+    expect(setItem).not.toHaveBeenCalled();
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
+  it('rejects an unknown setting path instead of reporting success', async () => {
+    const proposal = makeProposal('no.such.setting', 'value');
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Unknown or unsupported setting "no.such.setting"',
+    );
+
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rolls back earlier writes when a read-only change follows in the same proposal', async () => {
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings',
+      payload: {
+        changes: [
+          { path: 'quickActions.defaultModel', value: 'new-model' },
+          { path: 'model.providerDefaults', value: { codex: 'gpt-5' } },
+        ],
+      },
+      preview: { title: 'Change settings' },
+    };
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Setting "model.providerDefaults" is read-only and cannot be changed',
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('new-model'));
+    expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('old-model'));
+  });
+
   it('rolls back applied settings when a later apply write fails', async () => {
     const proposal: Proposal = {
       kind: 'settings-change',

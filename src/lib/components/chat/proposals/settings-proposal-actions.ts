@@ -489,7 +489,15 @@ async function applyPersistedSetting(
   value: unknown,
   apply: AppSettingApplyPlan | undefined,
 ): Promise<void> {
-  if (!apply || apply.kind === 'read-only') return;
+  // Returning silently here would let the transaction (and the proposal
+  // lifecycle) record the change as applied without writing anything, so
+  // unsupported changes must fail loudly instead.
+  if (!apply) {
+    throw new Error(`Unknown or unsupported setting "${path}"`);
+  }
+  if (apply.kind === 'read-only') {
+    throw new Error(`Setting "${path}" is read-only and cannot be changed`);
+  }
   if (dispatchReduxAction(path, value)) return;
   if (apply.kind === 'redux-action') {
     // A redux-action plan has no fallback below: reaching here means the
