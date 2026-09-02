@@ -84,6 +84,7 @@
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Header from '../ui/Header.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { createTerminalOverlayResize } from './terminal-overlay-resize';
 
   // ============================================================================
   // Props & State
@@ -126,7 +127,8 @@
 
   // UI state
   let isResizing = $state(false);
-  let bodyStylesBeforeResize: { cursor: string; userSelect: string } | null = null;
+  let resizePreviewHeight = $state<number | null>(null);
+  const renderedHeight = $derived(resizePreviewHeight ?? $height);
   let editingTerminalId = $state<string | null>(null);
   let editingValue = $state('');
   let isEditingHeaderName = $state(false);
@@ -537,7 +539,7 @@
     const scriptCount = $scriptEntries$.length;
     const hasTerminals = isRealWorkspace && ($terminals.length > 0 || scriptCount > 0);
     const terminalIsOpen = $isOpen && $activeTerminalId;
-    const terminalHeight = $height;
+    const terminalHeight = renderedHeight;
 
     function updateLayoutHeight() {
       let totalHeight = 0;
@@ -846,39 +848,12 @@
   // Resize Handling
   // ============================================================================
 
-  function startResize(event: MouseEvent) {
-    event.preventDefault();
-    if (!bodyStylesBeforeResize) {
-      bodyStylesBeforeResize = {
-        cursor: document.body.style.cursor,
-        userSelect: document.body.style.userSelect,
-      };
-    }
-    isResizing = true;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', handleResize);
-    document.addEventListener('mouseup', stopResize);
-  }
-
-  function handleResize(event: MouseEvent) {
-    if (!isResizing) return;
-    const windowHeight = window.innerHeight;
-    const newHeight = ((windowHeight - event.clientY) / windowHeight) * 100;
-    appStore.dispatch(setTerminalOverlayHeight(newHeight));
-  }
-
-  function stopResize() {
-    const previousBodyStyles = bodyStylesBeforeResize;
-    bodyStylesBeforeResize = null;
-    isResizing = false;
-    if (previousBodyStyles) {
-      document.body.style.cursor = previousBodyStyles.cursor;
-      document.body.style.userSelect = previousBodyStyles.userSelect;
-    }
-    document.removeEventListener('mousemove', handleResize);
-    document.removeEventListener('mouseup', stopResize);
-  }
+  const { start: startResize, stop: stopResize } = createTerminalOverlayResize({
+    getHeight: () => $height,
+    setPreviewHeight: (height) => (resizePreviewHeight = height),
+    setResizing: (resizing) => (isResizing = resizing),
+    commitHeight: (height) => appStore.dispatch(setTerminalOverlayHeight(height)),
+  });
 
   // ============================================================================
   // Keyboard Shortcuts
@@ -941,7 +916,7 @@
     <div
       class="terminal-panel-spacer"
       class:is-visible={panelIsVisible}
-      style="--terminal-panel-height: {$height}vh;"
+      style="--terminal-panel-height: {renderedHeight}vh;"
       aria-hidden="true"
     ></div>
 
@@ -952,7 +927,7 @@
         class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
         class:is-resizing={isResizing}
         class:is-visible={panelIsVisible}
-        style="height: {$height}vh;"
+        style="height: {renderedHeight}vh;"
         aria-hidden={!panelIsVisible}
         inert={!panelIsVisible}
       >

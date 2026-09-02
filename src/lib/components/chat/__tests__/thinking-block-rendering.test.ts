@@ -825,6 +825,45 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(responseGroup.textContent?.match(/History body after every title\./g)).toHaveLength(1);
   });
 
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])('preserves prose-to-title boundaries as semantic sections in %s', async (_, renderer) => {
+    await renderer([
+      { type: 'text', id: 'boundary:0', text: '<group:Prepping>Group description.' },
+      thinking(
+        'boundary:1',
+        'Reasoning\n\n**Evaluating user feedback mechanisms**\n\nReview input.',
+      ),
+      thinking('boundary:2', '**Specifying task requirements**\n\nDefine the smallest change.'),
+      { type: 'text', id: 'boundary:3', text: '</group:Prepping>' },
+    ]);
+
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    const group = screen.getByTestId('response-group');
+    const sections = [...group.querySelectorAll('[data-reasoning-section]')];
+    expect(sections).toHaveLength(2);
+    expect(sections.every((section) => section.tagName === 'SECTION')).toBe(true);
+    expect(sections.map((section) => section.getAttribute('aria-labelledby'))).toEqual(
+      sections.map((section) => section.querySelector('[data-reasoning-section-title]')?.id),
+    );
+    expect(sections[0].textContent).toContain('Review input.');
+    expect(sections[1].textContent).toContain('Specifying task requirements');
+    expect(sections[0].querySelector('[data-reasoning-history-body]')?.closest('section')).toBe(
+      sections[0],
+    );
+    expect(sections[1].querySelector('[data-reasoning-section-title]')?.closest('section')).toBe(
+      sections[1],
+    );
+
+    const childBoundaries = group.querySelectorAll('[data-reasoning-section-boundary]');
+    expect(childBoundaries).toHaveLength(2);
+    expect(childBoundaries[1].previousElementSibling?.textContent).toContain('Review input.');
+    expect(childBoundaries[1].textContent).toContain('Specifying task requirements');
+    expect(group.textContent?.match(/Review input\./g)).toHaveLength(1);
+    expect(group.textContent?.match(/Specifying task requirements/g)).toHaveLength(1);
+  });
+
   it('uses the reasoning title in the static message path', async () => {
     await renderStatic([
       thinking('msg_1:0', '# Considering task restoration\n\nInspect saved state.'),
@@ -968,13 +1007,19 @@ describe('thinking blocks — StreamingMessageContent', () => {
   });
 
   it('flags the last visible group child as streaming when a hidden child trails', async () => {
-    // tool_result children are never rendered by the group loop — a trailing
-    // one must not steal the "last block" streaming flag from the final
-    // visible thinking block.
+    // A paired tool_result child is rendered inside its visible tool_use — a
+    // trailing one must not steal the streaming flag from the final group child.
     await renderStreaming(
       [
-        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
-        thinking('msg_1:1', 'Reasoning while a result trails'),
+        {
+          type: 'tool_use',
+          id: 'msg_1:0',
+          toolCallId: 'call_1',
+          name: 'view',
+          input: { path: 'src/example.ts' },
+        },
+        { type: 'text', id: 'msg_1:1', text: '<group:Working>' },
+        thinking('msg_1:2', 'Reasoning while a result trails'),
         { type: 'tool_result', tool_use_id: 'call_1', output: 'done' } as ContentBlock,
       ],
       true,

@@ -4590,7 +4590,6 @@
   "ui_shortcuts_sendMessage_label": "傳送訊息",
   "ui_shortcuts_forceSend_label": "傳送（中斷）",
   "ui_shortcuts_newLine_label": "換行",
-  "ui_shortcuts_stopGeneration_label": "停止產生",
   "ui_shortcuts_focusInput_label": "聚焦輸入框",
   "ui_shortcuts_copy_label": "複製",
   "ui_shortcuts_edit_label": "編輯",

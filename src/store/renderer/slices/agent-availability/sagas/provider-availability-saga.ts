@@ -1,4 +1,4 @@
-import { all, call, cancelled, put, takeEvery, takeLeading } from 'typed-redux-saga';
+import { all, call, cancelled, put, takeEvery } from 'typed-redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -7,6 +7,7 @@ import {
   PROVIDER_AVAILABILITY_KEY_TO_ID,
   type ProviderAvailabilityResult,
 } from '$shared/types/provider-availability';
+import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { selectHasCheckedOnce, selectProviderCheckEpochMap } from '../agent-availability-selectors';
 import {
@@ -102,9 +103,16 @@ function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProvi
 
 /** Unregistered until the S20 middleware cutover. */
 export function* providerAvailabilitySaga() {
-  yield* call(hydrateProviderCatalog);
-  yield* takeEveryFromElectronChannel(IPC_CHANNELS.BACKEND.STATUS, handleBackendStatus);
+  // Register request ownership before async catalog hydration so setup's one
+  // boot-time ensure cannot be missed. This removes the need for setup polling
+  // without initiating an extra sweep from provider availability itself.
   yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
   yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
-  yield* takeLeading(checkAllProvidersRequested, handleCheckAllProvidersRequest);
+  yield* takeSingleFlightInContext(
+    checkAllProvidersRequested,
+    () => 'all-providers',
+    handleCheckAllProvidersRequest,
+  );
+  yield* call(hydrateProviderCatalog);
+  yield* takeEveryFromElectronChannel(IPC_CHANNELS.BACKEND.STATUS, handleBackendStatus);
 }

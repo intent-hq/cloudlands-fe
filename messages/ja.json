@@ -4590,7 +4590,6 @@
   "ui_shortcuts_sendMessage_label": "メッセージを送信",
   "ui_shortcuts_forceSend_label": "送信（中断）",
   "ui_shortcuts_newLine_label": "改行",
-  "ui_shortcuts_stopGeneration_label": "生成を停止",
   "ui_shortcuts_focusInput_label": "入力欄にフォーカス",
   "ui_shortcuts_copy_label": "コピー",
   "ui_shortcuts_edit_label": "編集",

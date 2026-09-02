@@ -4591,7 +4591,6 @@
   "ui_shortcuts_sendMessage_label": "Send Message",
   "ui_shortcuts_forceSend_label": "Send (Interrupt)",
   "ui_shortcuts_newLine_label": "New Line",
-  "ui_shortcuts_stopGeneration_label": "Stop Generation",
   "ui_shortcuts_focusInput_label": "Focus Input",
   "ui_shortcuts_copy_label": "Copy",
   "ui_shortcuts_edit_label": "Edit",

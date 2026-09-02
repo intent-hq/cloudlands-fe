@@ -1,4 +1,6 @@
 import type { AgentSession } from '$shared/types';
+import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
 import { normalizeSidebarSearchText, sidebarSearchMatches } from './sidebar/sidebar-search';
 
 export interface FlatWorkspaceAgentRow {
@@ -52,11 +54,81 @@ function getAgentRecency(agent: AgentSession): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-function sortAgents(a: AgentSession, b: AgentSession): number {
-  const aIsCoordinator = isCoordinatorAgentSession(a);
-  const bIsCoordinator = isCoordinatorAgentSession(b);
-  if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
-  return getAgentRecency(b) - getAgentRecency(a);
+/**
+ * Parked-wait precedence, mirroring the HUD's `agentBucketOf`: an agent
+ * holding completion watches (`isWaitingForOtherAgents`/`waitingForAgentIds`,
+ * §5.5), active background hooks (`waitingOnHooks`, §3.1), or active PR
+ * monitors (`waitingOnPrMonitors`, §5.42) is idle even when its lagging
+ * `status: "active"` / `isResponding` flags say otherwise — unless a turn is
+ * genuinely in flight (`turnInFlight`/`liveTurnOpen`/`isStreaming`/
+ * `isProcessing`).
+ */
+function isParkedWaiting(agent: AgentSession): boolean {
+  const parked =
+    agent.isWaitingForOtherAgents === true ||
+    (Array.isArray(agent.waitingForAgentIds) && agent.waitingForAgentIds.length > 0) ||
+    (Array.isArray(agent.waitingOnHooks) && agent.waitingOnHooks.length > 0) ||
+    (Array.isArray(agent.waitingOnPrMonitors) && agent.waitingOnPrMonitors.length > 0);
+  if (!parked) return false;
+  return (
+    agent.turnInFlight !== true &&
+    (agent as AgentSession & { liveTurnOpen?: boolean }).liveTurnOpen !== true &&
+    agent.isStreaming !== true &&
+    agent.isProcessing !== true
+  );
+}
+
+/**
+ * Idle classification for sibling ordering, mirroring the HUD card's
+ * running / failed / attention-request buckets: a live turn per the shared
+ * runtime-state predicates, a failed status, or a pending attention request
+ * keeps the row in the non-idle partition; everything else (waiting,
+ * parked on watches/hooks/monitors, completed, genuinely idle) sorts after
+ * it. Known gap vs the HUD: its `needs-attention` bucket also covers an
+ * outstanding §7.1 question, but `AgentSession` carries no pending-question
+ * field, so a question-pending-but-otherwise-idle agent sorts idle here.
+ */
+function isIdleForOrdering(agent: AgentSession): boolean {
+  const status = typeof agent.status === 'string' ? agent.status.toLowerCase() : '';
+  if (status === 'error' || status === 'failed') return false;
+  if (getAgentAttentionRequest(agent) !== null) return false;
+  if (isParkedWaiting(agent)) return true;
+  return !isAgentRunningState(toAgentRuntimeStateInput(agent));
+}
+
+/** Per-agent ordering keys, precomputed once per sort (matches the HUD's precomputed buckets). */
+interface AgentSortKey {
+  coordinator: boolean;
+  idle: boolean;
+  recency: number;
+}
+
+function getAgentSortKey(agent: AgentSession): AgentSortKey {
+  return {
+    coordinator: isCoordinatorAgentSession(agent),
+    idle: isIdleForOrdering(agent),
+    recency: getAgentRecency(agent),
+  };
+}
+
+/**
+ * Sibling comparator: coordinator first, then non-idle agents by recency
+ * descending, idle agents last (also by recency descending), with a stable
+ * agent-id tiebreak so rows don't jump between refreshes. Keys are read from
+ * the precomputed map so comparisons stay allocation-free.
+ */
+function makeAgentComparator(
+  keyById: ReadonlyMap<string, AgentSortKey>,
+): (a: AgentSession, b: AgentSession) => number {
+  return (a, b) => {
+    const aKey = keyById.get(a.id) ?? getAgentSortKey(a);
+    const bKey = keyById.get(b.id) ?? getAgentSortKey(b);
+    if (aKey.coordinator !== bKey.coordinator) return aKey.coordinator ? -1 : 1;
+    const idleDelta = Number(aKey.idle) - Number(bKey.idle);
+    if (idleDelta !== 0) return idleDelta;
+    if (aKey.recency !== bKey.recency) return bKey.recency - aKey.recency;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  };
 }
 
 export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspaceAgentRow[] {
@@ -83,6 +155,9 @@ export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspace
       childrenByParent.set(parentId, children);
     }
   }
+
+  const keyById = new Map(dedupedAgents.map((agent) => [agent.id, getAgentSortKey(agent)]));
+  const sortAgents = makeAgentComparator(keyById);
 
   for (const children of childrenByParent.values()) children.sort(sortAgents);
 

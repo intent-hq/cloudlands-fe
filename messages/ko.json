@@ -4590,7 +4590,6 @@
   "ui_shortcuts_sendMessage_label": "메시지 보내기",
   "ui_shortcuts_forceSend_label": "보내기(중단)",
   "ui_shortcuts_newLine_label": "줄 바꿈",
-  "ui_shortcuts_stopGeneration_label": "생성 중지",
   "ui_shortcuts_focusInput_label": "입력란에 포커스",
   "ui_shortcuts_copy_label": "복사",
   "ui_shortcuts_edit_label": "편집",

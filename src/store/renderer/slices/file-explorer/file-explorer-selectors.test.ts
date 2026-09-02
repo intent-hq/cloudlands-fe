@@ -6,8 +6,20 @@ import {
   type Workspace,
 } from '$shared/types';
 import { describe, expect, it } from 'vitest';
+import { store as appStore } from '../../store';
 import type { StoreState } from '../../types';
-import { fileExplorerReducer, emptyFileExplorerWorkspaceState, initialState, setChildrenAtPathAction, setGitStatusMap, setRootNode, setFileExplorerWorkspacePath, addExpandedPath } from './file-explorer-slice';
+import { setThemeError } from '../theme/theme-slice';
+import {
+  fileExplorerReducer,
+  emptyFileExplorerWorkspaceState,
+  initialState,
+  setChildrenAtPathAction,
+  setGitStatusMap,
+  setRootNode,
+  setFileExplorerWorkspacePath,
+  addExpandedPath,
+  updateAgentFileEditsEntries,
+} from './file-explorer-slice';
 import {
   selectFileExplorerRootNode,
   selectFileExplorerEnvironmentConfigTrigger,
@@ -601,6 +613,54 @@ describe('selectFlattenedNodes — referential stability across surgical updates
     }
     return state;
   }
+
+  function createFlattenedNodesReadable(fileExplorer = buildSeededState()) {
+    const dispose = appStore.init({ fileExplorer });
+    const readable = selectFlattenedNodes.withStore(appStore)(WS_ID);
+    return { testStore: appStore, readable, dispose };
+  }
+
+  async function settleSelectorSchedule() {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  it('readable reuses the outer array for unchanged rows and unrelated Redux updates', async () => {
+    const { testStore, readable, dispose } = createFlattenedNodesReadable();
+    const values: ReturnType<typeof selectFlattenedNodes.select>[] = [];
+    const unsubscribe = readable.subscribe((value) => values.push(value));
+
+    try {
+      const first = values.at(-1);
+      testStore.dispatch(updateAgentFileEditsEntries(WS_ID, { 'not-visible.ts': ['agent-1'] }));
+      await settleSelectorSchedule();
+      expect(values.at(-1)).toBe(first);
+
+      testStore.dispatch(setThemeError('unrelated update'));
+      await settleSelectorSchedule();
+      expect(values.at(-1)).toBe(first);
+    } finally {
+      unsubscribe();
+      dispose();
+    }
+  });
+
+  it('readable reuses the empty outer array across unrelated Redux updates', async () => {
+    const { testStore, readable, dispose } = createFlattenedNodesReadable(initialState);
+    const values: ReturnType<typeof selectFlattenedNodes.select>[] = [];
+    const unsubscribe = readable.subscribe((value) => values.push(value));
+
+    try {
+      const first = values.at(-1);
+      expect(first).toEqual([]);
+
+      testStore.dispatch(setThemeError('unrelated update'));
+      await settleSelectorSchedule();
+      expect(values.at(-1)).toBe(first);
+    } finally {
+      unsubscribe();
+      dispose();
+    }
+  });
 
   it('setChildrenAtPathAction (targeted directory refresh) keeps rows outside that directory ===-equal', () => {
     // Simulates what Wave 3's handleRefreshDirectory does: reload one
