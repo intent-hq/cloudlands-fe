@@ -121,7 +121,7 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -488,7 +488,8 @@
   const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
     !restoredModel ||
-    parseCompoundModelId(restoredModel, $defaultProviderId$).providerId === currentProviderAtInit;
+    (splitLegacyCompoundId(restoredModel).providerId ?? $defaultProviderId$) ===
+      currentProviderAtInit;
 
   let selectedModel = $state<string | undefined>(
     isModelForCurrentProvider ? restoredModel : undefined,
@@ -613,7 +614,7 @@
     const model = settings.selectedModel;
     const savedModelAccepted =
       !!model &&
-      parseCompoundModelId(model, $defaultProviderId$).providerId ===
+      (splitLegacyCompoundId(model).providerId ?? $defaultProviderId$) ===
         ($activeProviderId$ || $defaultProviderId$);
     if (savedModelAccepted) {
       selectedModel = model;

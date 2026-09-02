@@ -16,6 +16,7 @@
  */
 
 import { deleteLocalPref, getLocalPref, setLocalPref } from '../../../main/local-prefs';
+import { isLoopbackHost } from '$shared/loopback-host';
 
 /** local-prefs key persisting this machine's daemon cert fingerprint. */
 const SELF_FINGERPRINT_KEY = 'selfBackendFingerprint';
@@ -58,7 +59,9 @@ function nonEmptyString(value: unknown): string | null {
  * Parse a `server.pairingInfo` result into the fields the publish flow needs,
  * or `null` when the shape is absent/malformed (missing token/fingerprint).
  * A missing/invalid `port` maps to `null` (WSS listener down), and `localIps`
- * keeps only non-empty strings.
+ * keeps only non-empty, non-loopback strings — a loopback address is only
+ * reachable from this machine, so publishing it to the keychain registry
+ * would hand other devices a candidate that dials THEIR own daemon.
  */
 export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null {
   if (!result || typeof result !== 'object') return null;
@@ -68,7 +71,9 @@ export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null 
   if (!token || !certFingerprint) return null;
   const port = typeof r.port === 'number' && Number.isInteger(r.port) && r.port > 0 ? r.port : null;
   const localIps = Array.isArray(r.localIps)
-    ? r.localIps.map((ip) => (typeof ip === 'string' ? ip.trim() : '')).filter((ip) => ip !== '')
+    ? r.localIps
+        .map((ip) => (typeof ip === 'string' ? ip.trim() : ''))
+        .filter((ip) => ip !== '' && !isLoopbackHost(ip))
     : [];
   return {
     token,

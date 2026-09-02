@@ -1286,6 +1286,47 @@ describe('connections-store', () => {
     expect(remote?.host).toBe('192.168.1.10');
   });
 
+  it('loopback extras from legacy synced records are dropped on read', async () => {
+    // A record published before self-publish filtered loopback out of
+    // localIps may still sync a loopback extra — dialing it would connect
+    // this machine to its OWN local daemon, so reads must drop it.
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHosts(rec.id, [
+      '127.0.0.1',
+      'localhost',
+      '::1',
+      '[::1]',
+      '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '[::ffff:7f00:0001]',
+      '10.0.0.5',
+    ]);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5']);
+  });
+
+  it('a loopback PRIMARY is dropped from candidates but keeps the record identity', async () => {
+    // Legacy synced records can carry a loopback primary — dialing it from
+    // another device races that device's OWN daemon, so reads exclude it
+    // whenever a routable candidate exists. The on-disk host is untouched.
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['192.168.1.10']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['192.168.1.10']);
+  });
+
+  it('an all-loopback record keeps the primary as its sole candidate (stays dialable)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['::1']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['127.0.0.1']);
+  });
+
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
     const store = await import('../connections-store');
     await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBeUndefined();
@@ -2285,5 +2326,53 @@ describe('connections-store keychain sync surface', () => {
     const remotes = (await store.list()).filter((c) => !c.isLocal);
     expect(remotes).toHaveLength(1);
     expect(remotes[0]).toMatchObject({ port: 6200 });
+  });
+});
+
+describe('findMatching (pairing identity lookup)', () => {
+  it('matches by fingerprint even under a different host:port', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.99'],
+      port: 9999,
+      fingerprint: 'aa:bb:cc', // case-insensitive
+    });
+    expect(found).toMatchObject({ id: rec.id });
+    expect(found).not.toHaveProperty('token');
+    expect(found).not.toHaveProperty('encToken');
+  });
+
+  it('falls back to normalized host:port when fingerprints are unusable', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['  192.168.1.10 '],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('tries every candidate host from the pairing URI', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['10.9.9.9', '192.168.1.10'],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('returns null when nothing matches', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.1'],
+      port: 1234,
+      fingerprint: 'DD:EE:FF',
+    });
+    expect(found).toBeNull();
   });
 });

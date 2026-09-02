@@ -30,7 +30,7 @@ import {
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
-import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -370,8 +370,8 @@ export class UnifiedAgentFactory {
         const defaultProviderId = isBackend
           ? ''
           : selectEffectiveDefaultProviderId.select(appStore.state);
-        if (!isModelValidForProvider(resolvedModel, provider, defaultProviderId)) {
-          const modelProvider = splitCompoundModelId(resolvedModel).providerId;
+        const modelProvider = splitLegacyCompoundId(resolvedModel).providerId;
+        if ((modelProvider ?? defaultProviderId) !== provider) {
           logger.warn('Safety net: cross-provider model mismatch in agent creation', {
             resolvedModel,
             modelProvider,

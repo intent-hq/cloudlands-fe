@@ -31,6 +31,7 @@ import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
 import { normalizeFingerprint } from './backend-connection';
 import { Logger } from '../../../shared/logger';
+import { isLoopbackHost } from '../../../shared/loopback-host';
 import {
   DEFAULT_CONNECTION_ACCENT,
   LOCAL_CONNECTION_ID,
@@ -219,10 +220,20 @@ function localRecord(): ConnectionRecord {
 /**
  * Candidate-host list for a stored record: the primary `host` first, then the
  * stored extras (deduplicated). Records written before `hosts` existed migrate
- * to the one-element `[host]` list.
+ * to the one-element `[host]` list. Loopback entries — extras AND a legacy
+ * loopback primary — are dropped on read: a record synced from before
+ * self-publish filtered loopback out of `localIps` may still carry them, and
+ * racing one would connect the dialing machine to its OWN local daemon. The
+ * on-disk `stored.host` is untouched (it is the record's identity, and
+ * rewriting it is a store mutation, not a read); when EVERY host is loopback
+ * the primary is kept as the sole candidate so the record stays dialable on
+ * the machine it names.
  */
 function candidateHosts(stored: Pick<StoredConnection, 'host' | 'hosts'>): string[] {
-  return dedupeHosts([stored.host, ...(stored.hosts ?? [])]);
+  const routable = dedupeHosts(
+    [stored.host, ...(stored.hosts ?? [])].filter((h) => !isLoopbackHost(h)),
+  );
+  return routable.length > 0 ? routable : dedupeHosts([stored.host]);
 }
 
 /** Trim, drop empties, and deduplicate while preserving order. */
@@ -501,6 +512,27 @@ function clearTombstone(
 export async function list(): Promise<ConnectionRecord[]> {
   const state = await readState();
   return [localRecord(), ...state.connections.map(toRecord)];
+}
+
+/**
+ * Find the stored connection matching a pairing identity (deep-link/QR
+ * connect flows): the cert fingerprint is canonical — a match means the same
+ * machine even under a different host:port — with normalized `host:port` as
+ * the fallback, same semantics as add()'s live dedupe (`sameBackend`). Each
+ * candidate host from the pairing URI is tried against the stored primary
+ * host. Returns the token-free record of the first match, or null.
+ */
+export async function findMatching(identity: {
+  hosts: string[];
+  port: number;
+  fingerprint: string | null;
+}): Promise<ConnectionRecord | null> {
+  const state = await readState();
+  const probe = { port: identity.port, fingerprint: identity.fingerprint ?? '' };
+  const match = state.connections.find((c) =>
+    identity.hosts.some((host) => sameBackend(c, { ...probe, host })),
+  );
+  return match ? toRecord(match) : null;
 }
 
 /**

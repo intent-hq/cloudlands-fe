@@ -13,7 +13,7 @@
  */
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
-import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
 
@@ -23,9 +23,8 @@ export const selectProviderCatalogLoaded = store.createSelector(
 );
 
 /** All rows in the daemon's registry order (gated-off rows included). */
-export const selectProviderCatalogEntries = store.createSelector(
-  (state): ProviderCatalogEntry[] =>
-    state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
+export const selectProviderCatalogEntries = store.createSelector((state): ProviderCatalogEntry[] =>
+  state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
 );
 
 /** All provider ids in registry order. */
@@ -70,7 +69,7 @@ export const selectEffectiveDefaultProviderId = store.createSelector((state): st
     ? state.model?.providerModels?.[activeProviderId]
     : undefined;
   if (globalModel?.includes(':')) {
-    const { providerId } = splitCompoundModelId(globalModel);
+    const { providerId } = splitLegacyCompoundId(globalModel);
     if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
   }
   return activeProviderId;
@@ -131,16 +130,13 @@ export const selectProviderDisplayName = store.createSelector(
 );
 
 /**
- * `isModelValidForProvider`-equivalent against the effective default:
- * whether a (compound or bare) model id belongs to `targetProviderId`.
+ * Whether a (legacy compound or bare) model id belongs to
+ * `targetProviderId`; bare ids attribute to the effective default provider.
  */
 export const selectIsModelValidForProvider = store.createSelector(
   (state, model: string, targetProviderId: string): boolean =>
-    isModelValidForProvider(
-      model,
-      targetProviderId,
-      selectEffectiveDefaultProviderId.select(state),
-    ),
+    (splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state)) ===
+    targetProviderId,
 );
 
 /**
@@ -186,7 +182,7 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     // treat it as unset so resolution falls through to the model prefix.
     let rawId = provider && provider !== 'acp' ? provider : '';
     if (!rawId && model?.includes(':')) {
-      rawId = splitCompoundModelId(model).providerId || '';
+      rawId = splitLegacyCompoundId(model).providerId || '';
     }
     const entry = selectProviderCatalogEntryOrDefault.select(state, rawId);
     if (!isProviderAuthenticationErrorForEntry(entry, errorMessage)) return null;

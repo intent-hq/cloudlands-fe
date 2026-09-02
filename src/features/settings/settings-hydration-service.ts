@@ -30,7 +30,7 @@ import {
   hydrateActiveProvider,
   loadEnabledProvidersFromStorage,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   hydrateSettings as hydrateBackgroundAgentSettings,
   type BackgroundAgentType,
@@ -244,7 +244,7 @@ function resolveDefaultProviderCandidate(
   const persistedProviderId =
     activeProviderId || (providerModelIds.length === 1 ? providerModelIds[0] : '');
   const model = persistedProviderId ? providerModels[persistedProviderId] : undefined;
-  const prefix = model?.includes(':') ? splitCompoundModelId(model).providerId : undefined;
+  const prefix = model?.includes(':') ? splitLegacyCompoundId(model).providerId : undefined;
   if (prefix && (!knownProviderIds || knownProviderIds.includes(prefix))) return prefix;
   return persistedProviderId;
 }

@@ -6,7 +6,7 @@ import {
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { getAgentProvider } from '$shared/types/agent-session';
-import { isModelValidForProvider } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
@@ -40,8 +40,10 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
         : [];
     if (catalogModels.length === 0) return persisted;
 
-    const providerCatalogModels = catalogModels.filter((model) =>
-      isModelValidForProvider(model.value, effectiveProviderId, state.model.defaultProviderId),
+    const providerCatalogModels = catalogModels.filter(
+      (model) =>
+        (splitLegacyCompoundId(model.value).providerId ?? state.model.defaultProviderId) ===
+        effectiveProviderId,
     );
     const availableValues = providerCatalogModels.map((model) => model.value);
     if (
@@ -61,8 +63,10 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
   const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);
   if (!isAvailable) return '';
 
-  const models = getItems<AuggieModel, 'value'>(state.model.availableModels).filter((m) =>
-    isModelValidForProvider(m.value, effectiveProviderId, state.model.defaultProviderId),
+  const models = getItems<AuggieModel, 'value'>(state.model.availableModels).filter(
+    (m) =>
+      (splitLegacyCompoundId(m.value).providerId ?? state.model.defaultProviderId) ===
+      effectiveProviderId,
   );
   return resolveDefaultModel(models);
 });
