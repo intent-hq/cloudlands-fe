@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "前回の同期で一部の変更をキーチェーンに書き込めませんでした。",
   "settings_backendSync_status_unavailable": "iCloud キーチェーンを利用できません。",
   "settings_openInApps_empty": "「開く」対象のアプリが見つかりませんでした。",
+  "settings_openInApps_reorder_ariaLabel": "{name} を並べ替えます。上矢印キーと下矢印キーを使用してください。",
+  "settings_openInApps_reorderAnnouncement": "{name} を位置 {position} に移動しました",
   "settings_githubLinks_section_title": "GitHub リンク",
   "settings_githubLinks_defaultAction_label": "デフォルトのアクション",
   "settings_githubLinks_defaultAction_description": "GitHub の Issue またはプルリクエストのリンクをクリックしたときの動作を選択します。",

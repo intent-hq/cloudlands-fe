@@ -1,6 +1,5 @@
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 
-export const MAX_OPEN_IN_APPS = 3;
 export const FILE_MANAGER_EDITOR_ID = 'finder';
 
 const FALLBACK_FINDER: InstalledEditor = {
@@ -14,8 +13,14 @@ const FALLBACK_FINDER: InstalledEditor = {
   priority: 0,
 };
 
-export function getVisibleOpenInEditors(editors: InstalledEditor[]): InstalledEditor[] {
-  const fileManager = editors.find(({ id }) => id === FILE_MANAGER_EDITOR_ID) ?? FALLBACK_FINDER;
-  const apps = editors.filter(({ id }) => id !== FILE_MANAGER_EDITOR_ID).slice(0, MAX_OPEN_IN_APPS);
-  return [...apps, fileManager];
+export function getVisibleOpenInEditors(
+  editors: InstalledEditor[],
+  hiddenEditorIds: string[] = [],
+): InstalledEditor[] {
+  const hidden = new Set(hiddenEditorIds);
+  const visible = editors.filter(({ installed, id }) => installed && !hidden.has(id));
+  if (visible.some(({ id }) => id === FILE_MANAGER_EDITOR_ID) || hidden.has(FILE_MANAGER_EDITOR_ID)) {
+    return visible;
+  }
+  return [...visible, FALLBACK_FINDER];
 }

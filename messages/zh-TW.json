@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "上次同步時部分變更未能寫入鑰匙圈。",
   "settings_backendSync_status_unavailable": "iCloud 鑰匙圈無法使用。",
   "settings_openInApps_empty": "未偵測到已安裝的「開啟方式」應用程式。",
+  "settings_openInApps_reorder_ariaLabel": "重新排列 {name}。使用向上和向下箭頭鍵。",
+  "settings_openInApps_reorderAnnouncement": "已將 {name} 移至位置 {position}",
   "settings_githubLinks_section_title": "GitHub 連結",
   "settings_githubLinks_defaultAction_label": "預設動作",
   "settings_githubLinks_defaultAction_description": "選擇點擊 GitHub Issue 或提取要求連結時執行的動作。",

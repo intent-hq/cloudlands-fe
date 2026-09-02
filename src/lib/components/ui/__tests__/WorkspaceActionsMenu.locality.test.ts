@@ -66,6 +66,40 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const manyMockEditors: InstalledEditor[] = [
+  ...mockEditors,
+  ...(['cursor', 'zed', 'windsurf'].map((id, index) => ({
+    id,
+    name: id[0].toUpperCase() + id.slice(1),
+    shortLabel: id,
+    appName: id,
+    category: 'ide' as const,
+    handlerType: 'generic' as const,
+    priority: 90 - index * 10,
+    installed: true,
+  })) as InstalledEditor[]),
+  {
+    id: 'finder',
+    name: 'Finder',
+    shortLabel: 'Finder',
+    appName: 'Finder',
+    category: 'finder',
+    handlerType: 'finder',
+    priority: 0,
+    installed: true,
+  },
+  {
+    id: 'hidden-editor',
+    name: 'Hidden Editor',
+    shortLabel: 'Hidden',
+    appName: 'Hidden Editor',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 60,
+    installed: true,
+  },
+];
+
 const mockWorkspaces = [
   { id: 'ws-local' },
   { id: 'ws-remote', environmentConfig: { type: 'remote' } },
@@ -74,12 +108,16 @@ const mockWorkspaces = [
 function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
+  editors: InstalledEditor[] = mockEditors,
+  hiddenEditorIds: string[] = [],
+  editorOrder: string[] = [],
 ): Partial<StoreState> {
   return {
     externalEditors: {
       selectedAction: 'vscode',
-      editors: createCollection<InstalledEditor, 'id'>('id', mockEditors),
-      hiddenEditorIds: [],
+      editors: createCollection<InstalledEditor, 'id'>('id', editors),
+      editorOrder,
+      hiddenEditorIds,
       loading: false,
       error: null,
       lastFetched: 0,
@@ -102,6 +140,12 @@ async function renderMenu(workspaceId = '') {
     expect(container.textContent).toContain('Copy Absolute Path');
   });
   return container;
+}
+
+function openInLabels(container: HTMLElement): string[] {
+  return Array.from(
+    container.querySelectorAll<HTMLSpanElement>('button span[title^="Open in "]'),
+  ).map((label) => label.textContent?.trim() ?? '');
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -150,6 +194,36 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
 
     expect(container.textContent).toContain('Open in Visual Studio Code');
     expect(container.textContent).toContain('Choose app');
+  });
+
+  it('shows every installed non-hidden editor on a local daemon', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, manyMockEditors, ['hidden-editor']);
+    const container = await renderMenu();
+
+    expect(container.textContent).toContain('Open in Visual Studio Code');
+    expect(container.textContent).toContain('Open in Cursor');
+    expect(container.textContent).toContain('Open in Zed');
+    expect(container.textContent).toContain('Open in Windsurf');
+    expect(container.textContent).not.toContain('Open in Hidden Editor');
+  });
+
+  it('preserves selector-provided order when Finder is moved away from the end', async () => {
+    mockStoreState = makeState(
+      { mode: 'sidecar-uds' },
+      null,
+      manyMockEditors,
+      ['hidden-editor'],
+      ['finder', 'zed', 'vscode', 'windsurf', 'cursor', 'hidden-editor'],
+    );
+    const container = await renderMenu();
+
+    expect(openInLabels(container)).toEqual([
+      'Open in Finder',
+      'Open in Zed',
+      'Open in Visual Studio Code',
+      'Open in Windsurf',
+      'Open in Cursor',
+    ]);
   });
 });
 

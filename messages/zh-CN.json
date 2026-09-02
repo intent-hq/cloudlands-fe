@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "上次同步时部分更改未能写入钥匙串。",
   "settings_backendSync_status_unavailable": "iCloud 钥匙串不可用。",
   "settings_openInApps_empty": "未检测到已安装的“打开方式”应用。",
+  "settings_openInApps_reorder_ariaLabel": "重新排列 {name}。使用向上和向下箭头键。",
+  "settings_openInApps_reorderAnnouncement": "已将 {name} 移至位置 {position}",
   "settings_githubLinks_section_title": "GitHub 链接",
   "settings_githubLinks_defaultAction_label": "默认操作",
   "settings_githubLinks_defaultAction_description": "选择点击 GitHub Issue 或拉取请求链接时执行的操作。",
