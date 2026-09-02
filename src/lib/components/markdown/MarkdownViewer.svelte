@@ -287,6 +287,10 @@
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
+  let videoLightboxOpen = $state(false);
+  let videoLightboxUrl = $state('');
+  let videoLightboxName = $state<string | undefined>(undefined);
+  let videoLightboxOpenerElement = $state<HTMLElement | null>(null);
 
   // Hover overlay: chat-transcript thumbnails get an image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
@@ -331,6 +335,22 @@
   function handleLinkClick(event: MouseEvent | KeyboardEvent): void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
+
+    if (
+      !anchor &&
+      chatImageThumbnails &&
+      target instanceof HTMLVideoElement &&
+      target.classList.contains('markdown-video')
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      videoLightboxUrl = target.getAttribute('src') || '';
+      videoLightboxName = target.getAttribute('data-name') || undefined;
+      videoLightboxOpenerElement = target;
+      videoLightboxOpen = true;
+      return;
+    }
 
     // Inline workspace-file images open in the lightbox (unless wrapped in a
     // link, in which case the link wins)
@@ -528,6 +548,16 @@
   />
 {/if}
 
+{#if videoLightboxUrl}
+  <VideoLightbox
+    bind:open={videoLightboxOpen}
+    videoUrl={videoLightboxUrl}
+    videoName={videoLightboxName}
+    sourceKind="workspace"
+    openerElement={videoLightboxOpenerElement}
+  />
+{/if}
+
 <style>
   .markdown-viewer {
     position: relative;
@@ -575,6 +605,21 @@
     white-space: pre-wrap;
     word-break: break-word;
     text-wrap: pretty;
+  }
+
+  .markdown-viewer :global(.markdown-video) {
+    display: block;
+    width: 100%;
+    max-width: 42rem;
+    aspect-ratio: 16 / 9;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    background: black;
+    object-fit: contain;
+  }
+
+  .markdown-viewer.chat-image-thumbnails :global(.markdown-video) {
+    cursor: pointer;
   }
 
   .markdown-viewer :global(strong) {

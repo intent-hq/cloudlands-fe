@@ -4,7 +4,7 @@
  * Read-only markdown renders as static processed HTML — no ProseMirror
  * EditorView is constructed for chat transcript messages.
  */
-import { render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import MarkdownViewer from '../MarkdownViewer.svelte';
 
@@ -58,6 +58,27 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(container.querySelector('pre code')).toBeTruthy());
     expect(container.querySelector('.ProseMirror')).toBeNull();
     expect(container.querySelector('pre code')?.textContent).toContain('const x = 1;');
+  });
+
+  it('renders workspace videos inline and opens the video viewer in chat mode', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/out/demo.mp4)',
+        workspaceId: 'ws-abc',
+        chatImageThumbnails: true,
+      },
+    });
+
+    const video = await waitFor(() => {
+      const element = container.querySelector<HTMLVideoElement>('video.markdown-video');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(video.controls).toBe(true);
+    expect(video.getAttribute('src')).toBe('workspace-file://ws-abc/out/demo.mp4');
+
+    await fireEvent.click(video);
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('renders Mermaid fenced blocks as visible source when requested', async () => {

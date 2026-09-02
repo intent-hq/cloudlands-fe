@@ -17,7 +17,26 @@ describe('html-sanitizer', () => {
     expect(sanitizeMarkdownHTML(html)).toContain('src="workspace-file://ws-abc/docs/shot.png"');
   });
 
-  it('strips workspace-file:// from anchor hrefs (image-src only scheme)', () => {
+  it('allows workspace-file:// videos and their player attributes', () => {
+    const html =
+      '<video src="workspace-file://ws-abc/out/demo.mp4" controls preload="metadata" playsinline poster="workspace-file://ws-abc/out/poster.png" data-name="demo"></video>';
+
+    const sanitized = sanitizeMarkdownHTML(html);
+    expect(sanitized).toContain('src="workspace-file://ws-abc/out/demo.mp4"');
+    expect(sanitized).toContain('controls');
+    expect(sanitized).toContain('preload="metadata"');
+    expect(sanitized).toContain('playsinline');
+    expect(sanitized).toContain('data-name="demo"');
+  });
+
+  it.each(['https://example.com/demo.mp4', 'file:///tmp/demo.mp4'])(
+    'strips videos with a non-workspace source: %s',
+    (src) => {
+      expect(sanitizeMarkdownHTML(`<video src="${src}" controls></video>`)).not.toContain('<video');
+    },
+  );
+
+  it('strips workspace-file:// from anchor hrefs (media-src only scheme)', () => {
     const html = '<a href="workspace-file://ws-abc/docs/shot.png">open</a>';
 
     const sanitized = sanitizeMarkdownHTML(html);

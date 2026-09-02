@@ -1,5 +1,5 @@
 import type { EditorOptions } from '@tiptap/core';
-import { Extension } from '@tiptap/core';
+import { Extension, mergeAttributes, Node } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -64,6 +64,37 @@ import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton'
 import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
 import { store as appStore } from '$store/renderer/store';
 const lowlight = safeLowlight;
+
+const Video = Node.create({
+  name: 'video',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      name: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-name'),
+        renderHTML: (attributes) => (attributes.name ? { 'data-name': attributes.name } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'video.markdown-video' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'video',
+      mergeAttributes(HTMLAttributes, {
+        class: 'markdown-video',
+        controls: '',
+        preload: 'metadata',
+        playsinline: '',
+      }),
+    ];
+  },
+});
 
 // Extend Mention to parse our span[data-mention] chips back into nodes
 const MentionFromSpan = Mention.extend({
@@ -426,6 +457,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
             class: 'note-image max-w-full rounded-md',
           },
         }),
+        Video,
 
         // Table support
         Table.configure({

@@ -6,6 +6,7 @@ import { sanitizeMarkdownHTML } from './html-sanitizer';
 import {
   rewriteIntentFileImageSrcs,
   workspaceFileImageUrlToIntentFileUrl,
+  workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
@@ -1180,6 +1181,11 @@ export function processHTMLToMarkdown(
           } else {
             result += `![${alt}](${src})`;
           }
+        } else if (childEl.tagName === 'VIDEO') {
+          const rawSrc = childEl.getAttribute('src') || '';
+          const src = workspaceFileMediaUrlToIntentFileUrl(rawSrc) ?? rawSrc;
+          const name = childEl.getAttribute('data-name') || '';
+          if (src) result += `![${name}](${src})`;
         } else if (
           childEl.tagName === 'DIV' &&
           (childEl.hasAttribute('data-type') || childEl.hasAttribute('data-primitive-type'))
@@ -1448,6 +1454,11 @@ export function processHTMLToMarkdown(
         return `![${alt}](${src} "${title}")\n\n`;
       }
       return `![${alt}](${src})\n\n`;
+    } else if (el.tagName === 'VIDEO') {
+      const rawSrc = el.getAttribute('src') || '';
+      const src = workspaceFileMediaUrlToIntentFileUrl(rawSrc) ?? rawSrc;
+      const name = el.getAttribute('data-name') || '';
+      return src ? `![${name}](${src})\n\n` : '';
     } else if (el.tagName === 'P') {
       return `${processInlineContent(el)}\n\n`;
     } else if (el.tagName === 'H1') {
