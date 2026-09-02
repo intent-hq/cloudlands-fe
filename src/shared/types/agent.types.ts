@@ -5,6 +5,8 @@
  * These types ensure type safety across all agent-related operations.
  */
 
+import type { ModelTriple } from './model-triple';
+
 // Agent Status enum for use in code
 export enum AgentStatus {
   // Current values
@@ -143,14 +145,17 @@ export interface UnifiedAgentConfig {
 
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID
-  model?: string; // Bare model id (no provider prefix) — see ModelTriple in $shared/types/model-triple
+  // Bare model id on new paths (see ModelTriple in $shared/types/model-triple);
+  // legacy compound ids can still arrive from persisted pre-triple state — the
+  // agent-factory step 6.8 safety net filters cross-provider ones.
+  model?: string;
   provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
   /**
    * Reasoning-effort level for the model (the triple's optional third leg;
    * provider-interpreted string, e.g. "low"/"medium"/"high"). Omitted ⇒ the
    * model's default effort.
    */
-  reasoningEffort?: string;
+  reasoningEffort?: ModelTriple['reasoningEffort'];
   systemPrompt?: string; // System prompt for the agent (built from agentType)
   initialMessage?: string;
   /**
