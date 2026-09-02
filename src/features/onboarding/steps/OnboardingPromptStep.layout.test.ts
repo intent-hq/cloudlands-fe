@@ -328,6 +328,23 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
     expect(names).toContain('notes.txt');
   });
 
+  it('re-dropping the same folder is a no-op (one pill, one staged item)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const dropEvent = () => makeItemsDropEvent([{ file: folder, isDirectory: true }]);
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+
+    // One pill — a duplicate path-derived id would break keyed rendering
+    // and make one remove drop both pills.
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(1);
+    });
+    expect(pills(result.container)[0].dataset.name).toBe('my-folder');
+  });
+
   it('skips the folder with an error toast when no absolute path is resolvable', async () => {
     // Missing/empty getPathForFile bridge (e.g. dev:web): a bare folder
     // name must never be staged as if it were an absolute host path.
