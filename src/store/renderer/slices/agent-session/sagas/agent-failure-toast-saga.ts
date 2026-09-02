@@ -41,9 +41,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { selectProviderLoadingMap } from '../../agent-availability/agent-availability-selectors';
 import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import { selectProviderAuthFailureGuidance } from '../../provider-catalog/provider-catalog-selectors';
+import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { openPanel, setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
@@ -224,8 +226,30 @@ function* renderEntry(
     );
     if (authGuidance) {
       state.authRefreshedAt = entry.at;
-      yield* put(checkSingleProviderRequested(authGuidance.providerId));
+      // Burst guard: when several agents on the SAME provider fail together,
+      // the first dispatch flips the provider's loading flag synchronously,
+      // so the rest of the burst skips the put instead of stacking
+      // redundant concurrent probes — the in-flight probe's result covers
+      // them all.
+      const loadingMap = yield* selectProviderLoadingMap.effect();
+      if (!loadingMap[authGuidance.providerId]) {
+        yield* put(checkSingleProviderRequested(authGuidance.providerId));
+      }
     }
+  }
+}
+
+/**
+ * Re-render all registry entries once the provider catalog hydrates: a
+ * failure that landed BEFORE `providers.catalog` arrived rendered without
+ * login guidance (the selector had no rows to match against), and nothing
+ * else re-renders an unchanged entry. The snapshot re-render rebuilds the
+ * toast props — and runs the auth-refresh block — with the hydrated catalog.
+ */
+function* rerenderOnCatalogHydration(emit: FailureEmitter): SagaGenerator<void> {
+  while (true) {
+    yield* take(providerCatalogLoaded);
+    emit({ kind: 'snapshot', entries: listAgentFailureEntries() });
   }
 }
 
@@ -395,6 +419,7 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
   const states = new Map<string, AgentToastState>();
   const { channel, emit } = createFailureChannel();
   try {
+    yield* fork(rerenderOnCatalogHydration, emit);
     while (true) {
       const message: FailureMessage = yield* take(channel);
       if (message.kind === 'snapshot') {

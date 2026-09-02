@@ -334,6 +334,7 @@
   import {
     selectEffectiveDefaultProviderId,
     selectProviderAuthFailureGuidance,
+    selectProviderCatalogLoaded,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
@@ -2169,6 +2170,7 @@
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
   const catalogDefaultProviderId$ = selectEffectiveDefaultProviderId();
+  const providerCatalogLoaded$ = selectProviderCatalogLoaded();
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
@@ -2181,7 +2183,10 @@
   // command hint (and the claude-code desktop-app caveat) alongside the error.
   const chatAuthGuidance = $derived.by(() => {
     if (!effectiveError) return null;
-    // Read the catalog-backed store so the guidance recomputes on hydration.
+    // Depend on the loaded flag (false → true on hydration): an error
+    // rendered before `providers.catalog` lands recomputes once it does —
+    // the default-provider-id string alone may not change on hydration.
+    void $providerCatalogLoaded$;
     void $catalogDefaultProviderId$;
     return selectProviderAuthFailureGuidance.select(
       appStore.state,
