@@ -700,6 +700,7 @@ export const WindowCreateSchema = z.object({
 
 export const WindowOpenNewSchema = z.object({
   route: z.string().optional(),
+  requestId: z.string().min(1).max(256).optional(),
 });
 
 export const WindowSetThemeSchema = z.object({

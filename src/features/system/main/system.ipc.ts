@@ -89,6 +89,10 @@ const require = createRequire(import.meta.url);
 
 const logger = new Logger('SystemIPC');
 let nativeThemeBackgroundSyncInstalled = false;
+const WINDOW_OPEN_REQUEST_RETENTION_MS = 5 * 60 * 1000;
+const MAX_TRACKED_WINDOW_OPEN_REQUESTS = 256;
+
+type WindowOpenResult = { success: true; windowId: number } | { success: false; error: string };
 
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
@@ -562,6 +566,10 @@ export async function autoRepairCliSymlink(): Promise<void> {
 
 export function setupSystemIPC() {
   installNativeThemeBackgroundSync();
+  const handledWindowOpenRequests = new Map<
+    string,
+    { expiresAt: number; result: Promise<WindowOpenResult> }
+  >();
 
   // App info
   ipcMain.handle(
@@ -999,20 +1007,45 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowOpenNewSchema,
       async (event, validated) => {
-        try {
-          const newWindow = await createAppWindow(
-            validated.route,
-            getBackendIdForIpcSender(event.sender),
-          );
-          return { success: true, windowId: newWindow.id };
-        } catch (error) {
-          logger.error('Failed to open new window', error as Error);
-          return {
-            success: false,
-            error:
-              error instanceof Error ? error.message : m.system_ipc_openNewWindowFailed_error(),
-          };
+        const openWindow = async (): Promise<WindowOpenResult> => {
+          try {
+            const newWindow = await createAppWindow(
+              validated.route,
+              getBackendIdForIpcSender(event.sender),
+            );
+            return { success: true, windowId: newWindow.id };
+          } catch (error) {
+            logger.error('Failed to open new window', error as Error);
+            return {
+              success: false,
+              error:
+                error instanceof Error ? error.message : m.system_ipc_openNewWindowFailed_error(),
+            };
+          }
+        };
+
+        if (!validated.requestId) return openWindow();
+
+        const now = Date.now();
+        for (const [requestId, entry] of handledWindowOpenRequests) {
+          if (entry.expiresAt <= now) handledWindowOpenRequests.delete(requestId);
         }
+
+        const existing = handledWindowOpenRequests.get(validated.requestId);
+        if (existing) return existing.result;
+
+        while (handledWindowOpenRequests.size >= MAX_TRACKED_WINDOW_OPEN_REQUESTS) {
+          const oldestRequestId = handledWindowOpenRequests.keys().next().value;
+          if (typeof oldestRequestId !== 'string') break;
+          handledWindowOpenRequests.delete(oldestRequestId);
+        }
+
+        const result = openWindow();
+        handledWindowOpenRequests.set(validated.requestId, {
+          expiresAt: now + WINDOW_OPEN_REQUEST_RETENTION_MS,
+          result,
+        });
+        return result;
       },
       WINDOW_CHANNELS.OPEN_NEW,
     ),

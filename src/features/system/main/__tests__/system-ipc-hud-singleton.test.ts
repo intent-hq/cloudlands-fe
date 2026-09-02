@@ -149,6 +149,37 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     expect(electronMocks.constructed).toHaveLength(2);
   });
 
+  it('accepts one BrowserWindow creation when two renderers handle the same app event', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    const request = { route: '/workspace/ws-1', requestId: 'evt-workspace-open-1' };
+
+    const results = await Promise.all([
+      openNew({ sender: { backendId: 'local', id: 1 } }, request),
+      openNew({ sender: { backendId: 'local', id: 2 } }, request),
+    ]);
+    const repeated = await openNew({ sender: { backendId: 'local', id: 1 } }, request);
+
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(results[0]).toEqual({ success: true, windowId: electronMocks.constructed[0].id });
+    expect(results[1]).toEqual(results[0]);
+    expect(repeated).toEqual(results[0]);
+  });
+
+  it('accepts separate app events as separate BrowserWindow requests', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+
+    await openNew(
+      { sender: { backendId: 'local', id: 1 } },
+      { route: '/workspace/ws-1', requestId: 'evt-workspace-open-1' },
+    );
+    await openNew(
+      { sender: { backendId: 'local', id: 2 } },
+      { route: '/workspace/ws-1', requestId: 'evt-workspace-open-2' },
+    );
+
+    expect(electronMocks.constructed).toHaveLength(2);
+  });
+
   it.each([WINDOW_CHANNELS.CREATE, WINDOW_CHANNELS.OPEN_NEW])(
     '%s inherits the opener backend for remote and local app windows',
     async (channel) => {
