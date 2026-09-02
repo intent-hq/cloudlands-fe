@@ -225,6 +225,68 @@ describe('sidebar nav Chief selectors', () => {
     });
   });
 
+  it('does not reuse an unloaded Chief thread with wire message signals', () => {
+    const chief = session(
+      'agent-chief-wire-messages',
+      CHIEF_WORKSPACE_ID,
+      [],
+      '2026-01-01T15:00:00.000Z',
+      {
+        messageCount: 3,
+        lastMessageId: 'wire-message-3',
+        metadata: {
+          specialist: CHIEF_SPECIALIST_ID,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
+        },
+      },
+    );
+    const state = stateWithSessions([chief]);
+
+    expect(selectReusableChiefThread.select(state)).toBeNull();
+    expect(selectChiefThreads.select(state)).toEqual([
+      expect.objectContaining({ agentId: chief.id, messageCount: 3 }),
+    ]);
+  });
+
+  it('reuses an unloaded Chief thread without wire message signals', () => {
+    const chief = session(
+      'agent-chief-wire-blank',
+      CHIEF_WORKSPACE_ID,
+      [],
+      '2026-01-01T15:00:00.000Z',
+      {
+        metadata: {
+          specialist: CHIEF_SPECIALIST_ID,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
+        },
+      },
+    );
+
+    expect(selectReusableChiefThread.select(stateWithSessions([chief]))).toMatchObject({
+      agentId: chief.id,
+      messageCount: 0,
+    });
+  });
+
+  it('does not reuse a Chief thread with a loaded transcript regardless of wire count', () => {
+    const chief = session(
+      'agent-chief-loaded-message',
+      CHIEF_WORKSPACE_ID,
+      [message('loaded-message-1', 'user', 'Existing chat', '2026-01-01T15:00:00.000Z')],
+      '2026-01-01T15:00:00.000Z',
+      {
+        messageCount: 0,
+        metadata: {
+          specialist: CHIEF_SPECIALIST_ID,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
+        },
+      },
+    );
+
+    expect(selectReusableChiefThread.select(stateWithSessions([chief]))).toBeNull();
+    expect(selectChiefThreads.select(stateWithSessions([chief]))[0]?.messageCount).toBe(1);
+  });
+
   it('finds a current Chief thread even when a newer legacy thread has messages', () => {
     const stale = session(
       'agent-chief-stale-active',
