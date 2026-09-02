@@ -659,11 +659,27 @@ jobs:
         # co-tenant shards would collide on — derive a per-slot CT_PORT from
         # the runner name's slot number (tinybox-1..8 → 3101..3108;
         # playwright-ct.config.ts honors the override).
+        # Playwright's transform compilation cache also defaults to a
+        # SHARED, PERSISTENT dir (/tmp/playwright-transform-cache-<euid> —
+        # same uid across all slots, never cleaned between runs). The CT
+        # component registry is rebuilt from that cache's .data sidecars on
+        # every cache hit, and an entry whose .data is missing/stale is
+        # silently skipped — so one torn write (e.g. an OOM-killed run;
+        # addToCache's .js/.data writes aren't atomic) or a cross-version
+        # clobber (the 1.58.x CT runner and the repo's top-level 1.62.x
+        # share the dir and delete each other's entries) permanently drops
+        # a spec's components on that slot: every later run fails with
+        # "Unregistered component" until someone clears /tmp by hand
+        # (monorepo#4214). Point it at $RUNNER_TEMP, which the runner wipes
+        # between jobs: each run re-transforms specs cold (seconds — the
+        # ~2.5 min Vite CT bundle build is a separate cache and unaffected)
+        # in exchange for no cross-run, cross-slot, or cross-version state.
         if: needs.route.outputs.linux_burst != 'true'
         run: |
           echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
           slot=$(printf '%s' "$RUNNER_NAME" | grep -oE '[0-9]+$' || true)
           echo "CT_PORT=$((3100 + ${slot:-0}))" >> "$GITHUB_ENV"
+          echo "PWTEST_CACHE_DIR=$RUNNER_TEMP/playwright-transform-cache" >> "$GITHUB_ENV"
       - name: Cache Playwright browsers
         # Burst path only: tinybox's per-slot browsers dir (above) is
         # persistent, so the GH cache tarball round-trip would be pure
