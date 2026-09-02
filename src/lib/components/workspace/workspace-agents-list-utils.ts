@@ -55,20 +55,45 @@ function getAgentRecency(agent: AgentSession): number {
 }
 
 /**
+ * Parked-wait precedence, mirroring the HUD's `agentBucketOf`: an agent
+ * holding completion watches (`isWaitingForOtherAgents`/`waitingForAgentIds`,
+ * §5.5), active background hooks (`waitingOnHooks`, §3.1), or active PR
+ * monitors (`waitingOnPrMonitors`, §5.42) is idle even when its lagging
+ * `status: "active"` / `isResponding` flags say otherwise — unless a turn is
+ * genuinely in flight (`turnInFlight`/`liveTurnOpen`/`isStreaming`/
+ * `isProcessing`).
+ */
+function isParkedWaiting(agent: AgentSession): boolean {
+  const parked =
+    agent.isWaitingForOtherAgents === true ||
+    (Array.isArray(agent.waitingForAgentIds) && agent.waitingForAgentIds.length > 0) ||
+    (Array.isArray(agent.waitingOnHooks) && agent.waitingOnHooks.length > 0) ||
+    (Array.isArray(agent.waitingOnPrMonitors) && agent.waitingOnPrMonitors.length > 0);
+  if (!parked) return false;
+  return (
+    agent.turnInFlight !== true &&
+    (agent as AgentSession & { liveTurnOpen?: boolean }).liveTurnOpen !== true &&
+    agent.isStreaming !== true &&
+    agent.isProcessing !== true
+  );
+}
+
+/**
  * Idle classification for sibling ordering, mirroring the HUD card's
  * running / failed / attention-request buckets: a live turn per the shared
  * runtime-state predicates, a failed status, or a pending attention request
  * keeps the row in the non-idle partition; everything else (waiting,
- * completed, genuinely idle) sorts after it. Known gap vs the HUD: its
- * `needs-attention` bucket also covers an outstanding §7.1 question, but
- * `AgentSession` carries no pending-question field, so a
- * question-pending-but-otherwise-idle agent sorts idle here.
+ * parked on watches/hooks/monitors, completed, genuinely idle) sorts after
+ * it. Known gap vs the HUD: its `needs-attention` bucket also covers an
+ * outstanding §7.1 question, but `AgentSession` carries no pending-question
+ * field, so a question-pending-but-otherwise-idle agent sorts idle here.
  */
 function isIdleForOrdering(agent: AgentSession): boolean {
-  if (isAgentRunningState(toAgentRuntimeStateInput(agent))) return false;
   const status = typeof agent.status === 'string' ? agent.status.toLowerCase() : '';
   if (status === 'error' || status === 'failed') return false;
-  return getAgentAttentionRequest(agent) === null;
+  if (getAgentAttentionRequest(agent) !== null) return false;
+  if (isParkedWaiting(agent)) return true;
+  return !isAgentRunningState(toAgentRuntimeStateInput(agent));
 }
 
 /** Per-agent ordering keys, precomputed once per sort (matches the HUD's precomputed buckets). */

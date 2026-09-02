@@ -102,6 +102,43 @@ describe('getFlatWorkspaceAgentRows', () => {
     ]);
   });
 
+  it('sorts a parked session with lagging active flags as idle (HUD parked-wait parity)', () => {
+    // The daemon can leave `status: "active"` / `isResponding: true` on an
+    // agent BETWEEN turns while it holds completion watches, hooks, or PR
+    // monitors — the HUD buckets those idle, and this ordering must agree.
+    const child = (id: string, overrides: Partial<AgentSession>) =>
+      makeAgent(id, { metadata: { createdByAgentId: 'coordinator' } as any, ...overrides });
+    const agents = [
+      makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }),
+      child('parked-watch', {
+        isResponding: true,
+        isWaitingForOtherAgents: true,
+        waitingForAgentIds: ['other'],
+        updatedAt: '2026-01-01T00:00:05.000Z',
+      }),
+      child('parked-hooks', {
+        isResponding: true,
+        waitingOnHooks: [{ hookId: 'h1', name: 'CI watch' }],
+        updatedAt: '2026-01-01T00:00:04.000Z',
+      }),
+      child('running', { isResponding: true, updatedAt: '2026-01-01T00:00:01.000Z' }),
+      // A genuine in-flight turn defeats the parked-wait gate.
+      child('parked-but-turning', {
+        turnInFlight: true,
+        isWaitingForOtherAgents: true,
+        updatedAt: '2026-01-01T00:00:02.000Z',
+      }),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'parked-but-turning',
+      'running',
+      'parked-watch',
+      'parked-hooks',
+    ]);
+  });
+
   it('keeps failed and attention-pending siblings in the non-idle partition', () => {
     const child = (id: string, overrides: Partial<AgentSession>) =>
       makeAgent(id, { metadata: { createdByAgentId: 'coordinator' } as any, ...overrides });
