@@ -83,11 +83,11 @@
       <Fa icon={faCopy} size="xs" class="w-4 text-muted-foreground" />
       {m.browser_overflow_copyUrl_label()}
     </Menu.Item>
+    <Menu.Separator />
     <Menu.Item onSelect={() => void onScreenshot()}>
       <Fa icon={faCamera} size="xs" class="w-4 text-muted-foreground" />
       {m.browser_overflow_screenshot_label()}
     </Menu.Item>
-    <Menu.Separator />
     <Menu.Item onSelect={() => void onOpenConsole()}>
       <Fa icon={faTerminal} size="xs" class="w-4 text-muted-foreground" />
       {m.browser_overflow_console_label()}
