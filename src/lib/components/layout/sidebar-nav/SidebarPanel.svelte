@@ -7,6 +7,7 @@
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
   import {
+    faChevronDown,
     faXmark,
     faEllipsisVertical,
     faMagnifyingGlass,
@@ -19,6 +20,7 @@
     selectPanelItem,
     selectPanelWidth,
     selectCombinedPanelSplit,
+    selectIsChiefCollapsed,
     selectOnboardingActive,
     selectAllSpacesViewMode,
     selectShowArchivedWorkspaces,
@@ -27,6 +29,7 @@
     closePanel,
     setPanelWidth as setPanelWidthAction,
     setCombinedPanelSplit as setCombinedPanelSplitAction,
+    toggleChiefCollapsed,
     setAllSpacesViewMode,
     setShowArchivedWorkspaces,
     setShowCreateModal,
@@ -41,6 +44,7 @@
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
   const combinedPanelSplit$ = selectCombinedPanelSplit();
+  const isChiefCollapsed$ = selectIsChiefCollapsed();
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
@@ -289,8 +293,10 @@
           data-combined-panel-split
         >
           <div
-            class="combined-panel-spaces min-h-0 shrink-0 overflow-hidden flex flex-col"
-            style="height: {liveSplit * 100}%;"
+            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {$isChiefCollapsed$
+              ? 'flex-1'
+              : 'shrink-0'}"
+            style:height={$isChiefCollapsed$ ? undefined : `${liveSplit * 100}%`}
             data-combined-panel-spaces
           >
             <!-- Combined workspace panel: workspace list stacked above the Chief chat
@@ -400,31 +406,60 @@
             </div>
           </div>
 
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="app-resize-handle combined-panel-divider relative shrink-0"
-            data-resize-axis="y"
-            data-resizing={isSplitResizing}
-            data-testid="split-resize-handle"
-            onmousedown={handleSplitResizeStart}
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
-          >
+          {#if !$isChiefCollapsed$}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <div
-              class="pointer-events-none h-px w-full bg-border"
-              data-combined-panel-divider-border
-            ></div>
-          </div>
+              class="app-resize-handle combined-panel-divider relative shrink-0"
+              data-resize-axis="y"
+              data-resizing={isSplitResizing}
+              data-testid="split-resize-handle"
+              onmousedown={handleSplitResizeStart}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
+            >
+              <div
+                class="pointer-events-none h-px w-full bg-border"
+                data-combined-panel-divider-border
+              ></div>
+            </div>
+          {/if}
 
           <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
                lets the Chief composer's streaming aurora bleed across the app
                frame's pl-2/pb-2 window inset to the window edges. -->
           <div
-            class="min-h-0 flex-1 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col"
+            class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
+              ? 'shrink-0'
+              : 'flex-1'}"
             data-combined-panel-chief
           >
-            <ChiefCard expanded={true} embedded={true} />
+            <button
+              type="button"
+              class="mx-2 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm px-1 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              aria-expanded={!$isChiefCollapsed$}
+              aria-controls="combined-panel-chief-content"
+              data-chief-section-toggle
+              onclick={() => appStore.dispatch(toggleChiefCollapsed())}
+            >
+              <Fa
+                icon={faChevronDown}
+                size="xs"
+                class="shrink-0 text-muted-foreground transition-transform {$isChiefCollapsed$
+                  ? '-rotate-90'
+                  : ''}"
+              />
+              <span class="type-caption min-w-0 flex-1 truncate font-medium text-subtle">
+                {m.layout_chiefCard_title()}
+              </span>
+            </button>
+            <div
+              id="combined-panel-chief-content"
+              class="min-h-0 flex-1"
+              hidden={$isChiefCollapsed$}
+            >
+              <ChiefCard expanded={true} embedded={true} />
+            </div>
           </div>
         </div>
       {:else}

@@ -85,7 +85,7 @@
       <Button
         variant="ghost"
         size="icon-xs"
-        class="absolute right-0 top-0 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:bg-muted motion-reduce:transition-none"
+        class="absolute right-0 top-0 flex items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:bg-muted motion-reduce:transition-none"
         onclick={() => {
           query = '';
           inputRef?.focus();

@@ -5,12 +5,15 @@ import {
   initialState,
   openPanel,
   setCombinedPanelSplit,
+  setChiefCollapsed,
   setShowArchivedWorkspaces,
   setMultiSelectSidebarSelectedTabs,
   setStatsOverlayOpen,
   sidebarNavReducer,
   togglePanel,
+  toggleChiefCollapsed,
   toggleShowArchivedWorkspaces,
+  toggleStatusGroupCollapsed,
   toggleWorkspaceCollapsedNote,
 } from './sidebar-nav-slice';
 import { isCombinedWorkspacePanelItem } from './sidebar-nav-types';
@@ -97,6 +100,28 @@ describe('sidebarNavReducer Chief navigation', () => {
 });
 
 describe('sidebarNavReducer workspace sidebar UI persistence', () => {
+  it('toggles serializable status-group and Chief collapse preferences', () => {
+    const collapsedGroup = sidebarNavReducer(initialState, toggleStatusGroupCollapsed('idle'));
+    const expandedGroup = sidebarNavReducer(collapsedGroup, toggleStatusGroupCollapsed('idle'));
+    const collapsedChief = sidebarNavReducer(initialState, setChiefCollapsed(true));
+    const expandedChief = sidebarNavReducer(collapsedChief, toggleChiefCollapsed());
+
+    expect(collapsedGroup.collapsedStatusGroupIds).toEqual(['idle']);
+    expect(expandedGroup.collapsedStatusGroupIds).toEqual([]);
+    expect(collapsedChief.isChiefCollapsed).toBe(true);
+    expect(expandedChief.isChiefCollapsed).toBe(false);
+  });
+
+  it('hydrates status-group and Chief collapse preferences', () => {
+    const next = sidebarNavReducer(
+      initialState,
+      hydrateSidebarNav({ collapsedStatusGroupIds: ['idle', 'archived'], isChiefCollapsed: true }),
+    );
+
+    expect(next.collapsedStatusGroupIds).toEqual(['idle', 'archived']);
+    expect(next.isChiefCollapsed).toBe(true);
+  });
+
   it('stores and hydrates archived workspace visibility with a false default', () => {
     expect(initialState.showArchivedWorkspaces).toBe(false);
 

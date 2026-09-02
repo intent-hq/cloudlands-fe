@@ -909,6 +909,7 @@
   childBlock: ContentBlock,
   childIndex: number,
   suppressSpacing: boolean = false,
+  nested: boolean = true,
 )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
   {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
@@ -926,12 +927,14 @@
             childIndex,
             isVisibleGroupChild,
             group.isReasoningPhase,
-          )} {isOperationalClusterBlock(childBlock)
-      ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-      : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
-    style:padding-left={isOperationalClusterBlock(childBlock)
-      ? undefined
-      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+          )} {nested
+      ? isOperationalClusterBlock(childBlock)
+        ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+        : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+      : ''}"
+    style:padding-left={nested && !isOperationalClusterBlock(childBlock)
+      ? 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'
+      : undefined}
     data-message-content-block={childBlock.type}
     data-chat-search-block-path={childBlock.type === 'tool_result'
       ? undefined
@@ -946,7 +949,7 @@
       group.isStreaming &&
         groupIndex === groupedBlocks.length - 1 &&
         childIndex === lastRenderableChildIndex(group.children),
-      true,
+      nested,
       isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
       chatSearchBlockPath(groupIndex, childIndex),
@@ -968,7 +971,14 @@
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+            {@render renderResponseGroupChild(
+              group,
+              blockIndex,
+              childBlock,
+              childIndex,
+              false,
+              false,
+            )}
           {/if}
         {/each}
       {:else}

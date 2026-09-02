@@ -69,6 +69,8 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
+  import ChatOperationalRow from './ChatOperationalRow.svelte';
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -1702,20 +1704,40 @@
           {isLastConversationMessage}
         />
 
+        {#snippet stoppedIndicatorLeading()}
+          <Fa icon={faSquare} class="{CHAT_OPERATIONAL_ICON_CLASS} text-subtle opacity-50" />
+        {/snippet}
+        {#snippet stoppedIndicatorSummary()}
+          <span class="font-medium text-subtle">{stoppedIndicatorLabel}</span>
+        {/snippet}
+        {#snippet finishReasonLeading()}
+          <Fa
+            icon={faCircleExclamation}
+            class="{CHAT_OPERATIONAL_ICON_CLASS} text-subtle opacity-50"
+          />
+        {/snippet}
+        {#snippet finishReasonSummary()}
+          <span class="font-medium text-subtle">{finishReasonNoticeLabel}</span>
+        {/snippet}
+
         <!-- Stopped indicator for interrupted messages -->
         {#if shouldShowStoppedIndicator}
-          <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
-            <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
-            <span>{stoppedIndicatorLabel}</span>
-          </div>
+          <ChatOperationalRow
+            leading={stoppedIndicatorLeading}
+            summary={stoppedIndicatorSummary}
+            class="mt-5"
+            testId="stopped-indicator"
+          />
         {/if}
 
         <!-- Abnormal-finish notice (refusal / token limit, PROTOCOL §7.3) -->
         {#if finishReasonNoticeLabel}
-          <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
-            <Fa icon={faCircleExclamation} class="size-2.5 opacity-50 mt-px" />
-            <span>{finishReasonNoticeLabel}</span>
-          </div>
+          <ChatOperationalRow
+            leading={finishReasonLeading}
+            summary={finishReasonSummary}
+            class="mt-5"
+            testId="finish-reason-notice"
+          />
         {/if}
 
         <!-- Actions for assistant messages: overlay without shifting content on hover/focus -->

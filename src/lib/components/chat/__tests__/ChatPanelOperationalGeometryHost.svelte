@@ -23,6 +23,7 @@
     detachedStatus = false,
     reasoningSearchOnly = false,
     groupedOrphanSearchOnly = false,
+    terminalStatusOnly = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -31,6 +32,7 @@
     detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
     groupedOrphanSearchOnly?: boolean;
+    terminalStatusOnly?: boolean;
   } = $props();
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
@@ -293,7 +295,7 @@
         tool_use_id: `${prefix}-tool`,
         output: `${prefix} complete`,
       },
-    ] as AgentMessage['contentBlocks'];
+    ] as NonNullable<AgentMessage['contentBlocks']>;
   const productionWrapperMessages = [
     {
       ...message('assistant-production-search', 'assistant', [
@@ -362,6 +364,33 @@
     message('assistant-finished', 'assistant', operationalContent('finished')),
     message('user-streaming', 'user', [{ type: 'text', text: 'Render the streaming rows' }]),
     message('assistant-streaming', 'assistant', operationalContent('streaming', true)),
+  ];
+  const terminalStatusMessages = [
+    message('user-stopped', 'user', [{ type: 'text', text: 'Render the stopped row' }]),
+    {
+      ...message('assistant-stopped', 'assistant', toolOnlyContent('stopped-reference')),
+      metadata: {
+        interrupted: true,
+        stopReason: 'interrupted',
+        interruptReason: 'user_stop',
+      },
+    } as AgentMessage,
+    message('user-abnormal-finish', 'user', [
+      { type: 'text', text: 'Render the abnormal finish row' },
+    ]),
+    {
+      ...message('assistant-abnormal-finish', 'assistant', [
+        ...toolOnlyContent('finish-reference'),
+        { type: 'text', text: '<group:Prepping>' },
+        {
+          type: 'thinking',
+          id: 'finish-reasoning-group',
+          text: 'Thinking\n\nInspect the terminal row geometry.',
+        },
+        { type: 'text', text: '</group:Prepping>' },
+      ]),
+      metadata: { finishReason: 'max_tokens' },
+    } as AgentMessage,
   ];
   const reasoningSearchMessages = [
     message('user-inline-search', 'user', [
@@ -477,15 +506,18 @@
     message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = groupedOrphanSearchOnly
-    ? groupedOrphanSearchMessages
-    : reasoningSearchOnly
-      ? reasoningSearchMessages
-      : seamOnly
-        ? seamMessages
-        : alignmentMessages;
+  const messages = terminalStatusOnly
+    ? terminalStatusMessages
+    : groupedOrphanSearchOnly
+      ? groupedOrphanSearchMessages
+      : reasoningSearchOnly
+        ? reasoningSearchMessages
+        : seamOnly
+          ? seamMessages
+          : alignmentMessages;
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const fixtureIsStreaming = !reasoningSearchOnly && !groupedOrphanSearchOnly && !detachedStatus;
+  const fixtureIsStreaming =
+    !terminalStatusOnly && !reasoningSearchOnly && !groupedOrphanSearchOnly && !detachedStatus;
   const session = {
     id: agentId,
     workspaceId,
@@ -550,7 +582,7 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
-  <div class="h-[900px]" style:width="{width}px">
+  <div style:height="900px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
 </section>

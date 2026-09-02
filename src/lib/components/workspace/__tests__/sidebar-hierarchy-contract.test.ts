@@ -28,7 +28,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar).toContain('titlebar-left-drag-surface');
     expect(titleBar).toContain('data-titlebar-left-drag-handle');
-    expect(titleBar).toContain('class="flex min-w-0 items-center gap-1"');
+    expect(titleBar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titleBar).toContain('<WorkspaceTabStrip');
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');

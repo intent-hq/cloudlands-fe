@@ -40,8 +40,8 @@ export interface PanelHeaderActions {
 export interface PanelHeaderContext {
   /** Register header state from content component */
   registerState: (state: PanelHeaderState) => void;
-  /** Register content-specific items for the panel's grouped action menu. */
-  registerActions: (actions: PanelHeaderActions) => void;
+  /** Register content-specific items and return an ownership-safe cleanup function. */
+  registerActions: (actions: PanelHeaderActions) => () => void;
   /** Unregister when component unmounts */
   unregister: () => void;
 }
@@ -54,6 +54,8 @@ export function createPanelHeaderContext(): {
 } {
   const state = $state<{ current: PanelHeaderState | null }>({ current: null });
   const actions = $state<{ current: PanelHeaderActions | null }>({ current: null });
+  let nextActionsRegistrationId = 0;
+  let currentActionsRegistrationId = 0;
 
   const context: PanelHeaderContext = {
     registerState(newState: PanelHeaderState) {
@@ -62,13 +64,20 @@ export function createPanelHeaderContext(): {
       }
     },
     registerActions(newActions: PanelHeaderActions) {
-      if (untrack(() => actions.current) !== newActions) {
-        actions.current = newActions;
-      }
+      const registrationId = ++nextActionsRegistrationId;
+      currentActionsRegistrationId = registrationId;
+      actions.current = newActions;
+      return () => {
+        if (currentActionsRegistrationId === registrationId) {
+          currentActionsRegistrationId = 0;
+          actions.current = null;
+        }
+      };
     },
     unregister() {
       // Direct assignment is safe from $effect since effects run after render
       state.current = null;
+      currentActionsRegistrationId = 0;
       actions.current = null;
     },
   };

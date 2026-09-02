@@ -22,6 +22,7 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
+  import { WORKSPACE_HOVER_CARD_OPEN_DELAY_MS } from './utils/workspace-hover-card-intent';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -180,6 +181,7 @@
     getWorkspaceStatusPresentation(workspaceStatusState),
   );
   let isCurrent = $derived(workspace ? page.url.pathname === `/workspace/${workspace.id}` : false);
+  let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
 
@@ -188,8 +190,9 @@
   // on-demand load dispatches that fan out to every live selector in the
   // app), so scrubbing the pointer across the list must not mount one per
   // row — only a pointer that rests on a row opens the card.
-  const HOVER_CARD_OPEN_DELAY_MS = 250;
   let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  let pointerWithinRow = false;
+  let focusWithinRow = false;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -244,19 +247,33 @@
   }
 
   function handleMouseEnter() {
+    pointerWithinRow = true;
     onHover?.();
-    if (workspace && !suppressHover) {
+    if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
         hoverCardVisible = true;
-      }, HOVER_CARD_OPEN_DELAY_MS);
+      }, WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
     }
   }
 
   function handleMouseLeave() {
+    pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    hoverCardVisible = false;
+    if (!focusWithinRow) hoverCardVisible = false;
+  }
+
+  function handleFocusIn() {
+    focusWithinRow = true;
+    clearHoverCardOpenTimer();
+    if (workspace && !suppressHover) hoverCardVisible = true;
+  }
+
+  function handleFocusOut(event: FocusEvent) {
+    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
+    focusWithinRow = false;
+    if (!pointerWithinRow) hoverCardVisible = false;
   }
 
   $effect(() => {
@@ -482,6 +499,8 @@
     oncontextmenu={handleContextMenu}
     onmouseenter={handleMouseEnter}
     onmouseleave={handleMouseLeave}
+    onfocusin={handleFocusIn}
+    onfocusout={handleFocusOut}
     style:anchor-name="--workspace-list-{workspace.id}"
     data-workspace-card-row
   >
@@ -489,7 +508,7 @@
       variant="plain"
       class="absolute inset-0 z-0 h-auto w-auto rounded-md focus-visible:border-transparent focus-visible:bg-background/50 focus-visible:ring-0"
       aria-label={workspace.title || m.workspace_links_untitled_label()}
-      aria-describedby={`workspace-status-state-${workspace.id}${isPinned ? ` workspace-pinned-state-${workspace.id}` : ''}`}
+      aria-describedby={`workspace-status-state-${workspace.id}${isPinned ? ` workspace-pinned-state-${workspace.id}` : ''}${hoverCardVisible ? ` ${hoverCardId}` : ''}`}
       aria-current={isCurrent ? 'page' : undefined}
       data-workspace-card-trigger
       onclick={(event) => {
@@ -676,6 +695,7 @@
 
   {#if hoverCardVisible && !suppressHover}
     <HoverCard
+      id={hoverCardId}
       anchor="--workspace-list-{workspace.id}"
       position="right"
       anchorElement={rowElement}

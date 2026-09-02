@@ -35,6 +35,12 @@
     { type: 'tool_use', id: 'nested-tool', name: 'view', input: { path: 'src/example.ts' } },
     { type: 'text', text: '</group:Recovery>' },
   ];
+  const headerlessInlineResponseGroup: ContentBlock[] = [
+    { type: 'thinking', id: 'inline-history', text: 'Earlier reasoning history' },
+    { type: 'text', text: '<group:Prepping>Inline assistant prose' },
+    { type: 'tool_use', id: 'inline-tool', name: 'view', input: { path: 'src/inline.ts' } },
+    { type: 'text', text: '</group>' },
+  ];
   const tool = [
     { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'src/example.ts' } },
   ] as ContentBlock[];
@@ -206,6 +212,15 @@
     </div>
     <div data-testid="expanded-group-operational-rows">
       <MessageContent content={expandedGroupOperationalRows} />
+    </div>
+    <div data-testid="streaming-expanded-group-operational-rows">
+      <StreamingMessageContent content={expandedGroupOperationalRows} isStreaming />
+    </div>
+    <div data-testid="headerless-inline-static">
+      <MessageContent content={headerlessInlineResponseGroup} />
+    </div>
+    <div data-testid="headerless-inline-streaming">
+      <StreamingMessageContent content={headerlessInlineResponseGroup} isStreaming />
     </div>
     <div data-testid="static-rich-block"><MessageContent content={richBlock} /></div>
     <div data-testid="streaming-rich-block">

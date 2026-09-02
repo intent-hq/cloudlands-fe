@@ -14,7 +14,9 @@ import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-
 import {
   selectAllSpacesViewMode,
   selectChiefActiveAgentId,
+  selectCollapsedStatusGroupIds,
   selectCombinedPanelSplit,
+  selectIsChiefCollapsed,
   selectIsCardPinned,
   selectMultiSelectSidebarSelectedTabIds,
   selectPanelItem,
@@ -27,6 +29,8 @@ import {
 import {
   CARD_PINNED_KEY,
   CHIEF_ACTIVE_AGENT_ID_KEY,
+  CHIEF_COLLAPSED_KEY,
+  COLLAPSED_STATUS_GROUPS_KEY,
   COMBINED_PANEL_SPLIT_KEY,
   closeAll,
   closeHoverCards,
@@ -43,6 +47,7 @@ import {
   setAllSpacesViewMode,
   setCardPinned,
   setChiefActiveAgentId,
+  setChiefCollapsed,
   setCombinedPanelSplit,
   setMultiSelectSidebarSelectedTabs,
   setPanelWidth,
@@ -50,8 +55,10 @@ import {
   setWorkspaceNoteOrder,
   SHOW_ARCHIVED_KEY,
   toggleCardPinned,
+  toggleChiefCollapsed,
   togglePanel,
   togglePinWorkspace,
+  toggleStatusGroupCollapsed,
   toggleWorkspaceCollapsedNote,
   VIEW_MODE_KEY,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
@@ -154,6 +161,16 @@ function* hydrateSidebarNavState(): SagaGenerator<void> {
     const showArchived = yield* call(getLocalStorageJSON<unknown>, SHOW_ARCHIVED_KEY);
     if (typeof showArchived === 'boolean') data.showArchivedWorkspaces = showArchived;
 
+    const collapsedStatusGroups = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, COLLAPSED_STATUS_GROUPS_KEY),
+    );
+    if (collapsedStatusGroups !== undefined) {
+      data.collapsedStatusGroupIds = collapsedStatusGroups;
+    }
+
+    const chiefCollapsed = yield* call(getLocalStorageJSON<unknown>, CHIEF_COLLAPSED_KEY);
+    if (typeof chiefCollapsed === 'boolean') data.isChiefCollapsed = chiefCollapsed;
+
     const width = yield* call(getLocalStorageJSON<unknown>, PANEL_WIDTH_KEY);
     if (typeof width === 'number' && Number.isFinite(width)) data.panelWidth = width;
 
@@ -220,6 +237,26 @@ function* persistShowArchivedWorkspaces(): SagaGenerator<void> {
       SHOW_ARCHIVED_KEY,
       yield* selectShowArchivedWorkspaces.effect(),
     );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistCollapsedStatusGroups(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      COLLAPSED_STATUS_GROUPS_KEY,
+      yield* selectCollapsedStatusGroupIds.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistChiefCollapsed(): SagaGenerator<void> {
+  try {
+    yield* call(setLocalStorageJSON, CHIEF_COLLAPSED_KEY, yield* selectIsChiefCollapsed.effect());
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
   }
@@ -390,6 +427,8 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(PINNED_ACTIONS, persistPinnedWorkspaces);
   yield* takeEvery(setAllSpacesViewMode, persistViewMode);
   yield* takeEvery(setShowArchivedWorkspaces, persistShowArchivedWorkspaces);
+  yield* takeEvery(toggleStatusGroupCollapsed, persistCollapsedStatusGroups);
+  yield* takeEvery([setChiefCollapsed, toggleChiefCollapsed], persistChiefCollapsed);
   yield* takeEvery(setPanelWidth, persistPanelWidth);
   yield* takeEvery(setCombinedPanelSplit, persistCombinedPanelSplit);
   yield* takeEvery(PANEL_ITEM_ACTIONS, persistPanelAndCardState);

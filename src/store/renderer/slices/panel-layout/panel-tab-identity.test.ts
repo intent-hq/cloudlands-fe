@@ -31,6 +31,15 @@ describe('panel tab canonical identity', () => {
         terminalId: 'two',
       }),
     ).toBe(false);
+    expect(
+      panelTabsAreEquivalent(tab('s', { type: 'terminal', scriptId: 'dev' }), {
+        type: 'terminal',
+        title: 'Dev server',
+        closable: true,
+        workspaceId: 'ws-1',
+        scriptId: 'dev',
+      }),
+    ).toBe(true);
   });
 
   it('uses workspace and hook identity for hook script panels', () => {
