@@ -25,6 +25,7 @@ export class LiveServerClient implements ServerClient {
       path?: string;
       localIps?: string[];
       hostname?: string;
+      tcAddress?: string;
     }>("server.pairingInfo");
 
     // Validate required fields
@@ -45,6 +46,10 @@ export class LiveServerClient implements ServerClient {
       path: result.path,
       localIps: result.localIps,
       hostname: result.hostname,
+      // Additive (§5.2): present only when the tunnel is enabled and up.
+      ...(typeof result.tcAddress === "string" && result.tcAddress.length > 0
+        ? { tcAddress: result.tcAddress }
+        : {}),
     };
   }
 

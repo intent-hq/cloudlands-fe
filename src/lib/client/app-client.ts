@@ -2092,6 +2092,11 @@ export interface ServerPairingInfo {
   path: string;
   localIps: string[];
   hostname: string;
+  /**
+   * Additive tailcat tunnel address (§5.2): present only when the tunnel is
+   * enabled and up; absent on older daemons or while the tunnel is down.
+   */
+  tcAddress?: string;
 }
 
 export interface ServerClient {
