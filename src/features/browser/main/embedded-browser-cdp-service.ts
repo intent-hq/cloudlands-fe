@@ -425,6 +425,16 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Whether a tab currently has a live, CDP-addressable webContents
+   * (registered, or discoverable via a `webview-<id>` fallback id). Capture
+   * ops consult this before deciding to mount the tab on demand
+   * (intent-hq/monorepo#4103).
+   */
+  isTabMounted(tabId: string): boolean {
+    return this.resolveTabId(tabId) !== undefined;
+  }
+
+  /**
    * Unregister a browser tab (called when tab is closed).
    * Ownership is NOT cleared here — unregistration also covers unmounts;
    * use {@link clearTabOwnership} on a genuine close (monorepo#2857).
