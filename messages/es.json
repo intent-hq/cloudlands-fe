@@ -318,6 +318,7 @@
   "settings_listenTargets_allInterfaces_label": "Todas las interfaces (0.0.0.0)",
   "settings_listenTargets_loopback_label": "127.0.0.1 (host local)",
   "settings_listenTargets_loopbackRequired_note": "El túnel Tailcat reenvía las conexiones al host local, por lo que 127.0.0.1 permanece vinculada mientras el túnel esté seleccionado.",
+  "settings_listenTargets_coveredByAllInterfaces_note": "«Todas las interfaces» cubre todas las direcciones; desmárquela para elegir direcciones individualmente.",
   "settings_listenTargets_tunnelOnly_note": "Solo túnel: sin escuchas directas; los dispositivos se conectan a través del túnel.",
   "settings_listenTargets_saveError": "No se pudieron actualizar las direcciones de escucha: {error}",
   "settings_listenTargets_saved": "Direcciones de escucha actualizadas",

@@ -4,9 +4,9 @@
  * ListenTargetSelector — the listen-target picker (bind IPs; the tailcat
  * tunnel is toggled by the parent, mirrored in via `tunnelSelected`). Covers
  * the selection semantics the Advanced page persists from: exclusive
- * all-interfaces, the never-zero-targets guard, and the loopback lock while
- * the tunnel is on (the tailcat sidecar forwards to 127.0.0.1, so loopback
- * must stay bound).
+ * all-interfaces (which locks the covered addresses checked while selected),
+ * the never-zero-targets guard, and the loopback lock while the tunnel is on
+ * (the tailcat sidecar forwards to 127.0.0.1, so loopback must stay bound).
  */
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -81,10 +81,25 @@ describe('ListenTargetSelector', () => {
     expect(onchange).toHaveBeenCalledWith({ ips: ['0.0.0.0'], tunnel: false });
   });
 
-  it('selecting a specific IP while all-interfaces is bound drops the unspecified bind', async () => {
-    const { getByRole, onchange } = renderSelector({ selectedIps: ['0.0.0.0'] });
-    await fireEvent.click(getByRole('checkbox', { name: '10.0.0.5' }));
-    expect(onchange).toHaveBeenCalledWith({ ips: ['10.0.0.5'], tunnel: false });
+  it('locks the covered addresses checked while all-interfaces is bound', () => {
+    // 0.0.0.0 already covers every address, so the individual entries render
+    // checked but disabled until all-interfaces is unchecked.
+    const { getByRole, getByText } = renderSelector({ selectedIps: ['0.0.0.0'] });
+    for (const name of ['192.168.1.10', '10.0.0.5', m.settings_listenTargets_loopback_label()]) {
+      const box = asInput(getByRole('checkbox', { name }));
+      expect(box.checked).toBe(true);
+      expect(box.disabled).toBe(true);
+    }
+    expect(getByText(m.settings_listenTargets_coveredByAllInterfaces_note())).toBeTruthy();
+  });
+
+  it('unchecking all-interfaces makes the covered addresses toggleable again', async () => {
+    const { getByRole, rerender } = renderSelector({ selectedIps: ['0.0.0.0'] });
+    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
+    await rerender({ selectedIps: ['127.0.0.1'] });
+    const other = asInput(getByRole('checkbox', { name: '10.0.0.5' }));
+    expect(other.checked).toBe(false);
+    expect(other.disabled).toBe(false);
   });
 
   it('locks loopback checked while the tunnel is selected alongside specific IPs', () => {
@@ -100,13 +115,17 @@ describe('ListenTargetSelector', () => {
     expect(getByText(m.settings_listenTargets_loopbackRequired_note())).toBeTruthy();
   });
 
-  it('does not lock loopback while all-interfaces is bound with the tunnel', () => {
-    const { getByRole } = renderSelector({ selectedIps: ['0.0.0.0'], tunnelSelected: true });
+  it('shows the covered note (not the loopback note) while all-interfaces is bound with the tunnel', () => {
+    const { getByRole, queryByText } = renderSelector({
+      selectedIps: ['0.0.0.0'],
+      tunnelSelected: true,
+    });
     const loopback = asInput(
       getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(false);
-    expect(loopback.disabled).toBe(false);
+    expect(loopback.checked).toBe(true);
+    expect(loopback.disabled).toBe(true);
+    expect(queryByText(m.settings_listenTargets_loopbackRequired_note())).toBeNull();
   });
 
   it('load-repair: tunnel on without loopback renders it checked+locked and the next change persists it', async () => {
@@ -173,14 +192,15 @@ describe('ListenTargetSelector', () => {
     expect(sole.checked).toBe(true);
   });
 
-  it('never allows zero targets: unchecking all-interfaces as the sole target is refused', async () => {
+  it('unchecking all-interfaces as the sole target falls back to loopback', async () => {
+    // The covered addresses are locked while 0.0.0.0 is bound, so refusing
+    // the uncheck would deadlock the picker — fall back to loopback instead.
     const { getByRole, onchange } = renderSelector({ selectedIps: ['0.0.0.0'] });
     const allInterfaces = asInput(
       getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
     );
     await fireEvent.click(allInterfaces);
-    expect(onchange).not.toHaveBeenCalled();
-    expect(allInterfaces.checked).toBe(true);
+    expect(onchange).toHaveBeenCalledWith({ ips: ['127.0.0.1'], tunnel: false });
   });
 
   it('tunnel-only posture: loopback stays unchecked and unlocked (daemon binds it itself)', () => {

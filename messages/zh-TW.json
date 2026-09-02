@@ -318,6 +318,7 @@
   "settings_listenTargets_allInterfaces_label": "所有介面 (0.0.0.0)",
   "settings_listenTargets_loopback_label": "127.0.0.1(本地環回)",
   "settings_listenTargets_loopbackRequired_note": "Tailcat 隧道會將連線轉發到本機,因此選擇隧道時 127.0.0.1 保持繫結。",
+  "settings_listenTargets_coveredByAllInterfaces_note": "「所有介面」涵蓋所有位址；取消勾選後才能個別選擇位址。",
   "settings_listenTargets_tunnelOnly_note": "僅隧道:無直接監聽器;裝置透過隧道連線。",
   "settings_listenTargets_saveError": "更新監聽目標失敗:{error}",
   "settings_listenTargets_saved": "監聽目標已更新",

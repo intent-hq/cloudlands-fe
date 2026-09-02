@@ -318,6 +318,7 @@
   "settings_listenTargets_allInterfaces_label": "所有接口 (0.0.0.0)",
   "settings_listenTargets_loopback_label": "127.0.0.1(本地环回)",
   "settings_listenTargets_loopbackRequired_note": "Tailcat 隧道将连接转发到本机,因此选择隧道时 127.0.0.1 保持绑定。",
+  "settings_listenTargets_coveredByAllInterfaces_note": "“所有接口”涵盖所有地址；取消勾选后才能单独选择地址。",
   "settings_listenTargets_tunnelOnly_note": "仅隧道:无直接监听器;设备通过隧道连接。",
   "settings_listenTargets_saveError": "更新监听目标失败:{error}",
   "settings_listenTargets_saved": "监听目标已更新",

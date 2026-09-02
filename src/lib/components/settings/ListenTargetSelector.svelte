@@ -10,7 +10,9 @@
    * - IPs only            → bindAddress=[ips], tunnel.enabled=false
    * - IPs + tunnel        → bindAddress=[ips], tunnel.enabled=true, tunnel.only=false
    * - "All interfaces" (0.0.0.0) is exclusive with specific IPs (daemon
-   *   validation: unspecified-only-alone).
+   *   validation: unspecified-only-alone). While it is selected, the other
+   *   addresses render checked but locked (0.0.0.0 already covers them);
+   *   unchecking it makes them individually toggleable again.
    * - tunnel only         → tunnel.enabled=true, tunnel.only=true (no direct listeners)
    * - "127.0.0.1 (localhost)" is always listed; while the tunnel is enabled
    *   alongside specific IPs it is auto-selected and locked (the tailcat
@@ -60,6 +62,11 @@
 
   const selection = $derived(new Set(selectedIps));
 
+  // While all-interfaces is bound, every other address is already covered by
+  // 0.0.0.0 — render them checked but locked (same pattern as the loopback
+  // lock below) until all-interfaces is unchecked.
+  const allInterfacesSelected = $derived(selection.has(ALL_INTERFACES));
+
   // The tailcat sidecar forwards tunnel connections to 127.0.0.1:<port>, so
   // loopback must stay bound while the tunnel is selected alongside specific
   // IPs — otherwise the tunnel connects but every forwarded connection is
@@ -97,6 +104,13 @@
     }
     ips = withLoopbackLock(ips, tunnelSelected);
     if (ips.length === 0 && !tunnelSelected) {
+      if (ip === ALL_INTERFACES) {
+        // The covered addresses are locked while 0.0.0.0 is bound, so
+        // unchecking it is the only way out — fall back to loopback instead
+        // of refusing, then the unlocked entries are toggleable again.
+        onchange({ ips: [LOOPBACK], tunnel: tunnelSelected });
+        return;
+      }
       input.checked = true; // refuse: never allow zero targets
       return;
     }
@@ -109,14 +123,19 @@
   <p class="text-xs text-subtle mb-1">{m.settings_listenTargets_description()}</p>
   <ul class="flex flex-col gap-0.5">
     {#each ipOptions as ip (ip)}
-      {@const locked = ip === LOOPBACK && loopbackLocked}
+      {@const covered = ip !== ALL_INTERFACES && allInterfacesSelected}
+      {@const locked = covered || (ip === LOOPBACK && loopbackLocked)}
       {@const checked = selection.has(ip) || locked}
       <li>
         <label
           class="flex items-center gap-2 py-1 text-sm text-foreground cursor-pointer {saving
             ? 'opacity-50'
             : ''}"
-          title={locked ? m.settings_listenTargets_loopbackRequired_note() : undefined}
+          title={covered
+            ? m.settings_listenTargets_coveredByAllInterfaces_note()
+            : locked
+              ? m.settings_listenTargets_loopbackRequired_note()
+              : undefined}
         >
           <input
             type="checkbox"
@@ -133,12 +152,15 @@
                 : ip}
           </span>
         </label>
-        {#if locked}
+        {#if locked && !covered}
           <p class="text-xs text-subtle ml-6">{m.settings_listenTargets_loopbackRequired_note()}</p>
         {/if}
       </li>
     {/each}
   </ul>
+  {#if allInterfacesSelected}
+    <p class="text-xs text-subtle">{m.settings_listenTargets_coveredByAllInterfaces_note()}</p>
+  {/if}
   {#if tunnelSelected && selectedIps.length === 0}
     <p class="text-xs text-subtle">{m.settings_listenTargets_tunnelOnly_note()}</p>
   {/if}
