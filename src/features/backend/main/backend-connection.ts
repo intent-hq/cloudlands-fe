@@ -218,7 +218,10 @@ export function describeBackendConfig(config: BackendConnectionConfig): string {
 
 /**
  * Distinct candidate hosts for a `wss` config: the primary `host` first, then
- * the `hosts` extras, trimmed and deduplicated in order.
+ * the `hosts` extras, trimmed and deduplicated in order. No loopback
+ * filtering here — pairing URIs and tests legitimately dial loopback; the
+ * legacy-record sanitize lives in the store's `candidateHosts`, which feeds
+ * synced records into this config.
  */
 export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   const seen = new Set<string>();
