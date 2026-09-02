@@ -46,7 +46,7 @@
     CONNECTION_ACCENT_CLASSES,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
-  import { isPairingUri, parsePairingUri } from '$lib/utils/pairing-uri';
+  import { isPairingUri, parsePairingUri } from '$shared/utils/pairing-uri';
   import { cn } from '$lib/utils';
 
   interface Props {

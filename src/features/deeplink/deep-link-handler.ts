@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
-import { isPairingUri } from '$lib/utils/pairing-uri';
+import { isPairingUri } from '$shared/utils/pairing-uri';
 import type { Workspace } from '../../shared/types';
 import { Logger } from '../../shared/logger';
 import { scrubToken } from './utils/scrub-token';

@@ -18,6 +18,19 @@ describe('isPairingUri', () => {
     expect(isPairingUri('intent://open?id=ws_1')).toBe(false);
     expect(isPairingUri('https://example.com')).toBe(false);
   });
+
+  it('rejects undefined actions that merely start with "pair"', () => {
+    expect(isPairingUri('intent://pairing?v=1&host=h&port=5181&fp=AA&token=t')).toBe(false);
+    expect(isPairingUri('intent://paired?token=t')).toBe(false);
+  });
+
+  it('accepts exact-action variants (bare, query, path, fragment)', () => {
+    expect(isPairingUri('intent://pair')).toBe(true);
+    expect(isPairingUri('intent://pair?token=t')).toBe(true);
+    expect(isPairingUri('intent://pair/?token=t')).toBe(true);
+    expect(isPairingUri('intent://pair#x')).toBe(true);
+    expect(isPairingUri('INTENT://PAIR?token=t')).toBe(true);
+  });
 });
 
 describe('parsePairingUri', () => {

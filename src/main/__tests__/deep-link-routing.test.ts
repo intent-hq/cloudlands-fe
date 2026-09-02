@@ -1,26 +1,30 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Routing tests for createWindowForDeepLink: `intent://pair` links go straight
  * to the main-process pair handler — no new BrowserWindow, no renderer IPC,
  * and no bearer token in any log line. Non-pair links keep the existing
- * behavior (settings → existing window IPC; open → new window).
+ * behavior (settings → existing window IPC; open → new window). Also covers
+ * createWindow's cold-start argv scan: a pair link is never embedded in the
+ * renderer load URL, and the scan matches the intent:// scheme
+ * case-insensitively.
  */
 
 const mockBrowserWindowCtor = vi.fn();
+const mockLoadUrl = vi.fn();
 const mockGetPrimaryDisplay = vi.fn(() => ({
   workArea: { x: 0, y: 0, width: 1440, height: 900 },
 }));
 
 vi.mock('electron', () => ({
   app: {
-    getPath: vi.fn(() => '/tmp'),
+    getPath: vi.fn(() => `/tmp/deep-link-routing-test-${process.pid}`),
     getAppPath: vi.fn(() => '/tmp'),
     dock: undefined,
   },
   BrowserWindow: class {
     static getAllWindows = vi.fn(() => []);
-    loadURL = vi.fn();
+    loadURL = mockLoadUrl;
     focus = vi.fn();
     webContents = { on: vi.fn(), send: vi.fn(), session: { clearCache: vi.fn() } };
     on = vi.fn();
@@ -75,7 +79,8 @@ vi.mock('../../shared/logger', () => ({
 }));
 
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
-import { createWindowForDeepLink } from '../window';
+import { createWindow, createWindowForDeepLink } from '../window';
+import { findIntentUrl } from '../../features/deeplink/utils/find-intent-url';
 
 const TOKEN = 'super-secret-token-value';
 const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}`;
@@ -142,5 +147,56 @@ describe('createWindowForDeepLink pair-link routing', () => {
     await createWindowForDeepLink('intent://open?id=workspace_123', makeHandler());
     expect(mockBrowserWindowCtor).toHaveBeenCalledTimes(1);
     expect(handlePairDeepLink).not.toHaveBeenCalled();
+  });
+});
+
+describe('createWindow cold-start argv scan', () => {
+  const originalArgv = process.argv;
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  it('never embeds a pair link (or its token) in the renderer load URL', () => {
+    process.argv = ['electron', '.', PAIR_LINK];
+    createWindow();
+    expect(mockLoadUrl).toHaveBeenCalledTimes(1);
+    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    expect(loadedUrl).not.toContain(TOKEN);
+    expect(loadedUrl).not.toContain('deepLink=');
+    expect(logLines.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('excludes an uppercase pair link from URL embedding too', () => {
+    process.argv = ['electron', '.', PAIR_LINK.toUpperCase()];
+    createWindow();
+    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    expect(loadedUrl).not.toContain('deepLink=');
+    expect(logLines.join('\n')).not.toContain(TOKEN.toUpperCase());
+  });
+
+  it('still embeds non-pair deep links in the load URL', () => {
+    process.argv = ['electron', '.', 'intent://open?id=workspace_123'];
+    createWindow();
+    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    expect(loadedUrl).toContain('deepLink=');
+    const encoded = loadedUrl.split('deepLink=')[1];
+    expect(JSON.parse(decodeURIComponent(encoded))).toEqual({
+      type: 'open',
+      params: { id: 'workspace_123' },
+    });
+  });
+});
+
+describe('findIntentUrl', () => {
+  it('finds the first intent:// argument, matching the scheme case-insensitively', () => {
+    expect(findIntentUrl(['electron', '.', 'intent://open?id=x'])).toBe('intent://open?id=x');
+    expect(findIntentUrl(['electron', 'INTENT://PAIR?token=t'])).toBe('INTENT://PAIR?token=t');
+    expect(findIntentUrl(['electron', '  intent://open  '])).toBe('  intent://open  ');
+  });
+
+  it('returns undefined when no intent:// argument is present', () => {
+    expect(findIntentUrl(['electron', '.', '--flag', 'https://example.com'])).toBeUndefined();
+    expect(findIntentUrl([])).toBeUndefined();
   });
 });

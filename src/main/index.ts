@@ -371,9 +371,10 @@ import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
-import { handlePairDeepLink } from '../features/deeplink/main/pair-deep-link';
+import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/main/pair-deep-link';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
-import { isPairingUri } from '../lib/utils/pairing-uri';
+import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { isPairingUri } from '../shared/utils/pairing-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
@@ -1742,27 +1743,32 @@ app.whenReady().then(async () => {
     startupMetrics.start('createWindow');
 
     // Check for intent:// deep link in process.argv (cold start)
-    const intentUrlArg = process.argv.find((arg: string) => arg.startsWith('intent://'));
+    const intentUrlArg = findIntentUrl(process.argv);
+    const isPairLinkArg = intentUrlArg !== undefined && isPairingUri(intentUrlArg);
 
     // A pair link is handled fully in the main process: park it now and let
     // the pending-URL pass after window creation route it to the pair handler.
     // It is never embedded in the renderer load URL — createWindow skips it.
-    if (intentUrlArg && isPairingUri(intentUrlArg)) {
+    if (intentUrlArg !== undefined && isPairLinkArg) {
       await deepLinkHandler.handleDeepLink(intentUrlArg, null);
     }
 
     // Try to restore saved window sessions (unless we have a deep link to
-    // process, which keeps its single-window bypass). EVERY backend with a
-    // saved session bucket is restored, each bucket's windows stamped with its
-    // own backend id and backed by its own pooled client (fail-soft — an
+    // process, which keeps its single-window bypass — pair links are exempt:
+    // they embed nothing in a window, so a pair cold start restores sessions
+    // normally and then connects/foregrounds the linked backend on top).
+    // EVERY backend with a saved session bucket is restored, each bucket's
+    // windows stamped with its own backend id and backed by its own pooled
+    // client (fail-soft — an
     // unreachable backend still gets its windows behind the stopped overlay).
     // The last-used bucket (persisted activeId, legacy field) restores first
     // and provides the main window; each backend's own pooled client connects
     // on demand, so no boot-time reconciliation of the field is needed.
     const bootBackendId = await getActiveId();
-    const restored = intentUrlArg
-      ? false
-      : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
+    const restored =
+      intentUrlArg && !isPairLinkArg
+        ? false
+        : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
     if (!restored) {
       // No saved sessions anywhere (or has deep link) — create a single default
       // window. A remote boot backend needs its pooled client connected first
@@ -2025,14 +2031,12 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   logger.info('Received open-url event:', { url: scrubToken(url) });
 
   // Pair links bypass the renderer/window pipeline entirely: handled in the
-  // main process when the app is warm, parked as pending on cold start.
+  // main process whenever the app is ready — the flow needs no existing
+  // window (the confirm dialog can show parentless and openBackendWindow
+  // creates its own window), which covers macOS staying alive with zero
+  // windows open. Before ready, parked as pending for the startup pass.
   if (isPairingUri(url)) {
-    const pairMainWindow = getMainWindow();
-    if (pairMainWindow && !pairMainWindow.isDestroyed()) {
-      await handlePairDeepLink(url);
-    } else {
-      await deepLinkHandler.handleDeepLink(url, null);
-    }
+    await routePairLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
     return;
   }
 
@@ -2072,7 +2076,7 @@ if (!gotTheLock) {
     logger.info('Received second-instance event:', { commandLine: commandLine.map(scrubToken) });
 
     // Look for intent:// URL in command line arguments
-    const deepLinkUrl = commandLine.find((arg: string) => arg.startsWith('intent://'));
+    const deepLinkUrl = findIntentUrl(commandLine);
 
     if (deepLinkUrl) {
       logger.info('Found deep link URL in second instance:', { url: scrubToken(deepLinkUrl) });

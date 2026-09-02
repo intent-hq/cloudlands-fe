@@ -7,7 +7,8 @@ import { Logger } from '../shared/logger';
 import { resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
-import { isPairingUri } from '../lib/utils/pairing-uri';
+import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { isPairingUri } from '../shared/utils/pairing-uri';
 import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
@@ -892,7 +893,7 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
   // excluded: they are handled fully in the main process (parked at startup,
   // processed once the window is ready) and must never be embedded in the
   // renderer load URL — the pairing bearer token would leak to the renderer.
-  const intentUrl = process.argv.find((arg: string) => arg.startsWith('intent://'));
+  const intentUrl = findIntentUrl(process.argv);
   let loadUrl = buildLoadUrl();
 
   if (intentUrl && !isPairingUri(intentUrl)) {

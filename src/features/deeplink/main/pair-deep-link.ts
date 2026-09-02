@@ -16,11 +16,11 @@
  * - Everything fails soft: a malformed or incomplete link logs a scrubbed
  *   warning and returns; the app never crashes on a bad link.
  */
-import { dialog, type MessageBoxOptions } from 'electron';
+import { app, dialog, type MessageBoxOptions } from 'electron';
 
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { parsePairingUri } from '$lib/utils/pairing-uri';
+import { parsePairingUri } from '$shared/utils/pairing-uri';
 import { getMainWindow } from '../../../main/state';
 import * as connectionsStore from '../../backend/main/connections-store';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
@@ -83,6 +83,26 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       error: scrubToken(error instanceof Error ? error.message : String(error)),
     });
   }
+}
+
+/**
+ * Route a pair link arriving from the OS (macOS `open-url`). The pair flow
+ * needs no existing window — the confirm dialog can show parentless and
+ * `openBackendWindow` creates its own window — so the link is handled
+ * whenever the app is ready. This covers macOS staying alive with zero
+ * windows open, where a window-gated route would park the link forever
+ * (the pending slot is only drained once, during startup). Before ready,
+ * `park` stores it for the startup pending-URL pass.
+ */
+export async function routePairLinkFromOs(
+  url: string,
+  park: (url: string) => Promise<void>,
+): Promise<void> {
+  if (app.isReady()) {
+    await handlePairDeepLink(url);
+    return;
+  }
+  await park(url);
 }
 
 /**

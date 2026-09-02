@@ -9,10 +9,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const showMessageBox = vi.fn();
+const appIsReady = vi.fn(() => true);
 vi.mock('electron', () => ({
   dialog: {
     get showMessageBox() {
       return showMessageBox;
+    },
+  },
+  app: {
+    get isReady() {
+      return appIsReady;
     },
   },
 }));
@@ -57,7 +63,7 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
-import { handlePairDeepLink } from '../pair-deep-link';
+import { handlePairDeepLink, routePairLinkFromOs } from '../pair-deep-link';
 
 const TOKEN = 'super-secret-token-value';
 const LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}`;
@@ -65,6 +71,7 @@ const LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${
 beforeEach(() => {
   vi.clearAllMocks();
   logLines.length = 0;
+  appIsReady.mockReturnValue(true);
   openBackendWindow.mockResolvedValue({ id: 'x' });
   add.mockResolvedValue({ id: 'new-id' });
   findMatching.mockResolvedValue(null);
@@ -143,5 +150,25 @@ describe('handlePairDeepLink', () => {
     findMatching.mockResolvedValue({ id: 'known-id' });
     openBackendWindow.mockRejectedValue(new Error('probe failed'));
     await expect(handlePairDeepLink(LINK)).resolves.toBeUndefined();
+  });
+});
+
+describe('routePairLinkFromOs', () => {
+  it('handles the link when the app is ready even with no window (macOS zero-window)', async () => {
+    appIsReady.mockReturnValue(true);
+    findMatching.mockResolvedValue({ id: 'known-id' });
+    const park = vi.fn();
+    await routePairLinkFromOs(LINK, park);
+    expect(openBackendWindow).toHaveBeenCalledWith('known-id');
+    expect(park).not.toHaveBeenCalled();
+  });
+
+  it('parks the link before the app is ready', async () => {
+    appIsReady.mockReturnValue(false);
+    const park = vi.fn().mockResolvedValue(undefined);
+    await routePairLinkFromOs(LINK, park);
+    expect(park).toHaveBeenCalledWith(LINK);
+    expect(findMatching).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
   });
 });
