@@ -22,7 +22,10 @@ import {
   upsertSession,
   type BulkUpsertSessionsOptions,
 } from '../../agent-session/agent-session-slice';
-import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import {
+  selectAgentSession,
+  selectAgentSessionsById,
+} from '../../agent-session/agent-session-selectors';
 import {
   agentLineStatsRequestFailed,
   agentLineStatsRequestStarted,
@@ -290,6 +293,20 @@ function* filterPendingDeletions(
 }
 
 function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
+  // Crash-leftover runtime-flag convergence (monorepo#4135): snapshot which
+  // stored sessions hold the both-true isStreaming/isProcessing pair BEFORE
+  // any daemon read starts. A pair set while the reads below are in flight
+  // (chatSendStarted racing this hydration — the designed #1250 race case)
+  // must NOT count as pre-existing, or an older idle list row would clear a
+  // genuinely live turn. Mirrors the per-agent fetch path's storedBefore read
+  // in agent-read-service.
+  const sessionsBeforeFetch = yield* selectAgentSessionsById.effect();
+  const inFlightPairIdsBeforeFetch = new Set<string>();
+  for (const [id, session] of Object.entries(sessionsBeforeFetch)) {
+    if (session.isStreaming === true && session.isProcessing === true) {
+      inFlightPairIdsBeforeFetch.add(id);
+    }
+  }
   // Default read (§5.5 soft retire): retired rows are excluded daemon-side
   // and no longer ride every hydration frame; the sidebar's Retired bin
   // renders its collapsed toggle from `retiredCount` (v8.2, served on every
@@ -325,18 +342,19 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
 
   const agents = [] as typeof fetched;
   // Crash-leftover runtime-flag convergence (monorepo#4135): a stored session
-  // whose both-true isStreaming/isProcessing pair predates this read and whose
-  // fresh list row reports the turn idle is a crash leftover no event will
-  // ever clear — upsert it with the stale-clear options so the list refresh
-  // converges it, matching the per-agent fetch path (agent-read-service). A
-  // genuinely live turn returns undefined options and keeps the default
-  // pair-guard preservation semantics (monorepo#1250).
+  // whose both-true isStreaming/isProcessing pair predates this read (the
+  // pre-fetch snapshot above) and whose fresh list row reports the turn idle
+  // is a crash leftover no event will ever clear — upsert it with the
+  // stale-clear options so the list refresh converges it, matching the
+  // per-agent fetch path (agent-read-service). A genuinely live turn returns
+  // undefined options and keeps the default pair-guard preservation
+  // semantics (monorepo#1250). The per-agent `existing` read stays post-fetch
+  // on purpose: the message merge wants the latest stored transcript.
   const staleClearAgents = [] as typeof fetched;
   let staleClearOptions: BulkUpsertSessionsOptions | undefined;
   for (const agent of fetched) {
     const existing = yield* selectAgentSession.effect(String(agent.id));
-    const hadInFlightPairBeforeFetch =
-      existing?.isStreaming === true && existing?.isProcessing === true;
+    const hadInFlightPairBeforeFetch = inFlightPairIdsBeforeFetch.has(String(agent.id));
     const merged =
       agent.messages.length === 0 && existing && existing.messages.length > 0
         ? { ...agent, messages: existing.messages }

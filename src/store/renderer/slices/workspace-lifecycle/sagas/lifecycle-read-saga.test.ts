@@ -1376,18 +1376,52 @@ describe('lifecycleReadSaga', () => {
 
     // The stale agent is upserted separately with the stale-clear options so
     // the snapshot's idle flags win over the pair-guard; the rest keep the
-    // default preservation semantics.
-    expect(run.actions).toContainEqual({
-      type: 'agentSessions/bulkUpsertSessions',
-      payload: [[normalRow]],
+    // default preservation semantics. Pin the exact dispatch set so a
+    // regression that additionally upserts the stale row optionless (order-
+    // dependent re-assertion of the pair-guard) cannot slip through.
+    const bulkUpserts = run.actions.filter(
+      (action) => action.type === 'agentSessions/bulkUpsertSessions',
+    );
+    expect(bulkUpserts).toEqual([
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[normalRow]] },
+      {
+        type: 'agentSessions/bulkUpsertSessions',
+        payload: [
+          [staleRow],
+          { preserveExplicitRuntimeFlags: false, allowActiveTurnRuntimeFlagClear: true },
+        ],
+      },
+    ]);
+    await stop(run.task);
+  });
+
+  it('does not clear a pair set while the list fetch was in flight, even if the row reports idle', async () => {
+    // Race regression (PR #2028 review): chatSendStarted lands the both-true
+    // pair AFTER hydration starts but BEFORE the daemon list resolves. The
+    // daemon snapshot was cut before the turn started, so the row reports
+    // idle — but the pair does not predate the fetch, so it must keep the
+    // default #1250 preservation semantics, not be treated as a crash
+    // leftover.
+    const current = state();
+    const raceRow = agent('agent-race');
+    mocks.agents.listWithMeta.mockImplementation(async () => {
+      current.agentSessions.byAgentId['agent-race'] = agent('agent-race', {
+        isStreaming: true,
+        isProcessing: true,
+      });
+      return { agents: [raceRow], retiredCount: 0 };
     });
-    expect(run.actions).toContainEqual({
-      type: 'agentSessions/bulkUpsertSessions',
-      payload: [
-        [staleRow],
-        { preserveExplicitRuntimeFlags: false, allowActiveTurnRuntimeFlagClear: true },
-      ],
-    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    const bulkUpserts = run.actions.filter(
+      (action) => action.type === 'agentSessions/bulkUpsertSessions',
+    );
+    expect(bulkUpserts).toEqual([
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[raceRow]] },
+    ]);
     await stop(run.task);
   });
 
