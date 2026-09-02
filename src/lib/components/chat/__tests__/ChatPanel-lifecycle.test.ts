@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => {
     draftGet: vi.fn(),
     draftSet: vi.fn(),
     draftClear: vi.fn(),
+    listUserMessages: vi.fn(),
     invoke: vi.fn().mockResolvedValue(null),
     listenSync: vi.fn(),
     ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
@@ -45,6 +46,7 @@ const mocks = vi.hoisted(() => {
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
+    agentSessionIsStreaming: mutableReadable(false),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -94,13 +96,15 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$lib/client', () => ({
   appClient: {
     drafts: { get: mocks.draftGet, set: mocks.draftSet, clear: mocks.draftClear },
-    agents: { retry: vi.fn() },
+    agents: { retry: vi.fn(), listUserMessages: mocks.listUserMessages },
   },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
-  selectAgentSessionIsStreaming: mocks.selector(false),
+  selectAgentSessionIsStreaming: Object.assign(() => mocks.agentSessionIsStreaming, {
+    select: () => false,
+  }),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: mocks.selector([]),
   selectHistorySegmentMeta: mocks.selector({
@@ -383,6 +387,10 @@ function latestSentAppMessageId(): string {
   return action.payload.payload.userAppMessageId as string;
 }
 
+function dispatchedTypes(): string[] {
+  return mocks.dispatch.mock.calls.map(([action]) => action?.type);
+}
+
 function optimisticUserMessage(appMessageId: string, text: string) {
   return {
     id: `optimistic-${appMessageId}`,
@@ -457,6 +465,7 @@ beforeEach(() => {
   clearDraftCacheForTests();
   clearChatScrollCacheForTests();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
+  mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   mocks.dispatch.mockImplementation((action) => {
     if (action?.type !== 'transientUi/setChatDraft') return action;
@@ -468,6 +477,7 @@ beforeEach(() => {
   });
   mocks.agentMessages.set([]);
   mocks.agentSession.set(null);
+  mocks.agentSessionIsStreaming.set(false);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -498,6 +508,34 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('keeps an active response running on Escape and stops it from the visible control', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(false);
+    expect(dispatchedTypes()).not.toContain('agentSessions/stopChatRequested');
+
+    await fireEvent.click(screen.getByTestId('mock-input-stop'));
+    expect(dispatchedTypes()).toContain('agentSessions/stopChatRequested');
+  });
+
   it('retains user rows and newer hydrated assistant messages after the frontier passes them', async () => {
     MockChatIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
@@ -771,6 +809,8 @@ describe('ChatPanel mounted lifecycle', () => {
       target: { value: 'survive a sibling update' },
     });
 
+    expect(mocks.chatDrafts['workspace-a::agent-a']).toBeUndefined();
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
     expect(mocks.chatDrafts['workspace-a::agent-a']).toBe('survive a sibling update');
     firstView.unmount();
     render(ChatPanel, {
@@ -781,6 +821,29 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
       'survive a sibling update',
     );
+  });
+
+  it('coalesces a burst of draft changes and commits the latest value', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const editor = screen.getByTestId('mock-rich-input-editor');
+    await fireEvent.input(editor, { target: { value: 'a' } });
+    await fireEvent.input(editor, { target: { value: 'ab' } });
+    await fireEvent.input(editor, { target: { value: 'abc' } });
+
+    expect(mocks.dispatch.mock.calls).toHaveLength(0);
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
+
+    const draftActions = mocks.dispatch.mock.calls.filter(
+      ([action]) => action?.type === 'transientUi/setChatDraft',
+    );
+    expect(draftActions).toHaveLength(1);
+    expect(draftActions[0][0].payload).toEqual(['workspace-a', 'agent-a', 'abc']);
   });
 
   it('keeps the composer mounted (wizard auto-collapsed) when questions arrive mid-typing', async () => {
@@ -1666,6 +1729,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(onNavigationStateChange).toHaveBeenLastCalledWith({
       isAtBottom: false,
       userMessages: [{ id: 'message-1', text: 'User prompt' }],
+      isLoadingUserMessageIndex: false,
     });
 
     scrollContainer.scrollTop = 600;
@@ -1674,8 +1738,69 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(onNavigationStateChange).toHaveBeenLastCalledWith({
       isAtBottom: true,
       userMessages: [{ id: 'message-1', text: 'User prompt' }],
+      isLoadingUserMessageIndex: false,
     });
     expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
+  });
+
+  it('reports a loading index only while the first index fetch is in flight', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'message-1',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'text', text: 'User prompt' }],
+      },
+    ]);
+    const pending = deferred<{ ok: true; items: unknown[]; total: number }>();
+    mocks.listUserMessages.mockReturnValue(pending.promise);
+    const onNavigationStateChange = vi.fn();
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        onNavigationStateChange,
+      },
+    });
+    await tick();
+
+    view.component.refreshUserMessageIndex();
+    await tick();
+    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a');
+    expect(onNavigationStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ isLoadingUserMessageIndex: true }),
+    );
+
+    pending.resolve({
+      ok: true,
+      items: [
+        { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
+        { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+      ],
+      total: 2,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await tick();
+    expect(onNavigationStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        isLoadingUserMessageIndex: false,
+        userMessages: [
+          { id: 'older-1', text: 'Older prompt' },
+          { id: 'message-1', text: 'User prompt' },
+        ],
+      }),
+    );
+
+    // Reopen with a cached index: single-flight refresh must not re-report loading.
+    onNavigationStateChange.mockClear();
+    mocks.listUserMessages.mockClear();
+    mocks.listUserMessages.mockReturnValue(new Promise(() => {}));
+    view.component.refreshUserMessageIndex();
+    await tick();
+    expect(
+      onNavigationStateChange.mock.calls.some(([state]) => state.isLoadingUserMessageIndex),
+    ).toBe(false);
   });
 
   it('smoothly scrolls the header action before re-locking at the live bottom', async () => {

@@ -255,8 +255,8 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockCodeEditor.svelte')).default,
 }));
 
-vi.mock('$lib/components/editor/MarkdownFileEditor.svelte', async () => ({
-  default: (await import('./__tests__/mocks/MockMarkdownFileEditor.svelte')).default,
+vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
+  default: (await import('./__tests__/mocks/MockMarkdownViewer.svelte')).default,
 }));
 
 vi.mock('$lib/components/editor/FileViewer.svelte', async () => ({
@@ -415,7 +415,7 @@ describe('FileTabType Redux integration', () => {
     });
   });
 
-  it('keeps markdown files in the markdown preview instead of CodeEditor by default', async () => {
+  it('renders markdown files in a read-only preview by default', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
       originalContent: '# Project',
@@ -428,12 +428,29 @@ describe('FileTabType Redux integration', () => {
 
     renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
 
-    expect(await screen.findByTestId('markdown-file-editor')).toBeTruthy();
+    const preview = await screen.findByTestId('markdown-viewer');
+    expect(preview.textContent).toBe('# Project');
+    expect(preview.getAttribute('data-workspace-id')).toBe('ws-1');
     expect(screen.queryByTestId('code-editor')).toBeNull();
     expect(screen.queryByTestId('file-viewer')).toBeNull();
+
+    dispatchMock.mockClear();
+    await fireEvent.input(preview, { target: { textContent: '# Attempted preview edit' } });
+    await fireEvent.keyDown(preview, { key: 'x' });
+    await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    expect(actionMocks.updateFileContent).not.toHaveBeenCalled();
+    expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/updateFileContent' }),
+    );
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/saveFileContentRequested' }),
+    );
+    expect((await screen.findByTestId('header-state')).getAttribute('data-dirty')).toBe('false');
   });
 
-  it('updates the visible markdown editor for repeated external content while clean', async () => {
+  it('updates the read-only markdown preview for repeated external content while clean', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
       originalContent: '# Project',
@@ -446,22 +463,21 @@ describe('FileTabType Redux integration', () => {
 
     renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
 
-    const editor = await screen.findByTestId<HTMLTextAreaElement>('markdown-file-editor');
-    await waitFor(() => expect(editor.value).toBe('# Project'));
+    const preview = await screen.findByTestId('markdown-viewer');
+    await waitFor(() => expect(preview.textContent).toBe('# Project'));
 
     applyExternalFileContentToMockState('README.md', '# Project\n\nexternal marker');
 
-    await waitFor(() => expect(editor.value).toBe('# Project\n\nexternal marker'));
-    expect(editor.getAttribute('data-external-content-version')).toBe('1');
+    await waitFor(() => expect(preview.textContent).toBe('# Project\n\nexternal marker'));
 
     applyExternalFileContentToMockState('README.md', '# Project\n\nsecond external marker');
 
-    await waitFor(() => expect(editor.value).toBe('# Project\n\nsecond external marker'));
-    expect(editor.getAttribute('data-external-content-version')).toBe('2');
+    await waitFor(() => expect(preview.textContent).toBe('# Project\n\nsecond external marker'));
     expect(screen.queryByTestId('code-editor')).toBeNull();
+    expect(actionMocks.updateFileContent).not.toHaveBeenCalled();
   });
 
-  it('keeps local dirty markdown editor content when external content is applied', async () => {
+  it('switches markdown preview off for editing and back on without preview updates', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
       originalContent: '# Project',
@@ -474,17 +490,26 @@ describe('FileTabType Redux integration', () => {
 
     renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
 
-    const editor = await screen.findByTestId<HTMLTextAreaElement>('markdown-file-editor');
+    expect(await screen.findByTestId('markdown-viewer')).toBeTruthy();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Markdown Preview' }));
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
     await fireEvent.input(editor, { target: { value: '# Local draft' } });
-
-    applyExternalFileContentToMockState('README.md', '# External marker');
-
-    await waitFor(() => expect(editor.value).toBe('# Local draft'));
-    expect(mockReduxState.files['README.md']).toMatchObject({
-      localContent: '# Local draft',
-      originalContent: '# External marker',
-      lastUpdated: 1,
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'files/updateFileContent',
+      payload: ['ws-1', 'README.md', '# Local draft'],
     });
+
+    await fireEvent.click(
+      await screen.findByRole('menuitemcheckbox', { name: 'Markdown Preview' }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe('# Local draft'),
+    );
+    expect(screen.queryByTestId('code-editor')).toBeNull();
+    expect(actionMocks.updateFileContent).toHaveBeenCalledTimes(1);
   });
 
   it('keeps SVG files in FileViewer while preserving the XML language mapping', async () => {

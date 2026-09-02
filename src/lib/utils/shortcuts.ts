@@ -214,12 +214,6 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_newLine_label();
     },
   },
-  STOP: {
-    key: 'esc',
-    get label() {
-      return m.ui_shortcuts_stopGeneration_label();
-    },
-  },
   FOCUS_INPUT: {
     key: '/',
     get label() {
@@ -569,7 +563,6 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'chat.send',
     'chat.force-send',
     'chat.new-line',
-    'chat.stop',
     'chat.focus-input',
     'chat.mention-context',
   ],
@@ -759,13 +752,6 @@ export const SHORTCUT_CATEGORIES: Record<
         key: 'shift+enter',
         get label() {
           return m.ui_shortcuts_newLine_label();
-        },
-        contexts: ['chat'],
-      },
-      {
-        key: 'esc',
-        get label() {
-          return m.ui_shortcuts_stopGeneration_label();
         },
         contexts: ['chat'],
       },

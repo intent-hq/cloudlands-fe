@@ -649,7 +649,7 @@
   // any fetch failure silently leaves the tail-only fallback in place.
   let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
   let userMessageIndexUnsupported = false;
-  let userMessageIndexFetchInFlight = false;
+  let userMessageIndexFetchInFlight = $state(false);
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
@@ -661,6 +661,7 @@
     onNavigationStateChange?.({
       isAtBottom: distanceFromBottom <= SCROLL_BOTTOM_BUTTON_EPSILON,
       userMessages: userMessageNavigationItems,
+      isLoadingUserMessageIndex: userMessageIndexFetchInFlight && userMessageIndexItems === null,
     });
   });
 
@@ -1702,6 +1703,39 @@
     ),
   );
 
+  type PendingDraftWrite = { workspaceId: string; agentId: string; draft: string };
+  let pendingDraftWrite: PendingDraftWrite | null = null;
+
+  function flushPendingDraftWrite(): void {
+    const pending = pendingDraftWrite;
+    pendingDraftWrite = null;
+    if (pending) {
+      appStore.dispatch(setChatDraft(pending.workspaceId, pending.agentId, pending.draft));
+    }
+  }
+
+  function commitDraftWrite(draft: string): void {
+    const workspaceId = workspace?.id;
+    if (!workspaceId || !agentId) return;
+    pendingDraftWrite = null;
+    appStore.dispatch(setChatDraft(workspaceId, agentId, draft));
+  }
+
+  function scheduleDraftWrite(draft: string): void {
+    const workspaceId = workspace?.id;
+    if (!workspaceId || !agentId) return;
+    pendingDraftWrite = { workspaceId, agentId, draft };
+  }
+
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastDraftBindingKey = `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  $effect(() => {
+    const bindingKey = `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+    if (bindingKey === lastDraftBindingKey) return;
+    flushPendingDraftWrite();
+    lastDraftBindingKey = bindingKey;
+  });
+
   // Input history for up/down arrow navigation (like terminal)
   // Stores previously sent user prompts
   let inputHistory = $state<string[]>([]);
@@ -1974,6 +2008,7 @@
     const workspaceId = workspace?.id ?? null;
     if (!workspaceId || !isActive) return;
 
+    flushPendingSelectionWrites();
     const panels = availablePanelContexts;
     untrack(() => {
       appStore.dispatch(setMultiPanelWorkspace(workspaceId));
@@ -1984,6 +2019,47 @@
   // Sync selection context from editors to multi-panel context Redux store
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
   // Editors dispatch 'editor:selection-change' custom events which we sync to Redux
+  type PendingSelectionWrite =
+    | {
+        kind: 'set';
+        key: string;
+        selection: Omit<Parameters<typeof setMultiPanelSelection>[0], never>;
+      }
+    | { kind: 'clear'; key: string; panelId: string; tabId: string };
+  let pendingSelectionWrites = new Map<string, PendingSelectionWrite>();
+  let pendingSelectionFrame: number | null = null;
+
+  function flushPendingSelectionWrites(): void {
+    if (pendingSelectionFrame !== null) {
+      cancelAnimationFrame(pendingSelectionFrame);
+      pendingSelectionFrame = null;
+    }
+    const pending = pendingSelectionWrites;
+    pendingSelectionWrites = new Map();
+    for (const update of pending.values()) {
+      if (update.kind === 'set') {
+        appStore.dispatch(setMultiPanelSelection(update.selection));
+      } else {
+        appStore.dispatch(clearMultiPanelSelection(update.panelId, update.tabId));
+      }
+    }
+  }
+
+  function scheduleSelectionWrite(update: PendingSelectionWrite): void {
+    pendingSelectionWrites.set(update.key, update);
+    if (pendingSelectionFrame !== null) return;
+    pendingSelectionFrame = requestAnimationFrame(() => {
+      pendingSelectionFrame = null;
+      flushPendingSelectionWrites();
+    });
+  }
+
+  $effect(() => {
+    if (isActive) return;
+    flushPendingDraftWrite();
+    flushPendingSelectionWrites();
+  });
+
   $effect(() => {
     if (!isActive) return;
     const handleSelectionChange = (
@@ -1994,13 +2070,16 @@
       // doesn't track panel info - this ensures selections show up in the picker
       const panelId = file || 'unknown';
       const tabId = file || 'selection';
+      const key = `${panelId}\u0000${tabId}`;
 
       if (text?.trim()) {
         // Add selection to multi-panel context store
         // Detect if this is from a note (markdown) vs a code file
         const isNote = language === 'markdown' && !file?.includes('/');
-        appStore.dispatch(
-          setMultiPanelSelection({
+        scheduleSelectionWrite({
+          kind: 'set',
+          key,
+          selection: {
             panelId,
             tabId,
             sourceType: isNote ? 'note' : 'file',
@@ -2009,13 +2088,13 @@
             text: text,
             language: language,
             timestamp: Date.now(),
-          }),
-        );
+          },
+        });
       } else {
         // Clear the selection when text is deselected
         // This event is only dispatched when editor.isFocused is true (user clicked within the editor)
         // so it won't clear when user clicks on chat input to send
-        appStore.dispatch(clearMultiPanelSelection(panelId, tabId));
+        scheduleSelectionWrite({ kind: 'clear', key, panelId, tabId });
       }
     };
 
@@ -4353,6 +4432,8 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    flushPendingDraftWrite();
+    flushPendingSelectionWrites();
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
@@ -4617,6 +4698,7 @@
       contextItems = [];
       inputValue = '';
       inputComponent?.clear();
+      commitDraftWrite('');
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
@@ -4669,6 +4751,7 @@
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
     if (!workspace || !isActive) return;
+    flushPendingDraftWrite();
 
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString();
@@ -4861,6 +4944,7 @@
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
     if (!workspace) return;
+    flushPendingDraftWrite();
 
     logger.info('Force submit triggered', { agentId });
 
@@ -5135,15 +5219,6 @@
     ) {
       e.preventDefault();
       focusPrompt();
-      return;
-    }
-    if (
-      isPanelFocused &&
-      $agentSessionIsStreaming$ &&
-      matchesShortcut(e, getEffectiveShortcut('chat.stop'), isMac)
-    ) {
-      e.preventDefault();
-      handleStop();
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
@@ -6319,7 +6394,11 @@
         class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
         data-testid="chat-composer-lane"
       >
-        <div class="w-full min-w-0" data-testid="chat-composer-controls-inner">
+        <div
+          class="w-full min-w-0"
+          data-testid="chat-composer-controls-inner"
+          onfocusout={flushPendingDraftWrite}
+        >
           {#if isRetiredSession}
             <div
               class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
@@ -6395,9 +6474,7 @@
                 bind:contextItems
                 bind:value={inputValue}
                 onvaluechange={(value) => {
-                  if (workspace?.id && agentId) {
-                    appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-                  }
+                  scheduleDraftWrite(value);
                 }}
                 onsubmit={handleSend}
                 onforcesubmit={handleForceSubmit}

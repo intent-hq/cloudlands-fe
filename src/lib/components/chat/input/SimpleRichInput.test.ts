@@ -1194,9 +1194,12 @@ describe('SimpleRichInput Stop-button visibility', () => {
     });
   });
 
-  it('invokes onstop when the Stop button is clicked while responding', async () => {
+  it('ignores Escape while responding and invokes onstop from the Stop button', async () => {
     const onstop = vi.fn();
     render(SimpleRichInput, { props: { ...baseProps(), isResponding: true, onstop } });
+
+    await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Escape' });
+    expect(onstop).not.toHaveBeenCalled();
 
     const btn = stopButton();
     expect(btn).not.toBeNull();

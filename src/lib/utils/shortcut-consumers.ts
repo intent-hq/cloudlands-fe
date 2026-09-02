@@ -74,7 +74,6 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'lib/components/chat/input/TipTapEditor.svelte',
     handler: 'editor keydown',
   },
-  'chat.stop': { source: 'lib/components/chat/ChatPanel.svelte', handler: 'panel keydown' },
   'chat.focus-input': { source: 'lib/components/chat/ChatPanel.svelte', handler: 'panel keydown' },
   'chat.mention-context': {
     source: 'lib/components/chat/input/TipTapEditor.svelte',

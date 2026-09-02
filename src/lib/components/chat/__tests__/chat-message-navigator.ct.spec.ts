@@ -271,7 +271,8 @@ test.describe('chat message navigator production path', () => {
       await expect(
         dialog.getByRole('option', { name: 'Authored literal [SYSTEM NOTE] must stay visible' }),
       ).toHaveCount(1);
-      const initialOption = options.first();
+      // The navigator opens anchored at the most recent (last) message.
+      const initialOption = options.last();
       await expect(initialOption).toHaveAttribute('aria-selected', 'true');
       expect(
         await initialOption
