@@ -12,7 +12,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr'] },
+    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
@@ -54,12 +54,33 @@ async function mountControls(page: Page, theme: 'light' | 'dark', zoom: number) 
       document.body.replaceChildren();
       const target = document.createElement('div');
       document.body.append(target);
+      const listeners = new Map<string, EventListener>();
+      Object.assign(window, {
+        electronAPI: {
+          invoke: async (channel: string, params: unknown) => {
+            if (channel !== 'window:get-zoom-factor' || params !== undefined) {
+              throw new Error('Unexpected titlebar IPC request');
+            }
+            return { success: true, data: zoom };
+          },
+          on: (channel: string, handler: (payload: unknown) => void) => {
+            const listener = (event: Event) => handler((event as CustomEvent).detail);
+            listeners.set(channel, listener);
+            window.addEventListener(channel, listener);
+            return channel;
+          },
+          offById: (channel: string) => {
+            const listener = listeners.get(channel);
+            if (listener) window.removeEventListener(channel, listener);
+          },
+        },
+      });
+      document.body.style.zoom = String(zoom);
       mount(Harness, { target });
       const { store } = await import('/src/store/renderer/store.ts');
-      const { setZoomFactor } =
-        await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
-      document.body.style.zoom = String(zoom);
-      store.dispatch(setZoomFactor(zoom));
+      const { zoomIpcSaga } =
+        await import('/src/store/renderer/slices/user-preferences/sagas/zoom-ipc-saga.ts');
+      store.runSaga(zoomIpcSaga);
       await tick();
     },
     { theme, zoom },
@@ -75,15 +96,12 @@ async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linu
   }, platform);
 }
 
-// Models page scaling plus the existing Redux zoom input, not font-size changes.
-// Native Electron menu/IPC delivery is outside this browser harness.
+// Browser page scaling models Electron zoom; deliver its existing IPC payload
+// through the real saga. Native menu delivery is covered by the main IPC suite.
 async function changeZoom(page: Page, zoom: number) {
-  await page.evaluate(async (zoom) => {
-    const { store } = await import('/src/store/renderer/store.ts');
-    const { setZoomFactor } =
-      await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
+  await page.evaluate((zoom) => {
     document.body.style.zoom = String(zoom);
-    store.dispatch(setZoomFactor(zoom));
+    window.dispatchEvent(new CustomEvent('window:zoom-changed', { detail: { zoomFactor: zoom } }));
   }, zoom);
 }
 
@@ -197,8 +215,10 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           page.locator('[data-workspace-repo-launcher] button'),
         ];
         for (const control of controls) {
+          // Startup zoom arrives asynchronously over IPC, then selector readables
+          // schedule the titlebar's inverse-zoom layout update.
+          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(32, 0);
           const box = await control.boundingBox();
-          expect(box?.width).toBeCloseTo(32, 0);
           expect(box?.height).toBeCloseTo(32, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
