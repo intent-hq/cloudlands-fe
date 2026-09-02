@@ -4774,7 +4774,14 @@
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive) {
+      logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
+        agentId,
+        hasWorkspace: !!workspace,
+        isActive,
+      });
+      return;
+    }
     flushPendingDraftWrite();
 
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
