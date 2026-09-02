@@ -874,6 +874,53 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
+    it('a successful listen-targets save fires connections:refresh-self', async () => {
+      // The bind IPs feed the published hosts list, so the self entry must
+      // re-upsert after the save (same fail-soft trigger as port/token).
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('checkbox', { name: '10.0.0.5' }));
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:refresh-self');
+      });
+    });
+
+    it('a successful tunnel toggle fires connections:refresh-self', async () => {
+      // Toggling the tunnel changes the daemon's tc address, which is a
+      // published field on the self record.
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() }));
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:refresh-self');
+      });
+    });
+
+    it('a failed listen-targets save never fires connections:refresh-self', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('daemon says no'));
+      await fireEvent.click(screen.getByRole('checkbox', { name: '10.0.0.5' }));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:refresh-self');
+    });
+
     it('enabling the tunnel toggle persists a bindAddress that includes 127.0.0.1', async () => {
       // The tailcat sidecar forwards tunnel connections to 127.0.0.1, so
       // turning the tunnel on must write loopback into server.bindAddress.
