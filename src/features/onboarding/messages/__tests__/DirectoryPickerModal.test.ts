@@ -274,16 +274,10 @@ describe('DirectoryPickerModal — New Folder create → reload → select (real
       home: '/Users/me',
       entries: [],
     });
-    const homeWithFresh = (): DirectoryPickerListing => ({
-      path: '/Users/me',
-      parent: null,
-      home: '/Users/me',
-      entries: [
-        { name: 'code', path: '/Users/me/code', isDirectory: true, isGitRepo: false },
-        { name: 'fresh', path: '/Users/me/fresh', isDirectory: true, isGitRepo: false },
-      ],
-    });
 
+    // The saga reloads the created path directly (it never re-requests home),
+    // so the mock only answers the created path once the create has landed —
+    // any other request order trips the unexpected-path rejection.
     let created = false;
     backendRequestMock.mockImplementation(((method: string, params: unknown) => {
       const path = (params as { path?: string } | undefined)?.path;
@@ -292,7 +286,7 @@ describe('DirectoryPickerModal — New Folder create → reload → select (real
         return Promise.resolve(undefined);
       }
       if (method !== 'host.listDirectory') return Promise.resolve(undefined);
-      if (path === undefined) return Promise.resolve(created ? homeWithFresh() : homeListing());
+      if (path === undefined) return Promise.resolve(homeListing());
       if (path === '/Users/me/fresh' && created) return Promise.resolve(freshListing());
       return Promise.reject(new Error(`unexpected path ${String(path)}`));
     }) as never);
@@ -352,11 +346,18 @@ describe('DirectoryPickerModal — New Folder create → reload → select (real
       home: '/Users/me',
       entries: [],
     });
+    const folderListing = (): DirectoryPickerListing => ({
+      path: '/folder',
+      parent: '/',
+      home: '/Users/me',
+      entries: [],
+    });
     backendRequestMock.mockImplementation(((method: string, params: unknown) => {
       const path = (params as { path?: string } | undefined)?.path;
       if (method === 'host.createDirectory') return Promise.resolve(undefined);
       if (method !== 'host.listDirectory') return Promise.resolve(undefined);
-      if (path === undefined || path === '/folder') return Promise.resolve(rootListing());
+      if (path === undefined) return Promise.resolve(rootListing());
+      if (path === '/folder') return Promise.resolve(folderListing());
       return Promise.reject(new Error(`unexpected path ${String(path)}`));
     }) as never);
 
