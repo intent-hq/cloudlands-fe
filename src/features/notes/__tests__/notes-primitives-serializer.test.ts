@@ -174,6 +174,22 @@ ${JSON.stringify({ path: 'src/main.ts', startLine: 1, endLine: 16 })}
       expect(primitive.target.kind).toBe('file_range');
     });
 
+    it('should preserve an explicit kind on a fully formed target', () => {
+      const markdown = `
+\`\`\`ws-block:reference
+${JSON.stringify({
+  target: { kind: 'symbol', semanticId: 'src/lib/test.ts#myFunction' },
+})}
+\`\`\`
+`;
+
+      const parsed = serializer.parseMarkdown(markdown);
+      const primitive = parsed[0].primitive as ReferencePrimitive;
+
+      expect(primitive.target.semanticId).toBe('src/lib/test.ts#myFunction');
+      expect(primitive.target.kind).toBe('symbol');
+    });
+
     it('should parse reference primitives from markdown', () => {
       const refPrimitive = createValidPrimitive('reference', {
         semanticId: 'src/main.ts#symbol:MainClass',

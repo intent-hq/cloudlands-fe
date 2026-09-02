@@ -178,6 +178,8 @@ function parseMarkdownToPrimitives(
 
         // Normalize reference primitives
         if (parsed.type === 'reference') {
+          let hoistedShortFormField = false;
+
           // Ensure target exists and hoist the documented short-form fields when needed
           if (!parsed.target) {
             parsed.target = {};
@@ -185,9 +187,11 @@ function parseMarkdownToPrimitives(
           if (!parsed.target.semanticId && !parsed.target.filePath) {
             if (parsed.semanticId) {
               parsed.target.semanticId = parsed.semanticId;
+              hoistedShortFormField = true;
             }
             if (parsed.filePath || parsed.path) {
               parsed.target.filePath = parsed.filePath || parsed.path;
+              hoistedShortFormField = true;
             }
             if (
               (parsed.startLine !== undefined || parsed.endLine !== undefined) &&
@@ -197,6 +201,7 @@ function parseMarkdownToPrimitives(
                 startLine: parsed.startLine ?? 1,
                 endLine: parsed.endLine ?? parsed.startLine ?? 1,
               };
+              hoistedShortFormField = true;
             }
           }
 
@@ -218,10 +223,12 @@ function parseMarkdownToPrimitives(
             delete parsed.target.endLine;
           }
 
-          // Match the daemon's reference kind rule after any short-form fields are hoisted
-          parsed.target.kind = parsed.target.semanticId?.includes('#symbol:')
-            ? 'symbol'
-            : 'file_range';
+          // Match the daemon's reference kind rule for hoisted or incomplete targets
+          if (hoistedShortFormField || !parsed.target.kind) {
+            parsed.target.kind = parsed.target.semanticId?.includes('#symbol:')
+              ? 'symbol'
+              : 'file_range';
+          }
         }
 
         // Normalize CLI primitives
