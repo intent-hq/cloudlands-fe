@@ -41,6 +41,7 @@
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
+  import InlineProposal from './proposals/InlineProposal.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
@@ -191,9 +192,7 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    // Agent Q&A questions are wizard-only and proposals are tray-only
-    // (PROTOCOL §5.5): neither ever renders in the transcript, in any
-    // state, so strip both up front.
+    // Agent Q&A questions are wizard-only and never render in the transcript.
     const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
       isStreaming,
     });
@@ -203,7 +202,7 @@
         role,
         workspaceId,
       ),
-    ).filter((block) => !isQuestionResourceBlock(block) && getProposalFromBlock(block) === null);
+    ).filter((block) => !isQuestionResourceBlock(block));
 
     // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
@@ -439,9 +438,8 @@
     return ids;
   }
 
-  // Collected from the pre-strip content: proposal blocks never render in
-  // the transcript, but a bulk-op proposal's covered workspace cards stay
-  // suppressed so the prose does not duplicate the tray's list.
+  // Collect from the source content so a bulk-op proposal's covered workspace
+  // cards stay suppressed and do not duplicate the inline proposal's list.
   let bulkProposalWorkspaceIds = $derived.by(() =>
     collectBulkProposalWorkspaceIds(hydratedContent),
   );
@@ -597,6 +595,7 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    if (getProposalFromBlock(contentBlock)) return true;
     return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
 
@@ -744,7 +743,12 @@
   adjacentOperationalRow = false,
   reasoningHistory = false,
 )}
-  {#if isNavLinkBlock(block)}
+  {#if getProposalFromBlock(block) !== null}
+    {@const proposal = getProposalFromBlock(block)}
+    {#if proposal && agentId && workspaceId && messageId}
+      <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
+    {/if}
+  {:else if isNavLinkBlock(block)}
     <div class="w-full">
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
@@ -973,7 +977,7 @@
           </ResponseGroup>
         </div>
       {/if}
-    {:else if isNavLinkBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
+    {:else if isNavLinkBlock(block as ContentBlock) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
           ? 'nav-link'

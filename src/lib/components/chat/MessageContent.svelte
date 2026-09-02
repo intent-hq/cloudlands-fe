@@ -37,6 +37,7 @@
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
+  import InlineProposal from './proposals/InlineProposal.svelte';
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
@@ -146,12 +147,6 @@
       if (isQuestionResourceBlock(block)) {
         return false;
       }
-      // Proposals are tray-only (PROTOCOL §5.5 `pendingProposals` — the
-      // composer tray is the sole rendering surface, question-wizard model):
-      // proposal blocks never render in the transcript, in any state.
-      if (getProposalFromBlock(block) !== null) {
-        return false;
-      }
       if (block.type === 'text') {
         const text = block.text || '';
         const { cleanedContent } = parseSuggestedPrompts(text);
@@ -226,9 +221,8 @@
     return states;
   });
 
-  // Collected from the pre-strip content: proposal blocks never render in
-  // the transcript, but a bulk-op proposal's covered workspace cards stay
-  // suppressed so the prose does not duplicate the tray's list.
+  // Collect from the source content so a bulk-op proposal's covered workspace
+  // cards stay suppressed and do not duplicate the inline proposal's list.
   const bulkProposalWorkspaceIds = $derived.by(() =>
     collectBulkProposalWorkspaceIds(hydratedContent),
   );
@@ -403,6 +397,7 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    if (getProposalFromBlock(contentBlock)) return true;
     return ['tool_use', 'tool_result', 'thinking'].includes(contentBlock.type);
   }
 
@@ -510,7 +505,12 @@
   adjacentOperationalRow = false,
   reasoningHistory = false,
 )}
-  {#if isNavLinkBlock(block)}
+  {#if getProposalFromBlock(block) !== null}
+    {@const proposal = getProposalFromBlock(block)}
+    {#if proposal && agentId && workspaceId && messageId}
+      <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
+    {/if}
+  {:else if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
