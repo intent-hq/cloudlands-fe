@@ -685,6 +685,28 @@ describe('DirectoryPickerModal New Folder', () => {
     // The mock store never updates, so the input survives with its value.
     expect(nameInput().value).toBe('denied');
   });
+
+  it('Backspace and arrow keys inside the input do not drive list navigation', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: 'ab' } });
+    await fireEvent.keyDown(input, { key: 'Backspace' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await flush();
+
+    // Only the load-on-open request — Backspace in the input must not
+    // navigate up to the parent (the listing has one) and arrows must not
+    // move the list focus row.
+    expect(loadCalls()).toHaveLength(1);
+    expect(createCalls()).toHaveLength(0);
+    expect(nameInput()).toBeTruthy();
+  });
 });
 
 describe('DirectoryPickerModal keyboard focus indicators', () => {
