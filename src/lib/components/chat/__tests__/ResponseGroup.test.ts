@@ -15,7 +15,6 @@ import {
   getResponseGroupBlockKeys,
   getResponseGroupCurrentBlock,
   getResponseGroupCurrentBlockIndex,
-  getResponseGroupCurrentChildIndex,
   getResponseGroupPreviewBlock,
   isNestedReasoningSectionBoundary,
   isNestedReasoningSectionStart,
@@ -963,21 +962,6 @@ describe('ResponseGroup - block identity', () => {
     expect(getResponseGroupCurrentBlockIndex(blocks)).toBe(1);
     expect(getResponseGroupCurrentBlock(blocks)).toBe(blocks[1]);
     expect(getResponseGroupCurrentBlock([{ type: 'tool_result' } as ContentBlock])).toBeUndefined();
-  });
-
-  it('selects an adjacent description until later live history arrives', () => {
-    const description = { type: 'text', text: 'Group description.' } as ContentBlock;
-    const predecessor = { type: 'thinking', text: 'Earlier reasoning' } as ContentBlock;
-    const group = {
-      children: [description, predecessor],
-      hasAdjacentReasoningHistory: true,
-    };
-
-    expect(getResponseGroupCurrentChildIndex(group)).toBe(0);
-
-    const current = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
-    group.children.push(current);
-    expect(getResponseGroupCurrentChildIndex(group)).toBe(2);
   });
 
   it('uses protocol-backed tool identities instead of positions', () => {

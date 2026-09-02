@@ -217,8 +217,6 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(staticContent).not.toContain('getResponseGroupCurrentChildIndex');
-    expect(streamingContent).not.toContain('getResponseGroupCurrentChildIndex');
     expect(streamingContent).toContain(
       '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );
