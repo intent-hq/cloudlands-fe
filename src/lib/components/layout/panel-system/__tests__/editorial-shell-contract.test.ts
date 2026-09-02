@@ -197,7 +197,8 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar).toContain('--titlebar-control-shift: 0px');
     expect(titlebar).toContain('--titlebar-control-shift: 8px');
-    expect(titlebar).toContain('padding-left: 60px');
+    // Native-control clearance is measured against WindowTitleBar in
+    // test/titlebar-workspace-controls.spec.ts, not inferred from CSS spelling.
     expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
     expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));

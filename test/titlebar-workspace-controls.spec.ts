@@ -12,22 +12,10 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    optimizeDeps: { noDiscovery: true, include: ['bits-ui', 'svelte'] },
+    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr'] },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
-        {
-          find: '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
-          find: '$store/renderer/slices/sidebar-nav/sidebar-nav-slice',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
-          find: '$store/renderer/store',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
         { find: '$lib', replacement: resolve(process.cwd(), 'src/lib') },
         { find: '$store', replacement: resolve(process.cwd(), 'src/store') },
         { find: '$features', replacement: resolve(process.cwd(), 'src/features') },
@@ -65,14 +53,138 @@ async function mountControls(page: Page, theme: 'light' | 'dark', zoom: number) 
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.body.replaceChildren();
       const target = document.createElement('div');
-      target.style.zoom = String(zoom);
       document.body.append(target);
       mount(Harness, { target });
+      const { store } = await import('/src/store/renderer/store.ts');
+      const { setZoomFactor } =
+        await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
+      document.body.style.zoom = String(zoom);
+      store.dispatch(setZoomFactor(zoom));
       await tick();
     },
     { theme, zoom },
   );
 }
+
+async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
+  await page.addInitScript((platform) => {
+    Object.defineProperty(navigator, 'userAgentData', { value: { platform } });
+    Object.defineProperty(navigator, 'userAgent', {
+      value: platform === 'macOS' ? 'Macintosh' : platform,
+    });
+  }, platform);
+}
+
+// Models page scaling plus the existing Redux zoom input, not font-size changes.
+// Native Electron menu/IPC delivery is outside this browser harness.
+async function changeZoom(page: Page, zoom: number) {
+  await page.evaluate(async (zoom) => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { setZoomFactor } =
+      await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
+    document.body.style.zoom = String(zoom);
+    store.dispatch(setZoomFactor(zoom));
+  }, zoom);
+}
+
+test('keeps the Mac sidebar hit target clear of traffic lights through live zoom and reset', async ({
+  page,
+}) => {
+  await emulatePlatform(page, 'macOS');
+  await mountControls(page, 'dark', 1);
+  const toggle = page.locator('[data-titlebar-spaces-control]');
+  const wrapper = page.locator('.window-title-bar-wrapper');
+  const initialLeft = (await toggle.boundingBox())!.x;
+  // Independent safe-area requirement, not derived from the production padding.
+  expect(initialLeft).toBeGreaterThanOrEqual(88);
+  for (const zoom of [0.8, 0.67, 0.5, 1, 1.25, 2, 1]) {
+    await changeZoom(page, zoom);
+    await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
+    await expect.poll(async () => (await wrapper.boundingBox())!.height).toBeCloseTo(35, 0);
+    const box = (await toggle.boundingBox())!;
+    expect(box.width).toBeCloseTo(32, 0);
+    expect(box.height).toBeCloseTo(32, 0);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await toggle.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  }
+});
+
+for (const platform of ['Windows', 'Linux'] as const) {
+  test(`${platform} retains its existing sidebar placement`, async ({ page }) => {
+    await emulatePlatform(page, platform);
+    await mountControls(page, 'light', 1);
+    const toggle = page.locator('[data-titlebar-spaces-control]');
+    for (const zoom of [1, 0.5, 2, 1]) {
+      await changeZoom(page, zoom);
+      await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(28, 0);
+    }
+  });
+}
+
+test('Mac sidebar activation preserves tab alignment, drag regions and narrow-window controls', async ({
+  page,
+}) => {
+  await emulatePlatform(page, 'macOS');
+  await page.setViewportSize({ width: 640, height: 480 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mountControls(page, 'light', 0.67);
+  const toggle = page.locator('[data-titlebar-spaces-control]');
+  const tabs = page.locator('[data-titlebar-workspace-controls]');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(296, 0);
+  await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { setPanelWidth } =
+      await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
+    store.dispatch(setPanelWidth(320));
+  });
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(328, 0);
+  await toggle.press('Space');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  const toggleBox = (await toggle.boundingBox())!;
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeLessThan(200);
+
+  for (const selector of ['[data-titlebar-left-drag-handle]', '[data-titlebar-drag-handle]']) {
+    const drag = page.locator(selector);
+    // Fractional zoom can round an 8px drag surface down by a subpixel.
+    expect((await drag.boundingBox())!.width).toBeGreaterThan(7.5);
+    expect(
+      await drag.evaluate((node) => getComputedStyle(node).getPropertyValue('-webkit-app-region')),
+    ).toBe('drag');
+  }
+  expect(toggleBox.x).toBeGreaterThanOrEqual(88);
+  for (const control of [
+    toggle,
+    page.locator('[data-workspace-repo-launcher] button'),
+    page.locator('[data-titlebar-settings]'),
+  ]) {
+    const box = (await control.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(640);
+    expect(
+      await control.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return node.contains(
+          document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+        );
+      }),
+    ).toBe(true);
+    expect(
+      await control.evaluate((node) =>
+        getComputedStyle(node).getPropertyValue('-webkit-app-region'),
+      ),
+    ).toBe('no-drag');
+  }
+  await page.locator('[data-workspace-repo-launcher] button').click();
+  expect(
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      return store.state.sidebarNav.showCreateModal;
+    }),
+  ).toBe(true);
+});
 
 test('mounts accepted control geometry and shortcut tooltips', async ({ page }, testInfo) => {
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
@@ -86,8 +198,8 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         ];
         for (const control of controls) {
           const box = await control.boundingBox();
-          expect(box?.width).toBeCloseTo(32 * zoom, 0);
-          expect(box?.height).toBeCloseTo(32 * zoom, 0);
+          expect(box?.width).toBeCloseTo(32, 0);
+          expect(box?.height).toBeCloseTo(32, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
         const sidebarControl = controls[0];
@@ -101,8 +213,8 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         ];
         for (const glyph of glyphs) {
           const box = await glyph.boundingBox();
-          expect(box?.width).toBeCloseTo(16 * zoom, 0);
-          expect(box?.height).toBeCloseTo(16 * zoom, 0);
+          expect(box?.width).toBeCloseTo(16, 0);
+          expect(box?.height).toBeCloseTo(16, 0);
           expect(await glyph.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
         }
         await sidebarControl.hover();
