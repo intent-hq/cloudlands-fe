@@ -316,6 +316,8 @@
   "settings_listenTargets_label": "监听目标",
   "settings_listenTargets_description": "此守护进程接受远程连接的地址。选择隧道以实现跨网络连接。",
   "settings_listenTargets_allInterfaces_label": "所有接口 (0.0.0.0)",
+  "settings_listenTargets_loopback_label": "127.0.0.1(本地环回)",
+  "settings_listenTargets_loopbackRequired_note": "Tailcat 隧道将连接转发到本机,因此选择隧道时 127.0.0.1 保持绑定。",
   "settings_listenTargets_tunnel_label": "Tailcat 隧道",
   "settings_listenTargets_tunnelOnly_note": "仅隧道:无直接监听器;设备通过隧道连接。",
   "settings_listenTargets_saveError": "更新监听目标失败:{error}",

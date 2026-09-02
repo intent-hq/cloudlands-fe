@@ -316,6 +316,8 @@
   "settings_listenTargets_label": "수신 대상",
   "settings_listenTargets_description": "이 데몬이 원격 연결을 수락하는 주소입니다. 네트워크 간 연결에는 터널을 선택하세요.",
   "settings_listenTargets_allInterfaces_label": "모든 인터페이스 (0.0.0.0)",
+  "settings_listenTargets_loopback_label": "127.0.0.1(로컬호스트)",
+  "settings_listenTargets_loopbackRequired_note": "Tailcat 터널은 연결을 로컬호스트로 전달하므로 터널이 선택된 동안 127.0.0.1이 바인딩된 상태로 유지됩니다.",
   "settings_listenTargets_tunnel_label": "Tailcat 터널",
   "settings_listenTargets_tunnelOnly_note": "터널 전용: 직접 리스너 없음. 기기는 터널을 통해 연결합니다.",
   "settings_listenTargets_saveError": "수신 대상 업데이트 실패: {error}",

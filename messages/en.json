@@ -316,6 +316,8 @@
   "settings_listenTargets_label": "Listen targets",
   "settings_listenTargets_description": "Addresses this daemon accepts remote connections on. Select the tunnel for connectivity across networks.",
   "settings_listenTargets_allInterfaces_label": "All interfaces (0.0.0.0)",
+  "settings_listenTargets_loopback_label": "127.0.0.1 (localhost)",
+  "settings_listenTargets_loopbackRequired_note": "The Tailcat tunnel forwards connections to localhost, so 127.0.0.1 stays bound while the tunnel is selected.",
   "settings_listenTargets_tunnel_label": "Tailcat tunnel",
   "settings_listenTargets_tunnelOnly_note": "Tunnel-only: no direct listeners; devices connect through the tunnel.",
   "settings_listenTargets_saveError": "Failed to update listen targets: {error}",

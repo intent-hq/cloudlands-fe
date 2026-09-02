@@ -874,6 +874,62 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
+    it('selecting the tunnel persists a bindAddress that includes 127.0.0.1', async () => {
+      // The tailcat sidecar forwards tunnel connections to 127.0.0.1, so
+      // turning the tunnel on must write loopback into server.bindAddress.
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
+        ).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(
+        screen.getByRole('checkbox', { name: m.settings_listenTargets_tunnel_label() }),
+      );
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['192.168.1.2', '127.0.0.1'] },
+          { path: 'server.tunnel.enabled', value: true },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+    });
+
+    it('load-repair: tunnel on without loopback renders 127.0.0.1 checked+locked and the next change persists it', async () => {
+      // Daemon state persisted before the loopback rule: tunnel enabled but
+      // server.bindAddress carries only a specific IP.
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
+        ).toBeTruthy(),
+      );
+
+      const loopback = screen.getByRole('checkbox', {
+        name: m.settings_listenTargets_loopback_label(),
+      }) as HTMLInputElement;
+      expect(loopback.checked).toBe(true);
+      expect(loopback.disabled).toBe(true);
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('checkbox', { name: '10.0.0.5' }));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5', '127.0.0.1'] },
+          { path: 'server.tunnel.enabled', value: true },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+    });
+
     it('renders the tunnel-only posture on reload: persisted bind IPs show unselected', async () => {
       // server.tunnel.only=true deliberately leaves server.bindAddress
       // persisted for later restoration — the selector must not present those

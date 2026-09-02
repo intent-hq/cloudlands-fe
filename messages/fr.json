@@ -316,6 +316,8 @@
   "settings_listenTargets_label": "Adresses d'écoute",
   "settings_listenTargets_description": "Adresses sur lesquelles ce daemon accepte les connexions distantes. Sélectionnez le tunnel pour la connectivité entre réseaux.",
   "settings_listenTargets_allInterfaces_label": "Toutes les interfaces (0.0.0.0)",
+  "settings_listenTargets_loopback_label": "127.0.0.1 (hôte local)",
+  "settings_listenTargets_loopbackRequired_note": "Le tunnel Tailcat transfère les connexions vers l'hôte local ; 127.0.0.1 reste donc liée tant que le tunnel est sélectionné.",
   "settings_listenTargets_tunnel_label": "Tunnel Tailcat",
   "settings_listenTargets_tunnelOnly_note": "Tunnel uniquement : aucune écoute directe ; les appareils se connectent via le tunnel.",
   "settings_listenTargets_saveError": "Échec de la mise à jour des adresses d'écoute : {error}",
