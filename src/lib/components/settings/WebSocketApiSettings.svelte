@@ -80,10 +80,7 @@
   let tunnelOnly = $state(false);
   let tunnelSupported = $state(false);
   let tcAddress = $state('');
-  let derpUrl = $state('');
-  let persistedDerpUrl = $state('');
   let listenSaving = $state(false);
-  let derpSaving = $state(false);
 
   let showToken = $state(false);
   let showQr = $state(false);
@@ -164,11 +161,6 @@
       // Tunnel-only keeps the persisted bindAddress for later restoration, so
       // the selector must not present those IPs as active listeners.
       tunnelOnly = tunnelEnabled && tunnelOnlySetting?.value === true;
-      const derpSetting = settings.find(
-        (s: { path: string; value: unknown }) => s.path === 'server.tunnel.derpUrl',
-      );
-      persistedDerpUrl = typeof derpSetting?.value === 'string' ? derpSetting.value : '';
-      derpUrl = persistedDerpUrl;
 
       if (enabled) {
         const info = await appClient.server.pairingInfo();
@@ -249,22 +241,36 @@
     }
   }
 
-  async function handleDerpUrlSave() {
-    if (derpSaving) return;
-    derpSaving = true;
-    try {
-      await appClient.settings.update([{ path: 'server.tunnel.derpUrl', value: derpUrl }]);
-      persistedDerpUrl = derpUrl;
-      toast.success(m.settings_tunnel_derpUrl_saved());
-    } catch (error) {
-      toast.error(
-        m.settings_tunnel_derpUrl_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      derpUrl = persistedDerpUrl;
-    } finally {
-      derpSaving = false;
+  const ALL_INTERFACES = '0.0.0.0';
+  const LOOPBACK = '127.0.0.1';
+
+  /**
+   * Force loopback into a bind set while the tunnel is on: the tailcat
+   * sidecar forwards tunnel connections to 127.0.0.1:<port>. All-interfaces
+   * already covers loopback, and an empty set (tunnel-only) binds loopback
+   * daemon-side, so neither needs the force.
+   */
+  function withLoopbackLock(ips: string[]): string[] {
+    if (ips.length > 0 && !ips.includes(ALL_INTERFACES) && !ips.includes(LOOPBACK)) {
+      return [...ips, LOOPBACK];
+    }
+    return ips;
+  }
+
+  /**
+   * The "Enable Tailcat Tunnel" toggle drives `server.tunnel.enabled`.
+   * Enabling locks loopback into the bind set (see withLoopbackLock);
+   * disabling from the tunnel-only posture restores the persisted bind IPs
+   * as active listeners so the daemon never ends up with zero targets.
+   */
+  function handleTunnelToggle() {
+    if (listenSaving) return;
+    if (tunnelEnabled) {
+      let ips = tunnelOnly ? bindIps : withLoopbackLock(bindIps);
+      if (ips.length === 0) ips = [LOOPBACK];
+      void handleListenTargetChange({ ips, tunnel: false });
+    } else {
+      void handleListenTargetChange({ ips: withLoopbackLock(bindIps), tunnel: true });
     }
   }
 
@@ -642,56 +648,33 @@
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
-        <!-- Listen targets: bound IPs + the tailcat tunnel entry. Rendered only
-             once loaded; on old daemons the tunnel entry is absent
-             (tunnelSupported=false) and only IPs show. -->
-        <section>
-          <ListenTargetSelector
-            availableIps={localIps}
-            selectedIps={tunnelOnly ? [] : bindIps}
-            tunnelSelected={tunnelEnabled}
-            {tunnelSupported}
-            saving={listenSaving}
-            onchange={handleListenTargetChange}
-          />
-        </section>
-
-        {#if tunnelSupported && tunnelEnabled}
-          <!-- DERP relay URL -->
-          <section data-tunnel-derp-row>
-            <div class="flex items-center justify-between gap-3">
+        {#if tunnelSupported}
+          <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
+               old daemons predating the server.tunnel.* settings. -->
+          <section data-tunnel-toggle-row>
+            <div class="flex items-center justify-between">
               <div>
                 <p class="text-sm font-medium text-foreground">
-                  {m.settings_tunnel_derpUrl_label()}
+                  {m.settings_tunnel_enable_label()}
                 </p>
                 <p class="text-xs text-subtle mt-1">
-                  {m.settings_tunnel_derpUrl_description()}
+                  {m.settings_tunnel_enable_description()}{' '}<a
+                    href="https://github.com/tailscale/tailcat"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
+                  >
                 </p>
               </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <div class="w-56">
-                  <Input
-                    type="text"
-                    bind:value={derpUrl}
-                    disabled={derpSaving}
-                    placeholder={m.settings_tunnel_derpUrl_placeholder()}
-                    aria-label={m.settings_tunnel_derpUrl_label()}
-                    class="h-9 text-sm"
-                  />
-                </div>
-                {#if derpUrl !== persistedDerpUrl}
-                  <button
-                    type="button"
-                    onclick={handleDerpUrlSave}
-                    disabled={derpSaving}
-                    class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {derpSaving
-                      ? m.settings_tunnel_derpUrl_saving()
-                      : m.settings_tunnel_derpUrl_save()}
-                  </button>
-                {/if}
-              </div>
+              <Toggle
+                pressed={tunnelEnabled}
+                onclick={handleTunnelToggle}
+                variant="indicator"
+                size="xs"
+                class="mb-auto"
+                disabled={listenSaving}
+                ariaLabel={m.settings_tunnel_enable_label()}
+              />
             </div>
           </section>
         {/if}
@@ -740,20 +723,27 @@
           </section>
         {/if}
 
+        <!-- Listen targets: the daemon's bound IPs. Rendered only once
+             loaded; the tunnel is toggled above, not in the selector. -->
+        <section>
+          <ListenTargetSelector
+            availableIps={localIps}
+            selectedIps={tunnelOnly ? [] : bindIps}
+            tunnelSelected={tunnelEnabled}
+            saving={listenSaving}
+            onchange={handleListenTargetChange}
+          />
+        </section>
+
         <!-- This daemon's own tailcat tunnel address (copyable) — surfaced
              here, where pairing happens, whenever the daemon reports one;
              absent on old daemons or with the tunnel down. -->
         {#if tcAddress}
           <section data-tunnel-address-row>
             <div class="flex items-center justify-between gap-2">
-              <div>
-                <p class="text-sm font-medium text-foreground">
-                  {m.settings_tunnel_tcAddress_label()}
-                </p>
-                <p class="text-xs text-subtle mt-1">
-                  {m.settings_tunnel_tcAddress_description()}
-                </p>
-              </div>
+              <span class="text-sm text-muted-foreground">
+                {m.settings_tunnel_tcAddress_label()}
+              </span>
               <div class="flex items-center gap-2 shrink-0">
                 <code
                   class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
