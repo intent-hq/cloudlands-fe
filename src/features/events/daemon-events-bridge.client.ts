@@ -3351,7 +3351,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
-    invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route })
+    invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route, requestId: event.id })
       .then(async (result: unknown) => {
         // window:open-new resolves {success: false, error} on failure
         if (
