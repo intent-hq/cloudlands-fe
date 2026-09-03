@@ -7,7 +7,9 @@ import {
 import {
   initialState as userPreferencesInitialState,
   setAgentFontStyle,
+  setChatAuroraEnabled,
   setGithubLinkDefaultAction,
+  setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
@@ -159,6 +161,28 @@ describe('settings-proposal-actions', () => {
         path: 'githubLinks.defaultAction',
         value: 'show-choices',
         apply: { kind: 'redux-action', action: 'userPreferences/setGithubLinkDefaultAction' },
+      },
+    ]);
+  });
+
+  it('applies and reverses the appearance preferences', async () => {
+    const proposal = makeProposal('appearance.chatAurora', false);
+    proposal.payload.changes.push({ path: 'appearance.shellTransparency', value: false });
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setChatAuroraEnabled(false));
+    expect(mocks.dispatch).toHaveBeenCalledWith(setShellTransparencyEnabled(false));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'appearance.chatAurora',
+        value: true,
+        apply: { kind: 'redux-action', action: 'userPreferences/setChatAuroraEnabled' },
+      },
+      {
+        path: 'appearance.shellTransparency',
+        value: true,
+        apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
       },
     ]);
   });

@@ -36,6 +36,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 import {
   selectAgentFontStyle,
+  selectChatAuroraEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
@@ -48,6 +49,7 @@ import {
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
   selectSpellcheckEnabled,
+  selectShellTransparencyEnabled,
   selectUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
@@ -85,6 +87,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import {
   setAgentFontStyle,
+  setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -96,6 +99,7 @@ import {
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setSpellcheckEnabled,
+  setShellTransparencyEnabled,
   setUpdateChannel,
   setVolume,
   type FontStyle,
@@ -275,6 +279,10 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectUpdateChannel.select(state);
     case 'preferences.spellcheckEnabled':
       return selectSpellcheckEnabled.select(state);
+    case 'appearance.chatAurora':
+      return selectChatAuroraEnabled.select(state);
+    case 'appearance.shellTransparency':
+      return selectShellTransparencyEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -368,6 +376,12 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     }
     case 'preferences.spellcheckEnabled':
       appStore.dispatch(setSpellcheckEnabled(Boolean(value)));
+      return true;
+    case 'appearance.chatAurora':
+      appStore.dispatch(setChatAuroraEnabled(Boolean(value)));
+      return true;
+    case 'appearance.shellTransparency':
+      appStore.dispatch(setShellTransparencyEnabled(Boolean(value)));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));
@@ -530,9 +544,7 @@ async function applyPersistedSetting(
   }
   // Remaining plan kinds (`user-mcp-settings`) have no writer on the proposal
   // path, so they must fail rather than fall through as applied.
-  throw new Error(
-    m.chat_settingsProposalActions_unsupportedPlan_error({ path, kind: apply.kind }),
-  );
+  throw new Error(m.chat_settingsProposalActions_unsupportedPlan_error({ path, kind: apply.kind }));
 }
 
 async function prepareSettingsChange(

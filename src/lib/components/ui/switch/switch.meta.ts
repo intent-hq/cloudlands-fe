@@ -20,6 +20,7 @@ export const switchMetadata = {
     'src/lib/components/settings/mcp/McpServerCard.svelte',
     'src/lib/components/workspace/sidebar/McpServersSection.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',
+    'src/routes/(app)/settings/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/switch/switch.test.ts',

@@ -39,6 +39,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
+  import { Switch } from '$lib/components/ui/switch';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
@@ -708,12 +709,12 @@
                       {m.settings_appearance_chatAurora_description()}
                     </p>
                   </div>
-                  <Toggle
-                    variant="indicator"
-                    size="xs"
+                  <Switch
+                    id="chat-aurora-switch"
+                    size="sm"
                     class="mb-auto"
-                    pressed={$chatAuroraEnabled}
-                    onclick={() => appStore.dispatch(setChatAuroraEnabled(!$chatAuroraEnabled))}
+                    checked={$chatAuroraEnabled}
+                    onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
                     ariaLabel={m.settings_appearance_chatAurora_label()}
                   />
                 </div>
@@ -733,13 +734,13 @@
                       {m.settings_appearance_translucentWindow_description()}
                     </p>
                   </div>
-                  <Toggle
-                    variant="indicator"
-                    size="xs"
+                  <Switch
+                    id="translucent-window-switch"
+                    size="sm"
                     class="mb-auto"
-                    pressed={$shellTransparencyEnabled}
-                    onclick={() =>
-                      appStore.dispatch(setShellTransparencyEnabled(!$shellTransparencyEnabled))}
+                    checked={$shellTransparencyEnabled}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setShellTransparencyEnabled(enabled))}
                     ariaLabel={m.settings_appearance_translucentWindow_label()}
                   />
                 </div>
