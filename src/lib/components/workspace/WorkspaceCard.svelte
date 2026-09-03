@@ -121,6 +121,8 @@
     highlightId?: string;
     /** Whether to suppress hover styling (when keyboard navigation is active) */
     suppressHover?: boolean;
+    /** Scope hover/focus action reveals to this card instead of an ancestor group. */
+    isolateHoverReveal?: boolean;
     class?: string;
     actions?: Snippet;
   }
@@ -152,6 +154,7 @@
     selected = false,
     highlightId,
     suppressHover = false,
+    isolateHoverReveal = false,
     class: className,
     actions,
   }: Props = $props();
@@ -495,7 +498,8 @@
   <div
     bind:this={rowElement}
     class={cn(
-      'wc-root group relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      'wc-root relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      isolateHoverReveal ? 'group/wc' : 'group',
       isCurrent
         ? 'bg-background/60'
         : highlighted
@@ -566,7 +570,9 @@
                 ? 'opacity-0'
                 : suppressHover
                   ? ''
-                  : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                  : isolateHoverReveal
+                    ? 'group-hover/wc:opacity-0 group-focus-within/wc:opacity-0'
+                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
               : ''}"
             data-workspace-card-pin-indicator
             aria-hidden="true"
@@ -636,7 +642,9 @@
             ? 'opacity-0'
             : suppressHover
               ? ''
-              : 'group-hover:opacity-0 group-hover/message:opacity-0'
+              : isolateHoverReveal
+                ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
+                : 'group-hover:opacity-0 group-hover/message:opacity-0'
           : ''}"
         data-workspace-card-time
       >
@@ -652,12 +660,17 @@
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
-        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100 group-focus-within:opacity-100
+        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
+          {isolateHoverReveal
+          ? 'group-focus-within/wc:opacity-100'
+          : 'group-focus-within:opacity-100'}
           {highlighted
           ? 'opacity-100'
           : suppressHover
             ? 'opacity-0'
-            : 'opacity-0 group-hover:opacity-100'}"
+            : isolateHoverReveal
+              ? 'opacity-0 group-hover/wc:opacity-100'
+              : 'opacity-0 group-hover:opacity-100'}"
       >
         {#if onOpenInNewWindow}
           <SidebarOverflowMenu
