@@ -1,13 +1,14 @@
 /**
  * @vitest-environment jsdom
  *
- * Covers controlled reasoning in the model-options editor: a picked level
- * is committed as `modelOptions[i].reasoningEffort` (PROTOCOL §5.11), draft
- * rows stay uncommitted until they gain a model, and a model switch to a
- * model lacking the current level resets the row to Default. Rows carry the
- * triple shape `{ provider?, model, hint, reasoningEffort? }` — the picker
- * boundary speaks compound ids (a pick splits into provider + bare model)
- * and each row renders a textual effort label ("Default" when inheriting).
+ * Covers controlled reasoning in the model-options editor: the effort level
+ * is picked inside the ModelPicker dropdown (the picker's embedded reasoning
+ * selector — no separate per-row effort control exists) and committed as
+ * `modelOptions[i].reasoningEffort` (PROTOCOL §5.11), draft rows stay
+ * uncommitted until they gain a model, and a model switch to a model lacking
+ * the current level resets the row to Default. Rows carry the triple shape
+ * `{ provider?, model, hint, reasoningEffort? }` — picks consume the resolved
+ * triple the picker emits, falling back to splitting a legacy compound id.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -58,7 +59,7 @@ describe('SpecialistModelOptions reasoning', () => {
     mocks.effortLevels.value = {};
   });
 
-  it('enables controlled reasoning and commits a picked level on the triple', async () => {
+  it('enables in-dropdown reasoning and commits a picked level on the triple', async () => {
     mocks.effortLevels.value = { [EFFORT_MODEL]: ['low', 'high'] };
     const onCommit = vi.fn();
     render(SpecialistModelOptions, {
@@ -66,18 +67,25 @@ describe('SpecialistModelOptions reasoning', () => {
       onCommit,
     });
 
+    // The picker hosts the reasoning selector inside its dropdown; no
+    // separate per-row effort control renders.
     expect(screen.getByTestId('picker-show-reasoning').textContent).toBe('true');
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+    expect(screen.queryByTestId('effort-label')).toBeNull();
     // The picker boundary receives the recombined compound id.
     expect(screen.getByTestId('picker-selected').textContent).toBe(EFFORT_MODEL);
-    // Unset effort reads as the model default, never blank.
-    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: Default');
     await fireEvent.click(screen.getByTestId('pick-reasoning'));
 
     expect(onCommit).toHaveBeenCalledWith([
-      { provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: 'deep', reasoningEffort: 'high' },
+      {
+        provider: EFFORT_PROVIDER,
+        model: EFFORT_BARE_MODEL,
+        hint: 'deep',
+        reasoningEffort: 'high',
+      },
     ]);
-    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: High');
+    // The picked level feeds back into the picker's controlled effort.
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
   });
 
   it('does not commit an effort change on a draft row until it gains a model', async () => {
@@ -106,14 +114,12 @@ describe('SpecialistModelOptions reasoning', () => {
     });
 
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
-    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: High');
 
     // MockModelPicker picks PICKED_MODEL, which has no effortLevels.
     await fireEvent.click(screen.getByTestId('pick-model'));
 
     expect(onCommit).toHaveBeenCalledWith([{ model: PICKED_MODEL, hint: '' }]);
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
-    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: Default');
   });
 
   it('splits a compound pick into provider + bare model on the committed triple', async () => {
@@ -126,6 +132,20 @@ describe('SpecialistModelOptions reasoning', () => {
 
     expect(onCommit).toHaveBeenCalledWith([
       { provider: 'codex', model: 'cross-provider-model', hint: '' },
+    ]);
+  });
+
+  it('prefers the resolved triple the picker emits over splitting the model id', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, { savedOptions: [], onCommit });
+
+    await fireEvent.click(screen.getByText('Add model option'));
+    // MockModelPicker's triple button emits a bare id + resolved pick legs
+    // (catalog-group attribution for a bare cross-provider pick).
+    await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+
+    expect(onCommit).toHaveBeenCalledWith([
+      { provider: 'codex', model: 'bare-picked-model', hint: '' },
     ]);
   });
 

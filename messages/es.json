@@ -537,8 +537,6 @@
   "settings_aiBehavior_modelOptions_hint_placeholder": "Cuándo usar este modelo (opcional)",
   "settings_aiBehavior_modelOptions_remove_ariaLabel": "Eliminar opción de modelo",
   "settings_aiBehavior_modelOptions_add": "Añadir opción de modelo",
-  "settings_aiBehavior_modelOptions_effort_label": "Esfuerzo: {level}",
-  "settings_aiBehavior_modelOptions_effortDefault_label": "Predeterminado",
   "settings_aiBehavior_reset": "Restablecer",
   "settings_aiBehavior_systemPrompt_placeholder": "Introduzca instrucciones de comportamiento para este especialista...",
   "settings_aiBehavior_deleteSpecialist": "Eliminar especialista",
