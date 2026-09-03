@@ -35,8 +35,9 @@ Use one self-checking workspace hook when a cold renderer launch may outlive the
 turn. On this dev box, five cold `dev:ui` launches under concurrent unit-test load reached
 `[data-preview-ready=true]` in 41.774, 18.466, 19.303, 22.526, and 20.318 seconds. The
 nearest-rank p95 was 41.774 seconds, so 3× p95 is 125.322 seconds (round to 126 seconds)
-as the expected readiness margin. The hook stays alive for 615 seconds so its explicit
-10-minute failure ceiling can run, with one 15-second cadence of TTL margin.
+as the expected readiness margin. The daemon defaults delay-hook TTL to 24 hours and caps
+it at 24 hours; this template deliberately uses 615 seconds so its explicit 10-minute
+failure ceiling can run, with one 15-second cadence of TTL margin.
 
 Replace `TARGET_URL` and `EXPECTED_TITLE`, open or reuse the target tab, then schedule:
 
