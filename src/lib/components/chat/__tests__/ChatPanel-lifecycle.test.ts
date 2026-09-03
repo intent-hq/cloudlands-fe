@@ -816,6 +816,7 @@ describe('ChatPanel mounted lifecycle', () => {
       const newer = view.container.querySelector('[data-lazy-turn-key="assistant-18"]')!;
 
       observer.fire([{ target: older, isIntersecting: true }]);
+      flushFrame();
       await tick();
       // The frontier is a retention barrier, never a hydration trigger: only
       // the intersecting row hydrates; unseen newer rows stay placeholders.
@@ -823,6 +824,7 @@ describe('ChatPanel mounted lifecycle', () => {
       expect(newer.getAttribute('data-lazy-visible')).toBe('false');
 
       observer.fire([{ target: newer, isIntersecting: true }]);
+      flushFrame();
       await tick();
       expect(newer.getAttribute('data-lazy-visible')).toBe('true');
 
@@ -831,6 +833,7 @@ describe('ChatPanel mounted lifecycle', () => {
         { target: older, isIntersecting: false },
         { target: newer, isIntersecting: false },
       ]);
+      flushFrame();
       await vi.advanceTimersByTimeAsync(260);
       await tick();
 
