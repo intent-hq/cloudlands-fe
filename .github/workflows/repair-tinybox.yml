@@ -38,8 +38,12 @@ jobs:
             x86_64) arch=x64 ;; aarch64) arch=arm64 ;; *) echo "::error::unsupported arch"; exit 1 ;;
           esac
 
-          sig() { [ -f "$1/lib/node_modules/npm/lib/cli.js" ] && echo OK || echo BROKEN; }
-          npmv() { "$1/bin/node" "$1/lib/node_modules/npm/bin/npm-cli.js" -v 2>&1 | tail -1; }
+          # CI runs <node24>/bin/npm (pnpm self-installer); in the official tarball
+          # bin/npm is a symlink to ../lib/node_modules/npm/bin/npm-cli.js. A
+          # dereferenced (regular-file) copy resolves '../lib/cli.js' against bin/
+          # and dies with MODULE_NOT_FOUND — the monorepo#4304 signature.
+          sig() { [ -L "$1/bin/npm" ] && [ -f "$1/lib/node_modules/npm/lib/cli.js" ] && "$1/bin/node" "$1/bin/npm" -v >/dev/null 2>&1 && echo OK || echo BROKEN; }
+          npmv() { "$1/bin/node" "$1/bin/npm" -v 2>&1 | tail -1; }
 
           summary=""
           failures=0
@@ -59,10 +63,9 @@ jobs:
               echo "  $real node=$ver npm-sig=$before npm-v=$(npmv "$real")"
               ls -ld "$real" "$(dirname "$real")"
               [ -w "$(dirname "$real")" ] && echo "  parent writable: yes" || echo "  parent writable: NO"
-              if [ "$before" = BROKEN ]; then
-                echo "  npm tree: $(find "$real/lib/node_modules/npm" -type f 2>/dev/null | wc -l) files; lib/: $(ls "$real/lib/node_modules/npm/lib" 2>/dev/null | wc -l) entries"
-                stat -c '  npm dir mtime: %y' "$real/lib/node_modules/npm" 2>/dev/null || true
-              fi
+              echo "  bin/: $(ls -l "$real/bin" | tail -n +2 | awk '{printf "%s %s%s%s; ", $1, $9, ($10?" "$10:""), ($11?" "$11:"")}')"
+              echo "  symlinks in tree: $(find "$real" -type l | wc -l); lib/node_modules/npm/lib/cli.js: $([ -f "$real/lib/node_modules/npm/lib/cli.js" ] && echo present || echo MISSING)"
+              stat -c '  node24 dir mtime: %y' "$real" 2>/dev/null || true
               after="$before"
               if [ "$REPAIR_MODE" = repair ] && [ "$before" = BROKEN ]; then
                 pdir="$(dirname "$real")"; ts="$(date +%s)"
