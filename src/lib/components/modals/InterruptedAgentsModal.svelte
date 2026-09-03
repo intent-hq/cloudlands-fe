@@ -1,10 +1,11 @@
 <script lang="ts">
   /**
    * Modal for resuming or abandoning interrupted agents after intentd restart.
-   * Grouped by workspace with checkboxes (all checked by default).
+   * Grouped by workspace with selection toggles (all pressed by default).
    */
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Toggle } from '$lib/components/ui/toggle';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -38,7 +39,7 @@
   // the previously focused page element outside the portal. `agents` is read
   // untracked: the dialog mounting (bind:this assigning dialogEl) already
   // re-runs the effect, and tracking `agents` would re-steal focus from a
-  // checkbox/button when a cross-window prune replaces the array mid-open.
+  // selection Toggle when a cross-window prune replaces the array mid-open.
   $effect(() => {
     if (open && dialogEl && untrack(() => agents.length > 0)) {
       dialogEl.focus();
@@ -67,7 +68,7 @@
   let checkedAgents = $state<Set<string>>(new Set(agents.map((a) => a.agentId)));
 
   // Reconcile checked state when agents change: survivors of a cross-window
-  // prune keep their checkbox state; agents not previously listed default to
+  // prune keep their selection state; agents not previously listed default to
   // checked.
   // svelte-ignore state_referenced_locally - intentional initial capture; updated inside the reconcile $effect
   let knownAgentIds = new Set(agents.map((a) => a.agentId));
@@ -172,15 +173,7 @@
               <h3 class="text-sm font-medium text-foreground">{workspaceName}</h3>
               <div class="space-y-1.5 pl-2">
                 {#each wsAgents as agent (agent.agentId)}
-                  <label
-                    class="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/40 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checkedAgents.has(agent.agentId)}
-                      class="size-4 rounded border-border"
-                      onchange={() => toggleAgent(agent.agentId)}
-                    />
+                  <div class="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/40">
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-foreground truncate">{agent.agentName}</p>
                       <p class="text-xs text-subtle">
@@ -190,7 +183,14 @@
                         })}
                       </p>
                     </div>
-                  </label>
+                    <Toggle
+                      pressed={checkedAgents.has(agent.agentId)}
+                      onChange={() => toggleAgent(agent.agentId)}
+                      size="xs"
+                      class="shrink-0"
+                      ariaLabel={agent.agentName}
+                    />
+                  </div>
                 {/each}
               </div>
             </div>

@@ -47,6 +47,10 @@ const FEATURE_PATHS = [
   'agentFeatures.mcpTools',
 ];
 
+function getToggles() {
+  return screen.getAllByRole('button').filter((button) => button.hasAttribute('aria-pressed'));
+}
+
 describe('AgentFeaturesSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,10 +66,10 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect(getToggles()).toHaveLength(13);
     });
-    for (const toggle of screen.getAllByRole('switch')) {
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    for (const toggle of getToggles()) {
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
     }
   });
 
@@ -76,16 +80,16 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect(getToggles()).toHaveLength(13);
     });
-    const peerAgents = screen.getByRole('switch', {
+    const peerAgents = screen.getByRole('button', {
       name: 'Top-level agent spawning & retirement',
     });
     // peerAgents is the one opt-in feature — absent coerces to off
-    expect(peerAgents.getAttribute('aria-checked')).toBe('false');
-    for (const toggle of screen.getAllByRole('switch')) {
+    expect(peerAgents.getAttribute('aria-pressed')).toBe('false');
+    for (const toggle of getToggles()) {
       if (toggle === peerAgents) continue;
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
     }
   });
 
@@ -100,9 +104,9 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const taskGraph = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    const taskGraph = await screen.findByRole('button', { name: 'Task graph coordination' });
     await waitFor(() => {
-      expect(taskGraph.getAttribute('aria-checked')).toBe('true');
+      expect(taskGraph.getAttribute('aria-pressed')).toBe('true');
     });
   });
 
@@ -116,9 +120,9 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const taskGraph = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    const taskGraph = await screen.findByRole('button', { name: 'Task graph coordination' });
     await waitFor(() => {
-      expect(taskGraph.getAttribute('aria-checked')).toBe('false');
+      expect(taskGraph.getAttribute('aria-pressed')).toBe('false');
     });
   });
 
@@ -129,9 +133,9 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    const toggle = await screen.findByRole('button', { name: 'Task graph coordination' });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
     });
     await fireEvent.click(toggle);
 
@@ -141,7 +145,7 @@ describe('AgentFeaturesSettings', () => {
       ]);
     });
     expect(mockToast.error).not.toHaveBeenCalled();
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('renders a feature off when the daemon reports value false', async () => {
@@ -154,12 +158,12 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const hostExec = await screen.findByRole('switch', { name: 'Host command execution' });
+    const hostExec = await screen.findByRole('button', { name: 'Host command execution' });
     await waitFor(() => {
-      expect(hostExec.getAttribute('aria-checked')).toBe('false');
+      expect(hostExec.getAttribute('aria-pressed')).toBe('false');
     });
     expect(
-      screen.getByRole('switch', { name: 'Background hooks' }).getAttribute('aria-checked'),
+      screen.getByRole('button', { name: 'Background hooks' }).getAttribute('aria-pressed'),
     ).toBe('true');
   });
 
@@ -170,7 +174,7 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Browser automation' });
+    const toggle = await screen.findByRole('button', { name: 'Browser automation' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -179,7 +183,7 @@ describe('AgentFeaturesSettings', () => {
       ]);
     });
     expect(mockToast.error).not.toHaveBeenCalled();
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('toggling attention requests off sends the exact settings.update request', async () => {
@@ -189,7 +193,7 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Attention requests' });
+    const toggle = await screen.findByRole('button', { name: 'Attention requests' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -198,7 +202,7 @@ describe('AgentFeaturesSettings', () => {
       ]);
     });
     expect(mockToast.error).not.toHaveBeenCalled();
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('toggling the state snapshot off sends the exact settings.update request', async () => {
@@ -208,7 +212,7 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'State snapshot' });
+    const toggle = await screen.findByRole('button', { name: 'State snapshot' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -217,7 +221,7 @@ describe('AgentFeaturesSettings', () => {
       ]);
     });
     expect(mockToast.error).not.toHaveBeenCalled();
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('renders the state snapshot off when the daemon reports value false', async () => {
@@ -230,9 +234,9 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'State snapshot' });
+    const toggle = await screen.findByRole('button', { name: 'State snapshot' });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
   });
 
@@ -258,7 +262,7 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect(getToggles()).toHaveLength(13);
     });
     expect(screen.queryByText(/tokens\/(session|turn)/)).toBeNull();
   });
@@ -271,13 +275,13 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Saved scripts' });
+    const toggle = await screen.findByRole('button', { name: 'Saved scripts' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('shows toast.error and reverts when settings.update rejects', async () => {
@@ -285,13 +289,13 @@ describe('AgentFeaturesSettings', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Background hooks' });
+    const toggle = await screen.findByRole('button', { name: 'Background hooks' });
     await fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith(expect.stringContaining('daemon unavailable'));
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
 
   describe('peer agents (opt-in)', () => {
@@ -300,11 +304,11 @@ describe('AgentFeaturesSettings', () => {
     it('renders peer agents on when the daemon reports value true', async () => {
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', {
+      const toggle = await screen.findByRole('button', {
         name: 'Top-level agent spawning & retirement',
       });
       await waitFor(() => {
-        expect(toggle.getAttribute('aria-checked')).toBe('true');
+        expect(toggle.getAttribute('aria-pressed')).toBe('true');
       });
     });
 
@@ -321,11 +325,11 @@ describe('AgentFeaturesSettings', () => {
 
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', {
+      const toggle = await screen.findByRole('button', {
         name: 'Top-level agent spawning & retirement',
       });
       await waitFor(() => {
-        expect(toggle.getAttribute('aria-checked')).toBe('false');
+        expect(toggle.getAttribute('aria-pressed')).toBe('false');
       });
       await fireEvent.click(toggle);
 
@@ -335,7 +339,7 @@ describe('AgentFeaturesSettings', () => {
         ]);
       });
       expect(mockToast.error).not.toHaveBeenCalled();
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('seeds the max agents input from agents.maxTopLevelAgents in settings.list', async () => {
@@ -409,11 +413,11 @@ describe('AgentFeaturesSettings', () => {
 
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', {
+      const toggle = await screen.findByRole('button', {
         name: 'Top-level agent spawning & retirement',
       });
       await waitFor(() => {
-        expect(toggle.getAttribute('aria-checked')).toBe('false');
+        expect(toggle.getAttribute('aria-pressed')).toBe('false');
       });
       const input = screen.getByRole('spinbutton', { name: maxAgentsInputName });
       expect((input as HTMLInputElement).disabled).toBe(true);
@@ -454,7 +458,7 @@ describe('AgentFeaturesSettings', () => {
 
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', { name: 'PR monitoring' });
+      const toggle = await screen.findByRole('button', { name: 'PR monitoring' });
       await fireEvent.click(toggle);
 
       await waitFor(() => {
@@ -462,7 +466,7 @@ describe('AgentFeaturesSettings', () => {
           { path: 'agentFeatures.prMonitor', value: false },
         ]);
       });
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
 
     it('seeds the debounce input from prMonitor.debounceSeconds in settings.list', async () => {
@@ -550,9 +554,9 @@ describe('AgentFeaturesSettings', () => {
 
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', { name: 'PR monitoring' });
+      const toggle = await screen.findByRole('button', { name: 'PR monitoring' });
       await waitFor(() => {
-        expect(toggle.getAttribute('aria-checked')).toBe('false');
+        expect(toggle.getAttribute('aria-pressed')).toBe('false');
       });
       const input = screen.getByRole('spinbutton', { name: debounceInputName });
       expect((input as HTMLInputElement).disabled).toBe(true);

@@ -142,13 +142,40 @@
     </div>
   {:else if componentId === 'toggle'}
     {#if fixture.id === 'toggle-state-matrix'}
-      <div class="flex flex-wrap gap-2" data-catalog-rendered-state="off on disabled focus-visible">
-        <Toggle bind:pressed={togglePressed} ariaLabel="Bold">Bold</Toggle>
-        <Toggle pressed ariaLabel="Pinned">Pinned</Toggle>
-        <Toggle disabled ariaLabel="Disabled toggle">Disabled</Toggle>
+      <div
+        class="grid gap-3"
+        data-catalog-rendered-state="unpressed pressed disabled keyboard-focus light dark compact reduced-motion"
+      >
+        <div class="grid gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <span>Interactive</span>
+            <Toggle bind:pressed={togglePressed} size="xs" ariaLabel="Interactive" />
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span>Pinned</span>
+            <Toggle pressed size="xs" ariaLabel="Pinned" />
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span>Compact</span>
+            <Toggle size="xs" ariaLabel="Compact" />
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span>Compact pressed</span>
+            <Toggle size="xs" pressed ariaLabel="Compact pressed" />
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span>Disabled</span>
+            <Toggle disabled size="xs" ariaLabel="Disabled" />
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span>Disabled pressed</span>
+            <Toggle disabled pressed size="xs" ariaLabel="Disabled pressed" />
+          </div>
+        </div>
+        <output class="sr-only" aria-label="Interactive toggle value">{togglePressed}</output>
       </div>
     {:else}
-      <div class="flex flex-wrap gap-2" data-catalog-rendered-state="group switch indicator">
+      <div class="flex flex-wrap gap-2" data-catalog-rendered-state="group">
         <Toggle
           variant="group"
           options={[
@@ -158,8 +185,6 @@
           value="one"
           ariaLabel="Grouped toggle"
         />
-        <Toggle variant="switch" pressed ariaLabel="Switch compatibility" />
-        <Toggle variant="indicator" pressed ariaLabel="Indicator compatibility" />
       </div>
     {/if}
   {:else if componentId === 'toggle-group'}

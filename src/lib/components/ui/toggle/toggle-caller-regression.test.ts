@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { buildProductToggleLedger } from '../../../../../scripts/ui-component-manifest';
 import { checkboxMetadata } from '../checkbox/checkbox.meta';
 import { switchMetadata } from '../switch/switch.meta';
 import { toggleGroupMetadata } from '../toggle-group/toggle-group.meta';
@@ -11,6 +12,39 @@ const repositoryRoot = process.cwd();
 const sourceRoot = join(repositoryRoot, 'src');
 const families = ['checkbox', 'switch', 'toggle', 'toggle-group'] as const;
 const modes = ['group', 'switch', 'indicator'] as const;
+const retainedCompatibilityModes = ['group'] as const;
+const expectedProductToggleCounts = {
+  'src/features/log/components/ActivityLogFilters.svelte': 4,
+  'src/features/onboarding/OnboardingPage.svelte': 1,
+  'src/lib/components/chat/ChatChangesPanel.svelte': 1,
+  'src/lib/components/chat/ChatSearch.svelte': 2,
+  'src/lib/components/chat/input/ContextPickerButton.svelte': 2,
+  'src/lib/components/chat/proposals/BulkProposalItems.svelte': 1,
+  'src/lib/components/debug/DebugPanel.svelte': 10,
+  'src/lib/components/layout/ConnectBackendModal.svelte': 2,
+  'src/lib/components/modals/InterruptedAgentsModal.svelte': 1,
+  'src/lib/components/modals/TransferWorkspaceModal.svelte': 2,
+  'src/lib/components/notes/NotesPanel.svelte': 1,
+  'src/lib/components/settings/AgentBackendSettings.svelte': 1,
+  'src/lib/components/settings/AgentFeaturesSettings.svelte': 1,
+  'src/lib/components/settings/BackendSyncSettings.svelte': 1,
+  'src/lib/components/settings/GitWorkspaceSettings.svelte': 3,
+  'src/lib/components/settings/HardwareConsoleSettings.svelte': 2,
+  'src/lib/components/settings/LegacyImportSettings.svelte': 1,
+  'src/lib/components/settings/ListenTargetSelector.svelte': 1,
+  'src/lib/components/settings/McpServersSettings.svelte': 1,
+  'src/lib/components/settings/NotificationSettings.svelte': 3,
+  'src/lib/components/settings/OpenInAppsSettings.svelte': 1,
+  'src/lib/components/settings/RtkSettings.svelte': 1,
+  'src/lib/components/settings/WebSocketApiSettings.svelte': 3,
+  'src/lib/components/settings/WorkspaceApiSettings.svelte': 1,
+  'src/lib/components/settings/mcp/McpServerCard.svelte': 1,
+  'src/lib/components/workspace/initializer/BranchSelector.svelte': 1,
+  'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte': 1,
+  'src/lib/components/workspace/sidebar/FileChangesSection.svelte': 1,
+  'src/lib/components/workspace/sidebar/McpServersSection.svelte': 1,
+  'src/lib/components/workspace/sidebar/MergePanel.svelte': 3,
+} as const;
 const structuralAggregatorPaths = new Set([
   'src/lib/components/ui/index.ts',
   'src/lib/components/ui/manifest.ts',
@@ -90,45 +124,74 @@ function discoverCompatibilityUsages() {
 }
 
 describe('B2 caller metadata regression', () => {
+  it('keeps all 55 product Toggles on the compact external-label contract', () => {
+    const productToggles = buildProductToggleLedger(repositoryRoot).filter(
+      ({ exemption }) => exemption === null,
+    );
+    const counts = Object.fromEntries(
+      [...new Set(productToggles.map(({ file }) => file))]
+        .sort()
+        .map((file) => [file, productToggles.filter((entry) => entry.file === file).length]),
+    );
+
+    expect(counts).toEqual(expectedProductToggleCounts);
+    expect(productToggles).toHaveLength(55);
+    expect(
+      productToggles.every(
+        ({ selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, variant }) =>
+          selfClosing &&
+          size === 'xs' &&
+          hasAriaLabel &&
+          hasSourceDerivedAriaLabel &&
+          variant === null,
+      ),
+    ).toBe(true);
+  });
+
   it('matches current source-derived callers for every field primitive', () => {
     const expected = {
       checkbox: [
-        'src/features/onboarding/OnboardingPage.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
-        'src/lib/components/chat/input/ContextPickerButton.svelte',
-        'src/lib/components/chat/proposals/BulkProposalItems.svelte',
-        'src/lib/components/layout/ConnectBackendModal.svelte',
-        'src/lib/components/modals/TransferWorkspaceModal.svelte',
-        'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
-        'src/lib/components/workspace/initializer/BranchSelector.svelte',
-        'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
       switch: [
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/debug/DebugPanel.svelte',
-        'src/lib/components/settings/AgentBackendSettings.svelte',
-        'src/lib/components/settings/BackendSyncSettings.svelte',
-        'src/lib/components/settings/OpenInAppsSettings.svelte',
-        'src/lib/components/settings/mcp/McpServerCard.svelte',
-        'src/lib/components/workspace/sidebar/McpServersSection.svelte',
-        'src/lib/components/workspace/sidebar/MergePanel.svelte',
       ],
       toggle: [
+        'src/features/log/components/ActivityLogFilters.svelte',
+        'src/features/onboarding/OnboardingPage.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+        'src/lib/components/chat/ChatChangesPanel.svelte',
+        'src/lib/components/chat/ChatSearch.svelte',
+        'src/lib/components/chat/input/ContextPickerButton.svelte',
+        'src/lib/components/chat/proposals/BulkProposalItems.svelte',
+        'src/lib/components/debug/DebugPanel.svelte',
+        'src/lib/components/layout/ConnectBackendModal.svelte',
+        'src/lib/components/modals/InterruptedAgentsModal.svelte',
+        'src/lib/components/modals/TransferWorkspaceModal.svelte',
+        'src/lib/components/notes/NotesPanel.svelte',
+        'src/lib/components/settings/AgentBackendSettings.svelte',
         'src/lib/components/settings/AgentFeaturesSettings.svelte',
+        'src/lib/components/settings/BackendSyncSettings.svelte',
         'src/lib/components/settings/GitWorkspaceSettings.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/settings/LegacyImportSettings.svelte',
+        'src/lib/components/settings/ListenTargetSelector.svelte',
         'src/lib/components/settings/McpServersSettings.svelte',
         'src/lib/components/settings/NotificationSettings.svelte',
+        'src/lib/components/settings/OpenInAppsSettings.svelte',
         'src/lib/components/settings/RtkSettings.svelte',
         'src/lib/components/settings/WebSocketApiSettings.svelte',
         'src/lib/components/settings/WorkspaceApiSettings.svelte',
+        'src/lib/components/settings/mcp/McpServerCard.svelte',
+        'src/lib/components/workspace/initializer/BranchSelector.svelte',
+        'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
         'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
+        'src/lib/components/workspace/sidebar/McpServersSection.svelte',
+        'src/lib/components/workspace/sidebar/MergePanel.svelte',
         'src/routes/(app)/settings/+page.svelte',
       ],
       'toggle-group': [
@@ -160,31 +223,17 @@ describe('B2 caller metadata regression', () => {
         { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
         { path: 'src/routes/(app)/settings/+page.svelte', count: 3 },
       ],
-      switch: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/workspace/sidebar/FileChangesSection.svelte', count: 1 },
-      ],
-      indicator: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/GitWorkspaceSettings.svelte', count: 2 },
-        { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
-        { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 3 },
-        { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
-      ],
+      switch: [],
+      indicator: [],
     };
     const replacements = {
       group: '$lib/components/ui/toggle-group',
-      switch: '$lib/components/ui/switch',
-      indicator: '$lib/components/ui/switch',
     };
 
     expect(usages).toEqual(expectedUsages);
-    for (const mode of modes) {
+    expect(usages.switch).toEqual([]);
+    expect(usages.indicator).toEqual([]);
+    for (const mode of retainedCompatibilityModes) {
       const ledger = toggleCompatibilityModes[mode];
       expect(ledger.callers).toEqual(usages[mode]);
       expect(ledger.staticUsageCount).toBe(
@@ -196,5 +245,6 @@ describe('B2 caller metadata regression', () => {
         `Remove only when source-derived static and dynamic variant="${mode}" usage counts both reach zero.`,
       );
     }
+    expect(Object.keys(toggleCompatibilityModes)).toEqual([...retainedCompatibilityModes]);
   });
 });

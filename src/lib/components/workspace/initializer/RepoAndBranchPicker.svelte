@@ -1,7 +1,7 @@
 <script lang="ts">
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { faPlus, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
@@ -116,7 +116,9 @@
     ),
   );
   const repoOffBranchParts = $derived(
-    sentenceParts(m.workspace_repoAndBranchPicker_repoOffBranch_label({ repo: SLOT, branch: SLOT })),
+    sentenceParts(
+      m.workspace_repoAndBranchPicker_repoOffBranch_label({ repo: SLOT, branch: SLOT }),
+    ),
   );
   const cloneRepoParts = $derived(
     sentenceParts(
@@ -315,7 +317,9 @@
     <!-- New repo mode: show create with repo selector -->
     {#if !isMetadataPresentation}
       <Fa icon={faPlus} size="sm" class="ml-0.75 mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_createNewRepo_label()}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0"
+        >{m.workspace_repoAndBranchPicker_createNewRepo_label()}</span
+      >
     {/if}
     <RepoSelector
       variant="ghost"
@@ -420,7 +424,8 @@
       triggerChevronClass={metadataChevronClass}
     />
     {#if workOnRemoteParts[1]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[1]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[1]}</span
+      >
     {/if}
     <span
       class="text-xs text-subtle whitespace-nowrap shrink-0 ml-1 font-mono truncate max-w-60"
@@ -429,28 +434,30 @@
       {remoteDisplayPath}
     </span>
     {#if workOnRemoteParts[2]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{workOnRemoteParts[2]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2"
+        >{workOnRemoteParts[2]}</span
+      >
     {/if}
-    <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
-      >{remoteSetup.branch || 'main' /* i18n-ignore (git branch name) */}</span
-    >
+    <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono">
+      <!-- i18n-ignore (git branch name) -->
+      {remoteSetup.branch || 'main'}
+    </span>
     {#if workOnRemoteParts[3]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[3]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[3]}</span
+      >
     {/if}
     <!-- Skip isolation toggle for remote -->
     {#if typeof onSkipIsolationChange === 'function'}
-      <button
-        type="button"
-        onclick={() => onSkipIsolationChange?.(!skipIsolation)}
-        class="flex items-center gap-1.5 ml-3 shrink-0 cursor-pointer"
-      >
-        <Checkbox
-          checked={skipIsolation}
-          class="-mb-0.5"
-          onCheckedChange={(value) => onSkipIsolationChange?.(value)}
-        />
-        <span class="text-ui text-subtle whitespace-nowrap"> {m.workspace_repoAndBranchPicker_workDirectly_label()} </span>
-      </button>
+      <span class="ml-3 text-ui text-subtle whitespace-nowrap shrink-0">
+        {m.workspace_repoAndBranchPicker_workDirectly_label()}
+      </span>
+      <Toggle
+        pressed={skipIsolation}
+        onChange={(value) => onSkipIsolationChange?.(value as boolean)}
+        size="xs"
+        class="shrink-0"
+        ariaLabel={m.workspace_repoAndBranchPicker_workDirectly_label()}
+      />
     {/if}
   {:else if isMetadataPresentation}
     <RepoSelector
@@ -469,7 +476,9 @@
     {#if !isMetadataPresentation}
       <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
       {#if workOnRepoOffBranchParts[0]}
-        <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRepoOffBranchParts[0]}</span>
+        <span class="text-sm text-subtle whitespace-nowrap shrink-0"
+          >{workOnRepoOffBranchParts[0]}</span
+        >
       {/if}
     {/if}
     <RepoSelector
@@ -484,7 +493,9 @@
       triggerChevronClass={metadataChevronClass}
     />
     {#if workOnRepoOffBranchParts[1]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{workOnRepoOffBranchParts[1]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2"
+        >{workOnRepoOffBranchParts[1]}</span
+      >
     {/if}
     <BranchSelector
       variant="ghost"
@@ -508,7 +519,9 @@
       onchange={handleBranchChange}
     />
     {#if workOnRepoOffBranchParts[2]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRepoOffBranchParts[2]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1"
+        >{workOnRepoOffBranchParts[2]}</span
+      >
     {/if}
   {/if}
 </div>

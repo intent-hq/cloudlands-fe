@@ -7,7 +7,7 @@
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import { SettingsFieldRow } from '$lib/components/ui/settings-field-row';
-  import { Switch } from '$lib/components/ui/switch';
+  import { Toggle } from '$lib/components/ui/toggle';
   import {
     selectHiddenEditorIds,
     selectInstalledEditors,
@@ -64,7 +64,6 @@
     {#each installedEditors as editor (editor.id)}
       <SettingsFieldRow
         id={`open-in-${editor.id}`}
-        htmlFor={`open-in-${editor.id}-switch`}
         label={editor.name}
         class="py-2.5 first:pt-2.5 last:pb-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-4"
       >
@@ -86,13 +85,12 @@
             {/if}
           </div>
         {/snippet}
-        {#snippet control({ labelId })}
-          <Switch
-            id={`open-in-${editor.id}-switch`}
-            checked={isEditorEnabled(editor.id)}
-            onCheckedChange={(enabled) => handleEditorToggle(editor.id, enabled)}
-            size="sm"
-            ariaLabelledby={labelId}
+        {#snippet control()}
+          <Toggle
+            pressed={isEditorEnabled(editor.id)}
+            onChange={(pressed) => handleEditorToggle(editor.id, pressed === true)}
+            size="xs"
+            ariaLabel={editor.name}
           />
         {/snippet}
       </SettingsFieldRow>

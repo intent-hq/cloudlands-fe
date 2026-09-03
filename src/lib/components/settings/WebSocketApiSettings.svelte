@@ -656,8 +656,7 @@
         </div>
         <Toggle
           pressed={enabled}
-          onclick={() => handleToggle(!enabled)}
-          variant="indicator"
+          onChange={(pressed) => handleToggle(pressed === true)}
           size="xs"
           class="mb-auto"
           disabled={loading || toggleBusy}
@@ -688,7 +687,6 @@
             <Toggle
               pressed={tunnelEnabled}
               onclick={handleTunnelToggle}
-              variant="indicator"
               size="xs"
               class="mb-auto"
               disabled={toggleBusy || listenSaving}
@@ -743,7 +741,6 @@
             <Toggle
               pressed={localNetworkEnabled}
               onclick={handleLocalNetworkToggle}
-              variant="indicator"
               size="xs"
               class="mb-auto"
               disabled={toggleBusy || listenSaving}

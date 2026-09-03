@@ -1,8 +1,14 @@
+const toggleContractKinds = [
+  'toggle-contract',
+  'toggle-switch-variant',
+  'toggle-indicator-variant',
+] as const;
+const allBinaryControlKinds = ['checkbox-import', 'switch-import', ...toggleContractKinds] as const;
+
 export const uiComponentGuardrails = {
   internalImports: {
     '$lib/components/ui/button/button.svelte': 34,
     '$lib/components/ui/button/index.js': 1,
-    '$lib/components/ui/checkbox/checkbox.svelte': 3,
     '$lib/components/ui/dropdown/Dropdown.svelte': 1,
     '$lib/components/ui/indicators/AgentBadge.svelte': 1,
     '$lib/components/ui/indicators/UnsavedIndicator.svelte': 1,
@@ -13,13 +19,12 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/sheet/index.js': 1,
     '$lib/components/ui/skeleton/index.js': 1,
     '$lib/components/ui/skeleton/skeleton.svelte': 2,
-    '$lib/components/ui/switch/switch.svelte': 3,
     '$lib/components/ui/textarea/textarea.svelte': 2,
     '$lib/components/ui/toast/ErrorToast.svelte': 1,
     '$lib/components/ui/toast/AgentFailureToast.svelte': 1,
     '$lib/components/ui/toast/Toast.svelte': 1,
     '$lib/components/ui/toast/UpdateToast.svelte': 1,
-    '$lib/components/ui/toggle/toggle.svelte': 8,
+    '$lib/components/ui/toggle/toggle.svelte': 12,
     '$lib/components/ui/tooltip/LinkTooltip.svelte': 1,
     '$lib/components/ui/tooltip/Tooltip.svelte': 5,
     '$lib/components/ui/tooltip/TooltipRich.svelte': 1,
@@ -43,8 +48,179 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/scroll-area/index.ts': 2,
     'relative:src/lib/components/ui/skeleton/index.ts': 2,
     'relative:src/lib/components/ui/textarea/textarea.svelte': 1,
+    'relative:src/lib/components/ui/toggle/index.ts': 1,
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
     'relative:src/lib/components/ui/tooltip/index.ts': 1,
   },
-  rawControls: { button: 615, input: 83, select: 0, textarea: 11 },
+  rawControls: { button: 612, input: 72, select: 0, textarea: 11 },
+  checkboxControlAllowlist: [
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/checkbox/',
+      reason: 'Canonical general-purpose checkbox implementation.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/menu/',
+      reason: 'Canonical menu checkbox-item implementation.',
+    },
+    {
+      match: 'exact',
+      path: 'src/lib/components/markdown/MarkdownViewer.svelte',
+      reason: 'Generated read-only Markdown task-list markup and styling.',
+    },
+    {
+      match: 'exact',
+      path: 'src/lib/components/tiptap/TaskItemNodeView.svelte',
+      reason: 'TipTap task-state rendering internals.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/sandbox/',
+      reason: 'Sandbox-only controls.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/(app)/test-',
+      reason: 'App test harness routes.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/(app)/workspace/[id]/terminal-test/',
+      reason: 'Terminal test harness route.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/component-catalog/',
+      reason: 'Component catalog harnesses.',
+    },
+    {
+      match: 'contains',
+      path: '/__tests__/',
+      reason: 'Test-only components and fixtures.',
+    },
+    {
+      match: 'suffix',
+      path: 'Harness.svelte',
+      reason: 'Test and characterization harnesses.',
+    },
+    {
+      match: 'suffix',
+      path: 'TestWrapper.svelte',
+      reason: 'Test wrapper components.',
+    },
+    {
+      match: 'suffix',
+      path: 'test-harness.svelte',
+      reason: 'Test and characterization harnesses.',
+    },
+    {
+      match: 'suffix',
+      path: '.test.svelte',
+      reason: 'Test-only components.',
+    },
+    {
+      match: 'suffix',
+      path: '.spec.svelte',
+      reason: 'Test-only components.',
+    },
+  ],
+  binaryControlAllowlist: [
+    {
+      match: 'exact',
+      path: 'src/lib/components/ui/index.ts',
+      kinds: ['checkbox-import', 'switch-import'],
+      reason: 'Structural public UI aggregator.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/checkbox/',
+      kinds: ['checkbox-import'],
+      reason: 'Checkbox implementation and characterization infrastructure.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/switch/',
+      kinds: ['switch-import'],
+      reason: 'Switch characterization infrastructure.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/components/ui/toggle/',
+      kinds: toggleContractKinds,
+      reason: 'Toggle implementation and characterization infrastructure.',
+    },
+    {
+      match: 'exact',
+      path: 'src/lib/components/tiptap/TaskItemNodeView.svelte',
+      kinds: ['checkbox-import'],
+      reason: 'Approved TipTap task-checkbox semantic exception.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/lib/component-catalog/',
+      kinds: allBinaryControlKinds,
+      reason: 'Component catalog characterization only.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/sandbox/',
+      kinds: allBinaryControlKinds,
+      reason: 'Sandbox-only control characterization.',
+    },
+    {
+      match: 'prefix',
+      path: 'src/routes/(app)/test-',
+      kinds: allBinaryControlKinds,
+      reason: 'App test harness route.',
+    },
+    {
+      match: 'contains',
+      path: '/__tests__/',
+      kinds: allBinaryControlKinds,
+      reason: 'Test-only components and fixtures.',
+    },
+    {
+      match: 'suffix',
+      path: 'Harness.svelte',
+      kinds: allBinaryControlKinds,
+      reason: 'Test and characterization harness.',
+    },
+    {
+      match: 'suffix',
+      path: 'TestWrapper.svelte',
+      kinds: allBinaryControlKinds,
+      reason: 'Test wrapper component.',
+    },
+    {
+      match: 'suffix',
+      path: 'test-harness.svelte',
+      kinds: allBinaryControlKinds,
+      reason: 'Test and characterization harness.',
+    },
+    {
+      match: 'suffix',
+      path: '.test.svelte',
+      kinds: allBinaryControlKinds,
+      reason: 'Test-only component.',
+    },
+    {
+      match: 'suffix',
+      path: '.spec.svelte',
+      kinds: allBinaryControlKinds,
+      reason: 'Test-only component.',
+    },
+    {
+      match: 'suffix',
+      path: '.test.ts',
+      kinds: allBinaryControlKinds,
+      reason: 'Test-only module.',
+    },
+    {
+      match: 'suffix',
+      path: '.spec.ts',
+      kinds: allBinaryControlKinds,
+      reason: 'Test-only module.',
+    },
+  ],
 } as const;

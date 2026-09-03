@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { m } from '$shared/paraglide/messages.js';
 import WorkspaceApiSettings from './WorkspaceApiSettings.svelte';
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
@@ -52,7 +53,9 @@ describe('WorkspaceApiSettings', () => {
 
     render(WorkspaceApiSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch'));
+    const toggle = await waitFor(() =>
+      screen.getByRole('button', { name: m.settings_workspaceApi_toonOutput_label() }),
+    );
     await fireEvent.click(toggle);
 
     // Assert: settings.update was called with exact payload
@@ -72,14 +75,20 @@ describe('WorkspaceApiSettings', () => {
 
     render(WorkspaceApiSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('switch'));
+    const toggle = await waitFor(() =>
+      screen.getByRole('button', { name: m.settings_workspaceApi_toonOutput_label() }),
+    );
     await fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
     });
     // Toggle remains checked (rolled back to true)
-    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+    expect(
+      screen
+        .getByRole('button', { name: m.settings_workspaceApi_toonOutput_label() })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
   });
 
   it('shows Save when max output chars differs, and clicking Save sends the exact request', async () => {

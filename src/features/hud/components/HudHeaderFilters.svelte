@@ -6,6 +6,7 @@
    * filters off the same state.
    */
   import { m } from '$shared/paraglide/messages.js';
+  import * as Menu from '$lib/components/ui/menu';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectHudGridFilter,
@@ -58,7 +59,7 @@
   }
 </script>
 
-<svelte:window onclick={closeMenus} />
+<svelte:window onclick={() => (repoMenuOpen = false)} />
 
 <div class="hud-header-filters" data-testid="hud-header-filters">
   <div class="hud-header-filter">
@@ -111,55 +112,41 @@
   </div>
 
   <div class="hud-header-filter">
-    <button
-      class="hud-header-filter-btn"
-      aria-label={m.hud_filter_statusMenu_ariaLabel()}
-      aria-expanded={stateMenuOpen}
-      onclick={(event) => {
-        event.stopPropagation();
-        repoMenuOpen = false;
-        stateMenuOpen = !stateMenuOpen;
+    <Menu.Root
+      bind:open={stateMenuOpen}
+      onOpenChange={(open) => {
+        if (open) repoMenuOpen = false;
       }}
     >
-      <span class="hud-header-filter-label">{stateLabel}</span>
-      <!-- i18n-ignore (glyph) -->
-      <span class="hud-header-filter-caret">▼</span>
-    </button>
-    {#if stateMenuOpen}
-      <div class="hud-header-menu" role="menu">
-        <button
-          class="hud-header-menu-row"
-          role="menuitem"
-          onclick={(event) => {
-            event.stopPropagation();
-            clearStates();
-          }}
-        >
+      <Menu.Trigger
+        class="hud-header-filter-btn"
+        aria-label={m.hud_filter_statusMenu_ariaLabel()}
+        aria-expanded={stateMenuOpen}
+      >
+        <span class="hud-header-filter-label">{stateLabel}</span>
+        <!-- i18n-ignore (glyph) -->
+        <span class="hud-header-filter-caret">▼</span>
+      </Menu.Trigger>
+      <Menu.Content align="start" sideOffset={6} class="hud-header-status-menu min-w-64">
+        <Menu.Item class="gap-2 px-2.5 py-1.5" onSelect={clearStates}>
           <span class="hud-header-menu-name">{m.hud_filter_allStatuses_label()}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
-        </button>
-        <div class="hud-header-menu-sep"></div>
+        </Menu.Item>
+        <Menu.Separator />
         {#each HUD_CARD_STATE_KEYS as stateKey (stateKey)}
-          <button
-            class="hud-header-menu-row"
-            role="menuitemcheckbox"
-            aria-checked={$filter$.states.includes(stateKey)}
-            onclick={(event) => {
-              event.stopPropagation();
-              toggleState(stateKey);
-            }}
+          <Menu.CheckboxItem
+            class="gap-2 py-1.5 pr-2.5 pl-8!"
+            checked={$filter$.states.includes(stateKey)}
+            closeOnSelect={false}
+            onCheckedChange={() => toggleState(stateKey)}
           >
-            <span
-              class="hud-header-menu-check"
-              class:hud-header-menu-check-on={$filter$.states.includes(stateKey)}
-            ></span>
             <span class="hud-header-menu-swatch" style:background={cardStateColor(stateKey)}></span>
             <span class="hud-header-menu-name">{cardStateLabel(stateKey)}</span>
             <span class="hud-header-menu-count">{counts[stateKey] ?? 0}</span>
-          </button>
+          </Menu.CheckboxItem>
         {/each}
-      </div>
-    {/if}
+      </Menu.Content>
+    </Menu.Root>
   </div>
 </div>
 
@@ -277,26 +264,6 @@
   .hud-header-menu-avatar-all {
     border: 1px dashed hsl(var(--border));
     color: hsl(var(--muted-foreground) / 0.65);
-  }
-  .hud-header-menu-check {
-    width: 13px;
-    height: 13px;
-    border: 1px solid hsl(var(--border));
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font:
-      700 9px 'JetBrains Mono',
-      monospace;
-    color: hsl(var(--card));
-  }
-  .hud-header-menu-check-on {
-    background: hsl(var(--foreground));
-  }
-  /* Mock's ✓ glyph (CSS content; i18n-exempt glyph). */
-  .hud-header-menu-check-on::after {
-    content: '✓';
   }
   .hud-header-menu-swatch {
     width: 7px;

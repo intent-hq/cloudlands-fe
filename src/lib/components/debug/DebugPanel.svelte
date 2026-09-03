@@ -6,7 +6,7 @@
   import { debugConfig, type DebugFlags } from '$lib/config/debug';
   import { onMount } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { Switch } from '$lib/components/ui/switch';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Label } from '$lib/components/ui/label';
   import { Input } from '$lib/components/ui/input';
   import { Select } from '$lib/components/ui/select';
@@ -356,31 +356,37 @@
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="creation-animation" class="text-sm">Creation Animation</Label>
-            <Switch
-              id="creation-animation"
-              checked={flags.enableCreationAnimation}
-              onCheckedChange={() => handleToggle('enableCreationAnimation')}
+            <Label class="text-sm">Creation Animation</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.enableCreationAnimation}
+              onChange={() => handleToggle('enableCreationAnimation')}
+              size="xs"
+              ariaLabel={m.debug_panel_creationAnimation_ariaLabel()}
             />
           </div>
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="page-transitions" class="text-sm">Page Transitions</Label>
-            <Switch
-              id="page-transitions"
-              checked={flags.enablePageTransitions}
-              onCheckedChange={() => handleToggle('enablePageTransitions')}
+            <Label class="text-sm">Page Transitions</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.enablePageTransitions}
+              onChange={() => handleToggle('enablePageTransitions')}
+              size="xs"
+              ariaLabel={m.debug_panel_pageTransitions_ariaLabel()}
             />
           </div>
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="component-transitions" class="text-sm">Component Transitions</Label>
-            <Switch
-              id="component-transitions"
-              checked={flags.enableComponentTransitions}
-              onCheckedChange={() => handleToggle('enableComponentTransitions')}
+            <Label class="text-sm">Component Transitions</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.enableComponentTransitions}
+              onChange={() => handleToggle('enableComponentTransitions')}
+              size="xs"
+              ariaLabel={m.debug_panel_componentTransitions_ariaLabel()}
             />
           </div>
 
@@ -407,21 +413,25 @@
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="performance-metrics" class="text-sm">Performance Metrics</Label>
-            <Switch
-              id="performance-metrics"
-              checked={flags.showPerformanceMetrics}
-              onCheckedChange={() => handleToggle('showPerformanceMetrics')}
+            <Label class="text-sm">Performance Metrics</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.showPerformanceMetrics}
+              onChange={() => handleToggle('showPerformanceMetrics')}
+              size="xs"
+              ariaLabel={m.debug_panel_performanceMetrics_ariaLabel()}
             />
           </div>
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="log-state" class="text-sm">Log State Changes</Label>
-            <Switch
-              id="log-state"
-              checked={flags.logStateChanges}
-              onCheckedChange={() => handleToggle('logStateChanges')}
+            <Label class="text-sm">Log State Changes</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.logStateChanges}
+              onChange={() => handleToggle('logStateChanges')}
+              size="xs"
+              ariaLabel={m.debug_panel_logStateChanges_ariaLabel()}
             />
           </div>
         </div>
@@ -433,31 +443,37 @@
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="autofocus" class="text-sm">Enable Autofocus</Label>
-            <Switch
-              id="autofocus"
-              checked={flags.enableAutofocus}
-              onCheckedChange={() => handleToggle('enableAutofocus')}
+            <Label class="text-sm">Enable Autofocus</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.enableAutofocus}
+              onChange={() => handleToggle('enableAutofocus')}
+              size="xs"
+              ariaLabel={m.debug_panel_enableAutofocus_ariaLabel()}
             />
           </div>
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="branch-caching" class="text-sm">Branch Caching</Label>
-            <Switch
-              id="branch-caching"
-              checked={flags.enableBranchCaching}
-              onCheckedChange={() => handleToggle('enableBranchCaching')}
+            <Label class="text-sm">Branch Caching</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.enableBranchCaching}
+              onChange={() => handleToggle('enableBranchCaching')}
+              size="xs"
+              ariaLabel={m.debug_panel_branchCaching_ariaLabel()}
             />
           </div>
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="form-persistence" class="text-sm">Form Persistence</Label>
-            <Switch
-              id="form-persistence"
-              checked={flags.enableFormPersistence}
-              onCheckedChange={() => handleToggle('enableFormPersistence')}
+            <Label class="text-sm">Form Persistence</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.enableFormPersistence}
+              onChange={() => handleToggle('enableFormPersistence')}
+              size="xs"
+              ariaLabel={m.debug_panel_formPersistence_ariaLabel()}
             />
           </div>
         </div>
@@ -469,21 +485,25 @@
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="slow-network" class="text-sm">Simulate Slow Network</Label>
-            <Switch
-              id="slow-network"
-              checked={flags.simulateSlowNetwork}
-              onCheckedChange={() => handleToggle('simulateSlowNetwork')}
+            <Label class="text-sm">Simulate Slow Network</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.simulateSlowNetwork}
+              onChange={() => handleToggle('simulateSlowNetwork')}
+              size="xs"
+              ariaLabel={m.debug_panel_simulateSlowNetwork_ariaLabel()}
             />
           </div>
 
           <div class="flex items-center justify-between">
             <!-- i18n-ignore (dev-only debug UI) -->
-            <Label for="simulate-errors" class="text-sm">Simulate Errors</Label>
-            <Switch
-              id="simulate-errors"
-              checked={flags.simulateErrors}
-              onCheckedChange={() => handleToggle('simulateErrors')}
+            <Label class="text-sm">Simulate Errors</Label>
+            <!-- i18n-ignore (dev-only debug UI) -->
+            <Toggle
+              pressed={flags.simulateErrors}
+              onChange={() => handleToggle('simulateErrors')}
+              size="xs"
+              ariaLabel={m.debug_panel_simulateErrors_ariaLabel()}
             />
           </div>
 

@@ -5959,5 +5959,15 @@
   "workspace_agentsList_noSearchResults_label": "検索に一致するエージェントはありません。",
   "workspace_contextPanel_noSearchResults_label": "検索に一致するコンテキストはありません。",
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
-  "layout_allCard_archived_label": "アーカイブ済み"
+  "layout_allCard_archived_label": "アーカイブ済み",
+  "debug_panel_creationAnimation_ariaLabel": "作成アニメーション",
+  "debug_panel_pageTransitions_ariaLabel": "ページ遷移",
+  "debug_panel_componentTransitions_ariaLabel": "コンポーネント遷移",
+  "debug_panel_performanceMetrics_ariaLabel": "パフォーマンス指標",
+  "debug_panel_logStateChanges_ariaLabel": "状態変更をログに記録",
+  "debug_panel_enableAutofocus_ariaLabel": "オートフォーカスを有効化",
+  "debug_panel_branchCaching_ariaLabel": "ブランチキャッシュ",
+  "debug_panel_formPersistence_ariaLabel": "フォームの永続化",
+  "debug_panel_simulateSlowNetwork_ariaLabel": "低速ネットワークをシミュレート",
+  "debug_panel_simulateErrors_ariaLabel": "エラーをシミュレート"
 }

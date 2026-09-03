@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Toggle } from '$lib/components/ui/toggle';
   import type { BulkProposalItem } from '$shared/types/proposal';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -50,12 +50,6 @@
     {#each items as item (item.id)}
       {@const checked = selectedIds.includes(item.id)}
       <div class="flex items-start gap-3 px-3 py-2.5" class:opacity-60={item.disabled || disabled}>
-        <Checkbox
-          {checked}
-          disabled={item.disabled || disabled}
-          ariaLabel={m.chat_bulkProposalItems_toggle_ariaLabel({ title: item.title })}
-          onCheckedChange={(nextChecked) => handleCheckedChange(item, nextChecked)}
-        />
         <div class="min-w-0 flex-1 space-y-1">
           <div class="flex items-center gap-2">
             <div class="type-body truncate font-medium text-foreground">{item.title}</div>
@@ -86,6 +80,14 @@
             </div>
           {/if}
         </div>
+        <Toggle
+          pressed={checked}
+          disabled={item.disabled || disabled}
+          onChange={(nextChecked) => handleCheckedChange(item, nextChecked as boolean)}
+          size="xs"
+          class="shrink-0"
+          ariaLabel={m.chat_bulkProposalItems_toggle_ariaLabel({ title: item.title })}
+        />
       </div>
     {/each}
   </div>

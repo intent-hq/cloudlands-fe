@@ -224,6 +224,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
@@ -1881,7 +1882,12 @@
     const wsId = routeWorkspaceId;
     if (!wsId) return;
     appStore.dispatch(
-      openWorkspaceCommitChangeset(wsId, commitHash, undefined, gitRootId ? { gitRootId } : undefined)
+      openWorkspaceCommitChangeset(
+        wsId,
+        commitHash,
+        undefined,
+        gitRootId ? { gitRootId } : undefined,
+      ),
     );
   }
 
@@ -3091,30 +3097,31 @@
             <Fa icon={faArrowUpRightFromSquare} class="w-3 h-3" />
           </Button>
         </div>
-        <!-- Always-visible viewed checkbox -->
-        <label
-          class="shrink-0 flex items-center gap-1.5 cursor-pointer ml-1"
+        <!-- Always-visible viewed toggle -->
+        <div
+          class="shrink-0 ml-1 flex items-center gap-1.5"
           title={isViewed
             ? m.chat_changesPanel_markNotViewed_title()
             : m.chat_changesPanel_markViewed_title()}
-          onclick={(e: MouseEvent) => e.stopPropagation()}
         >
-          <input
-            type="checkbox"
-            checked={isViewed}
-            onchange={() => toggleViewed(change.filePath, expandKey)}
-            class="sr-only peer"
-          />
-          <span
-            class="w-3.5 h-3.5 rounded border border-muted-foreground/30 flex items-center justify-center
-              peer-checked:bg-primary peer-checked:border-primary transition-colors"
+          <button
+            type="button"
+            class="text-xs text-subtle"
+            onclick={(e: MouseEvent) => {
+              e.stopPropagation();
+              toggleViewed(change.filePath, expandKey);
+            }}
           >
-            {#if isViewed}
-              <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
-            {/if}
-          </span>
-          <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
-        </label>
+            {m.chat_changesPanel_viewed_label()}
+          </button>
+          <Toggle
+            pressed={isViewed}
+            onChange={() => toggleViewed(change.filePath, expandKey)}
+            onclick={(e: MouseEvent) => e.stopPropagation()}
+            ariaLabel={m.chat_changesPanel_viewed_label()}
+            size="xs"
+          />
+        </div>
       </div>
     </div>
 

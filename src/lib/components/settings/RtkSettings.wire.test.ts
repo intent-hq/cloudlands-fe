@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { m } from '$shared/paraglide/messages.js';
 
 // Mock backend transport (the wire seam)
 const mocks = vi.hoisted(() => ({
@@ -68,7 +69,9 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
     render(RtkSettings);
 
     await waitFor(() => {
-      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.get', { path: 'rtk.enabled' });
+      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.get', {
+        path: 'rtk.enabled',
+      });
     });
   });
 
@@ -96,15 +99,15 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(RtkSettings);
 
-    await waitFor(() => screen.getByRole('switch'));
-    const toggle = screen.getByRole('switch');
+    await waitFor(() => screen.getByRole('button', { name: m.settings_rtk_label() }));
+    const toggle = screen.getByRole('button', { name: m.settings_rtk_label() });
 
     await fireEvent.click(toggle);
 
     await waitFor(() => {
-      const updateCall = vi.mocked(mocks.mockBackendRequest).mock.calls.find(
-        (call) => call[0] === 'settings.update'
-      );
+      const updateCall = vi
+        .mocked(mocks.mockBackendRequest)
+        .mock.calls.find((call) => call[0] === 'settings.update');
       expect(updateCall).toBeDefined();
       expect(updateCall![1]).toEqual({
         changes: [{ path: 'rtk.enabled', value: true }],

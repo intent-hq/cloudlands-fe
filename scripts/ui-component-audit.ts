@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import {
+  buildBinaryControlLedger,
+  buildCheckboxControlLedger,
+  buildProductToggleLedger,
   buildUiInternalImportLedger,
   buildUiMigrationLedger,
   countRawUiControls,
@@ -240,6 +243,27 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   if (mode === 'raw-controls') {
     return { stdout: JSON.stringify(countRawUiControls(root), null, 2), stderr: '', exitCode: 0 };
   }
+  if (mode === 'checkbox-controls') {
+    return {
+      stdout: JSON.stringify(buildCheckboxControlLedger(root), null, 2),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'binary-controls') {
+    return {
+      stdout: JSON.stringify(buildBinaryControlLedger(root), null, 2),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'product-toggle-controls') {
+    return {
+      stdout: JSON.stringify(buildProductToggleLedger(root), null, 2),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
   if (mode === 'check') {
     const failures = checkFailures(root, inventory, usesProjectManifest);
     if (failures.length) {
@@ -265,7 +289,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   return {
     stdout: '',
     stderr:
-      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|check]',
+      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|checkbox-controls|binary-controls|product-toggle-controls|check]',
     exitCode: 2,
   };
 }

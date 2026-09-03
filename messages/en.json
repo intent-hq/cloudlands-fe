@@ -5959,5 +5959,15 @@
   "workspace_agentsList_noSearchResults_label": "No agents match your search.",
   "workspace_contextPanel_noSearchResults_label": "No context matches your search.",
   "workspace_sidebarSearch_clear_ariaLabel": "Clear search",
-  "layout_allCard_archived_label": "Archived"
+  "layout_allCard_archived_label": "Archived",
+  "debug_panel_creationAnimation_ariaLabel": "Creation Animation",
+  "debug_panel_pageTransitions_ariaLabel": "Page Transitions",
+  "debug_panel_componentTransitions_ariaLabel": "Component Transitions",
+  "debug_panel_performanceMetrics_ariaLabel": "Performance Metrics",
+  "debug_panel_logStateChanges_ariaLabel": "Log State Changes",
+  "debug_panel_enableAutofocus_ariaLabel": "Enable Autofocus",
+  "debug_panel_branchCaching_ariaLabel": "Branch Caching",
+  "debug_panel_formPersistence_ariaLabel": "Form Persistence",
+  "debug_panel_simulateSlowNetwork_ariaLabel": "Simulate Slow Network",
+  "debug_panel_simulateErrors_ariaLabel": "Simulate Errors"
 }

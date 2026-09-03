@@ -5959,5 +5959,15 @@
   "workspace_agentsList_noSearchResults_label": "검색과 일치하는 에이전트가 없습니다.",
   "workspace_contextPanel_noSearchResults_label": "검색과 일치하는 컨텍스트가 없습니다.",
   "workspace_sidebarSearch_clear_ariaLabel": "검색 지우기",
-  "layout_allCard_archived_label": "보관됨"
+  "layout_allCard_archived_label": "보관됨",
+  "debug_panel_creationAnimation_ariaLabel": "생성 애니메이션",
+  "debug_panel_pageTransitions_ariaLabel": "페이지 전환",
+  "debug_panel_componentTransitions_ariaLabel": "컴포넌트 전환",
+  "debug_panel_performanceMetrics_ariaLabel": "성능 지표",
+  "debug_panel_logStateChanges_ariaLabel": "상태 변경 기록",
+  "debug_panel_enableAutofocus_ariaLabel": "자동 포커스 활성화",
+  "debug_panel_branchCaching_ariaLabel": "브랜치 캐싱",
+  "debug_panel_formPersistence_ariaLabel": "양식 상태 유지",
+  "debug_panel_simulateSlowNetwork_ariaLabel": "느린 네트워크 시뮬레이션",
+  "debug_panel_simulateErrors_ariaLabel": "오류 시뮬레이션"
 }

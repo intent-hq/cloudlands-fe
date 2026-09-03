@@ -4,7 +4,7 @@
   import { serverToJson } from './types';
   import { findMatchingPreset } from './mcp-options';
   import McpIcon from './McpIcon.svelte';
-  import Switch from '$lib/components/ui/switch/switch.svelte';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import Dropdown from '$lib/components/ui/dropdown/Dropdown.svelte';
   import {
     faEllipsisV,
@@ -256,8 +256,12 @@
           {m.settings_mcp_restartButton()}
         </button>
       {/if}
-      <!-- Toggle switch -->
-      <Switch checked={!server.disabled} onCheckedChange={() => onToggle(server.name)} size="sm" />
+      <Toggle
+        pressed={!server.disabled}
+        onChange={() => onToggle(server.name)}
+        size="xs"
+        ariaLabel={matchedPreset ? matchedPreset.label : server.name}
+      />
 
       <!-- Actions dropdown -->
       <Dropdown

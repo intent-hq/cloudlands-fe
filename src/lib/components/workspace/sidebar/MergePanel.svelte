@@ -26,7 +26,7 @@
   import { selectSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
-  import Switch from '$lib/components/ui/switch/switch.svelte';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { toast } from '$lib/components/ui/toast';
@@ -372,19 +372,16 @@
         align="start"
         contentClass="w-[14rem]"
       >
-        <div class="flex items-center gap-1.5">
-          <Switch
-            id="squash-merge-github-toggle"
-            bind:checked={mergeOptions.squash}
-            disabled={mergeOptions.mergingPR}
-            size="sm"
-          />
-          <label
-            for="squash-merge-github-toggle"
-            class="text-xs text-subtle cursor-pointer select-none"
-          >
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs text-subtle">
             {m.workspace_mergePanel_squashCommits_label()}
-          </label>
+          </span>
+          <Toggle
+            bind:pressed={mergeOptions.squash}
+            disabled={mergeOptions.mergingPR}
+            size="xs"
+            ariaLabel={m.workspace_mergePanel_squashCommits_label()}
+          />
         </div>
       </Tooltip>
     {/if}
@@ -498,16 +495,16 @@
         align="start"
         contentClass="w-[14rem]"
       >
-        <div class="flex items-center gap-1.5">
-          <Switch
-            id="squash-merge-toggle"
-            bind:checked={mergeOptions.squash}
-            disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
-            size="sm"
-          />
-          <label for="squash-merge-toggle" class="text-xs text-subtle cursor-pointer select-none">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs text-subtle">
             {m.workspace_mergePanel_squashCommits_label()}
-          </label>
+          </span>
+          <Toggle
+            bind:pressed={mergeOptions.squash}
+            disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
+            size="xs"
+            ariaLabel={m.workspace_mergePanel_squashCommits_label()}
+          />
         </div>
       </Tooltip>
     {/if}
@@ -520,19 +517,16 @@
         align="start"
         contentClass="w-[14rem]"
       >
-        <div class="flex items-center gap-1.5">
-          <Switch
-            id="push-after-merge-toggle"
-            bind:checked={mergeOptions.pushAfter}
-            disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
-            size="sm"
-          />
-          <label
-            for="push-after-merge-toggle"
-            class="text-xs text-subtle cursor-pointer select-none"
-          >
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs text-subtle">
             {m.workspace_mergePanel_pushToRemote_label()}
-          </label>
+          </span>
+          <Toggle
+            bind:pressed={mergeOptions.pushAfter}
+            disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
+            size="xs"
+            ariaLabel={m.workspace_mergePanel_pushToRemote_label()}
+          />
         </div>
       </Tooltip>
     {/if}

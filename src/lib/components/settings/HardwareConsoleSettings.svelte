@@ -17,7 +17,6 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Select } from '$lib/components/ui/select';
   import Button from '$lib/components/ui/button/button.svelte';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { MACOS_INPUT_MONITORING_SETTINGS_URL } from '$shared/constants';
   import { formatNumber } from '$lib/i18n/format';
@@ -316,7 +315,6 @@
       <Toggle
         pressed={$enabled$}
         onChange={handleEnabledChange}
-        variant="indicator"
         size="xs"
         class="mb-auto"
         ariaLabel={m.settings_hardware_enable_label()}
@@ -481,17 +479,17 @@
       </p>
       <div class="flex flex-col gap-2">
         {#each cycleScopeFamilies as family (family.familyId)}
-          <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer w-fit">
-            <Checkbox
-              checked={$cycleScopes$[family.familyId] === 'all'}
-              onCheckedChange={(checked) => handleCycleScopeChange(family.familyId, checked)}
-              size="sm"
+          <div class="flex items-center justify-between gap-4">
+            <span class="text-sm text-foreground">{family.label}</span>
+            <Toggle
+              pressed={$cycleScopes$[family.familyId] === 'all'}
+              onChange={(pressed) => handleCycleScopeChange(family.familyId, pressed === true)}
+              size="xs"
               ariaLabel={m.settings_hardware_cycleScope_include_ariaLabel({
                 action: family.label,
               })}
             />
-            <span>{family.label}</span>
-          </label>
+          </div>
         {/each}
       </div>
     </section>

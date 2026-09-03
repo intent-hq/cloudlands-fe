@@ -5959,5 +5959,15 @@
   "workspace_agentsList_noSearchResults_label": "沒有符合搜尋條件的智慧體。",
   "workspace_contextPanel_noSearchResults_label": "沒有符合搜尋條件的內容。",
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜尋",
-  "layout_allCard_archived_label": "已歸檔"
+  "layout_allCard_archived_label": "已歸檔",
+  "debug_panel_creationAnimation_ariaLabel": "建立動畫",
+  "debug_panel_pageTransitions_ariaLabel": "頁面轉場",
+  "debug_panel_componentTransitions_ariaLabel": "元件轉場",
+  "debug_panel_performanceMetrics_ariaLabel": "效能指標",
+  "debug_panel_logStateChanges_ariaLabel": "記錄狀態變更",
+  "debug_panel_enableAutofocus_ariaLabel": "啟用自動對焦",
+  "debug_panel_branchCaching_ariaLabel": "分支快取",
+  "debug_panel_formPersistence_ariaLabel": "表單持久化",
+  "debug_panel_simulateSlowNetwork_ariaLabel": "模擬慢速網路",
+  "debug_panel_simulateErrors_ariaLabel": "模擬錯誤"
 }

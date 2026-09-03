@@ -66,7 +66,7 @@ describe('BackendSyncSettings', () => {
 
   it('disables the toggle before the state has loaded', () => {
     render(BackendSyncSettings);
-    const toggle = screen.getByRole('switch');
+    const toggle = screen.getByRole('button', { name: m.settings_backendSync_toggle_label() });
     expect(toggle.hasAttribute('disabled') || toggle.getAttribute('aria-disabled') === 'true').toBe(
       true,
     );
@@ -78,7 +78,7 @@ describe('BackendSyncSettings', () => {
     await waitFor(() => {
       expect(screen.getByText(m.settings_backendSync_unsupported_description())).toBeTruthy();
     });
-    const toggle = screen.getByRole('switch');
+    const toggle = screen.getByRole('button', { name: m.settings_backendSync_toggle_label() });
     expect(toggle.hasAttribute('disabled') || toggle.getAttribute('aria-disabled') === 'true').toBe(
       true,
     );
@@ -88,7 +88,11 @@ describe('BackendSyncSettings', () => {
     mocks.syncState.value = ACTIVE;
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+      expect(
+        screen
+          .getByRole('button', { name: m.settings_backendSync_toggle_label() })
+          .getAttribute('aria-pressed'),
+      ).toBe('true');
     });
     expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
   });
@@ -140,7 +144,11 @@ describe('BackendSyncSettings', () => {
     mocks.syncState.value = { supported: true, enabled: false, status: { state: 'active' } };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+      expect(
+        screen
+          .getByRole('button', { name: m.settings_backendSync_toggle_label() })
+          .getAttribute('aria-pressed'),
+      ).toBe('false');
     });
     expect(screen.queryByText(m.settings_backendSync_status_active())).toBeNull();
   });
@@ -149,10 +157,16 @@ describe('BackendSyncSettings', () => {
     mocks.syncState.value = { supported: true, enabled: false, status: null };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByRole('switch').hasAttribute('disabled')).toBe(false);
+      expect(
+        screen
+          .getByRole('button', { name: m.settings_backendSync_toggle_label() })
+          .hasAttribute('disabled'),
+      ).toBe(false);
     });
 
-    await fireEvent.click(screen.getByRole('switch'));
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_backendSync_toggle_label() }),
+    );
     await waitFor(() => {
       const action = mocks.dispatched.find(
         (a) => a.type === 'connections/setKeychainSyncEnabledRequested',

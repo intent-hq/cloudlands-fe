@@ -3,14 +3,13 @@ import type { UiComponentFixture } from '../component-metadata';
 export const toggleFixtures = [
   {
     id: 'toggle-state-matrix',
-    title: 'Toggle states',
+    title: 'Compact Toggle states',
     states: [
-      'off',
-      'on',
-      'deselected',
-      'selected',
+      'unpressed',
+      'pressed',
       'disabled',
       'keyboard-focus',
+      'light',
       'dark',
       'compact',
       'reduced-motion',
@@ -20,9 +19,9 @@ export const toggleFixtures = [
     reducedMotion: true,
   },
   {
-    id: 'toggle-compatibility-modes',
-    title: 'Deprecated Toggle modes',
-    states: ['group', 'switch', 'indicator'],
+    id: 'toggle-group-compatibility-mode',
+    title: 'Deprecated Toggle group mode',
+    states: ['group'],
     viewport: 'both',
   },
 ] satisfies UiComponentFixture[];

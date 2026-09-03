@@ -15,7 +15,7 @@
 
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { Switch } from '$lib/components/ui/switch';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { store as appStore } from '$store/renderer/store';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
   import {
@@ -25,7 +25,7 @@
 
   const syncState$ = selectKeychainSyncState();
 
-  // Bound to the Switch rather than derived: the Switch owns its own checked
+  // Bound to the Toggle rather than derived: the Toggle owns its own pressed
   // state once clicked, so a rejected write must be pushed back into it
   // explicitly or the toggle would sit in a state main never accepted.
   let toggleOn = $state(false);
@@ -106,10 +106,11 @@
     {/if}
   </div>
   <div class="shrink-0">
-    <Switch
-      bind:checked={toggleOn}
-      onCheckedChange={handleToggle}
+    <Toggle
+      bind:pressed={toggleOn}
+      onChange={(pressed) => handleToggle(pressed === true)}
       disabled={!supported || !loaded || writing}
+      size="xs"
       ariaLabel={m.settings_backendSync_toggle_label()}
     />
   </div>

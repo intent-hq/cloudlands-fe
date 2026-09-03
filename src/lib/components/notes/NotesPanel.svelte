@@ -2,6 +2,7 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
 
   import { Skeleton } from '../ui/skeleton';
+  import { Toggle } from '../ui/toggle';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListEmpty, ListItem } from '../ui/list';
 
@@ -94,6 +95,7 @@
           {@const hasTasks = taskStats.total > 0}
           {#if hasTasks}
             {@const isAllComplete = taskStats.completed === taskStats.total}
+            {@const noteTitle = getNoteTitle(note)}
             {@const size = 14}
             {@const strokeWidth = 2.5}
             {@const radius = (size - strokeWidth) / 2}
@@ -102,31 +104,51 @@
             {@const inProgressPctNorm = taskStats.inProgress / taskStats.total}
             {@const completedOffset = circumference * (1 - completedPctNorm)}
             {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
-            <ListItem
-              active={selectedNoteId === note.id}
-              iconClass="text-ghost"
-              title={getNoteTitle(note)}
-              onclick={() => onOpenNote(note.id)}
-              size="sm"
-              indent={depth}
-            >
-              {#snippet iconSnippet()}
-                {#if isAllComplete}
-                  <!-- All tasks complete - show checked checkbox -->
-                  <div
-                    title={m.workspace_notesPanel_taskProgress_tooltip({
-                      completed: taskStats.completed,
-                      total: taskStats.total,
-                    })}
-                  >
-                    <input
-                      type="checkbox"
-                      checked
-                      disabled
-                      class="w-3.5 h-3.5 rounded border border-muted-foreground/40 accent-emerald-500 pointer-events-none"
-                    />
-                  </div>
-                {:else}
+            {#if isAllComplete}
+              <div
+                class="relative"
+                title={m.workspace_notesPanel_taskProgress_tooltip({
+                  completed: taskStats.completed,
+                  total: taskStats.total,
+                })}
+              >
+                <ListItem
+                  active={selectedNoteId === note.id}
+                  iconClass="text-ghost"
+                  title={noteTitle}
+                  aria-label={noteTitle}
+                  onclick={() => onOpenNote(note.id)}
+                  size="sm"
+                  indent={depth}
+                >
+                  {#snippet iconSnippet()}
+                    <span aria-hidden="true" class="block h-(--control-height-small) w-4"></span>
+                  {/snippet}
+                </ListItem>
+                <div
+                  class="pointer-events-none absolute top-1/2 -translate-y-1/2"
+                  style={`left: ${depth * 22 + 8}px;`}
+                >
+                  <!-- All tasks complete - show a disabled status toggle outside the row button -->
+                  <Toggle
+                    pressed
+                    disabled
+                    size="xs"
+                    ariaLabel={m.workspace_statusIcon_complete_label()}
+                  />
+                </div>
+              </div>
+            {:else}
+              <ListItem
+                active={selectedNoteId === note.id}
+                iconClass="text-ghost"
+                title={noteTitle}
+                aria-label={noteTitle}
+                onclick={() => onOpenNote(note.id)}
+                size="sm"
+                indent={depth}
+              >
+                {#snippet iconSnippet()}
                   <!-- Show progress ring -->
                   <div
                     title={taskStats.inProgress > 0
@@ -185,9 +207,9 @@
                       {/if}
                     </svg>
                   </div>
-                {/if}
-              {/snippet}
-            </ListItem>
+                {/snippet}
+              </ListItem>
+            {/if}
           {:else}
             <ListItem
               active={selectedNoteId === note.id}
