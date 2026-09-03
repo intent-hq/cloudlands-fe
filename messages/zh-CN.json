@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "分支名称已复制到剪贴板",
   "workspace_sidebarHeader_branchCopyFailed_error": "复制分支名称失败",
   "workspace_sidebarHeader_status_ariaLabel": "工作区状态",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "拉取请求（{count}）",
   "workspace_sidebar_openInBrowser_tooltip": "在浏览器中打开",
   "workspace_skills_title": "技能",
   "workspace_devScripts_actionFailed_error": "无法运行 {name}：{error}",

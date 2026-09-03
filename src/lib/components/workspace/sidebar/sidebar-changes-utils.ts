@@ -4,7 +4,7 @@
  */
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
-import type { PullRequestInfo } from '$shared/types';
+import type { PullRequestInfo, Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type {
@@ -359,6 +359,31 @@ export function mapWorkspacePRs(
     }];
   }
   return [];
+}
+
+/**
+ * The still-supported legacy `Workspace.prNumber`/`prUrl` fields as a
+ * `PullRequestInfo`, or null when either is absent. Mirrors the fallback
+ * `selectWorkspaceActivePrSummary` applies, so a workspace hydrated with only
+ * the legacy fields keeps a route to its PR now that the Changes launcher
+ * dropdown is the sidebar's PR surface. Callers pass the result as the
+ * `activePR` fallback; `prStatus` is honored when the daemon sent it and the
+ * row otherwise reads as open, the only state the legacy link ever recorded.
+ */
+export function legacyWorkspacePullRequest(
+  workspace: Pick<Workspace, 'prNumber' | 'prUrl' | 'prStatus' | 'updatedAt'>,
+): PullRequestInfo | null {
+  const { prNumber, prUrl } = workspace;
+  if (prNumber === undefined || prNumber === null || !prUrl) return null;
+  return {
+    id: `legacy-pr-${prNumber}`, // i18n-ignore (synthetic identifier)
+    number: prNumber,
+    url: prUrl,
+    title: '',
+    status: workspace.prStatus ?? PullRequestStatus.Open,
+    createdAt: workspace.updatedAt,
+    updatedAt: workspace.updatedAt,
+  };
 }
 
 /** Display status for a monitored PR row (PROTOCOL §6.9): active monitors

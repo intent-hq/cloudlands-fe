@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "Nombre de la rama copiado al portapapeles",
   "workspace_sidebarHeader_branchCopyFailed_error": "Error al copiar el nombre de la rama",
   "workspace_sidebarHeader_status_ariaLabel": "Estado del espacio de trabajo",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "Pull requests ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "Abrir en el navegador",
   "workspace_skills_title": "Habilidades",
   "workspace_devScripts_actionFailed_error": "No se pudo ejecutar {name}: {error}",

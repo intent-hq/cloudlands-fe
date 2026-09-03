@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "Nom de branche copié dans le presse-papiers",
   "workspace_sidebarHeader_branchCopyFailed_error": "Impossible de copier le nom de branche",
   "workspace_sidebarHeader_status_ariaLabel": "Statut de l'espace de travail",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "Pull requests ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "Ouvrir dans le navigateur",
   "workspace_skills_title": "Compétences",
   "workspace_devScripts_actionFailed_error": "Impossible d’exécuter {name} : {error}",

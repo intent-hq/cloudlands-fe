@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "Branch-Name in die Zwischenablage kopiert",
   "workspace_sidebarHeader_branchCopyFailed_error": "Branch-Name konnte nicht kopiert werden",
   "workspace_sidebarHeader_status_ariaLabel": "Arbeitsbereich-Status",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "Pull Requests ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "Im Browser öffnen",
   "workspace_skills_title": "Skills",
   "workspace_devScripts_actionFailed_error": "{name} konnte nicht ausgeführt werden: {error}",
