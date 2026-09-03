@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
     env:
-      REPAIR_MODE: repair
+      REPAIR_MODE: inspect
       TARGET_SLOTS: 'tinybox-2 tinybox-5 tinybox-6'
     steps:
       - name: Inspect / repair runner externals
@@ -124,3 +124,32 @@ jobs:
             printf "$summary\n"
           } | tee -a "$GITHUB_STEP_SUMMARY"
           [ "$failures" -eq 0 ] || { echo "::error::$failures repair step(s) failed"; exit 1; }
+
+  # Same Setup pnpm step as intent-pr.yml, sprayed across the slots; each leg
+  # holds its slot briefly so the queue spreads over tinybox-2/-5/-6 too.
+  verify-setup-pnpm:
+    name: verify ${{ matrix.leg }}
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, tinybox]
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Report
+        shell: bash
+        run: |
+          own_root="$(cd "$RUNNER_TOOL_CACHE/../.." && pwd)"
+          ext="$(realpath "$own_root/externals/node24")"
+          echo "runner=$RUNNER_NAME externals=$ext node=$("$ext/bin/node" -v) npm=$("$ext/bin/node" "$ext/bin/npm" -v) pnpm=$(pnpm -v)"
+          echo "- $RUNNER_NAME: Setup pnpm OK, pnpm $(pnpm -v), externals npm $("$ext/bin/node" "$ext/bin/npm" -v)" >> "$GITHUB_STEP_SUMMARY"
+          sleep 45
