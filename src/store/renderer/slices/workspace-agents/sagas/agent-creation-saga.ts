@@ -31,6 +31,7 @@ import {
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
   selectExplicitModel,
+  selectExplicitReasoningEffort,
   selectSpecialists,
 } from '../../specialists/specialists-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -176,6 +177,7 @@ function* createSpecialistAgent(
   let model: string | undefined = yield* selectSelectedModel.effect();
   let provider: string = yield* selectActiveProviderId.effect();
   let behaviorPrompt: string | undefined;
+  let reasoningEffort: string | undefined;
   let baseName = 'Agent';
   if (specialistId) {
     const specialists = yield* selectSpecialists.effect();
@@ -191,6 +193,7 @@ function* createSpecialistAgent(
       model = pinned?.modelId || undefined;
       provider = pinned?.providerId || provider;
       behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
+      reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
     }
   }
   const name = generateSpecialistAgentName(
@@ -206,6 +209,7 @@ function* createSpecialistAgent(
       provider,
       agentType: createAgentTypeId('chat'),
       behaviorPrompt,
+      reasoningEffort,
       source: 'specialist-picker',
       metadata: specialistId ? { specialist: specialistId } : undefined,
     });
@@ -256,12 +260,16 @@ function* runAgentForNote(
   const specialistId = configured?.id ?? 'implementor';
   let model = yield* selectExplicitModel.effect(specialistId);
   let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
+  let reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
   if (!behaviorPrompt) {
     const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
     if (specialist) {
       behaviorPrompt = specialist.defaultBehaviorPrompt;
       if (!model) {
         model = specialist.defaultModel ?? '';
+      }
+      if (!reasoningEffort) {
+        reasoningEffort = specialist.reasoningEffort;
       }
     }
   }
@@ -293,6 +301,7 @@ function* runAgentForNote(
       provider,
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt,
+      reasoningEffort,
       source: 'task-metadata-bar-run',
       metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),

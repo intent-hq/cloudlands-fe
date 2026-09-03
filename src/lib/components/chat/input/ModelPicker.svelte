@@ -699,14 +699,41 @@
     }
   });
 
+  // Resolve the provider owning a picked row. Catalog groups carry bare ids
+  // for every provider, so a bare pick is attributed to the loaded group that
+  // contains the row rather than blanket-attributed to the default provider.
+  // A legacy compound prefix (persisted ids) still wins outright; when several
+  // groups own the same bare id — or no loaded group owns it — the default
+  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
+    const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
+    if (legacyProviderId) return { providerId: legacyProviderId, modelId };
+    const matchesIn = (rowProviderId: string, options: { value: string }[] | undefined) =>
+      Boolean(
+        options?.some(
+          (opt) =>
+            normalizeModelIdForMatch(opt.value, rowProviderId) ===
+            normalizeModelIdForMatch(modelId, rowProviderId),
+        ),
+      );
+    const defaultNormalized = normalizeProviderId($defaultProviderId$);
+    if (defaultNormalized && matchesIn(defaultNormalized, allProviderModels[defaultNormalized])) {
+      return { providerId: defaultNormalized, modelId };
+    }
+    for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
+      if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
+    }
+    return { providerId: $defaultProviderId$, modelId };
+  }
+
   async function applyBackendModelUpdate(model: string) {
     if (agentId && workspaceId) {
       try {
-        // Send the picked model's provider explicitly: the parsed compound
-        // prefix, or the effective default provider for bare ids. Without it
-        // the daemon resolves a bare id against the session's current
-        // provider, rejecting cross-provider picks of default-provider models.
-        const pickedProviderId = parseCompoundModelId(model).providerId || undefined;
+        // Send the picked model's provider explicitly: the owning catalog
+        // group's provider (legacy compound prefix wins). Without it the
+        // daemon resolves a bare id against the session's current provider,
+        // rejecting cross-provider picks.
+        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
         const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
@@ -757,10 +784,10 @@
       return;
     }
 
-    // Resolve the pick's triple legs once at the emit boundary: the compound
-    // prefix for legacy non-default-provider rows, else the effective default
-    // provider (bare rows only exist for it).
-    const { providerId: pickedProviderId, modelId: pickedModelId } = parseCompoundModelId(model);
+    // Resolve the pick's triple legs once at the emit boundary: the legacy
+    // compound prefix when present, else the provider whose loaded catalog
+    // group owns the picked bare row.
+    const { providerId: pickedProviderId, modelId: pickedModelId } = resolvePickedTriple(model);
     onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
     await tick();

@@ -222,6 +222,7 @@ describe('agentCreationSaga', () => {
       description: 'Pinned to Claude Opus',
       codingAgent: 'claude-code',
       model: 'opus-4-1',
+      reasoningEffort: 'high',
       behaviorPrompt: 'Review changes.',
       filePath: '/tmp/claude-reviewer.md',
       source: 'user',
@@ -235,6 +236,7 @@ describe('agentCreationSaga', () => {
       expect.objectContaining({
         provider: 'claude-code',
         model: 'opus-4-1',
+        reasoningEffort: 'high',
       }),
     );
     task.cancel();
@@ -424,6 +426,35 @@ describe('agentCreationSaga', () => {
         provider: 'augment',
         model: undefined,
         metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'verifier' },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('passes a pinned specialist reasoning effort through the task-run path', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'claude-reviewer',
+      name: 'Claude Reviewer',
+      description: 'Pinned to Claude with an effort level',
+      codingAgent: 'claude-code',
+      model: 'opus-4-1',
+      reasoningEffort: 'low',
+      behaviorPrompt: 'Review changes.',
+      filePath: '/tmp/claude-reviewer.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('claude-reviewer', [pinned]));
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        model: 'opus-4-1',
+        reasoningEffort: 'low',
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'claude-reviewer' },
       }),
     );
     task.cancel();

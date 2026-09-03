@@ -157,14 +157,6 @@ export const selectProviderModels = store.createSelector((state): Record<string,
 });
 
 /**
- * Effective default provider id mirrored by the model slice for model-id
- * normalization ('' before hydration). See `ModelState.defaultProviderId`.
- */
-export const selectDefaultProviderId = store.createSelector((state): string => {
-  return state.model.defaultProviderId;
-});
-
-/**
  * Default reasoning-effort level paired with the default-model setting
  * (`model.defaultReasoningEffort`), or '' when unset.
  */
