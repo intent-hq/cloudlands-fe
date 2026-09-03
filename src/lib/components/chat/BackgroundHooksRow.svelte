@@ -18,8 +18,13 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faCode, faPlay, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import HourglassMedium from 'phosphor-svelte/lib/HourglassMedium';
+  import {
+    faChevronDown,
+    faCode,
+    faHourglass,
+    faPlay,
+    faXmark,
+  } from '@fortawesome/free-solid-svg-icons';
   import { safeSlide } from '$lib/utils/animations';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -231,12 +236,7 @@
               data-testid="background-hook-icon"
               aria-hidden="true"
             >
-              <HourglassMedium
-                size={14}
-                weight="regular"
-                class="h-3.5 w-3.5"
-                data-icon="hourglass-medium"
-              />
+              <Fa icon={faHourglass} size={14} class="h-3.5 w-3.5" />
             </span>
             <span
               id={titleId}

@@ -106,9 +106,9 @@ describe('BackgroundHooksRow', () => {
     expect(document.getElementById('background-hook-title-hook-1')?.className).toContain(
       'font-medium',
     );
-    expect(icon?.getAttribute('data-icon')).toBe('hourglass-medium');
-    expect(icon?.getAttribute('width')).toBe('14');
-    expect(icon?.getAttribute('height')).toBe('14');
+    expect(icon?.getAttribute('data-icon')).toBe('hourglass');
+    expect(icon?.getAttribute('width')).toBe('14px');
+    expect(icon?.getAttribute('height')).toBe('14px');
     const title = screen.getByTestId('background-hook-title');
     expect(title.className).toContain('text-muted-foreground');
     expect(title.className).not.toContain('text-foreground');
