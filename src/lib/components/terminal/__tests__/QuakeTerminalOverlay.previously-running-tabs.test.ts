@@ -239,6 +239,33 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     expect(container.querySelector('[data-dismiss-script-tab]')).toBeNull();
   });
 
+  it('labels bottom-tab status without relying on color', async () => {
+    seedScripts([
+      makeScript('live-1', { status: 'running', pid: 42 }),
+      makeScript('restart-1', { status: 'restarting', pid: 43 }),
+      makeScript('success-1', { status: 'exited', exitCode: 0, previouslyRunning: true }),
+      makeScript('failed-1', { status: 'exited', exitCode: 1, previouslyRunning: true }),
+      makeScript('stopped-1', { status: 'exited', exitCode: 143, previouslyRunning: true }),
+      makeScript('idle-1', { status: 'idle', previouslyRunning: true }),
+    ]);
+
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+
+    await waitFor(() => expect(scriptTabs(container)).toHaveLength(6));
+    const labels = Object.fromEntries(
+      scriptTabs(container).map((tab) => [
+        tab.textContent?.trim(),
+        tab.querySelector('[role="img"]')?.getAttribute('aria-label'),
+      ]),
+    );
+    expect(labels['script-live-1']).toBe('Running');
+    expect(labels['script-restart-1']).toBe('Restarting');
+    expect(labels['script-success-1']).toBe('Exited (0)');
+    expect(labels['script-failed-1']).toBe('Error (1)');
+    expect(labels['script-stopped-1']).toBe('Stopped (signal 15)');
+    expect(labels['script-idle-1']).toBe('Idle');
+  });
+
   it('dismissing a previously-running tab calls script.stop and refetches the list', async () => {
     seedScripts([makeScript('prev-1', { previouslyRunning: true })]);
 

@@ -6,12 +6,8 @@
   import SettingsCard from './cards/SettingsCard.svelte';
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
-  import {
-    faXmark,
-    faEllipsisVertical,
-    faMagnifyingGlass,
-    faPlus,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faMagnifyingGlass, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import * as Menu from '$lib/components/ui/menu';
 
@@ -19,6 +15,7 @@
     selectPanelItem,
     selectPanelWidth,
     selectCombinedPanelSplit,
+    selectIsChiefCollapsed,
     selectOnboardingActive,
     selectAllSpacesViewMode,
     selectShowArchivedWorkspaces,
@@ -27,6 +24,7 @@
     closePanel,
     setPanelWidth as setPanelWidthAction,
     setCombinedPanelSplit as setCombinedPanelSplitAction,
+    toggleChiefCollapsed,
     setAllSpacesViewMode,
     setShowArchivedWorkspaces,
     setShowCreateModal,
@@ -41,6 +39,7 @@
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
   const combinedPanelSplit$ = selectCombinedPanelSplit();
+  const isChiefCollapsed$ = selectIsChiefCollapsed();
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
@@ -289,15 +288,17 @@
           data-combined-panel-split
         >
           <div
-            class="combined-panel-spaces min-h-0 shrink-0 overflow-hidden flex flex-col"
-            style="height: {liveSplit * 100}%;"
+            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {$isChiefCollapsed$
+              ? 'flex-1'
+              : 'shrink-0'}"
+            style:height={$isChiefCollapsed$ ? undefined : `${liveSplit * 100}%`}
             data-combined-panel-spaces
           >
             <!-- Combined workspace panel: workspace list stacked above the Chief chat
                with a draggable horizontal divider between them. -->
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
-                <h2 class="panel-title text-ui font-semibold text-foreground truncate">
+                <h2 class="panel-title text-ui font-medium text-foreground truncate">
                   {m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
@@ -334,7 +335,7 @@
                           aria-expanded={spacesOptionsOpen}
                           data-spaces-options-trigger
                         >
-                          <Fa icon={faEllipsisVertical} size="xs" />
+                          <KebabIcon class="size-3.5" />
                         </button>
                       </Tooltip>
                     {/snippet}
@@ -400,31 +401,40 @@
             </div>
           </div>
 
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="app-resize-handle combined-panel-divider relative shrink-0"
-            data-resize-axis="y"
-            data-resizing={isSplitResizing}
-            data-testid="split-resize-handle"
-            onmousedown={handleSplitResizeStart}
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
-          >
+          {#if !$isChiefCollapsed$}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <div
-              class="pointer-events-none h-px w-full bg-border"
-              data-combined-panel-divider-border
-            ></div>
-          </div>
+              class="app-resize-handle combined-panel-divider relative shrink-0"
+              data-resize-axis="y"
+              data-resizing={isSplitResizing}
+              data-testid="split-resize-handle"
+              onmousedown={handleSplitResizeStart}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
+            >
+              <div
+                class="pointer-events-none h-px w-full bg-border"
+                data-combined-panel-divider-border
+              ></div>
+            </div>
+          {/if}
 
           <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
                lets the Chief composer's streaming aurora bleed across the app
                frame's pl-2/pb-2 window inset to the window edges. -->
           <div
-            class="min-h-0 flex-1 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col"
+            class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
+              ? 'shrink-0'
+              : 'flex-1'}"
             data-combined-panel-chief
           >
-            <ChiefCard expanded={true} embedded={true} />
+            <ChiefCard
+              expanded={true}
+              embedded={true}
+              collapsed={$isChiefCollapsed$}
+              ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}
+            />
           </div>
         </div>
       {:else}

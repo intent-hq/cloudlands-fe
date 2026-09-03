@@ -41,7 +41,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         await expect(groupSummary).toBeVisible();
         const expandedGeometryGroups = component.locator(
-          '[data-testid="expanded-group-prose"], [data-testid="expanded-group-operational-rows"]',
+          '[data-testid="expanded-group-prose"], [data-testid="expanded-group-operational-rows"], [data-testid="streaming-expanded-group-operational-rows"]',
         );
         for (const disclosure of await expandedGeometryGroups
           .getByTestId('response-group-disclosure')
@@ -230,6 +230,44 @@ for (const theme of ['light', 'dark'] as const) {
         expect(toolBox.x).toBeCloseTo(laneBox.x, 1);
         expect(toolBox.x + toolBox.width).toBeCloseTo(laneBox.x + laneBox.width, 1);
 
+        const topLevelToolGeometry = await baseline
+          .locator('[data-testid="full-width-tool"] [data-operational-disclosure-row]')
+          .evaluate((element) => {
+            const row = element.getBoundingClientRect();
+            const icon = element
+              .querySelector('[data-operational-leading]')!
+              .getBoundingClientRect();
+            return { left: row.left, right: row.right, iconLeft: icon.left };
+          });
+        for (const mode of ['static', 'streaming']) {
+          const inlineGroup = component.locator(`[data-testid="headerless-inline-${mode}"]`);
+          await expect(inlineGroup.locator('[data-testid="response-group"]')).toHaveCount(0);
+          const inlineProse = inlineGroup.locator('[data-assistant-prose]');
+          await expect(inlineProse).toHaveCount(1);
+          const inlineProseX = await inlineProse
+            .locator(':scope > *')
+            .first()
+            .evaluate((element) => element.getBoundingClientRect().left);
+          expect(inlineProseX).toBeCloseTo(groupX, 1);
+
+          const inlineRows = inlineGroup.locator('[data-operational-disclosure-row]');
+          await expect(inlineRows).toHaveCount(2);
+          const inlineGeometry = await inlineRows.evaluateAll((elements) =>
+            elements.map((element) => {
+              const row = element.getBoundingClientRect();
+              const icon = element
+                .querySelector('[data-operational-leading]')!
+                .getBoundingClientRect();
+              return { left: row.left, right: row.right, iconLeft: icon.left };
+            }),
+          );
+          for (const geometry of inlineGeometry) {
+            expect(geometry.left).toBeCloseTo(topLevelToolGeometry.left, 1);
+            expect(geometry.right).toBeCloseTo(topLevelToolGeometry.right, 1);
+            expect(geometry.iconLeft).toBeCloseTo(topLevelToolGeometry.iconLeft, 1);
+          }
+        }
+
         await groupButton.click();
         const groupDetails = component.locator(
           '[data-testid="group-adjacency"] [data-operational-expanded-content]',
@@ -328,32 +366,37 @@ for (const theme of ['light', 'dark'] as const) {
         ]);
         expect(groupProseBox!.y - (groupRowBox!.y + groupRowBox!.height)).toBeCloseTo(16 * zoom, 1);
 
-        const nestedGroup = component.locator('[data-testid="expanded-group-operational-rows"]');
-        const nestedGroupDisclosure = nestedGroup.locator(
-          '[data-testid="response-group-disclosure"]',
-        );
-        await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
-        const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
-        const nestedRows = nestedGroup.locator('[data-response-group-child]');
-        await expect(nestedRows).toHaveCount(2);
-        const nestedGeometry = await nestedRows.evaluateAll((elements) =>
-          elements.map((element) => {
-            const box = element.getBoundingClientRect();
-            const parentBox = element.parentElement!.getBoundingClientRect();
-            const style = getComputedStyle(element);
-            return {
-              inset: box.left - parentBox.left,
-              marginLeft: style.marginLeft,
-              rightEdge: box.right,
-              parentRightEdge: parentBox.right,
-            };
-          }),
-        );
-        await expect(nestedGroupContent).toBeVisible();
-        for (const row of nestedGeometry) {
-          expect(row.inset).toBeCloseTo(8 * zoom, 1);
-          expect(row.marginLeft).toBe('8px');
-          expect(row.rightEdge).toBeCloseTo(row.parentRightEdge, 1);
+        for (const fixtureId of [
+          'expanded-group-operational-rows',
+          'streaming-expanded-group-operational-rows',
+        ]) {
+          const nestedGroup = component.locator(`[data-testid="${fixtureId}"]`);
+          const nestedGroupDisclosure = nestedGroup.locator(
+            '[data-testid="response-group-disclosure"]',
+          );
+          await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
+          const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
+          const nestedRows = nestedGroup.locator('[data-response-group-child]');
+          await expect(nestedRows).toHaveCount(2);
+          const nestedGeometry = await nestedRows.evaluateAll((elements) =>
+            elements.map((element) => {
+              const box = element.getBoundingClientRect();
+              const parentBox = element.parentElement!.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                inset: box.left - parentBox.left,
+                marginLeft: style.marginLeft,
+                rightEdge: box.right,
+                parentRightEdge: parentBox.right,
+              };
+            }),
+          );
+          await expect(nestedGroupContent).toBeVisible();
+          for (const row of nestedGeometry) {
+            expect(row.inset).toBeCloseTo(8 * zoom, 1);
+            expect(row.marginLeft).toBe('8px');
+            expect(row.rightEdge).toBeCloseTo(row.parentRightEdge, 1);
+          }
         }
 
         for (const mode of ['static', 'streaming']) {

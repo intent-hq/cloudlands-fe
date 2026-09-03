@@ -15,10 +15,14 @@ interface ChatSearchBlock {
   text: string;
 }
 import {
-  getResponseGroupCurrentChildIndex,
   normalizeResponseGroups,
   shouldRenderResponseGroupInline,
 } from './response-group-blocks';
+import {
+  classifyToolResults,
+  getStandaloneToolResultPresentation,
+  isStandaloneToolResult,
+} from './tool-result-pairing';
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -57,6 +61,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
     !!message.isStreaming,
   );
+  const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
     const cleaned = parseSuggestedPrompts(text).cleanedContent;
@@ -70,38 +75,66 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       addText(block.text || block.content || '', path, []);
       return;
     }
+    if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
+      addText(getStandaloneToolResultPresentation(block).searchableText, path, []);
+      return;
+    }
     if (block.type !== 'content_group') return;
     if (block.isStreaming) {
-      const currentChildIndex = getResponseGroupCurrentChildIndex(block);
-      const currentBlock = block.children[currentChildIndex];
-      if (currentBlock) {
-        addText(
-          getContentBlockText(currentBlock),
-          chatSearchBlockPath(blockIndex, currentChildIndex),
-          [],
-        );
-      }
+      block.children.forEach((child, childIndex) => {
+        if (
+          child.type === 'tool_result' &&
+          isStandaloneToolResult(toolResultClassification, child)
+        ) {
+          addText(
+            getStandaloneToolResultPresentation(child).searchableText,
+            chatSearchBlockPath(blockIndex, childIndex),
+            [`group:${path}`],
+          );
+          return;
+        }
+        if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
+          addText(
+            child.text || child.content || '',
+            chatSearchBlockPath(blockIndex, childIndex),
+            [],
+          );
+        }
+      });
       return;
     }
     if (block.isReasoningPhase) {
       const rendersInline = shouldRenderResponseGroupInline(block);
-      if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
       const disclosurePath = rendersInline ? [] : [`group:${path}`];
       block.children.forEach((child, childIndex) => {
-        if (child.type === 'tool_result') return;
-        addText(
-          getContentBlockText(child),
-          chatSearchBlockPath(blockIndex, childIndex),
-          disclosurePath,
-        );
+        const childPath = chatSearchBlockPath(blockIndex, childIndex);
+        if (child.type === 'tool_result') {
+          if (isStandaloneToolResult(toolResultClassification, child)) {
+            addText(
+              getStandaloneToolResultPresentation(child).searchableText,
+              childPath,
+              disclosurePath,
+            );
+          }
+          return;
+        }
+        if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
+        addText(getContentBlockText(child), childPath, disclosurePath);
       });
       return;
     }
     block.children.forEach((child, childIndex) => {
-      if (child.type !== 'text') return;
-      addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [
-        `group:${path}`,
-      ]);
+      const childPath = chatSearchBlockPath(blockIndex, childIndex);
+      if (child.type === 'text') {
+        addText(child.text || child.content || '', childPath, [`group:${path}`]);
+      } else if (
+        child.type === 'tool_result' &&
+        isStandaloneToolResult(toolResultClassification, child)
+      ) {
+        addText(getStandaloneToolResultPresentation(child).searchableText, childPath, [
+          `group:${path}`,
+        ]);
+      }
     });
   });
   return output;

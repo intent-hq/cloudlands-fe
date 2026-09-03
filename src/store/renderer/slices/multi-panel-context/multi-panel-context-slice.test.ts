@@ -188,6 +188,23 @@ describe("multiPanelContextReducer", () => {
       expect(selections).toHaveLength(1);
       expect(selections[0].text).toBe("new text");
     });
+
+    it("should return the same state for unchanged selection text despite timestamp changes", () => {
+      const stateWithSel = withSelections(makeSelection({ timestamp: 1000 }));
+      const state = multiPanelContextReducer(
+        stateWithSel,
+        setSelection({
+          panelId: "panel-1",
+          tabId: "tab-1",
+          sourceType: "file",
+          sourceLabel: "file.ts",
+          text: "selected text",
+          timestamp: 2000,
+        }),
+      );
+
+      expect(state).toBe(stateWithSel);
+    });
   });
 
   describe("clearSelection", () => {
@@ -195,6 +212,12 @@ describe("multiPanelContextReducer", () => {
       const stateWithSel = withSelections(makeSelection());
       const state = multiPanelContextReducer(stateWithSel, clearSelection("panel-1", "tab-1"));
       expect(getItems(state.selections)).toHaveLength(0);
+    });
+
+    it("should return the same state when the selection is already clear", () => {
+      expect(multiPanelContextReducer(initialState, clearSelection("panel-1", "tab-1"))).toBe(
+        initialState,
+      );
     });
   });
 

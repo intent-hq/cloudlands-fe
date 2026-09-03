@@ -213,13 +213,13 @@ function addBoundary(boundaries, file) {
   } else boundaries.add('renderer');
 }
 
-function command(id, label, args, expensive = false) {
+function command(id, label, args, lockKind = null) {
   return {
     id,
     label,
     executable: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
     args,
-    expensive,
+    lockKind,
   };
 }
 
@@ -290,7 +290,12 @@ export function createVerificationPlan(files, options = {}) {
     checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
   if (fullUnit)
     checks.push(
-      command('vitest-full', 'Vitest unit suite (safe fallback)', ['run', 'test:unit'], true),
+      command(
+        'vitest-full',
+        'Vitest unit suite (safe fallback)',
+        ['run', 'test:unit'],
+        'vitest-full',
+      ),
     );
   else {
     if (directUnit.length) {
@@ -341,7 +346,7 @@ export function createVerificationPlan(files, options = {}) {
       });
   if (fullCt)
     checks.push(
-      command('ct-full', 'Playwright component suite (safe fallback)', ['run', 'test:ct'], true),
+      command('ct-full', 'Playwright component suite (safe fallback)', ['run', 'test:ct'], 'ct'),
     );
   else if (relatedCt.length) {
     checks.push(
@@ -349,39 +354,42 @@ export function createVerificationPlan(files, options = {}) {
         'ct-related',
         'Playwright component tests (colocated imports)',
         ['run', 'test:ct', '--', ...relatedCt],
-        true,
+        'ct',
       ),
     );
   }
-  if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check'], true));
+  if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
   if (boundaries.has('renderer')) {
     checks.push(
-      command(
-        'tsc-renderer',
-        'TypeScript (renderer)',
-        ['exec', 'tsc', '-p', 'tsconfig.json', '--noEmit'],
-        true,
-      ),
+      command('tsc-renderer', 'TypeScript (renderer)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.json',
+        '--noEmit',
+      ]),
     );
   }
   if (boundaries.has('main')) {
     checks.push(
-      command(
-        'tsc-main',
-        'TypeScript (main)',
-        ['exec', 'tsc', '-p', 'tsconfig.main.json', '--noEmit'],
-        true,
-      ),
+      command('tsc-main', 'TypeScript (main)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.main.json',
+        '--noEmit',
+      ]),
     );
   }
   if (boundaries.has('preload')) {
     checks.push(
-      command(
-        'tsc-preload',
-        'TypeScript (preload)',
-        ['exec', 'tsc', '-p', 'tsconfig.preload.json', '--noEmit'],
-        true,
-      ),
+      command('tsc-preload', 'TypeScript (preload)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.preload.json',
+        '--noEmit',
+      ]),
     );
   }
   return { files, checks, fallbackReasons: [...new Set(fallbackReasons)].sort() };
@@ -397,9 +405,15 @@ function processIsAlive(pid) {
   }
 }
 
-export function defaultLockPath() {
+export function verificationLockKey(check, env = process.env) {
+  if (check.lockKind === 'vitest-full') return 'vitest-full';
+  if (check.lockKind === 'ct') return `ct-${env.CT_PORT ? Number(env.CT_PORT) : 3100}`;
+  return null;
+}
+
+export function defaultLockPath(lockKey) {
   const key = createHash('sha256')
-    .update('cloudlands-fe-expensive-verification')
+    .update(`cloudlands-fe-verification:${lockKey}`)
     .digest('hex')
     .slice(0, 12);
   return join(tmpdir(), `intent-${key}.lock`);
@@ -415,7 +429,10 @@ export async function acquireVerificationLock(options = {}) {
   while (true) {
     try {
       mkdirSync(lockPath);
-      writeFileSync(join(lockPath, 'owner.json'), JSON.stringify({ pid: process.pid, token }));
+      writeFileSync(
+        join(lockPath, 'owner.json'),
+        JSON.stringify({ pid: process.pid, cwd: options.cwd ?? process.cwd(), token }),
+      );
       return () => {
         try {
           const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
@@ -426,9 +443,10 @@ export async function acquireVerificationLock(options = {}) {
       };
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
-      let stale = false;
+      let stale;
+      let owner;
       try {
-        const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
+        owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
         stale = !processIsAlive(owner.pid);
       } catch {
         try {
@@ -443,9 +461,13 @@ export async function acquireVerificationLock(options = {}) {
         continue;
       }
       if (Date.now() - started >= timeoutMs) {
-        throw new Error(
-          `another expensive frontend verification is still active after ${timeoutMs}ms`,
-        );
+        const waitedMs = Date.now() - started;
+        const ownerDetails = owner
+          ? `owner pid ${owner.pid} cwd ${owner.cwd ?? '<unknown>'}`
+          : 'owner metadata unavailable';
+        throw new Error(`verification lock ${lockPath}: ${ownerDetails}; waited ${waitedMs}ms`, {
+          cause: error,
+        });
       }
       await new Promise((done) => setTimeout(done, pollMs));
     }
@@ -490,9 +512,39 @@ async function runCheck(check, root) {
   });
 }
 
-function lockTimeout(envValue) {
+export function lockTimeout(lockKey, envValue) {
   const value = Number(envValue);
-  return Number.isFinite(value) && value >= 0 ? Math.min(value, 300_000) : 30_000;
+  const defaultMs = lockKey.startsWith('ct-') ? 240_000 : 120_000;
+  return Number.isFinite(value) && value >= 0 ? Math.min(value, 300_000) : defaultMs;
+}
+
+export async function runVerificationPlan(plan, root, options = {}) {
+  const env = options.env ?? process.env;
+  const run = options.runCheck ?? runCheck;
+  const acquireLock = options.acquireLock ?? acquireVerificationLock;
+  const lockPath = options.lockPath ?? defaultLockPath;
+  const log = options.log ?? console.log;
+
+  for (const check of plan.checks) {
+    const lockKey = verificationLockKey(check, env);
+    if (!lockKey) {
+      await run(check, root);
+      continue;
+    }
+
+    const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
+    log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
+    const releaseLock = await acquireLock({
+      lockPath: lockPath(lockKey),
+      timeoutMs,
+      cwd: root,
+    });
+    try {
+      await run(check, root);
+    } finally {
+      releaseLock();
+    }
+  }
 }
 
 export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT) {
@@ -506,20 +558,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT) {
   printPlan(plan, args.dryRun);
   if (args.dryRun || plan.checks.length === 0) return;
 
-  let releaseLock;
-  try {
-    for (const check of plan.checks) {
-      if (check.expensive && !releaseLock) {
-        console.log('\n[verify:changed] waiting for the bounded expensive-check lock');
-        releaseLock = await acquireVerificationLock({
-          timeoutMs: lockTimeout(process.env.VERIFY_CHANGED_LOCK_TIMEOUT_MS),
-        });
-      }
-      await runCheck(check, root);
-    }
-  } finally {
-    releaseLock?.();
-  }
+  await runVerificationPlan(plan, root);
 }
 
 const isDirectRun =

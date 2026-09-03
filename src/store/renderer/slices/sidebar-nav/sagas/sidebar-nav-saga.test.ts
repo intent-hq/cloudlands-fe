@@ -17,6 +17,8 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 import {
   CARD_PINNED_KEY,
   CHIEF_ACTIVE_AGENT_ID_KEY,
+  CHIEF_COLLAPSED_KEY,
+  COLLAPSED_STATUS_GROUPS_KEY,
   COMBINED_PANEL_SPLIT_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
@@ -27,11 +29,13 @@ import {
   PANEL_WIDTH_KEY,
   PINNED_WORKSPACES_KEY,
   setAllSpacesViewMode,
+  setChiefCollapsed,
   setMultiSelectSidebarSelectedTabs,
   setPanelWidth,
   setWorkspaceNoteOrder,
   SHOW_ARCHIVED_KEY,
   toggleWorkspaceCollapsedNote,
+  toggleStatusGroupCollapsed,
   VIEW_MODE_KEY,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
   WORKSPACE_NOTE_ORDER_PREFIX,
@@ -48,6 +52,8 @@ const current = {
     pinnedWorkspaceIds: ['ws-1'],
     allSpacesViewMode: 'repo' as const,
     showArchivedWorkspaces: true,
+    collapsedStatusGroupIds: ['idle'],
+    isChiefCollapsed: true,
     panelWidth: 320,
     combinedPanelSplit: 0.4,
     panelItem: 'chief' as const,
@@ -79,6 +85,8 @@ describe('sidebarNavSaga', () => {
     storage.getJSON.mockImplementation((key: string) => {
       if (key === PINNED_WORKSPACES_KEY) return ['ws-1', 2, 'ws-2'];
       if (key === SHOW_ARCHIVED_KEY) return true;
+      if (key === COLLAPSED_STATUS_GROUPS_KEY) return ['idle', 2];
+      if (key === CHIEF_COLLAPSED_KEY) return true;
       if (key === PANEL_WIDTH_KEY) return 320;
       if (key === COMBINED_PANEL_SPLIT_KEY) return 0.4;
       if (key === PANEL_ITEM_KEY) return 'chief';
@@ -99,6 +107,8 @@ describe('sidebarNavSaga', () => {
         pinnedWorkspaceIds: ['ws-1', 'ws-2'],
         allSpacesViewMode: 'repo',
         showArchivedWorkspaces: true,
+        collapsedStatusGroupIds: ['idle'],
+        isChiefCollapsed: true,
         panelWidth: 320,
         combinedPanelSplit: 0.4,
         panelItem: 'chief',
@@ -182,6 +192,25 @@ describe('sidebarNavSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(task.isCancelled()).toBe(true);
+  });
+
+  it('persists status-group and Chief collapse preferences as global sidebar UI state', async () => {
+    storage.getItem.mockReturnValue(null);
+    storage.getJSON.mockReturnValue(undefined);
+    const channel = stdChannel();
+    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => current }, sidebarNavSaga);
+    await settle();
+
+    channel.put(toggleStatusGroupCollapsed('idle'));
+    channel.put(setChiefCollapsed(true));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [COLLAPSED_STATUS_GROUPS_KEY, ['idle']],
+      [CHIEF_COLLAPSED_KEY, true],
+    ]);
+    task.cancel();
+    await task.toPromise();
   });
 
   describe('multi-backend namespacing', () => {

@@ -29,6 +29,14 @@ import { Logger } from '$shared/logger';
 import { describeBackendUrl } from './backend-log-descriptor';
 import { resolveIntentdSocketPath } from './intentd-data-dir';
 import { toLocalEndpoint } from './intentd-pipe-name';
+import {
+  createTailcatTunnel,
+  createTunneledSocket,
+  resolveTailcatBinaryPath,
+  type TailcatSpawn,
+  type TailcatTunnel,
+} from './tailcat-tunnel';
+import { isTcAddress } from '$shared/tc-address';
 
 const raceLogger = new Logger('BackendConnection');
 
@@ -73,6 +81,16 @@ export interface BackendConnectionConfig {
    * presented cert against this pin; a mismatch fails with {@link PinMismatchError}.
    */
   fingerprint?: string;
+  /**
+   * tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3, the
+   * pairing URI `tc=` parameter / `system.status.tcAddress`). When present and
+   * the bundled tailcat client binary is available, the connect race gains a
+   * tunnel candidate alongside the direct host candidates: the same pinned
+   * `wss` transport dialed through a local tailcat forwarder (see
+   * `tailcat-tunnel.ts`), so remote daemons stay reachable when no direct
+   * host works. Fail-soft — a missing binary just skips the candidate.
+   */
+  tcAddress?: string;
 }
 
 /** Options for [[resolveBackendConfig]]. */
@@ -168,10 +186,16 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
   }
   if (config.transport === 'wss') {
     const hosts = candidateWssHosts(config);
-    if (hosts.length > 1) {
-      return raceWssSockets(config, hosts);
+    const attempts: RaceAttempt[] = hosts.map((host) => ({
+      host,
+      create: () => createWssSocket({ ...config, host }),
+    }));
+    const tunnelAttempt = tunnelRaceAttempt(config);
+    if (tunnelAttempt) attempts.push(tunnelAttempt);
+    if (attempts.length > 1) {
+      return raceDuplexSockets(attempts);
     }
-    return createWssSocket(config);
+    return attempts[0]?.create() ?? createWssSocket(config);
   }
   throw new Error(
     // i18n-ignore (developer-facing config error naming env vars; surfaces in logs, not UI)
@@ -194,7 +218,10 @@ export function describeBackendConfig(config: BackendConnectionConfig): string {
 
 /**
  * Distinct candidate hosts for a `wss` config: the primary `host` first, then
- * the `hosts` extras, trimmed and deduplicated in order.
+ * the `hosts` extras, trimmed and deduplicated in order. No loopback
+ * filtering here — pairing URIs and tests legitimately dial loopback; the
+ * legacy-record sanitize lives in the store's `candidateHosts`, which feeds
+ * synced records into this config.
  */
 export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   const seen = new Set<string>();
@@ -367,26 +394,69 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
   return duplex;
 }
 
-/** One racing attempt: a candidate host plus a factory for its socket. */
+/** How a race candidate reaches the daemon: a direct host dial or the tailcat tunnel. */
+export type ConnectedVia = 'direct' | 'tunnel';
+
+/**
+ * One racing attempt: a candidate host plus a factory for its socket. `via`
+ * marks the tunnel candidate explicitly (defaults to `'direct'`) so the
+ * winner classification never depends on the host label — a `wss` config can
+ * legitimately carry a direct host that happens to be named like
+ * {@link TUNNEL_RACE_HOST}.
+ */
 export interface RaceAttempt {
   host: string;
+  via?: ConnectedVia;
   create: () => Duplex;
+}
+
+/**
+ * Payload of the race facade's `'connect'` event: the candidate host that won
+ * ({@link TUNNEL_RACE_HOST} when the tunnel candidate won) and how it reached
+ * the daemon. Single-host sockets emit a bare `'connect'`, so consumers must
+ * treat the payload as optional.
+ */
+export interface RaceConnectInfo {
+  host: string;
+  via: ConnectedVia;
 }
 
 /** Overall bound on the multi-host race; matches the capture timeout. */
 const RACE_TIMEOUT_MS = 10_000;
 
+/** Pseudo-host label for the tunnel candidate in race logs/events. */
+export const TUNNEL_RACE_HOST = 'tailcat-tunnel';
+
 /**
- * Race the pinned `wss` transport across all candidate hosts (#1746),
- * mirroring iOS `ConnectionManager.raceHosts`: one socket per candidate, the
- * first to complete the pin-verified connect wins and the losers are torn
- * down. Returns a facade `Duplex` the JSON-RPC client drives exactly like a
- * single-host socket.
+ * Build the tunnel race attempt for a `wss` config carrying a `tcAddress`,
+ * or `null` when the tunnel cannot be dialed (no tc address, or no bundled
+ * tailcat binary — fail-soft, the direct candidates still race). The attempt
+ * dials the SAME pinned wss transport through a local tailcat forwarder
+ * (`tailcat-tunnel.ts`), so pin + token verification are identical to the
+ * direct candidates; only the TCP path differs. The pin is fingerprint-based
+ * (`servername` is not used for verification), so the loopback hop does not
+ * weaken it. Exported for unit tests.
  */
-function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duplex {
-  return raceDuplexSockets(
-    hosts.map((host) => ({ host, create: () => createWssSocket({ ...config, host }) })),
-  );
+export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt | null {
+  const { tcAddress, port } = config;
+  if (!tcAddress || !port) return null;
+  const binaryPath = resolveTailcatBinaryPath();
+  if (!binaryPath) {
+    raceLogger.debug('tailcat binary unavailable; skipping tunnel race candidate');
+    return null;
+  }
+  return {
+    host: TUNNEL_RACE_HOST,
+    via: 'tunnel',
+    create: () =>
+      createTunneledSocket({
+        tcAddress,
+        remotePort: port,
+        binaryPath,
+        createInner: (localPort) =>
+          createWssSocket({ ...config, host: '127.0.0.1', port: localPort }),
+      }),
+  };
 }
 
 /**
@@ -414,6 +484,9 @@ function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duple
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
  *   set cannot hang the client's connect (the reconnect loop retries).
+ * - The facade's `'connect'` event carries a {@link RaceConnectInfo} naming
+ *   the winning candidate host, so the connection layer can tell a tunnel win
+ *   from a direct one.
  */
 export function raceDuplexSockets(
   attempts: RaceAttempt[],
@@ -426,6 +499,7 @@ export function raceDuplexSockets(
   let lastError: Error | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
+  const candidateVias = new Map<Duplex, ConnectedVia>();
   const mismatches: HostCertMismatch[] = [];
   const reportedMismatchHosts = new Set<string>();
 
@@ -553,7 +627,11 @@ export function raceDuplexSockets(
       if (!facade.destroyed) facade.destroy(error);
     });
     candidate.on('close', () => facade.push(null));
-    facade.emit('connect');
+    const info: RaceConnectInfo = {
+      host: candidateHosts.get(candidate) ?? '',
+      via: candidateVias.get(candidate) ?? 'direct',
+    };
+    facade.emit('connect', info);
   };
 
   for (const attempt of attempts) {
@@ -569,6 +647,7 @@ export function raceDuplexSockets(
     }
     candidates.push(candidate);
     candidateHosts.set(candidate, attempt.host);
+    candidateVias.set(candidate, attempt.via ?? 'direct');
     // A failing candidate can emit `error` AND `close`; count it out only once.
     let counted = false;
     const failOnce = (error: Error): void => {
@@ -694,8 +773,56 @@ export function pinnedTlsConnect(
  * leak to a swapped endpoint (TOCTOU). The mismatch is reported as a
  * structured `fingerprint-mismatch` result carrying the presented
  * fingerprint.
+ *
+ * A `host` that is a tc address (PROTOCOL §12.3, manual tunnel entry) is
+ * captured through a local tailcat forwarder: the wss dial targets the
+ * forwarder's loopback port and tailcat carries it to the daemon, so cert +
+ * token verification are identical to a direct capture. Fails structured
+ * (`connect-failed`) when the bundled tailcat binary is unavailable.
  */
-export function captureFingerprint(
+export async function captureFingerprint(
+  target: { host: string; port: number; token?: string; expectedFingerprint?: string },
+  options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
+): Promise<CaptureFingerprintResult> {
+  if (isTcAddress(target.host)) {
+    const binaryPath = resolveTailcatBinaryPath();
+    if (!binaryPath) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: 'tailcat binary unavailable; cannot capture through the tunnel',
+      };
+    }
+    let tunnel: TailcatTunnel;
+    try {
+      tunnel = await createTailcatTunnel({
+        // Lowercase like `isTcAddress` does for its check: tc addresses are
+        // daemon-minted lowercase, so a hand-typed `TC-…` still dials.
+        tcAddress: target.host.trim().toLowerCase(),
+        remotePort: target.port,
+        binaryPath,
+        ...(options.tailcatSpawn ? { spawn: options.tailcatSpawn } : {}),
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: `tailcat forwarder failed to start: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    try {
+      return await captureFingerprintDirect(
+        { ...target, host: '127.0.0.1', port: tunnel.localPort },
+        options,
+      );
+    } finally {
+      tunnel.close();
+    }
+  }
+  return captureFingerprintDirect(target, options);
+}
+
+function captureFingerprintDirect(
   target: { host: string; port: number; token?: string; expectedFingerprint?: string },
   options: { timeoutMs?: number } = {},
 ): Promise<CaptureFingerprintResult> {

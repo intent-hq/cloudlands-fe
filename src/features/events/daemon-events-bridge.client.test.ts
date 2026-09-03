@@ -2258,8 +2258,7 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     updatedAt?: string;
   } {
     const session = readSession() as
-      | (AgentSession & { liveTurnOpen?: boolean; liveTurnOpenedAt?: string })
-      | undefined;
+      (AgentSession & { liveTurnOpen?: boolean; liveTurnOpenedAt?: string }) | undefined;
     return {
       liveTurnOpen: session?.liveTurnOpen,
       liveTurnOpenedAt: session?.liveTurnOpenedAt,
@@ -2321,7 +2320,9 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
 
     // A genuinely NEW turn's ping re-opens it.
-    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: 'msg_assistant_2' }));
+    handler(
+      notification('agent:stream:activity', { agentId: AGENT, messageId: 'msg_assistant_2' }),
+    );
     expect(readLiveTurnFields().liveTurnOpen).toBe(true);
   });
 
@@ -3857,7 +3858,6 @@ describe('daemonEventsBridge (agent-locks wire contract — changes:agent-locks 
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('changes:agent-locks');
   });
 });
-
 
 describe('daemonEventsBridge (linkage wire contract — task:agent-linked / task:agent-unlinked)', () => {
   beforeAll(() => {
@@ -5796,9 +5796,8 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
   });
 
   it('drops the panel layout entry and clears main registrations for owned tabs (monorepo#2857)', async () => {
-    const { initializeLayout, closeTab } = await import(
-      '$store/renderer/slices/panel-layout/panel-layout-slice'
-    );
+    const { initializeLayout, closeTab } =
+      await import('$store/renderer/slices/panel-layout/panel-layout-slice');
     appStore.dispatch(
       initializeLayout(WS, {
         root: { type: 'panel', panelId: 'p1' },
@@ -6609,9 +6608,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   // registrations; the SCHEDULE (grace window — cancelDelete must restore
   // tabs intact) does not.
   it('agent:deleted destroys owned tabs (visible + hidden) and clears main registrations', async () => {
-    const { initializeLayout, closeTab } = await import(
-      '$store/renderer/slices/panel-layout/panel-layout-slice'
-    );
+    const { initializeLayout, closeTab } =
+      await import('$store/renderer/slices/panel-layout/panel-layout-slice');
     appStore.dispatch(
       initializeLayout(PENDING_WS, {
         root: { type: 'panel', panelId: 'p1' },
@@ -6681,9 +6679,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('agent:delete-scheduled leaves owned tabs alive (grace window, cancel restores intact)', async () => {
-    const { initializeLayout } = await import(
-      '$store/renderer/slices/panel-layout/panel-layout-slice'
-    );
+    const { initializeLayout } =
+      await import('$store/renderer/slices/panel-layout/panel-layout-slice');
     appStore.dispatch(
       initializeLayout(PENDING_WS, {
         root: { type: 'panel', panelId: 'p1' },
@@ -6904,9 +6901,8 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     capturedHandlers.length = 0;
     // The union merge semantics on setWorkspaceEntity (monorepo#2951) mean PR
     // pools survive re-seeding — reset the slice so tests stay independent.
-    const { resetWorkspaceState } = await import(
-      '$store/renderer/slices/workspace/workspace-slice'
-    );
+    const { resetWorkspaceState } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(resetWorkspaceState());
   });
 
@@ -7351,9 +7347,8 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
 
   it('destroys agent-owned browser tabs (visible + hidden) and clears main registrations on archive (monorepo#2857)', async () => {
     await seedWorkspace();
-    const { initializeLayout, closeTab } = await import(
-      '$store/renderer/slices/panel-layout/panel-layout-slice'
-    );
+    const { initializeLayout, closeTab } =
+      await import('$store/renderer/slices/panel-layout/panel-layout-slice');
     appStore.dispatch(
       initializeLayout(WS_UPD, {
         root: { type: 'panel', panelId: 'p1' },
@@ -7927,6 +7922,7 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
       'not_started',
       'in_progress',
       'complete',
+      'pr_queued',
       'pr_ready',
       'pr_open',
       'pr_merged',
@@ -9408,10 +9404,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       const listCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.list');
       expect(listCalls.map(([, params]) => params)).toEqual(
-        expect.arrayContaining([
-          { workspaceId: 'ws-multi-1' },
-          { workspaceId: 'ws-multi-2' },
-        ]),
+        expect.arrayContaining([{ workspaceId: 'ws-multi-1' }, { workspaceId: 'ws-multi-2' }]),
       );
       expect(listCalls).toHaveLength(2);
       expect(listAgentFailureEntries()).toHaveLength(0);
@@ -11041,14 +11034,18 @@ describe('DaemonEventsBridge — app-UI events', () => {
     };
   }
 
-  function appWorkspaceOpenNotification(workspaceId: string, openInNewWindow?: boolean) {
+  function appWorkspaceOpenNotification(
+    workspaceId: string,
+    openInNewWindow?: boolean,
+    eventId = `evt-app-workspace-open-${Math.random().toString(36).slice(2, 8)}`,
+  ) {
     const data: Record<string, unknown> = { workspaceId };
     if (openInNewWindow !== undefined) data.openInNewWindow = openInNewWindow;
     return {
       method: 'events.event' as const,
       params: {
         event: {
-          id: `evt-app-workspace-open-${Math.random().toString(36).slice(2, 8)}`,
+          id: eventId,
           timestamp: '2026-01-02T00:00:00.000Z',
           type: 'app:workspace-open',
           actor: { type: 'agent', id: AGENT },
@@ -11188,10 +11185,13 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await primeBridge();
       const handler = capturedHandlers[0]!;
 
-      handler(appWorkspaceOpenNotification('ws-789', true));
+      handler(appWorkspaceOpenNotification('ws-789', true, 'evt-open-ws-789'));
       await flush();
 
-      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-789' });
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', {
+        route: '/workspace/ws-789',
+        requestId: 'evt-open-ws-789',
+      });
       expect(navigateToRouteSpy).not.toHaveBeenCalled();
     });
 
@@ -11200,11 +11200,12 @@ describe('DaemonEventsBridge — app-UI events', () => {
       const handler = capturedHandlers[0]!;
       invokeSpy.mockRejectedValueOnce(new Error('Window creation failed'));
 
-      handler(appWorkspaceOpenNotification('ws-fallback', true));
+      handler(appWorkspaceOpenNotification('ws-fallback', true, 'evt-open-ws-fallback'));
       await flush();
 
       expect(invokeSpy).toHaveBeenCalledWith('window:open-new', {
         route: '/workspace/ws-fallback',
+        requestId: 'evt-open-ws-fallback',
       });
       expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
     });
@@ -11225,11 +11226,12 @@ describe('DaemonEventsBridge — app-UI events', () => {
       const handler = capturedHandlers[0]!;
       invokeSpy.mockResolvedValueOnce({ success: false, error: 'Window creation blocked' });
 
-      handler(appWorkspaceOpenNotification('ws-success-false', true));
+      handler(appWorkspaceOpenNotification('ws-success-false', true, 'evt-open-ws-failure'));
       await flush();
 
       expect(invokeSpy).toHaveBeenCalledWith('window:open-new', {
         route: '/workspace/ws-success-false',
+        requestId: 'evt-open-ws-failure',
       });
       expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false');
     });

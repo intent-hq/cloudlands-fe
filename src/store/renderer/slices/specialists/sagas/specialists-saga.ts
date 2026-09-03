@@ -49,7 +49,7 @@ interface ListContext {
 const MODEL_RESOLUTION_SETTINGS_PATHS: readonly string[] = [
   'model.providerDefaults',
   'model.default',
-  'providers.active',
+  'model.defaultProvider',
 ];
 
 /**

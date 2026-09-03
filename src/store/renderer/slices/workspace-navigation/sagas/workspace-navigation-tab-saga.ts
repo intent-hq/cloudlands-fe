@@ -14,6 +14,7 @@ import {
   openTabInAdjacentOrSplit,
   openTabInRightmostColumnRequested,
 } from '../../panel-layout/panel-layout-slice';
+import { selectFocusedPanelId } from '../../panel-layout/panel-layout-selectors';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
@@ -48,9 +49,11 @@ function* openWorkspaceTab(
     );
     return;
   }
+  const targetPanelId =
+    sourcePanelId ?? (yield* selectFocusedPanelId.effect(workspaceId)) ?? undefined;
   yield* put(
-    sourcePanelId
-      ? openTab(workspaceId, tab, sourcePanelId, undefined, true)
+    targetPanelId
+      ? openTab(workspaceId, tab, targetPanelId, undefined, true)
       : openTabInRightmostColumnRequested(workspaceId, tab, { force: true }),
   );
 }

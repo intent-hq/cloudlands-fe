@@ -6,10 +6,12 @@ import {
   closePanel,
   openPanel,
   setAllSpacesViewMode,
+  setChiefCollapsed,
   setShowArchivedWorkspaces,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import {
   selectAllSpacesViewMode,
+  selectIsChiefCollapsed,
   selectShowArchivedWorkspaces,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 import SidebarPanelHarness from './mocks/SidebarPanelHarness.svelte';
@@ -64,6 +66,7 @@ describe('Spaces panel options menu', () => {
     appStore.init();
     appStore.dispatch(setAllSpacesViewMode('recent'));
     appStore.dispatch(setShowArchivedWorkspaces(false));
+    appStore.dispatch(setChiefCollapsed(false));
     global.ResizeObserver = class {
       observe = vi.fn();
       disconnect = vi.fn();
@@ -150,5 +153,30 @@ describe('Spaces panel options menu', () => {
     await fireEvent.keyDown(recent, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('collapses and expands the Chief section with an accessible disclosure', async () => {
+    const { container } = renderPanel();
+    const toggle = screen.getByRole('button', { name: 'Chief of Staff' });
+    const content = container.querySelector<HTMLElement>('#combined-panel-chief-content');
+
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(content?.hidden).toBe(false);
+    expect(container.querySelector('[data-testid="split-resize-handle"]')).toBeTruthy();
+
+    toggle.focus();
+    await fireEvent.click(toggle, { detail: 0 });
+
+    expect(selectIsChiefCollapsed.select(appStore.state)).toBe(true);
+    await waitFor(() => {
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(content?.hidden).toBe(true);
+      expect(container.querySelector('[data-testid="split-resize-handle"]')).toBeNull();
+    });
+
+    await fireEvent.click(toggle, { detail: 0 });
+    expect(selectIsChiefCollapsed.select(appStore.state)).toBe(false);
+    await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
   });
 });

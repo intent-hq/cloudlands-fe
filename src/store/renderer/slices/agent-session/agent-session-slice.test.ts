@@ -389,6 +389,22 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].lastMessageId).toBe('m-2');
     });
 
+    it('applies an AgentLite hydration when only the wire messageCount changes', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messageCount: 0 })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { messageCount: 3 })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].messages).toEqual([]);
+      expect(next.byAgentId['a1'].messageCount).toBe(3);
+    });
+
     it('applies an upsert when only hasUnread flips on an otherwise-equivalent session (marker convergence)', () => {
       const state = agentSessionReducer(
         initialState,
@@ -3352,6 +3368,29 @@ describe('agent-session selectors', () => {
 
       expect(selectAgentAttentionRequest.select(state, 'a1')).toBeNull();
       expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
+    });
+
+    it('gates a pending request while the agent runs a live turn; surfaces it once idle', () => {
+      // Mid-turn rehydration can deliver the persisted fields while the agent
+      // is still streaming — the selector must defer until the turn ends.
+      const live = makeSession('a1', 'ws-1', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'sandbox broken',
+        isResponding: true,
+      });
+      const liveState = storeWith({ byAgentId: { a1: live }, agentIdsByWorkspace: {} });
+      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toBeNull();
+
+      const settled = makeSession('a1', 'ws-1', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'sandbox broken',
+      });
+      const settledState = storeWith({ byAgentId: { a1: settled }, agentIdsByWorkspace: {} });
+      expect(selectAgentAttentionRequest.select(settledState, 'a1')).toEqual({
+        kind: 'blocker',
+        reason: 'sandbox broken',
+        timestamp: undefined,
+      });
     });
   });
 

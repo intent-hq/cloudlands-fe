@@ -16,6 +16,7 @@ import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   selectActivityLogPresets,
   selectAgentFontStyle,
+  selectChatAuroraEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
@@ -24,6 +25,7 @@ import {
   selectNoteFontStyle,
   selectShowArchived,
   selectShowReasoningBlocks,
+  selectShellTransparencyEnabled,
   selectShortcutOverrides,
   selectSpellcheckEnabled,
 } from '../user-preferences-selectors';
@@ -37,6 +39,7 @@ import {
   resetShortcutOverride,
   saveActivityLogPreset,
   setAgentFontStyle,
+  setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -45,16 +48,20 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setShowReasoningBlocks,
+  setShellTransparencyEnabled,
   setShortcutOverride,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
+  toggleChatAurora,
   toggleShowArchived,
   toggleShowReasoningBlocks,
+  toggleShellTransparency,
   toggleSpellcheck,
   type ActivityLogPresetPreference,
   type FontStyle,
+  type NoteFontStyle,
 } from '../user-preferences-slice';
 
 const SPELLCHECK_STORAGE_KEY = 'note-spellcheck-settings';
@@ -62,6 +69,8 @@ const SHOW_ARCHIVED_STORAGE_KEY = 'workspace-list:showArchived';
 const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
+const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
+const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -75,14 +84,21 @@ type ListSystemFontsResponse = {
   data?: unknown;
 };
 
-function validFont(value: unknown): value is { fontStyle: FontStyle } {
+function hasFontStyle(value: unknown): value is { fontStyle: string } {
   return (
     typeof value === 'object' &&
     value !== null &&
     'fontStyle' in value &&
-    typeof value.fontStyle === 'string' &&
-    FONT_STYLES.includes(value.fontStyle as FontStyle)
+    typeof value.fontStyle === 'string'
   );
+}
+
+function validAgentFont(value: unknown): value is { fontStyle: FontStyle } {
+  return hasFontStyle(value) && FONT_STYLES.includes(value.fontStyle as FontStyle);
+}
+
+function validNoteFont(value: unknown): value is { fontStyle: NoteFontStyle } {
+  return validAgentFont(value) || (hasFontStyle(value) && value.fontStyle === 'serif');
 }
 
 /**
@@ -142,11 +158,23 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setShowReasoningBlocks(showReasoningBlocks));
   }
 
+  const chatAuroraEnabled = yield* getLocalStorageJSON<boolean>(CHAT_AURORA_STORAGE_KEY);
+  if (typeof chatAuroraEnabled === 'boolean') {
+    yield* put(setChatAuroraEnabled(chatAuroraEnabled));
+  }
+
+  const shellTransparencyEnabled = yield* getLocalStorageJSON<boolean>(
+    SHELL_TRANSPARENCY_STORAGE_KEY,
+  );
+  if (typeof shellTransparencyEnabled === 'boolean') {
+    yield* put(setShellTransparencyEnabled(shellTransparencyEnabled));
+  }
+
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
-  if (validFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
+  if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
   const noteFont = yield* getLocalStorageJSON<unknown>(NOTE_STORAGE_KEY);
-  if (validFont(noteFont)) yield* put(setNoteFontStyle(noteFont.fontStyle));
+  if (validNoteFont(noteFont)) yield* put(setNoteFontStyle(noteFont.fontStyle));
 
   const codeFont = yield* getLocalStorageJSON<{ fontFamily?: unknown }>(CODE_STORAGE_KEY);
   if (typeof codeFont?.fontFamily === 'string' && codeFont.fontFamily.trim()) {
@@ -231,6 +259,17 @@ function* persistShowReasoningBlocksWorker() {
   );
 }
 
+function* persistChatAuroraWorker() {
+  yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
+}
+
+function* persistShellTransparencyWorker() {
+  yield* setLocalStorageJSON(
+    SHELL_TRANSPARENCY_STORAGE_KEY,
+    yield* selectShellTransparencyEnabled.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -298,6 +337,11 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setShowReasoningBlocks, toggleShowReasoningBlocks],
     persistShowReasoningBlocksWorker,
+  );
+  yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
+  yield* takeEvery(
+    [setShellTransparencyEnabled, toggleShellTransparency],
+    persistShellTransparencyWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

@@ -250,7 +250,6 @@
       >
         <ProposalCard
           proposal={current.proposal}
-          neutralBorder
           suppressLocalDiscard
           initialDraft={loadTrayDraft(storageAgentId, current.proposalId)}
           onDraftChange={(draft) => handleDraftChange(current.proposalId, draft)}

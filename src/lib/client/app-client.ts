@@ -59,15 +59,16 @@ import type { UserPreferencesState } from '$store/renderer/slices/user-preferenc
 import type { ProviderSettingsState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 /**
- * The daemon-persisted subset of provider settings (`providers.active` /
- * `providers.enabled`, PROTOCOL §5.12). The remaining ProviderSettingsState
- * fields are registry snapshots hydrated from `providers.catalog`, never
- * persisted through this seam.
+ * The daemon-persisted subset of provider settings (`model.defaultProvider` /
+ * `providers.enabled`, PROTOCOL §5.12). `activeProviderId` carries the default
+ * provider — the provider leg of the default model triple (the deprecated
+ * `providers.active` key is no longer read or written). The remaining
+ * ProviderSettingsState fields are registry snapshots hydrated from
+ * `providers.catalog`, never persisted through this seam.
  */
-export type PersistedProviderSettings = Pick<
-  ProviderSettingsState,
-  'activeProviderId' | 'enabledProviders'
->;
+export type PersistedProviderSettings = Pick<ProviderSettingsState, 'enabledProviders'> & {
+  activeProviderId: string;
+};
 import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
 import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import type { GitHubUser } from '$features/github-auth/types';
@@ -1062,6 +1063,10 @@ export interface SettingDefinitionWithValue {
   /** Approximate prompt-token cost of the gated feature (e.g. "~620 tokens/session"); absent when unannotated. */
   tokenImpact?: string;
   value: unknown;
+  /** Effective source for TOML-backed settings; absent for other stores. */
+  origin?: 'default' | 'file' | 'flag';
+  /** Daemon ordering watermark, present on settings.get results. */
+  revision?: number;
 }
 
 /** Wire-level change entry for `settings.update` (PROTOCOL §5.12 `AppSettingChange`). */
@@ -1075,6 +1080,18 @@ export interface AppSettingChange {
 export interface AppliedSettingChange {
   path: string;
   value: unknown;
+  /** Effective source after the commit for TOML-backed settings. */
+  origin?: 'default' | 'file' | 'flag';
+}
+
+export interface SettingsSnapshot {
+  settings: SettingDefinitionWithValue[];
+  revision: number;
+}
+
+export interface SettingsUpdateResult {
+  applied: AppliedSettingChange[];
+  revision: number;
 }
 
 /** One user-override rule as read via `rules.get` (§5.21). */
@@ -1087,10 +1104,12 @@ export interface UserRuleState {
 export interface SettingsClient {
   /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
   list(): Promise<SettingDefinitionWithValue[]>;
+  listSnapshot?(): Promise<SettingsSnapshot>;
   /** `settings.get` (§5.12). Returns the single setting + its definition; `null` when the daemon rejects the path. */
   get(path: string): Promise<SettingDefinitionWithValue | null>;
   /** `settings.update` (§5.12). Atomic batch update; emits `settings:changed` on success. */
   update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
+  updateSnapshot?(changes: AppSettingChange[]): Promise<SettingsUpdateResult>;
   /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
   reset(path: string): Promise<AppliedSettingChange | null>;
   /** `rules.get` (§5.21). Reads one global user-override rule type; `null` when the probe fails. */
@@ -1763,7 +1782,7 @@ export interface SpecialistDef {
    * `list`/`get` when the resolved list is non-empty, omitted otherwise
    * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
    */
-  modelOptions?: { model: string; hint: string; reasoningEffort?: string }[];
+  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
   /**
    * Reasoning-effort level for the specialist's model (additive, PROTOCOL
    * §5.11): one of the model's catalog `effortLevels`. Omitted when the
@@ -2074,6 +2093,11 @@ export interface ServerPairingInfo {
   path: string;
   localIps: string[];
   hostname: string;
+  /**
+   * Additive tailcat tunnel address (§5.2): present only when the tunnel is
+   * enabled and up; absent on older daemons or while the tunnel is down.
+   */
+  tcAddress?: string;
 }
 
 export interface ServerClient {
@@ -2116,6 +2140,8 @@ export interface DraftAttachment {
   type: string;
   label: string;
   description?: string;
+  /** Opaque text carried by content-backed context items such as selections. */
+  content?: string;
   path?: string;
   imageData?: string;
   imageMimeType?: string;

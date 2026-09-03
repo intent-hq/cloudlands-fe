@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => {
   const { readable } = await import('svelte/store');
@@ -29,9 +29,14 @@ vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
     .default,
 }));
 vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
-  default: (
-    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
-  ).default,
+  default: (await import('./__tests__/mocks/MockAttachmentPill.svelte')).default,
+}));
+const placementMocks = vi.hoisted(() => ({ isRemote: false }));
+vi.mock('$lib/components/chat/input/attachment-placement', () => ({
+  isRemoteBackend: () => placementMocks.isRemote,
+}));
+vi.mock('svelte-sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$lib/components/modals/SetupScriptModal.svelte', async () => ({
   default: (
@@ -209,6 +214,7 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
       expect(
         (first.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement).disabled,
       ).toBe(true);
+      expect(first.getByText('Select a branch to continue')).toBeTruthy();
 
       await fireEvent.click(trigger);
       expect(onProjectChange).toHaveBeenCalledWith({ ...selection, branch: 'master' });
@@ -230,4 +236,151 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
       expect(onSubmit).toHaveBeenCalledOnce();
     },
   );
+
+  it('enables create without a branch when the local folder needs git initialization', async () => {
+    const onSubmit = vi.fn();
+    const projectSelection = {
+      ...local,
+      branch: '',
+      initGit: true,
+    } as unknown as Props['projectSelection'];
+    const result = render(OnboardingPromptStep, {
+      props: props({ projectSelection, onSubmit }),
+    });
+
+    expect(result.queryByRole('button', { name: 'Select branch' })).toBeNull();
+    expect(result.getByText('New git repository will be initialized in this folder')).toBeTruthy();
+    const create = result.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+});
+
+describe('OnboardingPromptStep folder drop (path references, local daemon only)', () => {
+  /** Drop with a DataTransferItem list carrying folder-detection entries. */
+  function makeItemsDropEvent(entries: Array<{ file: File; isDirectory: boolean }>) {
+    return {
+      dataTransfer: {
+        types: ['Files'],
+        files: entries.map((e) => e.file),
+        items: entries.map((e) => ({
+          kind: 'file',
+          getAsFile: () => e.file,
+          webkitGetAsEntry: () => ({ isDirectory: e.isDirectory }),
+        })),
+      },
+    };
+  }
+
+  function dropTarget(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>('.rich-input-container')!;
+  }
+
+  function pills(container: HTMLElement) {
+    return Array.from(container.querySelectorAll<HTMLElement>('[data-testid="attachment-pill"]'));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    placementMocks.isRemote = false;
+  });
+
+  it('local folder drop stages a folder pill carrying the absolute host path', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    await fireEvent.drop(
+      dropTarget(result.container),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(1);
+    });
+    expect(pills(result.container)[0].dataset.name).toBe('my-folder');
+    const { toast } = await import('svelte-sonner');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
+    placementMocks.isRemote = true;
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const file = new File(['y'], 'notes.txt', { type: 'text/plain' });
+    await fireEvent.drop(
+      dropTarget(result.container),
+      makeItemsDropEvent([
+        { file, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    // Nothing attaches — not even the file in the same drop.
+    expect(pills(result.container)).toHaveLength(0);
+  });
+
+  it('mixed local drop: folder becomes a pill, non-image file stages as today', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const file = new File(['y'], 'notes.txt', { type: 'text/plain' });
+    await fireEvent.drop(
+      dropTarget(result.container),
+      makeItemsDropEvent([
+        { file, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(2);
+    });
+    const names = pills(result.container).map((p) => p.dataset.name);
+    expect(names).toContain('my-folder');
+    expect(names).toContain('notes.txt');
+  });
+
+  it('re-dropping the same folder is a no-op (one pill, one staged item)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const dropEvent = () => makeItemsDropEvent([{ file: folder, isDirectory: true }]);
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+
+    // One pill — a duplicate path-derived id would break keyed rendering
+    // and make one remove drop both pills.
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(1);
+    });
+    expect(pills(result.container)[0].dataset.name).toBe('my-folder');
+  });
+
+  it('skips the folder with an error toast when no absolute path is resolvable', async () => {
+    // Missing/empty getPathForFile bridge (e.g. dev:web): a bare folder
+    // name must never be staged as if it were an absolute host path.
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    await fireEvent.drop(
+      dropTarget(result.container),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(pills(result.container)).toHaveLength(0);
+  });
 });

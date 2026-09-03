@@ -346,6 +346,8 @@ describe('selectHudWorkspaceStateBars', () => {
       // BE-sent idle and absent displayStatus both bucket as IDLE.
       withStatus('ws-8', 'idle'),
       withStatus('ws-9'),
+      // pr_queued (in the merge queue) buckets with the PR-stage counter.
+      withStatus('ws-10', 'pr_queued'),
     ]);
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
       idle: 3,
@@ -353,11 +355,11 @@ describe('selectHudWorkspaceStateBars', () => {
       progress: 2,
       attention: 0,
       waiting: 0,
-      prOpen: 2,
+      prOpen: 3,
       prMerged: 1,
       failed: 0,
       completed: 1,
-      total: 9,
+      total: 10,
     });
   });
 
@@ -698,6 +700,20 @@ describe('selectHudAttnCount', () => {
       root: { status: 'active', attentionRequestKind: 'discussion', messages: [] },
     });
     expect(selectHudAttnCount.select(state)).toBe(1);
+  });
+
+  it('does not count a pending request while the agent runs a live turn (mid-turn gate)', () => {
+    // Mid-turn rehydration can deliver the persisted attention fields while
+    // the agent is still streaming — nothing must blink until the turn ends.
+    const state = attnState({
+      root: {
+        status: 'active',
+        attentionRequestKind: 'discussion',
+        isResponding: true,
+        messages: [],
+      },
+    });
+    expect(selectHudAttnCount.select(state)).toBe(0);
   });
 
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
@@ -1594,10 +1610,12 @@ describe('selectHudWorkspaceCards', () => {
       },
     );
     const [card] = selectHudWorkspaceCards.select(state);
+    // The idle-but-waiting coordinator still heads its subtree; among its
+    // children the running reviewer sorts before the idle implementor.
     expect(card.agents.map((a) => [a.id, a.bucket, a.isWaitingForAgents])).toEqual([
       ['coord', 'idle', true],
-      ['impl', 'idle', false],
       ['reviewer', 'running', false],
+      ['impl', 'idle', false],
     ]);
     expect(card.agents.find((a) => a.id === 'coord')?.waitingForAgentIds).toEqual([
       'impl',
@@ -2367,13 +2385,221 @@ describe('selectHudWorkspaceCards', () => {
       }),
     ]);
     const [card] = selectHudWorkspaceCards.select(state);
+    // All siblings are running with no lastActivity, so the stable id
+    // tiebreak orders child-a before child-b (wire order is NOT preserved).
     expect(card.agents.map((a) => [a.id, a.depth, a.treePrefix])).toEqual([
       ['root', 0, ''],
-      ['child-b', 1, '├─'],
-      // grandchild is child-b's LAST (only) child — closing connector, even
-      // though it is not the last row overall.
+      ['child-a', 1, '├─'],
+      ['child-b', 1, '└─'],
+      // grandchild is child-b's LAST (only) child — closing connector.
       ['grandchild', 2, '│ └─'],
-      ['child-a', 1, '└─'],
+    ]);
+  });
+
+  it('orders siblings non-idle-first by lastActivity desc, idle last (missing timestamps last in partition)', () => {
+    // The coordinator awaits the idle children so keepLiveWithAncestors
+    // keeps their rows visible — the ordering under test stays observable.
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 6,
+            agentIds: ['root', 'idle-old', 'run-old', 'run-new', 'run-nots', 'idle-new'],
+            agents: [
+              { id: 'root', name: 'Coordinator', status: 'idle' },
+              {
+                id: 'idle-old',
+                name: 'Idle Old',
+                status: 'idle',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T09:00:00Z',
+              },
+              {
+                id: 'run-old',
+                name: 'Runner Old',
+                status: 'active',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+              {
+                id: 'run-new',
+                name: 'Runner New',
+                status: 'active',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T11:00:00Z',
+              },
+              // No lastActivity — sorts after the timestamped runners but
+              // still before every idle sibling.
+              { id: 'run-nots', name: 'Runner Untimed', status: 'active', parentAgentId: 'root' },
+              {
+                id: 'idle-new',
+                name: 'Idle New',
+                status: 'idle',
+                parentAgentId: 'root',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            root: {
+              status: 'idle',
+              isWaitingForOtherAgents: true,
+              waitingForAgentIds: ['idle-old', 'idle-new'],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    // Non-idle partition first by recency desc (untimed runner last of it),
+    // then the idle partition by the same recency-desc rule.
+    expect(card.agents.map((a) => [a.id, a.bucket])).toEqual([
+      ['root', 'idle'],
+      ['run-new', 'running'],
+      ['run-old', 'running'],
+      ['run-nots', 'running'],
+      ['idle-new', 'idle'],
+      ['idle-old', 'idle'],
+    ]);
+  });
+
+  it('tiebreaks equal-recency siblings by agent id so rows stay stable', () => {
+    const state = cardState([
+      makeWorkspace('ws-1', {
+        displayStatus: 'in_progress',
+        agentSummary: {
+          count: 3,
+          agentIds: ['root', 'b-agent', 'a-agent'],
+          agents: [
+            { id: 'root', name: 'Coordinator', status: 'active' },
+            {
+              id: 'b-agent',
+              name: 'B',
+              status: 'active',
+              parentAgentId: 'root',
+              lastActivity: '2026-07-30T11:00:00Z',
+            },
+            {
+              id: 'a-agent',
+              name: 'A',
+              status: 'active',
+              parentAgentId: 'root',
+              lastActivity: '2026-07-30T11:00:00Z',
+            },
+          ],
+        } as Workspace['agentSummary'],
+      }),
+    ]);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => a.id)).toEqual(['root', 'a-agent', 'b-agent']);
+  });
+
+  it('orders roots by the same non-idle-first recency rule', () => {
+    // The idle root awaits a hook-parked agent elsewhere so it stays visible
+    // (isWaitingForAgents) — despite being more recent, it sorts after the
+    // running root.
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 2,
+            agentIds: ['idle-root', 'run-root'],
+            agents: [
+              {
+                id: 'idle-root',
+                name: 'Waiting Root',
+                status: 'idle',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+              {
+                id: 'run-root',
+                name: 'Running Root',
+                status: 'active',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            'idle-root': {
+              status: 'idle',
+              isWaitingForOtherAgents: true,
+              waitingForAgentIds: [],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => [a.id, a.bucket, a.treePrefix])).toEqual([
+      ['run-root', 'running', ''],
+      ['idle-root', 'idle', ''],
+    ]);
+  });
+
+  it('pins an idle coordinator root above active peer roots (agents-list parity)', () => {
+    // Spec ordering rule 1: the coordinator keeps the top row on both
+    // surfaces even when idle — an active, more recent top-level peer must
+    // not displace it.
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 2,
+            agentIds: ['coord', 'peer'],
+            agents: [
+              {
+                id: 'coord',
+                name: 'Coordinator',
+                status: 'idle',
+                specialist: 'spec-writer',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+              {
+                id: 'peer',
+                name: 'Peer Root',
+                status: 'active',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            coord: {
+              status: 'idle',
+              isWaitingForOtherAgents: true,
+              waitingForAgentIds: [],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => [a.id, a.bucket])).toEqual([
+      ['coord', 'idle'],
+      ['peer', 'running'],
     ]);
   });
 
@@ -2490,6 +2716,7 @@ describe('selectHudWorkspaceCards', () => {
     ['in_progress', 'in_progress'],
     ['complete', 'complete'],
     ['pr_ready', 'pr_ready'],
+    ['pr_queued', 'pr_queued'],
     ['pr_open', 'pr_open'],
     ['pr_merged', 'pr_merged'],
     ['idle', 'idle'],
@@ -2914,6 +3141,64 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('wait');
     expect(card.attentionSnippet).toEqual({ kind: 'pending', text: '' });
+  });
+
+  it('with multiple raisers the snippet follows the recency-first row order', () => {
+    // cardAttentionSnippet scans the tree-ordered rows for the first gated
+    // raiser — since rows sort non-idle-first by recency, the most-recently
+    // active raiser's reason wins over an older one listed first on the wire.
+    const state = mockState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'needs_attention',
+          agentSummary: {
+            count: 2,
+            agentIds: ['older', 'newer'],
+            agents: [
+              {
+                id: 'older',
+                name: 'Older',
+                status: 'active',
+                lastActivity: '2026-07-30T10:00:00Z',
+              },
+              {
+                id: 'newer',
+                name: 'Newer',
+                status: 'active',
+                lastActivity: '2026-07-30T12:00:00Z',
+              },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      [],
+      [],
+    );
+    const withSessions = {
+      ...state,
+      agentSessions: {
+        byAgentId: {
+          older: {
+            status: 'active',
+            attentionRequestKind: 'blocker',
+            attentionRequestReason: 'Older reason',
+            messages: [],
+          },
+          newer: {
+            status: 'active',
+            attentionRequestKind: 'blocker',
+            attentionRequestReason: 'Newer reason',
+            messages: [],
+          },
+        },
+        agentIdsByWorkspace: {},
+      },
+    } as StoreState;
+    const [card] = selectHudWorkspaceCards.select(withSessions);
+    expect(card.stateKey).toBe('wait');
+    expect(card.agents.map((a) => a.id)).toEqual(['newer', 'older']);
+    expect(card.attentionSnippet).toEqual({ kind: 'blocker', text: 'Newer reason' });
   });
 
   it('failed card snippet carries the failing agent stopReason', () => {

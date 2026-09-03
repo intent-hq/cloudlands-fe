@@ -74,6 +74,7 @@
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
+  import BrowserFavicon from './BrowserFavicon.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsWorkspaceHostLocal,
@@ -93,6 +94,7 @@
   import type { PanelHeaderActions } from './panel-header-context.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
+  import { getPanelExternalOpenTarget } from './panel-external-open-target';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -233,6 +235,7 @@
   let contextMenuElement = $state<HTMLDivElement | null>(null);
 
   let paneStackMenuOpen = $state(false);
+  let panelActionsMenuOpen = $state({ tabBar: false, compact: false });
 
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
@@ -386,9 +389,12 @@
     contextMenuTab = { source: 'tab', tabId, x: e.clientX, y: e.clientY };
   }
 
-  function handlePanelContextMenu(e: MouseEvent, tabId: string) {
+  function handlePanelContextMenu(e: MouseEvent) {
+    const target = e.target;
+    if (target instanceof Element && target.closest(PANEL_HEADER_INTERACTIVE_SELECTOR)) return;
     e.preventDefault();
-    contextMenuTab = { source: 'panel', tabId, x: e.clientX, y: e.clientY };
+    contextMenuTab = null;
+    panelActionsMenuOpen.compact = true;
   }
 
   function getContextMenuPosition() {
@@ -1171,8 +1177,9 @@
   }
 </script>
 
-{#snippet panelActionsDropdown()}
+{#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}
   <DropdownMenu
+    bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
     contentClass="panel-actions-menu-content w-max [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
@@ -1267,6 +1274,53 @@
           }}
         />
       </div>
+
+      <Menu.Separator />
+
+      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
+        {m.settings_section_openIn()}
+      </div>
+      <div data-panel-actions-section="open-in">
+        {#if activeTab}
+          {@const externalTarget = getPanelExternalOpenTarget(
+            activeTab,
+            workspaceId,
+            $isWorkspaceHostLocal$,
+          )}
+          {#if externalTarget.kind === 'browser'}
+            <Menu.CommandItem
+              icon={faArrowUpRightFromSquare}
+              label={m.layout_panelTabBar_openInBrowser_label()}
+              onclick={() => {
+                openInExternalBrowser(activeTab);
+                close();
+              }}
+            />
+          {:else if externalTarget.kind === 'path'}
+            {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
+              {@const WorkspaceActionsMenu = module.default}
+              <WorkspaceActionsMenu
+                filePath={externalTarget.filePath}
+                workspaceId={externalTarget.workspaceId}
+                isDirectory={externalTarget.isDirectory}
+                isDiff={externalTarget.isDiff ?? false}
+                isWorkspaceRoot={externalTarget.isWorkspaceRoot ?? false}
+                workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
+                showDeleteOption={false}
+                showArchiveOption={false}
+                showFileNameCopy={false}
+                onClose={close}
+              />
+            {/await}
+          {:else}
+            <Menu.CommandItem
+              icon={faArrowUpRightFromSquare}
+              label={m.ui_fileActions_noRepoPath_tooltip()}
+              disabled
+            />
+          {/if}
+        {/if}
+      </div>
     {/snippet}
   </DropdownMenu>
 {/snippet}
@@ -1355,14 +1409,8 @@
     />
   {:else if resourceKind}
     <ResourceIconTile kind={resourceKind} variant={compact ? 'standard' : 'emphasized'} />
-  {:else if tab.faviconUrl}
-    <img
-      src={tab.faviconUrl}
-      alt=""
-      width={compact ? 14 : 16}
-      height={compact ? 14 : 16}
-      class="rounded-sm"
-    />
+  {:else if tab.type === 'browser'}
+    <BrowserFavicon faviconUrl={tab.faviconUrl} size={compact ? 14 : 16} />
   {:else}
     <Fa
       icon={getTabIcon(tab.type)}
@@ -1595,26 +1643,12 @@
                 />
               {:else if resourceKind}
                 <ResourceIconTile kind={resourceKind} />
-              {:else if tab.faviconUrl}
-                <img
-                  src={tab.faviconUrl}
-                  alt=""
-                  width="16"
-                  height="16"
-                  class="shrink-0 rounded-sm"
-                  onerror={(e) => {
-                    // On favicon load failure, hide the img so the fallback icon shows
-                    const target = e.currentTarget as HTMLImageElement;
-                    target.style.display = 'none';
-                    // Show the sibling fallback icon
-                    const fallback = target.nextElementSibling as HTMLElement | null;
-                    if (fallback) fallback.style.display = '';
-                  }}
+              {:else if tab.type === 'browser'}
+                <BrowserFavicon
+                  faviconUrl={tab.faviconUrl}
+                  size={16}
+                  fallbackClass="tab-icon opacity-50"
                 />
-                <!-- Fallback icon, hidden by default, shown if favicon fails to load -->
-                <span style="display: none;">
-                  <Fa icon={getTabIcon(tab.type)} size={16} class="tab-icon shrink-0 opacity-50" />
-                </span>
               {:else}
                 <Fa icon={getTabIcon(tab.type)} size={16} class="tab-icon shrink-0 opacity-50" />
               {/if}
@@ -1818,7 +1852,7 @@
         class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
         data-panel-header-actions
       >
-        {@render panelActionsDropdown()}
+        {@render panelActionsDropdown('tabBar')}
         {@render contentActionsDivider()}
         {@render contentActions?.primary?.()}
         {@render panelCloseButton(activeTab)}
@@ -1837,7 +1871,7 @@
         isFocused && 'focused',
       )}
       data-column-focused={isFocused ? '' : undefined}
-      oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
+      oncontextmenu={handlePanelContextMenu}
       ondblclick={handlePanelHeaderDoubleClick}
       draggable="true"
       ondragstart={handlePaneDragStart}
@@ -1978,7 +2012,7 @@
             {@render contentActions.primary()}
           </span>
         {/if}
-        {@render panelActionsDropdown()}
+        {@render panelActionsDropdown('compact')}
         {@render panelControlsDivider()}
         {#if tabs.length > 1}
           {@render paneStackSelector()}

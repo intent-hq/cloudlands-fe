@@ -146,6 +146,14 @@ export interface AgentMessage {
   timestamp: string | Date;
   turnNumber?: number;
 
+  // Daemon-assigned per-agent monotonic sequence number (PROTOCOL §5.5) —
+  // present on every daemon-persisted row (getConversation pages, §7.1
+  // snapshot rows, terminal-frame reconciles via `messageSeq`). Absent only
+  // on local-only rows: optimistic user rows before the daemon echo and
+  // in-flight assistant messages before the terminal frame. The transcript
+  // orders by this, not timestamps (clock-skew immune).
+  seq?: number;
+
   // Tool interactions
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];

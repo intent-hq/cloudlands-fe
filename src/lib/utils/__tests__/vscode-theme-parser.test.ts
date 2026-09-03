@@ -343,6 +343,32 @@ describe('parseVSCodeTheme', () => {
     }
   });
 
+  it('repairs the danger surface when sparse imported surfaces prevent joint contrast', () => {
+    const result = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#111111',
+        'sideBar.background': '#000000',
+      },
+    });
+    const danger = result.cssVariables['--danger'];
+
+    expect(result.cssVariables['--danger-background']).toBe(result.cssVariables['--background']);
+    for (const surface of [
+      '--danger-background',
+      '--background',
+      '--card',
+      '--popover',
+      '--muted',
+      '--sidebar',
+    ]) {
+      expect(contrastRatio(danger, result.cssVariables[surface]), surface).toBeGreaterThanOrEqual(
+        4.55,
+      );
+    }
+  });
+
   it('first match wins for duplicate CSS variable targets', () => {
     // panel.border and editorGroup.border both map to --border
     const result = parseVSCodeTheme({

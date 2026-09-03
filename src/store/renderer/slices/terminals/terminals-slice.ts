@@ -9,6 +9,11 @@ import {
   getItemIndex,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  MAX_TERMINAL_OVERLAY_HEIGHT,
+  MIN_TERMINAL_OVERLAY_HEIGHT,
+  clampTerminalOverlayHeight,
+} from '$shared/utils/terminal-overlay-height';
 import { setScriptsData } from '../scripts/scripts-slice';
 
 // ============================================================================
@@ -16,8 +21,6 @@ import { setScriptsData } from '../scripts/scripts-slice';
 // ============================================================================
 
 const DEFAULT_HEIGHT = 50;
-const MIN_HEIGHT = 20;
-const MAX_HEIGHT = 90;
 
 export const STORAGE_KEY = 'terminal-overlay-height';
 export const CUSTOM_NAMES_STORAGE_KEY = 'terminal-custom-names';
@@ -335,7 +338,7 @@ terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
   });
 });
 terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [height] }) => {
-  const clamped = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, height));
+  const clamped = clampTerminalOverlayHeight(height);
   if (clamped === state.height) return state;
   return { ...state, height: clamped };
 });
@@ -465,7 +468,7 @@ terminalsReducer.with(
   },
 );
 terminalsReducer.with(hydrateHeight, (state, { payload: [height] }) => {
-  if (height < MIN_HEIGHT || height > MAX_HEIGHT) return state;
+  if (height < MIN_TERMINAL_OVERLAY_HEIGHT || height > MAX_TERMINAL_OVERLAY_HEIGHT) return state;
   return { ...state, height };
 });
 

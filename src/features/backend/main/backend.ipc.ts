@@ -820,7 +820,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
             BACKEND.STATUS,
             {
               status: instance.getStatus(),
-              transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+              transport: formatTransportInfo(
+                instance.getConfig(),
+                getPinnedVersion(),
+                instance.getConnectedVia(),
+              ),
               reconnectAttempts: instance.getReconnectAttempts(),
             },
             id,
@@ -844,7 +848,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       BACKEND.STATUS,
       {
         status,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       id,
@@ -858,7 +866,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       {
         status: 'connected',
         reconnected: true,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       id,
@@ -1236,19 +1248,55 @@ function extractUpdateSupported(result: unknown): boolean | null {
 }
 
 /**
+ * Pull the daemon's tailcat tunnel endpoint (`tcAddress`, PROTOCOL §12.3) out
+ * of a `system.status` or `server.pairingInfo` result (both carry the same
+ * field with the same semantics). Returns `null` when the field is absent,
+ * empty, or malformed — a conclusive "no tunnel" for a successful response.
+ *
+ * Known trade-off: the wire shape cannot distinguish "tunnel disabled" from
+ * "tunnel sidecar momentarily down" — `system.status` omits the field in both
+ * cases (including the daemon's restart-backoff window after an unexpected
+ * sidecar exit). A reconnect landing in that window therefore clears a stored
+ * address that would have come back on its own; it is re-learned from the
+ * next post-connect status once the sidecar recovers. Now that the address is
+ * keychain-synced, the blast radius is fleet-wide: the clear bumps the LWW
+ * clock and propagates, so a device that can ONLY dial through the tunnel
+ * loses its route until any directly-connected device reconnects after the
+ * sidecar recovers and re-captures the address (the tunnel-only device cannot
+ * rediscover it on its own). Deliberately accepted
+ * over retaining stale values: a kept address whose tunnel was genuinely
+ * disabled would add a perpetually-failing race candidate to every connect,
+ * and the field's contract ("never advertises a route nothing is serving")
+ * argues for mirroring it faithfully. Distinguishing the two states needs a
+ * protocol change (tracked upstream), not FE-side guessing.
+ */
+function extractTcAddress(result: unknown): string | null {
+  if (result && typeof result === 'object') {
+    const value = (result as { tcAddress?: unknown }).tcAddress;
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return null;
+}
+
+/**
  * Capture whether a freshly-connected remote's daemon supports self-update
  * (`updateSupported` from `system.status`) and persist it on the connection
  * record, following the `captureRemoteHostname` capture pattern. Runs on
  * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
  * change) refreshes the stored flag; the renderer gates the Update affordance
- * on it. A SUCCESSFUL response lacking a boolean field (a daemon too old to
+ * on it. The same response also refreshes the stored tailcat tunnel endpoint
+ * (`tcAddress`, PROTOCOL §12.3) used as a connect-race candidate, so a
+ * daemon gaining/losing its tunnel is reflected without re-pairing. A
+ * SUCCESSFUL response lacking a boolean field (a daemon too old to
  * report it — e.g. the machine's daemon was replaced/downgraded) is a
  * conclusive "unknown" and clears any previously-stored flag to `null`, so a
  * stale `true` never keeps offering Update against a daemon whose capability
- * is no longer known. Only a FAILED request (unreachable, method unknown,
- * store write error) is fail-soft: swallowed with a warn, stored value kept
- * as-is. Results that arrive after the backend's client was disposed are
- * discarded (monorepo#2221). Never called for the local entry.
+ * is no longer known (and likewise a stale `tcAddress` never keeps dialing a
+ * tunnel the daemon no longer advertises). Only a FAILED request
+ * (unreachable, method unknown, store write error) is fail-soft: swallowed
+ * with a warn, stored value kept as-is. Results that arrive after the
+ * backend's client was disposed are discarded (monorepo#2221). Never called
+ * for the local entry.
  */
 async function captureRemoteUpdateSupported(id: string): Promise<void> {
   try {
@@ -1257,11 +1305,13 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     const client = getBackendClientForId(id);
     const result = await client.request('system.status');
     const supported = extractUpdateSupported(result);
+    const tcAddress = extractTcAddress(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
       const changed = await connectionsStore.setUpdateSupported(id, supported);
-      if (changed) await broadcastConnectionsChanged();
+      const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
+      if (changed || tcChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote updateSupported flag', {
@@ -1329,7 +1379,11 @@ async function captureLocalUpdateSupported(): Promise<void> {
           BACKEND.STATUS,
           {
             status: client.getStatus(),
-            transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+            transport: formatTransportInfo(
+              client.getConfig(),
+              getPinnedVersion(),
+              client.getConnectedVia(),
+            ),
             reconnectAttempts: client.getReconnectAttempts(),
           },
           LOCAL_CONNECTION_ID,
@@ -1384,7 +1438,12 @@ function extractLocalIps(result: unknown): string[] | null {
  * until the daemon relaxes that gating this refresh quietly no-ops; the stored
  * host list keeps whatever candidates it already has, and the multi-host
  * reconnect racing still applies. When the daemon does answer, the persisted
- * list tracks the backend's current interfaces on every connect.
+ * list tracks the backend's current interfaces on every connect, and the same
+ * response also refreshes the stored tunnel tc address (PROTOCOL §12.3) —
+ * conclusively, so a successful answer without the field clears a stale
+ * address; the every-connect `system.status` capture
+ * ({@link captureRemoteUpdateSupported}) covers records whose detectHosts is
+ * off (this path early-returns for those).
  */
 async function refreshRemoteHosts(id: string): Promise<void> {
   try {
@@ -1397,9 +1456,10 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
-    if (ips && backendClients.get(id) === client) {
-      await connectionsStore.setHosts(id, ips);
-      await broadcastConnectionsChanged();
+    if (backendClients.get(id) === client) {
+      if (ips) await connectionsStore.setHosts(id, ips);
+      const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
+      if (ips || tcChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.debug('Could not refresh candidate hosts from server.pairingInfo (fail-soft)', {
@@ -1651,14 +1711,20 @@ export async function buildConfigForConnection(
   if (!token) {
     throw new Error(`No stored token for connection: ${id}`);
   }
+  // The store's list() already sanitizes `hosts` (a legacy loopback primary
+  // is excluded whenever a routable candidate exists), so the race dials
+  // hosts[0] first — not the raw stored primary, which can be loopback on
+  // records synced from before self-publish filtered it out.
+  const dialHosts = record.hosts?.length ? record.hosts : [record.host];
   return {
     config: {
       transport: 'wss',
-      host: record.host,
-      hosts: record.hosts ?? [record.host],
+      host: dialHosts[0],
+      hosts: dialHosts,
       port: record.port,
       token,
       fingerprint: record.fingerprint,
+      tcAddress: record.tcAddress ?? undefined,
     },
     meta: { id, host: record.host, port: record.port },
   };
@@ -1831,7 +1897,11 @@ async function performSpawnSidecar(): Promise<{
         BACKEND.STATUS,
         {
           status: client.getStatus(),
-          transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+          transport: formatTransportInfo(
+            client.getConfig(),
+            getPinnedVersion(),
+            client.getConnectedVia(),
+          ),
           reconnectAttempts: client.getReconnectAttempts(),
         },
         LOCAL_CONNECTION_ID,
@@ -1909,7 +1979,11 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
       const client = getLocalBackendClient();
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
-        transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          client.getConfig(),
+          getPinnedVersion(),
+          client.getConnectedVia(),
+        ),
         reconnectAttempts: client.getReconnectAttempts(),
       });
     }
@@ -2095,7 +2169,11 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);
-    const transport = formatTransportInfo(client.getConfig(), getPinnedVersion());
+    const transport = formatTransportInfo(
+      client.getConfig(),
+      getPinnedVersion(),
+      client.getConnectedVia(),
+    );
     // Boot-time startup failures fire before this module registers its
     // `onSidecarStartupFailed` listener and before any window exists, so the
     // broadcast alone is lossy. Expose the latched failure here so the
@@ -2144,7 +2222,11 @@ export function registerBackendHandlers(): void {
         status: instance.getStatus(),
         sidecarStartupFailed: true,
         reason,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       LOCAL_CONNECTION_ID,
@@ -2167,7 +2249,11 @@ export function registerBackendHandlers(): void {
         status: instance.getStatus(),
         sidecarGaveUp: true,
         reason,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       LOCAL_CONNECTION_ID,
@@ -2401,7 +2487,11 @@ function registerConnectionsHandlers(): void {
               {
                 status: 'connected',
                 reconnected: true,
-                transport: formatTransportInfo(rebuilt.getConfig(), getPinnedVersion()),
+                transport: formatTransportInfo(
+                  rebuilt.getConfig(),
+                  getPinnedVersion(),
+                  rebuilt.getConnectedVia(),
+                ),
                 reconnectAttempts: rebuilt.getReconnectAttempts(),
               },
               connection.id,
@@ -2420,6 +2510,9 @@ function registerConnectionsHandlers(): void {
 
   // Update remote metadata without carrying a token. Address changes are
   // validated with the saved main-only secret before any durable mutation.
+  // `detectHosts` / `syncExcluded` flips ride the same call; the store's
+  // mutation notification drives the keychain reconcile that pushes an
+  // exclusion tombstone or re-publishes a re-included record.
   ipcMain.handle(
     CONNECTIONS.UPDATE,
     createValidatedHandler(
@@ -2430,6 +2523,8 @@ function registerConnectionsHandlers(): void {
           const host = params.host ?? saved.host;
           const port = params.port ?? saved.port;
           const addressChanged = host !== saved.host || port !== saved.port;
+          const detectHostsChanged =
+            params.detectHosts !== undefined && params.detectHosts !== (saved.detectHosts ?? true);
           let fingerprint = saved.fingerprint;
           if (addressChanged) {
             const secret = await loadSavedConnectionSecret(params.id);
@@ -2450,8 +2545,15 @@ function registerConnectionsHandlers(): void {
             host,
             port,
             fingerprint,
+            detectHosts: params.detectHosts,
+            syncExcluded: params.syncExcluded,
           });
-          if (addressChanged) await rebuildConnectionClientIfOpen(params.id);
+          // An open pooled client froze its dial candidates at build time, so a
+          // detectHosts flip (which clears the detected extras) must rebuild it
+          // too — otherwise reconnects keep racing the IPs the user just disabled.
+          if (addressChanged || detectHostsChanged) {
+            await rebuildConnectionClientIfOpen(params.id);
+          }
           await broadcastConnectionsChanged();
           return { status: 'updated', connection } satisfies UpdateConnectionResult;
         }),
@@ -2668,7 +2770,9 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
  * detection and clears the "do not auto-publish" marker — publishing is
  * explicit user intent. Rejects when the local backend is unreachable
  * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
- * no routable local IP to publish. Runs as ONE enqueued critical section,
+ * neither a routable local IP nor a tunnel tc address to publish (tunnel-only
+ * posture publishes with the tc address as host). Runs as ONE enqueued
+ * critical section,
  * serialized with `connections:unpublish-self` and every forget: a
  * rapid WSS off→on could otherwise land this upsert while the unpublish is
  * still queued, which would then delete the fresh record (PR #1781 review).
@@ -2687,8 +2791,8 @@ async function performPublishSelfBackend(): Promise<PublishSelfResult> {
   if (info.port === null) {
     throw new Error('publish-self failed: the WebSocket API is not enabled');
   }
-  if (!info.localIps[0]) {
-    throw new Error('publish-self failed: no routable local IP to publish');
+  if (!info.localIps[0] && !info.tcAddress) {
+    throw new Error('publish-self failed: no routable local IP or tunnel address to publish');
   }
   // Publishing is explicit user intent to sync this machine, so force-clear
   // any per-backend exclusion on the record (mirrors clearing the marker).
@@ -2704,19 +2808,26 @@ async function performPublishSelfBackend(): Promise<PublishSelfResult> {
  * Shared upsert of this machine's self record from validated pairing info
  * (label = hostname with `host:port` fallback, host = first local IP, hosts =
  * all local IPs, port = bound wsApi port, fingerprint = cert fingerprint,
- * token, detectHosts on). The store dedupes by fingerprint — a host/port
- * change collapses into the existing record with a fresh `updatedAt` — and
- * the mutation triggers the keychain reconcile push. `opts.syncExcluded`
- * follows the store's tri-state: publish passes `false` (explicit intent to
- * sync), refresh omits it so the store preserves an existing per-backend
- * exclusion — a freshness re-upsert must never flip the user's opt-out.
- * Callers must have validated `port` and `localIps[0]` as non-null.
+ * token, detectHosts on). In tunnel-only posture — the daemon binds loopback
+ * only, so no routable local IP exists — the tc address stands in as the
+ * host, matching the manual tunnel-entry convention (ConnectBackendModal
+ * stores the tc address as the record's host). The store dedupes by
+ * fingerprint — a host/port change collapses into the existing record with a
+ * fresh `updatedAt` — and the mutation triggers the keychain reconcile push.
+ * `opts.syncExcluded` follows the store's tri-state: publish passes `false`
+ * (explicit intent to sync), refresh omits it so the store preserves an
+ * existing per-backend exclusion — a freshness re-upsert must never flip the
+ * user's opt-out. Callers must have validated `port` as non-null and at
+ * least one of `localIps[0]` / `tcAddress` as present.
  */
 async function upsertSelfRecord(
   info: SelfPairingInfo & { port: number },
   opts: { syncExcluded?: boolean } = {},
 ): Promise<ConnectionRecord> {
-  const host = info.localIps[0];
+  const host = info.localIps[0] ?? info.tcAddress;
+  if (!host) {
+    throw new Error('upsertSelfRecord requires a routable local IP or a tc address');
+  }
   const label = info.prettyHostname ?? info.hostname ?? `${host}:${info.port}`;
   const record = await connectionsStore.add({
     label,
@@ -2737,6 +2848,10 @@ async function upsertSelfRecord(
   if (hostname) {
     await connectionsStore.setHostname(record.id, hostname);
   }
+  // Persist the daemon's tunnel tc address conclusively: pairingInfo omits
+  // it whenever the tunnel is down, so `null` clears a stale address and a
+  // rotation propagates to the user's other devices via keychain sync.
+  await connectionsStore.setTcAddress(record.id, info.tcAddress);
   return record;
 }
 
@@ -2751,7 +2866,8 @@ async function upsertSelfRecord(
  * Strictly a freshness path, entirely fail-soft: while the "do not
  * auto-publish" marker is set, while no published self entry exists, when the
  * app is pinned to a remote, or when the pairing info is unavailable/
- * incomplete (WSS off, no routable IP) it is a no-op (`refreshed: false`).
+ * incomplete (WSS off, neither a routable IP nor a tc address) it is a no-op
+ * (`refreshed: false`).
  * Unlike publish it NEVER sets or clears the suppression marker, and its
  * upsert omits `syncExcluded` so the store preserves a per-backend exclusion
  * — refreshing is not user intent to (re-)publish or to sync.
@@ -2770,7 +2886,7 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
     });
     return { refreshed: false } satisfies RefreshSelfResult;
   }
-  if (!info || info.port === null || !info.localIps[0]) {
+  if (!info || info.port === null || (!info.localIps[0] && !info.tcAddress)) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
   // Only refresh an entry that is actually published: a stored record whose

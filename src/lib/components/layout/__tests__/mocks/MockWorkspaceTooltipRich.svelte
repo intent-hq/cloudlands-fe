@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+
   let {
     children,
     content,
@@ -9,8 +11,64 @@
     contentContainerClass,
     disableHoverableContent = false,
     disabled = false,
+    onOpenChange,
   }: any = $props();
   let open = $state(false);
+  let openTimer: ReturnType<typeof setTimeout> | null = null;
+  let pointerWithin = false;
+  let focusWithin = false;
+
+  function clearOpenTimer() {
+    if (openTimer === null) return;
+    clearTimeout(openTimer);
+    openTimer = null;
+  }
+
+  function setOpen(nextOpen: boolean) {
+    if (open === nextOpen) return;
+    open = nextOpen;
+    onOpenChange?.(open);
+  }
+
+  function handleMouseEnter() {
+    pointerWithin = true;
+    if (disabled || focusWithin) return;
+    clearOpenTimer();
+    openTimer = setTimeout(() => {
+      openTimer = null;
+      setOpen(true);
+    }, delayDuration);
+  }
+
+  function handleMouseLeave() {
+    pointerWithin = false;
+    clearOpenTimer();
+    if (!focusWithin) setOpen(false);
+  }
+
+  function handleFocusIn() {
+    focusWithin = true;
+    clearOpenTimer();
+    if (!disabled) setOpen(true);
+  }
+
+  function handleFocusOut(event: FocusEvent) {
+    const currentTarget = event.currentTarget;
+    if (
+      currentTarget instanceof HTMLElement &&
+      event.relatedTarget instanceof Node &&
+      currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+    focusWithin = false;
+    if (!pointerWithin) setOpen(false);
+  }
+
+  onDestroy(() => {
+    clearOpenTimer();
+    setOpen(false);
+  });
 </script>
 
 <div
@@ -22,10 +80,10 @@
   data-tooltip-disable-hoverable-content={disableHoverableContent}
   data-testid="workspace-tab-tooltip-root"
   role="group"
-  onmouseenter={() => {
-    if (!disabled) open = true;
-  }}
-  onmouseleave={() => (open = false)}
+  onmouseenter={handleMouseEnter}
+  onmouseleave={handleMouseLeave}
+  onfocusin={handleFocusIn}
+  onfocusout={handleFocusOut}
 >
   {@render children?.()}
   {#if open && content}

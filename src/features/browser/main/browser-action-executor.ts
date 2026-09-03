@@ -26,9 +26,19 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
-import { getWindowIdForWorkspace } from '../../system/main/system.ipc';
+import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserActionExecutor');
+
+/**
+ * Registration-wait budget for the capture-path mount-on-demand
+ * (intent-hq/monorepo#4103). Deliberately shorter than the service default:
+ * intentd caps a browser.exec batch containing a screenshot at 20s
+ * (SCREENSHOT_REVERSE_TIMEOUT), so the mount wait must leave room for the
+ * CDP capture itself — otherwise a slow-but-successful mount would surface
+ * as a generic transport timeout instead of a structured result.
+ */
+const CAPTURE_MOUNT_TIMEOUT_MS = 10_000;
 
 // ============================================================================
 // Action Schemas
@@ -164,8 +174,8 @@ const OpenTabActionSchema = z.object({
   allowDuplicate: z.boolean().optional(),
   // Pin the panel resolved by this open, including an existing reused panel.
   pin: z.boolean().optional(),
-  // Emulated viewport for agent opens (monorepo#2857); omitted width
-  // defaults to the standard desktop viewport (1280×800). Ignored on user
+  // Emulated viewport for agent opens (monorepo#2857); omitting both
+  // dimensions selects fit mode. Ignored on user
   // (agentId-less) opens, which stay native-sized and unowned. Like
   // `position`, also ignored when the per-agent exact-URL dedupe reuses an
   // existing tab — the reused tab keeps its current viewport (use resizeTab
@@ -322,6 +332,97 @@ function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?
 }
 
 /**
+ * Ensure a capture op's target tab has a mounted, CDP-addressable webview,
+ * mounting it on demand when possible (intent-hq/monorepo#4103).
+ *
+ * A tab opened while its workspace is not visible (or whose hosting window
+ * never visited the workspace this session) has no mounted webview, so
+ * capture ops would fail with a "not mounted" error whose focusTab guidance
+ * is a dead end for hidden tabs. Requesting a fresh tab list hydrates the
+ * workspace's persisted panel layout in every hosting window, which puts the
+ * tab into OffscreenWebviewHost's candidate set — the webview mounts
+ * offscreen and registers. The bounded registration wait below then settles
+ * the outcome truthfully instead of letting the capture op hang.
+ *
+ * Returns `{}` to proceed unchanged (tab already mounted, or no target/
+ * workspace context — the action fails with its own descriptive error), a
+ * `warning` to merge into the success result when the tab was mounted on
+ * demand for a not-visible workspace, or a structured `failure` result when
+ * the mount is impossible (workspace open nowhere, tab gone, or the webview
+ * never registered).
+ */
+async function ensureCaptureTabMounted(
+  actionName: string,
+  tabId: string | undefined,
+  workspaceId: string | undefined,
+): Promise<{ failure?: ActionResult; warning?: string }> {
+  if (!tabId || !workspaceId || embeddedBrowserCdp.isTabMounted(tabId)) return {};
+
+  let listed: Awaited<ReturnType<typeof embeddedBrowserCdp.listAllTabs>>;
+  try {
+    listed = await embeddedBrowserCdp.listAllTabs(workspaceId);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        ...(notVisible ? { errorCode: 'workspace-not-visible' as const } : {}),
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and it cannot be mounted on demand (${detail}). Open workspace ${workspaceId} in a window and retry.`,
+      },
+    };
+  }
+  if (!listed.stale && !listed.tabs.some((t) => t.tabId === tabId)) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Tab ${tabId} not found in workspace ${workspaceId} — check { action: "listTabs" }.`,
+      },
+    };
+  }
+  // A stale (cached) list with no window hosting the workspace means the
+  // hydration nudge reached no renderer — a mount can never happen, so fail
+  // fast instead of burning the full registration wait.
+  if (listed.stale && getWindowIdsForWorkspace(workspaceId).length === 0) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'workspace-not-visible' as const,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and workspace ${workspaceId} is not open in any window, so it cannot be mounted on demand. Open the workspace in a window and retry.`,
+      },
+    };
+  }
+
+  // The tab-list request hydrated the layout; the offscreen host mounts the
+  // tab and its registerTab settles this bounded wait (never rejects).
+  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, CAPTURE_MOUNT_TIMEOUT_MS);
+  if (!mounted) {
+    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        ...(notVisible ? { errorCode: 'workspace-not-visible' as const } : {}),
+        error: notVisible
+          ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+      },
+    };
+  }
+  // Mounted on demand: when the workspace is not displayed, surface the
+  // standard not-visible caveat so the caller knows the capture ran against
+  // an offscreen webview (a hidden tab in a displayed workspace mounts with
+  // no warning).
+  return { ...workspaceNotVisibleWarning(workspaceId) };
+}
+
+/**
  * Echo fields merged into an action's result when its URL was rewritten by
  * the loopback-hostname table (intent-hq/monorepo#2323). Empty for
  * non-rewritten URLs so their result shape is unchanged. `tunneled` adds a
@@ -346,7 +447,6 @@ const ActionSequenceSchema = z.object({
   tabId: z.string().optional(), // Default tabId for all actions
 });
 
-
 // ============================================================================
 // Execution Result Types
 // ============================================================================
@@ -358,8 +458,12 @@ interface ActionResult {
   error?: string;
   /** Successful result with a caveat (e.g. listTabs answered from a stale cache). */
   warning?: string;
-  /** Structured ownership error code (monorepo#2857). */
-  errorCode?: 'not-owner' | 'already-claimed';
+  /**
+   * Structured error code: ownership errors (monorepo#2857), or a capture op
+   * whose target tab could not be mounted because its workspace is not
+   * visible in the app (monorepo#4103).
+   */
+  errorCode?: 'not-owner' | 'already-claimed' | 'workspace-not-visible';
   /** Owning agent for ownership errors; null when the tab is unowned. */
   ownerAgentId?: string | null;
   /** Owning agent's display name for ownership errors, when resolvable. */
@@ -428,8 +532,7 @@ async function fetchAgentDisplayNames(workspaceId: string): Promise<Map<string, 
   try {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     const result = (await getBackendClient().request('agent.list', { workspaceId })) as
-      | { agents?: Array<{ id?: string; name?: string }> }
-      | undefined;
+      { agents?: Array<{ id?: string; name?: string }> } | undefined;
     for (const agent of result?.agents ?? []) {
       if (typeof agent.id === 'string' && typeof agent.name === 'string' && agent.name.length > 0) {
         names.set(agent.id, agent.name);
@@ -553,23 +656,27 @@ async function executeAction(
             : scope === 'unclaimed'
               ? tabs.filter((t) => !t.ownerAgentId)
               : tabs;
-        // Owner display info + sizing per §5.9: ownerAgentId is nullable
-        // (null = unowned), unowned tabs are always native, agent-owned
-        // tabs are always emulated with their current width/height
-        // (viewport invariant). One bulk agent.list resolves every owner's
+        // Owner display info + effective sizing per §5.9: ownerAgentId is
+        // nullable (null = unowned), fit user tabs are native, and fixed or
+        // owned tabs are emulated. One bulk agent.list resolves every owner's
         // display name; best-effort — unresolvable owners keep their id.
         const ownerNames = scoped.some((t) => t.ownerAgentId)
           ? await resolveAgentDisplayNames(workspaceId, ownerNameCache)
           : new Map<string, string>();
-        const result = scoped.map(({ emulatedSize, hidden, ...tab }) => {
+        const result = scoped.map(({ emulatedSize, viewport, hidden, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
           const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
-          const size = emulatedSize ?? DEFAULT_AGENT_VIEWPORT;
+          const effectiveSize = embeddedBrowserCdp.getTabEffectiveViewportSize(tab.tabId);
+          const fixedViewportSize = viewport && viewport.mode !== 'fit' ? viewport : undefined;
+          const fallbackSize = ownerAgentId
+            ? (emulatedSize ?? DEFAULT_AGENT_VIEWPORT)
+            : fixedViewportSize;
+          const size = effectiveSize ?? fallbackSize;
           return {
             ...tab,
             ownerAgentId,
             ...(ownerAgentName !== undefined ? { ownerAgentName } : {}),
-            ...(ownerAgentId
+            ...(size
               ? { mode: 'emulated' as const, width: size.width, height: size.height }
               : { mode: 'native' as const }),
             // Hidden is an agent-owned-tab state only (monorepo#3045):
@@ -675,18 +782,39 @@ async function executeAction(
       }
 
       case 'getAccessibilityTree': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        if (mount.failure) return mount.failure;
         const result = await embeddedBrowserCdp.getAccessibilityTree(tabId);
-        return { action: 'getAccessibilityTree', success: true, result };
+        return {
+          action: 'getAccessibilityTree',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'screenshot': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        if (mount.failure) return mount.failure;
         const result = await embeddedBrowserCdp.screenshot(tabId);
-        return { action: 'screenshot', success: true, result };
+        return {
+          action: 'screenshot',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'evaluate': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        if (mount.failure) return mount.failure;
         const result = await embeddedBrowserCdp.evaluate(tabId, action.expression);
-        return { action: 'evaluate', success: true, result };
+        return {
+          action: 'evaluate',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'snapshot': {
@@ -962,17 +1090,18 @@ async function executeAction(
         // one (which could silently hand the agent a user-opened tab).
         // Rewritten opens pass the original requested URL so the renderer
         // persists it with the tab and a restart can re-run the rewrite
-        // (intent-hq/monorepo#2789). Agent opens pass the owner AND the
-        // emulated viewport so the renderer persists both with the tab and
-        // a restart rehydrates ownership at the actual size (monorepo#2857).
+        // (intent-hq/monorepo#2789). Agent opens pass the owner and, when
+        // explicitly requested, a custom viewport so the renderer persists
+        // the mode and a restart rehydrates it (monorepo#2857).
         // The resolved replace target (when any) is bound into the payload
         // so the renderer adopts exactly the checked tab (TOCTOU, #2857).
-        const emulatedSize = agentId
-          ? {
-              width: action.width ?? DEFAULT_AGENT_VIEWPORT.width,
-              height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
-            }
-          : undefined;
+        const emulatedSize =
+          agentId && (action.width !== undefined || action.height !== undefined)
+            ? {
+                width: action.width ?? DEFAULT_AGENT_VIEWPORT.width,
+                height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
+              }
+            : undefined;
         // Agent opens are hidden by default (monorepo#3045): without an
         // explicit visible: true the tab is created straight into the
         // workspace's hidden set (offscreen webview, no panel mount, no
@@ -985,9 +1114,8 @@ async function executeAction(
         const openOwnerName = agentId
           ? await resolveAgentDisplayName(agentId, workspaceId, ownerNameCache)
           : undefined;
-        // The short call form is for user (agentId-less) opens only — agent
-        // opens always compute a defined emulatedSize above, so they always
-        // take the long form, which carries `visible` through.
+        // The short call form is for user (agentId-less) opens only. Agent
+        // opens take the long form even in fit mode so `visible` rides through.
         const result =
           agentId === undefined && replaceTargetTabId === undefined && emulatedSize === undefined
             ? openTabFn(
@@ -1014,11 +1142,11 @@ async function executeAction(
         // replace, otherwise the pre-generated id of the new tab.
         const effectiveTabId =
           result.success && replaceTargetTabId ? replaceTargetTabId : result.tabId;
-        // Agent opens create OWNED, viewport-emulated tabs (monorepo#2857):
+        // Agent opens create owned, viewport-emulated tabs (monorepo#2857):
         // record ownership right away — a repeat openTab for the same URL
         // then dedupes onto it (intent-hq/monorepo#2541) — with the emulated
-        // size (omitted width defaults to the standard 1280×800 desktop
-        // viewport). Tunneled opens record the original requested URL,
+        // optional custom size (omitting both dimensions selects fit mode).
+        // Tunneled opens record the original requested URL,
         // backing the requested-URL dedupe fallback above; non-tunneled
         // opens clear any stale identity (a replace-position open adopts an
         // existing tab whose record may carry one) (intent-hq/monorepo#2787).
@@ -1218,6 +1346,11 @@ async function executeAction(
           };
         }
 
+        // Navigate runs through evaluate(), so it needs a mounted webview too
+        // (intent-hq/monorepo#4103).
+        const mount = await ensureCaptureTabMounted(action.action, resolvedTabId, workspaceId);
+        if (mount.failure) return mount.failure;
+
         // Loopback-hostname rewrite (daemon.localhost / client.localhost /
         // bare loopback) — a no-op for non-loopback URLs and local daemons.
         const rewrite = rewriteLoopbackUrl(
@@ -1267,6 +1400,7 @@ async function executeAction(
             url: navigateTarget.rewrite.url,
             ...rewriteEcho(navigateTarget.rewrite, navigateTarget.tunneled),
           },
+          ...(mount.warning ? { warning: mount.warning } : {}),
         };
       }
 

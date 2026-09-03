@@ -167,6 +167,7 @@ describe('hud-takeover-triggers', () => {
       idle: 'workspace_idle',
       pr_open: 'pr_open',
       pr_ready: 'pr_ready',
+      pr_queued: 'pr_queued',
       pr_merged: 'pr_merged',
       complete: 'workspace_complete',
     };

@@ -3,6 +3,108 @@ import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost
 
 test.setTimeout(120_000);
 
+for (const zoom of [1, 2]) {
+  test(`aligns terminal status columns with tool rows at ${zoom * 100}%`, async ({ mount }) => {
+    const component = await mount(ChatPanelOperationalGeometryHost, {
+      props: { terminalStatusOnly: true, width: 320, zoom },
+    });
+
+    for (const [messageId, statusTestId] of [
+      ['assistant-stopped', 'stopped-indicator'],
+      ['assistant-abnormal-finish', 'finish-reason-notice'],
+    ] as const) {
+      const message = component.locator(`[data-message-id="${messageId}"]`);
+      const reference = message.locator('[data-tool-use-id]').first();
+      const status = message.getByTestId(statusTestId);
+      const geometry = await message.evaluate(
+        (node, ids) => {
+          const measure = (element: Element) => {
+            const row = element.querySelector('[data-operational-disclosure-row]')!;
+            const leading = element.querySelector('[data-operational-leading]')!;
+            const summary = element.querySelector('[data-operational-summary]')!;
+            const rowBox = row.getBoundingClientRect();
+            const leadingBox = leading.getBoundingClientRect();
+            return {
+              rowEdges: [rowBox.left, rowBox.right],
+              leadingCenter: (leadingBox.left + leadingBox.right) / 2,
+              summaryStart: summary.getBoundingClientRect().left,
+            };
+          };
+          return {
+            reference: measure(node.querySelector(`[data-tool-use-id="${ids.reference}"]`)!),
+            status: measure(node.querySelector(`[data-testid="${ids.status}"]`)!),
+          };
+        },
+        {
+          reference: await reference.getAttribute('data-tool-use-id'),
+          status: statusTestId,
+        },
+      );
+
+      expect(geometry.status.rowEdges).toEqual(geometry.reference.rowEdges);
+      expect(geometry.status.leadingCenter).toBeCloseTo(geometry.reference.leadingCenter, 1);
+      expect(geometry.status.summaryStart).toBeCloseTo(geometry.reference.summaryStart, 1);
+      await expect(status).toHaveCSS('margin-top', '20px');
+    }
+  });
+}
+
+for (const zoom of [1, 2]) {
+  test(`optically centers the reasoning-group glyph at ${zoom * 100}%`, async ({ mount }) => {
+    const component = await mount(ChatPanelOperationalGeometryHost, {
+      props: { terminalStatusOnly: true, width: 320, zoom },
+    });
+    const group = component
+      .locator('[data-message-id="assistant-abnormal-finish"]')
+      .getByTestId('response-group');
+    const trigger = group.getByTestId('response-group-disclosure');
+
+    for (let state = 0; state < 2; state += 1) {
+      const centers = await group.evaluate((node) => {
+        const row = node.querySelector('[data-operational-disclosure-row]')!;
+        const leading = node.querySelector('[data-operational-leading]')!;
+        const label = node.querySelector('[data-testid="response-group-name"]')!;
+        const svg = node.querySelector<SVGSVGElement>('[data-response-group-disclosure-icon] svg')!;
+        const path = svg.querySelector<SVGGraphicsElement>('path')!;
+        const pathBox = path.getBBox();
+        const pathCenter = new DOMPoint(
+          pathBox.x + pathBox.width / 2,
+          pathBox.y + pathBox.height / 2,
+        ).matrixTransform(path.getScreenCTM()!);
+        const labelStyle = getComputedStyle(label);
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d')!;
+        context.font = `${labelStyle.fontStyle} ${labelStyle.fontWeight} ${labelStyle.fontSize} ${labelStyle.fontFamily}`;
+        const textMetrics = context.measureText(label.textContent ?? '');
+        const baselineProbe = document.createElement('span');
+        baselineProbe.style.cssText =
+          'display:inline-block;width:0;height:0;margin:0;padding:0;vertical-align:baseline';
+        label.append(baselineProbe);
+        const baseline = baselineProbe.getBoundingClientRect().bottom;
+        baselineProbe.remove();
+        const scale = svg.getBoundingClientRect().width / 16;
+        const rowBox = row.getBoundingClientRect();
+        const leadingBox = leading.getBoundingClientRect();
+        return {
+          pathCenter: pathCenter.y,
+          labelCenter:
+            baseline -
+            ((textMetrics.actualBoundingBoxAscent - textMetrics.actualBoundingBoxDescent) * scale) /
+              2,
+          rowCenter: (rowBox.top + rowBox.bottom) / 2,
+          leadingCenter: (leadingBox.top + leadingBox.bottom) / 2,
+        };
+      });
+
+      // Font ink bounds vary slightly across platforms; keep the glyph optically
+      // within two CSS pixels of the visible label while its slot stays exact.
+      expect(Math.abs(centers.pathCenter - centers.labelCenter)).toBeLessThanOrEqual(2 * zoom);
+      expect(centers.leadingCenter).toBeCloseTo(centers.rowCenter, 1);
+      await trigger.click();
+    }
+  });
+}
+
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
     for (const width of [320, 720]) {
@@ -119,7 +221,7 @@ for (const theme of ['light', 'dark'] as const) {
             expect(row.leadingCenter[1]).toBeCloseTo(row.rowCenter, 1);
             expect(row.iconCenter[1]).toBeCloseTo(row.rowCenter, 1);
             expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(36 * zoom, 1);
-            expect(row.insets[1]).toBeCloseTo(row.insets[2], 1);
+            expect(row.insets[2] - row.insets[1]).toBeCloseTo(0, 1);
             expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
             expect(row.margins).toEqual([
               '0px',

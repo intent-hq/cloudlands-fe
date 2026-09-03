@@ -31,6 +31,7 @@ import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
 import { normalizeFingerprint } from './backend-connection';
 import { Logger } from '../../../shared/logger';
+import { isLoopbackHost } from '../../../shared/loopback-host';
 import {
   DEFAULT_CONNECTION_ACCENT,
   LOCAL_CONNECTION_ID,
@@ -106,6 +107,19 @@ interface StoredConnection {
    */
   hosts?: string[];
   /**
+   * tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3),
+   * captured from the pairing URI's `tc=` at add time and refreshed from
+   * `system.status.tcAddress` / `server.pairingInfo` after each successful
+   * connect. Absent on records written before this field existed and until
+   * the first capture; `null` after a conclusive refresh saying the daemon
+   * has no tunnel. Unlike `daemonVersion`, this IS part of the keychain-sync
+   * surface: every machine learns the same address from the same daemon, and
+   * syncing it lets a device that can only reach the daemon THROUGH the
+   * tunnel inherit the address from a device that paired locally — so writes
+   * bump the LWW clock and notify sync (see {@link setTcAddress}).
+   */
+  tcAddress?: string | null;
+  /**
    * "Detect all backend IPs" option (#1746). Absent on older records — treated
    * as enabled so existing connections gain the resilience benefit. When
    * `false`, the host list is never refreshed from the backend.
@@ -162,6 +176,8 @@ export interface NewConnection {
   port: number;
   fingerprint: string;
   token: string;
+  /** tc address from the pairing URI's `tc=` (PROTOCOL §12.3); absent = none advertised. */
+  tcAddress?: string;
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts?: boolean;
   /**
@@ -196,6 +212,7 @@ function localRecord(): ConnectionRecord {
     hosts: null,
     port: null,
     fingerprint: null,
+    tcAddress: null,
     isLocal: true,
   };
 }
@@ -203,10 +220,20 @@ function localRecord(): ConnectionRecord {
 /**
  * Candidate-host list for a stored record: the primary `host` first, then the
  * stored extras (deduplicated). Records written before `hosts` existed migrate
- * to the one-element `[host]` list.
+ * to the one-element `[host]` list. Loopback entries — extras AND a legacy
+ * loopback primary — are dropped on read: a record synced from before
+ * self-publish filtered loopback out of `localIps` may still carry them, and
+ * racing one would connect the dialing machine to its OWN local daemon. The
+ * on-disk `stored.host` is untouched (it is the record's identity, and
+ * rewriting it is a store mutation, not a read); when EVERY host is loopback
+ * the primary is kept as the sole candidate so the record stays dialable on
+ * the machine it names.
  */
 function candidateHosts(stored: Pick<StoredConnection, 'host' | 'hosts'>): string[] {
-  return dedupeHosts([stored.host, ...(stored.hosts ?? [])]);
+  const routable = dedupeHosts(
+    [stored.host, ...(stored.hosts ?? [])].filter((h) => !isLoopbackHost(h)),
+  );
+  return routable.length > 0 ? routable : dedupeHosts([stored.host]);
 }
 
 /** Trim, drop empties, and deduplicate while preserving order. */
@@ -231,10 +258,12 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     hosts: candidateHosts(stored),
     port: stored.port,
     fingerprint: stored.fingerprint,
+    tcAddress: stored.tcAddress ?? null,
     hostname: stored.hostname ?? null,
     daemonVersion: stored.daemonVersion ?? null,
     updateSupported: stored.updateSupported ?? null,
     syncExcluded: stored.syncExcluded === true,
+    detectHosts: stored.detectHosts !== false,
     isLocal: false,
   };
 }
@@ -268,6 +297,10 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     (c.hosts === undefined ||
       (Array.isArray(c.hosts) && c.hosts.every((h) => typeof h === 'string'))) &&
     (c.detectHosts === undefined || typeof c.detectHosts === 'boolean') &&
+    // `tcAddress` is an optional late addition (tailcat tunnel): absent on
+    // older records, string once captured, null after a conclusive "no
+    // tunnel" refresh. Accept missing/null/string; reject any other type.
+    (c.tcAddress === undefined || c.tcAddress === null || typeof c.tcAddress === 'string') &&
     // `updatedAt` is an optional late addition (keychain sync): absent on
     // records written before sync existed — treated as epoch-old.
     (c.updatedAt === undefined || typeof c.updatedAt === 'number') &&
@@ -483,6 +516,27 @@ export async function list(): Promise<ConnectionRecord[]> {
 }
 
 /**
+ * Find the stored connection matching a pairing identity (deep-link/QR
+ * connect flows): the cert fingerprint is canonical — a match means the same
+ * machine even under a different host:port — with normalized `host:port` as
+ * the fallback, same semantics as add()'s live dedupe (`sameBackend`). Each
+ * candidate host from the pairing URI is tried against the stored primary
+ * host. Returns the token-free record of the first match, or null.
+ */
+export async function findMatching(identity: {
+  hosts: string[];
+  port: number;
+  fingerprint: string | null;
+}): Promise<ConnectionRecord | null> {
+  const state = await readState();
+  const probe = { port: identity.port, fingerprint: identity.fingerprint ?? '' };
+  const match = state.connections.find((c) =>
+    identity.hosts.some((host) => sameBackend(c, { ...probe, host })),
+  );
+  return match ? toRecord(match) : null;
+}
+
+/**
  * Register a remote connection, deduplicating by backend identity (upsert):
  * the cert fingerprint is canonical (a matching fingerprint is the same
  * machine even under a different host:port), with normalized `host:port` as
@@ -521,6 +575,14 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     const supersededTombstone = state.tombstones.find((t) => tombstoneMatches(t, conn));
     const stamp = Math.max(Date.now(), (supersededTombstone?.updatedAt ?? 0) + 1);
     clearTombstone(state, conn);
+    // A re-pair that leaves the record excluded publishes nothing, so a cloud
+    // delete still pending for this identity must be carried forward or the
+    // keychain copy is orphaned.
+    const carryPendingCloudDelete = (excluded: boolean): void => {
+      if (excluded && supersededTombstone && supersededTombstone.excluded !== true) {
+        state.tombstones.push(supersededTombstone);
+      }
+    };
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = conn.label;
@@ -532,10 +594,14 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.hosts = (survivor.hosts ?? []).filter((h) => h.trim() !== conn.host.trim());
       survivor.fingerprint = conn.fingerprint;
       survivor.encToken = encToken;
+      // Re-pair carries fresh pairing-URI facts: a tc= param overwrites, but
+      // an absent one keeps the known address (older daemons/QRs omit it).
+      if (conn.tcAddress !== undefined) survivor.tcAddress = conn.tcAddress;
       survivor.detectHosts = conn.detectHosts ?? true;
       survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
       survivor.updatedAt = stamp;
+      carryPendingCloudDelete(survivor.syncExcluded === true);
       state.connections = state.connections.filter(
         (c) => c === survivor || !duplicates.includes(c),
       );
@@ -549,11 +615,13 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       host: conn.host,
       port: conn.port,
       fingerprint: conn.fingerprint,
+      tcAddress: conn.tcAddress,
       detectHosts: conn.detectHosts ?? true,
       syncExcluded: conn.syncExcluded ?? false,
       encToken,
       updatedAt: stamp,
     };
+    carryPendingCloudDelete(record.syncExcluded === true);
     state.connections.push(record);
     await writeState(state);
     return record;
@@ -566,6 +634,23 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
  * Update the user-editable metadata for a saved remote. The bearer token and
  * transport identity fields are deliberately untouched. Local and unknown ids
  * reject so callers cannot edit the synthetic sidecar or silently lose work.
+ *
+ * `detectHosts` flips the per-backend IP-detection option (#1746); turning it
+ * off also drops the detected extras so only the primary host remains.
+ *
+ * `syncExcluded` flips the per-backend keychain-sync exclusion after the fact
+ * (spec Phase 2 only set it at add time):
+ * - `false → true` keeps the local record but writes a NON-excluded tombstone
+ *   for its identity, so the next reconcile pushes the delete to the keychain
+ *   and the user's other machines drop their synced copy. The live record is
+ *   no longer listed to sync, and the excluded-record shields in
+ *   {@link applyRemoteSyncRecord} keep the echoed tombstone from ever deleting
+ *   it locally.
+ * - `true → false` clears that tombstone and stamps the record strictly past
+ *   its clock (ties favor the delete in the reconcile), so the record wins the
+ *   next reconcile and is re-published.
+ * While a record is (and stays) excluded, a matching tombstone is left alone:
+ * it is the pending cloud delete, not a stale entry to supersede.
  */
 export async function updateMetadata(
   id: string,
@@ -575,6 +660,8 @@ export async function updateMetadata(
     host?: string;
     port?: number;
     fingerprint?: string;
+    detectHosts?: boolean;
+    syncExcluded?: boolean;
   },
 ): Promise<ConnectionRecord> {
   if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
@@ -607,14 +694,24 @@ export async function updateMetadata(
     const duplicates = state.connections.filter(
       (candidate) => candidate !== conn && sameBackend(candidate, nextIdentity),
     );
-    const matchingTombstone = state.tombstones.find((tombstone) =>
-      tombstoneMatches(tombstone, nextIdentity),
-    );
+    const previouslyExcluded = conn.syncExcluded === true;
+    const nextExcluded = metadata.syncExcluded ?? previouslyExcluded;
+    const exclusionChanged = nextExcluded !== previouslyExcluded;
+    const nextDetectHosts = metadata.detectHosts ?? conn.detectHosts !== false;
+    const detectHostsChanged = nextDetectHosts !== (conn.detectHosts !== false);
+    // A record that is (and stays) excluded leaves its matching tombstone
+    // alone: that is the pending cloud delete written on exclusion, not a
+    // stale entry for this edit to supersede.
+    const matchingTombstone = nextExcluded
+      ? undefined
+      : state.tombstones.find((tombstone) => tombstoneMatches(tombstone, nextIdentity));
     if (
       conn.label === label &&
       conn.accent === metadata.accent &&
       !addressChanged &&
       !fingerprintChanged &&
+      !exclusionChanged &&
+      !detectHostsChanged &&
       duplicates.length === 0 &&
       !matchingTombstone
     ) {
@@ -636,11 +733,39 @@ export async function updateMetadata(
     conn.port = nextPort;
     conn.fingerprint = nextFingerprint;
     if (addressChanged) conn.hosts = [];
-    if (addressChanged || fingerprintChanged) conn.hostname = null;
+    // A new identity may be a different machine: the captured hostname and
+    // tunnel address describe the OLD daemon and would otherwise sync
+    // fleet-wide under the new identity (tcAddress rides the same record).
+    // Clear both; the next successful connect re-captures them.
+    if (addressChanged || fingerprintChanged) {
+      conn.hostname = null;
+      conn.tcAddress = null;
+    }
+    if (detectHostsChanged) {
+      conn.detectHosts = nextDetectHosts;
+      if (!nextDetectHosts) conn.hosts = [];
+    }
+    if (exclusionChanged) conn.syncExcluded = nextExcluded;
+    const previousIdentityLeavesSync =
+      (addressChanged && fingerprintChanged) || (exclusionChanged && nextExcluded);
+    // An earlier exclusion may have left a synced cloud delete pending for the
+    // previous identity; the replacement tombstone written below must keep
+    // propagating it, and never with a lower clock.
+    const pendingCloudDelete =
+      previousIdentityLeavesSync && previouslyExcluded
+        ? state.tombstones.find((t) => t.excluded !== true && tombstoneMatches(t, previous))
+        : undefined;
+    // Stamp strictly past the record's own clock (as setTcAddress does): a
+    // same-millisecond edit must out-clock the state it replaces, or the LWW
+    // reconcile treats equal clocks as in-sync and a peer's stale copy —
+    // e.g. a host-list refresh that beat a detectHosts=false flip — ties
+    // with, instead of losing to, this write.
     const now = Math.max(
       Date.now(),
+      (conn.updatedAt ?? 0) + 1,
       ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
       matchingTombstone ? matchingTombstone.updatedAt + 1 : 0,
+      pendingCloudDelete ? pendingCloudDelete.updatedAt + 1 : 0,
     );
     conn.updatedAt = now;
     if (identityChanged || matchingTombstone) clearTombstone(state, nextIdentity);
@@ -648,7 +773,13 @@ export async function updateMetadata(
     state.connections = state.connections.filter(
       (candidate) => candidate === conn || !duplicates.includes(candidate),
     );
-    if (addressChanged && fingerprintChanged) {
+    // Tombstone the PREVIOUS identity when it leaves sync: a whole-identity
+    // change (a different machine now lives under the record) or a fresh
+    // exclusion (the record stays, its synced copy must go). The tombstone
+    // is listed to sync unless the record was already local-only — except
+    // when an earlier exclusion left a cloud delete pending for that
+    // identity, which must keep propagating under the new tombstone.
+    if (previousIdentityLeavesSync) {
       clearTombstone(state, previous);
       state.tombstones.push({
         label: previous.label,
@@ -661,7 +792,7 @@ export async function updateMetadata(
         detectHosts: previous.detectHosts,
         updatedAt: now,
         deletedAt: now,
-        excluded: previous.syncExcluded === true,
+        excluded: previouslyExcluded && !pendingCloudDelete,
       });
     }
     await writeState(state);
@@ -687,14 +818,16 @@ export async function replaceSecret(
     conn.encToken = encryptToken(token);
     if (fingerprintKey(conn.fingerprint) !== fingerprintKey(normalizedFingerprint)) {
       conn.fingerprint = normalizedFingerprint;
-      // The cert changed, so the captured hostname may describe a different
-      // machine. A label auto-captured from it (see setHostname) resets to
-      // the address default so it stays recognizably uncustomized and the
-      // next connect re-captures the pretty name.
+      // The cert changed, so the captured hostname and tunnel address may
+      // describe a different machine — and tcAddress would sync fleet-wide
+      // under the new identity. A label auto-captured from the hostname (see
+      // setHostname) resets to the address default so it stays recognizably
+      // uncustomized; the next connect re-captures both.
       if (conn.hostname != null && conn.label.trim() === conn.hostname.trim()) {
         conn.label = `${conn.host.trim()}:${conn.port}`;
       }
       conn.hostname = null;
+      conn.tcAddress = null;
     }
     conn.updatedAt = Date.now();
     await writeState(state);
@@ -853,6 +986,48 @@ export async function setUpdateSupported(id: string, supported: boolean | null):
 }
 
 /**
+ * Persist the remote daemon's tailcat tunnel endpoint (`tcAddress` from its
+ * `system.status` or `server.pairingInfo`, PROTOCOL §12.3). `null` clears the
+ * address back to "no tunnel" — used when a successful response lacks the
+ * field, so a stale address never survives a conclusive tunnel-less response.
+ * Returns `true` when the stored value actually changed so the caller can
+ * broadcast the refreshed list. A no-op for an unknown id (fail-soft: the
+ * tunnel is one extra connect candidate, never a hard requirement).
+ *
+ * Unlike the observational {@link setDaemonVersion}, the tc address is part
+ * of the keychain-sync surface (see the `tcAddress` field doc): a change
+ * bumps the LWW clock and notifies sync so tunnel rotation propagates to the
+ * user's other devices. Like {@link setHostname}, the unchanged common
+ * every-reconnect case skips the write (no artificial clock bump), and the
+ * stamp is forced strictly past the record's current clock so a capture
+ * landing in the same millisecond as `add` still out-clocks it.
+ * Trade-off (same as {@link setHostname}'s, but recurring with every tunnel
+ * flap rather than a rename): the clock covers the WHOLE record, so this
+ * AUTOMATIC every-reconnect capture can out-clock a manual edit (label/host/
+ * token) or forget made on another machine shortly before but not yet
+ * synced — the capture then wins the whole record and the other machine's
+ * change loses the LWW reconcile. Accepted: address changes are rare in
+ * steady state (the unchanged-skip above keeps flap-free reconnects
+ * clock-neutral), and a lost edit re-syncs on its next mutation.
+ */
+export async function setTcAddress(id: string, tcAddress: string | null): Promise<boolean> {
+  const normalized = tcAddress?.trim() || null;
+  const changed = await mutate(async (state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return false; // unknown id: nothing to update
+    // Unchanged address (the common every-reconnect case): skip the write.
+    // Absent and null both mean "no tunnel" — normalize before comparing.
+    if ((conn.tcAddress ?? null) === normalized) return false;
+    conn.tcAddress = normalized;
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
+    await writeState(state);
+    return true;
+  });
+  if (changed) notifyMutated();
+  return changed;
+}
+
+/**
  * Forget a remote connection. Rejects the reserved `local` id. If the
  * forgotten connection was active, the active selection falls back to `local`.
  * Writes a tombstone for the removed backend so keychain sync propagates the
@@ -872,7 +1047,15 @@ export async function forget(id: string): Promise<void> {
       state.activeId = LOCAL_CONNECTION_ID;
     }
     if (removed) {
-      const now = Date.now();
+      // An excluded record may still owe the keychain a delete from the
+      // exclusion that kept it local (updateMetadata syncExcluded: true); the
+      // forget tombstone must keep propagating it rather than hide it as
+      // local-only, and never with a lower clock.
+      const pendingCloudDelete =
+        removed.syncExcluded === true
+          ? state.tombstones.find((t) => t.excluded !== true && tombstoneMatches(t, removed))
+          : undefined;
+      const now = Math.max(Date.now(), pendingCloudDelete ? pendingCloudDelete.updatedAt + 1 : 0);
       clearTombstone(state, removed);
       state.tombstones.push({
         label: removed.label,
@@ -885,7 +1068,7 @@ export async function forget(id: string): Promise<void> {
         detectHosts: removed.detectHosts,
         updatedAt: now,
         deletedAt: now,
-        excluded: removed.syncExcluded === true,
+        excluded: removed.syncExcluded === true && !pendingCloudDelete,
       });
     }
     await writeState(state);
@@ -978,6 +1161,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
       port: conn.port,
       fingerprint: conn.fingerprint,
       hostname: conn.hostname ?? null,
+      tcAddress: conn.tcAddress ?? null,
       detectHosts: conn.detectHosts !== false,
       token,
       updatedAt: conn.updatedAt ?? 0,
@@ -994,6 +1178,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
       port: t.port,
       fingerprint: t.fingerprint,
       hostname: t.hostname ?? null,
+      tcAddress: null,
       detectHosts: t.detectHosts !== false,
       token: '',
       updatedAt: t.updatedAt,
@@ -1011,9 +1196,9 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * record arriving under a new address collapses into the machine's existing
  * entry instead of duplicating it. The existing record keeps its `id` (so
  * open windows/pool entries stay attached) while host/port/
- * label/fingerprint/token/hosts/hostname/detectHosts and the remote's
- * `updatedAt` clock are taken verbatim (NOT re-stamped: the clock must
- * converge across machines). A tombstone removes the backend (matched by the
+ * label/fingerprint/token/hosts/hostname/tcAddress/detectHosts and the
+ * remote's `updatedAt` clock are taken verbatim (NOT re-stamped: the clock
+ * must converge across machines). A tombstone removes the backend (matched by the
  * same identity, so a delete written under an old address still lands) and
  * remembers the tombstone; if the removed backend was active, the selection
  * falls back to `local` (never touching any other machine-local selection
@@ -1101,6 +1286,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       survivor.encToken = encToken;
       survivor.hostname = record.hostname;
       survivor.hosts = extras;
+      survivor.tcAddress = record.tcAddress;
       survivor.detectHosts = record.detectHosts;
       survivor.updatedAt = record.updatedAt;
       state.connections = state.connections.filter(
@@ -1116,6 +1302,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
         fingerprint: record.fingerprint,
         hostname: record.hostname,
         hosts: extras,
+        tcAddress: record.tcAddress,
         detectHosts: record.detectHosts,
         encToken,
         updatedAt: record.updatedAt,

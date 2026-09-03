@@ -244,7 +244,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ['MessageContent', renderMessage],
     ['StreamingMessageContent', renderStreaming],
   ])(
-    'shows one current live-group child until the user expands full history in %s',
+    'shows all live-group children in the preview and expanded history in %s',
     async (_renderer, renderMessageContent) => {
       const content = [
         { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
@@ -260,7 +260,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
       expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
       expect(screen.getByTestId('response-group-name').textContent).toBe('Working');
-      expect(visibleChildTypes()).toEqual(['thinking']);
+      expect(visibleChildTypes()).toEqual(['text', 'thinking']);
       expect(screen.getAllByTestId('reasoning-disclosure')).toHaveLength(1);
 
       await view.rerender({
@@ -270,7 +270,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
         ],
         isStreaming: true,
       });
-      expect(visibleChildTypes()).toEqual(['thinking']);
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_result']);
 
       const tool = {
         type: 'tool_use',
@@ -280,7 +280,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
         toolCallId: 'tool-1',
       } as ContentBlock;
       await view.rerender({ content: [...content, tool], isStreaming: true });
-      expect(visibleChildTypes()).toEqual(['tool_use']);
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use']);
 
       const withAnswer = [
         ...content,
@@ -289,9 +289,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
         { type: 'text', id: 'msg_1:6', text: 'Current answer' },
       ] as ContentBlock[];
       await view.rerender({ content: withAnswer, isStreaming: true });
-      expect(visibleChildTypes()).toEqual(['text']);
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
       expect(document.body.textContent).toContain('Current answer');
-      expect(document.body.textContent).not.toContain('Earlier answer');
+      expect(document.body.textContent).toContain('Earlier answer');
 
       await fireEvent.click(groupDisclosure);
       expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
@@ -312,7 +312,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
       await fireEvent.click(groupDisclosure);
       expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-      expect(visibleChildTypes()).toEqual(['thinking']);
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
 
       await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
       expect(visibleChildTypes()).toEqual([]);
@@ -353,7 +353,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
       expect(document.body.textContent).not.toContain('Thinking...');
       expect(document.body.textContent?.match(/Planning workspace title setup/g)).toHaveLength(1);
       expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
-      expect(document.body.textContent).not.toContain('Assessing delegation and tool availability');
+      expect(document.body.textContent).toContain('Assessing delegation and tool availability');
       expect(findChatSearchMatches([message], 'dark-mode surface', new Map())).toEqual([
         {
           messageId: 'assistant-adjacent-preview',
@@ -558,8 +558,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
-    expect(visibleChildTypes()).toEqual(['tool_use']);
-    expect(document.body.textContent).not.toContain('Then I will read the current spec');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(document.body.textContent).toContain('Then I will read the current spec');
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
@@ -606,8 +606,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Workspace ready');
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(visibleChildTypes()).toEqual(['tool_use']);
-    expect(document.body.textContent).not.toContain('Then I will read the current spec');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(document.body.textContent).toContain('Then I will read the current spec');
 
     const completedContent = [
       ...groupContent,
@@ -825,6 +825,45 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(responseGroup.textContent?.match(/History body after every title\./g)).toHaveLength(1);
   });
 
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])('preserves prose-to-title boundaries as semantic sections in %s', async (_, renderer) => {
+    await renderer([
+      { type: 'text', id: 'boundary:0', text: '<group:Prepping>Group description.' },
+      thinking(
+        'boundary:1',
+        'Reasoning\n\n**Evaluating user feedback mechanisms**\n\nReview input.',
+      ),
+      thinking('boundary:2', '**Specifying task requirements**\n\nDefine the smallest change.'),
+      { type: 'text', id: 'boundary:3', text: '</group:Prepping>' },
+    ]);
+
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    const group = screen.getByTestId('response-group');
+    const sections = [...group.querySelectorAll('[data-reasoning-section]')];
+    expect(sections).toHaveLength(2);
+    expect(sections.every((section) => section.tagName === 'SECTION')).toBe(true);
+    expect(sections.map((section) => section.getAttribute('aria-labelledby'))).toEqual(
+      sections.map((section) => section.querySelector('[data-reasoning-section-title]')?.id),
+    );
+    expect(sections[0].textContent).toContain('Review input.');
+    expect(sections[1].textContent).toContain('Specifying task requirements');
+    expect(sections[0].querySelector('[data-reasoning-history-body]')?.closest('section')).toBe(
+      sections[0],
+    );
+    expect(sections[1].querySelector('[data-reasoning-section-title]')?.closest('section')).toBe(
+      sections[1],
+    );
+
+    const childBoundaries = group.querySelectorAll('[data-reasoning-section-boundary]');
+    expect(childBoundaries).toHaveLength(2);
+    expect(childBoundaries[1].previousElementSibling?.textContent).toContain('Review input.');
+    expect(childBoundaries[1].textContent).toContain('Specifying task requirements');
+    expect(group.textContent?.match(/Review input\./g)).toHaveLength(1);
+    expect(group.textContent?.match(/Specifying task requirements/g)).toHaveLength(1);
+  });
+
   it('uses the reasoning title in the static message path', async () => {
     await renderStatic([
       thinking('msg_1:0', '# Considering task restoration\n\nInspect saved state.'),
@@ -968,13 +1007,19 @@ describe('thinking blocks — StreamingMessageContent', () => {
   });
 
   it('flags the last visible group child as streaming when a hidden child trails', async () => {
-    // tool_result children are never rendered by the group loop — a trailing
-    // one must not steal the "last block" streaming flag from the final
-    // visible thinking block.
+    // A paired tool_result child is rendered inside its visible tool_use — a
+    // trailing one must not steal the streaming flag from the final group child.
     await renderStreaming(
       [
-        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
-        thinking('msg_1:1', 'Reasoning while a result trails'),
+        {
+          type: 'tool_use',
+          id: 'msg_1:0',
+          toolCallId: 'call_1',
+          name: 'view',
+          input: { path: 'src/example.ts' },
+        },
+        { type: 'text', id: 'msg_1:1', text: '<group:Working>' },
+        thinking('msg_1:2', 'Reasoning while a result trails'),
         { type: 'tool_result', tool_use_id: 'call_1', output: 'done' } as ContentBlock,
       ],
       true,

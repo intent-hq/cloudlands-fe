@@ -33,6 +33,7 @@ import {
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { removeScript } from '../../scripts/scripts-slice';
 import {
   workspaceDeleted,
   workspaceMounted,
@@ -130,6 +131,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  updateTabViewport,
 } from '../panel-layout-slice';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
@@ -190,6 +192,7 @@ const PERSIST_ACTIONS = [
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
+  updateTabViewport,
   updateFileTabPath,
   consumePendingFocus,
   reconcilePanelColumnCount,
@@ -1049,6 +1052,10 @@ export function* panelLayoutSaga(options?: {
     yield* fork(persistPanelLayout, action);
     yield* queueHistorySaveForAction(action);
   }
+  function* handleScriptRemoved(action: ReturnType<typeof removeScript>): SagaGenerator<void> {
+    yield* fork(persistPanelLayout, action);
+    yield* queueHistorySaveForAction(action);
+  }
   function* handleReopenedPanelColumn(
     action: ReturnType<typeof reopenClosedPanelColumn>,
   ): SagaGenerator<void> {
@@ -1084,6 +1091,7 @@ export function* panelLayoutSaga(options?: {
     // revert to hidden on restart (monorepo#3112).
     yield* takeEvery(revealHiddenTabAvoidingPanel, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
+    yield* takeEvery(removeScript, handleScriptRemoved);
     yield* takeEvery(reopenClosedPanelColumn, handleReopenedPanelColumn);
     yield* fork(watchRightmostColumnRequests);
     yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);

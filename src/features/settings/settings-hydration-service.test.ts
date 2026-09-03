@@ -29,11 +29,14 @@ import { applySettingsChanges, BG_MODEL_MIGRATION_MARKER_KEY } from './settings-
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import {
   activeProviderPersistRejected,
-  hydrateActiveProvider,
   loadEnabledProvidersFromStorage,
   setActiveProvider,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { loadProviderModelsFromStorage } from '$store/renderer/slices/model/model-slice';
+import {
+  hydrateDefaultProvider,
+  loadProviderModelsFromStorage,
+  setSelectedModel,
+} from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   beforeAll(() => {
@@ -50,45 +53,76 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
   afterEach(() => vi.clearAllMocks());
 
-  it('hydrates the provider-settings slice from providers.active / providers.enabled', async () => {
+  it('hydrates the default provider and enablement map from model.defaultProvider / providers.enabled', async () => {
     applySettingsChanges([
-      { path: 'providers.active', value: 'auggie' },
+      { path: 'model.defaultProvider', value: 'auggie' },
       { path: 'providers.enabled', value: { auggie: true, codex: false } },
     ]);
     const state = appStore.state as {
       providerSettings: {
-        activeProviderId: string;
         enabledProviders: Record<string, boolean>;
       };
       model: { defaultProviderId: string };
     };
-    expect(state.providerSettings.activeProviderId).toBe('auggie');
     expect(state.providerSettings.enabledProviders).toEqual({ auggie: true, codex: false });
     expect(state.model.defaultProviderId).toBe('auggie');
   });
 
-  it('keeps the model default synchronized with guarded active-provider hydration', () => {
+  it('guards default-provider hydration against stale echoes', () => {
     const state = () => appStore.state;
     appStore.dispatch(setActiveProvider('auggie'));
-    applySettingsChanges([{ path: 'providers.active', value: 'auggie' }]);
+    applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
 
     appStore.dispatch(setActiveProvider('claude-code'));
-    applySettingsChanges([{ path: 'providers.active', value: 'auggie' }]);
-    expect(state().providerSettings.activeProviderId).toBe('claude-code');
-    expect(state().providerSettings.pendingActiveProviderId).toBe('claude-code');
+    applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
     expect(state().model.defaultProviderId).toBe('claude-code');
+    expect(state().model.pendingDefaultProviderId).toBe('claude-code');
 
-    applySettingsChanges([{ path: 'providers.active', value: 'claude-code' }]);
-    expect(state().providerSettings.activeProviderId).toBe('claude-code');
-    expect(state().providerSettings.pendingActiveProviderId).toBeNull();
+    applySettingsChanges([{ path: 'model.defaultProvider', value: 'claude-code' }]);
     expect(state().model.defaultProviderId).toBe('claude-code');
+    expect(state().model.pendingDefaultProviderId).toBeNull();
 
     appStore.dispatch(setActiveProvider('claude-code'));
     appStore.dispatch(activeProviderPersistRejected('claude-code'));
-    applySettingsChanges([{ path: 'providers.active', value: 'auggie' }]);
-    expect(state().providerSettings.activeProviderId).toBe('auggie');
-    expect(state().providerSettings.pendingActiveProviderId).toBeNull();
+    applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
     expect(state().model.defaultProviderId).toBe('auggie');
+    expect(state().model.pendingDefaultProviderId).toBeNull();
+  });
+
+  it('reconciles a cross-provider default selection through stale settings echoes', () => {
+    applySettingsChanges([
+      { path: 'model.defaultProvider', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
+    ]);
+
+    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(
+      setSelectedModel({ providerId: 'claude-code', model: 'claude-code:sonnet-4.8' }),
+    );
+    applySettingsChanges([
+      { path: 'model.defaultProvider', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
+    ]);
+
+    expect(appStore.state.model.defaultProviderId).toBe('claude-code');
+    expect(appStore.state.model.providerModels['claude-code']).toBe('sonnet-4.8');
+
+    applySettingsChanges([
+      { path: 'model.defaultProvider', value: 'claude-code' },
+      {
+        path: 'model.providerDefaults',
+        value: { auggie: 'opus-4.8', 'claude-code': 'sonnet-4.8' },
+      },
+    ]);
+    expect(appStore.state.model.pendingDefaultProviderId).toBeNull();
+    expect(appStore.state.model.pendingProviderModels).toEqual({});
+
+    applySettingsChanges([
+      { path: 'model.defaultProvider', value: 'auggie' },
+      { path: 'model.providerDefaults', value: { auggie: 'opus-4.9' } },
+    ]);
+    expect(appStore.state.model.defaultProviderId).toBe('auggie');
+    expect(appStore.state.model.providerModels.auggie).toBe('opus-4.9');
   });
 
   it('hydrates the mcp-settings slice from mcp.servers + mcp.disabledServers + mcp.enableUserServers', async () => {
@@ -300,7 +334,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       catalogSpy.mockResolvedValue({ providers: [] });
       // Stale renderer state from the local machine: active provider set, no
       // enablement entry — the shape that passed the old gate during boot.
-      appStore.dispatch(hydrateActiveProvider(''));
+      appStore.dispatch(hydrateDefaultProvider(''));
       appStore.dispatch(loadEnabledProvidersFromStorage({}));
       appStore.dispatch(loadProviderModelsFromStorage({}));
       const connections = () =>
@@ -308,7 +342,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       expect(connections().hasReceivedList).toBe(false);
 
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: {} },
       ]);
       // Deferred: no wire traffic while the active backend is still unknown.
@@ -318,7 +352,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
       // connections:list resolves on a remote backend — the re-run gate must
       // reject the seed instead of writing stale local state to the remote.
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }));
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
       for (let i = 0; i < 5; i++) await Promise.resolve();
       expect(catalogSpy).not.toHaveBeenCalled();
       expect(updateSpy).not.toHaveBeenCalled();
@@ -370,10 +410,12 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       // app store is a module singleton), and settle the connections list on
       // the local sidecar so the seed's boot-race defer path stays out of the
       // way (that path has its own describe above).
-      appStore.dispatch(hydrateActiveProvider(''));
+      appStore.dispatch(hydrateDefaultProvider(''));
       appStore.dispatch(loadEnabledProvidersFromStorage({}));
       appStore.dispatch(loadProviderModelsFromStorage({}));
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }));
+      appStore.dispatch(
+        connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+      );
     });
 
     it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
@@ -381,7 +423,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       // without an auggie entry (the pre-fe#759 unset⇒enabled special case
       // meant it was never written).
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: { codex: true } },
       ]);
 
@@ -398,7 +440,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       // is path-keyed, so a null value still triggers it against the slice's
       // (empty) map even though applyOne skips the null dispatch.
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: null },
       ]);
 
@@ -409,9 +451,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       });
     });
 
-    it('seeds the sole persisted model provider when providers.active is unset', async () => {
+    it('seeds the sole persisted model provider when model.defaultProvider is unset', async () => {
       applySettingsChanges([
-        { path: 'providers.active', value: null },
+        { path: 'model.defaultProvider', value: null },
         { path: 'model.providerDefaults', value: { auggie: 'gpt5.6-sol' } },
         { path: 'providers.enabled', value: null },
       ]);
@@ -425,7 +467,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it('leaves an unset active provider unresolved when persisted model providers are ambiguous', async () => {
       applySettingsChanges([
-        { path: 'providers.active', value: null },
+        { path: 'model.defaultProvider', value: null },
         {
           path: 'model.providerDefaults',
           value: { auggie: 'gpt5.6-sol', codex: 'gpt-5.3-codex/high' },
@@ -441,7 +483,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it('preserves an explicit persisted false (deliberate disable) without touching the wire', async () => {
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: { auggie: false } },
       ]);
 
@@ -453,7 +495,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it('is idempotent: the seeded entry short-circuits every later hydration', async () => {
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: {} },
       ]);
       await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
@@ -471,7 +513,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it('never seeds a non-disableable provider (always enabled, needs no entry)', async () => {
       applySettingsChanges([
-        { path: 'providers.active', value: 'claude-code' },
+        { path: 'model.defaultProvider', value: 'claude-code' },
         { path: 'providers.enabled', value: {} },
       ]);
 
@@ -483,7 +525,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it('never seeds a provider unknown to the catalog', async () => {
       applySettingsChanges([
-        { path: 'providers.active', value: 'removed-provider' },
+        { path: 'model.defaultProvider', value: 'removed-provider' },
         { path: 'providers.enabled', value: {} },
       ]);
 
@@ -496,7 +538,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     it('skips the seed (and retries next hydration) when the catalog read fails', async () => {
       catalogSpy.mockRejectedValue(new Error('daemon unavailable'));
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: {} },
       ]);
 
@@ -515,7 +557,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     it('does not mutate renderer state when the daemon write fails (persist-first)', async () => {
       updateSpy.mockRejectedValue(new Error('write failed'));
       applySettingsChanges([
-        { path: 'providers.active', value: 'auggie' },
+        { path: 'model.defaultProvider', value: 'auggie' },
         { path: 'providers.enabled', value: {} },
       ]);
 
@@ -532,12 +574,18 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     });
 
     it('never seeds on a remote backend, even when stale local state names a candidate', async () => {
-      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }));
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
       try {
         // Stale renderer state from the local session: active provider set,
         // no enablement entry — the exact shape that would seed locally.
         applySettingsChanges([
-          { path: 'providers.active', value: 'auggie' },
+          { path: 'model.defaultProvider', value: 'auggie' },
           { path: 'providers.enabled', value: {} },
         ]);
 
@@ -546,7 +594,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
         expect(catalogSpy).not.toHaveBeenCalled();
         expect(updateSpy).not.toHaveBeenCalled();
       } finally {
-        appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }));
+        appStore.dispatch(
+          connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+        );
       }
     });
   });

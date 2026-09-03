@@ -126,7 +126,7 @@ export type SettingsStateFixtureContext = {
 };
 
 export function createSettingsFixtureUpdate(value: string) {
-  const change = { path: 'providers.active', value };
+  const change = { path: 'model.defaultProvider', value };
   return {
     request: { method: 'settings.update', params: { changes: [change] } },
     response: { applied: [change] },
@@ -139,10 +139,10 @@ export const SETTINGS_PROTOCOL_FIXTURES = {
     response: {
       settings: [
         {
-          path: 'providers.active',
-          label: 'Active provider',
+          path: 'model.defaultProvider',
+          label: 'Default provider',
           description: '',
-          category: 'providers',
+          category: 'agents',
           type: 'string',
           defaultValue: 'auggie',
           value: 'codex',

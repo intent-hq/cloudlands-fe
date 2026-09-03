@@ -13,7 +13,7 @@
  */
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
-import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
 
@@ -23,9 +23,8 @@ export const selectProviderCatalogLoaded = store.createSelector(
 );
 
 /** All rows in the daemon's registry order (gated-off rows included). */
-export const selectProviderCatalogEntries = store.createSelector(
-  (state): ProviderCatalogEntry[] =>
-    state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
+export const selectProviderCatalogEntries = store.createSelector((state): ProviderCatalogEntry[] =>
+  state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
 );
 
 /** All provider ids in registry order. */
@@ -35,45 +34,19 @@ export const selectAllCatalogProviderIds = store.createSelector(
 
 /**
  * The effective default provider id, derived from user settings (the
- * registry carries no default designation): the provider prefix of the
- * global default model when it is a compound id, else the active provider
- * (`providers.active`). '' when neither resolves — an honestly unresolved
- * state (fresh state, settings not hydrated, or `providers.active` unset).
+ * registry carries no default designation): the default provider mirrored
+ * by the model slice (`model.defaultProvider`). '' when unresolved — an
+ * honest state (fresh state, settings not hydrated, or
+ * `model.defaultProvider` unset).
  * The FE never fabricates a default from the catalog: falling through to
  * the first catalog row would functionally reinstate the removed hardcoded
  * auggie default. Mirrors the daemon's `derived_default_provider`, which
  * resolves unset settings to None (§5.31 gate closed), not a registry row.
- *
- * Once the catalog is hydrated, a prefix that is not a known catalog
- * provider id (malformed/legacy compound string) is ignored and resolution
- * falls through to the next precedence step, so an unknown id never
- * mis-attributes bare model ids downstream.
- *
- * Known divergences from the spec's ideal ordering (accepted, documented on
- * the PR #759 review):
- * - The model lookup is keyed by `activeProviderId`, so when
- *   `providers.active` is unset the persisted global model is never
- *   consulted — a daemon-persisted compound `model.default` without
- *   `providers.active` (older FE / another client) resolves to ''
- *   (unresolved) rather than the model's provider.
- * - In steady state the compound branch is a legacy/transient-state guard,
- *   not the primary path: `providerModels[activeProviderId]` is
- *   write-normalized to the bare form (the model slice mirrors the active
- *   provider as its default), so `includes(':')` only fires on
- *   un-normalized state (pre-hydration persistence, older writers).
+ * Provider provenance lives in the triple's provider leg — model ids in the
+ * store are always bare and never consulted here.
  */
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
-  const catalogLoaded = state.providerCatalog?.loaded ?? false;
-  const catalogIds = state.providerCatalog?.providers.ids ?? [];
-  const activeProviderId = state.providerSettings?.activeProviderId ?? '';
-  const globalModel = activeProviderId
-    ? state.model?.providerModels?.[activeProviderId]
-    : undefined;
-  if (globalModel?.includes(':')) {
-    const { providerId } = splitCompoundModelId(globalModel);
-    if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
-  }
-  return activeProviderId;
+  return state.model?.defaultProviderId ?? '';
 });
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
@@ -131,16 +104,13 @@ export const selectProviderDisplayName = store.createSelector(
 );
 
 /**
- * `isModelValidForProvider`-equivalent against the effective default:
- * whether a (compound or bare) model id belongs to `targetProviderId`.
+ * Whether a (legacy compound or bare) model id belongs to
+ * `targetProviderId`; bare ids attribute to the effective default provider.
  */
 export const selectIsModelValidForProvider = store.createSelector(
   (state, model: string, targetProviderId: string): boolean =>
-    isModelValidForProvider(
-      model,
-      targetProviderId,
-      selectEffectiveDefaultProviderId.select(state),
-    ),
+    (splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state)) ===
+    targetProviderId,
 );
 
 /**
@@ -154,4 +124,47 @@ export const selectIsProviderAuthenticationError = store.createSelector(
       selectProviderCatalogEntryOrDefault.select(state, providerId),
       errorMessage,
     ),
+);
+
+/** Login guidance for a provider authentication failure. */
+export interface ProviderAuthFailureGuidance {
+  /** Canonical id of the provider whose auth failed (refresh target). */
+  providerId: string;
+  /** Login command to surface (catalog hint, else `<command> login`). */
+  loginCommandHint: string;
+  /** claude-code only: desktop-app sign-in does not carry over to the CLI. */
+  showClaudeDesktopNote: boolean;
+}
+
+/**
+ * Login guidance for an agent failure: when `errorMessage` matches the
+ * provider's catalog `authErrorPatterns`, return the actionable login
+ * command (and the claude-code desktop-app caveat). The provider resolves
+ * from the session's explicit provider id, else the compound model prefix,
+ * else the effective default (via the EntryOrDefault fallback). `null` when
+ * there is no error or it is not an authentication failure.
+ */
+export const selectProviderAuthFailureGuidance = store.createSelector(
+  (
+    state,
+    provider: string | null | undefined,
+    model: string | null | undefined,
+    errorMessage: string | null | undefined,
+  ): ProviderAuthFailureGuidance | null => {
+    if (!errorMessage) return null;
+    // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
+    // treat it as unset so resolution falls through to the model prefix.
+    let rawId = provider && provider !== 'acp' ? provider : '';
+    if (!rawId && model?.includes(':')) {
+      rawId = splitLegacyCompoundId(model).providerId || '';
+    }
+    const entry = selectProviderCatalogEntryOrDefault.select(state, rawId);
+    if (!isProviderAuthenticationErrorForEntry(entry, errorMessage)) return null;
+    const providerId = entry?.id ?? rawId;
+    return {
+      providerId,
+      loginCommandHint: entry?.loginCommandHint || `${entry?.command ?? providerId} login`,
+      showClaudeDesktopNote: providerId === 'claude-code',
+    };
+  },
 );

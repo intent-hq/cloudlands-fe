@@ -7,6 +7,7 @@
    *
    * Performance optimizations:
    * - Throttled to 30fps instead of 60fps (halves GPU usage)
+   * - Caps the backing buffer at one render pixel per CSS pixel
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
    * - Respects prefers-reduced-motion
@@ -38,6 +39,8 @@
 
   // Target 30fps instead of 60fps to reduce GPU usage
   const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
+  // The effect is intentionally soft, so Retina supersampling adds fragment work without useful detail.
+  const MAX_RENDER_DPR = 1;
 
   // Random seed for variety each session
   const seed = Math.random() * 1000;
@@ -517,7 +520,7 @@
     const dpr = window.devicePixelRatio || 1;
     const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const handler = () => {
-      cachedDpr = window.devicePixelRatio || 1;
+      cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
       updateCanvasSize();
       // Remove old listener and set up a new one with the updated DPR
       dprQuery.removeEventListener('change', handler);
@@ -531,7 +534,7 @@
     // Check initial states
     isPageVisible = !document.hidden;
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    cachedDpr = window.devicePixelRatio || 1;
+    cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);

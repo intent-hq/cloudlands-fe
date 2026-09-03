@@ -56,6 +56,10 @@ export type SidebarNavState = {
   allSpacesViewMode: AllSpacesViewMode;
   /** Whether archived workspaces are included in the All Spaces list (persisted) */
   showArchivedWorkspaces: boolean;
+  /** Collapsed All Spaces status-group IDs (persisted) */
+  collapsedStatusGroupIds: string[];
+  /** Whether the Chief of Staff section in the combined panel is collapsed (persisted) */
+  isChiefCollapsed: boolean;
   /** Pinned workspace IDs (persisted to localStorage) */
   pinnedWorkspaceIds: string[];
   /** Global workspace sidebar tab order (persisted) */

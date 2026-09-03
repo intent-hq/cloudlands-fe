@@ -28,6 +28,7 @@ const {
   mockPersistClientId,
   mockSetDaemonVersion,
   mockSetUpdateSupported,
+  mockSetTcAddress,
   systemStatus,
   mockRunLog,
   startupFailedListeners,
@@ -38,6 +39,7 @@ const {
   mockPersistClientId: vi.fn(async () => {}),
   mockSetDaemonVersion: vi.fn(async () => false),
   mockSetUpdateSupported: vi.fn(async () => false),
+  mockSetTcAddress: vi.fn(async () => false),
   // `system.status` result the fake client answers with; tests override.
   systemStatus: { value: {} as unknown },
   mockRunLog: {
@@ -74,6 +76,9 @@ vi.mock('../json-rpc-client', () => ({
     }
     getStatus(): string {
       return 'disconnected';
+    }
+    getConnectedVia(): null {
+      return null;
     }
     getReconnectAttempts(): number {
       return 0;
@@ -121,6 +126,7 @@ vi.mock('../connections-store', async (importOriginal) => ({
   getDecryptedToken: vi.fn(async () => 'tok-remote'),
   setDaemonVersion: mockSetDaemonVersion,
   setUpdateSupported: mockSetUpdateSupported,
+  setTcAddress: mockSetTcAddress,
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
@@ -658,6 +664,110 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
     });
 
     disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote tcAddress capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetUpdateSupported.mockClear();
+    mockSetUpdateSupported.mockResolvedValue(false);
+    mockSetTcAddress.mockClear();
+    mockSetTcAddress.mockResolvedValue(false);
+    systemStatus.value = {};
+  });
+
+  it('persists the advertised tunnel address keyed by the connection id', async () => {
+    systemStatus.value = { tcAddress: 'tc7f2a91.tailcat.net' };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', 'tc7f2a91.tailcat.net');
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('clears the stored address to null when system.status omits tcAddress', async () => {
+    // PROTOCOL §5: the field is omitted — never null — when the tunnel is
+    // disabled or the sidecar is down; a successful flagless response is a
+    // conclusive "no tunnel" (see extractTcAddress for the trade-off note).
+    systemStatus.value = { updateSupported: true }; // no tcAddress field
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('clears to null on a malformed (non-string or empty) tcAddress', async () => {
+    systemStatus.value = { tcAddress: 42 };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    // Whitespace-only clears the same way.
+    mockSetTcAddress.mockClear();
+    systemStatus.value = { tcAddress: '   ' };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed when only the tunnel address changed', async () => {
+    systemStatus.value = { tcAddress: 'tc7f2a91.tailcat.net' };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // updateSupported unchanged, tcAddress changed → still broadcasts.
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    mockSetTcAddress.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    systemStatus.value = { tcAddress: 'tc7f2a91.tailcat.net' };
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetTcAddress).not.toHaveBeenCalled();
   });
 });
 

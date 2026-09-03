@@ -1,5 +1,7 @@
 import type {
+  AgentMessage,
   AgentSession,
+  ContentBlock,
   PullRequestInfo,
   Workspace,
   WorkspaceDiffSummary,
@@ -8,6 +10,7 @@ import type {
   WorkspaceTaskStats,
 } from '$shared/types';
 import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { definePreview, type PreviewDefinition } from '$lib/component-catalog/preview-definition';
 import {
   definePreviewFixture,
@@ -52,6 +55,8 @@ export interface WorkspaceHoverCardPreviewProps {
   cards: HoverCardScenario[];
   placement?: 'right-edge' | 'bottom-edge';
   layout?: 'standard' | 'narrow';
+  theme?: 'light' | 'dark';
+  setupData?: boolean;
 }
 
 export interface StateMatrixEntry {
@@ -89,7 +94,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Semantic status',
-    states: 'all 10 displayStatus values; absent; unknown',
+    states: 'all 11 displayStatus values; absent; unknown',
     expected:
       'Each canonical value uses normally cased product language in the right column only; absent and unknown values fall back to Not started.',
     coverage: 'semantic-status preview; status presentation tests',
@@ -122,10 +127,10 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   {
     family: 'Agents',
     states:
-      'none; unloaded; active statuses; three; overflow; unread; streaming dedupe; delegated/background suppression',
+      'none; unloaded; active statuses; three; overflow; blocker; question; discussion; unread; streaming dedupe; delegated/background suppression',
     expected:
-      'Only active agents get rows, capped at three plus overflow; unloaded members stay hidden; unread stack excludes live-streaming IDs and keeps only top-level foreground members.',
-    coverage: 'agents preview; component streaming/unread test',
+      'Cards show at most six top-level rows in the right table, ordered by blocker, question or discussion, unread, active, then waiting; every row ends with a compact activity time.',
+    coverage: 'attention and agents previews; component, accessibility, and container tests',
     conflicts:
       'The same live-streaming agent must not also appear as unread; delegated children and background agents never show the unread dot.',
   },
@@ -148,9 +153,9 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Recency',
-    states: 'recent; absent; invalid; archived timestamp',
+    states: '<1m; minutes; hours; days; months; absent; invalid',
     expected:
-      'Valid activity uses relative text; absent or invalid activity becomes No recent activity; archived time belongs in the lifecycle chip.',
+      'Every agent row keeps a compact trailing activity time while accessible text provides the full relative value.',
     coverage: 'changes-recency and identity-lifecycle previews',
     conflicts: 'Invalid timestamps never leak Invalid Date.',
   },
@@ -234,6 +239,39 @@ function agent(
   };
 }
 
+function activityAgo(milliseconds: number) {
+  const timestamp = new Date(Date.now() - milliseconds).toISOString();
+  return { lastActivity: timestamp, updatedAt: timestamp };
+}
+
+function questionMessage(id: string, question: string | string[]): AgentMessage {
+  const questions = Array.isArray(question) ? question : [question];
+  const blocks = questions.map(
+    (prompt, index) =>
+      ({
+        type: 'resource',
+        resource: {
+          uri: `intent-question://hover-card-${id}-${index}`,
+          name: `Implementation choice ${index + 1}`,
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: `hover-card-${id}-${index}`,
+            header: `Implementation choice ${index + 1}`,
+            question: prompt,
+            options: [{ label: 'Keep current behavior' }, { label: 'Use the new behavior' }],
+            multiSelect: false,
+          }),
+        },
+      }) as unknown as ContentBlock,
+  );
+  return {
+    id,
+    role: 'assistant',
+    contentBlocks: blocks,
+    timestamp: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
+  };
+}
+
 function scenario(
   key: string,
   label: string,
@@ -241,6 +279,44 @@ function scenario(
   overrides: Partial<HoverCardScenario> = {},
 ): HoverCardScenario {
   return { key, label, expected, workspace: workspace(key), ...overrides };
+}
+
+function questionAttentionScenario(
+  key: string,
+  label: string,
+  prompts: string[] | null,
+  recentResponse?: string,
+): HoverCardScenario {
+  const agentId = `${key}-agent`;
+  const messageId = `${key}-message`;
+  const message = prompts ? questionMessage(messageId, prompts) : null;
+  const ws = workspace(key, {
+    displayStatus: 'needs_attention',
+    statusMessage: 'A teammate needs an answer before implementation can continue.',
+    agentSummary: {
+      agentIds: [agentId],
+      agents: [{ id: agentId, name: 'Leah', status: 'waiting', parentAgentId: null }],
+    } as Workspace['agentSummary'],
+  });
+  return scenario(
+    key,
+    label,
+    prompts
+      ? 'The first unresolved prompt and compact question count share the descriptive second row.'
+      : 'The question label appears without generic awaiting-answer copy when the marked message body is unavailable.',
+    {
+      workspace: ws,
+      agents: [
+        agent(ws.id, agentId, AgentStatus.Waiting, {
+          name: 'Leah',
+          messages: message ? [message] : [],
+          metadata: { pendingQuestionsMessageId: message?.id ?? messageId },
+          lastAgentResponse: recentResponse,
+          ...activityAgo(90 * 24 * 60 * 60_000),
+        }),
+      ],
+    },
+  );
 }
 
 const statuses = [
@@ -251,6 +327,7 @@ const statuses = [
   'not_started',
   'idle',
   'complete',
+  'pr_queued',
   'pr_ready',
   'pr_open',
   'pr_merged',
@@ -284,11 +361,139 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           tasks: mixedTasks,
           taskStats: { total: 5, completed: 1, inProgress: 3 },
           agents: [
-            agent(ws.id, 'working-implementor', AgentStatus.Active),
-            agent(ws.id, 'working-verifier', 'responding' as AgentSession['status']),
+            agent(ws.id, 'working-implementor', AgentStatus.Active, activityAgo(4 * 60_000)),
+            agent(
+              ws.id,
+              'working-verifier',
+              'responding' as AgentSession['status'],
+              activityAgo(2 * 60 * 60_000),
+            ),
           ],
         });
       })(),
+    ],
+  },
+  attention: {
+    family: 'Agent attention',
+    expected:
+      'The wide activity column shows real agent names, localized state labels, and concise existing context without exposing internal IDs.',
+    cards: [
+      questionAttentionScenario(
+        'attention-one-question',
+        'One pending question',
+        ['Should the migration preserve the existing cache keys?'],
+        'I checked the cache callers and need your compatibility decision.',
+      ),
+      questionAttentionScenario(
+        'attention-four-questions',
+        'Four pending questions',
+        [
+          'Which deployment region should receive the migration first?',
+          'Should the old cache keys remain readable?',
+          'How long should the compatibility window remain open?',
+          'Who should approve the final rollout?',
+        ],
+        'The deployment plan is ready after these decisions, with rollout safeguards queued for the selected region and compatibility window.',
+      ),
+      questionAttentionScenario(
+        'attention-missing-body',
+        'Pending question body unavailable',
+        null,
+      ),
+      (() => {
+        const blockerId = 'attention-maya';
+        const questionId = 'attention-jules';
+        const unreadId = 'attention-rowan';
+        const pendingQuestion = questionMessage(
+          'attention-question',
+          'Should the migration preserve the existing cache keys?',
+        );
+        const ws = workspace('attention-priority', {
+          displayStatus: 'needs_attention',
+          attention: 'unread',
+          statusMessage: 'Two teammates need a decision before the migration can continue.',
+          agentSummary: {
+            agentIds: [blockerId, questionId, unreadId],
+            agents: [
+              { id: blockerId, name: 'Maya', status: 'waiting', parentAgentId: null },
+              { id: questionId, name: 'Jules', status: 'waiting', parentAgentId: null },
+              { id: unreadId, name: 'Rowan', status: 'completed', parentAgentId: null },
+            ],
+          } as Workspace['agentSummary'],
+        });
+        return scenario(
+          'attention-priority',
+          'Blocker and question',
+          'Blocker wins; question follows; the third unread agent remains in the activity table.',
+          {
+            workspace: ws,
+            agents: [
+              agent(ws.id, blockerId, AgentStatus.Waiting, {
+                name: 'Maya',
+                attentionRequestKind: 'blocker',
+                attentionRequestReason: 'The staging database rejects the migration user.',
+              }),
+              agent(ws.id, questionId, AgentStatus.Waiting, {
+                name: 'Jules',
+                messages: [pendingQuestion],
+                metadata: { pendingQuestionsMessageId: pendingQuestion.id },
+              }),
+              agent(ws.id, unreadId, AgentStatus.Completed, {
+                name: 'Rowan',
+                hasUnread: true,
+                lastAgentResponse: 'The accessibility audit is ready for review.',
+              }),
+            ],
+          },
+        );
+      })(),
+      (() => {
+        const discussionId = 'attention-nora';
+        const unreadId = 'attention-owen';
+        const ws = workspace('attention-secondary', {
+          displayStatus: 'needs_attention',
+          statusMessage: 'The team has a product decision and a completed review to inspect.',
+          agentSummary: {
+            agentIds: [discussionId, unreadId],
+            agents: [
+              { id: discussionId, name: 'Nora', status: 'waiting', parentAgentId: null },
+              { id: unreadId, name: 'Owen', status: 'completed', parentAgentId: null },
+            ],
+          } as Workspace['agentSummary'],
+        });
+        return scenario(
+          'attention-secondary',
+          'Discussion and unread',
+          'Both rows use existing reason and response previews with localized labels.',
+          {
+            workspace: ws,
+            agents: [
+              agent(ws.id, discussionId, AgentStatus.Waiting, {
+                name: 'Nora',
+                attentionRequestKind: 'discussion',
+                attentionRequestReason:
+                  'The empty state needs a product decision before implementation.',
+              }),
+              agent(ws.id, unreadId, AgentStatus.Completed, {
+                name: 'Owen',
+                hasUnread: true,
+                lastAgentResponse: 'Keyboard and screen-reader checks now pass.',
+              }),
+            ],
+          },
+        );
+      })(),
+    ],
+  },
+  'attention-narrow': {
+    family: 'Agent attention',
+    expected:
+      'The existing single-column container layout stays compact and hides the new attention detail.',
+    layout: 'narrow',
+    cards: [
+      questionAttentionScenario('attention-narrow-question', 'Narrow pending question', [
+        'Should the migration preserve the existing cache keys?',
+      ]),
     ],
   },
   'stopped-blocked': {
@@ -333,7 +538,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
   dense: {
     family: 'Dense',
-    expected: 'Long optional content stays bounded; only three active rows render.',
+    expected: 'Long optional content stays bounded; no more than six active rows render.',
     cards: [
       (() => {
         const agentIds = ['dense-one', 'dense-two', 'dense-three', 'dense-four', 'dense-five'];
@@ -356,7 +561,18 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
             workspace: ws,
             tasks: mixedTasks,
             taskStats: { total: 5, completed: 1, inProgress: 3 },
-            agents: agentIds.map((id) => agent(ws.id, id, AgentStatus.Active)),
+            agents: agentIds.map((id, index) =>
+              agent(
+                ws.id,
+                id,
+                AgentStatus.Active,
+                activityAgo(
+                  [30_000, 4 * 60_000, 2 * 60 * 60_000, 24 * 60 * 60_000, 90 * 24 * 60 * 60_000][
+                    index
+                  ] ?? 0,
+                ),
+              ),
+            ),
             diffSummary: {
               schemaVersion: 1,
               updatedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
@@ -393,7 +609,9 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
             workspace: ws,
             tasks: [task('narrow-progress', 'in_progress'), task('narrow-todo', 'not_started')],
             taskStats: { total: 2, completed: 0, inProgress: 1 },
-            agents: [agent(ws.id, 'narrow-agent', AgentStatus.Active)],
+            agents: [
+              agent(ws.id, 'narrow-agent', AgentStatus.Active, activityAgo(24 * 60 * 60_000)),
+            ],
           },
         );
       })(),
@@ -570,7 +788,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
   agents: {
     family: 'Agent activity',
-    expected: 'Active rows cap at three; unread uses the stack.',
+    expected: 'Top-level agent activity appears only in the table and caps at six rows.',
     cards: [
       scenario('agents-none', 'No agents', 'No agent section.'),
       scenario(
@@ -606,7 +824,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           ],
         });
       })(),
-      scenario('agents-unread', 'Unread stack', 'Unread members render as card-stack avatars.', {
+      scenario('agents-unread', 'Unread members', 'Unloaded unread members add no identity row.', {
         workspace: workspace('agents-unread', {
           attention: 'unread',
           agentSummary: { agentIds: ['unread-one', 'unread-two'] },
@@ -615,7 +833,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
       scenario(
         'agents-unread-top-level',
         'Unread top-level only',
-        'Delegated children stay out of the unread stack.',
+        'Delegated children stay out of the activity table.',
         {
           workspace: workspace('agents-unread-top-level', {
             attention: 'unread',
@@ -810,6 +1028,64 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
 };
 
+function firstSceneCard(name: string) {
+  const card = scenes[name]?.cards[0];
+  if (!card) throw new Error(`Missing workspace hover-card scene: ${name}`);
+  return card;
+}
+
+function dockTailSurfaceCards(): HoverCardScenario[] {
+  const sourceCards = [
+    firstSceneCard('working'),
+    scenes.attention?.cards.find(({ key }) => key === 'attention-four-questions'),
+    firstSceneCard('idle-complete'),
+  ];
+  return sourceCards.map((card, index) => {
+    if (!card) throw new Error('Missing workspace hover-card dock-tail surface scene');
+    const position = index === 0 ? 'third-last' : index === 1 ? 'second-last' : 'last';
+    return {
+      ...card,
+      key: `surface-${position}`,
+      label: `${position.replace('-', ' ')} dock item`,
+      expected: 'The opaque elevated surface remains distinct from the dock plate.',
+    };
+  });
+}
+
+scenes['landscape-wide'] = {
+  ...scenes.working,
+  family: 'Landscape wide',
+};
+scenes['landscape-light'] = {
+  ...scenes.working,
+  family: 'Landscape light',
+  theme: 'light',
+  cards: dockTailSurfaceCards(),
+};
+scenes['landscape-dark'] = {
+  ...scenes.working,
+  family: 'Landscape dark',
+  theme: 'dark',
+  cards: dockTailSurfaceCards(),
+};
+scenes['landscape-narrow'] = {
+  ...scenes.narrow,
+  family: 'Landscape narrow',
+  theme: 'light',
+};
+scenes['landscape-loading'] = {
+  family: 'Landscape loading',
+  expected: 'The loading shell keeps the landscape footprint without exposing loaded content.',
+  theme: 'light',
+  cards: [firstSceneCard('readiness')],
+};
+scenes['landscape-question'] = {
+  family: 'Landscape question',
+  expected: 'The first real question and its count remain readable in the activity column.',
+  theme: 'light',
+  cards: [scenes.attention?.cards[1] ?? firstSceneCard('attention')],
+};
+
 function clearCards(cards: readonly HoverCardScenario[]) {
   for (const card of cards) {
     const workspaceId = card.workspace?.id;
@@ -821,7 +1097,7 @@ function clearCards(cards: readonly HoverCardScenario[]) {
   }
 }
 
-function setupCards(cards: readonly HoverCardScenario[]) {
+export function setupWorkspaceHoverCardPreviewCards(cards: readonly HoverCardScenario[]) {
   clearCards(cards);
   for (const card of cards) {
     const workspaceId = card.workspace?.id;
@@ -855,7 +1131,7 @@ export const workspaceHoverCardPreview: PreviewDefinition<WorkspaceHoverCardPrev
     states: Object.fromEntries(
       Object.entries(scenes).map(([name, props]) => [
         name,
-        { props, setup: () => setupCards(props.cards) },
+        { props, setup: () => setupWorkspaceHoverCardPreviewCards(props.cards) },
       ]),
     ),
   });

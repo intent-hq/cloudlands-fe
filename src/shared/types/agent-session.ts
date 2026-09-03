@@ -13,7 +13,7 @@
  */
 
 import type { AgentId, WorkspaceId } from './branded-ids';
-import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { AgentMessage } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentMetadata } from '../types';
@@ -283,6 +283,13 @@ export interface AgentSession {
   lastAgentResponse?: string;
 
   /**
+   * Number of transcript messages (PROTOCOL.md §5.5 `AgentLite` additive
+   * field), served on `agent.list`/`agent.get` when messages are stripped.
+   * Rendered verbatim.
+   */
+  messageCount?: number;
+
+  /**
    * Most recent tool call preview, from two wire sources sharing this field:
    * (a) the in-flight turn's live tool signal (PROTOCOL §7, tool-call arm of
    * `agent:stream:activity`, `{ name, status? }`) — push-applied by the
@@ -546,13 +553,13 @@ export function getAgentProvider(
     return explicit;
   }
 
-  // Fallback: infer provider from model ID.
-  // parseCompoundModelId handles both compound ('opencode:haiku4.5' -> 'opencode')
-  // and bare ('haiku4.5' -> default provider) model IDs. An empty resolution
-  // (bare id before catalog hydration, or a malformed ':model' prefix) is
-  // "unknown", never an empty-string provider id.
+  // Fallback: infer provider from model ID. Bare ids ('haiku4.5') attribute
+  // to the default provider; legacy persisted compound ids
+  // ('opencode:haiku4.5' -> 'opencode') still resolve via the lenient
+  // splitter. An empty resolution (bare id before catalog hydration, or a
+  // malformed ':model' prefix) is "unknown", never an empty-string provider id.
   if (session.model) {
-    return parseCompoundModelId(session.model, defaultProviderId).providerId || undefined;
+    return (splitLegacyCompoundId(session.model).providerId ?? defaultProviderId) || undefined;
   }
 
   return undefined;

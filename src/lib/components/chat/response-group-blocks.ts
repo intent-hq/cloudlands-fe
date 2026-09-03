@@ -5,7 +5,11 @@ import {
   getToolResultContentBlockKey,
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
-import { extractReasoningHeading, extractStandaloneReasoningTitle } from './reasoning-heading';
+import {
+  extractReasoningHeading,
+  extractReasoningHistory,
+  extractStandaloneReasoningTitle,
+} from './reasoning-heading';
 
 // This provider phase arrives in the same parsed content_group shape as normal
 // named groups. Keep the compatibility match narrow so authored group names
@@ -150,6 +154,31 @@ export function shouldRenderResponseGroupInline(
   return group.isReasoningPhase === true && !group.isStreaming && !group.name.trim();
 }
 
+export function isNestedReasoningSectionStart(
+  group: Pick<ContentBlockGroup, 'children' | 'isReasoningPhase'>,
+  childIndex: number,
+): boolean {
+  if (!group.isReasoningPhase) return false;
+  const child = group.children[childIndex];
+  if (child?.type !== 'thinking') return false;
+
+  return extractReasoningHistory(child.text ?? child.content ?? '').some(
+    (section) => section.title,
+  );
+}
+
+export function isNestedReasoningSectionBoundary(
+  group: Pick<ContentBlockGroup, 'children' | 'isReasoningPhase'>,
+  childIndex: number,
+  isVisible: (block: ContentBlock) => boolean = (block) => block.type !== 'tool_result',
+): boolean {
+  if (!isNestedReasoningSectionStart(group, childIndex)) return false;
+
+  let previousIndex = childIndex - 1;
+  while (previousIndex >= 0 && !isVisible(group.children[previousIndex])) previousIndex -= 1;
+  return previousIndex >= 0;
+}
+
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {
   // A tool owner id is not row identity. Prefer the protocol block id so
   // sibling results owned by one tool call stay stable through finalization.
@@ -198,19 +227,6 @@ export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[
   }
 
   return -1;
-}
-
-export function getResponseGroupCurrentChildIndex(
-  group: Pick<ContentBlockGroup, 'children' | 'hasAdjacentReasoningHistory'>,
-): number {
-  if (
-    group.hasAdjacentReasoningHistory &&
-    getResponseGroupCurrentBlockIndex(group.children.slice(2)) < 0
-  ) {
-    return group.children.length > 0 ? 0 : -1;
-  }
-
-  return getResponseGroupCurrentBlockIndex(group.children);
 }
 
 export function getResponseGroupCurrentBlock(

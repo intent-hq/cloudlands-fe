@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => {
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
+    agentSessionIsStreaming: mutableReadable(false),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -61,6 +62,9 @@ const mocks = vi.hoisted(() => {
     >(undefined),
     fetchingOlderHistory: mutableReadable(false),
     fetchingHistorySeek: mutableReadable(false),
+    pendingBrowserCaptures: mutableReadable<unknown[]>([]),
+    focusedActiveTab: { type: 'agent', agentId: 'agent-a' } as
+      { type: string; agentId?: string } | undefined,
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
@@ -101,7 +105,9 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
-  selectAgentSessionIsStreaming: mocks.selector(false),
+  selectAgentSessionIsStreaming: Object.assign(() => mocks.agentSessionIsStreaming, {
+    select: () => false,
+  }),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: mocks.selector([]),
   selectHistorySegmentMeta: mocks.selector({
@@ -175,12 +181,17 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () =
   ),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectChatAuroraEnabled: mocks.selector(true),
   selectIsAgentMonospace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectActiveTab: { select: () => mocks.focusedActiveTab },
   selectAllTabs: mocks.selector([]),
   selectPanels: mocks.selector({}),
   selectHiddenTabs: mocks.selector([]),
+}));
+vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
+  selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
 }));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: mocks.selector([]),
@@ -305,6 +316,9 @@ vi.mock('../AgentSubscriptions.svelte', async () => ({
 vi.mock('../AttentionRequestBanner.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
+vi.mock('../AuroraBackground.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 vi.mock('../BackgroundHooksRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
@@ -382,6 +396,10 @@ function latestSentAppMessageId(): string {
     .map(([candidate]) => candidate)
     .findLast((candidate) => candidate?.type === 'chatState/sendMessage');
   return action.payload.payload.userAppMessageId as string;
+}
+
+function dispatchedTypes(): string[] {
+  return mocks.dispatch.mock.calls.map(([action]) => action?.type);
 }
 
 function optimisticUserMessage(appMessageId: string, text: string) {
@@ -470,6 +488,7 @@ beforeEach(() => {
   });
   mocks.agentMessages.set([]);
   mocks.agentSession.set(null);
+  mocks.agentSessionIsStreaming.set(false);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -479,6 +498,8 @@ beforeEach(() => {
   mocks.transcriptSnapshotMeta.set(undefined);
   mocks.fetchingOlderHistory.set(false);
   mocks.fetchingHistorySeek.set(false);
+  mocks.pendingBrowserCaptures.set([]);
+  mocks.focusedActiveTab = { type: 'agent', agentId: 'agent-a' };
   mocks.dividerSessionValue = { anchorId: null };
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
@@ -500,6 +521,192 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.pendingBrowserCaptures.set([
+      {
+        id: 'capture-1',
+        tabId: 'browser-1',
+        ownerAgentId: 'agent-owner',
+        targetAgentId: 'agent-a',
+        pageUrl: 'https://example.com/account',
+        title: 'Account',
+        image: { data: 'base64-png', mimeType: 'image/png' },
+        viewport: { width: 1440, height: 900 },
+        element: {
+          selector: 'button#save',
+          domPath: 'html > body > main > button#save',
+          tagName: 'BUTTON',
+          id: 'save',
+          className: 'primary',
+          textSnippet: 'Save changes',
+          rect: { x: 80, y: 120, width: 140, height: 36 },
+          pageUrl: 'https://example.com/account',
+          sourceRef: 'src/routes/account.svelte:42:3',
+        },
+      },
+    ]);
+
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(screen.getByTestId('mock-context-capture-1-image')).toBeTruthy();
+    expect(screen.getByTestId('mock-context-capture-1-context')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('mock-rich-input-editor'));
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'browser/clearElementCapture',
+      payload: ['workspace-a', 'capture-1'],
+    });
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Fix this element' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+
+    const sendAction = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .findLast((action) => action?.type === 'chatState/sendMessage');
+    expect(sendAction.payload.payload).toMatchObject({
+      wsId: 'workspace-a',
+      text: 'Fix this element',
+      imageBlocks: [{ type: 'image', data: 'base64-png', mimeType: 'image/png' }],
+    });
+    expect(sendAction.payload.payload.workspaceContextStr).toContain(
+      'DOM path: html > body > main > button#save',
+    );
+    expect(sendAction.payload.payload.workspaceContextStr).toContain(
+      'Source ref: src/routes/account.svelte:42:3',
+    );
+    expect(sendAction.payload.payload.workspaceContextStr).toContain('Viewport: 1440×900');
+  });
+
+  it.each([
+    ['image', 'capture-1-image'],
+    ['context', 'capture-1-context'],
+  ])('excludes a removed browser capture %s pill from the next send', async (kind, itemId) => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.pendingBrowserCaptures.set([
+      {
+        id: 'capture-1',
+        tabId: 'browser-1',
+        ownerAgentId: 'agent-a',
+        targetAgentId: 'agent-a',
+        pageUrl: 'https://example.com/account',
+        title: 'Account',
+        image: { data: 'base64-png', mimeType: 'image/png' },
+        element: {
+          selector: 'button#save',
+          domPath: 'html > body > main > button#save',
+          tagName: 'BUTTON',
+          id: 'save',
+          className: 'primary',
+          textSnippet: 'Save changes',
+          rect: { x: 80, y: 120, width: 140, height: 36 },
+          pageUrl: 'https://example.com/account',
+        },
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    await fireEvent.click(screen.getByTestId(`mock-context-${itemId}`));
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Fix this element' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+
+    const payload = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .findLast((action) => action?.type === 'chatState/sendMessage').payload.payload;
+    if (kind === 'image') {
+      expect(payload).not.toHaveProperty('imageBlocks');
+      expect(payload.workspaceContextStr).toContain('DOM path: html > body > main > button#save');
+    } else {
+      expect(payload.imageBlocks).toEqual([
+        { type: 'image', data: 'base64-png', mimeType: 'image/png' },
+      ]);
+      expect(payload.workspaceContextStr).toBe('');
+    }
+  });
+
+  it('mounts the regular Aurora only while a streaming panel is active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: false },
+    });
+    await tick();
+
+    expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    await tick();
+    await vi.runAllTimersAsync();
+    expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+  });
+
+  it('mounts the Chief Aurora when its inactive streaming panel becomes active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    const chiefWorkspace = workspace('__chief__');
+    const view = render(ChatPanel, {
+      props: { workspace: chiefWorkspace, agentId: 'chief-agent', isActive: false },
+    });
+    await tick();
+
+    expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+
+    await view.rerender({ workspace: chiefWorkspace, agentId: 'chief-agent', isActive: true });
+    await tick();
+    expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
+  });
+
+  it('keeps an active response running on Escape and stops it from the visible control', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(false);
+    expect(dispatchedTypes()).not.toContain('agentSessions/stopChatRequested');
+
+    await fireEvent.click(screen.getByTestId('mock-input-stop'));
+    expect(dispatchedTypes()).toContain('agentSessions/stopChatRequested');
+  });
+
   it('retains user rows and newer hydrated assistant messages after the frontier passes them', async () => {
     MockChatIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
@@ -773,6 +980,8 @@ describe('ChatPanel mounted lifecycle', () => {
       target: { value: 'survive a sibling update' },
     });
 
+    expect(mocks.chatDrafts['workspace-a::agent-a']).toBeUndefined();
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
     expect(mocks.chatDrafts['workspace-a::agent-a']).toBe('survive a sibling update');
     firstView.unmount();
     render(ChatPanel, {
@@ -783,6 +992,29 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
       'survive a sibling update',
     );
+  });
+
+  it('coalesces a burst of draft changes and commits the latest value', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    const editor = screen.getByTestId('mock-rich-input-editor');
+    await fireEvent.input(editor, { target: { value: 'a' } });
+    await fireEvent.input(editor, { target: { value: 'ab' } });
+    await fireEvent.input(editor, { target: { value: 'abc' } });
+
+    expect(mocks.dispatch.mock.calls).toHaveLength(0);
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
+
+    const draftActions = mocks.dispatch.mock.calls.filter(
+      ([action]) => action?.type === 'transientUi/setChatDraft',
+    );
+    expect(draftActions).toHaveLength(1);
+    expect(draftActions[0][0].payload).toEqual(['workspace-a', 'agent-a', 'abc']);
   });
 
   it('keeps the composer mounted (wizard auto-collapsed) when questions arrive mid-typing', async () => {

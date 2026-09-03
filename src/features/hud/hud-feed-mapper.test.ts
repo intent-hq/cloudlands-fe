@@ -181,6 +181,14 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
     );
     expect(open).toMatchObject({ colorClass: "accent", displayStatus: "pr_open" });
 
+    const queued = mapEventToFeedEntry(
+      wireEvent("workspace:displayStatus-changed", {
+        workspaceId: WS_ID,
+        displayStatus: "pr_queued",
+      }),
+    );
+    expect(queued).toMatchObject({ colorClass: "accent", displayStatus: "pr_queued" });
+
     // Other kinds never carry the field.
     const other = mapEventToFeedEntry(
       wireEvent("agent:status-changed", { agentId: "agent-1", status: "active" }),

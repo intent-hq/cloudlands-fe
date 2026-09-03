@@ -1,290 +1,221 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
-import type { Workspace } from '$shared/types';
-import { WorkspaceStatus } from '$shared/types';
-import { WorkspaceId } from '$shared/types/branded-ids';
-import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
-import { workspaceHoverCardPreview } from './workspace-hover-card.preview-fixtures';
-import WorkspaceSidebarPreview from './workspace-sidebar.preview.svelte';
+import WorkspaceHoverCardPreview from './workspace-hover-card.preview.svelte';
+import {
+  workspaceHoverCardPreview,
+  type WorkspaceHoverCardPreviewProps,
+} from './workspace-hover-card.preview-fixtures';
 
-const timestamp = '2026-08-25T12:00:00.000Z';
-const workspace: Workspace = {
-  id: WorkspaceId('hover-card-geometry'),
-  title: 'Workspace hover-card geometry',
-  branch: 'hover-card-geometry',
-  changesets: [],
-  timeline: [],
-  conversationInfo: [],
-  status: WorkspaceStatus.Active,
-  displayStatus: 'in_progress',
-  statusMessage:
-    'This long description verifies truncation while the real sidebar hover stays inside the viewport.',
-  createdAt: timestamp,
-  updatedAt: timestamp,
-};
-
-for (const theme of ['light', 'dark'] as const) {
-  test(`keeps the placed hover-card perimeter complete in ${theme}`, async ({ mount, page }) => {
-    await page.setViewportSize({ width: 900, height: 620 });
-    await page.evaluate((nextTheme) => {
-      document.documentElement.classList.remove('light', 'dark');
-      document.documentElement.classList.add(nextTheme);
-    }, theme);
-    const sidebar = await mount(WorkspaceSidebarPreview, {
-      props: { loading: false, width: 248, workspaces: [workspace] },
-    });
-    await sidebar.evaluate((node) => {
-      (node as HTMLElement).style.marginLeft = '568px';
-    });
-    await sidebar.locator('[data-workspace-card-row]').dispatchEvent('mouseenter');
-
-    const tooltip = page.getByRole('tooltip');
-    const surface = tooltip.locator('[data-workspace-hover-card-layout]');
-    await expect(surface).toBeVisible();
-    await expect.poll(async () => (await surface.boundingBox())?.x ?? 0).toBeGreaterThanOrEqual(8);
-
-    const geometry = await tooltip.evaluate((wrapper) => {
-      const card = wrapper.querySelector<HTMLElement>('[data-workspace-hover-card-layout]')!;
-      const wrapperStyle = getComputedStyle(wrapper);
-      const cardStyle = getComputedStyle(card);
-      const rect = card.getBoundingClientRect();
-      const inset = 1;
-      const cornerPoints = [
-        [rect.left + inset, rect.top + inset],
-        [rect.right - inset, rect.top + inset],
-        [rect.left + inset, rect.bottom - inset],
-        [rect.right - inset, rect.bottom - inset],
-      ];
-      const cornersClear = cornerPoints.every(([x, y]) => {
-        const hit = document.elementFromPoint(x, y);
-        return hit !== wrapper && hit !== card && !card.contains(hit);
-      });
-      return {
-        wrapperBackground: wrapperStyle.backgroundColor,
-        cardBackground: cardStyle.backgroundColor,
-        wrapperRounded: wrapper.classList.contains('rounded-lg'),
-        cardRounded: card.classList.contains('rounded-lg'),
-        wrapperClippingSafe: wrapper.classList.contains('overflow-visible!'),
-        wrapperBorderless: wrapper.classList.contains('border-0!'),
-        wrapperShadowless: wrapper.classList.contains('shadow-none!'),
-        cardClipsFill: card.classList.contains('overflow-hidden'),
-        cardElevated: card.classList.contains('shadow-(--elevation-overlay)'),
-        cardOutlined:
-          card.classList.contains('ring-1') && card.classList.contains('ring-border/70'),
-        cornersClear,
-      };
-    });
-    const bounds = await surface.boundingBox();
-
-    expect(geometry.wrapperBackground).toBe(geometry.cardBackground);
-    expect(geometry.wrapperBackground).not.toBe('rgba(0, 0, 0, 0)');
-    expect(geometry.wrapperRounded).toBe(true);
-    expect(geometry.cardRounded).toBe(true);
-    expect(geometry.wrapperClippingSafe).toBe(true);
-    expect(geometry.wrapperBorderless).toBe(true);
-    expect(geometry.wrapperShadowless).toBe(true);
-    expect(geometry.cardClipsFill).toBe(true);
-    expect(geometry.cardElevated).toBe(true);
-    expect(geometry.cardOutlined).toBe(true);
-    expect(geometry.cornersClear).toBe(true);
-    expect(bounds).not.toBeNull();
-    expect(bounds!.x).toBeGreaterThanOrEqual(8);
-    expect(bounds!.y).toBeGreaterThanOrEqual(8);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(892);
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(612);
-  });
+function fixture(stateName: string, cardKey?: string): WorkspaceHoverCardPreviewProps {
+  const state = workspaceHoverCardPreview.states[stateName];
+  if (!state) throw new Error(`Missing workspace hover-card fixture: ${stateName}`);
+  const card = cardKey
+    ? state.props.cards.find(({ key }) => key === cardKey)
+    : state.props.cards[0];
+  if (!card) throw new Error(`Missing workspace hover-card scenario: ${cardKey ?? stateName}`);
+  return { ...state.props, cards: [card], setupData: true };
 }
 
-test('uses three natural description lines and one compact detail-row gap', async ({
-  mount,
-  page,
-}) => {
-  await page.setViewportSize({ width: 900, height: 700 });
-  const state = workspaceHoverCardPreview.states['long-content'];
-  const card = state.props.cards[0]!;
-  await mount(WorkspaceHoverCard, {
-    props: {
-      workspace: card.workspace,
-      activeAgentIds: card.activeAgentIds,
-      loadAgentSessions: false,
-      loadWorkspaceData: false,
-    },
-  });
+const landscapeRows = [
+  { count: 1, state: 'attention', card: 'attention-four-questions', hasPr: false },
+  { count: 2, state: 'working', card: 'working', hasPr: true },
+  { count: 3, state: 'attention', card: 'attention-priority', hasPr: false },
+  { count: 4, state: 'agents', card: 'agents-active', hasPr: false },
+] as const;
 
-  const description = page.locator('[data-workspace-hover-card-status-message]');
-  const agentRows = page.locator('[data-workspace-hover-card-agent-row]');
-  const agentDetailRows = agentRows.locator('.workspace-hover-card__detail-row');
-  const prRow = page.locator('[data-workspace-hover-card-pr-row]');
-  const activity = page.locator('[data-workspace-hover-card-activity]');
-
-  await expect(description).toBeVisible();
-  expect(
-    await description.evaluate((node) => {
-      const element = node as HTMLElement;
-      const style = getComputedStyle(element);
-      const lineHeight = Number.parseFloat(style.lineHeight);
-      return {
-        lineClamp: style.webkitLineClamp,
-        isTruncated: element.scrollHeight > element.clientHeight,
-        renderedLines: Math.round(element.clientHeight / lineHeight),
-      };
-    }),
-  ).toEqual({ lineClamp: '3', isTruncated: true, renderedLines: 3 });
-
-  await expect(agentRows).toHaveCount(3);
-  expect((await agentRows.allTextContents()).map((text) => text.trim())).toEqual([
-    'Agent',
-    'Agent',
-    'Agent',
-  ]);
-  expect(await agentRows.first().getAttribute('aria-label')).toContain('Running');
-  expect(
-    await agentDetailRows.evaluateAll((rows) => rows.map((row) => getComputedStyle(row).columnGap)),
-  ).toEqual(['6px', '6px', '6px']);
-  expect(await prRow.evaluate((row) => getComputedStyle(row).columnGap)).toBe('6px');
-  await expect(prRow.locator('[data-workspace-hover-card-pr-status]')).not.toHaveText('');
-
-  const iconGeometry = await Promise.all(
-    [
-      agentRows.first().locator('[data-workspace-hover-card-agent-icon]'),
-      prRow.locator('[data-workspace-hover-card-pr-icon]'),
-    ].map(async (icon) => icon.boundingBox()),
-  );
-  expect(iconGeometry.every((bounds) => bounds?.width === 24)).toBe(true);
-  expect(iconGeometry[0]!.x).toBeCloseTo(iconGeometry[1]!.x, 1);
-  expect(
-    await activity
-      .locator(':scope > div')
-      .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderTopWidth)),
-  ).toEqual(['0px', '0px']);
-  await expect(activity.locator('[data-workspace-hover-card-divider]')).toHaveCount(0);
-  await expect(activity.locator('[data-workspace-hover-card-pr-divider]')).toHaveCount(0);
-});
-
-for (const scene of [
-  { name: 'wide', width: 900 },
-  { name: 'narrow', width: 420 },
-] as const) {
-  test(`aligns activity rows and separates sections in the ${scene.name} scene`, async ({
+for (const scene of landscapeRows) {
+  test(`keeps a 640px card landscape with ${scene.count} activity rows`, async ({
     mount,
     page,
   }) => {
-    await page.setViewportSize({ width: scene.width, height: 700 });
-    const state = workspaceHoverCardPreview.states['long-content'];
-    const card = state.props.cards[0]!;
-    await mount(WorkspaceHoverCard, {
-      props: {
-        workspace: card.workspace,
-        activeAgentIds: card.activeAgentIds,
-        loadAgentSessions: false,
-        loadWorkspaceData: false,
-      },
+    await page.setViewportSize({ width: 720, height: 640 });
+    const preview = await mount(WorkspaceHoverCardPreview, {
+      props: fixture(scene.state, scene.card),
     });
+    const card = preview.locator('[data-workspace-hover-card]');
+    const header = card.locator('[data-workspace-hover-card-header]');
+    const title = card.locator('[data-workspace-hover-card-title]');
+    const status = card.locator('[data-workspace-hover-card-status]');
+    const activity = card.locator('[data-workspace-hover-card-activity]');
+    const pullRequests = card.locator('[data-workspace-hover-card-pr-column]');
+    const rows = card.locator('[data-workspace-hover-card-agent-row]');
 
-    const statusRow = page.locator('[data-workspace-hover-card-status-row]');
-    const agentRows = page.locator('[data-workspace-hover-card-agent-row]');
-    const agentRow = agentRows.first();
-    const prRow = page.locator('[data-workspace-hover-card-pr-row]');
-    const agentSection = page.locator('[data-workspace-hover-card-agent-section]');
-    const prSection = page.locator('[data-workspace-hover-card-pr-list]');
-    const elements = {
-      statusRow,
-      agentRow,
-      prRow,
-      statusIcon: statusRow.locator('[data-workspace-hover-card-status-icon]'),
-      agentIcon: agentRow.locator('[data-workspace-hover-card-agent-icon]'),
-      prIcon: prRow.locator('[data-workspace-hover-card-pr-icon]'),
-      statusText: statusRow.locator('[data-workspace-hover-card-status-text]'),
-      agentText: agentRow.locator('[data-workspace-hover-card-agent-text]'),
-      prText: prRow.locator('[data-workspace-hover-card-pr-text]'),
-      agentSection,
-      prSection,
-      prGlyph: prRow.locator('[data-workspace-hover-card-pr-icon] svg'),
-      agentAvatar: agentRow.locator('[data-agent-avatar-with-state]'),
-    };
-    const boxes = Object.fromEntries(
-      await Promise.all(
-        Object.entries(elements).map(async ([name, locator]) => [
-          name,
-          await locator.boundingBox(),
-        ]),
-      ),
-    );
-
-    expect(Object.values(boxes).every(Boolean)).toBe(true);
-    const iconStarts = [boxes.statusIcon!.x, boxes.agentIcon!.x, boxes.prIcon!.x];
-    const textStarts = [boxes.statusText!.x, boxes.agentText!.x, boxes.prText!.x];
-    expect(Math.max(...iconStarts) - Math.min(...iconStarts)).toBeLessThanOrEqual(0.5);
-    expect(Math.max(...textStarts) - Math.min(...textStarts)).toBeLessThanOrEqual(0.5);
-    expect([boxes.statusIcon!.width, boxes.agentIcon!.width, boxes.prIcon!.width]).toEqual([
-      24, 24, 24,
+    await expect(rows).toHaveCount(scene.count);
+    await expect(pullRequests).toHaveCount(scene.hasPr ? 1 : 0);
+    const [cardBox, activityBox, pullRequestsBox, titleBox, statusBox] = await Promise.all([
+      card.boundingBox(),
+      activity.boundingBox(),
+      scene.hasPr ? pullRequests.boundingBox() : Promise.resolve(null),
+      title.boundingBox(),
+      status.boundingBox(),
     ]);
-
-    for (const [rowName, iconName, textName] of [
-      ['statusRow', 'statusIcon', 'statusText'],
-      ['agentRow', 'agentIcon', 'agentText'],
-      ['prRow', 'prIcon', 'prText'],
-    ] as const) {
-      const rowCenter = boxes[rowName]!.y + boxes[rowName]!.height / 2;
-      const iconCenter = boxes[iconName]!.y + boxes[iconName]!.height / 2;
-      const textCenter = boxes[textName]!.y + boxes[textName]!.height / 2;
-      expect(iconCenter).toBeCloseTo(rowCenter, 1);
-      expect(textCenter).toBeCloseTo(rowCenter, 1);
+    expect(cardBox).not.toBeNull();
+    expect(activityBox).not.toBeNull();
+    expect(cardBox!.width).toBeCloseTo(640, 0);
+    expect(titleBox).not.toBeNull();
+    expect(statusBox).not.toBeNull();
+    expect(cardBox!.width / cardBox!.height).toBeGreaterThanOrEqual(1.4);
+    expect(cardBox!.x).toBeGreaterThanOrEqual(8);
+    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(712);
+    if (scene.hasPr) {
+      expect(pullRequestsBox).not.toBeNull();
+      expect(activityBox!.width).toBeCloseTo(pullRequestsBox!.width, 0);
+      expect(activityBox!.y).toBeCloseTo(pullRequestsBox!.y, 0);
+      expect(activityBox!.height).toBeCloseTo(pullRequestsBox!.height, 0);
+    } else {
+      expect(pullRequestsBox).toBeNull();
     }
-
-    const agentRowBoxes = await agentRows.evaluateAll((rows) =>
-      rows.map((row) => {
-        const bounds = row.getBoundingClientRect();
-        return { top: bounds.top, bottom: bounds.bottom };
+    expect(Math.abs(titleBox!.y - statusBox!.y)).toBeLessThanOrEqual(3);
+    expect(await header.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
+    expect(
+      await activity.evaluate((node) => {
+        const overflow = getComputedStyle(node).overflowY;
+        return overflow !== 'auto' && overflow !== 'scroll';
       }),
-    );
-    const withinAgentGap = agentRowBoxes[1]!.top - agentRowBoxes[0]!.bottom;
-    const statusAgentGap = boxes.agentSection!.y - (boxes.statusRow!.y + boxes.statusRow!.height);
-    const agentPrGap = boxes.prSection!.y - (boxes.agentSection!.y + boxes.agentSection!.height);
-    expect(statusAgentGap).toBe(12);
-    expect(agentPrGap).toBe(12);
-    expect(statusAgentGap).toBeGreaterThan(withinAgentGap);
-    expect(agentPrGap).toBeGreaterThan(withinAgentGap);
-    expect(boxes.prGlyph!.height).toBe(16);
-    expect(boxes.prGlyph!.width).toBeGreaterThanOrEqual(boxes.agentAvatar!.width * 0.75);
+    ).toBe(true);
+    await expect(card.locator('[data-workspace-hover-card-agent-time]')).toHaveCount(scene.count);
   });
 }
 
-test('keeps short descriptions at one line and stacks responsively when narrow', async ({
+test('stacks only in the explicit narrow fixture without horizontal clipping', async ({
   mount,
   page,
 }) => {
-  await page.setViewportSize({ width: 420, height: 700 });
-  await mount(WorkspaceHoverCard, {
-    props: {
-      workspace: { ...workspace, statusMessage: 'Short description.' },
-      loadAgentSessions: false,
-      loadWorkspaceData: false,
-    },
+  await page.setViewportSize({ width: 420, height: 720 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('landscape-narrow'),
   });
+  const card = preview.locator('[data-workspace-hover-card]');
+  const columns = card.locator('[data-workspace-hover-card-columns]');
+  const pullRequests = card.locator('[data-workspace-hover-card-pr-column]');
+  const bounds = await card.boundingBox();
 
-  const description = page.locator('[data-workspace-hover-card-status-message]');
-  const columns = page.locator('[data-workspace-hover-card-columns]');
-  const activity = page.locator('[data-workspace-hover-card-activity]');
-  const geometry = await description.evaluate((node) => {
-    const element = node as HTMLElement;
-    const style = getComputedStyle(element);
-    return {
-      height: element.clientHeight,
-      lineHeight: Number.parseFloat(style.lineHeight),
-      lineClamp: style.webkitLineClamp,
-    };
-  });
-
-  expect(geometry.lineClamp).toBe('3');
-  expect(geometry.height).toBeCloseTo(geometry.lineHeight, 0);
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(8);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(412);
   expect(
     await columns.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').length),
   ).toBe(1);
-  expect(await activity.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
-  expect(await activity.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('1px');
-  expect(
-    await activity
-      .locator(':scope > div')
-      .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderTopWidth)),
-  ).toEqual(['0px', '0px']);
+  expect(await pullRequests.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
+  expect(await pullRequests.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('1px');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]')).toBeVisible();
+  await expect(card.locator('[data-workspace-hover-card-agent-context]')).toBeVisible();
+  expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+});
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`keeps the lowest three ${theme} cards on the application background`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 1280 });
+    const state = workspaceHoverCardPreview.states[`landscape-${theme}`];
+    if (!state) throw new Error(`Missing landscape ${theme} fixture`);
+    const preview = await mount(WorkspaceHoverCardPreview, {
+      props: { ...state.props, setupData: true },
+    });
+    const cards = preview.locator('[data-workspace-hover-card]');
+
+    await expect(cards).toHaveCount(3);
+    expect(await preview.getAttribute('class')).toContain(theme);
+    const surfaces = await cards.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const elevatedProbe = document.createElement('span');
+        const dockPlateProbe = document.createElement('span');
+        elevatedProbe.style.backgroundColor = 'hsl(var(--popover))';
+        dockPlateProbe.style.backgroundColor = 'hsl(var(--background))';
+        node.append(elevatedProbe, dockPlateProbe);
+        const result = {
+          card: getComputedStyle(node).backgroundColor,
+          elevated: getComputedStyle(elevatedProbe).backgroundColor,
+          dockPlate: getComputedStyle(dockPlateProbe).backgroundColor,
+        };
+        elevatedProbe.remove();
+        dockPlateProbe.remove();
+        return result;
+      }),
+    );
+    expect(new Set(surfaces.map(({ card }) => card)).size).toBe(1);
+    for (const surface of surfaces) {
+      expect(surface.card).not.toBe(surface.elevated);
+      expect(surface.card).toBe(surface.dockPlate);
+      expect(surface.card).not.toBe('rgba(0, 0, 0, 0)');
+    }
+  });
+}
+
+test('keeps the landscape loading skeleton at the target width', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 520 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('landscape-loading'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+
+  await expect(card.locator('[data-slot="skeleton"]')).toHaveCount(6);
+  expect((await card.boundingBox())?.width).toBeCloseTo(640, 0);
+  await expect(card.locator('[data-workspace-hover-card-title]')).toHaveCount(0);
+});
+
+test('shows the real first question and its total count in the landscape activity column', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 560, height: 520 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('landscape-question'),
+  });
+  const question = preview.locator('[data-workspace-hover-card-agent-context]');
+
+  await expect(question).toHaveText('Which deployment region should receive the migration first?');
+  const questionMeta = preview.locator('[data-workspace-hover-card-question-meta]');
+  await expect(questionMeta.locator('[aria-hidden="true"]')).toHaveText('1/4');
+  await expect(questionMeta).toHaveAccessibleName('Question 1 of 4');
+  await expect(preview.locator('[data-workspace-hover-card-agent-preview]')).toHaveCount(0);
+  const row = preview.locator('[data-workspace-hover-card-agent-row]');
+  const name = preview.locator('[data-workspace-hover-card-agent-name]');
+  const timestamp = preview.locator('[data-workspace-hover-card-agent-time]');
+  const detail = preview.locator('[data-workspace-hover-card-agent-detail]');
+  const [rowBox, nameBox, questionBox, timestampBox, detailBox] = await Promise.all([
+    row.boundingBox(),
+    name.boundingBox(),
+    question.boundingBox(),
+    timestamp.boundingBox(),
+    detail.boundingBox(),
+  ]);
+  expect(rowBox).not.toBeNull();
+  expect(nameBox).not.toBeNull();
+  expect(questionBox).not.toBeNull();
+  expect(timestampBox).not.toBeNull();
+  expect(detailBox).not.toBeNull();
+  expect(detailBox!.x).toBeCloseTo(nameBox!.x, 0);
+  expect(detailBox!.x + detailBox!.width).toBeLessThanOrEqual(rowBox!.x + rowBox!.width + 1);
+  expect(rowBox!.x + rowBox!.width - (timestampBox!.x + timestampBox!.width)).toBeLessThanOrEqual(
+    13,
+  );
+  expect(Math.abs(timestampBox!.y - nameBox!.y)).toBeLessThanOrEqual(3);
+  expect(detailBox!.y).toBeGreaterThanOrEqual(
+    Math.max(nameBox!.y + nameBox!.height, timestampBox!.y + timestampBox!.height) - 1,
+  );
+  expect(await question.evaluate((node) => getComputedStyle(node).whiteSpace)).toBe('nowrap');
+});
+
+test('keeps sections accessible without visible headings or internal row dividers', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 520 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('landscape-wide'),
+  });
+  await expect(preview.locator('[data-workspace-hover-card] h3')).toHaveCount(0);
+  await expect(preview.locator('[data-workspace-hover-card-activity]')).toHaveAccessibleName(
+    'Agents',
+  );
+  await expect(preview.locator('[data-workspace-hover-card-pr-column]')).toHaveAccessibleName(
+    'Pull requests',
+  );
+  await expect(preview.locator('[data-agent-group]')).toHaveCount(0);
+  const rowBorders = await preview
+    .locator('[data-workspace-hover-card-agent-row]')
+    .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderBottomWidth));
+  expect(rowBorders.every((width) => width === '0px')).toBe(true);
 });

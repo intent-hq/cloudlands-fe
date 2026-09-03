@@ -2,14 +2,17 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import type { ScriptStatus } from '$features/scripts/types';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
   import {
     faExclamationTriangle,
+    faChevronDown,
     faPlay,
     faRotateRight,
     faSpinner,
     faStop,
+    faTableColumns,
   } from '$lib/icons/phosphor-icons';
   import {
     selectWorkspaceScriptEntries,
@@ -23,8 +26,10 @@
   import {
     selectActiveTerminalIdForWorkspace,
     selectTerminalsForWorkspace,
+    selectWorkspaceTerminalState,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
+    closeTerminalOverlay,
     openTerminalOverlay,
     selectScript,
   } from '$store/renderer/slices/terminals/terminals-slice';
@@ -53,6 +58,36 @@
   function openScript(scriptId: string) {
     appStore.dispatch(selectScript(workspaceId, scriptId));
     appStore.dispatch(openTerminalOverlay(workspaceId));
+  }
+
+  function openTerminalInPanel(terminalId: string, title: string, event: MouseEvent) {
+    event.stopPropagation();
+    getPanelLayoutManager(workspaceId).openUserTab({
+      type: 'terminal',
+      title,
+      terminalId,
+      workspaceId,
+      closable: true,
+    });
+    const state = selectWorkspaceTerminalState.select(appStore.state, workspaceId);
+    if (state.isOpen && state.selectedScriptId === null && state.activeTerminalId === terminalId) {
+      appStore.dispatch(closeTerminalOverlay(workspaceId));
+    }
+  }
+
+  function openScriptInPanel(scriptId: string, title: string, event: MouseEvent) {
+    event.stopPropagation();
+    getPanelLayoutManager(workspaceId).openUserTab({
+      type: 'terminal',
+      title,
+      scriptId,
+      workspaceId,
+      closable: true,
+    });
+    const state = selectWorkspaceTerminalState.select(appStore.state, workspaceId);
+    if (state.isOpen && state.selectedScriptId === scriptId) {
+      appStore.dispatch(closeTerminalOverlay(workspaceId));
+    }
   }
 
   function runScript(scriptId: string, action: 'start' | 'stop' | 'restart', event: MouseEvent) {
@@ -88,23 +123,54 @@
     <div class="flex flex-col gap-0">
       {#each $terminals$ as terminal (terminal.id)}
         {@const active = terminal.id === $activeTerminalId$}
-        <Button
-          variant="plain"
-          class="flex h-8 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-0 py-0 text-left hover:bg-muted focus-visible:bg-muted"
-          onclick={() => openTerminal(terminal.id)}
+        {@const terminalName =
+          terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
+        <div
+          class="group/terminal flex h-8 min-w-0 items-center gap-2 rounded-md hover:bg-muted focus-within:bg-muted"
           data-sidebar-shell-terminal={terminal.id}
           data-active={active || undefined}
         >
-          <span
-            class="size-1.5 shrink-0 rounded-full {active
-              ? 'bg-success'
-              : 'bg-muted-foreground/40'}"
-            aria-hidden="true"
-          ></span>
-          <span class="min-w-0 truncate text-sm font-medium text-foreground">
-            {terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
-          </span>
-        </Button>
+          <Button
+            variant="plain"
+            class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 p-0! text-left"
+            onclick={() => openTerminal(terminal.id)}
+          >
+            <span
+              class="size-1.5 shrink-0 rounded-full {active
+                ? 'bg-success'
+                : 'bg-muted-foreground/40'}"
+              aria-hidden="true"
+            ></span>
+            <span class="min-w-0 truncate text-sm font-medium text-foreground">{terminalName}</span>
+          </Button>
+          <div class="flex shrink-0 items-center" data-surface-actions>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              iconOnly
+              class="size-7"
+              tooltip={m.workspace_shell_showInPanel_tooltip()}
+              tooltipSide="left"
+              onclick={(event) => openTerminalInPanel(terminal.id, terminalName, event)}
+            >
+              <Fa icon={faTableColumns} class="size-3" />
+            </Button>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              iconOnly
+              class="size-7"
+              tooltip={m.workspace_shell_showInBottomBar_tooltip()}
+              tooltipSide="left"
+              onclick={(event) => {
+                event.stopPropagation();
+                openTerminal(terminal.id);
+              }}
+            >
+              <Fa icon={faChevronDown} class="size-3" />
+            </Button>
+          </div>
+        </div>
       {:else}
         <p class="px-0 py-1.5 text-sm text-muted-foreground">
           {m.terminal_sidebar_noTerminals_label()}
@@ -165,6 +231,33 @@
               <Fa icon={faExclamationTriangle} class="size-3" />
             {/if}
           </span>
+          <div class="flex shrink-0 items-center" data-surface-actions>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              iconOnly
+              class="size-7"
+              tooltip={m.workspace_shell_showInPanel_tooltip()}
+              tooltipSide="left"
+              onclick={(event) => openScriptInPanel(script.id, script.name, event)}
+            >
+              <Fa icon={faTableColumns} class="size-3" />
+            </Button>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              iconOnly
+              class="size-7"
+              tooltip={m.workspace_shell_showInBottomBar_tooltip()}
+              tooltipSide="left"
+              onclick={(event) => {
+                event.stopPropagation();
+                openScript(script.id);
+              }}
+            >
+              <Fa icon={faChevronDown} class="size-3" />
+            </Button>
+          </div>
           <div
             class="flex shrink-0 items-center rounded-md bg-secondary/80 px-1"
             data-script-actions

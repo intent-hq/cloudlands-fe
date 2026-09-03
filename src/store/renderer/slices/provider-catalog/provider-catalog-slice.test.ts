@@ -14,6 +14,7 @@ import type { StoreState } from '../../types';
 import {
   selectAllCatalogProviderIds,
   selectEffectiveDefaultProviderId,
+  selectProviderAuthFailureGuidance,
   selectProviderCatalogEntries,
   selectProviderCatalogEntry,
   selectProviderCatalogEntryOrDefault,
@@ -77,8 +78,11 @@ function storeWith(
 ): StoreState {
   return {
     providerCatalog,
-    providerSettings: { enabledProviders, activeProviderId: extra.activeProviderId ?? '' },
-    model: { providerModels: extra.providerModels ?? {} },
+    providerSettings: { enabledProviders },
+    model: {
+      defaultProviderId: extra.activeProviderId ?? '',
+      providerModels: extra.providerModels ?? {},
+    },
   } as unknown as StoreState;
 }
 
@@ -123,9 +127,13 @@ describe('provider-catalog selectors', () => {
     ]);
   });
 
-  it('selectEffectiveDefaultProviderId derives the default from user settings', () => {
-    // Compound global default model wins: its provider prefix (a known
-    // catalog row) is the default.
+  it('selectEffectiveDefaultProviderId reads the settings-mirrored default provider', () => {
+    // The default provider is the explicit `model.defaultProvider` mirror —
+    // model-id prefixes never influence it (ids in the store are bare).
+    expect(
+      selectEffectiveDefaultProviderId.select(storeWith(hydrated, {}, { activeProviderId: 'pi' })),
+    ).toBe('pi');
+    // A stray legacy compound value in providerModels is inert here.
     expect(
       selectEffectiveDefaultProviderId.select(
         storeWith(hydrated, {}, {
@@ -133,16 +141,6 @@ describe('provider-catalog selectors', () => {
           providerModels: { pi: 'unsloth:some-model' },
         }),
       ),
-    ).toBe('unsloth');
-    // Bare global model → the active provider.
-    expect(
-      selectEffectiveDefaultProviderId.select(
-        storeWith(hydrated, {}, { activeProviderId: 'pi', providerModels: { pi: 'sonnet4.5' } }),
-      ),
-    ).toBe('pi');
-    // No global model → the active provider.
-    expect(
-      selectEffectiveDefaultProviderId.select(storeWith(hydrated, {}, { activeProviderId: 'pi' })),
     ).toBe('pi');
     // Nothing configured → '' (honestly unresolved). The catalog never
     // fabricates a default: falling through to the first row would silently
@@ -150,35 +148,6 @@ describe('provider-catalog selectors', () => {
     expect(selectEffectiveDefaultProviderId.select(storeWith(hydrated))).toBe('');
     // Before hydration with nothing configured → ''.
     expect(selectEffectiveDefaultProviderId.select(storeWith(initialState))).toBe('');
-  });
-
-  it('selectEffectiveDefaultProviderId ignores compound prefixes unknown to the catalog', () => {
-    // Malformed/legacy compound id: the prefix is not a catalog provider id
-    // once the catalog is hydrated → fall through to the active provider.
-    expect(
-      selectEffectiveDefaultProviderId.select(
-        storeWith(hydrated, {}, {
-          activeProviderId: 'pi',
-          providerModels: { pi: 'legacy-removed-provider:some-model' },
-        }),
-      ),
-    ).toBe('pi');
-    // Empty-prefix malformed id (':model') also falls through.
-    expect(
-      selectEffectiveDefaultProviderId.select(
-        storeWith(hydrated, {}, { activeProviderId: 'pi', providerModels: { pi: ':model' } }),
-      ),
-    ).toBe('pi');
-    // Before hydration there is no catalog to validate against — the prefix
-    // is trusted verbatim (re-validated once the catalog lands).
-    expect(
-      selectEffectiveDefaultProviderId.select(
-        storeWith(initialState, {}, {
-          activeProviderId: 'pi',
-          providerModels: { pi: 'opencode:some-model' },
-        }),
-      ),
-    ).toBe('opencode');
   });
 
   it('selectProviderCatalogEntry keys by id, undefined for unknown ids', () => {
@@ -205,6 +174,34 @@ describe('provider-catalog selectors', () => {
     expect(
       selectProviderCatalogEntryOrDefault.select(storeWith(initialState), 'auggie'),
     ).toBeUndefined();
+  });
+
+  it('selectProviderAuthFailureGuidance treats the legacy acp provider value as unset', () => {
+    // 'acp' is the protocol name, not a provider id (mirrors getAgentProvider):
+    // resolution must fall through to the compound-model prefix instead of
+    // healing 'acp' to the default provider's row.
+    const state = storeWith(hydrated, {}, { activeProviderId: 'auggie' });
+    const viaModelPrefix = selectProviderAuthFailureGuidance.select(
+      state,
+      'acp',
+      'pi:some-model',
+      'authentication required',
+    );
+    // pi's row has no authErrorPatterns → no match; the default (auggie) row
+    // WOULD match, so guidance must be null, not auggie's login command.
+    expect(viaModelPrefix).toBeNull();
+    // With no model either, 'acp' resolves like an unset provider (default row).
+    expect(
+      selectProviderAuthFailureGuidance.select(state, 'acp', null, 'authentication required'),
+    ).toEqual({
+      providerId: 'auggie',
+      loginCommandHint: 'auggie login',
+      showClaudeDesktopNote: false,
+    });
+    // An explicit real provider id still wins.
+    expect(
+      selectProviderAuthFailureGuidance.select(state, 'auggie', null, 'auggie login'),
+    ).toMatchObject({ providerId: 'auggie' });
   });
 
   it('selectProviderEnabledFromCatalog resolves enabled state like resolveProviderEnabled', () => {

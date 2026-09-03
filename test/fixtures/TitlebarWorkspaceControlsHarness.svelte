@@ -1,17 +1,17 @@
 <script lang="ts">
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
-  import SidebarNav from '$lib/components/layout/sidebar-nav/SidebarNav.svelte';
-  import WorkspaceRepoLauncher from '$lib/components/layout/WorkspaceRepoLauncher.svelte';
+  import { onDestroy } from 'svelte';
+  import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
+  import { store } from '$store/renderer/store';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   const TooltipProvider = TooltipPrimitive.Provider;
+  const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+  store.dispatch(openWorkspaceTab('titlebar-test'));
+  onDestroy(dispose);
 </script>
 
 <TooltipProvider>
-  <div
-    class="app-drag-region flex h-12 items-center gap-1 bg-background px-3 text-foreground"
-    data-titlebar-workspace-controls-fixture
-  >
-    <SidebarNav />
-    <div data-fixture-control="launcher"><WorkspaceRepoLauncher /></div>
-  </div>
+  <WindowTitleBar />
 </TooltipProvider>

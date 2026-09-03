@@ -32,7 +32,6 @@
     selectFileExplorerIsInitialized,
     selectFileExplorerError,
     selectFileExplorerGitStatus,
-    selectEffectiveFileExplorerWorkspacePath,
     selectFileExplorerInitializationInputs,
     selectFlattenedNodes,
     selectHasExpandedDirectories,
@@ -42,9 +41,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import type { FlattenedFileNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
 
   // Search result type mapped from daemon search.fileNames (PROTOCOL §5.15)
   interface SearchResult {
@@ -66,8 +62,6 @@
     isLoading?: boolean; // External loading state (e.g., from parent workspace page)
     showOnlyChanged?: boolean; // Filter to show only files with git changes
     searchQuery?: string; // External search query for filtering files
-    openPanelTabs?: PanelTab[];
-    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -81,8 +75,6 @@
     isLoading: externalLoading = false,
     showOnlyChanged = false,
     searchQuery = '',
-    openPanelTabs = [],
-    activePanelTab,
   }: Props = $props();
 
   // Writable store for workspace ID, used as reactive arg for selectors
@@ -115,14 +107,6 @@
   // Effective workspace id used for dispatches. Derived so it reacts to prop
   // changes without requiring a separate mutable ref.
   const effectiveWsId = $derived(workspaceId);
-
-  function getFilePanelState(filePath: string) {
-    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
-      type: 'file',
-      filePath,
-      workspaceId,
-    });
-  }
 
   function toggleFlattenedDirectory(nodePath: string, flatNode?: FlattenedFileNode) {
     if (flatNode?.isExpanded && flatNode.compactedExpandedPaths?.length) {
@@ -540,24 +524,9 @@
         // best-effort scroll on the next animation frame after a short delay.
         setTimeout(() => {
           requestAnimationFrame(() => {
-            // Try both absolute and relative path selectors
-            let fileElement = document.querySelector(
-              `[data-file-path="${CSS.escape(targetFile)}"]`,
-            );
-            // If not found and path is relative, try with workspace prefix
-            const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(
-              appStore.state,
-              targetWsId,
-            );
-            if (!fileElement && !targetFile.startsWith('/') && workspacePath) {
-              const absolutePath = `${workspacePath}/${targetFile}`;
-              fileElement = document.querySelector(
-                `[data-file-path="${CSS.escape(absolutePath)}"]`,
-              );
-            }
-            if (fileElement) {
-              fileElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            // Keep reveal scrolling inside the virtualized tree. A global
+            // data-file-path query can match Markdown decorations in the editor.
+            virtualizedTreeRef?.scrollToPath(targetFile);
           });
         }, 50);
       }, 100);
@@ -626,7 +595,6 @@
           <div bind:this={searchResultsContainerRef}>
             <ListContainer spacing="compact">
               {#each searchResults as result, i (result.path)}
-                {@const panelState = getFilePanelState(result.path)}
                 <div data-file-path={result.path} data-search-result-index={i}>
                   <ListItem
                     active={selectedFile === result.path}
@@ -644,7 +612,6 @@
                         {@html getFileTypeIconSvg(result.name)}
                       </span>
                     {/snippet}
-                    <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                   </ListItem>
                 </div>
               {/each}
@@ -668,8 +635,6 @@
         {onRenameFile}
         {onSelectAgent}
         {getGitStatusColor}
-        {openPanelTabs}
-        {activePanelTab}
         {onExternalFilesDrop}
       />
     {:else}

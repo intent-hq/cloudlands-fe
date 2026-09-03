@@ -40,7 +40,7 @@
   import { isAbsolutePath, isAbsolutePathOutsideRoot, isTildePath } from '$lib/utils/path-utils';
   import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
-  import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
+  import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
@@ -128,9 +128,6 @@
   let codeEditorRef = $state<{
     focus: () => boolean;
     runShortcut: (action: Exclude<EditorShortcutAction, 'toggle-task-list'>) => boolean;
-  } | null>(null);
-  let markdownEditorRef = $state<{
-    runShortcut: (action: EditorShortcutAction) => boolean;
   } | null>(null);
   let isMounted = $state(true);
   let fileLineChanges = $state<LineChange[]>([]);
@@ -437,9 +434,7 @@
               ? 'select-all'
               : null;
     if (!action) return;
-    const handled =
-      markdownEditorRef?.runShortcut(action) ||
-      (action !== 'toggle-task-list' && codeEditorRef?.runShortcut(action));
+    const handled = action !== 'toggle-task-list' && codeEditorRef?.runShortcut(action);
     if (handled) e.preventDefault();
   }
 
@@ -611,11 +606,9 @@
           isBinary={isFileBinary}
         />
       {:else if isMarkdownFile && markdownPreview}
-        <MarkdownFileEditor
-          bind:this={markdownEditorRef}
-          bind:value={getFileContentForEditor, setFileContentFromEditor}
-          externalContentVersion={fileLastUpdated}
-        />
+        <div class="h-full overflow-auto p-4">
+          <MarkdownViewer content={fileContent} {workspaceId} renderRichFencesAsCode />
+        </div>
       {:else}
         <CodeEditor
           bind:this={codeEditorRef}

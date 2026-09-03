@@ -40,6 +40,7 @@ export interface InstalledEditor {
 export type ExternalEditorsState = {
   selectedAction: OpenAction;
   editors: Collection<InstalledEditor, 'id'>;
+  editorOrder: string[];
   hiddenEditorIds: string[];
   loading: boolean;
   error: string | null;
@@ -65,6 +66,7 @@ const VALID_HANDLER_TYPES = new Set<InstalledEditor['handlerType']>([
 export const initialState: ExternalEditorsState = {
   selectedAction: DEFAULT_ACTION,
   editors: createCollection<InstalledEditor, 'id'>('id'),
+  editorOrder: [],
   hiddenEditorIds: [],
   loading: false,
   error: null,
@@ -105,6 +107,9 @@ export const setHiddenEditorIds = createAction<[editorIds: string[]]>(
 export const toggleHiddenEditor = createAction<[editorId: string]>(
   'externalEditors/toggleHiddenEditor',
 );
+
+/** Replace the persisted order of editor IDs. */
+export const setEditorOrder = createAction<[editorIds: string[]]>('externalEditors/setEditorOrder');
 
 // ============================================================================
 // Utilities
@@ -206,6 +211,18 @@ export function normalizeHiddenEditorIds(editorIds: unknown): string[] {
   return Array.from(new Set(editorIds.filter((id): id is string => typeof id === 'string')));
 }
 
+export function normalizeEditorOrder(editorIds: unknown): string[] {
+  if (!Array.isArray(editorIds)) return [];
+  return Array.from(new Set(editorIds.filter((id): id is string => typeof id === 'string')));
+}
+
+function reconcileEditorOrder(preferred: string[], editors: InstalledEditor[]): string[] {
+  const detected = new Set(editors.map(({ id }) => id));
+  const retained = preferred.filter((id) => detected.has(id));
+  const additions = editors.map(({ id }) => id).filter((id) => !preferred.includes(id));
+  return [...retained, ...additions];
+}
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -216,12 +233,20 @@ externalEditorsReducer.with(setOpenAction, (state, { payload: [selectedAction] }
   ...state,
   selectedAction: normalizeOpenAction(selectedAction),
 }));
-externalEditorsReducer.with(fetchEditorsSuccess, (state, { payload: [editors, lastFetched] }) => ({
+externalEditorsReducer.with(fetchEditorsSuccess, (state, { payload: [editors, lastFetched] }) => {
+  const normalizedEditors = normalizeInstalledEditors(editors);
+  return {
+    ...state,
+    editors: createCollection<InstalledEditor, 'id'>('id', normalizedEditors),
+    editorOrder: reconcileEditorOrder(state.editorOrder ?? [], normalizedEditors),
+    lastFetched: typeof lastFetched === 'number' && Number.isFinite(lastFetched) ? lastFetched : 0,
+    loading: false,
+    error: null,
+  };
+});
+externalEditorsReducer.with(setEditorOrder, (state, { payload: [editorIds] }) => ({
   ...state,
-  editors: createCollection<InstalledEditor, 'id'>('id', normalizeInstalledEditors(editors)),
-  lastFetched: typeof lastFetched === 'number' && Number.isFinite(lastFetched) ? lastFetched : 0,
-  loading: false,
-  error: null,
+  editorOrder: normalizeEditorOrder(editorIds),
 }));
 externalEditorsReducer.with(fetchEditorsFailure, (state, { payload: [error] }) => ({
   ...state,

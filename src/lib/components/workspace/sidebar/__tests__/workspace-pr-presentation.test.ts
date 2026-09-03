@@ -56,7 +56,7 @@ function build(
 }
 
 describe('buildWorkspacePRPresentationModel', () => {
-  it('returns every branch-linked PR in deterministic status order', () => {
+  it('returns every branch-linked PR in lifecycle order, earliest state first', () => {
     const rows = build(
       [
         makePR({ id: 'closed', number: 4, status: PullRequestStatus.Closed }),
@@ -68,8 +68,24 @@ describe('buildWorkspacePRPresentationModel', () => {
       [],
     );
 
-    expect(rows.map(({ status }) => status)).toEqual(['open', 'draft', 'merged', 'closed']);
-    expect(rows.map(({ number }) => number)).toEqual([1, 2, 3, 4]);
+    expect(rows.map(({ status }) => status)).toEqual(['draft', 'open', 'merged', 'closed']);
+    expect(rows.map(({ number }) => number)).toEqual([2, 1, 3, 4]);
+  });
+
+  it('breaks same-status ties by most recent update, then higher PR number', () => {
+    const rows = build(
+      [
+        makePR({ id: 'older', number: 12, updatedAt: '2026-08-01T00:00:00Z' }),
+        makePR({ id: 'newer', number: 5, updatedAt: '2026-08-09T00:00:00Z' }),
+        makePR({ id: 'no-timestamp', number: 20, updatedAt: undefined }),
+        makePR({ id: 'same-time-low', number: 7, updatedAt: '2026-08-09T00:00:00Z' }),
+      ],
+      null,
+      [],
+    );
+
+    expect(rows.every(({ status }) => status === 'open')).toBe(true);
+    expect(rows.map(({ number }) => number)).toEqual([7, 5, 12, 20]);
   });
 
   it('uses the active PR only as the legacy fallback', () => {
@@ -233,16 +249,16 @@ describe('buildWorkspacePRPresentationModel', () => {
       })),
     ).toEqual([
       {
-        status: 'open',
-        foregroundClass: 'text-success',
-        backgroundClass: 'bg-success/10',
-        accessibleStateLabel: 'Open',
-      },
-      {
         status: 'draft',
         foregroundClass: 'text-muted-foreground',
         backgroundClass: 'bg-muted',
         accessibleStateLabel: 'Draft',
+      },
+      {
+        status: 'open',
+        foregroundClass: 'text-success',
+        backgroundClass: 'bg-success/10',
+        accessibleStateLabel: 'Open',
       },
       {
         status: 'merged',

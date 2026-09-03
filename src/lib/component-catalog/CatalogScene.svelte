@@ -1,8 +1,14 @@
 <script lang="ts">
   import { tick, type Component } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
   import { waitForCaptureStability } from './capture-stability';
+
+  interface RenderedScene {
+    name: string;
+    state: PreviewState<Record<string, unknown>>;
+  }
 
   let {
     slug,
@@ -16,7 +22,7 @@
   let stateName = $state('');
   let availableStates = $state<string[]>([]);
   let Preview = $state<Component<Record<string, unknown>> | null>(null);
-  let scene = $state<PreviewState<Record<string, unknown>> | null>(null);
+  let scenes = $state<RenderedScene[]>([]);
   let sceneElement = $state<HTMLElement>();
   let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
   let stabilityError = $state('');
@@ -40,18 +46,22 @@
     const nextState = requestedState;
     const nextWidth = width;
     let cancelled = false;
-    let disposeSetup: (() => void) | undefined;
+    const disposeSetups: Array<() => void> = [];
     let setupDisposed = false;
     const stabilityController = new AbortController();
 
     const cleanupSetup = (): unknown => {
       if (setupDisposed) return;
       setupDisposed = true;
-      try {
-        disposeSetup?.();
-      } catch (cleanupError) {
-        return cleanupError;
+      let firstError: unknown;
+      for (let index = disposeSetups.length - 1; index >= 0; index -= 1) {
+        try {
+          disposeSetups[index]();
+        } catch (cleanupError) {
+          firstError ??= cleanupError;
+        }
       }
+      return firstError;
     };
 
     const failScene = (stage: 'import' | 'setup' | 'preparation', cause: unknown) => {
@@ -60,7 +70,7 @@
       status = 'error';
       stabilityStatus = 'error';
       Preview = null;
-      scene = null;
+      scenes = [];
       error = `Preview ${stage} failed: ${describeError(cause)}`;
       if (cleanupError) error += ` Cleanup failed: ${describeError(cleanupError)}`;
       setActivePreview(null);
@@ -72,7 +82,7 @@
     stateName = '';
     availableStates = [];
     Preview = null;
-    scene = null;
+    scenes = [];
     stabilityStatus = 'waiting';
     stabilityError = '';
     captureMotion = 'full';
@@ -98,31 +108,42 @@
 
       title = loaded.definition.title;
       availableStates = Object.keys(loaded.definition.states);
-      const resolved = resolvePreviewState(loaded.definition, nextState);
-      if (!resolved.ok) {
-        status = 'error';
-        stabilityStatus = 'error';
-        stateName = resolved.requestedState;
-        error = `Unknown state “${resolved.requestedState}”.`;
-        return;
+      const renderedScenes: RenderedScene[] = [];
+      if (nextState === 'all') {
+        stateName = 'all';
+        renderedScenes.push(
+          ...Object.entries(loaded.definition.states).map(([name, state]) => ({ name, state })),
+        );
+      } else {
+        const resolved = resolvePreviewState(loaded.definition, nextState);
+        if (!resolved.ok) {
+          status = 'error';
+          stabilityStatus = 'error';
+          stateName = resolved.requestedState;
+          error = `Unknown state “${resolved.requestedState}”.`;
+          return;
+        }
+        stateName = resolved.name;
+        renderedScenes.push({ name: resolved.name, state: resolved.state });
       }
-
-      stateName = resolved.name;
-      try {
-        disposeSetup = resolved.state.setup?.() || undefined;
-      } catch (setupError) {
-        failScene('setup', setupError);
-        return;
-      }
-      scene = resolved.state;
       Preview = loaded.component;
-      try {
-        await tick();
-      } catch (preparationError) {
-        failScene('preparation', preparationError);
-        return;
+      for (const rendered of renderedScenes) {
+        try {
+          const dispose = rendered.state.setup?.();
+          if (dispose) disposeSetups.push(dispose);
+        } catch (setupError) {
+          failScene('setup', setupError);
+          return;
+        }
+        scenes = [...scenes, rendered];
+        try {
+          await tick();
+        } catch (preparationError) {
+          failScene('preparation', preparationError);
+          return;
+        }
+        if (cancelled) return;
       }
-      if (cancelled) return;
 
       try {
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
@@ -170,6 +191,11 @@
     <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
     {#if availableStates.length > 0}
       <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
+        <a
+          class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
+          aria-current={stateName === 'all' ? 'page' : undefined}
+          href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
+        >
         {#each availableStates as name (name)}
           <a
             class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
@@ -205,19 +231,30 @@
         <p class="font-medium">{stabilityError}</p>
       </div>
     {/if}
-    <div
-      class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
-    >
-      <div
-        class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
-        style:width={`${width}px`}
-        data-testid="catalog-scene-focus"
-      >
-        {#if Preview && scene}
-          <Preview {...scene.props} />
-        {/if}
+    {#if Preview && scenes.length > 0}
+      <div class="grid gap-8" data-preview-scene-list={stateName === 'all' ? 'all' : undefined}>
+        {#each scenes as rendered (rendered.name)}
+          <article class="grid gap-3" data-preview-rendered-state={rendered.name}>
+            {#if stateName === 'all'}
+              <h2 class="text-lg font-medium">
+                {m.sandbox_catalogScene_stateHeading_title({ state: rendered.name })}
+              </h2>
+            {/if}
+            <div
+              class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
+            >
+              <div
+                class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
+                style:width={`${width}px`}
+                data-testid="catalog-scene-focus"
+              >
+                <Preview {...rendered.state.props} />
+              </div>
+            </div>
+          </article>
+        {/each}
       </div>
-    </div>
+    {/if}
   {/if}
 </section>
 

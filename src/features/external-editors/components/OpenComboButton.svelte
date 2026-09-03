@@ -1,12 +1,10 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
-  import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
-  import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
-  import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
-  import TerminalIcon from '$lib/components/shared/icons/TerminalIcon.svelte';
-  import VSCodeIcon from '$lib/components/shared/icons/VSCodeIcon.svelte';
-  import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
-  import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
+  import {
+    resolveEditorFallbackIcon,
+    resolveEditorIcon,
+    type EditorIconComponent,
+  } from '$lib/components/shared/icons/editor-icon';
   import { Button } from '$lib/components/ui/button';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -19,6 +17,7 @@
     type OpenAction,
   } from '$store/renderer/slices/external-editors/external-editors-slice';
   import {
+    selectHiddenEditorIds,
     selectInstalledEditorsFiltered,
     selectOpenAction,
   } from '$store/renderer/slices/external-editors/external-editors-selectors';
@@ -32,34 +31,20 @@
   import {
     faArrowUpRightFromSquare,
     faChevronDown,
-    faCode,
     faCodeBranch,
     faCopy,
-    faFolder,
     faFolderOpen,
-    faTerminal,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
   import { getVisibleOpenInEditors } from './open-combo-actions';
 
   const logger = createLogger('OpenComboButton');
-  /** Icon mapping from editor ID to Svelte component */
-  const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
-    vscode: VSCodeIcon,
-    cursor: CursorCodeIcon,
-    jetbrains: JetBrainsIcon,
-    xcode: XcodeIcon,
-    warp: WarpIcon,
-    ghostty: GhosttyIcon,
-    terminal: TerminalIcon,
-  };
-
   interface ActionConfig {
     id: OpenAction;
     label: string;
     shortLabel: string;
-    icon: typeof VSCodeIcon | null;
+    icon: EditorIconComponent | null;
     faIcon?: typeof faCopy;
     shortcut?: string;
     description?: string;
@@ -125,6 +110,7 @@
 
   const openAction = selectOpenAction();
   const installedEditors$ = selectInstalledEditorsFiltered(workspaceIdStore);
+  const hiddenEditorIds$ = selectHiddenEditorIds();
   // With an empty workspaceId this reduces to daemon locality (a missing
   // workspace entity is treated as local), so it is the single gate for both
   // the daemon-remote (monorepo#883) and workspace-remote (monorepo#2171)
@@ -144,7 +130,7 @@
       id: editor.id,
       label: editor.name,
       shortLabel: editor.shortLabel,
-      icon: EDITOR_ICONS[editor.id] || null,
+      icon: resolveEditorIcon(editor),
       shortcut: editor.shortcut,
       handlerType: editor.handlerType,
       appName: editor.appName,
@@ -162,8 +148,10 @@
     const installedEditors = $installedEditors$;
 
     // Convert installed editors to action configs, sorted by priority
-    const editorActions: ActionConfig[] =
-      getVisibleOpenInEditors(installedEditors).map(editorToAction);
+    const editorActions: ActionConfig[] = getVisibleOpenInEditors(
+      installedEditors,
+      $hiddenEditorIds$,
+    ).map(editorToAction);
 
     // Add "Other..." option to pick any app
     const otherAction: ActionConfig = {
@@ -365,12 +353,11 @@
             <Icon size={16} />
           {:else if action.faIcon}
             <Fa icon={action.faIcon} class="size-4 text-muted-foreground opacity-70" />
-          {:else if action.category === 'terminal'}
-            <Fa icon={faTerminal} class="size-4 text-muted-foreground opacity-70" />
-          {:else if action.category === 'finder'}
-            <Fa icon={faFolder} class="size-4 text-muted-foreground opacity-70" />
           {:else}
-            <Fa icon={faCode} class="size-4 text-muted-foreground opacity-70" />
+            <Fa
+              icon={resolveEditorFallbackIcon(action.category)}
+              class="size-4 text-muted-foreground opacity-70"
+            />
           {/if}
           <span class="min-w-0 flex-1 truncate">{action.label}</span>
           {#if action.shortcut}
@@ -432,12 +419,11 @@
                 <Icon size={14} />
               {:else if currentAction.faIcon}
                 <Fa icon={currentAction.faIcon} class="w-3.5 h-3.5 opacity-60" />
-              {:else if currentAction.category === 'terminal'}
-                <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
-              {:else if currentAction.category === 'finder'}
-                <Fa icon={faFolder} class="w-3.5 h-3.5 opacity-60" />
               {:else}
-                <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
+                <Fa
+                  icon={resolveEditorFallbackIcon(currentAction.category)}
+                  class="w-3.5 h-3.5 opacity-60"
+                />
               {/if}
               <span class="text-subtle"
                 >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
@@ -486,12 +472,11 @@
                   <Icon size={16} />
                 {:else if action.faIcon}
                   <Fa icon={action.faIcon} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                {:else if action.category === 'terminal'}
-                  <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                {:else if action.category === 'finder'}
-                  <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
                 {:else}
-                  <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                  <Fa
+                    icon={resolveEditorFallbackIcon(action.category)}
+                    class="w-4 h-4 ml-0.5 mr-0.5 opacity-30"
+                  />
                 {/if}
                 <span class="flex-1">{action.label}</span>
                 {#if action.shortcut}

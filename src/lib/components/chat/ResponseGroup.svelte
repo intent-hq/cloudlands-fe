@@ -35,8 +35,6 @@
     /** True when the owning message is the conversation's final assistant message. */
     isLastConversationMessage?: boolean;
     children: Snippet;
-    currentChild?: Snippet;
-    currentChildKey?: string;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
@@ -50,8 +48,6 @@
     isTerminal = false,
     isLastConversationMessage = false,
     children,
-    currentChild,
-    currentChildKey,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
@@ -59,9 +55,10 @@
     class: className = '',
   }: Props = $props();
 
+  const hasPreview = $derived((blocks?.length ?? 0) > 0);
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
   let isExpanded = $state(
-    (isStreaming && !currentChild) || (!isStreaming && isTerminal && isLastConversationMessage),
+    (isStreaming && !hasPreview) || (!isStreaming && isTerminal && isLastConversationMessage),
   );
   let isClosing = $state(false);
   let isInitialized = false;
@@ -111,13 +108,13 @@
   $effect(() => {
     const currentlyStreaming = isStreaming;
     const currentlyTerminal = isTerminal;
-    const hasCurrentChild = Boolean(currentChild);
+    const currentlyHasPreview = hasPreview;
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
-      if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
+      if (currentlyStreaming && currentlyHasPreview && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
         // A terminal group of the conversation's final assistant message keeps
@@ -133,7 +130,7 @@
       if (!prevStreaming && disclosureOverride === 'expanded-completed') {
         disclosureOverride = 'automatic';
       }
-      if (disclosureOverride === 'automatic') setExpanded(!hasCurrentChild);
+      if (disclosureOverride === 'automatic') setExpanded(!currentlyHasPreview);
       clearCollapseTimer();
     } else if (prevStreaming && !currentlyStreaming) {
       if (currentlyTerminal) {
@@ -185,7 +182,7 @@
     if (!searchOwnsExpansion) return;
     searchOwnsExpansion = false;
     if (isStreaming && disclosureOverride === 'automatic') {
-      setExpanded(!currentChild);
+      setExpanded(!hasPreview);
       return;
     }
     setExpanded(false);
@@ -233,17 +230,19 @@
 </script>
 
 {#snippet leading()}
-  <Fa
-    icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
-    size={16}
-    class={CHAT_OPERATIONAL_ICON_CLASS}
-  />
+  <span class="flex" data-response-group-disclosure-icon>
+    <Fa
+      icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
+      size={16}
+      class={CHAT_OPERATIONAL_ICON_CLASS}
+    />
+  </span>
 {/snippet}
 
 {#snippet summary()}
   <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
     >{displayName}</span
-  >{#if textSnippet && !isExpanded && (!isStreaming || !currentChild)}<InlineMarkdownSnippet
+  >{#if textSnippet && !isExpanded && (!isStreaming || !hasPreview)}<InlineMarkdownSnippet
       content={textSnippet}
       class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
       testId="response-group-snippet"
@@ -251,25 +250,14 @@
 {/snippet}
 
 {#snippet preview()}
-  <CylinderScroller isActive={isStreaming} constrained={false}>
+  <CylinderScroller isActive={isStreaming} constrained>
     <div class="relative flex flex-col gap-0" data-response-group-content>
       <span
         class="operational-group-guide pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      <!-- Keying on the current child's block identity makes a discrete swap
-           replace nodes: the outgoing child's outro and the incoming child's
-           intro run the same tick-driven disclosure motion, so their combined
-           height interpolates old→new under the followed-bottom lease.
-           Streaming growth within one child keeps the key stable and never
-           animates; the local transition stays inert when the preview itself
-           mounts or unmounts. -->
-      {#key currentChildKey}
-        <div data-response-group-preview-child transition:safeDisclosureTransition>
-          {@render currentChild?.()}
-        </div>
-      {/key}
+      {@render children()}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -290,7 +278,7 @@
 <ChatOperationalRow
   {leading}
   {summary}
-  preview={!isExpanded && isStreaming && currentChild ? preview : undefined}
+  preview={!isExpanded && isStreaming && hasPreview ? preview : undefined}
   details={isExpanded ? details : undefined}
   interactive
   showChevron={false}

@@ -54,15 +54,132 @@ describe('getFlatWorkspaceAgentRows', () => {
 
   it('keeps standalone background agents in the same top-level list', () => {
     const agents = [
-      makeAgent('foreground'),
+      makeAgent('foreground', { updatedAt: '2026-01-01T00:00:02.000Z' }),
       makeAgent('delegated', { metadata: { createdByAgentId: 'foreground' } as any }),
-      makeAgent('background', { isBackground: true }),
+      makeAgent('background', { isBackground: true, updatedAt: '2026-01-01T00:00:01.000Z' }),
     ];
 
     expect(getFlatWorkspaceAgentRows(agents).map(({ agent, depth }) => [agent.id, depth])).toEqual([
       ['foreground', 0],
       ['delegated', 1],
       ['background', 0],
+    ]);
+  });
+
+  it('orders siblings non-idle first by recency descending, idle last', () => {
+    const child = (id: string, overrides: Partial<AgentSession>) =>
+      makeAgent(id, { metadata: { createdByAgentId: 'coordinator' } as any, ...overrides });
+    const agents = [
+      makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }),
+      child('idle-old', { status: AgentStatus.RuntimeIdle, updatedAt: '2026-01-01T00:00:01.000Z' }),
+      child('active-old', { isResponding: true, updatedAt: '2026-01-01T00:00:02.000Z' }),
+      child('idle-new', { status: AgentStatus.Completed, updatedAt: '2026-01-01T00:00:04.000Z' }),
+      child('active-new', { turnInFlight: true, updatedAt: '2026-01-01T00:00:03.000Z' }),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'active-new',
+      'active-old',
+      'idle-new',
+      'idle-old',
+    ]);
+  });
+
+  it('keeps an idle coordinator above active siblings', () => {
+    const agents = [
+      makeAgent('standalone', { isResponding: true, updatedAt: '2026-01-01T00:00:02.000Z' }),
+      makeAgent('coordinator', {
+        metadata: { specialist: 'spec-writer' } as any,
+        status: AgentStatus.RuntimeIdle,
+        updatedAt: '2026-01-01T00:00:01.000Z',
+      }),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'standalone',
+    ]);
+  });
+
+  it('sorts a parked session with lagging active flags as idle (HUD parked-wait parity)', () => {
+    // The daemon can leave `status: "active"` / `isResponding: true` on an
+    // agent BETWEEN turns while it holds completion watches, hooks, or PR
+    // monitors — the HUD buckets those idle, and this ordering must agree.
+    const child = (id: string, overrides: Partial<AgentSession>) =>
+      makeAgent(id, { metadata: { createdByAgentId: 'coordinator' } as any, ...overrides });
+    const agents = [
+      makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }),
+      child('parked-watch', {
+        isResponding: true,
+        isWaitingForOtherAgents: true,
+        waitingForAgentIds: ['other'],
+        updatedAt: '2026-01-01T00:00:05.000Z',
+      }),
+      child('parked-hooks', {
+        isResponding: true,
+        waitingOnHooks: [{ hookId: 'h1', name: 'CI watch' }],
+        updatedAt: '2026-01-01T00:00:04.000Z',
+      }),
+      child('running', { isResponding: true, updatedAt: '2026-01-01T00:00:01.000Z' }),
+      // A genuine in-flight turn defeats the parked-wait gate.
+      child('parked-but-turning', {
+        turnInFlight: true,
+        isWaitingForOtherAgents: true,
+        updatedAt: '2026-01-01T00:00:02.000Z',
+      }),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'parked-but-turning',
+      'running',
+      'parked-watch',
+      'parked-hooks',
+    ]);
+  });
+
+  it('keeps failed and attention-pending siblings in the non-idle partition', () => {
+    const child = (id: string, overrides: Partial<AgentSession>) =>
+      makeAgent(id, { metadata: { createdByAgentId: 'coordinator' } as any, ...overrides });
+    const agents = [
+      makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }),
+      child('idle-newest', {
+        status: AgentStatus.RuntimeIdle,
+        updatedAt: '2026-01-01T00:00:05.000Z',
+      }),
+      child('failed', { status: AgentStatus.Error, updatedAt: '2026-01-01T00:00:01.000Z' }),
+      child('blocked', {
+        status: AgentStatus.RuntimeIdle,
+        attentionRequestKind: 'blocker',
+        updatedAt: '2026-01-01T00:00:02.000Z',
+      }),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'blocked',
+      'failed',
+      'idle-newest',
+    ]);
+  });
+
+  it('breaks equal-recency ties by agent id so rows stay stable', () => {
+    const child = (id: string) =>
+      makeAgent(id, {
+        metadata: { createdByAgentId: 'coordinator' } as any,
+        status: AgentStatus.RuntimeIdle,
+      });
+    const agents = [
+      makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }),
+      child('idle-b'),
+      child('idle-a'),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'idle-a',
+      'idle-b',
     ]);
   });
 

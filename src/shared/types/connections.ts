@@ -115,6 +115,15 @@ export interface ConnectionRecord {
   /** Pinned self-signed cert fingerprint, SHA-256 colon-hex (PROTOCOL §1.2); `null` for local. */
   fingerprint: string | null;
   /**
+   * tc address of the remote daemon's tailcat tunnel endpoint (PROTOCOL §12.3;
+   * pairing URI `tc=` / `system.status.tcAddress`), captured at add time and
+   * refreshed after each successful connect. When present, every (re)connect
+   * adds a tunnel candidate to the host race so the backend stays reachable
+   * with no directly routable host. `null`/absent when the daemon has no
+   * tunnel configured (or predates the field). Never set for the local entry.
+   */
+  tcAddress?: string | null;
+  /**
    * The remote machine's hostname (from `host.status`), captured on the first
    * successful connect so the menu can label a remote as `hostname (host:port)`
    * instead of the raw address. `null`/absent until captured or unavailable —
@@ -148,6 +157,13 @@ export interface ConnectionRecord {
    * equivalent to `false` (synced). Never set for the local entry.
    */
   syncExcluded?: boolean;
+  /**
+   * Whether the "detect all backend IPs" option (#1746) is on for this
+   * remote: post-connect `server.pairingInfo` refreshes of `hosts` are
+   * skipped when `false`. Optional so pre-existing fixtures/records remain
+   * valid — absent is equivalent to `true`. Never set for the local entry.
+   */
+  detectHosts?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
   /** Present on list/broadcast payloads; never persisted. */
@@ -254,6 +270,12 @@ export interface AddConnectionParams {
   fingerprint: string;
   token: string;
   /**
+   * tc address from the pairing URI's `tc=` parameter (PROTOCOL §12.3), when
+   * the daemon advertises a tailcat tunnel endpoint. Stored on the record so
+   * connects can race a tunnel candidate alongside the direct hosts.
+   */
+  tcAddress?: string;
+  /**
    * "Detect all backend IPs" option (#1746), default ON. When enabled, the
    * connection refreshes its candidate-host list from the backend's
    * `server.pairingInfo` after each successful connect; when disabled, only
@@ -293,6 +315,14 @@ export interface UpdateConnectionParams {
   port?: number;
   /** Explicit user confirmation of a newly presented certificate. */
   confirmedFingerprint?: string;
+  /** Flip the "detect all backend IPs" option; omitted = unchanged. */
+  detectHosts?: boolean;
+  /**
+   * Flip the per-backend keychain-sync exclusion; omitted = unchanged.
+   * `true` tombstones the synced copy (the local record stays), `false`
+   * re-publishes the record on the next reconcile.
+   */
+  syncExcluded?: boolean;
 }
 
 /** Machine-readable validation outcomes; renderer copy is localized by status/reason. */

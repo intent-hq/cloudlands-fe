@@ -769,10 +769,23 @@ function buildCSSVariables(
     '--muted',
     '--sidebar',
   ] as const;
+  const dangerSource = result['--danger'];
   result['--danger'] = ensureContrastAgainstSurfaces(
-    result['--danger'],
+    dangerSource,
     dangerSurfaces.map((surface) => result[surface]),
   );
+  const dangerRGB = hslToRGB(result['--danger']);
+  const hasLegibleDanger = dangerSurfaces.every(
+    (surface) => contrastRatio(dangerRGB, hslToRGB(result[surface])) >= 4.55,
+  );
+  if (!hasLegibleDanger) {
+    // A neutral supporting surface makes extreme mixed light/dark imports solvable.
+    result['--danger-background'] = result['--background'];
+    result['--danger'] = ensureContrastAgainstSurfaces(
+      dangerSource,
+      dangerSurfaces.map((surface) => result[surface]),
+    );
+  }
   return result;
 }
 

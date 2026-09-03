@@ -563,7 +563,7 @@ describe('daemonEventsSaga', () => {
         _subscriptionIds,
         overrides: { onSettingsChanges: (changes: unknown[]) => void },
       ) => {
-        overrides.onSettingsChanges([{ path: 'providers.active', value: 'auggie' }]);
+        overrides.onSettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
       },
     );
     const dispatch = vi.fn();
@@ -576,7 +576,7 @@ describe('daemonEventsSaga', () => {
     await settle();
 
     expect(dispatch).toHaveBeenCalledWith(
-      settingsChangesReceived([{ path: 'providers.active', value: 'auggie' }]),
+      settingsChangesReceived([{ path: 'model.defaultProvider', value: 'auggie' }], undefined),
     );
     task.cancel();
     await task.toPromise();

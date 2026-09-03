@@ -22,6 +22,7 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
+  import { workspaceHoverCardIntentSession } from './utils/workspace-hover-card-intent';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -120,6 +121,8 @@
     highlightId?: string;
     /** Whether to suppress hover styling (when keyboard navigation is active) */
     suppressHover?: boolean;
+    /** Scope hover/focus action reveals to this card instead of an ancestor group. */
+    isolateHoverReveal?: boolean;
     class?: string;
     actions?: Snippet;
   }
@@ -151,6 +154,7 @@
     selected = false,
     highlightId,
     suppressHover = false,
+    isolateHoverReveal = false,
     class: className,
     actions,
   }: Props = $props();
@@ -180,6 +184,7 @@
     getWorkspaceStatusPresentation(workspaceStatusState),
   );
   let isCurrent = $derived(workspace ? page.url.pathname === `/workspace/${workspace.id}` : false);
+  let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
 
@@ -188,14 +193,30 @@
   // on-demand load dispatches that fan out to every live selector in the
   // app), so scrubbing the pointer across the list must not mount one per
   // row — only a pointer that rests on a row opens the card.
-  const HOVER_CARD_OPEN_DELAY_MS = 250;
   let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  let pointerWithinRow = false;
+  let focusWithinRow = false;
+  let hoverCardOpenedFromPointer = false;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
       clearTimeout(hoverCardOpenTimer);
       hoverCardOpenTimer = null;
     }
+  }
+
+  function openHoverCardFromPointer() {
+    hoverCardVisible = true;
+    if (hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = true;
+    workspaceHoverCardIntentSession.notifyOpened();
+  }
+
+  function closeHoverCard() {
+    hoverCardVisible = false;
+    if (!hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = false;
+    workspaceHoverCardIntentSession.notifyClosed();
   }
 
   const activePullRequest = $derived.by(() => {
@@ -233,6 +254,9 @@
       getDisplayTitle: (pr) => pr.title,
     });
   });
+  // Rows are sorted earliest-in-flow first (draft → open → merged → closed);
+  // the compact row shows only that PR so the sidebar stays scannable.
+  const primaryPr = $derived<WorkspacePRPresentationRow | undefined>(workspacePrRows[0]);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -244,25 +268,39 @@
   }
 
   function handleMouseEnter() {
+    pointerWithinRow = true;
     onHover?.();
-    if (workspace && !suppressHover) {
+    if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
-        hoverCardVisible = true;
-      }, HOVER_CARD_OPEN_DELAY_MS);
+        openHoverCardFromPointer();
+      }, workspaceHoverCardIntentSession.currentOpenDelay);
     }
   }
 
   function handleMouseLeave() {
+    pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    hoverCardVisible = false;
+    if (!focusWithinRow) closeHoverCard();
+  }
+
+  function handleFocusIn() {
+    focusWithinRow = true;
+    clearHoverCardOpenTimer();
+    if (workspace && !suppressHover) hoverCardVisible = true;
+  }
+
+  function handleFocusOut(event: FocusEvent) {
+    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
+    focusWithinRow = false;
+    if (!pointerWithinRow) closeHoverCard();
   }
 
   $effect(() => {
     if (suppressHover) {
       clearHoverCardOpenTimer();
-      hoverCardVisible = false;
+      closeHoverCard();
     }
   });
 
@@ -297,6 +335,7 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
@@ -462,7 +501,8 @@
   <div
     bind:this={rowElement}
     class={cn(
-      'wc-root group relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      'wc-root relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      isolateHoverReveal ? 'group/wc' : 'group',
       isCurrent
         ? 'bg-background/60'
         : highlighted
@@ -482,6 +522,8 @@
     oncontextmenu={handleContextMenu}
     onmouseenter={handleMouseEnter}
     onmouseleave={handleMouseLeave}
+    onfocusin={handleFocusIn}
+    onfocusout={handleFocusOut}
     style:anchor-name="--workspace-list-{workspace.id}"
     data-workspace-card-row
   >
@@ -489,7 +531,7 @@
       variant="plain"
       class="absolute inset-0 z-0 h-auto w-auto rounded-md focus-visible:border-transparent focus-visible:bg-background/50 focus-visible:ring-0"
       aria-label={workspace.title || m.workspace_links_untitled_label()}
-      aria-describedby={`workspace-status-state-${workspace.id}${isPinned ? ` workspace-pinned-state-${workspace.id}` : ''}`}
+      aria-describedby={`workspace-status-state-${workspace.id}${isPinned ? ` workspace-pinned-state-${workspace.id}` : ''}${hoverCardVisible ? ` ${hoverCardId}` : ''}`}
       aria-current={isCurrent ? 'page' : undefined}
       data-workspace-card-trigger
       onclick={(event) => {
@@ -531,7 +573,9 @@
                 ? 'opacity-0'
                 : suppressHover
                   ? ''
-                  : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                  : isolateHoverReveal
+                    ? 'group-hover/wc:opacity-0 group-focus-within/wc:opacity-0'
+                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
               : ''}"
             data-workspace-card-pin-indicator
             aria-hidden="true"
@@ -553,47 +597,44 @@
         </span>
       {/if}
 
-      {#if workspacePrRows.length > 0}
+      {#if primaryPr}
+        {@const pr = primaryPr}
         <span
-          class="wc-pr-list flex min-w-0 max-w-11/20 shrink items-center gap-0.5 overflow-x-auto"
+          class="flex shrink-0 items-center"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
-          {#each workspacePrRows as pr (pr.identity)}
-            <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>
-              {#if pr.url}
-                <Button
-                  variant="plain"
-                  class="type-caption h-5 min-w-5 shrink-0 gap-1 rounded-sm !px-1 font-normal tabular-nums {pr.backgroundClass} {pr.foregroundClass}"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  data-workspace-card-pr-item
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                  onclick={(event) => {
-                    event.stopPropagation();
-                    const workspaceId = workspace.id;
-                    void import('$features/navigation/link-handler').then(({ handleLink }) =>
-                      handleLink(pr.url, { workspaceId, event }),
-                    );
-                  }}
-                >
-                  <Fa icon={pr.statusIcon} size="xs" />
-                  <span class="wc-pr-number" data-workspace-card-pr-number>#{pr.number}</span>
-                </Button>
-              {:else}
-                <span
-                  class="type-caption inline-flex h-5 min-w-5 shrink-0 items-center gap-1 rounded-sm px-1 font-normal tabular-nums {pr.backgroundClass} {pr.foregroundClass}"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  data-workspace-card-pr-item
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                >
-                  <Fa icon={pr.statusIcon} size="xs" />
-                  <span class="wc-pr-number" data-workspace-card-pr-number>#{pr.number}</span>
-                </span>
-              {/if}
-            </Tooltip>
-          {/each}
+          <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>
+            {#if pr.url}
+              <Button
+                variant="plain"
+                class="size-5 shrink-0 rounded-sm !p-0 {pr.foregroundClass}"
+                aria-label={getWorkspacePrLabel(pr)}
+                data-workspace-card-pr-item
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  const workspaceId = workspace.id;
+                  void import('$features/navigation/link-handler').then(({ handleLink }) =>
+                    handleLink(pr.url, { workspaceId, event }),
+                  );
+                }}
+              >
+                <Fa icon={pr.statusIcon} size={14} />
+              </Button>
+            {:else}
+              <span
+                class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm {pr.foregroundClass}"
+                aria-label={getWorkspacePrLabel(pr)}
+                data-workspace-card-pr-item
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+              >
+                <Fa icon={pr.statusIcon} size={14} />
+              </span>
+            {/if}
+          </Tooltip>
         </span>
       {/if}
 
@@ -603,7 +644,9 @@
             ? 'opacity-0'
             : suppressHover
               ? ''
-              : 'group-hover:opacity-0 group-hover/message:opacity-0'
+              : isolateHoverReveal
+                ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
+                : 'group-hover:opacity-0 group-hover/message:opacity-0'
           : ''}"
         data-workspace-card-time
       >
@@ -619,12 +662,17 @@
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
-        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100 group-focus-within:opacity-100
+        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
+          {isolateHoverReveal
+          ? 'group-focus-within/wc:opacity-100'
+          : 'group-focus-within:opacity-100'}
           {highlighted
           ? 'opacity-100'
           : suppressHover
             ? 'opacity-0'
-            : 'opacity-0 group-hover:opacity-100'}"
+            : isolateHoverReveal
+              ? 'opacity-0 group-hover/wc:opacity-100'
+              : 'opacity-0 group-hover:opacity-100'}"
       >
         {#if onOpenInNewWindow}
           <SidebarOverflowMenu
@@ -676,6 +724,7 @@
 
   {#if hoverCardVisible && !suppressHover}
     <HoverCard
+      id={hoverCardId}
       anchor="--workspace-list-{workspace.id}"
       position="right"
       anchorElement={rowElement}
@@ -861,32 +910,8 @@
 {/if}
 
 <style>
-  /* Interactive PR items are Button primitives whose base carries
-     `type-body`; that unlayered role class is declared after `.type-caption`
-     in app.css and would win the cascade, so the caption role is re-applied
-     here with scoped (higher-specificity) selectors to keep the pill's
-     typography identical to its non-interactive sibling. */
-  .wc-pr-list :global([data-slot='button']) {
-    font-size: var(--text-caption-size);
-    line-height: var(--text-caption-line-height);
-    font-weight: var(--text-caption-weight);
-    letter-spacing: var(--text-caption-tracking);
-  }
-
-  .wc-pr-list {
-    scrollbar-width: none;
-  }
-
-  .wc-pr-list::-webkit-scrollbar {
-    display: none;
-  }
-
   @container (max-width: 220px) {
     .wc-secondary {
-      display: none;
-    }
-
-    .wc-pr-number {
       display: none;
     }
   }

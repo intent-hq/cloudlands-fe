@@ -39,7 +39,9 @@ export function panelTabsAreEquivalent(
       return !!path && canonicalWorkspacePath(existing.filePath) === path;
     }
     case 'terminal':
-      return !!requested.terminalId && existing.terminalId === requested.terminalId;
+      return requested.scriptId
+        ? existing.scriptId === requested.scriptId
+        : !!requested.terminalId && existing.terminalId === requested.terminalId;
     case 'hook-script':
       return (
         !!requested.workspaceId &&

@@ -85,8 +85,6 @@
   import PRSection from './PRSection.svelte';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import OpenPanelIndicator from './OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -638,13 +636,6 @@
     appStore.dispatch(openWorkspaceLocalChanges(workspaceId));
   }
 
-  const localChangesPanelState = $derived(
-    getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
-      type: 'local-changes',
-      workspaceId,
-    }),
-  );
-
   // Multi-select state for bulk staging/unstaging
   // Keys are "{staged}:{path}" to distinguish between same file in staged vs unstaged
   let selectedFiles = $state(new Set<string>());
@@ -1114,7 +1105,7 @@
               <button
                 onclick={handleOpenAllChanges}
                 class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
-                  ? 'bg-background text-foreground border-border shadow-xs pl-2'
+                  ? 'bg-background text-foreground border-transparent pl-2'
                   : 'border-transparent'}
                 "
               >
@@ -1127,10 +1118,6 @@
                           count: formatInteger(totalFilesChanged),
                         })}
                   </span>
-                  <OpenPanelIndicator
-                    count={localChangesPanelState.count}
-                    active={localChangesPanelState.isActive}
-                  />
                   <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
                 </div>
               </button>

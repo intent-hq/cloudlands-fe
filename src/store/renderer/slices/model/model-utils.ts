@@ -11,10 +11,7 @@ import {
   type ProviderModelEntry,
 } from '$features/providers/provider-models.client';
 import { store as appStore } from '../../store';
-import {
-  selectEffectiveDefaultProviderId,
-  selectNormalizedProviderId,
-} from '../provider-catalog/provider-catalog-selectors';
+import { selectNormalizedProviderId } from '../provider-catalog/provider-catalog-selectors';
 /**
  * Provider model row shape — the provider-agnostic daemon catalog shape
  * shared by all eight providers (`models.list`, PROTOCOL §6.7).
@@ -47,22 +44,6 @@ export async function fetchModelsForProvider(providerId: string): Promise<Provid
   return (await fetchProviderModelsWithWarning(providerId)).models;
 }
 
-function prefixModelsForProvider(providerId: string, models: ProviderModel[]): AuggieModel[] {
-  if (models.length === 0) {
-    return [];
-  }
-  const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
-  return models.map((model) => {
-    if (providerId !== defaultProviderId) {
-      return {
-        ...model,
-        value: `${providerId}:${model.value}`,
-      } as AuggieModel;
-    }
-    return model as AuggieModel;
-  });
-}
-
 export async function getModelsForProviderForLoadingState(
   providerId: string,
   options: { forceRefresh?: boolean } = {},
@@ -74,7 +55,10 @@ export async function getModelsForProviderForLoadingState(
   const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
   const result = await fetchProviderModelsWithWarning(normalizedId, options);
   return {
-    models: prefixModelsForProvider(normalizedId, result.models),
+    // Catalog rows keep their bare daemon-served ids; provider provenance is
+    // carried separately by the caller (availableModelsProviderId / the
+    // per-provider map key), never encoded into the id.
+    models: result.models as AuggieModel[],
     warning: result.warning,
     stale: result.stale,
   };
@@ -84,8 +68,6 @@ export async function getModelsForProviderForLoadingState(
  * Fetch and return models for a specific provider ID.
  * Unlike the load-models saga, this does NOT update Redux state.
  * Used by ModelPicker when an agent's provider differs from the global active provider.
- *
- * Applies the same provider-ID prefixing logic as the load-models saga.
  */
 export async function getModelsForProvider(providerId: string): Promise<AuggieModel[]> {
   return (await getModelsForProviderForLoadingState(providerId)).models;

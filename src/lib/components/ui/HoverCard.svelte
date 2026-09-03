@@ -4,6 +4,7 @@
   import Portal from './Portal.svelte';
   import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
   interface Props {
+    id?: string;
     anchor: string;
     position?: 'right' | 'bottom' | 'bottom-right' | 'bottom-left' | 'top';
     /** Use absolute positioning instead of fixed (needed inside transformed containers) */
@@ -14,6 +15,7 @@
     children?: Snippet;
   }
   let {
+    id,
     anchor,
     position = 'right',
     absolute = false,
@@ -205,6 +207,7 @@
 
 {#if absolute}
   <div
+    {id}
     bind:this={cardEl}
     class={positionClass +
       ' z-50 w-64 flex flex-col bg-popover border border-border shadow pointer-events-none transition duration-150 ease-out ' +
@@ -232,6 +235,7 @@
 {:else}
   <Portal zIndex={50}>
     <div
+      {id}
       bind:this={cardEl}
       class={positionClass +
         ' z-50 w-64 flex flex-col overflow-y-auto bg-popover border border-border shadow pointer-events-auto transition duration-150 ease-out ' +

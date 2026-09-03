@@ -78,7 +78,8 @@ vi.mock('$store/renderer/store', async () => {
       providerCatalog,
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+      providerSettings: { enabledProviders: {} },
+      model: { defaultProviderId: 'auggie' },
       providerModels: {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,
@@ -373,7 +374,10 @@ describe('ModelPicker legacy Auggie models', () => {
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
     const legacyOption = await screen.findByRole('option', { name: /Opus 4.1/ });
     await fireEvent.click(legacyOption);
-    expect(onModelChange).toHaveBeenCalledWith('legacy-opus');
+    expect(onModelChange).toHaveBeenCalledWith('legacy-opus', {
+      providerId: 'auggie',
+      modelId: 'legacy-opus',
+    });
   });
 
   it('supports keyboard expand and collapse on the legacy subgroup header', async () => {
@@ -1418,7 +1422,10 @@ describe('ModelPicker multi-provider mode', () => {
 
     await fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
 
-    expect(onModelChange).toHaveBeenCalledWith('sonnet4.6');
+    expect(onModelChange).toHaveBeenCalledWith('sonnet4.6', {
+      providerId: 'auggie',
+      modelId: 'sonnet4.6',
+    });
   });
 
   it('surfaces an empty-with-warning provider as a visible disabled row instead of hiding the group', async () => {
@@ -1772,7 +1779,10 @@ describe('ModelPicker multi-provider mode', () => {
     });
 
     await waitFor(() => {
-      expect(onModelChange).toHaveBeenCalledWith('opencode:real-model');
+      expect(onModelChange).toHaveBeenCalledWith('opencode:real-model', {
+        providerId: 'opencode',
+        modelId: 'real-model',
+      });
     });
     expect(vi.mocked(toast.info)).toHaveBeenCalled();
 
@@ -2542,7 +2552,10 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     await pickModelOne();
 
-    expect(onModelChange).toHaveBeenCalledWith('model-1');
+    expect(onModelChange).toHaveBeenCalledWith('model-1', {
+      providerId: 'auggie',
+      modelId: 'model-1',
+    });
     expect(dispatchedTypes()).not.toContain(selectModel.type);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
@@ -2641,6 +2654,55 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
   });
 
+  it('bare pick from a non-default provider group resolves the owning provider (catalog ownership)', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    // Catalog rows are bare for every provider — the codex group owns the
+    // bare 'gpt-5-codex' row, so a pick of it must attribute to codex, not
+    // blanket-attribute to the default provider (auggie).
+    enabledProviderIds$.set(['auggie', 'codex']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'codex'
+          ? [{ value: 'gpt-5-codex', label: 'GPT-5 Codex', description: 'Codex model' }]
+          : [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }));
+
+    render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Codex/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onModelChange).toHaveBeenCalledWith('gpt-5-codex', {
+      providerId: 'codex',
+      modelId: 'gpt-5-codex',
+    });
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'gpt-5-codex',
+        'ws-1',
+        'codex',
+      );
+    });
+  });
+
+  // Legacy boundary: compound `provider:model` ids no longer exist as catalog
+  // rows, but persisted selections can still carry them — the prefix must win
+  // provider attribution outright.
   it('compound model pick sends the compound prefix as the explicit providerId', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
@@ -2725,7 +2787,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     const selectModelActions = mockSvelteDispatch.mock.calls
       .map(([action]) => action as { type?: string; payload?: unknown })
       .filter((action) => action.type === selectModel.type);
-    expect(selectModelActions[0]?.payload).toEqual(['model-1']);
+    expect(selectModelActions[0]?.payload).toEqual(['model-1', 'auggie']);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
   });
 });
@@ -2768,7 +2830,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
 
     await waitFor(() => {
-      expect(onModelChange).toHaveBeenCalledWith('model-2');
+      expect(onModelChange).toHaveBeenCalledWith('model-2', {
+        providerId: 'auggie',
+        modelId: 'model-2',
+      });
     });
     expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
   });
@@ -2869,7 +2934,10 @@ describe('ModelPicker confirmModelChange gate', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(confirmModelChange).not.toHaveBeenCalled();
-    expect(onModelChange).toHaveBeenCalledWith('model-1');
+    expect(onModelChange).toHaveBeenCalledWith('model-1', {
+      providerId: 'auggie',
+      modelId: 'model-1',
+    });
   });
 });
 
@@ -2996,7 +3064,10 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
     await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
 
     await waitFor(() => {
-      expect(onModelChange).toHaveBeenCalledWith('model-2');
+      expect(onModelChange).toHaveBeenCalledWith('model-2', {
+        providerId: 'auggie',
+        modelId: 'model-2',
+      });
     });
   });
 });

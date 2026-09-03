@@ -98,17 +98,17 @@
     default: cn(
       'hover:bg-accent/60 hover:text-accent-foreground',
       selected && 'bg-accent text-accent-foreground',
-      active && 'border-input bg-card text-foreground',
+      active && 'bg-card text-foreground',
     ),
     ghost: cn(
       'hover:bg-accent/60 hover:text-accent-foreground',
       selected && 'bg-accent text-accent-foreground',
-      active && 'border-input bg-card text-foreground',
+      active && 'bg-card text-foreground',
     ),
     subtle: cn(
       'hover:bg-muted',
       selected && 'bg-accent text-accent-foreground',
-      active && 'border-input bg-card text-foreground',
+      active && 'bg-card text-foreground',
     ),
   });
 
@@ -274,9 +274,5 @@
   [data-slot='list-item'],
   [role='button'] {
     transition-duration: var(--motion-fast);
-  }
-
-  [data-slot='list-item'][data-active] {
-    box-shadow: var(--elevation-raised);
   }
 </style>

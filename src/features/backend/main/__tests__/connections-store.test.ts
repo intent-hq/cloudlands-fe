@@ -163,6 +163,33 @@ describe('connections-store', () => {
     ).toBeNull();
   });
 
+  it('accepts optional detectHosts / syncExcluded flips through the update IPC schema', async () => {
+    const { ConnectionsUpdateSchema } = await import('../../../../main/ipc-schemas');
+    const parsed = ConnectionsUpdateSchema.parse({
+      id: 'remote-1',
+      label: 'Studio Mac',
+      accent: null,
+      detectHosts: false,
+      syncExcluded: true,
+    });
+    expect(parsed).toMatchObject({ detectHosts: false, syncExcluded: true });
+    const omitted = ConnectionsUpdateSchema.parse({
+      id: 'remote-1',
+      label: 'Studio Mac',
+      accent: null,
+    });
+    expect(omitted.detectHosts).toBeUndefined();
+    expect(omitted.syncExcluded).toBeUndefined();
+    expect(
+      ConnectionsUpdateSchema.safeParse({
+        id: 'remote-1',
+        label: 'Studio Mac',
+        accent: null,
+        syncExcluded: 'yes',
+      }).success,
+    ).toBe(false);
+  });
+
   it('updateMetadata changes name and accent without rewriting the bearer token', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
@@ -640,6 +667,7 @@ describe('connections-store', () => {
       port: sampleConn.port,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: Date.now() + 60_000,
@@ -1048,6 +1076,191 @@ describe('connections-store', () => {
     }
   });
 
+  it('add captures the pairing tcAddress and it round-trips through disk', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    expect(rec.tcAddress).toBe('tc.example.ts.net');
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.tcAddress).toBe('tc.example.ts.net');
+  });
+
+  it('records default to a null tcAddress until one is captured', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.tcAddress).toBeNull();
+    expect((await store.list())[1].tcAddress).toBeNull();
+  });
+
+  it('re-pair keeps the known tcAddress when the new pairing URI omits tc=', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // Same host:port → same identity; an older QR without tc= must not clear it.
+    const repaired = await store.add({ ...sampleConn, token: 'token-2' });
+    expect(repaired.id).toBe(rec.id);
+    expect(repaired.tcAddress).toBe('tc.example.ts.net');
+
+    // A pairing URI that does carry tc= overwrites.
+    const updated = await store.add({ ...sampleConn, token: 'token-3', tcAddress: 'tc2.ts.net' });
+    expect(updated.tcAddress).toBe('tc2.ts.net');
+  });
+
+  it('setTcAddress refreshes/clears the stored address and reports no-ops as false', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBe('tc.example.ts.net');
+
+    // The routine every-reconnect same-address capture is a no-op.
+    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(false);
+
+    // A successful status without the field conclusively clears the address.
+    await expect(store.setTcAddress(rec.id, null)).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBeNull();
+
+    // Already-cleared (absent or null) is a no-op; unknown id is fail-soft.
+    await expect(store.setTcAddress(rec.id, null)).resolves.toBe(false);
+    await expect(store.setTcAddress('does-not-exist', 'tc.ts.net')).resolves.toBe(false);
+  });
+
+  it('setTcAddress bumps the LWW clock and notifies keychain sync (synced state)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].tcAddress).toBe('tc.example.ts.net');
+      // A tc address change is a syncable edit: the LWW clock advances so the
+      // rotation propagates to the user's other devices.
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_001_000);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // The unchanged every-reconnect case skips the write: no clock bump,
+      // no sync notification.
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsubscribe();
+
+      // The captured address is part of the sync surface.
+      const records = await store.listSyncRecords();
+      const synced = records.find((r) => r.host === sampleConn.host);
+      expect(synced?.tcAddress).toBe('tc.example.ts.net');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setTcAddress out-clocks an add landing in the same millisecond', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      // Same-millisecond capture (the routine post-connect case): the stamp
+      // is forced strictly past the record's clock, or reconcile would treat
+      // equal live clocks as in-sync and never propagate the address.
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_001);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sync records carry tcAddress and applyRemoteSyncRecord round-trips it', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    const records = await store.listSyncRecords();
+    const synced = records.find((r) => r.host === sampleConn.host);
+    expect(synced?.tcAddress).toBe('tc.example.ts.net');
+
+    // A newer remote copy updates the stored address in place…
+    await store.applyRemoteSyncRecord({ ...synced!, tcAddress: 'tc2.ts.net', updatedAt: 9e12 });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+
+    // …and a remote copy without one (older app / tunnel down) clears it.
+    await store.applyRemoteSyncRecord({ ...synced!, tcAddress: null, updatedAt: 9e12 + 1 });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('applyRemoteSyncRecord inserts a new record with the synced tcAddress', async () => {
+    const store = await import('../connections-store');
+    await store.applyRemoteSyncRecord({
+      label: 'Studio',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AA:BB',
+      hostname: null,
+      tcAddress: 'tc.example.ts.net',
+      detectHosts: true,
+      token: 'tok',
+      updatedAt: 1_700_000_000_000,
+    });
+    const pulled = (await store.list()).find((c) => c.host === '10.0.0.9');
+    expect(pulled?.tcAddress).toBe('tc.example.ts.net');
+  });
+
+  it('an identity change via updateMetadata clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // A metadata-only edit keeps the address…
+    await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'blue' });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc.example.ts.net');
+
+    // …but a new endpoint may be a different machine: the old daemon's tunnel
+    // address must not sync fleet-wide under the new identity.
+    await store.updateMetadata(rec.id, {
+      label: 'Renamed',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('a fingerprint change via updateMetadata or replaceSecret clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    await store.updateMetadata(rec.id, {
+      label: sampleConn.label,
+      accent: 'blue',
+      fingerprint: 'DD:EE:FF',
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+
+    await store.setTcAddress(rec.id, 'tc2.ts.net');
+    // A same-fingerprint token rotation keeps the address…
+    await store.replaceSecret(rec.id, 'rotated-token', 'DD:EE:FF');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+    // …a cert change clears it.
+    await store.replaceSecret(rec.id, 'rotated-again', '11:22:33');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');
@@ -1098,6 +1311,47 @@ describe('connections-store', () => {
     expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5', 'fe80::1']);
     // The primary host stays untouched.
     expect(remote?.host).toBe('192.168.1.10');
+  });
+
+  it('loopback extras from legacy synced records are dropped on read', async () => {
+    // A record published before self-publish filtered loopback out of
+    // localIps may still sync a loopback extra — dialing it would connect
+    // this machine to its OWN local daemon, so reads must drop it.
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHosts(rec.id, [
+      '127.0.0.1',
+      'localhost',
+      '::1',
+      '[::1]',
+      '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '[::ffff:7f00:0001]',
+      '10.0.0.5',
+    ]);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5']);
+  });
+
+  it('a loopback PRIMARY is dropped from candidates but keeps the record identity', async () => {
+    // Legacy synced records can carry a loopback primary — dialing it from
+    // another device races that device's OWN daemon, so reads exclude it
+    // whenever a routable candidate exists. The on-disk host is untouched.
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['192.168.1.10']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['192.168.1.10']);
+  });
+
+  it('an all-loopback record keeps the primary as its sole candidate (stays dialable)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['::1']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['127.0.0.1']);
   });
 
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
@@ -1322,6 +1576,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'NEW:FP',
       hostname: 'studio.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'rotated-token',
       updatedAt: 42,
@@ -1351,6 +1606,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9000,
       fingerprint: 'FP',
       hostname: null,
+      tcAddress: null,
       detectHosts: false,
       token: 'laptop-token',
       updatedAt: 7,
@@ -1376,6 +1632,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1408,6 +1665,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9443,
       fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
       hostname: 'studio.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'rotated-token',
       updatedAt: 42,
@@ -1435,6 +1693,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1493,6 +1752,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9000,
       fingerprint: 'FP',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 't',
       updatedAt: 7,
@@ -1624,6 +1884,278 @@ describe('connections-store keychain sync surface', () => {
     expect(records).toEqual([expect.objectContaining({ deleted: true })]);
   });
 
+  it('updateMetadata syncExcluded true keeps the local record and writes a synced tombstone for its cloud copy', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const before = (await store.listSyncRecords())[0].updatedAt;
+
+    const updated = await store.updateMetadata(rec.id, {
+      label: sampleConn.label,
+      accent: null,
+      syncExcluded: true,
+    });
+    await store.__drainWriteChainForTesting();
+
+    expect(updated).toMatchObject({ id: rec.id, syncExcluded: true });
+    expect((await store.list()).find((c) => c.id === rec.id)?.syncExcluded).toBe(true);
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+
+    // The live record leaves the sync listing; a NON-excluded tombstone for
+    // its identity takes its place so the reconcile deletes the keychain copy.
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      deleted: true,
+      host: sampleConn.host,
+      port: sampleConn.port,
+      fingerprint: sampleConn.fingerprint,
+    });
+    expect(records[0].updatedAt).toBeGreaterThanOrEqual(before);
+
+    // The echoed tombstone (or a stale live copy) never touches the local-only record.
+    expect(await store.applyRemoteSyncRecord(records[0])).toBe(false);
+    expect((await store.list()).find((c) => c.id === rec.id)).toBeDefined();
+  });
+
+  it('a later plain edit of an excluded record leaves its pending cloud-delete tombstone in place', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    const [tombstone] = await store.listSyncRecords();
+
+    await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'teal' });
+
+    const records = await store.listSyncRecords();
+    expect(records).toEqual([expect.objectContaining({ deleted: true })]);
+    expect(records[0].updatedAt).toBe(tombstone.updatedAt);
+  });
+
+  it('identity change of an excluded record keeps its pending cloud delete synced and never lowers its clock', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_005_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+      const [pending] = await store.listSyncRecords();
+      expect(pending.deleted).toBe(true);
+
+      // Wall clock rolled back below the pending delete's stamp.
+      vi.setSystemTime(1_700_000_000_000);
+      await store.updateMetadata(rec.id, {
+        label: 'Studio Mac',
+        accent: null,
+        host: '10.0.0.9',
+        port: 9443,
+        fingerprint: 'ZZ:YY:XX',
+      });
+      await store.__drainWriteChainForTesting();
+
+      const records = await store.listSyncRecords();
+      expect(records).toEqual([
+        expect.objectContaining({
+          deleted: true,
+          host: sampleConn.host,
+          port: sampleConn.port,
+          fingerprint: sampleConn.fingerprint,
+        }),
+      ]);
+      expect(records[0].updatedAt).toBeGreaterThan(pending.updatedAt);
+      expect((await store.list()).find((c) => c.id === rec.id)).toMatchObject({
+        host: '10.0.0.9',
+        syncExcluded: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forget of an excluded record with a pending cloud delete keeps that delete synced (never hides it as local-only)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_005_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+      const [pending] = await store.listSyncRecords();
+      expect(pending.deleted).toBe(true);
+
+      // Forget before any reconcile pushed the delete, under a rolled-back clock.
+      vi.setSystemTime(1_700_000_000_000);
+      await store.forget(rec.id);
+      await store.__drainWriteChainForTesting();
+
+      expect((await store.list()).find((c) => c.id === rec.id)).toBeUndefined();
+      const records = await store.listSyncRecords();
+      expect(records).toEqual([
+        expect.objectContaining({
+          deleted: true,
+          host: sampleConn.host,
+          port: sampleConn.port,
+          fingerprint: sampleConn.fingerprint,
+        }),
+      ]);
+      expect(records[0].updatedAt).toBeGreaterThan(pending.updatedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-pair of an excluded record with a pending cloud delete carries that delete forward', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    const [pending] = await store.listSyncRecords();
+    expect(pending.deleted).toBe(true);
+
+    // A refresh-style re-add (no syncExcluded) keeps the survivor excluded.
+    const repaired = await store.add({ ...sampleConn, token: 'rotated-token' });
+    await store.__drainWriteChainForTesting();
+
+    expect(repaired).toMatchObject({ id: rec.id, syncExcluded: true });
+    const records = await store.listSyncRecords();
+    expect(records).toEqual([expect.objectContaining({ deleted: true, host: sampleConn.host })]);
+    expect(records[0].updatedAt).toBe(pending.updatedAt);
+
+    // Re-including it on re-pair supersedes the delete with the live record.
+    const included = await store.add({ ...sampleConn, syncExcluded: false });
+    await store.__drainWriteChainForTesting();
+    expect(included.syncExcluded).toBe(false);
+    const live = await store.listSyncRecords();
+    expect(live).toEqual([expect.objectContaining({ host: sampleConn.host })]);
+    expect(live[0].deleted).toBeUndefined();
+    expect(live[0].updatedAt).toBeGreaterThan(pending.updatedAt);
+  });
+
+  it('updateMetadata syncExcluded false re-publishes the record strictly past its own tombstone', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    const [tombstone] = await store.listSyncRecords();
+
+    const included = await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: null,
+      syncExcluded: false,
+    });
+    await store.__drainWriteChainForTesting();
+
+    expect(included.syncExcluded).toBe(false);
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ token: 'secret-token', host: sampleConn.host });
+    expect(records[0].deleted).toBeUndefined();
+    // Ties favor the delete in the reconcile, so the clock must be strictly newer.
+    expect(records[0].updatedAt).toBeGreaterThan(tombstone.updatedAt);
+    const file = path.join(tmpDir, 'backend-connections.json');
+    expect(JSON.parse(await fs.readFile(file, 'utf8')).tombstones).toHaveLength(0);
+  });
+
+  it('updateMetadata with an unchanged syncExcluded flag is a no-op write', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, accent: null, syncExcluded: true });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const before = await fs.readFile(file, 'utf8');
+
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    await store.__drainWriteChainForTesting();
+
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect(await store.listSyncRecords()).toHaveLength(0);
+  });
+
+  it('updateMetadata detectHosts false drops detected extras and stops refreshes; true re-enables them', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHosts(rec.id, ['10.0.0.5']);
+    expect((await store.list()).find((c) => c.id === rec.id)).toMatchObject({
+      detectHosts: true,
+      hosts: [sampleConn.host, '10.0.0.5'],
+    });
+
+    const off = await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: null,
+      detectHosts: false,
+    });
+    expect(off).toMatchObject({ detectHosts: false, hosts: [sampleConn.host] });
+    expect(await store.getDetectHosts(rec.id)).toBe(false);
+    await store.setHosts(rec.id, ['10.0.0.6']);
+    expect((await store.list()).find((c) => c.id === rec.id)?.hosts).toEqual([sampleConn.host]);
+
+    const on = await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: null,
+      detectHosts: true,
+    });
+    expect(on.detectHosts).toBe(true);
+    await store.setHosts(rec.id, ['10.0.0.6']);
+    expect((await store.list()).find((c) => c.id === rec.id)?.hosts).toEqual([
+      sampleConn.host,
+      '10.0.0.6',
+    ]);
+    expect((await store.listSyncRecords())[0].detectHosts).toBe(true);
+  });
+
+  it('detectHosts=false converges fleet-wide: the flip out-clocks a same-tick refresh, and a peer that pulls it clears its extras and stops refreshing', async () => {
+    vi.useFakeTimers();
+    const localTmp = tmpDir;
+    const peerTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'backend-connections-peer-'));
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      const [before] = await store.listSyncRecords();
+      expect(before.hosts).toEqual([sampleConn.host, '10.0.0.5']);
+
+      // Flip in the same millisecond as the last refresh: the write must
+      // still land strictly past the record's clock, or the reconcile would
+      // treat the flip and a peer's refresh at that clock as in-sync.
+      await store.updateMetadata(rec.id, {
+        label: sampleConn.label,
+        accent: null,
+        detectHosts: false,
+      });
+      const [flipped] = await store.listSyncRecords();
+      expect(flipped.updatedAt).toBeGreaterThan(before.updatedAt);
+      expect(flipped).toMatchObject({ detectHosts: false, hosts: [sampleConn.host] });
+      await store.__drainWriteChainForTesting();
+
+      // The peer's side: pulling the flip clears its extras and disables its
+      // refreshes, so later pairing-info updates no longer repopulate them.
+      tmpDir = peerTmp;
+      vi.resetModules();
+      const peer = await import('../connections-store');
+      await peer.applyRemoteSyncRecord(before);
+      const peerRec = (await peer.list()).find((c) => c.host === sampleConn.host)!;
+      expect(peerRec.hosts).toEqual([sampleConn.host, '10.0.0.5']);
+
+      expect(await peer.applyRemoteSyncRecord(flipped)).toBe(true);
+      expect((await peer.list()).find((c) => c.id === peerRec.id)).toMatchObject({
+        detectHosts: false,
+        hosts: [sampleConn.host],
+      });
+      await peer.setHosts(peerRec.id, ['10.0.0.5', '10.0.0.6']);
+      expect((await peer.list()).find((c) => c.id === peerRec.id)).toMatchObject({
+        detectHosts: false,
+        hosts: [sampleConn.host],
+      });
+      const [peerSynced] = await peer.listSyncRecords();
+      expect(peerSynced).toMatchObject({
+        detectHosts: false,
+        hosts: [sampleConn.host],
+        updatedAt: flipped.updatedAt,
+      });
+      await peer.__drainWriteChainForTesting();
+    } finally {
+      tmpDir = localTmp;
+      await fs.rm(peerTmp, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
   it('legacy state without syncExcluded is read as synced (back-compat)', async () => {
     await fs.writeFile(
       path.join(tmpDir, 'backend-connections.json'),
@@ -1675,6 +2207,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: 'twin.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000, // newer than the local record
@@ -1699,6 +2232,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9443,
       fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1726,6 +2260,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: '',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1751,6 +2286,7 @@ describe('connections-store keychain sync surface', () => {
       port: 7443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1785,6 +2321,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1812,6 +2349,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: '',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1840,6 +2378,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1895,6 +2434,7 @@ describe('connections-store keychain sync surface', () => {
         port: 8443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: 'stale-token',
         updatedAt: Date.now() - 60_000,
@@ -1976,6 +2516,7 @@ describe('connections-store keychain sync surface', () => {
         port: 9443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: 'remote-token',
         updatedAt: Date.now() + 60_000,
@@ -2008,6 +2549,7 @@ describe('connections-store keychain sync surface', () => {
         port: 9443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: '',
         updatedAt: tombClock,
@@ -2083,5 +2625,53 @@ describe('connections-store keychain sync surface', () => {
     const remotes = (await store.list()).filter((c) => !c.isLocal);
     expect(remotes).toHaveLength(1);
     expect(remotes[0]).toMatchObject({ port: 6200 });
+  });
+});
+
+describe('findMatching (pairing identity lookup)', () => {
+  it('matches by fingerprint even under a different host:port', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.99'],
+      port: 9999,
+      fingerprint: 'aa:bb:cc', // case-insensitive
+    });
+    expect(found).toMatchObject({ id: rec.id });
+    expect(found).not.toHaveProperty('token');
+    expect(found).not.toHaveProperty('encToken');
+  });
+
+  it('falls back to normalized host:port when fingerprints are unusable', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['  192.168.1.10 '],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('tries every candidate host from the pairing URI', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['10.9.9.9', '192.168.1.10'],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('returns null when nothing matches', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.1'],
+      port: 1234,
+      fingerprint: 'DD:EE:FF',
+    });
+    expect(found).toBeNull();
   });
 });

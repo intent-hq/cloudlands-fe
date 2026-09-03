@@ -73,7 +73,7 @@
     selectProviderModelsClearEpoch,
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
-  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
@@ -123,7 +123,8 @@
     providerId: string;
     modelId: string;
   } {
-    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
   const activeProviderId$ = selectActiveProviderId();
@@ -151,7 +152,15 @@
 
   interface Props {
     selectedModel?: string | null;
-    onModelChange?: (model: string) => void;
+    /**
+     * Called on every user pick. `model` keeps the picked row's raw value for
+     * backward compatibility (bare for the default provider, legacy
+     * `provider:model` otherwise); `pick` carries the resolved triple legs —
+     * the bare model id and its owning provider — so consumers never parse
+     * the model string for a provider. Absent on the "use default" pick
+     * (`model === ''`).
+     */
+    onModelChange?: (model: string, pick?: { providerId: string; modelId: string }) => void;
     /**
      * Optional go/no-go gate invoked before a user-picked model change is
      * applied. Called with the current and target model ids when they differ;
@@ -690,14 +699,41 @@
     }
   });
 
+  // Resolve the provider owning a picked row. Catalog groups carry bare ids
+  // for every provider, so a bare pick is attributed to the loaded group that
+  // contains the row rather than blanket-attributed to the default provider.
+  // A legacy compound prefix (persisted ids) still wins outright; when several
+  // groups own the same bare id — or no loaded group owns it — the default
+  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
+    const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
+    if (legacyProviderId) return { providerId: legacyProviderId, modelId };
+    const matchesIn = (rowProviderId: string, options: { value: string }[] | undefined) =>
+      Boolean(
+        options?.some(
+          (opt) =>
+            normalizeModelIdForMatch(opt.value, rowProviderId) ===
+            normalizeModelIdForMatch(modelId, rowProviderId),
+        ),
+      );
+    const defaultNormalized = normalizeProviderId($defaultProviderId$);
+    if (defaultNormalized && matchesIn(defaultNormalized, allProviderModels[defaultNormalized])) {
+      return { providerId: defaultNormalized, modelId };
+    }
+    for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
+      if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
+    }
+    return { providerId: $defaultProviderId$, modelId };
+  }
+
   async function applyBackendModelUpdate(model: string) {
     if (agentId && workspaceId) {
       try {
-        // Send the picked model's provider explicitly: the parsed compound
-        // prefix, or the effective default provider for bare ids. Without it
-        // the daemon resolves a bare id against the session's current
-        // provider, rejecting cross-provider picks of default-provider models.
-        const pickedProviderId = parseCompoundModelId(model).providerId || undefined;
+        // Send the picked model's provider explicitly: the owning catalog
+        // group's provider (legacy compound prefix wins). Without it the
+        // daemon resolves a bare id against the session's current provider,
+        // rejecting cross-provider picks.
+        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
         const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
@@ -748,11 +784,15 @@
       return;
     }
 
-    onModelChange?.(model);
+    // Resolve the pick's triple legs once at the emit boundary: the legacy
+    // compound prefix when present, else the provider whose loaded catalog
+    // group owns the picked bare row.
+    const { providerId: pickedProviderId, modelId: pickedModelId } = resolvePickedTriple(model);
+    onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
     await tick();
 
-    if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+    if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
@@ -782,11 +822,10 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
-  // Catalog row values are shape-dependent — bare for the FE's default
-  // provider, `provider:model` otherwise (prefixModelsForProvider) — while a
-  // session id may be daemon-pinned bare or stored compound, so ids are
-  // compared via normalizeModelIdForMatch (like selectedCatalogOption), not
-  // exact string equality.
+  // Catalog rows now carry bare ids for every provider, while a session id
+  // may be daemon-pinned bare or stored legacy-compound, so ids are compared
+  // via normalizeModelIdForMatch (like selectedCatalogOption), not exact
+  // string equality.
   // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
   // rows (the daemon collapses them to one base row + effortLevels), so on an
   // exact-id miss the base model's label is rendered with the effort suffix
@@ -929,7 +968,9 @@
 
   const triggerProviderId = $derived.by(() => {
     if (localModel && hasExplicitModel) {
-      return parseCompoundModelId(localModel).providerId;
+      // Catalog-ownership attribution so a bare cross-provider selection
+      // shows its own provider's icon, not the default provider's.
+      return resolvePickedTriple(localModel).providerId;
     }
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
@@ -1155,9 +1196,11 @@
   });
 
   // Provider the explicitly selected model belongs to ('' when inheriting).
+  // Catalog rows are bare for every provider, so ownership is resolved from
+  // the loaded groups (legacy compound prefix wins) — not by parsing the id.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
+      ? normalizeProviderId(resolvePickedTriple(localModel).providerId)
       : '',
   );
 

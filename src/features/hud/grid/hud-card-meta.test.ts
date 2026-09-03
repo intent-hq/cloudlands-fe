@@ -92,6 +92,7 @@ describe('canonical HUD state→color mapping (drift pin)', () => {
     expect(cardStateColor('failed')).toBe(HUD_STATE_COLORS.failed);
     expect(cardStateColor('pr_open')).toBe(HUD_STATE_COLORS.pr);
     expect(cardStateColor('pr_ready')).toBe(HUD_STATE_COLORS.pr);
+    expect(cardStateColor('pr_queued')).toBe(HUD_STATE_COLORS.pr);
     expect(cardStateColor('pr_merged')).toBe(HUD_STATE_COLORS.prMerged);
     expect(cardStateColor('idle')).toBe(HUD_STATE_COLORS.idle);
     expect(cardStateColor('not_started')).toBe(HUD_STATE_COLORS.idle);
