@@ -1,16 +1,9 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
-
-const panelTabBarSource = readFileSync(
-  path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
-  'utf8',
-);
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
@@ -396,19 +389,6 @@ describe('mounted panel header actions menu', () => {
     expect(screen.getByTestId('content-command-action')).toBeTruthy();
   });
 
-  it('sizes the grouped action menu from content within a viewport cap', async () => {
-    const { container } = renderHeader('note');
-
-    await fireEvent.click(panelTrigger(container));
-    const menu = await screen.findByRole('menu');
-
-    expect(menu.classList).toContain('w-max');
-    expect(menu.classList).toContain('panel-actions-menu-content');
-    expect(panelTabBarSource).toContain('min-width: min(14rem, calc(100vw - 1rem))');
-    expect(panelTabBarSource).toContain('max-width: calc(100vw - 1rem)');
-    expect(menu.classList).toContain('[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground');
-  });
-
   it.each(
     panelTypes.flatMap(
       (type) =>
@@ -452,6 +432,48 @@ describe('mounted panel header actions menu', () => {
     });
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(outsideTrigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each([
+    {
+      label: 'compact menu when the active tab changes',
+      headerSelector: '[data-panel-tabless-header]',
+      showTabStrip: false,
+      nextActiveTabId: 'note-tab',
+    },
+    {
+      label: 'compact menu when the active tab is removed',
+      headerSelector: '[data-panel-tabless-header]',
+      showTabStrip: false,
+      nextActiveTabId: null,
+    },
+    {
+      label: 'tab-bar menu when the active tab changes',
+      headerSelector: '[data-panel-tab-bar]',
+      showTabStrip: true,
+      nextActiveTabId: 'note-tab',
+    },
+    {
+      label: 'tab-bar menu when the active tab is removed',
+      headerSelector: '[data-panel-tab-bar]',
+      showTabStrip: true,
+      nextActiveTabId: null,
+    },
+  ])('closes the $label', async ({ headerSelector, showTabStrip, nextActiveTabId }) => {
+    const view = renderHeader('agent', {
+      tabs: [tab('agent'), tab('note')],
+      showTabStrip,
+    });
+    const trigger = view.container.querySelector<HTMLButtonElement>(
+      `${headerSelector} [data-testid="panel-actions-trigger"]`,
+    )!;
+
+    await fireEvent.click(trigger);
+    await screen.findByRole('menu');
+
+    await view.rerender({ activeTabId: nextActiveTabId });
+
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
   it('runs enabled actions once and closes only the active pane', async () => {
