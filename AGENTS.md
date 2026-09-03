@@ -102,10 +102,10 @@ and production application sagas. Use `dev:web` when the full browser renderer o
 client connection is required. Use `dev:cdp` for Electron main, preload, native,
 window, or shell behavior.
 
-From the monorepo root, run `make ports`, then start `make dev-sandbox-ui` as a
-workspace service script. The target installs locked dependencies when needed and uses
-the worktree's derived `DEV_PORT`, avoiding collisions with concurrent workspaces. An
-explicit `DEV_PORT` override remains available when needed.
+For remote-host lifecycle, browser, evidence, and hand-off steps, follow the monorepo
+root [`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) loop.
+Choose `make dev-sandbox-ui` for this recipe. UI mode intentionally has no daemon bridge
+or `/__sandbox/health`; wait for its component-ready marker instead.
 
 Use these exact state names in direct URLs:
 
@@ -122,68 +122,16 @@ On the sandbox page, use `window.__INTENT_PREVIEW__.list()` to find preview IDs,
 
 ### Put a preview screenshot in user chat
 
-Use an owned hidden embedded-browser tab with a fixed viewport. Call
-`ws.browser.listTabs` first and reuse a matching tab; otherwise call
-`ws.browser.openTab` with the preview URL under
-`http://daemon.localhost:<DEV_PORT>/`. Wait no more than 15 seconds for
-`[data-preview-ready=true]`. Confirm that
-`window.__INTENT_PREVIEW__.current()` has the expected state and `status: 'ready'`.
-Then call the browser `screenshot` action. A successful action returns image content;
-keep that image block in the user response. A local file path alone does not show the
-image in chat.
-
-The embedded-browser path is the remote-host default. `playwright-cli` is typically
-absent on remote hosts; use it only as a local fallback if the browser screenshot call
-reaches its 30-second limit. Do not retry the same stalled browser call. In a new,
-clean local session, set a fixed viewport, wait up to 15 seconds for the ready marker,
-and write one PNG under `.demo-artifacts/<timestamp>-<flow>/`. Check that the PNG is
-non-empty and has the expected dimensions, inspect it with an image-capable file
-viewer, and close the clean session. Do not commit the media, load saved browser state,
-or inspect cookies, credentials, or unrelated tabs.
+Follow the root Observe and Prove steps with a fixed viewport. For this preview, require
+`[data-preview-ready=true]` and confirm `window.__INTENT_PREVIEW__.current()` has the
+expected state and `status: 'ready'` before capture. Keep the returned image block in the
+user response; a local path alone does not display an image in chat.
 
 Before linking any generated image or video, verify that the actual file exists in the
 message's owning workspace. Use its exact workspace-relative path or its contained
 absolute workspace path. Never invent an `artifacts/...` path, substitute a similarly
 named file, or read a sibling workspace. If the expected artifact is absent, report it
 as missing instead of emitting a link.
-
-```bash
-playwright-cli -s=ui-preview-chat open 'http://127.0.0.1:<DEV_PORT>/sandbox/button?state=destructive&theme=dark&width=420&motion=reduced'
-playwright-cli -s=ui-preview-chat resize 1100 850
-playwright-cli -s=ui-preview-chat run-code 'async page => { await page.locator("[data-preview-ready=true]").waitFor({ timeout: 15000 }); }'
-playwright-cli -s=ui-preview-chat screenshot --filename=.demo-artifacts/<run>/preview.png --hires
-playwright-cli -s=ui-preview-chat console error
-playwright-cli -s=ui-preview-chat close
-```
-
-### Show your work with a video
-
-Record demos only when a video helps the reviewer understand a flow. Keep every recording under
-`.demo-artifacts/<timestamp>-<flow>/<flow>.webm`; `.demo-artifacts/` is git-ignored and videos must
-never be committed. When `playwright-cli` is available, open a clean session, start recording with
-`video-start <path>`, perform the flow, then run `video-stop` and close the session.
-
-If video recording is unavailable, the embedded browser can capture a sequence of screenshot frames.
-This is a fallback, not the preferred recording path: save numbered PNGs in the same artifact directory
-and, when `ffmpeg` is available, stitch them with `ffmpeg -framerate 8 -i frame-%04d.png -c:v libvpx-vp9
--pix_fmt yuv420p <flow>.webm`. Keep the viewport fixed and capture at a steady interval.
-
-Before linking the result, verify it is non-empty with `test -s <path>`. Embed the verified recording
-in chat or a note with one line:
-
-```markdown
-![demo](intent://local/file/.demo-artifacts/<timestamp>-<flow>/<flow>.webm)
-```
-
-The file must belong to the message's workspace. Do not link a client-local capture or a sibling
-workspace artifact; copy or create the recording in the daemon workspace first.
-
-Call `ws.browser.listTabs` before `ws.browser.openTab` and reuse a matching URL. New
-agent tabs are hidden by default and can still be evaluated, inspected, and captured.
-Keep the tab open so Vite HMR updates it after source edits. Use `ws.browser.showTab`
-to reveal it for human review; add `focus: true` only when focus is wanted. Use
-`http://daemon.localhost:<DEV_PORT>` in `ws.browser` URLs so local and remote daemon
-setups resolve correctly.
 
 For focused browser validation, run:
 
@@ -197,61 +145,29 @@ process on that port before retrying if it is occupied. The full workflow is in
 
 ## Dogfooding a dev FE against a daemon
 
-The Vite dev server embeds a same-origin daemon bridge for `dev:web` and the app and
-stack sandboxes. While they run, the renderer reaches the daemon at `/intentd/ws` on
-the Vite origin, using `INTENTD_SOCKET` or the platform default socket. No separate
-bridge process or second tunnel is needed. The bridged daemon API is unauthenticated
-and loopback-only by design; never expose it beyond the Intent client's tunnel.
+Start with the monorepo root
+[`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) loop. It owns
+the canonical status, sandbox lifecycle, health wait, browser, evidence, and hand-off
+steps. The deeper implementation contract is in the
+[`Remote Sandbox Internals`](../../docs/fe/DEVELOPER_GUIDE.md#remote-sandbox-internals).
 
 ### Loop A — web build in an embedded tab (primary; renderer/UI work)
 
-From the monorepo root, choose the smallest one-command sandbox and run it as a
-workspace service script:
+The app and stack sandboxes enable the Vite dev server's same-origin daemon bridge. The
+renderer reaches `/intentd/ws` on the page origin through `INTENTD_SOCKET` or the platform
+default socket; `/__sandbox/health` checks the same socket plus Vite warm-up. The browser
+therefore needs one tunnel for the page, daemon RPC, and HMR.
 
-- `make dev-sandbox-ui` — component previews, with no daemon.
-- `make dev-sandbox-app` — the complete web renderer against the installed Intent
-  daemon (or `INTENTD_SOCKET`).
-- `make dev-sandbox-stack` — a dev-profile intentd build on isolated `.dev/` state plus
-  the renderer. Use `INTENTD_PROFILE=release` to opt into a release build or
-  `INTENTD_BIN=/path/to/intentd` to skip the build and use a prebuilt binary.
+A first tunneled open of a fresh, pre-warmed app takes roughly one to three minutes to
+hydrate depending on host load. If the splash remains after health is ok, keep waiting
+rather than restarting; later loads are fast.
 
-Run `make doctor` first for the stack path. It intentionally exits nonzero for missing
-required prerequisites, including `pkg-config` plus OpenSSL development headers
-(`libssl-dev` and `pkg-config` on Debian/Ubuntu). Do not bypass that check.
-
-The remote-first Loop A is:
-
-1. Start the chosen `dev-sandbox-*` workspace service and wait for its exact
-   `Sandbox ready:` line. App and stack pre-warm the Vite module graph before printing
-   that line.
-2. Read the service status `detectedUrl`, keep its port, and call
-   `ws.browser.listTabs`. Reuse a matching tab or call `ws.browser.openTab` with
-   `http://daemon.localhost:<port>/` (plus any route/query).
-3. Poll the tab for the expected DOM or accessibility content. A first tunneled open of
-   a fresh pre-warmed app takes roughly one to three minutes to hydrate depending on host
-   load (fastest observed: about 45 seconds). If only the splash is visible, keep polling;
-   do not restart the service. Subsequent loads are fast; before pre-warming, a cold
-   tunneled load took about 10 minutes.
-4. Capture a browser screenshot, set the representative image as the workspace status
-   image, and call `ws.browser.showTab` without focus so the human can inspect the live
-   tab. Keep it open for HMR while editing.
-
-Always use `http://daemon.localhost:<port>` for embedded-browser URLs. Same-machine
-setups resolve to loopback; remote setups automatically create one tunnel for the page
-and its same-origin `/intentd/ws` daemon connection. The app and stack Vite origin
-exposes the full unauthenticated daemon API, so keep it loopback-only and open it only
-through the client tunnel.
+The bridged daemon API is unauthenticated. Keep Vite on loopback and reach it only through
+the Intent client's authenticated tunnel.
 
 Tunneled Chromium treats `daemon.localhost` as a remote origin. Consequently,
 `workspace-file://` media do not load in that embedded tab even though they load in
 Electron; validate such media in an Electron build.
-
-### Show your work after visible changes
-
-Capture one representative embedded-browser screenshot and set it as the workspace
-status image with `ws.workspace.setStatusImage`. Then call `ws.browser.showTab` without
-`focus: true` so the human can click through the live HMR tab without having focus
-stolen.
 
 ### Loop B — dev Electron FE + CDP (Electron shell work)
 
