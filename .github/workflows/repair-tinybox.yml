@@ -14,12 +14,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        probe: [1, 2]
+        probe: [1]
     timeout-minutes: 15
     permissions:
       contents: read
     env:
-      REPAIR_MODE: inspect
+      REPAIR_MODE: repair
       TARGET_SLOTS: 'tinybox-2 tinybox-5 tinybox-6'
     steps:
       - name: Inspect / repair runner externals
@@ -67,7 +67,7 @@ jobs:
               echo "  symlinks in tree: $(find "$real" -type l | wc -l); lib/node_modules/npm/lib/cli.js: $([ -f "$real/lib/node_modules/npm/lib/cli.js" ] && echo present || echo MISSING)"
               stat -c '  node24 dir mtime: %y' "$real" 2>/dev/null || true
               after="$before"
-              if [ "$REPAIR_MODE" = repair ] && [ "$before" = BROKEN ]; then
+              if [ "$REPAIR_MODE" = repair ] && [ "$before" = BROKEN ] && [[ "$ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 pdir="$(dirname "$real")"; ts="$(date +%s)"
                 lock="$pdir/.node24-repair-lock"
                 if ! mkdir "$lock" 2>/dev/null; then
@@ -86,7 +86,7 @@ jobs:
                       && echo "  fresh tarball npm-v=$(npmv "$tmp/node-$ver-linux-$arch")"; then
                       if mv "$real" "$real.broken.$ts" 2>&1; then
                         if mv "$tmp/node-$ver-linux-$arch" "$real" 2>&1; then
-                          echo "  swapped; old tree kept at $real.broken.$ts"
+                          rm -rf "$real.broken.$ts" && echo "  swapped in fresh $tb; defective tree removed"
                         else
                           echo "::error::swap-in failed for $real; rolling back"; mv "$real.broken.$ts" "$real"; failures=$((failures+1))
                         fi
