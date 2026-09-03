@@ -7922,6 +7922,7 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
       'not_started',
       'in_progress',
       'complete',
+      'pr_queued',
       'pr_ready',
       'pr_open',
       'pr_merged',

@@ -240,7 +240,7 @@ export interface HudWorkspaceStateBars {
    * disjoint buckets below, which each count a card once).
    */
   waiting: number;
-  /** `pr_open` + `pr_ready`. */
+  /** `pr_open` + `pr_ready` + `pr_queued`. */
   prOpen: number;
   /** `pr_merged`. */
   prMerged: number;
@@ -302,6 +302,7 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
         break;
       case 'pr_open':
       case 'pr_ready':
+      case 'pr_queued':
         bars.prOpen += 1;
         break;
       case 'pr_merged':

@@ -124,6 +124,7 @@ export const HUD_CARD_STATE_KEYS = [
   'in_progress',
   'pr_open',
   'pr_ready',
+  'pr_queued',
   'pr_merged',
   'wait',
   'blocked',

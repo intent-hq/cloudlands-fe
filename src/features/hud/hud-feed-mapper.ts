@@ -82,7 +82,7 @@ function colorFor(type: string, data: Record<string, unknown>): HudFeedColorClas
   if (type === 'workspace:displayStatus-changed') {
     const status = str(data.displayStatus);
     if (status === 'pr_merged' || status === 'complete') return 'ok';
-    if (status === 'pr_ready' || status === 'pr_open') return 'accent';
+    if (status === 'pr_ready' || status === 'pr_queued' || status === 'pr_open') return 'accent';
     if (status === 'needs_attention') return 'warn';
     if (status === 'idle' || status === 'not_started') return 'idle';
     return 'info';

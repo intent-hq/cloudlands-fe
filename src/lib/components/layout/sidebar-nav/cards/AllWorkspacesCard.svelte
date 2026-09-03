@@ -276,6 +276,7 @@
     not_started: () => m.layout_allCard_statusNoChanges_label(),
     in_progress: () => m.layout_allCard_statusInProgress_label(),
     complete: () => m.layout_allCard_statusComplete_label(),
+    pr_queued: () => m.layout_allCard_statusPrQueued_label(),
     pr_ready: () => m.layout_allCard_statusPrReady_label(),
     pr_open: () => m.layout_allCard_statusPrOpen_label(),
     pr_merged: () => m.layout_allCard_statusPrMerged_label(),
@@ -291,6 +292,7 @@
     'complete',
     'pr_open',
     'pr_ready',
+    'pr_queued',
     'pr_merged',
   ];
 
