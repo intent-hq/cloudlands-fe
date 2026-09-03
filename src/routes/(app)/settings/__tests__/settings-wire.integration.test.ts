@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveAppClient } from '$lib/client';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { ReduxStoreContext } from '$store/renderer/types';
@@ -30,6 +31,7 @@ describe('Settings deterministic mock-BE contracts', () => {
   let storeContext: ReduxStoreContext | undefined;
 
   beforeEach(() => {
+    __resetSettingsReadCacheForTests();
     storeContext = initAppStore(appStore);
     resetMockIpcRouter();
     window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>

@@ -51,7 +51,7 @@ import type {
 import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
 import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import type { UserPreferencesState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { backendRequest } from './backend-transport';
+import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 import { runMutation } from './live-support';
 
 type UserPrefsResult = UserPreferencesState | null;
@@ -64,6 +64,120 @@ type UserPrefsResult = UserPreferencesState | null;
  * satisfies the contract without binding the edit to a real workspace.
  */
 const GLOBAL_RULES_WORKSPACE_ID = 'global';
+
+type PendingSettingRead = {
+  generation: number;
+  promise: Promise<SettingDefinitionWithValue | null>;
+};
+
+const settingCache = new Map<string, SettingDefinitionWithValue | null>();
+const pendingSettingReads = new Map<string, PendingSettingRead>();
+const trailingSettingReads = new Map<string, Promise<SettingDefinitionWithValue | null>>();
+let settingsGeneration = 0;
+let settingsLifecycleInstalled = false;
+
+function eventType(notification: { method: string; params?: unknown }): string | undefined {
+  if (notification.method !== 'events.event' || !notification.params) return undefined;
+  const params = notification.params as { event?: unknown; type?: unknown };
+  const event = params.event && typeof params.event === 'object' ? params.event : params;
+  return typeof (event as { type?: unknown }).type === 'string'
+    ? (event as { type: string }).type
+    : undefined;
+}
+
+function ensureSettingsLifecycle(): void {
+  if (settingsLifecycleInstalled) return;
+  settingsLifecycleInstalled = true;
+  if (typeof onBackendNotification === 'function') {
+    onBackendNotification((notification) => {
+      if (eventType(notification) === 'settings:changed') invalidateSettingsReadCache();
+    });
+  }
+  if (typeof onBackendReconnected === 'function') {
+    onBackendReconnected(() => invalidateSettingsReadCache());
+  }
+}
+
+export function invalidateSettingsReadCache(paths?: readonly string[]): void {
+  settingsGeneration += 1;
+  if (!paths) settingCache.clear();
+  else for (const path of paths) settingCache.delete(path);
+}
+
+function parseSettingResult(result: {
+  value?: unknown;
+  definition?: Omit<SettingDefinitionWithValue, 'value'>;
+  origin?: SettingDefinitionWithValue['origin'];
+  revision?: unknown;
+}): SettingDefinitionWithValue | null {
+  if (!result?.definition) return null;
+  return {
+    ...result.definition,
+    value: result.value,
+    ...(result.origin ? { origin: result.origin } : {}),
+    ...(typeof result.revision === 'number' ? { revision: result.revision } : {}),
+  };
+}
+
+/** Strict shared settings.get read; transport errors reject and are never cached. */
+export function readSetting(path: string): Promise<SettingDefinitionWithValue | null> {
+  ensureSettingsLifecycle();
+  if (settingCache.has(path)) return Promise.resolve(settingCache.get(path) ?? null);
+
+  const pending = pendingSettingReads.get(path);
+  if (pending?.generation === settingsGeneration) return pending.promise;
+  if (pending) {
+    const trailing = trailingSettingReads.get(path);
+    if (trailing) return trailing;
+    const run = pending.promise
+      .catch(() => null)
+      .then(() => readSetting(path))
+      .finally(() => {
+        if (trailingSettingReads.get(path) === run) trailingSettingReads.delete(path);
+      });
+    trailingSettingReads.set(path, run);
+    return run;
+  }
+
+  const generation = settingsGeneration;
+  const run = backendRequest<{
+    value?: unknown;
+    definition?: Omit<SettingDefinitionWithValue, 'value'>;
+    origin?: SettingDefinitionWithValue['origin'];
+    revision?: unknown;
+  }>('settings.get', { path })
+    .then(parseSettingResult)
+    .then((setting) => {
+      if (generation === settingsGeneration) settingCache.set(path, setting);
+      return setting;
+    })
+    .finally(() => {
+      if (pendingSettingReads.get(path)?.promise === run) pendingSettingReads.delete(path);
+    });
+  pendingSettingReads.set(path, { generation, promise: run });
+  return run;
+}
+
+/** Strict shared settings.update mutation with immediate read-cache invalidation. */
+export async function updateSettings(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
+  if (changes.length === 0) return { applied: [], revision: 0 };
+  const result = await backendRequest<{
+    applied?: AppliedSettingChange[];
+    revision?: unknown;
+  }>('settings.update', { changes });
+  invalidateSettingsReadCache(changes.map(({ path }) => path));
+  return {
+    applied: Array.isArray(result?.applied) ? result.applied : [],
+    revision: typeof result?.revision === 'number' ? result.revision : 0,
+  };
+}
+
+export function __resetSettingsReadCacheForTests(): void {
+  settingCache.clear();
+  pendingSettingReads.clear();
+  trailingSettingReads.clear();
+  settingsGeneration += 1;
+}
 
 /** Build a fresh `update` change list, omitting `undefined` values. */
 function changesFrom(patch: Record<string, unknown>): AppSettingChange[] {
@@ -80,16 +194,22 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async listSnapshot(): Promise<SettingsSnapshot> {
+    ensureSettingsLifecycle();
+    const generation = settingsGeneration;
     try {
       const result = await backendRequest<{ settings?: unknown[]; revision?: unknown }>(
         'settings.list',
       );
-      return {
+      const snapshot = {
         settings: Array.isArray(result?.settings)
           ? (result.settings as SettingDefinitionWithValue[])
           : [],
         revision: typeof result?.revision === 'number' ? result.revision : 0,
       };
+      if (generation === settingsGeneration) {
+        for (const setting of snapshot.settings) settingCache.set(setting.path, setting);
+      }
+      return snapshot;
     } catch {
       return { settings: [], revision: 0 };
     }
@@ -97,20 +217,7 @@ export class LiveSettingsClient implements SettingsClient {
 
   async get(path: string): Promise<SettingDefinitionWithValue | null> {
     try {
-      const result = await backendRequest<{
-        path?: string;
-        value?: unknown;
-        definition?: Omit<SettingDefinitionWithValue, 'value'>;
-        origin?: SettingDefinitionWithValue['origin'];
-        revision?: unknown;
-      }>('settings.get', { path });
-      if (!result?.definition) return null;
-      return {
-        ...result.definition,
-        value: result.value,
-        ...(result.origin ? { origin: result.origin } : {}),
-        ...(typeof result.revision === 'number' ? { revision: result.revision } : {}),
-      };
+      return await readSetting(path);
     } catch {
       return null;
     }
@@ -121,15 +228,7 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async updateSnapshot(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
-    if (changes.length === 0) return { applied: [], revision: 0 };
-    const result = await backendRequest<{
-      applied?: AppliedSettingChange[];
-      revision?: unknown;
-    }>('settings.update', { changes });
-    return {
-      applied: Array.isArray(result?.applied) ? result.applied : [],
-      revision: typeof result?.revision === 'number' ? result.revision : 0,
-    };
+    return updateSettings(changes);
   }
 
   async reset(path: string): Promise<AppliedSettingChange | null> {
@@ -138,6 +237,7 @@ export class LiveSettingsClient implements SettingsClient {
         path,
       });
       if (typeof result?.path !== 'string') return null;
+      invalidateSettingsReadCache([result.path]);
       return { path: result.path, value: result.value };
     } catch {
       return null;

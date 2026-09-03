@@ -11,9 +11,23 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+const providerLifecycle = vi.hoisted(() => ({
+  notification: undefined as
+    ((notification: { method: string; params?: unknown }) => void) | undefined,
+  reconnected: undefined as (() => void) | undefined,
+}));
+
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn((handler) => {
+    providerLifecycle.notification = handler;
+    return () => {};
+  }),
+  onBackendReconnected: vi.fn((handler) => {
+    providerLifecycle.reconnected = handler;
+    return () => {};
+  }),
 }));
 
 // The seeder reads known provider ids / gating metadata from the
@@ -33,6 +47,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  __resetProviderAuthStatusForTests,
+  getProviderAuthVerdicts,
+} from '$features/providers/provider-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -132,7 +150,32 @@ describe('provider-status-bridge-seeder', () => {
   });
 
   afterEach(() => {
+    __resetProviderAuthStatusForTests();
     vi.clearAllMocks();
+  });
+
+  it('single-flights auth reads and refetches after auth events and reconnects', async () => {
+    mockedRequest.mockResolvedValue(authSweep({ codex: true }));
+
+    const [first, second] = await Promise.all([
+      getProviderAuthVerdicts(),
+      getProviderAuthVerdicts(),
+    ]);
+    expect(first.codex?.authenticated).toBe(true);
+    expect(second).toEqual(first);
+    await getProviderAuthVerdicts();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    await getProviderAuthVerdicts();
+    providerLifecycle.reconnected?.();
+    await getProviderAuthVerdicts();
+
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(mockedRequest).toHaveBeenLastCalledWith('host.providerAuthStatus', {});
   });
 
   describe('providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus', () => {

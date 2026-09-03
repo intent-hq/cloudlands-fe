@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const settingsLifecycle = vi.hoisted(() => ({
+  notification: undefined as
+    ((notification: { method: string; params?: unknown }) => void) | undefined,
+  reconnected: undefined as (() => void) | undefined,
+}));
+
 // FAKE transport only: no settings RPC ever reaches the real daemon. The
 // `runMutation` helper stays real so each domain mutator asserts the JSON-RPC
 // method + params it forwards to the mocked transport.
@@ -7,15 +13,29 @@ vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-set-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
-  onBackendNotification: vi.fn(() => () => {}),
+  onBackendNotification: vi.fn((handler) => {
+    settingsLifecycle.notification = handler;
+    return () => {};
+  }),
+  onBackendReconnected: vi.fn((handler) => {
+    settingsLifecycle.reconnected = handler;
+    return () => {};
+  }),
 }));
 
 import { backendRequest } from './backend-transport';
-import { LiveSettingsClient } from './live-settings-client';
+import {
+  __resetSettingsReadCacheForTests,
+  LiveSettingsClient,
+  readSetting,
+} from './live-settings-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  __resetSettingsReadCacheForTests();
+  vi.clearAllMocks();
+});
 
 describe('LiveSettingsClient wire requests (fake transport)', () => {
   it("list forwards settings.list with no params and surfaces the daemon's settings[] array", async () => {
@@ -88,6 +108,139 @@ describe('LiveSettingsClient wire requests (fake transport)', () => {
     mockedRequest.mockRejectedValueOnce(new Error('invalid params'));
     const client = new LiveSettingsClient();
     expect(await client.get('does.not.exist')).toBeNull();
+  });
+
+  it('coalesces and caches settings.get by path until invalidated', async () => {
+    mockedRequest.mockResolvedValue({
+      value: true,
+      definition: {
+        path: 'rtk.enabled',
+        label: 'RTK',
+        description: '',
+        category: 'git',
+        type: 'boolean',
+      },
+    });
+    const client = new LiveSettingsClient();
+
+    const [first, second] = await Promise.all([
+      client.get('rtk.enabled'),
+      readSetting('rtk.enabled'),
+    ]);
+    const third = await client.get('rtk.enabled');
+
+    expect(first?.value).toBe(true);
+    expect(second).toEqual(first);
+    expect(third).toEqual(first);
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches after a settings delta or backend reconnect', async () => {
+    mockedRequest.mockResolvedValue({
+      value: true,
+      definition: {
+        path: 'rtk.enabled',
+        label: 'RTK',
+        description: '',
+        category: 'git',
+        type: 'boolean',
+      },
+    });
+    const client = new LiveSettingsClient();
+
+    await client.get('rtk.enabled');
+    settingsLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'settings:changed' } },
+    });
+    await client.get('rtk.enabled');
+    settingsLifecycle.reconnected?.();
+    await client.get('rtk.enabled');
+
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('invalidates the read cache immediately after a successful settings mutation', async () => {
+    const definition = {
+      path: 'rtk.enabled',
+      label: 'RTK',
+      description: '',
+      category: 'git',
+      type: 'boolean',
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ value: false, definition })
+      .mockResolvedValueOnce({ applied: [{ path: 'rtk.enabled', value: true }], revision: 2 })
+      .mockResolvedValueOnce({ value: true, definition });
+    const client = new LiveSettingsClient();
+
+    await expect(client.get('rtk.enabled')).resolves.toMatchObject({ value: false });
+    await client.update([{ path: 'rtk.enabled', value: true }]);
+    await expect(client.get('rtk.enabled')).resolves.toMatchObject({ value: true });
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'settings.update', {
+      changes: [{ path: 'rtk.enabled', value: true }],
+    });
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not cache a rejected settings.get', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({
+      value: false,
+      definition: {
+        path: 'rtk.enabled',
+        label: 'RTK',
+        description: '',
+        category: 'git',
+        type: 'boolean',
+      },
+    });
+    const client = new LiveSettingsClient();
+
+    await expect(client.get('rtk.enabled')).resolves.toBeNull();
+    await expect(client.get('rtk.enabled')).resolves.toMatchObject({ value: false });
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards an older response after invalidation and performs one trailing read', async () => {
+    let resolveOld!: (value: unknown) => void;
+    mockedRequest
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        value: 'new',
+        definition: {
+          path: 'model.defaultProvider',
+          label: 'Provider',
+          description: '',
+          category: 'model',
+          type: 'string',
+        },
+      });
+    const client = new LiveSettingsClient();
+    const oldRead = client.get('model.defaultProvider');
+
+    const { invalidateSettingsReadCache } = await import('./live-settings-client');
+    invalidateSettingsReadCache(['model.defaultProvider']);
+    const newRead = client.get('model.defaultProvider');
+    resolveOld({
+      value: 'old',
+      definition: {
+        path: 'model.defaultProvider',
+        label: 'Provider',
+        description: '',
+        category: 'model',
+        type: 'string',
+      },
+    });
+
+    await expect(oldRead).resolves.toMatchObject({ value: 'old' });
+    await expect(newRead).resolves.toMatchObject({ value: 'new' });
+    await expect(client.get('model.defaultProvider')).resolves.toMatchObject({ value: 'new' });
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
   });
 
   it('update forwards settings.update with { changes } and returns the applied list', async () => {

@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { appClient } from '$lib/client';
 import { workspaceClient } from '../slices/workspace/utils/workspace.client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
 import type { KnownRepo } from '$shared/types/known-repo';
 import { isDaemonManagedCheckoutPath } from '$shared/utils/daemon-managed-checkout';
 import type { Workspace } from '$shared/types';
@@ -108,9 +109,7 @@ const REPOS_KNOWN_SETTING = 'repos.known';
 
 async function readReposKnownSetting(): Promise<KnownRepo[]> {
   try {
-    const setting = await backendRequest<{ value?: unknown }>('settings.get', {
-      path: REPOS_KNOWN_SETTING,
-    });
+    const setting = await readSetting(REPOS_KNOWN_SETTING);
     return Array.isArray(setting?.value) ? (setting.value as KnownRepo[]) : [];
   } catch {
     // Non-fatal: recents still serve the daemon repo.list registry.
@@ -171,9 +170,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => 
     } else {
       existing.push({ path: repository, name, owner, githubUrl, addedAt: now, lastUsedAt: now });
     }
-    await backendRequest('settings.update', {
-      changes: [{ path: REPOS_KNOWN_SETTING, value: existing }],
-    });
+    await updateSettings([{ path: REPOS_KNOWN_SETTING, value: existing }]);
     return { success: true };
   } catch (error) {
     return {
@@ -207,9 +204,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
     const remaining = githubPicks.filter((repo) => repo.path !== repository);
     const removedFromSetting = remaining.length !== githubPicks.length;
     if (removedFromSetting) {
-      await backendRequest('settings.update', {
-        changes: [{ path: REPOS_KNOWN_SETTING, value: remaining }],
-      });
+      await updateSettings([{ path: REPOS_KNOWN_SETTING, value: remaining }]);
     }
     return {
       success: true,

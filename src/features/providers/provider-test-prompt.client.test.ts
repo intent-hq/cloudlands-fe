@@ -8,15 +8,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  __resetProviderAuthStatusForTests,
+  getProviderAuthVerdicts,
+} from './provider-auth-status.client';
 import { runProviderTestPrompt } from './provider-test-prompt.client';
 
 const mockedRequest = vi.mocked(backendRequest);
 
 describe('runProviderTestPrompt wire contract (fake transport)', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    __resetProviderAuthStatusForTests();
+    mockedRequest.mockReset();
+  });
 
   it('sends host.providerTestPrompt with providerId only when no model is given', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
@@ -29,6 +38,24 @@ describe('runProviderTestPrompt wire contract (fake transport)', () => {
       { timeoutMs: 300_000 },
     );
     expect(result).toEqual({ ok: true });
+  });
+
+  it('invalidates the provider auth verdict after a successful setup probe', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ providers: [{ id: 'claude-code', authenticated: false }] })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ providers: [{ id: 'claude-code', authenticated: true }] });
+
+    await expect(getProviderAuthVerdicts()).resolves.toEqual({
+      'claude-code': { authenticated: false },
+    });
+    await runProviderTestPrompt({ providerId: 'claude-code' });
+    await expect(getProviderAuthVerdicts()).resolves.toEqual({
+      'claude-code': { authenticated: true },
+    });
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'host.providerAuthStatus', {});
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, 'host.providerAuthStatus', {});
   });
 
   it('includes model in the params when supplied', async () => {
