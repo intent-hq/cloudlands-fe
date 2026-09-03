@@ -408,6 +408,29 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(mountedAvatar.getAttribute('data-provider')).toBe('codex');
   });
 
+  it('renders the sender as running, not waiting, while a tool is executing mid-turn', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'agent-sender-tool',
+          fromAgentName: 'Tool Builder',
+        }),
+      },
+    });
+
+    // The raw waiting selector is true for an unresolved tool_use on the
+    // in-flight turn; the shared precedence must still resolve to running.
+    agentSelectorHarness.set({
+      responding: true,
+      waiting: true,
+      session: { status: 'active', isResponding: true, isWaitingOnTool: true },
+    });
+    await Promise.resolve();
+
+    expect(screen.getByTestId('agent-avatar').getAttribute('data-avatar-state')).toBe('running');
+  });
+
   it.each([
     { width: 450, zoom: 1 },
     { width: 220, zoom: 1 },
