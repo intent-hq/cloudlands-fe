@@ -3083,7 +3083,10 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(await screen.findByRole('option', { name: /Gemini 3.7 Flash \(High\)/ }));
     await waitFor(() =>
-      expect(onModelChange).toHaveBeenCalledWith('antigravity:gemini-3.7-flash-high'),
+      expect(onModelChange).toHaveBeenCalledWith('antigravity:gemini-3.7-flash-high', {
+        providerId: 'antigravity',
+        modelId: 'gemini-3.7-flash-high',
+      }),
     );
     expect(screen.queryByRole('slider')).toBeNull();
   });
