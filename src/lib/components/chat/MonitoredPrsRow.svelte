@@ -35,7 +35,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger, formatTime } from '$lib/i18n/format';
+  import { formatDateTime, formatInteger } from '$lib/i18n/format';
   import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
   import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -308,12 +308,6 @@
               class="min-w-0 flex-1 truncate text-muted-foreground"
               data-testid="monitored-pr-label">{monitorLabel(monitor)}</span
             >
-            {#if monitor.hasPendingChanges}
-              <span
-                class="block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/80"
-                title={m.chat_monitoredPrs_pendingDot_tooltip()}
-              ></span>
-            {/if}
           </Button>
           <div
             class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
@@ -432,49 +426,40 @@
         {#if expandedMonitorId === monitor.monitorId}
           <div
             id={detailsId}
-            class="grid gap-1 overflow-hidden text-xs text-subtle {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
+            class="grid gap-1 overflow-hidden text-xs text-muted-foreground {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
             data-testid="monitored-pr-details"
             transition:safeSubscriptionSlide
           >
-            <strong class="font-medium text-muted-foreground">{readinessSummary(monitor)}</strong>
+            <span class="text-muted-foreground">{readinessSummary(monitor)}</span>
             {#if !workspaceRepo || monitor.repo !== workspaceRepo}
               <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
-              <span>{monitor.repo}#{monitor.prNumber}</span>
+              <span class="text-muted-foreground">{monitor.repo}#{monitor.prNumber}</span>
             {/if}
-            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
-              {#if checksSummary(monitor)}
-                <dt class="text-muted-foreground">{m.chat_monitoredPrs_details_checks_label()}</dt>
-                <dd class="min-w-0 text-foreground">{checksSummary(monitor)}</dd>
-              {/if}
-              {#if approvalsSummary(monitor)}
-                <dt class="text-muted-foreground">
-                  {m.chat_monitoredPrs_details_approvals_label()}
-                </dt>
-                <dd class="min-w-0 text-foreground">{approvalsSummary(monitor)}</dd>
-              {/if}
-              {#if threadsSummary(monitor)}
-                <dt class="text-muted-foreground">{m.chat_monitoredPrs_details_threads_label()}</dt>
-                <dd class="min-w-0 text-foreground">{threadsSummary(monitor)}</dd>
-              {/if}
-              {#if monitor.lastChangeAt}
-                <dt class="text-muted-foreground">
-                  {m.chat_monitoredPrs_details_lastChange_label()}
-                </dt>
-                <dd class="min-w-0 text-foreground">
-                  {formatTime(monitor.lastChangeAt, { seconds: true })}
-                </dd>
-              {/if}
-              {#if monitor.hasPendingChanges}
-                <dt class="text-muted-foreground">{m.chat_monitoredPrs_details_pending_label()}</dt>
-                <dd class="min-w-0 text-foreground" data-testid="monitored-pr-pending">
-                  {monitor.pendingChanges.length === 1
-                    ? m.chat_monitoredPrs_hover_pending_one()
-                    : m.chat_monitoredPrs_hover_pending_many({
-                        count: formatInteger(monitor.pendingChanges.length),
-                      })}
-                </dd>
-              {/if}
-            </dl>
+            {#if checksSummary(monitor)}
+              <span class="text-muted-foreground">{checksSummary(monitor)}</span>
+            {/if}
+            {#if approvalsSummary(monitor)}
+              <span class="text-muted-foreground">{approvalsSummary(monitor)}</span>
+            {/if}
+            {#if threadsSummary(monitor)}
+              <span class="text-muted-foreground">{threadsSummary(monitor)}</span>
+            {/if}
+            {#if monitor.lastChangeAt}
+              <span class="text-muted-foreground">
+                {m.chat_monitoredPrs_details_lastChangeAt({
+                  time: formatDateTime(monitor.lastChangeAt),
+                })}
+              </span>
+            {/if}
+            {#if monitor.hasPendingChanges}
+              <span class="text-muted-foreground" data-testid="monitored-pr-pending">
+                {monitor.pendingChanges.length === 1
+                  ? m.chat_monitoredPrs_hover_pending_one()
+                  : m.chat_monitoredPrs_hover_pending_many({
+                      count: formatInteger(monitor.pendingChanges.length),
+                    })}
+              </span>
+            {/if}
           </div>
         {/if}
       </div>

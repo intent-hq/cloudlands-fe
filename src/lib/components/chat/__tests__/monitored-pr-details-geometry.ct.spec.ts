@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import MonitoredPrsRowGeometryHost from './MonitoredPrsRowGeometryHost.svelte';
 
-test('aligns expanded details with the PR label and uses readable label-value columns', async ({
+test('aligns expanded details with the PR label as plain muted sentences', async ({
   mount,
   page,
 }) => {
@@ -24,18 +24,15 @@ test('aligns expanded details with the PR label and uses readable label-value co
       const summaryBounds = summaryRow.getBoundingClientRect();
       const kebabBounds = kebab.getBoundingClientRect();
       const chevronBounds = chevron.getBoundingClientRect();
-      const foregroundProbe = document.createElement('span');
       const mutedProbe = document.createElement('span');
-      foregroundProbe.style.color = 'hsl(var(--foreground))';
       mutedProbe.style.color = 'hsl(var(--muted-foreground))';
-      root.append(foregroundProbe, mutedProbe);
-      const rows = Array.from(details.querySelectorAll('dt')).map((term) => {
-        const termBounds = term.getBoundingClientRect();
-        const valueBounds = term.nextElementSibling!.getBoundingClientRect();
+      root.append(mutedProbe);
+      const lines = Array.from(details.children).map((line) => {
+        const bounds = line.getBoundingClientRect();
         return {
-          term: [termBounds.left, termBounds.top],
-          value: [valueBounds.left, valueBounds.top],
-          colors: [getComputedStyle(term).color, getComputedStyle(term.nextElementSibling!).color],
+          left: bounds.left,
+          color: getComputedStyle(line).color,
+          fontWeight: getComputedStyle(line).fontWeight,
         };
       });
       const result = {
@@ -49,13 +46,9 @@ test('aligns expanded details with the PR label and uses readable label-value co
           chevronRight: chevronBounds.right,
           chevronWidth: chevronBounds.width,
         },
-        rows,
-        semanticColors: [
-          getComputedStyle(mutedProbe).color,
-          getComputedStyle(foregroundProbe).color,
-        ],
+        lines,
+        mutedColor: getComputedStyle(mutedProbe).color,
       };
-      foregroundProbe.remove();
       mutedProbe.remove();
       return result;
     });
@@ -65,11 +58,11 @@ test('aligns expanded details with the PR label and uses readable label-value co
     expect(geometry.trailing.chevronWidth).toBeCloseTo(24 * zoom, 1);
     expect(geometry.trailing.kebabRight).toBeLessThanOrEqual(geometry.trailing.chevronLeft);
     expect(geometry.trailing.rowRight - geometry.trailing.chevronRight).toBeCloseTo(12 * zoom, 1);
-    expect(geometry.rows).toHaveLength(5);
-    for (const row of geometry.rows) {
-      expect(row.value[0]).toBeGreaterThan(row.term[0]);
-      expect(row.value[1]).toBeCloseTo(row.term[1], 1);
-      expect(row.colors).toEqual(geometry.semanticColors);
+    expect(geometry.lines).toHaveLength(7);
+    for (const line of geometry.lines) {
+      expect(line.left).toBeCloseTo(geometry.labelLeft, 1);
+      expect(line.color).toBe(geometry.mutedColor);
+      expect(line.fontWeight).toBe('400');
     }
   }
 });
