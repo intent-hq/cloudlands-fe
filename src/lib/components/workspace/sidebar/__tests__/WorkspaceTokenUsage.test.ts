@@ -289,6 +289,8 @@ describe('WorkspaceTokenUsage', () => {
     expect(compositionStrip.nextElementSibling).toBe(compositionHeader);
     expect(compositionStrip.classList).toContain('mb-5');
     expect(compositionStrip.classList).not.toContain('mb-3');
+    expect(compositionStrip.classList).toContain('h-2');
+    expect(compositionStrip.classList).not.toContain('h-2.5');
     expect(compositionStrip.getAttribute('aria-label')).toContain(
       'Token composition, Cached context: 9M tokens, 99%',
     );
@@ -318,6 +320,22 @@ describe('WorkspaceTokenUsage', () => {
       { label: 'Model output', value: '98K', context: '1%' },
       { label: 'Reasoning tokens', value: '0', context: '0%' },
     ]);
+    const zeroCompositionRows = compositionRows.filter(
+      (compositionRow) => compositionRow.getAttribute('data-zero') === 'true',
+    );
+    expect(zeroCompositionRows).toHaveLength(1);
+    expect(visibleText(zeroCompositionRows[0])).toBe('Reasoning tokens 0 0%');
+    expect(
+      [
+        zeroCompositionRows[0].querySelector('.composition-metric'),
+        zeroCompositionRows[0].querySelector('.composition-value'),
+        zeroCompositionRows[0].querySelector('.composition-context'),
+      ].every((element) => element?.classList.contains('text-muted-foreground')),
+    ).toBe(true);
+    expect(
+      zeroCompositionRows[0].querySelector('.composition-key')?.getAttribute('data-zero'),
+    ).toBe('true');
+    expect(compositionRows[1].getAttribute('data-zero')).toBeNull();
     expect(composition.querySelector('.composition-description')).toBeNull();
     const compositionKeys = Array.from(
       composition.querySelectorAll<HTMLElement>('.composition-key[aria-hidden="true"]'),
@@ -335,10 +353,14 @@ describe('WorkspaceTokenUsage', () => {
     expect(composition.querySelectorAll('.composition-value')).toHaveLength(4);
     expect(composition.querySelectorAll('.composition-context')).toHaveLength(4);
     expect(
-      [...composition.querySelectorAll('.composition-value')].every(
-        (cell) =>
-          cell.classList.contains('font-normal') && cell.classList.contains('text-foreground'),
-      ),
+      [...composition.querySelectorAll('.composition-value')]
+        .filter(
+          (cell) => cell.closest('.token-composition-row')?.getAttribute('data-zero') !== 'true',
+        )
+        .every(
+          (cell) =>
+            cell.classList.contains('font-normal') && cell.classList.contains('text-foreground'),
+        ),
     ).toBe(true);
     expect(
       [...composition.querySelectorAll('.composition-context')].every(
@@ -406,6 +428,8 @@ describe('WorkspaceTokenUsage', () => {
       const label = selection.firstElementChild!;
       const percentage = selection.lastElementChild!;
       expect(stack.previousElementSibling).toBe(selection);
+      expect(stack.classList).toContain('h-2');
+      expect(stack.classList).not.toContain('h-2.5');
       expect(navigatorRow.classList).toContain('flex-col');
       expect(controls.every((control) => control.tagName === 'BUTTON')).toBe(true);
       expect(controls.every((control) => control.classList.contains('appearance-none'))).toBe(true);
