@@ -656,6 +656,7 @@
   <div
     class="group/watch w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
     data-agent-id={watchedAgentId}
+    data-agent-task-action-reveal
     data-subscription-motion-row={finished ? 'finished' : 'waiting'}
     transition:safeSubscriptionRowTransition
   >
@@ -963,3 +964,17 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  @media (hover: hover) and (pointer: fine) {
+    [data-agent-task-action-reveal] :global([data-row-task-action]) {
+      opacity: 0;
+    }
+
+    [data-agent-task-action-reveal]:hover :global([data-row-task-action]),
+    [data-agent-task-action-reveal]:focus-within :global([data-row-task-action]),
+    [data-agent-task-action-reveal] :global([data-row-task-action][aria-expanded='true']) {
+      opacity: 1;
+    }
+  }
+</style>

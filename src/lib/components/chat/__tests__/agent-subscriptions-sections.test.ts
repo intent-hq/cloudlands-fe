@@ -1197,6 +1197,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(within(nativeRow).getByTestId('one-shot-cancel')).toBeTruthy();
 
     nativeTrigger.focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(nativeTrigger);
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     expect(document.activeElement).toBe(nativeTrigger);
     expect(within(dialog).getByText('Native task running')).toBeTruthy();
@@ -1209,6 +1211,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
     linkedTrigger.focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(linkedTrigger);
     const linkedDialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     expect(within(linkedDialog).getByText('Linked workspace task')).toBeTruthy();
     expect(within(linkedDialog).queryByText('Native task running')).toBeNull();
@@ -1281,6 +1285,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();
 
       trigger.focus();
+      expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+      await fireEvent.click(trigger);
       const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
       expect(within(dialog).getAllByTestId('task-progress-row')).toHaveLength(tasks.length);
     },
@@ -1314,6 +1320,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const trigger = within(agentRow('agent-linked')).getByTestId('task-progress-trigger');
     trigger.focus();
+    await fireEvent.click(trigger);
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 0 of 1 completed');
     appStore.dispatch(applyTaskStatusChanged(wsId, 'task-linked', 'complete'));
 
