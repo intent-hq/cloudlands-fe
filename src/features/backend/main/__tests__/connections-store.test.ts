@@ -1970,6 +1970,63 @@ describe('connections-store keychain sync surface', () => {
     }
   });
 
+  it('forget of an excluded record with a pending cloud delete keeps that delete synced (never hides it as local-only)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_005_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+      const [pending] = await store.listSyncRecords();
+      expect(pending.deleted).toBe(true);
+
+      // Forget before any reconcile pushed the delete, under a rolled-back clock.
+      vi.setSystemTime(1_700_000_000_000);
+      await store.forget(rec.id);
+      await store.__drainWriteChainForTesting();
+
+      expect((await store.list()).find((c) => c.id === rec.id)).toBeUndefined();
+      const records = await store.listSyncRecords();
+      expect(records).toEqual([
+        expect.objectContaining({
+          deleted: true,
+          host: sampleConn.host,
+          port: sampleConn.port,
+          fingerprint: sampleConn.fingerprint,
+        }),
+      ]);
+      expect(records[0].updatedAt).toBeGreaterThan(pending.updatedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-pair of an excluded record with a pending cloud delete carries that delete forward', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    const [pending] = await store.listSyncRecords();
+    expect(pending.deleted).toBe(true);
+
+    // A refresh-style re-add (no syncExcluded) keeps the survivor excluded.
+    const repaired = await store.add({ ...sampleConn, token: 'rotated-token' });
+    await store.__drainWriteChainForTesting();
+
+    expect(repaired).toMatchObject({ id: rec.id, syncExcluded: true });
+    const records = await store.listSyncRecords();
+    expect(records).toEqual([expect.objectContaining({ deleted: true, host: sampleConn.host })]);
+    expect(records[0].updatedAt).toBe(pending.updatedAt);
+
+    // Re-including it on re-pair supersedes the delete with the live record.
+    const included = await store.add({ ...sampleConn, syncExcluded: false });
+    await store.__drainWriteChainForTesting();
+    expect(included.syncExcluded).toBe(false);
+    const live = await store.listSyncRecords();
+    expect(live).toEqual([expect.objectContaining({ host: sampleConn.host })]);
+    expect(live[0].deleted).toBeUndefined();
+    expect(live[0].updatedAt).toBeGreaterThan(pending.updatedAt);
+  });
+
   it('updateMetadata syncExcluded false re-publishes the record strictly past its own tombstone', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);

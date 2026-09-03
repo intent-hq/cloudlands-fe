@@ -575,6 +575,14 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     const supersededTombstone = state.tombstones.find((t) => tombstoneMatches(t, conn));
     const stamp = Math.max(Date.now(), (supersededTombstone?.updatedAt ?? 0) + 1);
     clearTombstone(state, conn);
+    // A re-pair that leaves the record excluded publishes nothing, so a cloud
+    // delete still pending for this identity must be carried forward or the
+    // keychain copy is orphaned.
+    const carryPendingCloudDelete = (excluded: boolean): void => {
+      if (excluded && supersededTombstone && supersededTombstone.excluded !== true) {
+        state.tombstones.push(supersededTombstone);
+      }
+    };
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = conn.label;
@@ -593,6 +601,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
       survivor.updatedAt = stamp;
+      carryPendingCloudDelete(survivor.syncExcluded === true);
       state.connections = state.connections.filter(
         (c) => c === survivor || !duplicates.includes(c),
       );
@@ -612,6 +621,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       encToken,
       updatedAt: stamp,
     };
+    carryPendingCloudDelete(record.syncExcluded === true);
     state.connections.push(record);
     await writeState(state);
     return record;
@@ -1037,7 +1047,15 @@ export async function forget(id: string): Promise<void> {
       state.activeId = LOCAL_CONNECTION_ID;
     }
     if (removed) {
-      const now = Date.now();
+      // An excluded record may still owe the keychain a delete from the
+      // exclusion that kept it local (updateMetadata syncExcluded: true); the
+      // forget tombstone must keep propagating it rather than hide it as
+      // local-only, and never with a lower clock.
+      const pendingCloudDelete =
+        removed.syncExcluded === true
+          ? state.tombstones.find((t) => t.excluded !== true && tombstoneMatches(t, removed))
+          : undefined;
+      const now = Math.max(Date.now(), pendingCloudDelete ? pendingCloudDelete.updatedAt + 1 : 0);
       clearTombstone(state, removed);
       state.tombstones.push({
         label: removed.label,
@@ -1050,7 +1068,7 @@ export async function forget(id: string): Promise<void> {
         detectHosts: removed.detectHosts,
         updatedAt: now,
         deletedAt: now,
-        excluded: removed.syncExcluded === true,
+        excluded: removed.syncExcluded === true && !pendingCloudDelete,
       });
     }
     await writeState(state);

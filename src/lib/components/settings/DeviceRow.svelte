@@ -281,9 +281,17 @@
     };
   }
 
-  function cancelCloudRemoval() {
+  // Any change of the switch invalidates the removal prompt and an earlier
+  // confirmation: a failed submit must not carry consent into a later
+  // off-flip, and flipping back on dismisses the pending prompt.
+  function setPushToCloud(next: boolean) {
+    pushToCloud = next;
     cloudRemovalPending = false;
-    pushToCloud = savedPushToCloud;
+    cloudRemovalConfirmed = false;
+  }
+
+  function cancelCloudRemoval() {
+    setPushToCloud(savedPushToCloud);
   }
 
   function confirmCloudRemoval() {
@@ -713,7 +721,7 @@
             <Switch
               id={`device-${device.id}-push-to-cloud`}
               size="sm"
-              bind:checked={pushToCloud}
+              bind:checked={() => pushToCloud, setPushToCloud}
               disabled={busy !== null || !syncSupported}
               ariaLabelledby={`device-${device.id}-push-to-cloud-label`}
             />

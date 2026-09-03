@@ -671,6 +671,82 @@ describe('DevicesSettings', () => {
       );
       await waitFor(() => expect(mocks.setSyncEnabled).toHaveBeenCalledWith(true));
       expect(screen.queryByRole('alert')).toBeNull();
+      await waitFor(() =>
+        expect(screen.queryByRole('form', { name: 'Edit Studio Mac' })).toBeNull(),
+      );
+    });
+
+    it('leaves the machine-wide sync pref alone when the re-inclusion update is rejected', async () => {
+      mocks.keychainSync = { supported: true, enabled: false, status: null };
+      mocks.connections = [local, { ...remote, syncExcluded: true }];
+      mocks.update.mockImplementation((params) => ({
+        type: 'connections/updateRequested',
+        payload: [params],
+        promise: Promise.resolve({ status: 'failed', reason: 'connect-failed' }),
+      }));
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      await waitFor(() =>
+        expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: false })),
+      );
+      expect(await screen.findByRole('alert')).toBeTruthy();
+      expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+      expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
+    });
+
+    it('asks for cloud-removal confirmation again after a confirmed submit fails', async () => {
+      mocks.update.mockImplementation((params) => ({
+        type: 'connections/updateRequested',
+        payload: [params],
+        promise: Promise.resolve({ status: 'failed', reason: 'connect-failed' }),
+      }));
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      await fireEvent.click(
+        within(screen.getByRole('alert')).getByRole('button', {
+          name: m.settings_devices_removeFromCloud_confirm(),
+        }),
+      );
+      await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole('alert')).queryByText(m.settings_devices_removeFromCloud_title()),
+        ).toBeNull(),
+      );
+
+      // Toggle back on, then off again: the earlier consent must not carry over.
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      expect(
+        within(screen.getByRole('alert')).getByText(m.settings_devices_removeFromCloud_title()),
+      ).toBeTruthy();
+    });
+
+    it('dismisses the cloud-removal prompt when the toggle is flipped back on', async () => {
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      expect(screen.getByRole('alert')).toBeTruthy();
+
+      await fireEvent.click(cloudSwitch());
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(cloudSwitch().getAttribute('aria-checked')).toBe('true');
+      expect((screen.getByRole('button', { name: 'Update' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      expect(mocks.update).not.toHaveBeenCalled();
     });
 
     it('re-includes without touching the sync pref when it is already on', async () => {
