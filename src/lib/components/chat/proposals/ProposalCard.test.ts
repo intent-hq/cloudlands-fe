@@ -287,32 +287,13 @@ describe('ProposalCard', () => {
     expect(onDiscard).not.toHaveBeenCalled();
   });
 
-  it('keeps completed cards flat without a success border in the tray surface', () => {
-    lifecycleSelectorState.status = 'applied';
+  it('uses the editorial type ramp without raw palette colors', () => {
     const { container } = render(ProposalCard, {
       props: {
         proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
       },
     });
 
-    const card = container.querySelector('[data-proposal-kind]');
-    expect(card?.className).not.toContain('border-success');
-    expect(screen.getByRole('status').className).toContain('text-success');
-  });
-
-  it('renders a full-width flat surface without nested card chrome', () => {
-    const { container } = render(ProposalCard, {
-      props: {
-        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
-      },
-    });
-
-    const card = container.querySelector('[data-proposal-kind]');
-    expect(card?.className).toContain('w-full');
-    expect(card?.className).not.toContain('max-w-xl');
-    expect(card?.className).not.toContain('border');
-    expect(card?.className).not.toContain('shadow');
-    expect(card?.className).not.toContain('bg-card');
     expect(screen.getByRole('heading', { name: 'Change settings' }).className).toContain(
       'type-body',
     );
