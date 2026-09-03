@@ -136,6 +136,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: testState.selector([]),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectChatAuroraEnabled: testState.selector(true),
   selectIsAgentMonospace: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({

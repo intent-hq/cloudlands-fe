@@ -178,6 +178,7 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () =
   ),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectChatAuroraEnabled: mocks.selector(true),
   selectIsAgentMonospace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
