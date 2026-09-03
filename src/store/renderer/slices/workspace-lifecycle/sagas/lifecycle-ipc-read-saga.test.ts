@@ -1,6 +1,7 @@
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Workspace } from '$shared/types';
 
 const mocks = vi.hoisted(() => ({
   listRepos: vi.fn(),
@@ -25,6 +26,7 @@ import { loadKnownRepos } from '../../known-repos/known-repos-slice';
 import { initialState as initialConnectionsState } from '../../connections/connections-slice';
 import { initialState as initialPanelLayoutState } from '../../panel-layout/panel-layout-slice';
 import { initialState as initialSidebarNavState } from '../../sidebar-nav/sidebar-nav-slice';
+import { initialState as initialWorkspaceState } from '../../workspace/workspace-slice';
 import {
   initialState as initialWorkspaceLifecycleState,
   backendReconnected,
@@ -43,6 +45,21 @@ const WS = 'ws-ipc-lifecycle';
 const NOW = new Date('2026-07-31T00:00:00.000Z');
 type ObservedAction = { type: string; payload?: unknown[] };
 
+function workspace(id: string, worktreePath?: string): Workspace {
+  return {
+    id,
+    title: id,
+    branch: 'main',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: 'Active',
+    createdAt: NOW.toISOString(),
+    updatedAt: NOW.toISOString(),
+    worktreePath,
+  } as Workspace;
+}
+
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -50,7 +67,7 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function state() {
+function state(workspaces: Workspace[] = [workspace(WS, '/repo/worktrees/ws-ipc-lifecycle')]) {
   return {
     externalEditors: {
       loading: false,
@@ -61,6 +78,10 @@ function state() {
     connections: initialConnectionsState,
     panelLayout: initialPanelLayoutState,
     sidebarNav: initialSidebarNavState,
+    workspace: {
+      ...initialWorkspaceState,
+      workspaces: createCollection('id', workspaces),
+    },
     workspaceLifecycle: initialWorkspaceLifecycleState,
   };
 }
@@ -327,7 +348,7 @@ describe('lifecycleIpcReadSaga', () => {
     await stop(run.task);
   });
 
-  it('keeps deferred reads out of first reveal and flushes them at the bounded fallback', async () => {
+  it('flushes worktree-dependent deferred reads for a real workspace with a resolved path', async () => {
     const run = start();
     run.channel.put(workspaceMounted(WS));
     await settle();
@@ -339,6 +360,26 @@ describe('lifecycleIpcReadSaga', () => {
     await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(run.actions).toEqual(workspaceDeferredFanOut(WS));
+    await stop(run.task);
+  });
+
+  it('skips worktree-dependent hydration for a synthetic pathless workspace', async () => {
+    const pathlessWorkspace = workspace('__chief__');
+    const run = start(state([pathlessWorkspace]));
+    run.channel.put(workspaceMounted(pathlessWorkspace.id));
+    await settle();
+    run.actions.length = 0;
+
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
+    await settle();
+
+    expect(run.actions).toEqual(
+      workspaceDeferredFanOut(pathlessWorkspace.id).filter(
+        (action) =>
+          action.type !== 'skills/loadSkillsRequested' &&
+          action.type !== 'fileExplorer/hydrateFileExplorerRequested',
+      ),
+    );
     await stop(run.task);
   });
 
