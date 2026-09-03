@@ -759,14 +759,20 @@ describe('NoteWithComments task conversion regression', () => {
   });
 
   describe('workspace-relative images', () => {
-    const IMAGE_MARKDOWN = '![Example](intent://local/file/ui-tweak-artifacts/example.png)';
-    const TRAVERSAL_MARKDOWN = '![Escape](intent://local/file/../outside.png)';
-    const RESOLVED_IMAGE_SRC = `workspace-file://${WORKSPACE_ID}/ui-tweak-artifacts/example.png`;
+    const IMAGE_PATH = 'ui-tweak-artifacts/example.png';
+    const IMAGE_MARKDOWN = `![Example](intent://local/file/${IMAGE_PATH})`;
+    const TRAVERSAL_SRC = 'intent://local/file/../outside.png';
+    const TRAVERSAL_MARKDOWN = `![Escape](${TRAVERSAL_SRC})`;
+    const RESOLVED_IMAGE_SRC = `workspace-file://${WORKSPACE_ID}/${IMAGE_PATH}`;
 
     function renderedImageSrcs(container: HTMLElement): string[] {
       return Array.from(container.querySelectorAll('.ProseMirror img')).map(
         (img) => img.getAttribute('src') ?? '',
       );
+    }
+
+    function workspaceFileSrcs(container: HTMLElement): string[] {
+      return renderedImageSrcs(container).filter((src) => src.startsWith('workspace-file://'));
     }
 
     it('resolves short-form intent file images against the owner workspace on initial load', async () => {
@@ -778,15 +784,21 @@ describe('NoteWithComments task conversion regression', () => {
       await waitFor(() => {
         expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
       });
-      const srcs = renderedImageSrcs(view.container);
-      expect(srcs.some((src) => src.startsWith('workspace-file://') && src.includes('..'))).toBe(
-        false,
-      );
+      expect(workspaceFileSrcs(view.container)).toEqual([RESOLVED_IMAGE_SRC]);
+      expect(renderedImageSrcs(view.container)).toContain(TRAVERSAL_SRC);
+    });
+
+    it('resolves intent file images against the owner workspace on deferred large-note load', async () => {
+      const content = `${IMAGE_MARKDOWN}\n\n${'x'.repeat(5001)}`;
+      const view = await renderInitializedNote('large-image-note', content);
+
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
     });
 
     it('resolves intent file images against the owner workspace after switching notes', async () => {
       const view = await renderInitializedNote();
-      mockProcessMarkdownToHTML.mockClear();
 
       await view.rerender({
         workspace: { id: WORKSPACE_ID } as any,
@@ -800,15 +812,31 @@ describe('NoteWithComments task conversion regression', () => {
       await waitFor(() => {
         expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
       });
-      expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-        IMAGE_MARKDOWN,
-        expect.objectContaining({ workspaceId: WORKSPACE_ID }),
-      );
+    });
+
+    it('re-resolves intent file images against the new owner when the workspace changes', async () => {
+      const view = await renderInitializedNote('image-note', IMAGE_MARKDOWN);
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
+
+      await view.rerender({
+        workspace: { id: 'ws-2' } as any,
+        noteId: 'image-note',
+        content: IMAGE_MARKDOWN,
+        editable: true,
+        showSuggestions: false,
+        showComments: true,
+      });
+
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(`workspace-file://ws-2/${IMAGE_PATH}`);
+      });
+      expect(renderedImageSrcs(view.container)).not.toContain(RESOLVED_IMAGE_SRC);
     });
 
     it('resolves intent file images against the owner workspace on live external updates', async () => {
       const view = await renderInitializedNote(SPEC_NOTE_ID, 'Spec before image');
-      mockProcessMarkdownToHTML.mockClear();
 
       replaceNotes([createNote(SPEC_NOTE_ID, 'Spec', IMAGE_MARKDOWN)]);
 
@@ -817,10 +845,6 @@ describe('NoteWithComments task conversion regression', () => {
           expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
         },
         { timeout: 2500 },
-      );
-      expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-        IMAGE_MARKDOWN,
-        expect.objectContaining({ workspaceId: WORKSPACE_ID }),
       );
     });
   });
