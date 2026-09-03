@@ -1,7 +1,6 @@
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
-import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 export type FixtureState = 'collapsed' | 'expanded';
 
@@ -38,8 +37,6 @@ export interface LiveCardFixture {
   state: FixtureState;
   hooks?: BackgroundHook[];
   prs?: PrMonitorRow[];
-  tabs?: PanelTab[];
-  hiddenTabs?: PanelTab[];
   agents?: string[];
   completedAgents?: string[];
   woken?: boolean;
@@ -98,15 +95,6 @@ const pr = (id: string, number: number, overrides: Partial<PrMonitorRow> = {}): 
   url: `https://github.com/intent-hq/cloudlands-fe/pull/${number}`,
   lastSnapshot: snapshot(),
   ...overrides,
-});
-
-const tab = (id: string, title: string, url: string): PanelTab => ({
-  id,
-  type: 'browser',
-  title,
-  browserUrl: url,
-  ownerAgentId: '',
-  closable: true,
 });
 
 const livePairs = (
@@ -202,39 +190,10 @@ export const liveCardFixtures: LiveCardFixture[] = [
       }),
     ],
   }),
-  {
-    id: 'tab-one-inline',
-    label: 'Single browser tab inline',
-    state: 'collapsed',
-    tabs: [tab('inline', 'Inline docs', 'https://example.test/inline')],
-  },
-  ...livePairs('tab-active', '1 active browser tab', {
-    tabs: [tab('active', 'Active docs', 'https://example.test/docs')],
-  }),
-  ...livePairs('tab-hidden', '1 hidden browser tab', {
-    hiddenTabs: [tab('hidden', 'Hidden preview', 'https://example.test/preview')],
-  }),
-  ...livePairs('tab-mixed', '3 mixed browser tabs', {
-    tabs: [
-      tab('first', 'Reference', 'https://example.test/reference'),
-      tab('second', 'Dashboard', 'https://example.test/dashboard'),
-    ],
-    hiddenTabs: [tab('third', 'Hidden report', 'https://example.test/report')],
-  }),
-  ...livePairs('tab-long', 'Long browser tab title and URL', {
-    tabs: [
-      tab(
-        'long',
-        'An extremely long browser tab title that must truncate cleanly in narrow cards',
-        'https://example.test/a/very/long/path/that/must/truncate/without/wrapping?query=subscription-rows',
-      ),
-    ],
-  }),
-  ...livePairs('mixed', 'Agents, hooks, PRs, and tabs', {
+  ...livePairs('mixed', 'Agents, hooks, and PRs', {
     agents: ['mixed-one', 'mixed-two'],
     hooks: [hook('mixed')],
     prs: [pr('mixed', 2106)],
-    tabs: [tab('mixed-tab', 'Mixed fixture documentation', 'https://example.test/mixed')],
   }),
   ...livePairs('completed-woken', 'Completed agents with woken-up pill', {
     agents: ['done-one', 'done-two'],

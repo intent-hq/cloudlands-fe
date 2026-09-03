@@ -52,7 +52,7 @@ export const catalogEntries: CatalogEntry[] = [
       {
         id: 'all-permutations',
         title: m.sandbox_subscriptionRows_fixture_title(),
-        states: ['agents', 'hooks', 'pull-requests', 'browser-tabs', 'mixed', 'headers'],
+        states: ['agents', 'hooks', 'pull-requests', 'mixed', 'headers'],
         themes: ['light', 'dark'],
         viewport: 'both',
         reducedMotion: true,

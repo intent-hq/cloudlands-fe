@@ -23,9 +23,6 @@ vi.mock('../BackgroundHooksRow.svelte', async () => ({
 vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/MockPrEventSection.svelte')).default,
 }));
-vi.mock('../BrowserTabsRow.svelte', async () => ({
-  default: (await import('./mocks/MockBrowserTabsSection.svelte')).default,
-}));
 vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', async () => {
   const { readable } = await import('svelte/store');
   return { selectBackgroundHooks: () => readable(liveSubscriptions.hooks) };
@@ -70,7 +67,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async ()
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 
 beforeEach(() => {
-  liveSubscriptions.hooks = ['hooks', 'agents-hooks-prs', 'hooks-tabs'].map((agentId) => ({
+  liveSubscriptions.hooks = ['hooks', 'agents-hooks-prs'].map((agentId) => ({
     agentId,
     state: 'scheduled',
   }));
@@ -282,28 +279,11 @@ describe('EventSubscriptionsCard', () => {
     expect(card.parentElement?.getAttribute('data-has-subscriptions')).toBe('false');
   });
 
-  it('shows the card for a browser-tabs-only agent without the events header', async () => {
+  it('does not surface a subscription card for a browser-tabs-only agent', async () => {
     const card = await renderCard('tabs');
-    expect(card.parentElement?.classList.contains('hidden')).toBe(false);
-    expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
+    expect(card.parentElement?.classList.contains('hidden')).toBe(true);
+    expect(card.parentElement?.getAttribute('data-has-subscriptions')).toBe('false');
     expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
-    // Tabs-only card must not be labelled "Subscribed to events".
-    expect(card.getAttribute('aria-label')).toBe('2 browser tabs');
-  });
-
-  it('renders browser tabs parallel to a collapsed events disclosure', async () => {
-    liveSubscriptions.hooks = [
-      { agentId: 'hooks-tabs', state: 'scheduled' },
-      { agentId: 'hooks-tabs', state: 'scheduled' },
-    ];
-    await renderCard('hooks-tabs');
-    const section = screen.getByTestId('event-subscriptions-browser-tabs');
-    expect(section.classList.contains('hidden')).toBe(false);
-    expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Subscribed to 2 events' }));
-    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
-    expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
   });
 
   it.each([

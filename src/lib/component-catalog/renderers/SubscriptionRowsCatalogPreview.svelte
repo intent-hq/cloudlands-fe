@@ -14,10 +14,6 @@
   import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
   import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import {
-    initializeLayout,
-    clearPanelLayout,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import {
     setSubscriptionSnapshot,
     setWokenUp,
     deleteSubscriptionUI,
@@ -25,7 +21,6 @@
   import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     setEventSubscriptionsExpanded,
-    setBrowserTabsExpanded,
     setExpandedPrMonitorId,
   } from '$lib/components/chat/agent-subscriptions-view-state';
   import {
@@ -49,26 +44,6 @@
       rows.map((row) => ({ ...row, workspaceId, agentId }));
     store.dispatch(backgroundHooksUpdated(workspaceId, own(fixture.hooks ?? [])));
     store.dispatch(prMonitorsUpdated(workspaceId, own(fixture.prs ?? [])));
-    const tabs = [...(fixture.tabs ?? []), ...(fixture.hiddenTabs ?? [])].map((tab) => ({
-      ...tab,
-      workspaceId,
-      ownerAgentId: agentId,
-    }));
-    const visibleCount = fixture.tabs?.length ?? 0;
-    store.dispatch(
-      initializeLayout(workspaceId, {
-        root: { type: 'panel', panelId: `panel-${fixture.id}` },
-        panels: {
-          [`panel-${fixture.id}`]: {
-            id: `panel-${fixture.id}`,
-            tabs: tabs.slice(0, visibleCount),
-            activeTabId: tabs[0]?.id ?? null,
-          },
-        },
-        focusedPanelId: `panel-${fixture.id}`,
-        hiddenTabs: tabs.slice(visibleCount),
-      }),
-    );
     const agents = fixture.agents ?? [];
     const completed = new Set(fixture.completedAgents ?? []);
     if (fixture.woken)
@@ -102,7 +77,6 @@
       }),
     );
     setEventSubscriptionsExpanded(workspaceId, agentId, fixture.state === 'expanded');
-    setBrowserTabsExpanded(workspaceId, agentId, fixture.state === 'expanded');
     setExpandedPrMonitorId(
       workspaceId,
       agentId,
@@ -123,7 +97,6 @@
   onDestroy(() => {
     for (const { workspaceId, agentId } of liveIds) {
       store.dispatch(deleteSubscriptionUI(workspaceId, agentId));
-      store.dispatch(clearPanelLayout(workspaceId));
       store.dispatch(removeWorkspaceEntity(workspaceId));
     }
     disposeStore();

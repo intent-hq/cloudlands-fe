@@ -14,12 +14,7 @@ const readable = <T>(value: T) => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  // BrowserTabsRow reads the real panel-layout selectors, which expect the
-  // panelLayout slice to exist on the store state.
-  return createAppStoreMockModule({
-    state: () => ({ panelLayout: { byWorkspaceId: {} } }),
-    dispatch: dispatchMock,
-  });
+  return createAppStoreMockModule({ state: () => ({}), dispatch: dispatchMock });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () =>
