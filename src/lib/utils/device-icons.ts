@@ -1,5 +1,5 @@
 import type { Component } from 'svelte';
-import type { DeviceIconChoice, DeviceKind } from '$shared/types/connections';
+import { isDeviceKind, type DeviceIconChoice, type DeviceKind } from '$shared/types/connections';
 import { m } from '$shared/paraglide/messages.js';
 import {
   AlienIcon,
@@ -181,8 +181,9 @@ function fallbackDeviceKind(os: string | null | undefined): DeviceKind {
 }
 
 export function resolveDeviceKind(source: DeviceIconSource): DeviceKind {
-  if (source.deviceIcon && source.deviceIcon !== 'auto') return source.deviceIcon;
-  return source.detectedDeviceKind ?? fallbackDeviceKind(source.os);
+  if (source.deviceIcon !== 'auto' && isDeviceKind(source.deviceIcon)) return source.deviceIcon;
+  if (isDeviceKind(source.detectedDeviceKind)) return source.detectedDeviceKind;
+  return fallbackDeviceKind(source.os);
 }
 
 export function deviceIconOptions(source: DeviceIconSource): readonly DeviceIconOption[] {

@@ -23,6 +23,24 @@ describe('device icons', () => {
     expect(resolveDeviceKind({})).toBe('desktop');
   });
 
+  it('ignores invalid persisted kinds without exposing an unsafe registry key', () => {
+    const invalidOverride = {
+      deviceIcon: 'bogus',
+      detectedDeviceKind: 'laptop',
+      os: 'linux',
+    } as unknown as Parameters<typeof resolveDeviceKind>[0];
+    const invalidDetection = {
+      deviceIcon: 'auto',
+      detectedDeviceKind: 'bogus',
+      os: 'linux',
+    } as unknown as Parameters<typeof resolveDeviceKind>[0];
+
+    expect(resolveDeviceKind(invalidOverride)).toBe('laptop');
+    expect(resolveDeviceKind(invalidDetection)).toBe('server');
+    expect(() => deviceIconOptions(invalidDetection)).not.toThrow();
+    expect(deviceIconOptions(invalidDetection)[0]).toMatchObject({ kind: 'server' });
+  });
+
   it('puts Automatic first and describes detection rather than the current override', () => {
     const options = deviceIconOptions({ deviceIcon: 'dog', detectedDeviceKind: 'macMini' });
     expect(options).toHaveLength(DEVICE_KINDS.length + 1);
