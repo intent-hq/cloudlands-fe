@@ -85,7 +85,8 @@
 {#if placement === 'modal'}
   <Dialog.Root bind:open={modalOpen}>
     <Dialog.Content
-      class="h-[min(520px,calc(100dvh-32px))] grid-rows-[auto_1fr] overflow-hidden"
+      class="grid-rows-[auto_1fr] overflow-hidden"
+      style="height: min(520px, calc(100dvh - 32px));"
       showCloseButton={false}
       data-testid="picker-modal"
     >
