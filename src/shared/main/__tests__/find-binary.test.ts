@@ -8,18 +8,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * shape sent on the wire and feed back PROTOCOL-shaped mock responses.
  */
 
-const { mockRequest, loggerSpies } = vi.hoisted(() => ({
-  mockRequest: vi.fn(),
-  loggerSpies: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+const { backendMocks, mockRequest, loggerSpies } = vi.hoisted(() => {
+  const request = vi.fn();
+  return {
+    backendMocks: {
+      client: { request },
+      reconnectHandler: undefined as (() => void) | undefined,
+    },
+    mockRequest: request,
+    loggerSpies: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+  };
+});
 
 vi.mock('../../../features/backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: mockRequest }),
+  getBackendClient: () => backendMocks.client,
+  onBackendReconnected: (handler: () => void) => {
+    backendMocks.reconnectHandler = handler;
+    return () => {};
+  },
 }));
 
 vi.mock('../../logger', () => ({
@@ -32,6 +43,8 @@ vi.mock('../../logger', () => ({
 }));
 
 import {
+  FIND_BINARY_NEGATIVE_TTL_MS,
+  FIND_BINARY_POSITIVE_TTL_MS,
   findBinary,
   findBinaryStrict,
   getCachedHostEnv,
@@ -39,6 +52,7 @@ import {
   getCommonNpxPaths,
   getEnhancedPath,
   initializeHostEnv,
+  invalidateHostDiscoveryCache,
 } from '../find-binary';
 import { JsonRpcError } from '../../../features/backend/main/json-rpc-errors';
 
@@ -51,16 +65,19 @@ function setPlatform(platform: NodeJS.Platform): void {
 
 describe('findBinary (host.findBinary wire contract)', () => {
   beforeEach(() => {
+    backendMocks.client = { request: mockRequest };
     mockRequest.mockReset();
     loggerSpies.debug.mockReset();
     loggerSpies.info.mockReset();
     loggerSpies.warn.mockReset();
     loggerSpies.error.mockReset();
+    invalidateHostDiscoveryCache();
     process.env = { ...originalEnv };
     setPlatform(originalPlatform);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     process.env = { ...originalEnv };
     setPlatform(originalPlatform);
   });
@@ -108,17 +125,55 @@ describe('findBinary (host.findBinary wire contract)', () => {
     });
   });
 
-  it('never caches: every call issues a fresh wire request', async () => {
+  it('caches a positive probe for 5 seconds', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    mockRequest.mockResolvedValue({ available: true, path: '/usr/local/bin/foo' });
+
+    expect(await findBinary('foo')).toBe('/usr/local/bin/foo');
+    now.mockReturnValue(1_000 + FIND_BINARY_POSITIVE_TTL_MS - 1);
+    expect(await findBinary('foo')).toBe('/usr/local/bin/foo');
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches an authoritative negative probe for 1 second', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    mockRequest.mockResolvedValue({ available: false });
+
+    expect(await findBinary('foo')).toBeNull();
+    now.mockReturnValue(1_000 + FIND_BINARY_NEGATIVE_TTL_MS - 1);
+    expect(await findBinary('foo')).toBeNull();
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('force refresh bypasses a negative TTL and observes a newly available binary', async () => {
     mockRequest
       .mockResolvedValueOnce({ available: false })
       .mockResolvedValueOnce({ available: true, path: '/refreshed/foo' });
 
     const first = await findBinary('foo');
-    const second = await findBinary('foo');
+    const second = await findBinary('foo', { forceRefresh: true });
 
     expect(first).toBeNull();
     expect(second).toBe('/refreshed/foo');
     expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares one request across concurrent identical normalized probes', async () => {
+    let resolveProbe!: (value: { available: boolean; path: string }) => void;
+    mockRequest.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProbe = resolve;
+      }),
+    );
+
+    const first = findBinary('foo', { commonPaths: ['/a/foo', '/a/foo'] });
+    const second = findBinaryStrict('foo', { commonPaths: ['/a/foo'] });
+    resolveProbe({ available: true, path: '/a/foo' });
+
+    await expect(Promise.all([first, second])).resolves.toEqual(['/a/foo', '/a/foo']);
+    expect(mockRequest).toHaveBeenCalledTimes(1);
   });
 
   it('returns null when the daemon request rejects, without caching the miss', async () => {
@@ -133,12 +188,39 @@ describe('findBinary (host.findBinary wire contract)', () => {
     expect(second).toBe('/usr/local/bin/foo');
     expect(mockRequest).toHaveBeenCalledTimes(2);
   });
+
+  it('invalidates cached probes when the backend client identity changes', async () => {
+    mockRequest.mockResolvedValueOnce({ available: false });
+    expect(await findBinary('foo')).toBeNull();
+
+    const replacementRequest = vi.fn().mockResolvedValue({
+      available: true,
+      path: '/replacement/foo',
+    });
+    backendMocks.client = { request: replacementRequest };
+
+    expect(await findBinary('foo')).toBe('/replacement/foo');
+    expect(replacementRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidates cached probes on reconnect', async () => {
+    mockRequest
+      .mockResolvedValueOnce({ available: false })
+      .mockResolvedValueOnce({ available: true, path: '/reconnected/foo' });
+    expect(await findBinary('foo')).toBeNull();
+
+    backendMocks.reconnectHandler?.();
+
+    expect(await findBinary('foo')).toBe('/reconnected/foo');
+  });
 });
 
 describe('findBinaryStrict (strict probe semantics)', () => {
   beforeEach(() => {
+    backendMocks.client = { request: mockRequest };
     mockRequest.mockReset();
     loggerSpies.warn.mockReset();
+    invalidateHostDiscoveryCache();
   });
 
   it('sends the same host.findBinary request and returns the resolved path', async () => {
@@ -185,7 +267,9 @@ describe('findBinaryStrict (strict probe semantics)', () => {
 
 describe('initializeHostEnv / getEnhancedPath (host.env wire contract)', () => {
   beforeEach(() => {
+    backendMocks.client = { request: mockRequest };
     mockRequest.mockReset();
+    invalidateHostDiscoveryCache();
     process.env = { ...originalEnv };
   });
 
@@ -270,6 +354,26 @@ describe('initializeHostEnv / getEnhancedPath (host.env wire contract)', () => {
     process.env.PATH = '/local/only';
 
     expect(getEnhancedPath()).toBe('/local/only');
+  });
+
+  it('invalidates binary probes when the daemon PATH context changes', async () => {
+    mockRequest
+      .mockResolvedValueOnce({ available: false })
+      .mockResolvedValueOnce({
+        path: '/new/bin',
+        pathEntries: ['/new/bin'],
+        enhancedPath: '/new/bin:/usr/bin',
+        shell: '/bin/zsh',
+        home: '/Users/test',
+        varNames: ['PATH'],
+      })
+      .mockResolvedValueOnce({ available: true, path: '/new/bin/foo' });
+
+    expect(await findBinary('foo')).toBeNull();
+    await initializeHostEnv();
+
+    expect(await findBinary('foo')).toBe('/new/bin/foo');
+    expect(mockRequest).toHaveBeenCalledTimes(3);
   });
 });
 
