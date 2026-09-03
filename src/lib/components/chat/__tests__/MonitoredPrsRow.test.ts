@@ -338,7 +338,7 @@ describe('MonitoredPrsRow', () => {
     );
   });
 
-  it('inline details stack one fact per line without dot separators', async () => {
+  it('renders non-empty details as a semantic label and value list', async () => {
     monitorsState.monitors = [
       makeMonitor({
         hasPendingChanges: true,
@@ -349,17 +349,22 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const card = await openDetails();
-    // Facts live in a flex-col block, one <span> per line — no inline
-    // "·" separators that wrap mid-phrase.
-    expect(card.textContent).not.toContain('·');
-    const lines = Array.from(card.querySelectorAll(':scope > span')).map(
-      (line) => line.textContent,
-    );
-    expect(lines).toEqual([
+    const list = card.querySelector('dl');
+    expect(list).toBeTruthy();
+    expect(Array.from(list!.querySelectorAll('dt')).map((label) => label.textContent)).toEqual([
+      'Checks',
+      'Approvals',
+      'Threads',
+      'Last change',
+      'Pending',
+    ]);
+    expect(
+      Array.from(list!.querySelectorAll('dd')).map((value) => value.textContent?.trim()),
+    ).toEqual([
       '1 of 4 checks are still running.',
       '0 of 1 required approvals received.',
       '2 unresolved threads',
-      expect.stringContaining('Last change'),
+      expect.any(String),
       '1 change pending emit',
     ]);
   });
@@ -371,6 +376,11 @@ describe('MonitoredPrsRow', () => {
     const card = await openDetails();
     expect(screen.queryByTestId('monitored-pr-pending')).toBeNull();
     expect(card.textContent).not.toContain('No changes pending');
+    expect(Array.from(card.querySelectorAll('dt')).map((label) => label.textContent)).toEqual([
+      'Checks',
+      'Approvals',
+      'Threads',
+    ]);
 
     expect(document.querySelector('[data-tooltip-trigger]')).toBeNull();
   });

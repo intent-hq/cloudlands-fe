@@ -60,6 +60,7 @@
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import { getExpandedPrMonitorId, setExpandedPrMonitorId } from './agent-subscriptions-view-state';
 
@@ -422,7 +423,7 @@
         {#if expandedMonitorId === monitor.monitorId}
           <div
             id={detailsId}
-            class="grid gap-1 overflow-hidden px-9 pb-2 text-xs text-subtle"
+            class="grid gap-1 overflow-hidden text-xs text-subtle {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
             data-testid="monitored-pr-details"
             transition:safeSubscriptionSlide
           >
@@ -431,25 +432,40 @@
               <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
               <span>{monitor.repo}#{monitor.prNumber}</span>
             {/if}
-            {#if checksSummary(monitor)}<span>{checksSummary(monitor)}</span>{/if}
-            {#if approvalsSummary(monitor)}<span>{approvalsSummary(monitor)}</span>{/if}
-            {#if threadsSummary(monitor)}<span>{threadsSummary(monitor)}</span>{/if}
-            {#if monitor.lastChangeAt}
-              <span
-                >{m.chat_monitoredPrs_hover_lastChange_label({
-                  time: formatTime(monitor.lastChangeAt, { seconds: true }),
-                })}</span
-              >
-            {/if}
-            {#if monitor.hasPendingChanges}
-              <span data-testid="monitored-pr-pending"
-                >{monitor.pendingChanges.length === 1
-                  ? m.chat_monitoredPrs_hover_pending_one()
-                  : m.chat_monitoredPrs_hover_pending_many({
-                      count: formatInteger(monitor.pendingChanges.length),
-                    })}</span
-              >
-            {/if}
+            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
+              {#if checksSummary(monitor)}
+                <dt class="text-muted-foreground">{m.chat_monitoredPrs_details_checks_label()}</dt>
+                <dd class="min-w-0 text-foreground">{checksSummary(monitor)}</dd>
+              {/if}
+              {#if approvalsSummary(monitor)}
+                <dt class="text-muted-foreground">
+                  {m.chat_monitoredPrs_details_approvals_label()}
+                </dt>
+                <dd class="min-w-0 text-foreground">{approvalsSummary(monitor)}</dd>
+              {/if}
+              {#if threadsSummary(monitor)}
+                <dt class="text-muted-foreground">{m.chat_monitoredPrs_details_threads_label()}</dt>
+                <dd class="min-w-0 text-foreground">{threadsSummary(monitor)}</dd>
+              {/if}
+              {#if monitor.lastChangeAt}
+                <dt class="text-muted-foreground">
+                  {m.chat_monitoredPrs_details_lastChange_label()}
+                </dt>
+                <dd class="min-w-0 text-foreground">
+                  {formatTime(monitor.lastChangeAt, { seconds: true })}
+                </dd>
+              {/if}
+              {#if monitor.hasPendingChanges}
+                <dt class="text-muted-foreground">{m.chat_monitoredPrs_details_pending_label()}</dt>
+                <dd class="min-w-0 text-foreground" data-testid="monitored-pr-pending">
+                  {monitor.pendingChanges.length === 1
+                    ? m.chat_monitoredPrs_hover_pending_one()
+                    : m.chat_monitoredPrs_hover_pending_many({
+                        count: formatInteger(monitor.pendingChanges.length),
+                      })}
+                </dd>
+              {/if}
+            </dl>
           </div>
         {/if}
       </div>
