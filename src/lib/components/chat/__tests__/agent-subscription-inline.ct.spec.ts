@@ -196,6 +196,12 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
         for (const current of cases) {
           await component.update({ props: { theme, width, zoom, ...current } });
           const summary = component.getByTestId('one-shot-summary-toggle');
+          if (current.agentCount === 1) {
+            await expect(component.getByTestId('agent-list-item')).toHaveCount(1);
+            await expect(summary).toHaveCount(0);
+            await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+            continue;
+          }
           if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
           await expect(component.getByTestId('agent-list-item')).toHaveCount(current.agentCount);
 
@@ -818,6 +824,12 @@ test('caps one through eight participants at three and computes overflow from re
     await component.update({
       props: { mode: 'agents', agentCount, width: 600, initiallyExpanded: false },
     });
+    if (agentCount === 1) {
+      await expect(component.getByTestId('agent-list-item')).toHaveCount(1);
+      await expect(summary).toHaveCount(0);
+      await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+      continue;
+    }
     if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
     const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
     const visibleCount = Math.min(agentCount, 3);
@@ -1040,6 +1052,13 @@ test('pins the participant stack before a fixed trailing chevron slot', async ({
           });
           const summary = component.getByTestId('one-shot-summary-toggle');
           const chevron = component.getByTestId('one-shot-collapse-toggle');
+          if (agentCount === 1) {
+            await expect(component.getByTestId('agent-list-item')).toHaveCount(1);
+            await expect(summary).toHaveCount(0);
+            await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+            await expect(chevron).toHaveCount(0);
+            continue;
+          }
           if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
           await expect(summary).toHaveAttribute('aria-expanded', 'false');
           await expect(chevron.locator('[data-icon="chevron-down"]')).toHaveClass(/rotate-90/);
