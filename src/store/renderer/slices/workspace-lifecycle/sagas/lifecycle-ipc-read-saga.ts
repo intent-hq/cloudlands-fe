@@ -1,5 +1,16 @@
+import type { Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, delay, fork, put, take, takeEvery, takeLeading } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  take,
+  takeEvery,
+  takeLeading,
+} from 'typed-redux-saga';
 
 import { externalEditorsClient } from '$features/external-editors/external-editors.client';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
@@ -181,6 +192,48 @@ function* deferredHydrationWorker(
   if (due) yield* putHydrationBranches(workspaceId, due.generation, due.force, due.branches);
 }
 
+type DeferredHydrationTaskSlot = { generation: number; task?: Task };
+
+interface DeferredHydrationCoordinator {
+  tasks: Map<string, DeferredHydrationTaskSlot>;
+}
+
+function* cancelDeferredHydrationWorker(
+  coordinator: DeferredHydrationCoordinator,
+  workspaceId: string,
+): SagaGenerator<void> {
+  const active = coordinator.tasks.get(workspaceId);
+  if (!active) return;
+  coordinator.tasks.delete(workspaceId);
+  if (active.task?.isRunning()) yield* cancel(active.task);
+}
+
+function* startDeferredHydrationWorker(
+  scheduler: WorkspaceHydrationTierScheduler,
+  coordinator: DeferredHydrationCoordinator,
+  workspaceId: string,
+  generation: number,
+): SagaGenerator<void> {
+  const active = coordinator.tasks.get(workspaceId);
+  if (active && active.generation > generation) return;
+  yield* cancelDeferredHydrationWorker(coordinator, workspaceId);
+  const slot: DeferredHydrationTaskSlot = { generation };
+  coordinator.tasks.set(workspaceId, slot);
+  const task = yield* fork(function* trackedDeferredHydrationWorker(): SagaGenerator<void> {
+    try {
+      yield* deferredHydrationWorker(scheduler, workspaceId, generation);
+    } finally {
+      if (coordinator.tasks.get(workspaceId) === slot) {
+        coordinator.tasks.delete(workspaceId);
+      }
+    }
+  });
+  slot.task = task;
+  if (!task.isRunning() && coordinator.tasks.get(workspaceId) === slot) {
+    coordinator.tasks.delete(workspaceId);
+  }
+}
+
 function* dispatchHydrationBranch(
   action: ReturnType<typeof workspaceHydrationBranchRequested>,
 ): SagaGenerator<void> {
@@ -234,6 +287,7 @@ function* refreshEditorsWorker(action: ReturnType<typeof fetchEditors>): SagaGen
 function* workspaceMountedWorker(
   scheduler: WorkspaceHydrationTierScheduler,
   mountedWorkspaceIds: Set<string>,
+  coordinator: DeferredHydrationCoordinator,
   action: ReturnType<typeof workspaceMounted>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
@@ -242,7 +296,7 @@ function* workspaceMountedWorker(
   const consumers = yield* readHydrationConsumers(workspaceId);
   const started = scheduler.start(workspaceId, consumers);
   yield* putHydrationBranches(workspaceId, started.generation, false, started.branches);
-  yield* fork(deferredHydrationWorker, scheduler, workspaceId, started.generation);
+  yield* startDeferredHydrationWorker(scheduler, coordinator, workspaceId, started.generation);
 }
 
 function workspaceIdFromConsumerAction(action: { payload?: unknown }): string | null {
@@ -273,33 +327,40 @@ function* promoteVisibleConsumers(
 function* workspaceUnmountedWorker(
   scheduler: WorkspaceHydrationTierScheduler,
   mountedWorkspaceIds: Set<string>,
+  coordinator: DeferredHydrationCoordinator,
   action: ReturnType<typeof workspaceUnmounted>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   mountedWorkspaceIds.delete(workspaceId);
   scheduler.cancel(workspaceId);
+  yield* cancelDeferredHydrationWorker(coordinator, workspaceId);
 }
 
 function* restartMountedHydration(
   scheduler: WorkspaceHydrationTierScheduler,
   mountedWorkspaceIds: Set<string>,
+  coordinator: DeferredHydrationCoordinator,
 ): SagaGenerator<void> {
   scheduler.reset();
+  for (const workspaceId of [...coordinator.tasks.keys()]) {
+    yield* cancelDeferredHydrationWorker(coordinator, workspaceId);
+  }
   for (const workspaceId of mountedWorkspaceIds) {
     const consumers = yield* readHydrationConsumers(workspaceId);
     const started = scheduler.start(workspaceId, consumers, true);
     yield* putHydrationBranches(workspaceId, started.generation, true, started.branches);
-    yield* fork(deferredHydrationWorker, scheduler, workspaceId, started.generation);
+    yield* startDeferredHydrationWorker(scheduler, coordinator, workspaceId, started.generation);
   }
 }
 
 function* backendReconnectHydrationWatcher(
   scheduler: WorkspaceHydrationTierScheduler,
   mountedWorkspaceIds: Set<string>,
+  coordinator: DeferredHydrationCoordinator,
 ): SagaGenerator<void> {
   while (true) {
     yield* take(backendReconnected);
-    yield* restartMountedHydration(scheduler, mountedWorkspaceIds);
+    yield* restartMountedHydration(scheduler, mountedWorkspaceIds, coordinator);
   }
 }
 
@@ -384,34 +445,49 @@ function* workspaceHydrationRequestedWorker(
 function* backendIdentityChangedWorker(
   scheduler: WorkspaceHydrationTierScheduler,
   mountedWorkspaceIds: Set<string>,
+  coordinator: DeferredHydrationCoordinator,
   backend: { id: string },
 ): SagaGenerator<void> {
   const nextBackendId = yield* selectActiveBackendId();
   if (nextBackendId === backend.id) return;
   backend.id = nextBackendId;
-  yield* restartMountedHydration(scheduler, mountedWorkspaceIds);
+  yield* restartMountedHydration(scheduler, mountedWorkspaceIds, coordinator);
 }
 
 export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
   const scheduler = createWorkspaceHydrationTierScheduler();
   const mountedWorkspaceIds = new Set<string>();
+  const coordinator: DeferredHydrationCoordinator = { tasks: new Map() };
   const backend = { id: yield* selectActiveBackendId() };
   yield* all([
     takeLeading(loadGithubRepos, refreshGithubRepos),
     takeLeading(fetchEditors, refreshEditorsWorker),
     takeLeading(loadKnownRepos, refreshKnownRepos),
     takeEvery(workspaceHydrationRequested, workspaceHydrationRequestedWorker),
-    takeEvery(workspaceMounted, workspaceMountedWorker, scheduler, mountedWorkspaceIds),
-    takeEvery(workspaceUnmounted, workspaceUnmountedWorker, scheduler, mountedWorkspaceIds),
+    takeEvery(
+      workspaceMounted,
+      workspaceMountedWorker,
+      scheduler,
+      mountedWorkspaceIds,
+      coordinator,
+    ),
+    takeEvery(
+      workspaceUnmounted,
+      workspaceUnmountedWorker,
+      scheduler,
+      mountedWorkspaceIds,
+      coordinator,
+    ),
     takeEvery(workspaceHydrationBranchRequested, dispatchHydrationBranch),
     takeEvery(isConsumerVisibilityAction, promoteVisibleConsumers, scheduler),
     takeEvery(isHydrationSettleAction, settleHydrationBranch, scheduler),
-    fork(backendReconnectHydrationWatcher, scheduler, mountedWorkspaceIds),
+    fork(backendReconnectHydrationWatcher, scheduler, mountedWorkspaceIds, coordinator),
     takeEvery(
       connectionsListReceived,
       backendIdentityChangedWorker,
       scheduler,
       mountedWorkspaceIds,
+      coordinator,
       backend,
     ),
   ]);
