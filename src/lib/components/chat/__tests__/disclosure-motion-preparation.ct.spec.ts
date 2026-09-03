@@ -1,8 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
 import DisclosureMotionPreparationHost from './DisclosureMotionPreparationHost.svelte';
 
-test.describe.configure({ mode: 'serial' });
-
 interface FrameSample {
   responseHeight: number;
   subscriptionHeight: number;
