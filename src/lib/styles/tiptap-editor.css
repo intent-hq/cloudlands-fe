@@ -328,6 +328,8 @@
   border: none;
   padding: 0;
   position: relative;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .note-font-monospace .tiptap-editor pre::before {
@@ -753,11 +755,11 @@ code.is-file-path:focus {
   color: hsl(var(--muted-foreground));
   border: none;
   border-radius: 0.25rem;
-  padding: 0.8rem 1.3rem;
+  padding: 0.75rem 1rem;
   margin: 1rem 0;
   overflow-x: auto;
-  font-size: 1em;
-  line-height: 1.5;
+  font-size: 0.8125rem;
+  line-height: 20px;
 }
 
 .tiptap-editor pre code {
