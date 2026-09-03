@@ -578,13 +578,16 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     await waitFor(() => expect(pending).toHaveLength(1));
 
     expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
+    // The daemon has not acknowledged anything yet.
+    expect(screen.getByText(/Current: 10 min/)).toBeTruthy();
 
     pending[0]();
-    await waitFor(() =>
-      expect(
-        screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
-      ).toBe('false'),
-    );
+    // The readout follows the acknowledged value, so it only flips once the
+    // write has settled — unlike aria-checked, which the toggle flips on click.
+    await waitFor(() => expect(screen.getByText(/Current: Off/)).toBeTruthy());
+    expect(
+      screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+    ).toBe('false');
     expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
     // The disable is the only write: nothing resurrected the interval.
     expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);

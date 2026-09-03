@@ -639,22 +639,23 @@
   {#if idleReapSupported}
     <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
-        <p id="idleReapToggleLabel" class="text-sm font-medium text-foreground">
+        <label for="idleReapToggle" class="text-sm font-medium text-foreground">
           {m.settings_agentBackend_idleReap_toggleLabel()}
-        </p>
-        <p class="text-xs text-subtle mt-0.5">
+        </label>
+        <p id="idleReapDescription" class="text-xs text-subtle mt-0.5">
           {m.settings_agentBackend_idleReap_description({ current: idleReapDisplay })}
         </p>
-        <p class="text-xs text-subtle mt-0.5">
+        <p id="idleReapOffNote" class="text-xs text-subtle mt-0.5">
           {m.settings_agentBackend_idleReap_offNote()}
         </p>
       </div>
       <div class="shrink-0">
         <Switch
+          id="idleReapToggle"
           bind:checked={idleReapToggleOn}
           onCheckedChange={handleIdleReapToggle}
           size="sm"
-          ariaLabelledby="idleReapToggleLabel"
+          ariaDescribedby="idleReapDescription idleReapOffNote"
         />
       </div>
     </div>
@@ -671,7 +672,7 @@
           <label for="idleReapMinutes" class="text-sm font-medium text-foreground">
             {m.settings_agentBackend_idleReap_label()}
           </label>
-          <p class="text-xs text-subtle mt-0.5">
+          <p id="idleReapBoundsNote" class="text-xs text-subtle mt-0.5">
             {m.settings_agentBackend_idleReap_boundsNote({
               min: formatInteger(IDLE_REAP_MIN_MINUTES),
               max: formatInteger(idleReapMaxMinutes),
@@ -686,6 +687,7 @@
             oninput={handleIdleReapInput}
             onblur={commitIdleReapInput}
             onkeydown={handleIdleReapKeydown}
+            aria-describedby="idleReapBoundsNote"
             min={String(IDLE_REAP_MIN_MINUTES)}
             max={String(idleReapMaxMinutes)}
             step="1"
