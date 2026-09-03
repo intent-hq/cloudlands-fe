@@ -3,6 +3,7 @@ import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.pre
 import {
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
   WORKSPACE_TAB_FLARE_RADIUS_PX,
+  WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
 } from './titlebar-geometry';
 
 async function expectVisibleThroughAncestorClipping(target: Locator) {
@@ -182,6 +183,36 @@ async function getBorderMaskFadeStops(component: Locator) {
   });
 }
 
+async function getLeadingEdgeGeometry(component: Locator) {
+  return component.evaluate(
+    (root, { fadeOffset, fadeWidth }) => {
+      const rootRect = root.getBoundingClientRect();
+      const logoRect = root
+        .querySelector<HTMLElement>('[data-preview-logo]')
+        ?.getBoundingClientRect();
+      const stripRect = root
+        .querySelector<HTMLElement>('[data-workspace-tab-strip]')
+        ?.getBoundingClientRect();
+      const firstTabRect = root
+        .querySelector<HTMLElement>('[data-workspace-tab]')
+        ?.getBoundingClientRect();
+      if (!logoRect || !stripRect || !firstTabRect) throw new Error('Missing leading geometry');
+      const curveEnd = logoRect.right - rootRect.left;
+      const clipStart = stripRect.left - rootRect.left + fadeOffset;
+      return {
+        curveEnd,
+        clipStart,
+        fadeEnd: clipStart + fadeWidth,
+        firstTab: firstTabRect.left - rootRect.left,
+      };
+    },
+    {
+      fadeOffset: WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+      fadeWidth: WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+    },
+  );
+}
+
 test('keeps flares mounted and synchronizes visibility through activation and clipping', async ({
   mount,
 }) => {
@@ -239,7 +270,13 @@ test('clips the mask during user scroll and restores it without transition lag',
   await strip.evaluate((element) => (element.scrollLeft = 100));
   await expect(strip).toHaveAttribute('data-fade-left', 'true');
   await expect(strip).toHaveAttribute('data-fade-right', 'true');
-  await expect(mask).toHaveCSS('transition', 'none');
+  const transitionWhileScrolling = await strip.evaluate(async (element) => {
+    element.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+    const borderMask = document.querySelector<HTMLElement>('[data-active-tab-border-mask]');
+    return borderMask ? getComputedStyle(borderMask).transition : null;
+  });
+  expect(transitionWhileScrolling).toBe('none');
   await expect
     .poll(async () => {
       const [stripBox, maskBox] = await Promise.all([strip.boundingBox(), mask.boundingBox()]);
@@ -249,7 +286,10 @@ test('clips the mask during user scroll and restores it without transition lag',
     .toBe(true);
   const fade = await getBorderMaskFadeStops(component);
   expect(fade.stops).toHaveLength(4);
-  expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(fade.stripLeft, 1);
+  expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(
+    fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+    1,
+  );
   expect(fade.stops[1] - fade.stops[0]).toBe(WORKSPACE_TAB_EDGE_FADE_WIDTH_PX);
   expect(fade.maskLeft + fade.stops[2]).toBeCloseTo(
     fade.stripRight - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
@@ -279,7 +319,7 @@ test('keeps the border fade aligned when the active flare or body enters it', as
   const active = component.locator('[data-workspace-tab][data-active="true"]');
   const mask = component.locator('[data-active-tab-border-mask]');
 
-  for (const activeOffset of [28, 12]) {
+  for (const activeOffset of [44, 28]) {
     await strip.evaluate((element, targetOffset) => {
       const activeTab = document.querySelector<HTMLElement>(
         '[data-workspace-tab][data-active="true"]',
@@ -306,9 +346,12 @@ test('keeps the border fade aligned when the active flare or body enters it', as
       })
       .toEqual({ activeOffset, maskOffset: -WORKSPACE_TAB_FLARE_RADIUS_PX });
     const fade = await getBorderMaskFadeStops(component);
-    expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(fade.stripLeft, 1);
+    expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(
+      fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+      1,
+    );
     expect(fade.maskLeft + fade.stops[1]).toBeCloseTo(
-      fade.stripLeft + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+      fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
       1,
     );
   }
@@ -429,6 +472,12 @@ test('widens the closed-sidebar logo gap while the flare and mask remain attache
   const closedGap = await getLogoToLeadingFlareGap(component);
   expect(closedGap).toBeGreaterThanOrEqual(8);
   expect(closedGap).toBeLessThanOrEqual(12);
+  expect(await getLeadingEdgeGeometry(component)).toEqual({
+    curveEnd: 32,
+    clipStart: 60,
+    fadeEnd: 84,
+    firstTab: 50,
+  });
   await expectVisibleThroughAncestorClipping(
     component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
   );
@@ -437,6 +486,14 @@ test('widens the closed-sidebar logo gap while the flare and mask remain attache
     props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: true },
   });
   await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(16, 0);
+  await expect
+    .poll(() => getLeadingEdgeGeometry(component))
+    .toEqual({
+      curveEnd: 32,
+      clipStart: 60,
+      fadeEnd: 84,
+      firstTab: 54,
+    });
   await expectMaskAttachedToActiveTab(component);
 });
 

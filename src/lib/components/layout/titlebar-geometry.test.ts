@@ -9,6 +9,7 @@ import {
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
   WORKSPACE_TAB_CORNER_RADIUS_PX,
   WORKSPACE_TAB_FLARE_RADIUS_PX,
+  WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
   WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
 } from './titlebar-geometry';
 
@@ -64,7 +65,10 @@ describe('shared title-bar geometry', () => {
     ).toEqual({
       left: 80,
       width: 120,
-      fadeLeft: { start: 80, end: 80 + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX },
+      fadeLeft: {
+        start: 80 + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+        end: 80 + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+      },
       fadeRight: { start: 200 - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX, end: 200 },
     });
     expect(
@@ -86,7 +90,7 @@ describe('shared title-bar geometry', () => {
 
     expect(bounds).not.toBeNull();
     expect(getWorkspaceTabBorderMaskImage(bounds!)).toBe(
-      'linear-gradient(to right, transparent -6px, black 18px, black 90px, transparent 114px)',
+      'linear-gradient(to right, transparent 10px, black 34px, black 90px, transparent 114px)',
     );
     expect(getWorkspaceTabBorderMaskImage({ left: 80, width: 120 })).toBe('none');
   });

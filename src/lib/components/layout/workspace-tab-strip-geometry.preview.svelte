@@ -140,6 +140,7 @@
 <style>
   .window-title-bar-wrapper {
     position: relative;
+    z-index: 50;
     width: 360px;
   }
 
@@ -157,7 +158,7 @@
     position: absolute;
     bottom: -1px;
     height: 1px;
-    background: var(--sidebar);
+    background: hsl(var(--sidebar));
     pointer-events: none;
   }
 

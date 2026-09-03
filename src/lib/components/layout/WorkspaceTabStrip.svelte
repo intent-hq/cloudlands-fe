@@ -63,6 +63,7 @@
     WORKSPACE_TAB_FLARE_OUTER_PX,
     WORKSPACE_TAB_FLARE_RADIUS_PX,
     WORKSPACE_TAB_FLARE_SIZE_PX,
+    WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
     WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
@@ -148,7 +149,7 @@
   const workspaceTabMaskImage = $derived.by(() => {
     if (!isOverflowing) return 'none';
     const leftStops = hasHiddenTabsLeft
-      ? `transparent 0, black ${WORKSPACE_TAB_EDGE_FADE_WIDTH_PX}px`
+      ? `transparent ${WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX}px, black ${WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX}px`
       : 'black 0';
     const rightStops = hasHiddenTabsRight
       ? `black calc(100% - ${WORKSPACE_TAB_EDGE_FADE_WIDTH_PX}px), transparent 100%`
@@ -834,10 +835,11 @@
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- The scroller starts 12px farther right so its clip clears the workspace
-       panel curve. Reducing the open-state padding by the same amount keeps
-       the first tab fixed; the closed-state padding stays at the 6px flare
-       radius to give the logo 10px of clear space before the flare.
+  <!-- The scroller starts 12px after the workspace panel curve. While content
+       is hidden on the left, a 16px transparent lead-in moves the effective
+       clip/fade start to 28px after the curve without moving the first tab at
+       rest. The closed-state padding stays at the 6px flare radius to give the
+       logo about 10px of clear space before the flare.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1

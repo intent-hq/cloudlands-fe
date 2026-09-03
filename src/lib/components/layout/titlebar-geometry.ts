@@ -18,6 +18,7 @@ export const WORKSPACE_TAB_FLARE_OUTER_PX =
 export const WORKSPACE_PANEL_CORNER_RADIUS_PX = 12;
 export const WORKSPACE_TAB_CLIP_INSET_PX = WORKSPACE_PANEL_CORNER_RADIUS_PX;
 export const WORKSPACE_TAB_EDGE_FADE_WIDTH_PX = 24;
+export const WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX = 16;
 export const WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX = 8;
 
 export const WORKSPACE_TAB_MOTION_DURATION_MS = 200;
@@ -75,8 +76,12 @@ export function getClippedWorkspaceTabBorderMaskBounds(
     width: right - left,
     ...(fadeEdges.left && {
       fadeLeft: {
-        start: scrollerRect.left - titlebarLeft,
-        end: scrollerRect.left + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX - titlebarLeft,
+        start: scrollerRect.left + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX - titlebarLeft,
+        end:
+          scrollerRect.left +
+          WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX +
+          WORKSPACE_TAB_EDGE_FADE_WIDTH_PX -
+          titlebarLeft,
       },
     }),
     ...(fadeEdges.right && {
