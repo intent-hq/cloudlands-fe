@@ -87,7 +87,12 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
-import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '../../../shared/types/connections';
+import {
+  LOCAL_CONNECTION_ID,
+  isDeviceKind,
+  type ConnectionRecord,
+  type DeviceKind,
+} from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -836,6 +841,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // remote capture above. Fire-and-forget/fail-soft; the capture
         // itself guards on external + UDS and clears otherwise.
         void captureLocalUpdateSupported();
+        void captureLocalDeviceKind();
       }
     },
   });
@@ -1222,14 +1228,41 @@ async function captureRemoteHostname(id: string): Promise<void> {
     const client = getBackendClientForId(id);
     const result = await client.request('host.status');
     const hostname = extractHostname(result);
+    const deviceKind = extractDeviceKind(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
-    if (hostname && backendClients.get(id) === client) {
-      await connectionsStore.setHostname(id, hostname);
-      await broadcastConnectionsChanged();
+    if (backendClients.get(id) === client) {
+      const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
+      if (hostname) await connectionsStore.setHostname(id, hostname);
+      if (hostname || kindChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote hostname for connection label', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function extractDeviceKind(result: unknown): DeviceKind | null {
+  if (!result || typeof result !== 'object') return null;
+  const value = (result as { deviceKind?: unknown }).deviceKind;
+  return isDeviceKind(value) ? value : null;
+}
+
+/** Capture the synthesized local record's kind from the connected daemon. */
+async function captureLocalDeviceKind(): Promise<void> {
+  try {
+    const client = backendClients.get(LOCAL_CONNECTION_ID);
+    if (!client) return;
+    const result = await client.request('host.status');
+    if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
+    if (
+      await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
+    ) {
+      await broadcastConnectionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to capture local device kind', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -2543,6 +2576,11 @@ function registerConnectionsHandlers(): void {
       ConnectionsUpdateSchema,
       async (_event, params) =>
         enqueueConnectionOperation(async () => {
+          if (params.id === LOCAL_CONNECTION_ID) {
+            const connection = await connectionsStore.updateMetadata(params.id, params);
+            await broadcastConnectionsChanged();
+            return { status: 'updated', connection } satisfies UpdateConnectionResult;
+          }
           const saved = await getRemoteConnection(params.id);
           const host = params.host ?? saved.host;
           const port = params.port ?? saved.port;
@@ -2569,6 +2607,8 @@ function registerConnectionsHandlers(): void {
             host,
             port,
             fingerprint,
+            detectedDeviceKind: params.detectedDeviceKind,
+            deviceIcon: params.deviceIcon,
             detectHosts: params.detectHosts,
             syncExcluded: params.syncExcluded,
           });
@@ -2859,6 +2899,7 @@ async function upsertSelfRecord(
     port: info.port,
     fingerprint: info.certFingerprint,
     token: info.token,
+    detectedDeviceKind: info.deviceKind,
     detectHosts: true,
     ...(opts.syncExcluded !== undefined ? { syncExcluded: opts.syncExcluded } : {}),
   });
@@ -2876,6 +2917,7 @@ async function upsertSelfRecord(
   // it whenever the tunnel is down, so `null` clears a stale address and a
   // rotation propagates to the user's other devices via keychain sync.
   await connectionsStore.setTcAddress(record.id, info.tcAddress);
+  await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, info.deviceKind);
   return record;
 }
 

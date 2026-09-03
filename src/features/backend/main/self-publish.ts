@@ -17,6 +17,7 @@
 
 import { deleteLocalPref, getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { isLoopbackHost } from '$shared/loopback-host';
+import { isDeviceKind, type DeviceKind } from '$shared/types/connections';
 
 /** local-prefs key persisting this machine's daemon cert fingerprint. */
 const SELF_FINGERPRINT_KEY = 'selfBackendFingerprint';
@@ -43,6 +44,7 @@ export interface SelfPairingInfo {
   localIps: string[];
   hostname: string | null;
   prettyHostname: string | null;
+  deviceKind: DeviceKind | null;
   /**
    * The tailcat tunnel's tc address (PROTOCOL §12.3), or null when the wire
    * field is absent/empty — the daemon omits it whenever the tunnel sidecar
@@ -82,6 +84,7 @@ export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null 
     localIps,
     hostname: nonEmptyString(r.hostname),
     prettyHostname: nonEmptyString(r.prettyHostname),
+    deviceKind: isDeviceKind(r.deviceKind) ? r.deviceKind : null,
     tcAddress: nonEmptyString(r.tcAddress),
   };
 }

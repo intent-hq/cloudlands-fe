@@ -213,6 +213,27 @@ describe('connections-store', () => {
     });
   });
 
+  it('persists device icon choices for remote and local records without syncing the local override', async () => {
+    const store = await import('../connections-store');
+    const remote = await store.add({ ...sampleConn, deviceIcon: 'rocket' });
+    expect(remote).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'rocket' });
+
+    const local = await store.updateMetadata(store.LOCAL_CONNECTION_ID, {
+      label: 'ignored',
+      accent: null,
+      deviceIcon: 'cat',
+    });
+    expect(local).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'cat' });
+    expect((await store.listSyncRecords())[0].deviceIcon).toBe('rocket');
+    expect(JSON.stringify(await store.listSyncRecords())).not.toContain('localDeviceIcon');
+
+    await store.__drainWriteChainForTesting();
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    expect((await reloaded.list())[0].deviceIcon).toBe('cat');
+  });
+
   it('updateMetadata rejects local, unknown, blank-name, and invalid-accent updates', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
@@ -723,6 +744,37 @@ describe('connections-store', () => {
     const reloaded = await import('../connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.hostname).toBe('studio.local');
+  });
+
+  it('setDetectedDeviceKind persists and syncs a clock bump, then clears on fingerprint change', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add({ ...sampleConn, deviceIcon: 'dog' });
+      const before = (await store.listSyncRecords())[0].updatedAt;
+
+      expect(await store.setDetectedDeviceKind(rec.id, 'macStudio')).toBe(true);
+      const detected = (await store.listSyncRecords())[0];
+      expect(detected).toMatchObject({ detectedDeviceKind: 'macStudio', deviceIcon: 'dog' });
+      expect(detected.updatedAt).toBeGreaterThan(before);
+      expect(await store.setDetectedDeviceKind(rec.id, 'macStudio')).toBe(false);
+
+      const replaced = await store.replaceSecret(rec.id, 'rotated', 'DD:EE:FF');
+      expect(replaced).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'dog' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('persists the local detected kind without putting the local record in keychain sync', async () => {
+    const store = await import('../connections-store');
+    expect(await store.setDetectedDeviceKind(store.LOCAL_CONNECTION_ID, 'laptop')).toBe(true);
+    expect((await store.list())[0]).toMatchObject({
+      detectedDeviceKind: 'laptop',
+      deviceIcon: 'auto',
+    });
+    expect(await store.listSyncRecords()).toEqual([]);
   });
 
   it('setHostname trims whitespace and ignores an empty hostname (keeps host:port fallback)', async () => {

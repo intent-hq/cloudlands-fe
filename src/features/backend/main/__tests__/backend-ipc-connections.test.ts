@@ -134,6 +134,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDetectedDeviceKind: vi.fn(),
   setDaemonVersion: vi.fn(),
   setUpdateSupported: vi.fn(),
   setTcAddress: vi.fn(),
@@ -151,6 +152,7 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDetectedDeviceKind: store.setDetectedDeviceKind,
   setDaemonVersion: store.setDaemonVersion,
   setUpdateSupported: store.setUpdateSupported,
   setTcAddress: store.setTcAddress,
@@ -2138,6 +2140,7 @@ describe('self-publish IPC', () => {
     localIps: ['192.168.1.10', '10.0.0.5'],
     hostname: 'my-mac.local',
     prettyHostname: "Clement's Mac Studio",
+    deviceKind: 'macStudio',
   };
   const SELF_RECORD = {
     id: 'self-1',
@@ -2178,12 +2181,17 @@ describe('self-publish IPC', () => {
       port: 5181,
       fingerprint: '11:22:33:44',
       token: 'a'.repeat(64),
+      detectedDeviceKind: 'macStudio',
       detectHosts: true,
       syncExcluded: false,
     });
     // All local IPs persist as candidate hosts; the hostname persists too.
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
     expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ detectedDeviceKind: 'macStudio' }),
+    );
+    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', 'macStudio');
     // Self fingerprint persisted (normalized) + suppression marker cleared.
     expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
     expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
@@ -2554,6 +2562,7 @@ describe('self-entry refresh IPC', () => {
       port: 5181,
       fingerprint: '11:22:33:44',
       token: 'b'.repeat(64),
+      detectedDeviceKind: null,
       detectHosts: true,
     });
     // Regression (PR #1762 review): the refresh upsert must NOT carry a

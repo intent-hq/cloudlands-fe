@@ -36,8 +36,12 @@ import {
   DEFAULT_CONNECTION_ACCENT,
   LOCAL_CONNECTION_ID,
   isConnectionAccent,
+  isDeviceIconChoice,
+  isDeviceKind,
   type ConnectionAccent,
   type ConnectionRecord,
+  type DeviceIconChoice,
+  type DeviceKind,
 } from '../../../shared/types/connections';
 import { TOMBSTONE_TTL_MS, accountKeyFor, type KeychainSyncRecord } from './keychain-sync';
 
@@ -72,6 +76,8 @@ interface StoredConnection {
   label: string;
   /** Optional for backward compatibility; missing uses the default, null is explicitly blank. */
   accent?: ConnectionAccent;
+  detectedDeviceKind?: DeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
   fingerprint: string;
@@ -172,6 +178,8 @@ interface StoredTombstone {
 export interface NewConnection {
   label: string;
   accent?: ConnectionAccent;
+  detectedDeviceKind?: DeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
   fingerprint: string;
@@ -194,6 +202,10 @@ interface PersistedState {
   connections: StoredConnection[];
   activeId: string;
   tombstones: StoredTombstone[];
+  /** Local-only icon override; intentionally excluded from keychain sync. */
+  localDeviceIcon?: DeviceIconChoice;
+  /** Last kind detected from the local daemon. */
+  localDetectedDeviceKind?: DeviceKind | null;
 }
 
 /** In-flight write chain so concurrent writers serialize. */
@@ -203,11 +215,13 @@ function filePath(): string {
   return path.join(app.getPath('userData'), FILE_NAME);
 }
 
-function localRecord(): ConnectionRecord {
+function localRecord(state?: PersistedState): ConnectionRecord {
   return {
     id: LOCAL_CONNECTION_ID,
     label: LOCAL_CONNECTION_LABEL,
     accent: null,
+    detectedDeviceKind: state?.localDetectedDeviceKind ?? null,
+    deviceIcon: state?.localDeviceIcon ?? 'auto',
     host: null,
     hosts: null,
     port: null,
@@ -254,6 +268,8 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     id: stored.id,
     label: stored.label,
     accent: stored.accent === undefined ? DEFAULT_CONNECTION_ACCENT : stored.accent,
+    detectedDeviceKind: isDeviceKind(stored.detectedDeviceKind) ? stored.detectedDeviceKind : null,
+    deviceIcon: isDeviceIconChoice(stored.deviceIcon) ? stored.deviceIcon : 'auto',
     host: stored.host,
     hosts: candidateHosts(stored),
     port: stored.port,
@@ -346,7 +362,13 @@ async function readState(): Promise<PersistedState> {
       const tombstones = Array.isArray(obj.tombstones)
         ? obj.tombstones.filter(isStoredTombstone)
         : [];
-      return { connections, activeId, tombstones };
+      const localDeviceIcon = isDeviceIconChoice(obj.localDeviceIcon)
+        ? obj.localDeviceIcon
+        : 'auto';
+      const localDetectedDeviceKind = isDeviceKind(obj.localDetectedDeviceKind)
+        ? obj.localDetectedDeviceKind
+        : null;
+      return { connections, activeId, tombstones, localDeviceIcon, localDetectedDeviceKind };
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -512,7 +534,7 @@ function clearTombstone(
  */
 export async function list(): Promise<ConnectionRecord[]> {
   const state = await readState();
-  return [localRecord(), ...state.connections.map(toRecord)];
+  return [localRecord(state), ...state.connections.map(toRecord)];
 }
 
 /**
@@ -559,6 +581,12 @@ export async function findMatching(identity: {
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const accent = conn.accent === undefined ? DEFAULT_CONNECTION_ACCENT : conn.accent;
   if (!isConnectionAccent(accent)) throw new Error('Invalid connection accent');
+  if (conn.deviceIcon !== undefined && !isDeviceIconChoice(conn.deviceIcon)) {
+    throw new Error('Invalid device icon');
+  }
+  if (conn.detectedDeviceKind != null && !isDeviceKind(conn.detectedDeviceKind)) {
+    throw new Error('Invalid detected device kind');
+  }
   const encToken = encryptToken(conn.token);
   const stored = await mutate(async (state) => {
     // Identity matching: fingerprint first (canonical machine identity, so a
@@ -585,8 +613,16 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     };
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
+      const fingerprintChanged =
+        fingerprintKey(survivor.fingerprint) !== fingerprintKey(conn.fingerprint);
       survivor.label = conn.label;
       survivor.accent = accent;
+      survivor.deviceIcon = conn.deviceIcon ?? survivor.deviceIcon ?? 'auto';
+      survivor.detectedDeviceKind = fingerprintChanged
+        ? null
+        : conn.detectedDeviceKind !== undefined
+          ? conn.detectedDeviceKind
+          : survivor.detectedDeviceKind;
       survivor.host = conn.host;
       survivor.port = conn.port;
       // Extras keyed to the old primary may be stale after a host change;
@@ -612,6 +648,8 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       id: randomUUID(),
       label: conn.label,
       accent,
+      detectedDeviceKind: conn.detectedDeviceKind ?? null,
+      deviceIcon: conn.deviceIcon ?? 'auto',
       host: conn.host,
       port: conn.port,
       fingerprint: conn.fingerprint,
@@ -660,11 +698,28 @@ export async function updateMetadata(
     host?: string;
     port?: number;
     fingerprint?: string;
+    detectedDeviceKind?: DeviceKind | null;
+    deviceIcon?: DeviceIconChoice;
     detectHosts?: boolean;
     syncExcluded?: boolean;
   },
 ): Promise<ConnectionRecord> {
-  if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
+  if (metadata.deviceIcon !== undefined && !isDeviceIconChoice(metadata.deviceIcon)) {
+    throw new Error('Invalid device icon');
+  }
+  if (metadata.detectedDeviceKind != null && !isDeviceKind(metadata.detectedDeviceKind)) {
+    throw new Error('Invalid detected device kind');
+  }
+  if (id === LOCAL_CONNECTION_ID) {
+    if (metadata.deviceIcon === undefined) throw new Error('Cannot update the local connection');
+    return mutate(async (state) => {
+      if (metadata.deviceIcon !== undefined && state.localDeviceIcon !== metadata.deviceIcon) {
+        state.localDeviceIcon = metadata.deviceIcon;
+        await writeState(state);
+      }
+      return localRecord(state);
+    });
+  }
   const label = metadata.label.trim();
   if (!label) throw new Error('Connection label is required');
   if (!isConnectionAccent(metadata.accent)) throw new Error('Invalid connection accent');
@@ -699,6 +754,14 @@ export async function updateMetadata(
     const exclusionChanged = nextExcluded !== previouslyExcluded;
     const nextDetectHosts = metadata.detectHosts ?? conn.detectHosts !== false;
     const detectHostsChanged = nextDetectHosts !== (conn.detectHosts !== false);
+    const nextDeviceIcon = metadata.deviceIcon ?? conn.deviceIcon ?? 'auto';
+    const nextDetectedDeviceKind = identityChanged
+      ? null
+      : metadata.detectedDeviceKind === undefined
+        ? (conn.detectedDeviceKind ?? null)
+        : metadata.detectedDeviceKind;
+    const deviceIconChanged = nextDeviceIcon !== (conn.deviceIcon ?? 'auto');
+    const detectedDeviceKindChanged = nextDetectedDeviceKind !== (conn.detectedDeviceKind ?? null);
     // A record that is (and stays) excluded leaves its matching tombstone
     // alone: that is the pending cloud delete written on exclusion, not a
     // stale entry for this edit to supersede.
@@ -712,6 +775,8 @@ export async function updateMetadata(
       !fingerprintChanged &&
       !exclusionChanged &&
       !detectHostsChanged &&
+      !deviceIconChanged &&
+      !detectedDeviceKindChanged &&
       duplicates.length === 0 &&
       !matchingTombstone
     ) {
@@ -729,6 +794,8 @@ export async function updateMetadata(
       (conn.hostname != null && label === conn.hostname.trim());
     conn.label = identityChanged && labelAutoCaptured ? `${nextHost}:${nextPort}` : label;
     conn.accent = metadata.accent;
+    conn.deviceIcon = nextDeviceIcon;
+    conn.detectedDeviceKind = nextDetectedDeviceKind;
     conn.host = nextHost;
     conn.port = nextPort;
     conn.fingerprint = nextFingerprint;
@@ -740,6 +807,7 @@ export async function updateMetadata(
     if (addressChanged || fingerprintChanged) {
       conn.hostname = null;
       conn.tcAddress = null;
+      conn.detectedDeviceKind = null;
     }
     if (detectHostsChanged) {
       conn.detectHosts = nextDetectHosts;
@@ -828,6 +896,7 @@ export async function replaceSecret(
       }
       conn.hostname = null;
       conn.tcAddress = null;
+      conn.detectedDeviceKind = null;
     }
     conn.updatedAt = Date.now();
     await writeState(state);
@@ -938,6 +1007,26 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
     return true;
   });
   if (changed) notifyMutated();
+}
+
+/** Persist the latest daemon-detected device kind, clearing it with `null`. */
+export async function setDetectedDeviceKind(id: string, kind: DeviceKind | null): Promise<boolean> {
+  const changed = await mutate(async (state) => {
+    if (id === LOCAL_CONNECTION_ID) {
+      if ((state.localDetectedDeviceKind ?? null) === kind) return false;
+      state.localDetectedDeviceKind = kind;
+      await writeState(state);
+      return true;
+    }
+    const conn = state.connections.find((candidate) => candidate.id === id);
+    if (!conn || (conn.detectedDeviceKind ?? null) === kind) return false;
+    conn.detectedDeviceKind = kind;
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
+    await writeState(state);
+    return true;
+  });
+  if (changed && id !== LOCAL_CONNECTION_ID) notifyMutated();
+  return changed;
 }
 
 /**
@@ -1161,6 +1250,8 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
     records.push({
       label: conn.label,
       accent: conn.accent === undefined ? DEFAULT_CONNECTION_ACCENT : conn.accent,
+      detectedDeviceKind: conn.detectedDeviceKind ?? null,
+      deviceIcon: conn.deviceIcon ?? 'auto',
       host: conn.host,
       hosts: candidateHosts(conn),
       port: conn.port,
@@ -1285,6 +1376,8 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = record.label;
       survivor.accent = record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent;
+      survivor.detectedDeviceKind = record.detectedDeviceKind ?? null;
+      survivor.deviceIcon = record.deviceIcon ?? 'auto';
       survivor.host = record.host;
       survivor.port = record.port;
       survivor.fingerprint = record.fingerprint;
@@ -1302,6 +1395,8 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
         id: randomUUID(),
         label: record.label,
         accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
+        detectedDeviceKind: record.detectedDeviceKind ?? null,
+        deviceIcon: record.deviceIcon ?? 'auto',
         host: record.host,
         port: record.port,
         fingerprint: record.fingerprint,

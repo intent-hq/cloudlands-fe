@@ -36,7 +36,11 @@ import { Logger } from '../../../shared/logger';
 import {
   DEFAULT_CONNECTION_ACCENT,
   isConnectionAccent,
+  isDeviceIconChoice,
+  isDeviceKind,
   type ConnectionAccent,
+  type DeviceIconChoice,
+  type DeviceKind,
 } from '../../../shared/types/connections';
 
 const logger = new Logger('KeychainSync');
@@ -66,6 +70,8 @@ export interface KeychainSyncRecord {
   label: string;
   /** Optional only for compatibility with payloads written before metadata accents. */
   accent?: ConnectionAccent;
+  detectedDeviceKind?: DeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   /** Primary remote host/IP (identity, with `port`). */
   host: string;
   /** Candidate hosts (primary first) — mirrors the store's `hosts` semantics. */
@@ -119,6 +125,8 @@ export function serializeRecord(record: KeychainSyncRecord): string {
     v: KEYCHAIN_PAYLOAD_VERSION,
     label: record.label,
     accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
+    detectedDeviceKind: record.detectedDeviceKind ?? null,
+    deviceIcon: record.deviceIcon ?? 'auto',
     host: record.host,
     hosts: record.hosts,
     port: record.port,
@@ -166,6 +174,8 @@ export function parsePayload(payload: string): ParsedPayload {
   const record: KeychainSyncRecord = {
     label: obj.label,
     accent: isConnectionAccent(obj.accent) ? obj.accent : DEFAULT_CONNECTION_ACCENT,
+    detectedDeviceKind: isDeviceKind(obj.detectedDeviceKind) ? obj.detectedDeviceKind : null,
+    deviceIcon: isDeviceIconChoice(obj.deviceIcon) ? obj.deviceIcon : 'auto',
     host: obj.host,
     hosts:
       Array.isArray(obj.hosts) && obj.hosts.every((h) => typeof h === 'string')

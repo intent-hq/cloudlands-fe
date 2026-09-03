@@ -71,6 +71,29 @@ export type ConnectionAccent = ConnectionAccentName | null;
 /** Deterministic fallback for records written before accent metadata existed. */
 export const DEFAULT_CONNECTION_ACCENT: ConnectionAccentName = 'blue';
 
+/** Stable device identifiers accepted from daemon detection and user overrides. */
+export const DEVICE_KINDS = [
+  'macMini',
+  'macStudio',
+  'laptop',
+  'desktop',
+  'server',
+  'cloudVm',
+  'robot',
+  'rocket',
+  'flyingSaucer',
+  'ghost',
+  'cat',
+  'dog',
+  'gameController',
+  'coffee',
+  'planet',
+  'pottedPlant',
+] as const;
+
+export type DeviceKind = (typeof DEVICE_KINDS)[number];
+export type DeviceIconChoice = 'auto' | DeviceKind;
+
 /** Transient state derived only from an already-created backend client. */
 export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
 
@@ -79,6 +102,14 @@ export function isConnectionAccent(value: unknown): value is ConnectionAccent {
     value === null ||
     (typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value))
   );
+}
+
+export function isDeviceKind(value: unknown): value is DeviceKind {
+  return typeof value === 'string' && (DEVICE_KINDS as readonly string[]).includes(value);
+}
+
+export function isDeviceIconChoice(value: unknown): value is DeviceIconChoice {
+  return value === 'auto' || isDeviceKind(value);
 }
 
 // ============================================================================
@@ -99,6 +130,10 @@ export interface ConnectionRecord {
   label: string;
   /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
   accent?: ConnectionAccent;
+  /** Daemon-detected kind; `null` when the daemon omits or predates the field. */
+  detectedDeviceKind?: DeviceKind | null;
+  /** User-selected icon override; `auto` resolves from the detected kind. */
+  deviceIcon?: DeviceIconChoice;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
   /**
@@ -265,6 +300,8 @@ export interface AddConnectionParams {
   label: string;
   /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}; `null` explicitly clears it. */
   accent?: ConnectionAccent;
+  detectedDeviceKind?: DeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
   fingerprint: string;
@@ -309,6 +346,8 @@ export interface UpdateConnectionParams {
   id: string;
   label: string;
   accent: ConnectionAccent;
+  detectedDeviceKind?: DeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   /** Optional for compatibility with presentation-only callers. */
   host?: string;
   /** Must be supplied together with `host`. */

@@ -51,6 +51,8 @@ function rec(overrides: Partial<KeychainSyncRecord> = {}): KeychainSyncRecord {
   return {
     label: 'Studio Mac',
     accent: 'blue',
+    detectedDeviceKind: null,
+    deviceIcon: 'auto',
     host: '192.168.1.10',
     hosts: ['192.168.1.10'],
     port: 8443,
@@ -140,6 +142,28 @@ describe('accountKeyFor', () => {
 });
 
 describe('payload schema', () => {
+  it('round-trips device metadata and defaults missing or unknown values', () => {
+    expect(
+      parsePayload(serializeRecord(rec({ detectedDeviceKind: 'macStudio', deviceIcon: 'cat' }))),
+    ).toEqual({
+      kind: 'record',
+      record: rec({ detectedDeviceKind: 'macStudio', deviceIcon: 'cat' }),
+    });
+    const legacy = JSON.parse(serializeRecord(rec()));
+    delete legacy.detectedDeviceKind;
+    delete legacy.deviceIcon;
+    expect(parsePayload(JSON.stringify(legacy))).toMatchObject({
+      kind: 'record',
+      record: { detectedDeviceKind: null, deviceIcon: 'auto' },
+    });
+    legacy.detectedDeviceKind = 'futureKind';
+    legacy.deviceIcon = 'futureIcon';
+    expect(parsePayload(JSON.stringify(legacy))).toMatchObject({
+      kind: 'record',
+      record: { detectedDeviceKind: null, deviceIcon: 'auto' },
+    });
+  });
+
   it('round-trips a live record', () => {
     const record = rec();
     const parsed = parsePayload(serializeRecord(record));
