@@ -76,6 +76,8 @@ const mocks = vi.hoisted(() => {
       createdAt: string;
       updatedAt: string;
     }>,
+    // Legacy `Workspace.prNumber`/`prUrl` (pre-`activePullRequest`); unset by default.
+    legacyPr: null as { prNumber: number; prUrl: string } | null,
   };
 });
 
@@ -165,6 +167,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     repositoryOwner: 'intent-hq',
     repositoryName: 'project',
     pullRequests: mocks.pullRequests,
+    updatedAt: '2026-08-12T00:00:00.000Z',
+    ...(mocks.legacyPr ?? {}),
   })),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
@@ -343,6 +347,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.runningAgentIds.clear();
     mocks.focusedPanelId = 'source-panel';
     mocks.pullRequests = [];
+    mocks.legacyPr = null;
   });
 
   afterEach(() => {
@@ -520,6 +525,34 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
     );
+  });
+
+  it('keeps a route to a PR known only through the legacy prNumber/prUrl fields', async () => {
+    const legacyUrl = 'https://github.com/intent-hq/project/pull/7';
+    mocks.legacyPr = { prNumber: 7, prUrl: legacyUrl };
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-sidebar-launcher="changes"] [data-sidebar-pr-trigger]',
+    )!;
+
+    expect(trigger).not.toBeNull();
+    expect(trigger.dataset.sidebarPrCount).toBe('1');
+
+    await fireEvent.click(trigger);
+    const link = await waitFor(() => {
+      const found = document.body.querySelector<HTMLElement>(
+        '[role="menu"] [data-sidebar-pr-link]',
+      );
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    expect(link.dataset.sidebarPrUrl).toBe(legacyUrl);
+    expect(link.dataset.prStatus).toBe('open');
+    expect(link.textContent).toContain('7');
+
+    await fireEvent.click(link);
+    expect(mocks.handleLink).toHaveBeenCalledWith(legacyUrl, { workspaceId: 'ws-1' });
   });
 
   it('keeps the Changes card PR-free when the workspace has no pull requests', async () => {

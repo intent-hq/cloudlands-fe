@@ -65,7 +65,7 @@
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
-  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
   import { onDestroy, onMount, tick } from 'svelte';
@@ -196,7 +196,7 @@
         : undefined;
     return buildWorkspacePRPresentationModel({
       workspacePRs: ws.pullRequests,
-      activePR: $activePullRequest$ ?? ws.activePullRequest,
+      activePR: $activePullRequest$ ?? ws.activePullRequest ?? legacyWorkspacePullRequest(ws),
       monitors: $prMonitors$,
       workspaceRepo,
       buildPrUrl: (prNumber, fallbackUrl) =>
