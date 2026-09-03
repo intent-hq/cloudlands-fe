@@ -181,6 +181,15 @@ describe('CatalogFixtureList real previews', () => {
     expect(container.querySelector('[data-testid="agent-message-disclosure-header"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="hook-wake-attribution"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="pr-monitor-wake-attribution"]')).toBeTruthy();
+    await waitFor(() => {
+      const expandedDelegations = container.querySelectorAll(
+        '[data-catalog-delegation-state="expanded"]',
+      );
+      expect(expandedDelegations.length).toBeGreaterThan(0);
+      for (const specimen of expandedDelegations) {
+        expect(specimen.querySelector('[data-testid="delegation-group-agent-list"]')).toBeTruthy();
+      }
+    });
   });
 
   it('mounts and operates the canonical Settings Slider and FileInput previews', async () => {

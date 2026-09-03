@@ -45,6 +45,9 @@ export interface LiveCardFixture {
   woken?: boolean;
 }
 
+const fixtureNow = Date.now();
+const relativeFixtureTime = (offsetMs: number) => new Date(fixtureNow + offsetMs).toISOString();
+
 const hook = (id: string, overrides: Partial<BackgroundHook> = {}): BackgroundHook => ({
   hookId: id,
   workspaceId: '',
@@ -52,9 +55,9 @@ const hook = (id: string, overrides: Partial<BackgroundHook> = {}): BackgroundHo
   name: `Hook ${id}`,
   delayMs: 60000,
   state: 'scheduled',
-  createdAt: '2026-09-01T09:00:00.000Z',
-  nextRunAt: '2099-09-01T09:05:00.000Z',
-  expiresAt: '2099-09-01T10:00:00.000Z',
+  createdAt: relativeFixtureTime(-5 * 60_000),
+  nextRunAt: relativeFixtureTime(10 * 60_000),
+  expiresAt: relativeFixtureTime(2 * 60 * 60_000),
   runCount: 4,
   ...overrides,
 });

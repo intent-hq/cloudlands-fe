@@ -113,8 +113,10 @@
   onMount(() => {
     void tick().then(() => {
       document
-        .querySelectorAll<HTMLElement>('[data-catalog-auto-expand] [aria-expanded="false"]')
-        .forEach((control) => control.click());
+        .querySelectorAll<HTMLElement>('[data-catalog-auto-expand]')
+        .forEach((specimen) =>
+          specimen.querySelector<HTMLElement>('[aria-expanded="false"]')?.click(),
+        );
     });
   });
 
@@ -214,7 +216,7 @@
             hideActions
           />
         </article>
-        <article data-catalog-auto-expand>
+        <article data-catalog-auto-expand data-catalog-delegation-state="expanded">
           {@render caption(item.label, 'expanded')}<DelegationGroupSection
             group={{ ...item.group, groupId: `${item.group.groupId}-expanded` }}
             hideActions
