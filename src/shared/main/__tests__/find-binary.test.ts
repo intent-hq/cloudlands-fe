@@ -14,6 +14,7 @@ const { backendMocks, mockRequest, loggerSpies } = vi.hoisted(() => {
     backendMocks: {
       client: { request },
       reconnectHandler: undefined as (() => void) | undefined,
+      reconnectRegistrations: 0,
     },
     mockRequest: request,
     loggerSpies: {
@@ -28,6 +29,7 @@ const { backendMocks, mockRequest, loggerSpies } = vi.hoisted(() => {
 vi.mock('../../../features/backend/main/backend.ipc', () => ({
   getBackendClient: () => backendMocks.client,
   onBackendReconnected: (handler: () => void) => {
+    backendMocks.reconnectRegistrations += 1;
     backendMocks.reconnectHandler = handler;
     return () => {};
   },
@@ -74,6 +76,18 @@ describe('findBinary (host.findBinary wire contract)', () => {
     invalidateHostDiscoveryCache();
     process.env = { ...originalEnv };
     setPlatform(originalPlatform);
+  });
+
+  it('defers reconnect registration until first cache use and installs it once', async () => {
+    expect(backendMocks.reconnectRegistrations).toBe(0);
+    mockRequest.mockResolvedValue({ available: false });
+
+    await findBinary('foo');
+    const installedHandler = backendMocks.reconnectHandler;
+    await findBinary('bar');
+
+    expect(backendMocks.reconnectRegistrations).toBe(1);
+    expect(backendMocks.reconnectHandler).toBe(installedHandler);
   });
 
   afterEach(() => {

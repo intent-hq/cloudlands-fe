@@ -51,7 +51,6 @@ vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: vi.fn() }),
-  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock(import('child_process'), async (importOriginal) => {

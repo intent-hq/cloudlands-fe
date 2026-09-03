@@ -62,6 +62,7 @@ interface HostEnvResult {
 let cachedHostEnv: HostEnvResult | null = null;
 let discoveryGeneration = 0;
 let activeBackendClient: ReturnType<typeof getBackendClient> | null = null;
+let reconnectInvalidationInstalled = false;
 const binaryCache = new Map<string, { value: string | null; expiresAt: number }>();
 const binaryInFlight = new Map<string, Promise<string | null>>();
 const invalidationListeners = new Set<() => void>();
@@ -89,7 +90,17 @@ export function onHostDiscoveryInvalidated(listener: () => void): () => void {
   return () => invalidationListeners.delete(listener);
 }
 
+function ensureReconnectInvalidation(): void {
+  if (reconnectInvalidationInstalled) return;
+  onBackendReconnected(() => {
+    activeBackendClient = null;
+    invalidateHostDiscoveryCache();
+  });
+  reconnectInvalidationInstalled = true;
+}
+
 function currentBackendClient(): ReturnType<typeof getBackendClient> {
+  ensureReconnectInvalidation();
   const client = getBackendClient();
   if (activeBackendClient && activeBackendClient !== client) {
     invalidateHostDiscoveryCache();
@@ -97,11 +108,6 @@ function currentBackendClient(): ReturnType<typeof getBackendClient> {
   activeBackendClient = client;
   return client;
 }
-
-onBackendReconnected(() => {
-  activeBackendClient = null;
-  invalidateHostDiscoveryCache();
-});
 
 interface HostEnvInitOptions {
   /** Keep retrying transient connection failures while the sidecar starts. */

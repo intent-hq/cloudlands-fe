@@ -36,12 +36,6 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   findAuggieAsync: vi.fn(),
   findVSCodeAsync: vi.fn(),
 }));
-vi.mock('../../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: vi.fn() }),
-  getBackendIdForIpcSender: vi.fn(() => 'local'),
-  onBackendReconnected: vi.fn(() => () => {}),
-}));
-
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { getWindowBackgroundColor } from '../../../../shared/main/window-appearance';

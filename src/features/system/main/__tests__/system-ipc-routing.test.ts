@@ -32,12 +32,6 @@ vi.mock('electron', () => ({
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: electronMocks.broadcastToBrowserIpcClients,
 }));
-vi.mock('../../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: vi.fn() }),
-  getBackendIdForIpcSender: vi.fn(() => 'local'),
-  onBackendReconnected: vi.fn(() => () => {}),
-}));
-
 import { sendToWorkspaceWindows } from '../system.ipc';
 
 function makeWindow() {
