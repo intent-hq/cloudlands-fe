@@ -321,9 +321,8 @@ jobs:
   # and intentd sidecar pin bumps (auto-pin-intentd.yml) change only the pin
   # value in intentd.version — in both cases the built/tested code is
   # identical to what main already validated and the heavy jobs (checks /
-  # build-web / test / test-integration) add no signal — their wall time
-  # just delays the
-  # release. This job diffs the PR against its base and emits fast_path=true
+  # build-web / test / test-integration / test-ct) add no signal — their
+  # wall time just delays the release. This job diffs the PR against its base and emits fast_path=true
   # only when the diff has exactly one of those shapes (release: files ⊆
   # {CHANGELOG.md, package.json, .release-please-manifest.json}, pure
   # modifications, and every non-changelog change is a uniform old→new
@@ -550,6 +549,12 @@ jobs:
     # proof in the #4260 follow-up PR). Integration tests moved to the
     # separate unsharded test-integration job so they still run exactly
     # once.
+    # Known trade-off: vitest.config.ts caps CI workers per JOB (min(16,
+    # cores/2), monorepo#3082), so two concurrent legs on one tinybox host
+    # can run 2x that fork count (plus the now-concurrent test-integration
+    # job). Per-leg wall time halves the exposure window and the 60s CI
+    # test timeout gives slack; if #3082-class load flakes reappear, halve
+    # the vitest.config.ts worker cap when --shard is in play.
     # Skipped at job level on release-fast-path PRs — see the checks job's
     # comment for the full skip/fail-safe rationale (a job-level skip
     # reports 'skipped' for the whole matrix; no per-leg required contexts
@@ -636,7 +641,8 @@ jobs:
         run: pnpm run test:integration
 
   # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
-  # monorepo#2091). Routed through the probe like checks / build-web / test:
+  # monorepo#2091). Routed through the probe like checks / build-web / test
+  # / test-integration:
   # tinybox when healthy, gh-linux-8x on burst (the burst runner replaces
   # the old ubuntu-latest pin; its 8 cores / 32 GB also clear the 16 GB
   # ubuntu-latest VMs whose memory exhaustion killed shard legs,
@@ -659,7 +665,8 @@ jobs:
     # The route.result guard subsumes the old explicit same-repo `if:` guard
     # (fork-PR hardening note): fork PRs skip the guarded route job, and
     # `needs.route.result == 'success'` then skips this matrix too — the
-    # same transitive guard as checks / build-web / test (a route failure
+    # same transitive guard as checks / build-web / test / test-integration
+    # (a route failure
     # also skips it; see the checks job's comment). Merge groups pass the
     # route job's guard via its event check.
     needs: [route, release-fast-path]
