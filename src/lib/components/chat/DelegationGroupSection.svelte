@@ -45,6 +45,7 @@
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -160,78 +161,80 @@
       </div>
     {/if}
 
-    <div class="flex shrink-0 items-center gap-0.5" data-testid="group-header-actions">
-      {#if !hideActions}
-        <!-- Provider ensures proper context and cleanup during component destruction -->
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root delayDuration={0}>
-            <Tooltip.Trigger>
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  onStopGroup?.(group);
-                }}
-                class="h-6 w-6 text-ghost opacity-60 hover:text-muted-foreground/70 hover:opacity-100 focus-visible:opacity-100"
-                data-testid="group-stop"
-                aria-label={m.chat_agentSubscriptions_stopGroup_tooltip()}
-              >
-                <Fa icon={faStop} class="h-3.5! w-3.5!" />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side="top" class="text-xs">
-              <p>{m.chat_agentSubscriptions_stopGroup_tooltip()}</p>
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-        <!-- Provider ensures proper context and cleanup during component destruction -->
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root delayDuration={0}>
-            <Tooltip.Trigger>
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  onCancelGroup?.(group);
-                }}
-                class="h-6 w-6 text-ghost opacity-60 hover:text-muted-foreground/70 hover:opacity-100 focus-visible:opacity-100"
-                data-testid="group-cancel"
-                aria-label={m.chat_agentSubscriptions_cancelGroup_tooltip()}
-              >
-                <Fa icon={faXmark} class="h-3.5! w-3.5!" />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side="top" class="text-xs">
-              <p>{m.chat_agentSubscriptions_cancelGroup_tooltip()}</p>
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-      {/if}
+    <div class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}>
+      <div class="flex shrink-0 items-center gap-0.5" data-testid="group-header-actions">
+        {#if !hideActions}
+          <!-- Provider ensures proper context and cleanup during component destruction -->
+          <Tooltip.Provider delayDuration={0}>
+            <Tooltip.Root delayDuration={0}>
+              <Tooltip.Trigger>
+                <Button
+                  variant="ghost-light"
+                  size="icon-xs"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    onStopGroup?.(group);
+                  }}
+                  class="h-6 w-6 text-ghost opacity-60 hover:text-muted-foreground/70 hover:opacity-100 focus-visible:opacity-100"
+                  data-testid="group-stop"
+                  aria-label={m.chat_agentSubscriptions_stopGroup_tooltip()}
+                >
+                  <Fa icon={faStop} class="h-3.5! w-3.5!" />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content side="top" class="text-xs">
+                <p>{m.chat_agentSubscriptions_stopGroup_tooltip()}</p>
+              </Tooltip.Content>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+          <!-- Provider ensures proper context and cleanup during component destruction -->
+          <Tooltip.Provider delayDuration={0}>
+            <Tooltip.Root delayDuration={0}>
+              <Tooltip.Trigger>
+                <Button
+                  variant="ghost-light"
+                  size="icon-xs"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    onCancelGroup?.(group);
+                  }}
+                  class="h-6 w-6 text-ghost opacity-60 hover:text-muted-foreground/70 hover:opacity-100 focus-visible:opacity-100"
+                  data-testid="group-cancel"
+                  aria-label={m.chat_agentSubscriptions_cancelGroup_tooltip()}
+                >
+                  <Fa icon={faXmark} class="h-3.5! w-3.5!" />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content side="top" class="text-xs">
+                <p>{m.chat_agentSubscriptions_cancelGroup_tooltip()}</p>
+              </Tooltip.Content>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        {/if}
+      </div>
+      <button
+        type="button"
+        class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        data-testid="group-collapse-toggle"
+        aria-expanded={!isCollapsed}
+        aria-controls={agentListId}
+        aria-label={isCollapsed
+          ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
+          : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
+        onclick={toggleCollapsed}
+        onkeydown={handleDisclosureKeydown}
+      >
+        <span class="inline-flex" data-testid="group-chevron">
+          <Fa
+            icon={faChevronDown}
+            size={16}
+            class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
+              ? 'rotate-90'
+              : ''}"
+          />
+        </span>
+      </button>
     </div>
-    <button
-      type="button"
-      class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      data-testid="group-collapse-toggle"
-      aria-expanded={!isCollapsed}
-      aria-controls={agentListId}
-      aria-label={isCollapsed
-        ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
-        : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
-      onclick={toggleCollapsed}
-      onkeydown={handleDisclosureKeydown}
-    >
-      <span class="inline-flex" data-testid="group-chevron">
-        <Fa
-          icon={faChevronDown}
-          size={16}
-          class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
-            ? 'rotate-90'
-            : ''}"
-        />
-      </span>
-    </button>
   </div>
 
   <!-- Agent cards - shown when expanded -->

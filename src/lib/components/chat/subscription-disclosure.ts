@@ -27,6 +27,8 @@ export const SUBSCRIPTION_CHEVRON_CLASS =
 export const SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!';
 export const SUBSCRIPTION_ICON_BUTTON_CLASS =
   'border-0! bg-transparent! hover:bg-transparent! focus-visible:bg-transparent!';
+/** Author trailing actions/menu first and the disclosure chevron last inside this wrapper. */
+export const SUBSCRIPTION_TRAILING_CONTROLS_CLASS = 'ml-auto inline-flex shrink-0 items-center';
 
 export function safeSubscriptionSlide(
   node: Element,

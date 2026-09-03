@@ -5,6 +5,7 @@ import {
   SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
   SUBSCRIPTION_LEADING_COLUMN_CLASS,
   SUBSCRIPTION_ROW_GEOMETRY_CLASS,
+  SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
 } from '../subscription-disclosure';
 
 function rowStyle(): CSSStyleDeclaration {
@@ -33,6 +34,8 @@ describe('safeSubscriptionRowTransition', () => {
     expect(SUBSCRIPTION_ROW_GEOMETRY_CLASS).toContain('py-2!');
     expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain('h-(--agent-avatar-standard-surface-size)');
     expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain('w-(--agent-avatar-standard-surface-size)');
+    expect(SUBSCRIPTION_TRAILING_CONTROLS_CLASS).toContain('ml-auto');
+    expect(SUBSCRIPTION_TRAILING_CONTROLS_CLASS).toContain('shrink-0');
   });
 
   it('moves a clipped row from zero height and opacity to its measured natural box', () => {

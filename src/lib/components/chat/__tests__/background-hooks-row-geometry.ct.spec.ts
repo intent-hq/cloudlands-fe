@@ -147,8 +147,8 @@ for (const theme of ['light', 'dark'] as const) {
                 row: [bounds.left, bounds.right, bounds.height],
                 leading: [leading.left, leading.width],
                 titleLeft: title.left,
-                chevronWidth: chevron.width,
-                kebab: [kebab.right, kebab.width],
+                chevron: [chevron.right, chevron.width],
+                kebab: [kebab.left, kebab.right, kebab.width],
                 overflow: [row.scrollWidth, row.clientWidth],
                 colors: [titleColor, iconColor, kebabColor, mutedColor],
               };
@@ -156,9 +156,12 @@ for (const theme of ['light', 'dark'] as const) {
           expect(summaryGeometry.row[2]).toBeCloseTo(36 * zoom, 1);
           expect(summaryGeometry.leading[1]).toBeCloseTo(20 * zoom, 1);
           expect(summaryGeometry.titleLeft - summaryGeometry.row[0]).toBeCloseTo(40 * zoom, 1);
-          expect(summaryGeometry.chevronWidth).toBeCloseTo(24 * zoom, 1);
-          expect(summaryGeometry.kebab[1]).toBeCloseTo(24 * zoom, 1);
-          expect(summaryGeometry.row[1] - summaryGeometry.kebab[0]).toBeCloseTo(12 * zoom, 1);
+          expect(summaryGeometry.chevron[1]).toBeCloseTo(24 * zoom, 1);
+          expect(summaryGeometry.kebab[2]).toBeCloseTo(24 * zoom, 1);
+          expect(summaryGeometry.kebab[1]).toBeLessThanOrEqual(
+            summaryGeometry.chevron[0] - 24 * zoom,
+          );
+          expect(summaryGeometry.row[1] - summaryGeometry.chevron[0]).toBeCloseTo(12 * zoom, 1);
           expect(summaryGeometry.overflow[0]).toBeLessThanOrEqual(summaryGeometry.overflow[1]);
           expect(summaryGeometry.colors.slice(0, -1)).toEqual([
             summaryGeometry.colors.at(-1),

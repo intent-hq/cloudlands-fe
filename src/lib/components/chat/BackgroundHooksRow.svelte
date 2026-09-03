@@ -54,6 +54,7 @@
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -250,68 +251,88 @@
               class="min-w-0 shrink-[999] truncate text-muted-foreground"
               data-testid="background-hook-state">{summaryStatus(hook)}</span
             >
-            <span
-              class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
-              data-testid="background-hook-chevron"
-            >
-              <Fa
-                icon={faChevronDown}
-                size={16}
-                class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedHookId ===
-                hook.hookId
-                  ? ''
-                  : 'rotate-90'}"
-              />
-            </span>
           </Button>
-          <DropdownMenu side="top" align="end">
-            {#snippet trigger({ props })}
-              <Button
-                {...props}
-                variant="plain"
-                size="icon-xs"
-                type="button"
-                class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
-                data-testid="background-hook-chip"
-                aria-label={m.chat_backgroundHooks_row_ariaLabel()}
+          <div
+            class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
+            data-testid="background-hook-trailing-controls"
+          >
+            <DropdownMenu side="top" align="end">
+              {#snippet trigger({ props })}
+                <Button
+                  {...props}
+                  variant="plain"
+                  size="icon-xs"
+                  type="button"
+                  class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                  data-testid="background-hook-chip"
+                  aria-label={m.chat_backgroundHooks_row_ariaLabel()}
+                >
+                  <KebabIcon class="h-3 w-3" />
+                </Button>
+              {/snippet}
+              {#snippet content({ close }: { close: () => void })}
+                <div class="flex w-36 flex-col p-1">
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="justify-start"
+                    disabled={hook.state === 'running'}
+                    onclick={() => handleRunNow(hook, close)}
+                  >
+                    <Fa icon={faPlay} class="h-2.5 w-2.5" />
+                    {m.chat_backgroundHooks_runNow_label()}
+                  </Button>
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="justify-start"
+                    data-testid="background-hook-view-script-item"
+                    onclick={() => handleViewScript(hook, close)}
+                  >
+                    <Fa icon={faCode} class="h-2.5 w-2.5" />
+                    {m.chat_backgroundHooks_viewScript_label()}
+                  </Button>
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="justify-start"
+                    onclick={() => handleCancel(hook, close)}
+                  >
+                    <Fa icon={faXmark} class="h-2.5 w-2.5" />
+                    {m.chat_backgroundHooks_cancel_label()}
+                  </Button>
+                </div>
+              {/snippet}
+            </DropdownMenu>
+            <Button
+              variant="plain"
+              size="icon-xs"
+              type="button"
+              class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+              data-testid="background-hook-disclosure"
+              aria-label={hook.name}
+              aria-expanded={expandedHookId === hook.hookId}
+              aria-controls={detailsId}
+              onclick={(event) => {
+                event.stopPropagation();
+                toggleHookDetails(hook.hookId);
+              }}
+            >
+              <span
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                data-testid="background-hook-chevron"
               >
-                <KebabIcon class="h-3 w-3" />
-              </Button>
-            {/snippet}
-            {#snippet content({ close }: { close: () => void })}
-              <div class="flex w-36 flex-col p-1">
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="justify-start"
-                  disabled={hook.state === 'running'}
-                  onclick={() => handleRunNow(hook, close)}
-                >
-                  <Fa icon={faPlay} class="h-2.5 w-2.5" />
-                  {m.chat_backgroundHooks_runNow_label()}
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="justify-start"
-                  data-testid="background-hook-view-script-item"
-                  onclick={() => handleViewScript(hook, close)}
-                >
-                  <Fa icon={faCode} class="h-2.5 w-2.5" />
-                  {m.chat_backgroundHooks_viewScript_label()}
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="justify-start"
-                  onclick={() => handleCancel(hook, close)}
-                >
-                  <Fa icon={faXmark} class="h-2.5 w-2.5" />
-                  {m.chat_backgroundHooks_cancel_label()}
-                </Button>
-              </div>
-            {/snippet}
-          </DropdownMenu>
+                <Fa
+                  icon={faChevronDown}
+                  size={16}
+                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedHookId ===
+                  hook.hookId
+                    ? ''
+                    : 'rotate-90'}"
+                />
+              </span>
+            </Button>
+          </div>
         </div>
         {#if expandedHookId === hook.hookId}
           <div

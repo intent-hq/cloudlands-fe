@@ -16,6 +16,14 @@ test('aligns expanded details with the PR label and uses readable label-value co
     const geometry = await component.evaluate((root) => {
       const label = root.querySelector<HTMLElement>('[data-testid="monitored-pr-label"]')!;
       const details = root.querySelector<HTMLElement>('[data-testid="monitored-pr-details"]')!;
+      const summaryRow = root.querySelector<HTMLElement>(
+        '[data-testid="monitored-pr-summary-row"]',
+      )!;
+      const kebab = root.querySelector<HTMLElement>('[data-testid="monitored-pr-chip"]')!;
+      const chevron = root.querySelector<HTMLElement>('[data-testid="monitored-pr-chevron"]')!;
+      const summaryBounds = summaryRow.getBoundingClientRect();
+      const kebabBounds = kebab.getBoundingClientRect();
+      const chevronBounds = chevron.getBoundingClientRect();
       const foregroundProbe = document.createElement('span');
       const mutedProbe = document.createElement('span');
       foregroundProbe.style.color = 'hsl(var(--foreground))';
@@ -33,6 +41,14 @@ test('aligns expanded details with the PR label and uses readable label-value co
       const result = {
         labelLeft: label.getBoundingClientRect().left,
         detailsLeft: details.firstElementChild!.getBoundingClientRect().left,
+        trailing: {
+          rowRight: summaryBounds.right,
+          kebabRight: kebabBounds.right,
+          kebabWidth: kebabBounds.width,
+          chevronLeft: chevronBounds.left,
+          chevronRight: chevronBounds.right,
+          chevronWidth: chevronBounds.width,
+        },
         rows,
         semanticColors: [
           getComputedStyle(mutedProbe).color,
@@ -45,6 +61,10 @@ test('aligns expanded details with the PR label and uses readable label-value co
     });
 
     expect(geometry.detailsLeft).toBeCloseTo(geometry.labelLeft, 1);
+    expect(geometry.trailing.kebabWidth).toBeCloseTo(24 * zoom, 1);
+    expect(geometry.trailing.chevronWidth).toBeCloseTo(24 * zoom, 1);
+    expect(geometry.trailing.kebabRight).toBeLessThanOrEqual(geometry.trailing.chevronLeft);
+    expect(geometry.trailing.rowRight - geometry.trailing.chevronRight).toBeCloseTo(12 * zoom, 1);
     expect(geometry.rows).toHaveLength(5);
     for (const row of geometry.rows) {
       expect(row.value[0]).toBeGreaterThan(row.term[0]);

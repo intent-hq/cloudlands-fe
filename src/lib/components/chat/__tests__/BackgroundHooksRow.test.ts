@@ -148,6 +148,17 @@ describe('BackgroundHooksRow', () => {
     expect(chip.className).toContain('cursor-pointer');
   });
 
+  it('renders the kebab before the far-right disclosure control', () => {
+    hooksState.hooks = [makeHook()];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const kebab = screen.getByTestId('background-hook-chip');
+    const disclosure = screen.getByTestId('background-hook-disclosure');
+    expect(
+      kebab.compareDocumentPosition(disclosure) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('caps the restored disclosure summary so long names ellipsize, not overflow', () => {
     hooksState.hooks = [
       makeHook({ name: 'a-very-long-hook-name-that-would-overflow-a-narrow-row' }),
@@ -177,9 +188,7 @@ describe('BackgroundHooksRow', () => {
   });
 
   it('renders running alone because the wire does not expose a current-run start time', () => {
-    hooksState.hooks = [
-      makeHook({ state: 'running', lastRunAt: '2026-07-31T09:00:00Z' }),
-    ];
+    hooksState.hooks = [makeHook({ state: 'running', lastRunAt: '2026-07-31T09:00:00Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     expect(screen.getByTestId('background-hook-state').textContent).toBe('running');
