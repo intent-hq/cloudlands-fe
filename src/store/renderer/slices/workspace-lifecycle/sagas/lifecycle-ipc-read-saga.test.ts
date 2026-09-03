@@ -424,6 +424,30 @@ describe('lifecycleIpcReadSaga', () => {
     },
   );
 
+  it('drops unresolved worktree hydration when unmounted before the path resolves', async () => {
+    const run = start(state([]));
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.actions.length = 0;
+
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
+    await settle();
+    run.send(workspaceUnmounted(WS));
+    await settle();
+    run.send(setWorkspaceEntity(workspace(WS, '/repo/worktrees/too-late')));
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS * 2);
+    await settle();
+
+    expect(
+      run.actions.filter((action) => action.type === 'skills/loadSkillsRequested'),
+    ).toHaveLength(0);
+    expect(
+      run.actions.filter((action) => action.type === 'fileExplorer/hydrateFileExplorerRequested'),
+    ).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+    await stop(run.task);
+  });
+
   it('promotes a deferred read when its restored active panel becomes visible', async () => {
     const current = state();
     const run = start(current);
