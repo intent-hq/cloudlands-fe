@@ -83,13 +83,23 @@ describe('HTML to Markdown Conversion', () => {
     const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
 
     expect(html).toContain('src="workspace-file://workspace-1/docs/d.png"');
-    expect(processHTMLToMarkdown(html)).toBe(markdown);
+    expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(markdown);
   });
 
   it('should convert top-level workspace images back to short intent file links', () => {
     const html = '<img src="workspace-file://workspace-1/docs/a%20b.png" alt="diagram">';
 
-    expect(processHTMLToMarkdown(html)).toBe('![diagram](intent://local/file/docs/a%20b.png)');
+    expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(
+      '![diagram](intent://local/file/docs/a%20b.png)',
+    );
+  });
+
+  it('keeps workspace videos portable through a comment edit round trip', async () => {
+    const markdown = '![clip](intent://local/file/x.mp4)';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
+
+    expect(html).toContain('src="workspace-file://workspace-1/x.mp4"');
+    expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(markdown);
   });
 
   it('should leave workspace asset image sources unchanged', () => {

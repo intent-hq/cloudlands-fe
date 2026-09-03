@@ -492,7 +492,7 @@ export async function processMarkdownToHTML(
     if (content.includes('```ws-block')) {
       logger.debug('Content looks like HTML but has ws-blocks, processing anyway');
     } else {
-      return sanitizeMarkdownHTML(content);
+      return sanitizeMarkdownHTML(content, workspaceId);
     }
   }
 
@@ -593,7 +593,7 @@ export async function processMarkdownToHTML(
     if (isLargeContent) await yieldToEventLoop();
 
     // Sanitize the HTML to prevent XSS
-    htmlOut = sanitizeMarkdownHTML(htmlOut);
+    htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId);
     const t6 = isLargeContent ? performance.now() : 0;
 
     // Debug: Check if primitive divs survived sanitization
@@ -621,7 +621,7 @@ export async function processMarkdownToHTML(
   } catch (error) {
     logger.error('[markdown-processor] Failed to parse markdown:', error as Error);
     // Callers inject the result with {@html}, so the fallback must be sanitized too.
-    const fallback = sanitizeMarkdownHTML(`<p>${content}</p>`);
+    const fallback = sanitizeMarkdownHTML(`<p>${content}</p>`, workspaceId);
     setCachedMarkdown(cacheKey, fallback);
     return fallback;
   }
@@ -1063,9 +1063,9 @@ function convertSpanAnchorsToComments(html: string): string {
  */
 export function processHTMLToMarkdown(
   html: string,
-  options: { preserveAnchors?: boolean } = {},
+  options: { preserveAnchors?: boolean; workspaceId?: string } = {},
 ): string {
-  const { preserveAnchors = true } = options;
+  const { preserveAnchors = true, workspaceId } = options;
 
   // Check for primitive blocks in the HTML
   const hasPrimitiveType = html.includes('data-primitive-type');
@@ -1105,7 +1105,7 @@ export function processHTMLToMarkdown(
     div.innerHTML = htmlToProcess;
   } else {
     // Sanitize normally when not preserving anchors
-    const sanitized = sanitizeMarkdownHTML(htmlToProcess);
+    const sanitized = sanitizeMarkdownHTML(htmlToProcess, workspaceId);
     div.innerHTML = sanitized;
   }
 

@@ -292,10 +292,6 @@
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
-  let videoLightboxOpen = $state(false);
-  let videoLightboxUrl = $state('');
-  let videoLightboxName = $state<string | undefined>(undefined);
-  let videoLightboxOpenerElement = $state<HTMLElement | null>(null);
 
   // Hover overlay: workspace-backed images get an image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
@@ -365,7 +361,10 @@
 
     function reconcile() {
       for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
-        if (isWorkspaceImage(image)) image.tabIndex = 0;
+        if (isWorkspaceImage(image)) {
+          image.tabIndex = 0;
+          image.setAttribute('role', 'button');
+        }
       }
       for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
         replaceMedia(media, 'unsupported');
@@ -412,22 +411,6 @@
   function handleLinkClick(event: MouseEvent | KeyboardEvent): void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
-
-    if (
-      !anchor &&
-      chatImageThumbnails &&
-      target instanceof HTMLVideoElement &&
-      target.classList.contains('markdown-video')
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      videoLightboxUrl = target.getAttribute('src') || '';
-      videoLightboxName = target.getAttribute('data-name') || undefined;
-      videoLightboxOpenerElement = target;
-      videoLightboxOpen = true;
-      return;
-    }
 
     // Inline workspace-file images open in the lightbox (unless wrapped in a
     // link, in which case the link wins)
@@ -519,6 +502,14 @@
   }
 
   function handleLinkKeydown(event: KeyboardEvent): void {
+    if (
+      event.target instanceof HTMLImageElement &&
+      isWorkspaceImage(event.target) &&
+      (event.key === 'Enter' || event.key === ' ')
+    ) {
+      handleLinkClick(event);
+      return;
+    }
     if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
     handleLinkClick(event);
   }
@@ -626,16 +617,6 @@
     imageName={lightboxImageAlt}
     openerElement={lightboxOpenerElement}
     showActionsMenu
-  />
-{/if}
-
-{#if videoLightboxUrl}
-  <VideoLightbox
-    bind:open={videoLightboxOpen}
-    videoUrl={videoLightboxUrl}
-    videoName={videoLightboxName}
-    sourceKind="workspace"
-    openerElement={videoLightboxOpenerElement}
   />
 {/if}
 

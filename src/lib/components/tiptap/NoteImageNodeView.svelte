@@ -53,14 +53,17 @@
     if (!editor.isEditable) return;
     openLightbox(event, editor.view.dom);
   }
+
+  function handleImageKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    openLightbox(event as unknown as MouseEvent);
+  }
 </script>
 
 <NodeViewWrapper
   class={`note-image-node${selected ? ' selected' : ''}${editor.isEditable ? ' editable' : ''}`}
 >
-  <!-- Editable clicks must bubble to ProseMirror selection; read-only clicks open the lightbox. -->
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="group relative inline-block max-w-full" onclick={handleImageClick}>
+  <div class="group relative inline-block max-w-full">
     {#if unavailableReason}
       <MediaUnavailable
         name={imageName}
@@ -69,15 +72,23 @@
         workspaceId={unavailableWorkspaceId}
       />
     {:else}
-      <img
-        src={imageUrl}
-        alt={imageName}
-        title={node.attrs.title ?? undefined}
-        class="note-image max-w-full rounded-md"
+      <!-- Editable clicks must bubble to ProseMirror selection; keyboard activation always previews. -->
+      <span
+        role="button"
+        tabindex="0"
+        onclick={handleImageClick}
         ondblclick={handleImageDoubleClick}
-        onerror={() => (failedImageUrl = imageUrl)}
-        draggable="true"
-      />
+        onkeydown={handleImageKeydown}
+      >
+        <img
+          src={imageUrl}
+          alt={imageName}
+          title={node.attrs.title ?? undefined}
+          class="note-image max-w-full rounded-md"
+          onerror={() => (failedImageUrl = imageUrl)}
+          draggable="true"
+        />
+      </span>
       <div
         class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
         contenteditable="false"

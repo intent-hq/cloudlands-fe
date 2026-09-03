@@ -137,7 +137,10 @@
     } else {
       try {
         const html = internalEditEditor?.getHTML?.() ?? '';
-        const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+        const md = processHTMLToMarkdown(html, {
+          preserveAnchors: false,
+          workspaceId: markdownWorkspaceId,
+        }).trim();
         if (!md) return cancelEdit();
         const v2 = selectCommentById.select(appStore.state, comment.id);
         if (v2) {

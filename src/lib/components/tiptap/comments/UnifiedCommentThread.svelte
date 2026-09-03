@@ -119,7 +119,10 @@
     if (!id) return cancelEditReply();
     try {
       const html = replyEditEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+      const md = processHTMLToMarkdown(html, {
+        preserveAnchors: false,
+        workspaceId: workspace?.id,
+      }).trim();
       if (!md) return cancelEditReply();
       const v2 = selectCommentById.select(appStore.state, id);
       if (v2) {
@@ -182,7 +185,10 @@
     if (!text) return;
     try {
       const html = replyEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false });
+      const md = processHTMLToMarkdown(html, {
+        preserveAnchors: false,
+        workspaceId: workspace?.id,
+      });
       const out = (md || text).trim();
       if (out) onReply?.(out);
     } finally {

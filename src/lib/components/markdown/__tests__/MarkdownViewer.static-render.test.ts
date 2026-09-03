@@ -60,7 +60,7 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('pre code')?.textContent).toContain('const x = 1;');
   });
 
-  it('renders workspace videos inline and opens the video viewer in chat mode', async () => {
+  it('leaves workspace video clicks to the native controls in chat mode', async () => {
     const { container } = render(MarkdownViewer, {
       props: {
         content: '![demo](intent://local/file/out/demo.mp4)',
@@ -77,8 +77,27 @@ describe('MarkdownViewer static rendering', () => {
     expect(video.controls).toBe(true);
     expect(video.getAttribute('src')).toBe('workspace-file://ws-abc/out/demo.mp4');
 
-    await fireEvent.click(video);
-    expect(screen.getByRole('dialog')).toBeTruthy();
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    expect(video.dispatchEvent(click)).toBe(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it.each(['Enter', ' '])('opens workspace image lightbox with %s', async (key) => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![diagram](intent://local/file/docs/diagram.png)',
+        workspaceId: 'ws-abc',
+      },
+    });
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    await fireEvent.keyDown(image, { key });
+
+    expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
   });
 
   it('offers image actions for a note workspace asset without chat thumbnails', async () => {

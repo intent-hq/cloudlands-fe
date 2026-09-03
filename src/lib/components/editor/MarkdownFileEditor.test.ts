@@ -99,6 +99,14 @@ describe('MarkdownFileEditor external content sync', () => {
     expect(processHTMLToMarkdown).not.toHaveBeenCalled();
   });
 
+  it('passes its workspace owner to the shared editor config', async () => {
+    render(MarkdownFileEditor, { value: '![logo](intent://local/file/logo.svg)' });
+
+    await waitFor(() => expect(editorMocks.getLatestConfig()).toBeTruthy());
+
+    expect(editorMocks.getLatestConfig().workspace).toEqual({ id: 'workspace-1' });
+  });
+
   it('still emits user edits after initialization', async () => {
     render(MarkdownFileEditor, { value: '# Project\n', externalContentVersion: 1 });
 
@@ -108,6 +116,7 @@ describe('MarkdownFileEditor external content sync', () => {
 
     expect(processHTMLToMarkdown).toHaveBeenCalledWith('<p>User edit</p>', {
       preserveAnchors: false,
+      workspaceId: 'workspace-1',
     });
   });
 

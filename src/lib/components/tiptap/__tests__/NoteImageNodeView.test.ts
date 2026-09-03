@@ -32,20 +32,28 @@ describe('NoteImageNodeView', () => {
   it('opens a workspace-asset image from a read-only note click', async () => {
     render(NoteImageNodeView, { props: makeProps(false) });
 
-    await fireEvent.click(screen.getByRole('img', { name: 'Note image' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Note image' }));
 
     expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
   });
 
   it('keeps editable clicks for selection and opens on double-click', async () => {
     render(NoteImageNodeView, { props: makeProps(true) });
-    const image = screen.getByRole('img', { name: 'Note image' });
+    const image = screen.getByRole('button', { name: 'Note image' });
 
     await fireEvent.click(image);
     expect(screen.queryByRole('dialog')).toBeNull();
     await fireEvent.dblClick(image);
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
+  it.each(['Enter', ' '])('opens the lightbox with %s', async (key) => {
+    render(NoteImageNodeView, { props: makeProps(false) });
+
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Note image' }), { key });
+
+    expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
   });
 
   it('replaces a missing workspace file with path actions', async () => {
@@ -57,7 +65,7 @@ describe('NoteImageNodeView', () => {
       }),
     });
 
-    await fireEvent.error(screen.getByRole('img', { name: 'Missing image' }));
+    await fireEvent.error(screen.getByAltText('Missing image'));
 
     expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('missing');
     expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
@@ -74,7 +82,7 @@ describe('NoteImageNodeView', () => {
       }),
     });
 
-    expect(screen.queryByRole('img', { name: 'Vector logo' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vector logo' })).toBeNull();
     expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('unsupported');
     expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();

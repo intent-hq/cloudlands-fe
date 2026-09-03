@@ -71,7 +71,7 @@
       return;
     }
 
-    const markdown = processHTMLToMarkdown(html, { preserveAnchors: false });
+    const markdown = processHTMLToMarkdown(html, { preserveAnchors: false, workspaceId });
     // Ensure there's a newline separator between front matter and body
     // (front matter may end at EOF without trailing newline)
     const separator = preservedFrontMatter && !preservedFrontMatter.endsWith('\n') ? '\n' : '';
@@ -120,6 +120,7 @@
       enableComments: false,
       enableMentions: false,
       enableNotePrimitives: false,
+      workspace: workspaceId ? ({ id: workspaceId } as any) : undefined,
     });
 
     editor = new Editor(config);
