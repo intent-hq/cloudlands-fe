@@ -7,20 +7,19 @@
    * and hosts the tunnel on/off toggle; `tunnelSelected` mirrors it here.
    *
    * Selection semantics:
-   * - IPs only            → bindAddress=[ips], tunnel.enabled=false
-   * - IPs + tunnel        → bindAddress=[ips], tunnel.enabled=true, tunnel.only=false
+   * - "127.0.0.1 (localhost)" is always bound: this app and the tailcat
+   *   sidecar (which forwards tunnel connections to 127.0.0.1:<port>) reach
+   *   the daemon over loopback, so it renders checked + locked and every
+   *   emission includes it — except under all-interfaces, which covers it.
    * - "All interfaces" (0.0.0.0) is exclusive with specific IPs (daemon
    *   validation: unspecified-only-alone). While it is selected, the other
    *   addresses render checked but locked (0.0.0.0 already covers them);
-   *   unchecking it makes them individually toggleable again.
-   * - tunnel only         → tunnel.enabled=true, tunnel.only=true (no direct listeners)
-   * - "127.0.0.1 (localhost)" is always listed; while the tunnel is enabled
-   *   alongside specific IPs it is auto-selected and locked (the tailcat
-   *   sidecar forwards tunnel connections to 127.0.0.1:<port>, so loopback
-   *   must stay bound). All-interfaces already covers loopback, and in
-   *   tunnel-only mode the daemon binds loopback itself (mirroring the
-   *   `intentd pair` picker, which leaves loopback unchecked there), so the
-   *   lock applies in neither of those postures.
+   *   unchecking it falls back to loopback-only and makes them individually
+   *   toggleable again.
+   * - Specific IPs are hand-picked on top of loopback; deselecting the last
+   *   one leaves loopback-only (never zero targets), and the parent keeps
+   *   the section open so more IPs can be picked.
+   * - The tunnel toggle lives in the parent; its state is carried through.
    */
   import { m } from '$shared/paraglide/messages.js';
 
@@ -47,11 +46,15 @@
 
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
+  // The daemon treats the IPv6 unspecified address like 0.0.0.0 (must stand
+  // alone, covers loopback). The selector has no IPv6 UI, so an out-of-band
+  // "::" only renders as a plain entry — but never gets loopback appended.
+  const UNSPECIFIED = new Set([ALL_INTERFACES, '::']);
 
   // Render the union of available and currently bound IPs so a bound address
   // missing from the live enumeration (e.g. interface down) stays visible and
   // deselectable instead of silently dropping from the persisted value.
-  // Loopback is always listed: the tunnel forwards to it (see below).
+  // Loopback is always listed (and always bound, see below).
   const ipOptions = $derived([
     ALL_INTERFACES,
     LOOPBACK,
@@ -62,59 +65,33 @@
 
   const selection = $derived(new Set(selectedIps));
 
-  // While all-interfaces is bound, every other address is already covered by
-  // 0.0.0.0 — render them checked but locked (same pattern as the loopback
-  // lock below) until all-interfaces is unchecked.
-  const allInterfacesSelected = $derived(selection.has(ALL_INTERFACES));
+  // While an unspecified address is bound, every other address is already
+  // covered by it — render them checked but locked until it is unchecked.
+  const allInterfacesSelected = $derived(selectedIps.some((ip) => UNSPECIFIED.has(ip)));
 
-  // The tailcat sidecar forwards tunnel connections to 127.0.0.1:<port>, so
-  // loopback must stay bound while the tunnel is selected alongside specific
-  // IPs — otherwise the tunnel connects but every forwarded connection is
-  // reset. All-interfaces already covers loopback, and tunnel-only (no IPs)
-  // binds loopback daemon-side, so the lock applies in neither posture.
-  const loopbackLocked = $derived(
-    tunnelSelected && !selection.has(ALL_INTERFACES) && selectedIps.some((ip) => ip !== LOOPBACK),
-  );
-
-  /** Force loopback into an emission when the lock applies to it. */
-  function withLoopbackLock(ips: string[], tunnel: boolean): string[] {
-    if (tunnel && ips.length > 0 && !ips.includes(ALL_INTERFACES) && !ips.includes(LOOPBACK)) {
-      return [...ips, LOOPBACK];
-    }
-    return ips;
+  /**
+   * Loopback is always bound: force it into every emission unless an
+   * unspecified address (which already covers it) is selected. This also
+   * means a selection can never be empty — unchecking the last specific IP
+   * (or all-interfaces) lands on loopback-only.
+   */
+  function withLoopback(ips: string[]): string[] {
+    if (ips.some((ip) => UNSPECIFIED.has(ip)) || ips.includes(LOOPBACK)) return ips;
+    return [...ips, LOOPBACK];
   }
 
-  // At least one target must stay selected overall. Enforced as a refusal
-  // (the checkbox snaps back) rather than disabling the sole entry, so every
-  // entry — including all-interfaces — stays clickable and deselectable
-  // whenever another target is selected (intent-hq/monorepo bug report:
-  // 0.0.0.0 rendered disabled and could not be unchecked).
-  function toggleIp(ip: string, input: HTMLInputElement): void {
+  function toggleIp(ip: string): void {
+    if (ip === LOOPBACK) return; // always bound, never toggled
     let ips: string[];
     if (selection.has(ip)) {
-      // Removal bases on selectedIps (not effectiveIps): deselecting the
-      // last real IP falls through to tunnel-only instead of stranding a
-      // lock-forced loopback; withLoopbackLock re-forces it otherwise.
       ips = selectedIps.filter((v) => v !== ip);
     } else if (ip === ALL_INTERFACES) {
       // Unspecified bind must stand alone.
       ips = [ALL_INTERFACES];
     } else {
-      ips = [...selectedIps.filter((v) => v !== ALL_INTERFACES), ip];
+      ips = [...selectedIps.filter((v) => !UNSPECIFIED.has(v)), ip];
     }
-    ips = withLoopbackLock(ips, tunnelSelected);
-    if (ips.length === 0 && !tunnelSelected) {
-      if (ip === ALL_INTERFACES) {
-        // The covered addresses are locked while 0.0.0.0 is bound, so
-        // unchecking it is the only way out — fall back to loopback instead
-        // of refusing, then the unlocked entries are toggleable again.
-        onchange({ ips: [LOOPBACK], tunnel: tunnelSelected });
-        return;
-      }
-      input.checked = true; // refuse: never allow zero targets
-      return;
-    }
-    onchange({ ips, tunnel: tunnelSelected });
+    onchange({ ips: withLoopback(ips), tunnel: tunnelSelected });
   }
 </script>
 
@@ -123,8 +100,8 @@
   <p class="text-xs text-subtle mb-1">{m.settings_listenTargets_description()}</p>
   <ul class="flex flex-col gap-0.5">
     {#each ipOptions as ip (ip)}
-      {@const covered = ip !== ALL_INTERFACES && allInterfacesSelected}
-      {@const locked = covered || (ip === LOOPBACK && loopbackLocked)}
+      {@const covered = !UNSPECIFIED.has(ip) && allInterfacesSelected}
+      {@const locked = covered || ip === LOOPBACK}
       {@const checked = selection.has(ip) || locked}
       <li>
         <label
@@ -134,14 +111,14 @@
           title={covered
             ? m.settings_listenTargets_coveredByAllInterfaces_note()
             : locked
-              ? m.settings_listenTargets_loopbackRequired_note()
+              ? m.settings_listenTargets_loopbackAlwaysBound_note()
               : undefined}
         >
           <input
             type="checkbox"
             {checked}
             disabled={saving || locked}
-            onchange={(e) => toggleIp(ip, e.currentTarget)}
+            onchange={() => toggleIp(ip)}
             class="accent-primary"
           />
           <span class="font-mono text-xs">
@@ -153,7 +130,9 @@
           </span>
         </label>
         {#if locked && !covered}
-          <p class="text-xs text-subtle ml-6">{m.settings_listenTargets_loopbackRequired_note()}</p>
+          <p class="text-xs text-subtle ml-6">
+            {m.settings_listenTargets_loopbackAlwaysBound_note()}
+          </p>
         {/if}
       </li>
     {/each}

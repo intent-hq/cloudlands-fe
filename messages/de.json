@@ -323,7 +323,7 @@
   "settings_listenTargets_description": "Adressen, auf denen dieser Daemon Remote-Verbindungen annimmt.",
   "settings_listenTargets_allInterfaces_label": "Alle Schnittstellen (0.0.0.0)",
   "settings_listenTargets_loopback_label": "127.0.0.1 (Localhost)",
-  "settings_listenTargets_loopbackRequired_note": "Der Tailcat-Tunnel leitet Verbindungen an Localhost weiter, daher bleibt 127.0.0.1 gebunden, solange der Tunnel ausgewählt ist.",
+  "settings_listenTargets_loopbackAlwaysBound_note": "127.0.0.1 ist immer gebunden: Diese App und der Tailcat-Tunnel erreichen den Daemon über Localhost.",
   "settings_listenTargets_coveredByAllInterfaces_note": "„Alle Schnittstellen“ deckt jede Adresse ab; deaktivieren Sie die Option, um Adressen einzeln auszuwählen.",
   "settings_listenTargets_tunnelOnly_note": "Nur Tunnel: keine direkten Listener; Geräte verbinden sich über den Tunnel.",
   "settings_listenTargets_saveError": "Empfangsadressen konnten nicht aktualisiert werden: {error}",
