@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
   invoke: vi.fn().mockResolvedValue(undefined),
   writeTextToClipboard: vi.fn().mockResolvedValue(undefined),
   electronInvoke: vi.fn().mockResolvedValue(undefined),
@@ -17,7 +18,7 @@ vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: vi.fn() },
+  store: { dispatch: mocks.dispatch },
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
@@ -50,6 +51,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
 
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { navigateToAgent } from '$lib/utils/workspace-navigation';
+import { elementPickerScript } from './element-picker-script';
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => {
@@ -364,8 +366,8 @@ describe('EmbeddedBrowser', () => {
     });
   });
 
-  describe('overflow tools', () => {
-    async function renderReadyBrowser() {
+  describe('element picker and overflow tools', () => {
+    async function renderReadyBrowser(extraProps: Record<string, unknown> = {}) {
       (window as unknown as { electronAPI: { invoke: typeof mocks.electronInvoke } }).electronAPI =
         {
           invoke: mocks.electronInvoke,
@@ -375,6 +377,7 @@ describe('EmbeddedBrowser', () => {
           url: 'https://example.test/docs',
           workspaceId: 'workspace-1',
           tabId: 'tab-1',
+          ...extraProps,
         },
       });
       const webview = rendered.container.querySelector('webview') as HTMLElement & {
@@ -389,6 +392,10 @@ describe('EmbeddedBrowser', () => {
       webview.getURL = () => 'https://loaded.test/page';
       webview.capturePage = vi.fn().mockResolvedValue({
         toDataURL: () => 'data:image/png;base64,cG5n',
+      });
+      Object.defineProperties(webview, {
+        clientWidth: { configurable: true, value: 640 },
+        clientHeight: { configurable: true, value: 400 },
       });
       webview.reloadIgnoringCache = vi.fn();
       webview.dispatchEvent(new Event('dom-ready'));
@@ -413,6 +420,73 @@ describe('EmbeddedBrowser', () => {
       });
       webview.dispatchEvent(event);
     }
+
+    function captureActions() {
+      return mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'browser/elementCaptured');
+    }
+
+    it('toggles the picker pressed state and exits when the guest reports Escape', async () => {
+      const { webview } = await renderReadyBrowser();
+      const picker = screen.getByTestId('browser-select-element');
+
+      expect(picker.getAttribute('aria-pressed')).toBe('false');
+      await fireEvent.click(picker);
+      await waitFor(() =>
+        expect(webview.executeJavaScript).toHaveBeenCalledWith(elementPickerScript),
+      );
+      expect(picker.getAttribute('aria-pressed')).toBe('true');
+
+      dispatchConsoleMessage(webview, 1, '__INTENT_ELEMENT_PICK_CANCELLED__');
+      await waitFor(() => expect(picker.getAttribute('aria-pressed')).toBe('false'));
+    });
+
+    it('captures a validated element using the fixed viewport scale', async () => {
+      const { webview } = await renderReadyBrowser({
+        ownerAgentId: 'agent-1',
+        viewport: { mode: 'preset', presetId: 'desktop-1280x800', width: 1280, height: 800 },
+      });
+      const element = {
+        selector: '#save',
+        domPath: 'html>body>button#save.primary',
+        tagName: 'button',
+        id: 'save',
+        className: 'primary',
+        textSnippet: 'Save changes',
+        rect: { x: 100, y: 50, width: 200, height: 100 },
+        pageUrl: 'https://picked.test/settings',
+        sourceRef: 'src/routes/settings/+page.svelte:42:2',
+      };
+
+      dispatchConsoleMessage(webview, 1, `__INTENT_ELEMENT_PICKED__:${JSON.stringify(element)}`);
+
+      await waitFor(() =>
+        expect(webview.capturePage).toHaveBeenCalledWith({ x: 50, y: 25, width: 100, height: 50 }),
+      );
+      await waitFor(() => expect(captureActions()).toHaveLength(1));
+      expect(captureActions()[0].payload).toMatchObject({
+        wsId: 'workspace-1',
+        capture: {
+          tabId: 'tab-1',
+          ownerAgentId: 'agent-1',
+          pageUrl: 'https://picked.test/settings',
+          title: 'picked.test',
+          image: { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' },
+          element,
+        },
+      });
+    });
+
+    it('ignores malformed element picker messages', async () => {
+      const { webview } = await renderReadyBrowser();
+
+      dispatchConsoleMessage(webview, 1, '__INTENT_ELEMENT_PICKED__:{"selector":42}');
+      await Promise.resolve();
+
+      expect(webview.capturePage).not.toHaveBeenCalled();
+      expect(captureActions()).toHaveLength(0);
+    });
 
     it('counts only error-level console messages and resets on top-level navigation', async () => {
       const { webview } = await renderReadyBrowser();
@@ -468,26 +542,22 @@ describe('EmbeddedBrowser', () => {
       }
     });
 
-    it('captures the visible page as PNG and writes it to the clipboard', async () => {
+    it('dispatches the visible page as a PNG capture without an element', async () => {
       const { webview } = await renderReadyBrowser();
-      const write = vi.fn().mockResolvedValue(undefined);
-      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } });
-      vi.stubGlobal(
-        'ClipboardItem',
-        class ClipboardItem {
-          constructor(public data: Record<string, Blob>) {}
-        },
-      );
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue({ blob: () => Promise.resolve(new Blob()) }),
-      );
 
       await openOverflow();
       await fireEvent.click(screen.getByRole('menuitem', { name: 'Screenshot' }));
 
       await waitFor(() => expect(webview.capturePage).toHaveBeenCalledTimes(1));
-      await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(captureActions()).toHaveLength(1));
+      const capture = captureActions()[0].payload.capture;
+      expect(capture).toMatchObject({
+        tabId: 'tab-1',
+        pageUrl: 'https://loaded.test/page',
+        title: 'loaded.test',
+        image: { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' },
+      });
+      expect(capture).not.toHaveProperty('element');
     });
   });
 });

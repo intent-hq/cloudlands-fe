@@ -18,9 +18,11 @@
 
   import {
     addRecentUrl,
+    browserElementCaptured,
     clearBrowserTabZoomRequest,
     updateUrlMetadata,
   } from '$store/renderer/slices/browser/browser-slice';
+  import type { BrowserElement } from '$store/renderer/slices/browser/browser-types';
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import {
     createEmbeddedBrowserNavigationSyncState,
@@ -51,6 +53,11 @@
   import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
   import BrowserViewportMenu from './BrowserViewportMenu.svelte';
   import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
+  import BrowserElementPickerButton from './BrowserElementPickerButton.svelte';
+  import { toWebviewCaptureRect } from './element-picker-coordinates';
+  import { parseElementPickerMessage } from './element-picker-payload';
+  import { elementPickerScript } from './element-picker-script';
+  import type { EmbeddedBrowserWebview } from './embedded-browser-webview';
 
   const logger = createLogger('EmbeddedBrowser');
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
@@ -150,35 +157,8 @@
   let urlInputRef: { focus: () => void; blur: () => void; select: () => void } | null =
     $state(null);
 
-  // State
-  // Electron's webview element type - using any since Electron types aren't available in renderer
-  let webviewRef:
-    | (HTMLElement & {
-        src: string;
-        canGoBack: () => boolean;
-        canGoForward: () => boolean;
-        goBack: () => void;
-        goForward: () => void;
-        reload: () => void;
-        stop: () => void;
-        loadURL: (url: string) => Promise<void>;
-        executeJavaScript: (code: string) => Promise<unknown>;
-        addEventListener: (event: string, handler: (e: any) => void) => void;
-        removeEventListener?: (event: string, handler: (e: any) => void) => void;
-        openDevTools: () => void;
-        closeDevTools: () => void;
-        isDevToolsOpened: () => boolean;
-        getURL?: () => string;
-        getWebContentsId: () => number;
-        getZoomLevel: () => number;
-        setZoomLevel: (level: number) => void;
-        getZoomFactor: () => number;
-        setZoomFactor: (factor: number) => void;
-        setAudioMuted?: (muted: boolean) => void;
-        reloadIgnoringCache?: () => void;
-        capturePage?: () => Promise<{ toDataURL: () => string }>;
-      })
-    | null = $state(null);
+  // Electron webview types are unavailable in the renderer build.
+  let webviewRef: EmbeddedBrowserWebview | null = $state(null);
   // displayUrl tracks the loaded URL and can differ from prop `url` after navigation.
   // Initialize from url prop so it's correct on first render (intentionally captures initial value)
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
@@ -195,6 +175,7 @@
   let errorMessage = $state('');
   let webviewReady = $state(false);
   let consoleErrorCount = $state(0);
+  let isPickingElement = $state(false);
 
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
@@ -468,6 +449,14 @@
       const isMod = e.metaKey || e.ctrlKey;
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
+      // Escape cancels element picking when focus is in the app chrome.
+      if (isPickingElement && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelElementPicker();
+        return;
+      }
+
       // Cmd+L / Ctrl+L - edit the current address when this panel is focused.
       if (
         focusRef.current &&
@@ -555,6 +544,7 @@
     // Loading events
     addWebviewListener('did-start-loading', () => {
       isLoading = true;
+      isPickingElement = false;
     });
 
     addWebviewListener('did-stop-loading', () => {
@@ -680,6 +670,17 @@
       } else if (message === '__INTENT_DEVTOOLS__') {
         // Cmd+Option+I / Ctrl+Shift+I was pressed - toggle devtools
         toggleDevTools();
+      } else {
+        const pickerMessage = parseElementPickerMessage(message);
+        if (pickerMessage?.type === 'cancelled') isPickingElement = false;
+        if (pickerMessage?.type === 'malformed') {
+          isPickingElement = false;
+          logger.warn('Ignored malformed element picker payload', { issues: pickerMessage.issues });
+        }
+        if (pickerMessage?.type === 'picked') {
+          isPickingElement = false;
+          void capturePickedElement(pickerMessage.element);
+        }
       }
     });
   }
@@ -846,18 +847,74 @@
     }
   }
 
-  async function captureScreenshotToClipboard() {
-    if (!webviewRef?.capturePage || !webviewReady) return;
+  function dispatchBrowserCapture(imageData: string, element?: BrowserElement) {
+    if (!tabId) return;
+    const pageUrl = element?.pageUrl || currentLoadedUrl();
+    appStore.dispatch(
+      browserElementCaptured(_workspaceId, {
+        tabId,
+        ownerAgentId,
+        pageUrl,
+        title: pageTitle || getHostname(pageUrl) || pageUrl,
+        image: { data: imageData, mimeType: 'image/png' },
+        ...(element ? { element } : {}),
+      }),
+    );
+  }
+
+  async function captureScreenshot() {
+    if (!webviewRef?.capturePage || !webviewReady || !tabId) return;
     try {
       const image = await webviewRef.capturePage();
-      const response = await fetch(image.toDataURL());
-      const blob = await response.blob();
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      toast.success(m.browser_embedded_screenshotCopied_label());
+      dispatchBrowserCapture(image.toDataURL());
     } catch (error) {
       logger.error('Failed to capture browser screenshot', error);
       toast.error(m.browser_embedded_screenshotFailed_error());
     }
+  }
+
+  async function capturePickedElement(element: BrowserElement) {
+    if (!webviewRef?.capturePage || !webviewReady || !tabId) return;
+    const clientSize = { width: webviewRef.clientWidth, height: webviewRef.clientHeight };
+    const effectiveEmulatedSize =
+      viewport.mode === 'fit' ? clientSize : { width: viewport.width, height: viewport.height };
+    const captureRect = toWebviewCaptureRect(element.rect, clientSize, effectiveEmulatedSize);
+    if (captureRect.width <= 0 || captureRect.height <= 0) {
+      logger.warn('Ignored offscreen element picker rectangle', { rect: element.rect });
+      return;
+    }
+    try {
+      const image = await webviewRef.capturePage(captureRect);
+      dispatchBrowserCapture(image.toDataURL(), element);
+    } catch (error) {
+      logger.error('Failed to capture selected browser element', error);
+      toast.error(m.browser_embedded_screenshotFailed_error());
+    }
+  }
+
+  async function toggleElementPicker() {
+    if (isPickingElement) {
+      cancelElementPicker();
+      return;
+    }
+    if (!webviewRef || !webviewReady || !tabId) return;
+    try {
+      await webviewRef.executeJavaScript(elementPickerScript);
+      isPickingElement = true;
+      webviewRef.focus?.();
+    } catch (error) {
+      logger.debug('Failed to inject element picker', { error });
+      isPickingElement = false;
+    }
+  }
+
+  function cancelElementPicker() {
+    isPickingElement = false;
+    void webviewRef
+      ?.executeJavaScript(
+        "typeof window.__intentElementPickerCleanup === 'function' && window.__intentElementPickerCleanup()",
+      )
+      .catch((error: unknown) => logger.debug('Failed to clean up element picker', { error }));
   }
 
   async function openDevToolsPanel(panel: 'console' | 'sources' | 'elements') {
@@ -1037,8 +1094,14 @@
       {/if}
     </div>
 
-    <!-- Element picker slot: populated by the element-picker task. -->
-    <div class="h-7 w-7 shrink-0" data-browser-select-element-slot></div>
+    <!-- Element picker -->
+    <div class="h-7 w-7 shrink-0" data-browser-select-element-slot>
+      <BrowserElementPickerButton
+        active={isPickingElement}
+        disabled={!webviewReady || !tabId}
+        onToggle={() => void toggleElementPicker()}
+      />
+    </div>
 
     <!-- Viewport mode -->
     <div class="flex shrink-0 items-center" data-browser-viewport-slot>
@@ -1054,7 +1117,7 @@
         disabled={!webviewReady}
         onOpenExternal={openInExternalBrowser}
         onCopyUrl={copyCurrentUrl}
-        onScreenshot={captureScreenshotToClipboard}
+        onScreenshot={captureScreenshot}
         onOpenConsole={() => openDevToolsPanel('console')}
         onOpenSource={() => openDevToolsPanel('sources')}
         onOpenInspector={() => openDevToolsPanel('elements')}
