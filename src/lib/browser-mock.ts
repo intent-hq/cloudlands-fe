@@ -23,7 +23,7 @@ import {
   getWebDaemonStatusSource,
   onWebDaemonStatusSourceRegistered,
 } from './client/live/web-daemon-status';
-import { isElectronRuntime } from './utils/platform-capabilities';
+import { expectsElectronPreloadBridge } from './utils/platform-capabilities';
 
 /**
  * Whether the browser mock is allowed to activate: dev builds or explicit
@@ -494,9 +494,11 @@ export function installBrowserMock(): boolean {
   // Dev-only affordance — never activate in packaged/daemon-bridged runs
   if (!isBrowserMockEnabled()) return false;
 
-  // Electron renderer — the preload bridge owns window.electronAPI, even if
-  // it has not been exposed yet (see intent-hq/monorepo#3606)
-  if (isElectronRuntime()) {
+  // Electron-built renderer in Electron — the preload bridge owns
+  // window.electronAPI; its absence here means the preload has not landed,
+  // not that this is a browser (see intent-hq/monorepo#3606). The web build
+  // inside the app's <webview> is not affected (never has a preload).
+  if (expectsElectronPreloadBridge()) {
     console.warn(
       '[BrowserMock] Electron renderer detected — refusing to install the mock over the preload bridge',
     );

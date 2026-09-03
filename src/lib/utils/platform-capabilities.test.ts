@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   capabilitiesForPlatform,
   detectPlatform,
+  expectsElectronPreloadBridge,
   getCapabilities,
   getPlatform,
   hasCapability,
@@ -124,6 +125,32 @@ describe('platform-capabilities', () => {
 
     it('reads navigator.userAgent by default (jsdom is not Electron)', () => {
       expect(isElectronRuntime()).toBe(false);
+    });
+  });
+
+  describe('expectsElectronPreloadBridge', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('is true for an Electron-built renderer running in Electron', () => {
+      vi.stubEnv('INTENT_BUILD_TARGET', 'electron');
+      expect(expectsElectronPreloadBridge(ELECTRON_UA)).toBe(true);
+    });
+
+    it('defaults to the Electron build when no build target is defined', () => {
+      vi.stubEnv('INTENT_BUILD_TARGET', undefined);
+      expect(expectsElectronPreloadBridge(ELECTRON_UA)).toBe(true);
+    });
+
+    it('is false for the web build even under the Electron UA (app <webview> has no preload)', () => {
+      vi.stubEnv('INTENT_BUILD_TARGET', 'web');
+      expect(expectsElectronPreloadBridge(ELECTRON_UA)).toBe(false);
+    });
+
+    it('is false for a plain browser regardless of build target', () => {
+      vi.stubEnv('INTENT_BUILD_TARGET', 'electron');
+      expect(expectsElectronPreloadBridge(CHROME_UA)).toBe(false);
     });
   });
 });

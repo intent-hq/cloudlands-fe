@@ -67,16 +67,29 @@ export function isElectronPlatform(): boolean {
 const ELECTRON_USER_AGENT_PATTERN = /\bElectron\/\d/;
 
 /**
- * Whether the renderer is hosted by Electron, decided from the user agent
- * rather than from `window.electronAPI` presence. Chromium embeds
- * `Electron/<version>` in the default UA before any script runs, so this is
- * answerable synchronously at module-evaluation time — unlike the preload
- * bridge, which can be exposed after early renderer modules evaluate.
+ * Whether the page is hosted by Electron, decided from the user agent rather
+ * than from `window.electronAPI` presence. Chromium embeds `Electron/<version>`
+ * in the default UA before any script runs, so this is answerable synchronously
+ * at module-evaluation time and does not depend on the preload having loaded.
+ * True for the app window and for pages inside the app's `<webview>` tabs.
  * Exported with an explicit `userAgent` for tests.
  */
 export function isElectronRuntime(userAgent?: string): boolean {
   const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
   return typeof ua === 'string' && ELECTRON_USER_AGENT_PATTERN.test(ua);
+}
+
+/**
+ * Whether this renderer is owed a real preload bridge: an Electron-built
+ * renderer (`INTENT_BUILD_TARGET` is not `web`) running inside Electron. The
+ * web build (`dev:web` / `build:web`) never receives a preload — even when it
+ * is opened inside the app's own `<webview>`, which strips preloads and shares
+ * the Electron UA — so it stays eligible for the browser mock.
+ * `process.env.INTENT_BUILD_TARGET` is a Vite build-time define.
+ */
+export function expectsElectronPreloadBridge(userAgent?: string): boolean {
+  const buildTarget = typeof process === 'undefined' ? undefined : process.env.INTENT_BUILD_TARGET;
+  return isElectronRuntime(userAgent) && buildTarget !== 'web';
 }
 
 /** Capability profile for a given platform. */

@@ -191,10 +191,12 @@ describe('browser-mock DEV gate', () => {
 
 /**
  * Regression tests for intent-hq/monorepo#3606: a dev Electron window must
- * never install the browser mock over the preload bridge, even when the
- * bridge has not been exposed yet at the moment the mock module evaluates
- * (the preload can land after early renderer modules). The Electron check is
- * synchronous (user agent), so preload timing cannot change the outcome.
+ * never install the browser mock over the preload bridge, even when
+ * window.electronAPI is absent at the moment the mock module evaluates
+ * (bridge presence at import time is not a safe signal). The Electron check
+ * is synchronous (user agent + build target), so preload state cannot change
+ * the outcome. The web build inside the app's own <webview> (Loop A) shares
+ * the Electron UA but never gets a preload, so it must keep the mock.
  */
 describe('browser-mock never shadows the Electron preload bridge (monorepo#3606)', () => {
   const ELECTRON_UA =
@@ -232,8 +234,8 @@ describe('browser-mock never shadows the Electron preload bridge (monorepo#3606)
     expect(installBrowserMock()).toBe(false);
     expect((window as any).electronAPI).toBeUndefined();
 
-    // Preload finishes after the renderer module evaluated: the real bridge
-    // is installed unopposed and stays the bridge.
+    // The real bridge, whenever it lands, is installed unopposed and stays
+    // the bridge.
     const realBridge = { invoke: vi.fn(), versions: { electron: '36.4.0' } };
     (window as any).electronAPI = realBridge;
     expect(installBrowserMock()).toBe(false);
@@ -255,6 +257,17 @@ describe('browser-mock never shadows the Electron preload bridge (monorepo#3606)
     setUserAgent(
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
     );
+
+    await importBrowserMock();
+
+    const api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+    expect(api.versions.electron).toBe('0.0.0-browser');
+  });
+
+  it('web build loaded inside the app <webview> (Electron UA, no preload) still installs the mock', async () => {
+    setUserAgent(ELECTRON_UA);
+    vi.stubEnv('INTENT_BUILD_TARGET', 'web');
 
     await importBrowserMock();
 
