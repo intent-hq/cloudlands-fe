@@ -10,6 +10,7 @@ import {
 import {
   initialState as initialWorkspaceState,
   removeWorkspaceEntity,
+  setWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -19,6 +20,7 @@ import {
   workspaceDeleted,
   workspaceHydrationRequested,
   workspaceLoadRequested,
+  workspaceLoadSucceeded,
   workspaceLifecycleReducer,
   workspaceMounted,
   workspaceOpenFailed,
@@ -171,20 +173,52 @@ describe('workspaceLoadSaga', () => {
     await stop(run.task);
   });
 
-  it('publishes optional path hydration after a successful open', async () => {
+  it('publishes load success before optional path hydration settles', async () => {
     const opened = { ...workspace('path-space'), repositoryPath: undefined } as Workspace;
     const hydrated = { ...opened, repositoryPath: '/hydrated/repo' } as Workspace;
+    const gate = deferred<Workspace>();
     mocks.open.mockResolvedValueOnce({ ok: true, data: opened });
-    mocks.get.mockResolvedValueOnce(hydrated);
+    mocks.get.mockReturnValueOnce(gate.promise);
     const run = createHarness();
 
     run.dispatch(workspaceLoadRequested(opened.id));
     await settle();
 
     expect(mocks.get).toHaveBeenCalledExactlyOnceWith(opened.id);
+    expect(run.actions).toContainEqual(workspaceOpenSucceeded(opened.id));
+    expect(run.actions).toContainEqual(workspaceLoadSucceeded(opened.id));
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[opened.id]?.status).toBe('ready');
+    expect(selectWorkspaceById.select(run.getState() as never, opened.id)?.repositoryPath).toBe(
+      undefined,
+    );
+
+    gate.resolve(hydrated);
+    await settle();
     expect(selectWorkspaceById.select(run.getState() as never, opened.id)?.repositoryPath).toBe(
       '/hydrated/repo',
     );
+    await stop(run.task);
+  });
+
+  it('does not overwrite a newer path mutation with stale optional detail', async () => {
+    const opened = { ...workspace('stale-path'), repositoryPath: undefined } as Workspace;
+    const gate = deferred<Workspace>();
+    mocks.open.mockResolvedValueOnce({ ok: true, data: opened });
+    mocks.get.mockReturnValueOnce(gate.promise);
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(opened.id));
+    await settle();
+    run.dispatch(
+      setWorkspaceEntity({ ...opened, title: 'Newer title', repositoryPath: '/event/repo' }),
+    );
+    gate.resolve({ ...opened, title: 'Stale title', repositoryPath: '/stale/repo' } as Workspace);
+    await settle();
+
+    expect(selectWorkspaceById.select(run.getState() as never, opened.id)).toMatchObject({
+      title: 'Newer title',
+      repositoryPath: '/event/repo',
+    });
     await stop(run.task);
   });
 
@@ -305,7 +339,7 @@ describe('workspaceLoadSaga', () => {
     await stop(run.task);
   });
 
-  it('drops rejected optional path hydration after explicit entity eviction', async () => {
+  it('cancels optional path hydration after explicit entity eviction', async () => {
     const opened = { ...workspace('evicted-path'), repositoryPath: undefined } as Workspace;
     const gate = deferred<Workspace>();
     mocks.open.mockResolvedValueOnce({ ok: true, data: opened });
@@ -314,17 +348,17 @@ describe('workspaceLoadSaga', () => {
 
     run.dispatch(workspaceLoadRequested(opened.id));
     await settle();
+    expect(run.actions).toContainEqual(workspaceOpenSucceeded(opened.id));
+    expect(run.actions).toContainEqual(workspaceLoadSucceeded(opened.id));
     run.dispatch(removeWorkspaceEntity(opened.id));
-    gate.reject(new Error('Path unavailable'));
+    gate.resolve({ ...opened, repositoryPath: '/late/repo' } as Workspace);
     await settle();
 
     expect(selectWorkspaceById.select(run.getState() as never, opened.id)).toBeUndefined();
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId[opened.id]).toBeUndefined();
-    expect(run.actions).not.toContainEqual({
-      type: 'workspace-lifecycle/workspaceOpenSucceeded',
-      payload: [opened.id],
-    });
-    expect(run.actions).not.toContainEqual(markWorkspaceNavigationInitialized(opened.id));
+    expect(run.actions.filter((action) => action.type === 'workspace/setWorkspaceEntity')).toEqual([
+      setWorkspaceEntity(opened),
+    ]);
     await stop(run.task);
   });
 
