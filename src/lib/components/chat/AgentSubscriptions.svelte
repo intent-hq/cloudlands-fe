@@ -643,7 +643,7 @@
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
-        <Tooltip.Trigger>
+        <Tooltip.Trigger class="ml-auto">
           <div
             class="ml-auto min-w-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
             data-testid="standalone-woken-up-pill"
@@ -718,7 +718,7 @@
           {/if}
           <Tooltip.Provider delayDuration={0}>
             <Tooltip.Root delayDuration={0}>
-              <Tooltip.Trigger>
+              <Tooltip.Trigger class="ml-auto">
                 <span
                   class="ml-auto inline-flex min-w-0 items-center gap-1 truncate whitespace-nowrap {isCompleted
                     ? 'rounded-full bg-muted/50 px-1.5 py-0.5'
