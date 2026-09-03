@@ -256,7 +256,15 @@
       }
       const openAction = openConnectionRequested(connection.id);
       appStore.dispatch(openAction);
-      await openAction.promise;
+      const openResult = await openAction.promise;
+      if (openResult.status === 'secret-unavailable') {
+        // The device was stored but its token could not be read back (keychain
+        // locked or entry gone) — a resolved failure, not a success (#3783).
+        // Stay open so the outcome is visible; recovery lives in Devices settings.
+        error = m.modals_connect_secretUnavailable_error();
+        busy = false;
+        return;
+      }
       close();
     } catch (e) {
       error = toMessage(e);
