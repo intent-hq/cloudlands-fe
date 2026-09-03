@@ -40,10 +40,13 @@ export interface WorkspaceInitializerRecentRepo {
 
 export interface WorkspaceInitializerAgentSettings {
   selectedSpecialist?: string | null;
+  /** Bare model id of an explicit pick, paired with `selectedProvider`. */
   selectedModel?: string;
   modelWasOverridden?: boolean;
   selectedReasoningEffort?: string;
   isTeamMode?: boolean;
+  /** Provider the persisted `selectedModel` belongs to. */
+  selectedProvider?: string;
 }
 
 export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializerAgentSettings {
@@ -56,7 +59,6 @@ export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializ
   scope?: string;
   scopeRepoPath?: string;
   remoteSetup?: WorkspaceInitializerRemoteSetup | null;
-  selectedProvider?: string;
   skipIsolation?: boolean;
 }
 
@@ -71,10 +73,12 @@ export interface WorkspaceInitializerOnboardingFormState {
     isValid?: boolean;
   } | null;
   skipIsolation?: boolean;
-  /** User-picked model for the initial Coordinator agent (step 3 picker). */
+  /** User-picked bare model id for the initial Coordinator agent (step 3 picker). */
   selectedModel?: string;
   /** Whether the user explicitly overrode the model (vs the auto-resolved default). */
   modelWasOverridden?: boolean;
+  /** Provider the picked `selectedModel` belongs to. */
+  selectedProvider?: string;
   step?: OnboardingStep;
 }
 

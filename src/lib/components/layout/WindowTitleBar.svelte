@@ -379,7 +379,7 @@
 
   .window-title-bar:global(.window-title-bar-mac) {
     --titlebar-control-shift: 8px;
-    padding-left: 60px; /* Space for macOS traffic lights */
+    padding-left: 80px; /* Native traffic-light clearance inside the counter-scaled titlebar */
   }
 
   .window-title-bar:global(.window-title-bar-windows) {

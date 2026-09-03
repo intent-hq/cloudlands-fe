@@ -264,13 +264,15 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'read-only' },
   },
   {
-    path: 'providers.active',
-    label: 'Active coding agent',
+    // Provider leg of the default model triple. Replaces the deprecated
+    // `providers.active` key (unread by the daemon).
+    path: 'model.defaultProvider',
+    label: 'Default provider',
     description: 'Default provider/coding agent for new work.',
-    category: 'accounts',
+    category: 'agents',
     type: 'string',
-    source: 'local-storage',
-    storageKey: 'workspaces-active-provider',
+    source: 'daemon-settings',
+    storageKey: 'model.defaultProvider',
     defaultValue: 'auggie',
     apply: { kind: 'redux-action', action: 'providerSettings/setActiveProvider' },
   },

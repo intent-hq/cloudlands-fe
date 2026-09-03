@@ -4803,7 +4803,14 @@
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive) {
+      logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
+        agentId,
+        hasWorkspace: !!workspace,
+        isActive,
+      });
+      return;
+    }
     flushPendingDraftWrite();
 
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
@@ -5338,7 +5345,7 @@
 >
   <!-- The regular Aurora belongs to the complete chat surface, not the inset
        composer lane. It inherits the real Panel radius for its own bottom clip. -->
-  {#if $agentSessionIsStreaming$ && !isChiefWorkspace}
+  {#if isActive && $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
       class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
@@ -6434,7 +6441,7 @@
          ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
          ancestors clip with an 8px overflow-clip-margin), touching the app window's
          left/bottom edges. -->
-    {#if $agentSessionIsStreaming$ && isChiefWorkspace}
+    {#if isActive && $agentSessionIsStreaming$ && isChiefWorkspace}
       <div
         class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
         style="height: calc(100% + 10rem);"

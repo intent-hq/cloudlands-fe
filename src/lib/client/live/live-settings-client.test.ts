@@ -384,14 +384,14 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     expect(result).toEqual({ success: false, error: 'mcp server already exists: srv-x' });
   });
 
-  it('getProviderSettings folds providers.active + providers.enabled out of settings.list', async () => {
+  it('getProviderSettings folds model.defaultProvider + providers.enabled out of settings.list', async () => {
     mockedRequest.mockResolvedValueOnce({
       settings: [
         {
-          path: 'providers.active',
+          path: 'model.defaultProvider',
           label: '',
           description: '',
-          category: 'providers',
+          category: 'agents',
           type: 'string',
           value: 'auggie',
         },
@@ -420,7 +420,7 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
 
     await client.setProviderSettings({ activeProviderId: 'codex' });
     expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
-      changes: [{ path: 'providers.active', value: 'codex' }],
+      changes: [{ path: 'model.defaultProvider', value: 'codex' }],
     });
   });
 

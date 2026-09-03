@@ -450,7 +450,7 @@ describe('specialistsSaga', () => {
       // refetch nor swallow the pending one (predicate-filtered pattern).
       channel.put(settingsChanged([{ path: 'mcp.servers', value: [] }]));
       channel.put(settingsChanged([{ path: 'model.default', value: 'fable-5' }]));
-      channel.put(settingsChanged([{ path: 'providers.active', value: 'claude-code' }]));
+      channel.put(settingsChanged([{ path: 'model.defaultProvider', value: 'claude-code' }]));
       await vi.advanceTimersByTimeAsync(200);
 
       expect(mocks.list.mock.calls).toEqual([[]]);
@@ -475,7 +475,7 @@ describe('specialistsSaga', () => {
 
       // Relevant deltas spaced past the debounce window while the RPC hangs
       // must NOT start concurrent specialist.list calls (single-flight).
-      channel.put(settingsChanged([{ path: 'providers.active', value: 'codex' }]));
+      channel.put(settingsChanged([{ path: 'model.defaultProvider', value: 'codex' }]));
       await vi.advanceTimersByTimeAsync(150);
       channel.put(settingsChanged([{ path: 'model.providerDefaults', value: {} }]));
       await vi.advanceTimersByTimeAsync(300);

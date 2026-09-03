@@ -193,15 +193,19 @@
   // Sync specialist model value when specialist changes or file specialists
   // change. The picker's selected value is the EXPLICIT frontmatter model
   // only — undefined when inheriting (the daemon resolvedModel preview is
-  // shown via the picker's default-option plumbing instead).
+  // shown via the picker's default-option plumbing instead). The stored
+  // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
+  // compound ids, so the effective codingAgent is recombined for display.
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
-      specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      const codingAgent = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
+      _specialistCodingAgentValue = codingAgent;
+      const explicitModel = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      specialistModelValue =
+        explicitModel && codingAgent && !explicitModel.includes(':')
+          ? `${codingAgent}:${explicitModel}`
+          : explicitModel;
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
@@ -223,7 +227,10 @@
     return levels?.includes(effort) ? effort : undefined;
   }
 
-  function handleSpecialistModelChange(compoundModelId: string) {
+  function handleSpecialistModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!currentSpecialist) return;
 
     // Empty string = the inherit ("use global default") option was picked:
@@ -272,7 +279,14 @@
       return;
     }
 
-    const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
+    // Writes emit the bare model id only (PROTOCOL §5.11) — the provider
+    // rides the `codingAgent:` key, never a compound `model:` id. Prefer the
+    // resolved triple legs the picker emits (catalog-group attribution for
+    // bare cross-provider picks); fall back to splitting a legacy compound id
+    // (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    const newProvider = resolved.providerId || $defaultProviderId$;
+    const bareModelId = resolved.modelId;
     _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
     // Reset the effort to Default when the newly picked model does not
@@ -291,7 +305,7 @@
             name: fileSpec.name,
             description: fileSpec.description,
             codingAgent: newProvider,
-            model: compoundModelId,
+            model: bareModelId,
             roleReminder: fileSpec.roleReminder,
             modelOptions: fileSpec.modelOptions,
             reasoningEffort: nextEffort,
@@ -313,7 +327,7 @@
           name: currentSpecialist.name,
           description: currentSpecialist.description,
           codingAgent: newProvider,
-          model: compoundModelId,
+          model: bareModelId,
           roleReminder: currentSpecialist.roleReminder,
           modelOptions: currentSpecialist.modelOptions,
           reasoningEffort: nextEffort,
@@ -393,7 +407,10 @@
     );
   }
 
-  function handleCreateModelChange(compoundModelId: string) {
+  function handleCreateModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     // Empty string = the inherit ("use global default") option was picked.
     if (!compoundModelId) {
       newCodingAgent = undefined;
@@ -401,8 +418,11 @@
       newEffort = effortForModel($selectedModel, newEffort);
       return;
     }
-    const { providerId } = parseCompoundModelId(compoundModelId);
-    newCodingAgent = providerId;
+    // Prefer the resolved triple legs the picker emits (catalog-group
+    // attribution for bare cross-provider picks); fall back to splitting a
+    // legacy compound id (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    newCodingAgent = resolved.providerId || $defaultProviderId$;
     newModel = compoundModelId;
     newEffort = effortForModel(compoundModelId, newEffort);
   }
@@ -609,13 +629,16 @@
       newName.trim(),
       selectSpecialists.select(appStore.state).map((specialist) => specialist.id),
     );
+    // `newModel` carries the picker's compound id for display; writes emit
+    // the bare model id only (PROTOCOL §5.11), the provider on codingAgent.
+    const bareNewModel = newModel ? parseCompoundModelId(newModel).modelId : undefined;
     appStore.dispatch(
       saveFileSpecialist({
         id: createdId,
         name: newName.trim(),
         description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
         codingAgent: newCodingAgent,
-        model: newModel,
+        model: bareNewModel,
         reasoningEffort: newEffort,
         behaviorPrompt: newPrompt,
         scope: 'user',

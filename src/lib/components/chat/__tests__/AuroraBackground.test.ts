@@ -273,14 +273,14 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
-  it('rounds and deduplicates resize-driven backing dimensions without frame layout reads', () => {
-    const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(1.5);
+  it('caps Retina backing work across common sizes without frame layout reads', () => {
+    const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2);
     const clientWidth = vi
       .spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
-      .mockReturnValue(320);
+      .mockReturnValue(0);
     const clientHeight = vi
       .spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get')
-      .mockReturnValue(180);
+      .mockReturnValue(0);
     render(AuroraBackground);
 
     expect(clientWidth).toHaveBeenCalledTimes(1);
@@ -289,12 +289,23 @@ describe('AuroraBackground cleanup', () => {
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
 
-    MockResizeObserver.instances[0].fire(640.25, 360.25);
-    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 960, 540);
     const canvas = document.querySelector('canvas')!;
-    expect([canvas.width, canvas.height]).toEqual([960, 540]);
+    for (const [width, height] of [
+      [320, 180],
+      [640, 360],
+      [1440, 360],
+    ]) {
+      MockResizeObserver.instances[0].fire(width, height);
+      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width, height);
+      expect([canvas.width, canvas.height]).toEqual([width, height]);
+      expect(canvas.width * canvas.height).toBe((width * 2 * height * 2) / 4);
+    }
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
+
+    MockResizeObserver.instances[0].fire(640.25, 360.25);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 640, 360);
+    expect([canvas.width, canvas.height]).toEqual([640, 360]);
 
     mockGL.gl.viewport.mockClear();
     MockResizeObserver.instances[0].fire(640.25, 360.25);

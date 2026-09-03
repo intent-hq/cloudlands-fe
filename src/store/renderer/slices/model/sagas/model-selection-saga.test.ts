@@ -15,15 +15,14 @@ vi.mock('$lib/client', () => ({
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import {
-  hydrateActiveProvider,
-  initialState as providerSettingsInitialState,
-  providerSettingsReducer,
-} from '../../provider-settings/provider-settings-slice';
+import { initialState as providerSettingsInitialState } from '../../provider-settings/provider-settings-slice';
 
 import {
+  hydrateDefaultProvider,
+  initialState as modelInitialState,
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
+  modelReducer,
   selectModel,
   setDefaultReasoningEffort,
   setSelectedModel,
@@ -44,7 +43,7 @@ const settle = async () => {
 
 function state() {
   return {
-    providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
+    providerSettings: { ...providerSettingsInitialState },
     providerCatalog: {
       providers: createCollection('id', [{ id: 'codex', canBeDisabled: true }]),
       loaded: true,
@@ -75,7 +74,7 @@ describe('modelSelectionSaga', () => {
       { type: 'model/reloadModelsForProvider', payload: [] },
       {
         type: 'providerSettings/setAtomicDefaultModel',
-        payload: [{ providerId: 'codex', model: 'codex:gpt-5' }],
+        payload: [{ providerId: 'codex', model: 'gpt-5' }],
       },
     ]);
   });
@@ -83,13 +82,14 @@ describe('modelSelectionSaga', () => {
   it('keeps a compound Claude model pick authoritative over stale provider hydration', async () => {
     const current = {
       ...state(),
+      model: { ...modelInitialState },
       providerCatalog: {
         providers: createCollection('id', [{ id: 'claude-code', canBeDisabled: true }]),
         loaded: true,
       },
     };
     const dispatch = vi.fn((action) => {
-      current.providerSettings = providerSettingsReducer(current.providerSettings, action);
+      current.model = modelReducer(current.model, action);
       return action;
     });
 
@@ -98,13 +98,10 @@ describe('modelSelectionSaga', () => {
       handleSelectModel,
       selectModel('claude-code:opus-4-1'),
     ).toPromise();
-    current.providerSettings = providerSettingsReducer(
-      current.providerSettings,
-      hydrateActiveProvider('auggie'),
-    );
+    current.model = modelReducer(current.model, hydrateDefaultProvider('auggie'));
 
-    expect(current.providerSettings.activeProviderId).toBe('claude-code');
-    expect(current.providerSettings.pendingActiveProviderId).toBe('claude-code');
+    expect(current.model.defaultProviderId).toBe('claude-code');
+    expect(current.model.pendingDefaultProviderId).toBe('claude-code');
   });
 
   it('does not switch for an unknown compound provider once the catalog is loaded', async () => {
@@ -134,7 +131,7 @@ describe('modelSelectionSaga', () => {
       { type: 'model/reloadModelsForProvider', payload: [] },
       {
         type: 'providerSettings/setAtomicDefaultModel',
-        payload: [{ providerId: 'claude-code', model: 'claude-code:fable5' }],
+        payload: [{ providerId: 'claude-code', model: 'fable5' }],
       },
     ]);
   });
@@ -153,7 +150,7 @@ describe('modelSelectionSaga', () => {
         [
           {
             path: 'model.providerDefaults',
-            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
           },
         ],
       ],
@@ -163,8 +160,8 @@ describe('modelSelectionSaga', () => {
   it('persists a cross-provider default as one revision-bearing atomic batch', async () => {
     mocks.updateSnapshot = vi.fn().mockResolvedValue({
       applied: [
-        { path: 'providers.active', value: 'codex' },
-        { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' } },
+        { path: 'model.defaultProvider', value: 'codex' },
+        { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'gpt-5' } },
       ],
       revision: 7,
     });
@@ -179,20 +176,20 @@ describe('modelSelectionSaga', () => {
 
     expect(landed).toBe('persisted');
     expect(mocks.updateSnapshot).toHaveBeenCalledWith([
-      { path: 'providers.active', value: 'codex' },
+      { path: 'model.defaultProvider', value: 'codex' },
       {
         path: 'model.providerDefaults',
-        value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+        value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
       },
     ]);
     expect(dispatch).toHaveBeenCalledWith({
       type: 'settings/changesReceived',
       payload: [
         [
-          { path: 'providers.active', value: 'codex' },
+          { path: 'model.defaultProvider', value: 'codex' },
           {
             path: 'model.providerDefaults',
-            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
           },
         ],
         7,
@@ -292,16 +289,16 @@ describe('modelSelectionSaga', () => {
     await settle();
 
     // Provider A's pick starts a held-in-flight write.
-    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'codex:gpt-5' };
-    channel.put(setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5' }));
+    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'gpt-5' };
+    channel.put(setSelectedModel({ providerId: 'codex', model: 'gpt-5' }));
     await settle();
     // Provider B's pick queues behind it...
     current.model.providerModels = {
       auggie: 'sonnet4.5',
-      codex: 'codex:gpt-5',
-      'claude-code': 'claude-code:fable5',
+      codex: 'gpt-5',
+      'claude-code': 'fable5',
     };
-    channel.put(setSelectedModel({ providerId: 'claude-code', model: 'claude-code:fable5' }));
+    channel.put(setSelectedModel({ providerId: 'claude-code', model: 'fable5' }));
     // ...then a stale boot snapshot resets the SHARED map, wiping A's pick
     // from state before B's write runs.
     current.model.providerModels = { auggie: 'sonnet4.5' };
@@ -316,7 +313,7 @@ describe('modelSelectionSaga', () => {
         [
           {
             path: 'model.providerDefaults',
-            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
           },
         ],
       ],
@@ -326,8 +323,8 @@ describe('modelSelectionSaga', () => {
             path: 'model.providerDefaults',
             value: {
               auggie: 'sonnet4.5',
-              codex: 'codex:gpt-5',
-              'claude-code': 'claude-code:fable5',
+              codex: 'gpt-5',
+              'claude-code': 'fable5',
             },
           },
         ],
@@ -373,8 +370,8 @@ describe('modelSelectionSaga', () => {
     channel.put(setSelectedModel({ providerId: 'auggie', model: 'invalid' }));
     await settle();
 
-    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'codex:gpt-5' };
-    channel.put(setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5' }));
+    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'gpt-5' };
+    channel.put(setSelectedModel({ providerId: 'codex', model: 'gpt-5' }));
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([
@@ -383,7 +380,7 @@ describe('modelSelectionSaga', () => {
         [
           {
             path: 'model.providerDefaults',
-            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
           },
         ],
       ],
