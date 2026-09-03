@@ -4395,6 +4395,7 @@
   "browser_embedded_viewport_tooltip": "Vom Agenten festgelegter emulierter Viewport: {width}×{height}",
   "browser_viewport_trigger_ariaLabel": "Viewport-Modus: {mode}",
   "browser_viewport_fitPanel_label": "An Panel anpassen",
+  "browser_viewport_fit_short_label": "Anpassen",
   "browser_viewport_phoneGroup_label": "Telefon",
   "browser_viewport_tabletGroup_label": "Tabletgerät",
   "browser_viewport_desktopGroup_label": "Desktop-PC",

@@ -261,7 +261,7 @@ describe('EmbeddedBrowser', () => {
     it('shows no device frame or dimensions in fit mode', () => {
       const { container } = renderWithOwner({ viewport: { mode: 'fit' } });
 
-      expect(screen.getByTestId('browser-viewport-trigger').textContent).toContain('Fit panel');
+      expect(screen.getByTestId('browser-viewport-trigger').textContent).toContain('Fit');
       expect(container.querySelector('[data-browser-device-frame]')).toBeNull();
       expect(container.querySelector('[data-browser-viewport-readout]')).toBeNull();
       expect(container.querySelector('webview')?.className).toContain('w-full');

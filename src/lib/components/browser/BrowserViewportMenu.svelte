@@ -47,10 +47,13 @@
   );
   const triggerLabel = $derived(
     viewport.mode === 'fit'
-      ? m.browser_viewport_fitPanel_label()
+      ? m.browser_viewport_fit_short_label()
       : viewport.mode === 'preset' && selectedPreset
         ? selectedPreset.name
         : dimensionsLabel,
+  );
+  const triggerAriaLabel = $derived(
+    viewport.mode === 'fit' ? m.browser_viewport_fitPanel_label() : triggerLabel,
   );
   const customSizeValid = $derived(
     typeof customWidth === 'number' &&
@@ -116,8 +119,8 @@
         {...props}
         variant="ghost-light"
         size="xs"
-        class="max-w-36 gap-1 px-2"
-        aria-label={m.browser_viewport_trigger_ariaLabel({ mode: triggerLabel })}
+        class="h-6 max-w-36 gap-1 rounded-full bg-muted px-2 text-xs hover:bg-muted/80"
+        aria-label={m.browser_viewport_trigger_ariaLabel({ mode: triggerAriaLabel })}
         data-testid="browser-viewport-trigger"
       >
         <span class="truncate">{triggerLabel}</span>

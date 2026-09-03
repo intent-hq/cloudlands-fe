@@ -1102,40 +1102,43 @@
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
 
-      {#if isEditingUrl}
-        <form onsubmit={handleFormSubmit} class="flex min-w-0 flex-1 items-center">
-          <Input
-            bind:this={urlInputRef}
-            type="text"
-            bind:value={urlDraft}
-            onkeydown={handleUrlInputKeydown}
-            onblur={exitUrlEditMode}
-            class="h-8 flex-1 bg-background"
-            placeholder={m.browser_embedded_url_placeholder()}
-            aria-label={m.browser_embedded_addressInput_ariaLabel()}
-          />
-          <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
-        </form>
-      {:else}
-        <button
-          type="button"
-          class="flex min-w-0 flex-1 flex-col items-start justify-center rounded px-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring"
-          onclick={() => void focusUrlInput()}
-          aria-label={m.browser_embedded_editAddress_ariaLabel()}
-        >
-          <span class="w-full truncate text-sm font-medium text-foreground">{identityTitle}</span>
-          {#if pageHostname}
-            <span
-              class="browser-toolbar-hostname flex w-full items-center gap-1 text-xs text-muted-foreground"
-            >
-              {#if isSecure}
-                <Fa icon={faLock} class="shrink-0 text-emerald-500" size="xs" />
-              {/if}
-              <span class="truncate">{pageHostname}</span>
-            </span>
-          {/if}
-        </button>
-      {/if}
+      <div class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
+        {#if isEditingUrl}
+          <form onsubmit={handleFormSubmit} class="flex h-full min-w-0 flex-1 items-center">
+            <Input
+              bind:this={urlInputRef}
+              type="text"
+              bind:value={urlDraft}
+              onkeydown={handleUrlInputKeydown}
+              onblur={exitUrlEditMode}
+              noFocusStyle
+              class="h-full flex-1 rounded-none border-0 bg-transparent px-0 hover:border-transparent"
+              placeholder={m.browser_embedded_url_placeholder()}
+              aria-label={m.browser_embedded_addressInput_ariaLabel()}
+            />
+            <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
+          </form>
+        {:else}
+          <button
+            type="button"
+            class="flex h-full min-w-0 flex-1 flex-col items-start justify-center rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
+            onclick={() => void focusUrlInput()}
+            aria-label={m.browser_embedded_editAddress_ariaLabel()}
+          >
+            <span class="w-full truncate text-sm font-medium text-foreground">{identityTitle}</span>
+            {#if pageHostname}
+              <span
+                class="browser-toolbar-hostname flex w-full items-center gap-1 text-xs text-muted-foreground"
+              >
+                {#if isSecure}
+                  <Fa icon={faLock} class="shrink-0 text-emerald-500" size="xs" />
+                {/if}
+                <span class="truncate">{pageHostname}</span>
+              </span>
+            {/if}
+          </button>
+        {/if}
+      </div>
     </div>
 
     <!-- Element picker -->

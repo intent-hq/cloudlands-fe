@@ -4395,6 +4395,7 @@
   "browser_embedded_viewport_tooltip": "智慧體設定的模擬視口：{width}×{height}",
   "browser_viewport_trigger_ariaLabel": "視口模式：{mode}",
   "browser_viewport_fitPanel_label": "符合面板大小",
+  "browser_viewport_fit_short_label": "適合",
   "browser_viewport_phoneGroup_label": "手機",
   "browser_viewport_tabletGroup_label": "平板電腦",
   "browser_viewport_desktopGroup_label": "桌面裝置",

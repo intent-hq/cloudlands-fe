@@ -4395,6 +4395,7 @@
   "browser_embedded_viewport_tooltip": "에이전트가 설정한 에뮬레이트 뷰포트: {width}×{height}",
   "browser_viewport_trigger_ariaLabel": "뷰포트 모드: {mode}",
   "browser_viewport_fitPanel_label": "패널에 맞추기",
+  "browser_viewport_fit_short_label": "맞춤",
   "browser_viewport_phoneGroup_label": "휴대전화",
   "browser_viewport_tabletGroup_label": "태블릿",
   "browser_viewport_desktopGroup_label": "데스크톱",

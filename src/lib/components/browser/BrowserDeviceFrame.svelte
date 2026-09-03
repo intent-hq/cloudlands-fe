@@ -132,7 +132,9 @@
   <div
     class="relative overflow-hidden bg-background {isFit
       ? 'h-full w-full'
-      : `border border-border shadow-sm ${dragging ? 'ring-2 ring-primary/30' : ''}`}"
+      : dragging
+        ? 'ring-2 ring-primary/30'
+        : ''}"
     style:width={isFit ? undefined : `${renderedWidth}px`}
     style:height={isFit ? undefined : `${renderedHeight}px`}
     data-browser-device-frame={isFit ? undefined : ''}
