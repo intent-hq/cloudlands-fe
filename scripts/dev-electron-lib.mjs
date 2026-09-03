@@ -49,9 +49,36 @@ export function buildWaitOnTargets(devPort, sentinelFiles) {
  * SvelteKit upgrade relocating the generated nodes, so the http-get target
  * 404s forever) hangs the launcher silently; with it, wait-on exits non-zero
  * and prints the stuck targets. A legit cold start resolves in ~1.3 s, so a
- * 2-minute ceiling only trips on genuine wedges or pathologically slow hosts.
+ * 5-minute ceiling survives loaded development hosts while still detecting a
+ * genuinely wedged readiness probe.
  */
-export const WAIT_ON_TIMEOUT_MS = 120000;
+export const WAIT_ON_TIMEOUT_MS = 300000;
+
+/**
+ * Resolve the wait-on timeout from the launcher environment.
+ *
+ * Invalid overrides fall back instead of crashing the dev launcher. The
+ * warning keeps a typo visible rather than silently ignoring it.
+ *
+ * @param {NodeJS.ProcessEnv} env launcher environment
+ * @param {(message: string) => void} warn warning sink
+ * @returns {number} positive timeout in milliseconds
+ */
+export function resolveWaitOnTimeoutMs(env, warn = console.warn) {
+  const rawValue = env.DEV_WAIT_ON_TIMEOUT_MS;
+  if (rawValue === undefined) return WAIT_ON_TIMEOUT_MS;
+
+  const normalizedValue = rawValue.trim();
+  const timeoutMs = Number(normalizedValue);
+  if (/^[0-9]+$/.test(normalizedValue) && Number.isSafeInteger(timeoutMs) && timeoutMs > 0) {
+    return timeoutMs;
+  }
+
+  warn(
+    `Invalid DEV_WAIT_ON_TIMEOUT_MS=${JSON.stringify(rawValue)}; using ${WAIT_ON_TIMEOUT_MS}ms.`,
+  );
+  return WAIT_ON_TIMEOUT_MS;
+}
 
 /**
  * Augment an environment for the wait-on child so the loopback http-get
