@@ -86,9 +86,10 @@ return await ws.hook.schedule({
 
 Each run performs the readiness check itself, compares the result with `hookState`, and
 returns without dispatch while readiness is unchanged. The two browser calls stay well
-inside the hook's 60-second per-run budget. Hook expiry also wakes the owner, so a
-right-sized TTL is a backstop that prompts reassessment, not a failure to loop around by
-silently scheduling another hook.
+inside the hook's 60-second per-run budget. The 10-minute ceiling, not the TTL, is the
+failure mechanism because it dispatches the caller-authored diagnostic. Hook expiry also
+wakes the owner, but only with the generic expiry notice; it is a backstop that prompts
+reassessment, not a reason to silently schedule another hook.
 
 Use `perpetual: false` for one readiness transition: the first dispatch retires the hook.
 Use `perpetual: true` only when the caller needs a stream of readiness or health changes;
