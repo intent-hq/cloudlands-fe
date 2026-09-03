@@ -63,6 +63,11 @@
   let port = $state<number | null>(null);
   let certFingerprint = $state('');
   let localIps = $state<string[]>([]);
+  // Bind candidates unfiltered by the bind set (additive `availableIps`).
+  // Undefined on older daemons, where the selector falls back to the
+  // bind-filtered `localIps` (its union with the bound set keeps the bound
+  // entries visible, but a loopback-only bind then offers nothing to pick).
+  let availableIps = $state<string[] | undefined>(undefined);
   let _hostname = $state('');
   let loading = $state(true);
   let regenerating = $state(false);
@@ -170,6 +175,7 @@
         port = info.port; // bound port from pairing info
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
+        availableIps = info.availableIps;
         _hostname = info.hostname;
         tcAddress = info.tcAddress ?? '';
         await refreshPublishState();
@@ -807,13 +813,13 @@
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
-        <!-- Listen targets: the daemon's bound IPs. Shown only while Local
-             Network Access is ON; the tunnel is toggled above, not in the
-             selector. -->
+        <!-- Listen targets: the daemon's bind candidates with the bound ones
+             selected. Shown only while Local Network Access is ON; the tunnel
+             is toggled above, not in the selector. -->
         {#if localNetworkShown}
           <section transition:slide={{ duration: 200 }}>
             <ListenTargetSelector
-              availableIps={localIps}
+              availableIps={availableIps ?? localIps}
               selectedIps={tunnelOnly ? [] : bindIps}
               tunnelSelected={tunnelEnabled}
               saving={listenSaving}

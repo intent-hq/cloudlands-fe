@@ -2098,6 +2098,12 @@ export interface ServerPairingInfo {
    * enabled and up; absent on older daemons or while the tunnel is down.
    */
   tcAddress?: string;
+  /**
+   * Additive bind-candidate enumeration: the machine's non-loopback IPv4
+   * addresses regardless of the current bind set (unlike `localIps`, which is
+   * bind-filtered). Absent on older daemons.
+   */
+  availableIps?: string[];
 }
 
 export interface ServerClient {
