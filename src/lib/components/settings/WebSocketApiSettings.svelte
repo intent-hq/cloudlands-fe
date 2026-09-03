@@ -606,6 +606,65 @@
       </div>
     </section>
 
+    {#if enabled && tunnelSupported}
+      <div transition:slide={{ duration: 200 }} class="space-y-4">
+        <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
+             old daemons predating the server.tunnel.* settings. -->
+        <section data-tunnel-toggle-row>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_tunnel_enable_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_tunnel_enable_description()}{' '}<a
+                  href="https://github.com/tailscale/tailcat"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
+                >
+              </p>
+            </div>
+            <Toggle
+              pressed={tunnelEnabled}
+              onclick={handleTunnelToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              disabled={listenSaving}
+              ariaLabel={m.settings_tunnel_enable_label()}
+            />
+          </div>
+        </section>
+
+        <!-- This daemon's own tailcat tunnel address (copyable) — shown only
+             while the tunnel is on and the daemon reports one. -->
+        {#if tunnelEnabled && tcAddress}
+          <section data-tunnel-address-row>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm text-muted-foreground">
+                {m.settings_tunnel_tcAddress_label()}
+              </span>
+              <div class="flex items-center gap-2 shrink-0">
+                <code
+                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                  title={tcAddress}>{tcAddress}</code
+                >
+                <button
+                  type="button"
+                  onclick={handleCopyTcAddress}
+                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                  title={m.settings_tunnel_tcAddress_copy()}
+                >
+                  <Fa icon={faCopy} size="sm" />
+                </button>
+              </div>
+            </div>
+          </section>
+        {/if}
+      </div>
+    {/if}
+
     <!-- Port (always visible) -->
     <section>
       {#snippet portValidation()}
@@ -613,7 +672,7 @@
         <!-- i18n-ignore (template expression, not user-facing text) -->
         {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
         <div class="flex items-center justify-between gap-3">
-          <span class="text-sm text-muted-foreground">{m.settings_wsApi_port_label()}</span>
+          <span class="text-sm font-medium text-foreground">{m.settings_wsApi_port_label()}</span>
           <div class="flex items-center gap-2">
             <div class="shrink-0 w-32">
               <Input
@@ -641,47 +700,23 @@
         {#if !isValid}
           <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
         {/if}
-        {#if enabled && port}
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_wsApi_port_currentlyBound({ port: String(port) })}
-          </p>
-        {/if}
       {/snippet}
       {@render portValidation()}
     </section>
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
-        {#if tunnelSupported}
-          <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
-               old daemons predating the server.tunnel.* settings. -->
-          <section data-tunnel-toggle-row>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm font-medium text-foreground">
-                  {m.settings_tunnel_enable_label()}
-                </p>
-                <p class="text-xs text-subtle mt-1">
-                  {m.settings_tunnel_enable_description()}{' '}<a
-                    href="https://github.com/tailscale/tailcat"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
-                  >
-                </p>
-              </div>
-              <Toggle
-                pressed={tunnelEnabled}
-                onclick={handleTunnelToggle}
-                variant="indicator"
-                size="xs"
-                class="mb-auto"
-                disabled={listenSaving}
-                ariaLabel={m.settings_tunnel_enable_label()}
-              />
-            </div>
-          </section>
-        {/if}
+        <!-- Listen targets: the daemon's bound IPs. Rendered only once
+             loaded; the tunnel is toggled above, not in the selector. -->
+        <section>
+          <ListenTargetSelector
+            availableIps={localIps}
+            selectedIps={tunnelOnly ? [] : bindIps}
+            tunnelSelected={tunnelEnabled}
+            saving={listenSaving}
+            onchange={handleListenTargetChange}
+          />
+        </section>
 
         <!-- Mobile App Pairing -->
         <section>
@@ -723,45 +758,6 @@
                   ? m.settings_wsApi_publishSelf_republish_label()
                   : m.settings_wsApi_publishSelf_button_label()}
               </Button>
-            </div>
-          </section>
-        {/if}
-
-        <!-- Listen targets: the daemon's bound IPs. Rendered only once
-             loaded; the tunnel is toggled above, not in the selector. -->
-        <section>
-          <ListenTargetSelector
-            availableIps={localIps}
-            selectedIps={tunnelOnly ? [] : bindIps}
-            tunnelSelected={tunnelEnabled}
-            saving={listenSaving}
-            onchange={handleListenTargetChange}
-          />
-        </section>
-
-        <!-- This daemon's own tailcat tunnel address (copyable) — surfaced
-             here, where pairing happens, whenever the daemon reports one;
-             absent on old daemons or with the tunnel down. -->
-        {#if tcAddress}
-          <section data-tunnel-address-row>
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm text-muted-foreground">
-                {m.settings_tunnel_tcAddress_label()}
-              </span>
-              <div class="flex items-center gap-2 shrink-0">
-                <code
-                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-                  title={tcAddress}>{tcAddress}</code
-                >
-                <button
-                  type="button"
-                  onclick={handleCopyTcAddress}
-                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-                  title={m.settings_tunnel_tcAddress_copy()}
-                >
-                  <Fa icon={faCopy} size="sm" />
-                </button>
-              </div>
             </div>
           </section>
         {/if}

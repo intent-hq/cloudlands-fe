@@ -1105,5 +1105,17 @@ describe('WebSocketApiSettings', () => {
       );
       expect(screen.queryByText(m.settings_tunnel_tcAddress_label())).toBeNull();
     });
+
+    it('hides the Tailcat address row while the tunnel toggle is off, even if an address is reported', async () => {
+      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: false, only: false }));
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      render(WebSocketApiSettings);
+
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
+      );
+      expect(screen.queryByText(m.settings_tunnel_tcAddress_label())).toBeNull();
+      expect(screen.queryByText('tc-key-abc')).toBeNull();
+    });
   });
 });
