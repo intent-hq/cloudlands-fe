@@ -58,6 +58,7 @@
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -526,15 +527,14 @@
                   label: connectionLabel(secretUnavailableConnection),
                 })}
               </p>
-              <button
-                type="button"
-                class="mt-2 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              <Button
+                class="mt-2 w-full"
                 disabled={$isConnecting$}
                 onclick={() => (repairModalOpen = true)}
                 data-testid="daemon-stopped-reenter-token"
               >
                 {m.daemonStatus_overlay_reenterToken_label()}
-              </button>
+              </Button>
             {/if}
           </div>
         {/if}
