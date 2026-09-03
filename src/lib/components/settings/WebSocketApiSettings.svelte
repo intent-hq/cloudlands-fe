@@ -76,6 +76,7 @@
   // gates the whole tunnel surface: false on daemons predating the
   // `server.tunnel.*` settings, so the UI degrades to the plain IP selector.
   let bindIps = $state<string[]>([]);
+  let bindAddressSupported = $state(false);
   let tunnelEnabled = $state(false);
   let tunnelOnly = $state(false);
   let tunnelSupported = $state(false);
@@ -149,6 +150,7 @@
       const bindAddress = settings.find(
         (s: { path: string; value: unknown }) => s.path === 'server.bindAddress',
       );
+      bindAddressSupported = bindAddress !== undefined;
       bindIps = parseBindAddress(bindAddress?.value);
       const tunnelSetting = settings.find(
         (s: { path: string; value: unknown }) => s.path === 'server.tunnel.enabled',
@@ -248,6 +250,10 @@
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
 
+  // "Enable Local Network Access" is a view over server.bindAddress (no
+  // daemon setting of its own): ON whenever a non-loopback target is bound.
+  const localNetworkEnabled = $derived(bindIps.some((ip) => ip !== LOOPBACK));
+
   /**
    * Force loopback into a bind set while the tunnel is on: the tailcat
    * sidecar forwards tunnel connections to 127.0.0.1:<port>. All-interfaces
@@ -275,6 +281,42 @@
       void handleListenTargetChange({ ips, tunnel: false });
     } else {
       void handleListenTargetChange({ ips: withLoopbackLock(bindIps), tunnel: true });
+    }
+  }
+
+  /**
+   * The "Enable Local Network Access" toggle rewrites the bind set: OFF
+   * narrows it to loopback only (the tunnel, when on, still forwards to
+   * 127.0.0.1), ON widens it to all interfaces. The tunnel state is carried
+   * through untouched.
+   */
+  function handleLocalNetworkToggle() {
+    if (listenSaving) return;
+    void handleListenTargetChange({
+      ips: localNetworkEnabled ? [LOOPBACK] : [ALL_INTERFACES],
+      tunnel: tunnelEnabled,
+    });
+  }
+
+  /**
+   * First-enable default: the daemon binds loopback only out of the box, so
+   * turning the WebSocket API on from that state widens the bind set to all
+   * interfaces (Local Network Access ON). A bindAddress the user already
+   * customized beyond loopback is left alone and the tunnel is untouched.
+   * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
+   */
+  async function maybeDefaultLocalNetworkAccess() {
+    if (!bindAddressSupported || localNetworkEnabled) return;
+    try {
+      await appClient.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
+      bindIps = [ALL_INTERFACES];
+      refreshSelfEntry();
+    } catch (error) {
+      toast.error(
+        m.settings_listenTargets_saveError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
 
@@ -308,6 +350,7 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
+        await maybeDefaultLocalNetworkAccess();
         await maybeAutoPublish();
       } else {
         await maybeAutoUnpublish();
@@ -665,6 +708,35 @@
       </div>
     {/if}
 
+    {#if enabled && bindAddressSupported}
+      <div transition:slide={{ duration: 200 }}>
+        <!-- Local Network Access: a view over server.bindAddress (ON when a
+             non-loopback target is bound). Absent on daemons that do not
+             report server.bindAddress. -->
+        <section data-local-network-toggle-row>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_wsApi_localNetworkAccess_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_wsApi_localNetworkAccess_description()}
+              </p>
+            </div>
+            <Toggle
+              pressed={localNetworkEnabled}
+              onclick={handleLocalNetworkToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              disabled={listenSaving}
+              ariaLabel={m.settings_wsApi_localNetworkAccess_label()}
+            />
+          </div>
+        </section>
+      </div>
+    {/if}
+
     <!-- Port (always visible) -->
     <section>
       {#snippet portValidation()}
@@ -706,17 +778,20 @@
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
-        <!-- Listen targets: the daemon's bound IPs. Rendered only once
-             loaded; the tunnel is toggled above, not in the selector. -->
-        <section>
-          <ListenTargetSelector
-            availableIps={localIps}
-            selectedIps={tunnelOnly ? [] : bindIps}
-            tunnelSelected={tunnelEnabled}
-            saving={listenSaving}
-            onchange={handleListenTargetChange}
-          />
-        </section>
+        <!-- Listen targets: the daemon's bound IPs. Shown only while Local
+             Network Access is ON; the tunnel is toggled above, not in the
+             selector. -->
+        {#if localNetworkEnabled}
+          <section transition:slide={{ duration: 200 }}>
+            <ListenTargetSelector
+              availableIps={localIps}
+              selectedIps={tunnelOnly ? [] : bindIps}
+              tunnelSelected={tunnelEnabled}
+              saving={listenSaving}
+              onchange={handleListenTargetChange}
+            />
+          </section>
+        {/if}
 
         <!-- Mobile App Pairing -->
         <section>
