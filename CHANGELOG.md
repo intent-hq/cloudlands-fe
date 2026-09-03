@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.129.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.128.0...v2.129.0) (2026-09-03)
+
+
+### 🚀 Features
+
+* image and video parity in chats and notes ([#2086](https://github.com/intent-hq/cloudlands-fe/issues/2086)) ([ca6ef43](https://github.com/intent-hq/cloudlands-fe/commit/ca6ef4381a81a30357082b62bcfa826c2a4d3ace))
+
 ## [2.128.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.127.0...v2.128.0) (2026-09-03)
 
 
