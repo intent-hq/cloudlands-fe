@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "브라우저에서 열지 못했습니다",
   "browser_embedded_screenshotCopied_label": "스크린샷이 클립보드에 복사되었습니다",
   "browser_embedded_screenshotFailed_error": "스크린샷을 캡처하지 못했습니다",
+  "browser_embedded_noTargetAgent_error": "이 항목을 첨부할 에이전트가 없습니다. 먼저 에이전트 채팅을 여세요",
   "browser_embedded_selectElement_tooltip": "요소 선택",
   "browser_embedded_selectElement_ariaLabel": "페이지에서 요소 선택",
   "browser_embedded_cancelElementSelection_tooltip": "요소 선택 취소",

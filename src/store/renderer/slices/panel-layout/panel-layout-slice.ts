@@ -1727,6 +1727,7 @@ export const setTabOwnerAgent = createAction<
     ownerAgentId: string,
     emulatedSize?: { width: number; height: number },
     ownerAgentName?: string,
+    viewport?: BrowserTabViewport,
   ]
 >('panelLayout/setTabOwnerAgent');
 
@@ -3044,8 +3045,11 @@ panelLayoutReducer.with(
 // --- Set Tab Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(
   setTabOwnerAgent,
-  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName] }) => {
+  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName, viewport] }) => {
     const ws = getWorkspaceState(state, wsId);
+    const nextViewport =
+      viewport ??
+      (emulatedSize === undefined ? undefined : { mode: 'custom' as const, ...emulatedSize });
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
       if (tabIdx >= 0) {
@@ -3054,8 +3058,8 @@ panelLayoutReducer.with(
           tab.ownerAgentId === ownerAgentId &&
           (emulatedSize === undefined ||
             (tab.emulatedSize?.width === emulatedSize.width &&
-              tab.emulatedSize?.height === emulatedSize.height &&
-              browserTabViewportEqual(tab.viewport, { mode: 'custom', ...emulatedSize }))) &&
+              tab.emulatedSize?.height === emulatedSize.height)) &&
+          (nextViewport === undefined || browserTabViewportEqual(tab.viewport, nextViewport)) &&
           (ownerAgentName === undefined || tab.ownerAgentName === ownerAgentName);
         if (unchanged) return state;
         const newTabs = panel.tabs.map((t, i) =>
@@ -3063,9 +3067,8 @@ panelLayoutReducer.with(
             ? {
                 ...t,
                 ownerAgentId,
-                ...(emulatedSize === undefined
-                  ? {}
-                  : { emulatedSize, viewport: { mode: 'custom' as const, ...emulatedSize } }),
+                ...(emulatedSize === undefined ? {} : { emulatedSize }),
+                ...(nextViewport === undefined ? {} : { viewport: nextViewport }),
                 // An undefined name keeps any previously persisted one — a
                 // notification that couldn't resolve the name must not erase
                 // it (monorepo#3438).
@@ -3087,8 +3090,8 @@ panelLayoutReducer.with(
         hiddenTab.ownerAgentId === ownerAgentId &&
         (emulatedSize === undefined ||
           (hiddenTab.emulatedSize?.width === emulatedSize.width &&
-            hiddenTab.emulatedSize?.height === emulatedSize.height &&
-            browserTabViewportEqual(hiddenTab.viewport, { mode: 'custom', ...emulatedSize }))) &&
+            hiddenTab.emulatedSize?.height === emulatedSize.height)) &&
+        (nextViewport === undefined || browserTabViewportEqual(hiddenTab.viewport, nextViewport)) &&
         (ownerAgentName === undefined || hiddenTab.ownerAgentName === ownerAgentName);
       if (unchanged) return state;
       return setWorkspaceState(state, wsId, {
@@ -3096,9 +3099,8 @@ panelLayoutReducer.with(
         hiddenTabs: updateItem(ws.hiddenTabs, {
           id: tabId,
           ownerAgentId,
-          ...(emulatedSize === undefined
-            ? {}
-            : { emulatedSize, viewport: { mode: 'custom' as const, ...emulatedSize } }),
+          ...(emulatedSize === undefined ? {} : { emulatedSize }),
+          ...(nextViewport === undefined ? {} : { viewport: nextViewport }),
           ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
         }),
       });

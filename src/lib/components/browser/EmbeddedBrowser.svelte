@@ -248,6 +248,16 @@
   }
 
   function handleUrlInputKeydown(event: KeyboardEvent) {
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      !event.shiftKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === 'l'
+    ) {
+      event.preventDefault();
+      urlInputRef?.select();
+      return;
+    }
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
@@ -881,6 +891,10 @@
     const pageUrl = element?.pageUrl || currentLoadedUrl();
     const targetAgentId =
       selectMostRecentAgentTab.select(appStore.state, _workspaceId)?.agentId ?? ownerAgentId;
+    if (!targetAgentId) {
+      toast.error(m.browser_embedded_noTargetAgent_error());
+      return;
+    }
     appStore.dispatch(
       browserElementCaptured(_workspaceId, {
         tabId,

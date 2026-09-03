@@ -56,6 +56,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
 
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { navigateToAgent } from '$lib/utils/workspace-navigation';
+import { toast } from '$lib/components/ui/toast';
 import { elementPickerScript } from './element-picker-script';
 
 class ToolbarResizeObserver {
@@ -379,6 +380,27 @@ describe('EmbeddedBrowser', () => {
       );
     });
 
+    it('selects the full address when Ctrl+L is repeated in the input', async () => {
+      const { getByRole } = renderPage({ isFocused: true });
+      await fireEvent.keyDown(window, { key: 'l', ctrlKey: true });
+      const input = (await waitFor(() =>
+        getByRole('textbox', { name: 'Browser address' }),
+      )) as HTMLInputElement;
+      input.setSelectionRange(4, 11);
+      const event = new KeyboardEvent('keydown', {
+        key: 'l',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+
+      input.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+    });
+
     it('updates the identity title and unowned favicon from webview events', async () => {
       const { container, getByRole } = renderPage();
       const webview = container.querySelector('webview')!;
@@ -676,7 +698,7 @@ describe('EmbeddedBrowser', () => {
     });
 
     it('dispatches the visible page as a PNG capture without an element', async () => {
-      const { webview } = await renderReadyBrowser();
+      const { webview } = await renderReadyBrowser({ ownerAgentId: 'agent-owner' });
 
       await openOverflow();
       await fireEvent.click(screen.getByRole('menuitem', { name: 'Screenshot' }));
@@ -686,7 +708,7 @@ describe('EmbeddedBrowser', () => {
       const capture = captureActions()[0].payload.capture;
       expect(capture).toMatchObject({
         tabId: 'tab-1',
-        targetAgentId: undefined,
+        targetAgentId: 'agent-owner',
         pageUrl: 'https://loaded.test/page',
         title: 'loaded.test',
         viewport: { width: 640, height: 400 },
@@ -695,6 +717,17 @@ describe('EmbeddedBrowser', () => {
       expect(capture.image.data).not.toMatch(/^data:/);
       expect(atob(capture.image.data)).toBe('png');
       expect(capture).not.toHaveProperty('element');
+    });
+
+    it('shows an error and skips capture dispatch when no target agent exists', async () => {
+      const { webview } = await renderReadyBrowser();
+
+      await openOverflow();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Screenshot' }));
+
+      await waitFor(() => expect(webview.capturePage).toHaveBeenCalledTimes(1));
+      expect(captureActions()).toHaveLength(0);
+      expect(toast.error).toHaveBeenCalledTimes(1);
     });
 
     it('targets the owner when no agent tab appears in focus history', async () => {

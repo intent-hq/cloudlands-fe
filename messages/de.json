@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "Im Browser konnte nicht geöffnet werden",
   "browser_embedded_screenshotCopied_label": "Screenshot in die Zwischenablage kopiert",
   "browser_embedded_screenshotFailed_error": "Screenshot konnte nicht aufgenommen werden",
+  "browser_embedded_noTargetAgent_error": "Kein Agent zum Anhängen verfügbar — öffnen Sie zuerst einen Agenten-Chat",
   "browser_embedded_selectElement_tooltip": "Element auswählen",
   "browser_embedded_selectElement_ariaLabel": "Element auf der Seite auswählen",
   "browser_embedded_cancelElementSelection_tooltip": "Elementauswahl abbrechen",

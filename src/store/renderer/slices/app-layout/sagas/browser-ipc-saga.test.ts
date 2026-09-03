@@ -671,6 +671,45 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  it('persists an owned fit viewport in one store action', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } } },
+        },
+      },
+    };
+
+    await emit(
+      {
+        tabId: 'browser-1',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 1280, height: 800 },
+        viewport: { mode: 'fit' },
+      },
+      'browser:tab-owner-changed',
+    );
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: [
+          'ws-1',
+          'browser-1',
+          'agent-1',
+          { width: 1280, height: 800 },
+          undefined,
+          { mode: 'fit' },
+        ],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('opens an agent tab with the payload emulatedSize persisted on the tab (§5.9)', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));

@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "ブラウザーで開けませんでした",
   "browser_embedded_screenshotCopied_label": "スクリーンショットをクリップボードにコピーしました",
   "browser_embedded_screenshotFailed_error": "スクリーンショットを取得できませんでした",
+  "browser_embedded_noTargetAgent_error": "これを添付するエージェントがいません。先にエージェントチャットを開いてください",
   "browser_embedded_selectElement_tooltip": "要素を選択",
   "browser_embedded_selectElement_ariaLabel": "ページから要素を選択",
   "browser_embedded_cancelElementSelection_tooltip": "要素の選択をキャンセル",

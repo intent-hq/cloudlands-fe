@@ -3235,6 +3235,25 @@ describe('panelLayoutReducer', () => {
       const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
       expect(tab.ownerAgentId).toBe('agent-1');
       expect(tab.emulatedSize).toEqual({ width: 390, height: 844 });
+      expect(tab.viewport).toEqual({ mode: 'custom', width: 390, height: 844 });
+    });
+
+    it('records an explicit fit viewport atomically and no-ops when unchanged', () => {
+      const action = setTabOwnerAgent(
+        WS,
+        't1',
+        'agent-1',
+        { width: 1280, height: 800 },
+        undefined,
+        { mode: 'fit' },
+      );
+      const result = panelLayoutReducer(browserState(), action);
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 1280, height: 800 },
+        viewport: { mode: 'fit' },
+      });
+      expect(panelLayoutReducer(result, action)).toBe(result);
     });
 
     it('updates the emulated size on a resize (same owner, new size)', () => {

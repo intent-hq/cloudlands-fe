@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "Impossible d'ouvrir dans le navigateur",
   "browser_embedded_screenshotCopied_label": "Capture d'écran copiée dans le presse-papiers",
   "browser_embedded_screenshotFailed_error": "Impossible de capturer l'écran",
+  "browser_embedded_noTargetAgent_error": "Aucun agent auquel joindre ceci — ouvrez d’abord une discussion avec un agent",
   "browser_embedded_selectElement_tooltip": "Sélectionner un élément",
   "browser_embedded_selectElement_ariaLabel": "Sélectionner un élément de la page",
   "browser_embedded_cancelElementSelection_tooltip": "Annuler la sélection de l'élément",

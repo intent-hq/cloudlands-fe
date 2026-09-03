@@ -4372,6 +4372,7 @@
   "browser_embedded_openExternalFailed_error": "Failed to open in browser",
   "browser_embedded_screenshotCopied_label": "Screenshot copied to clipboard",
   "browser_embedded_screenshotFailed_error": "Failed to capture screenshot",
+  "browser_embedded_noTargetAgent_error": "No agent to attach this to — open an agent chat first",
   "browser_embedded_selectElement_tooltip": "Select an element",
   "browser_embedded_selectElement_ariaLabel": "Select an element from the page",
   "browser_embedded_cancelElementSelection_tooltip": "Cancel element selection",

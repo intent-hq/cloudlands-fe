@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "无法在浏览器中打开",
   "browser_embedded_screenshotCopied_label": "截图已复制到剪贴板",
   "browser_embedded_screenshotFailed_error": "截图失败",
+  "browser_embedded_noTargetAgent_error": "没有可附加此内容的智能体，请先打开智能体聊天",
   "browser_embedded_selectElement_tooltip": "选择元素",
   "browser_embedded_selectElement_ariaLabel": "从页面中选择元素",
   "browser_embedded_cancelElementSelection_tooltip": "取消元素选择",

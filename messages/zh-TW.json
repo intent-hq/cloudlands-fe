@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "無法在瀏覽器中開啟",
   "browser_embedded_screenshotCopied_label": "螢幕截圖已複製到剪貼簿",
   "browser_embedded_screenshotFailed_error": "無法擷取螢幕截圖",
+  "browser_embedded_noTargetAgent_error": "沒有可附加此內容的智慧體，請先開啟智慧體聊天",
   "browser_embedded_selectElement_tooltip": "選取元素",
   "browser_embedded_selectElement_ariaLabel": "從頁面選取元素",
   "browser_embedded_cancelElementSelection_tooltip": "取消元素選取",

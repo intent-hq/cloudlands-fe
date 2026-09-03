@@ -39,7 +39,6 @@ import {
   setActiveTab,
   setTabOwnerAgent,
   updateTabBrowserUrl,
-  updateTabViewport,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
@@ -90,7 +89,17 @@ function tabOwnerAction(
   ownerAgentId: string,
   emulatedSize?: BrowserEmulatedSize,
   ownerAgentName?: string,
+  viewport?: BrowserTabViewport,
 ): ReturnType<typeof setTabOwnerAgent> {
+  if (viewport !== undefined)
+    return setTabOwnerAgent(
+      workspaceId,
+      tabId,
+      ownerAgentId,
+      emulatedSize,
+      ownerAgentName,
+      viewport,
+    );
   if (ownerAgentName !== undefined)
     return setTabOwnerAgent(workspaceId, tabId, ownerAgentId, emulatedSize, ownerAgentName);
   if (emulatedSize !== undefined)
@@ -561,11 +570,9 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
       data.ownerAgentId,
       isBrowserEmulatedSize(data.emulatedSize) ? data.emulatedSize : undefined,
       ownerAgentName,
+      isBrowserTabViewport(data.viewport) ? data.viewport : undefined,
     ),
   );
-  if (isBrowserTabViewport(data.viewport)) {
-    yield* put(updateTabViewport(workspaceId, data.tabId, data.viewport));
-  }
 }
 
 export function* browserIpcSaga(): SagaGenerator<void> {

@@ -4371,6 +4371,7 @@
   "browser_embedded_openExternalFailed_error": "No se pudo abrir en el navegador",
   "browser_embedded_screenshotCopied_label": "Captura de pantalla copiada al portapapeles",
   "browser_embedded_screenshotFailed_error": "Error al capturar la pantalla",
+  "browser_embedded_noTargetAgent_error": "No hay ningún agente al que adjuntar esto; abre primero un chat de agente",
   "browser_embedded_selectElement_tooltip": "Seleccionar un elemento",
   "browser_embedded_selectElement_ariaLabel": "Seleccionar un elemento de la página",
   "browser_embedded_cancelElementSelection_tooltip": "Cancelar selección de elemento",

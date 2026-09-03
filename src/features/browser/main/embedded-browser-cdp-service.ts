@@ -171,6 +171,9 @@ class EmbeddedBrowserCdpService {
   /** Per-tab viewport mode for owned and unowned tabs. */
   private tabViewports = new Map<string, BrowserTabViewport>();
 
+  /** Tabs whose current webContents has received a device-metrics override. */
+  private tabsWithDeviceMetricsOverride = new Set<string>();
+
   /**
    * Agents whose owned tabs were destroyed via {@link clearAgentTabs}
    * (deletion committed, monorepo#2857). An in-flight LIST_TABS_RESPONSE
@@ -358,6 +361,9 @@ class EmbeddedBrowserCdpService {
    */
   registerTab(tabId: string, webContentsId: number): void {
     logger.info('Registering browser tab', { tabId, webContentsId });
+    if (this.tabRegistry.get(tabId) !== webContentsId) {
+      this.tabsWithDeviceMetricsOverride.delete(tabId);
+    }
     this.tabRegistry.set(tabId, webContentsId);
 
     // Owned tabs are always emulated (docs/protocol §5.9): (re)apply the
@@ -386,6 +392,7 @@ class EmbeddedBrowserCdpService {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
         if (this.tabRegistry.get(tabId) === webContentsId) {
           this.tabRegistry.delete(tabId);
+          this.tabsWithDeviceMetricsOverride.delete(tabId);
           // Bounds belong to the destroyed webview element; a remount
           // re-reports them.
           this.tabViewBounds.delete(tabId);
@@ -449,6 +456,7 @@ class EmbeddedBrowserCdpService {
    * use {@link clearTabOwnership} on a genuine close (monorepo#2857).
    */
   unregisterTab(tabId: string): void {
+    this.tabsWithDeviceMetricsOverride.delete(tabId);
     const webContentsId = this.tabRegistry.get(tabId);
     if (webContentsId !== undefined) {
       logger.info('Unregistering browser tab', { tabId, webContentsId });
@@ -1182,15 +1190,16 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) return;
     const viewport = explicitViewport ?? { mode: 'fit' as const };
     if (viewport.mode === 'fit' && !ownership) {
-      void this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride').catch(
-        (error) => {
+      if (!this.tabsWithDeviceMetricsOverride.has(tabId)) return;
+      void this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride')
+        .then(() => this.tabsWithDeviceMetricsOverride.delete(tabId))
+        .catch((error) => {
           logger.warn('Failed to clear viewport emulation', {
             tabId,
             webContentsId,
             error: (error as Error).message,
           });
-        },
-      );
+        });
       return;
     }
     const bounds = this.tabViewBounds.get(tabId);
@@ -1214,15 +1223,24 @@ class EmbeddedBrowserCdpService {
       deviceScaleFactor: 0,
       mobile: false,
       scale,
-    }).catch((error) => {
-      logger.warn('Failed to apply viewport emulation', {
-        tabId,
-        webContentsId,
-        ...size,
-        scale,
-        error: (error as Error).message,
+    })
+      .then(() => {
+        if (this.tabRegistry.get(tabId) !== webContentsId) return;
+        this.tabsWithDeviceMetricsOverride.add(tabId);
+        const currentViewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
+        if (currentViewport.mode === 'fit' && !this.tabOwnership.has(tabId)) {
+          this.applyViewportEmulation(tabId);
+        }
+      })
+      .catch((error) => {
+        logger.warn('Failed to apply viewport emulation', {
+          tabId,
+          webContentsId,
+          ...size,
+          scale,
+          error: (error as Error).message,
+        });
       });
-    });
   }
 
   /**

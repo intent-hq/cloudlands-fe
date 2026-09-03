@@ -20,9 +20,7 @@ export function browserCaptureToContextItems(
   capture: BrowserElementCapture,
 ): [image: ContextItem, context: ContextItem] {
   const element = capture.element;
-  const viewport = (
-    capture as BrowserElementCapture & { viewport?: { width: number; height: number } }
-  ).viewport;
+  const viewport = capture.viewport;
   const host = captureHost(capture);
   const label = element ? `<${element.tagName.toLowerCase()}> · ${host}` : capture.title || host;
   const details = [

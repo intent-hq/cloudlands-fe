@@ -534,20 +534,84 @@ describe('viewport emulation modes', () => {
     expect(service.getTabEmulatedSize('tab-owned-fit')).toEqual({ width: 1024, height: 768 });
   });
 
-  it('clears device metrics for an unowned fit tab', async () => {
+  it('does not attach the debugger for a plain unowned fit tab', async () => {
     const service = await loadService();
     const wc = fakeCdpWebview(64, {});
+    wc.debugger.isAttached = () => false;
     mocks.fromId.mockReturnValue(wc);
     service.registerTab('tab-user-fit', 64);
     service.setTabViewport('tab-user-fit', { mode: 'fit' });
 
-    await vi.waitFor(() => {
+    expect(wc.debugger.attach).not.toHaveBeenCalled();
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalled();
+    expect(service.getTabEffectiveViewportSize('tab-user-fit')).toBeUndefined();
+  });
+
+  it('clears device metrics after an unowned tab returns from preset to fit', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(66, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-preset', 66);
+    service.setTabViewport('tab-user-preset', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.any(Object),
+      ),
+    );
+
+    service.setTabViewport('tab-user-preset', { mode: 'fit' });
+
+    await vi.waitFor(() =>
       expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
         'Emulation.clearDeviceMetricsOverride',
         undefined,
-      );
+      ),
+    );
+  });
+
+  it('waits for an in-flight device metrics override before clearing it', async () => {
+    let resolveOverride!: () => void;
+    const override = new Promise<void>((resolve) => {
+      resolveOverride = resolve;
     });
-    expect(service.getTabEffectiveViewportSize('tab-user-fit')).toBeUndefined();
+    const service = await loadService();
+    const wc = fakeCdpWebview(67, {
+      'Emulation.setDeviceMetricsOverride': override,
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-in-flight', 67);
+    service.setTabViewport('tab-user-in-flight', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.any(Object),
+      ),
+    );
+
+    service.setTabViewport('tab-user-in-flight', { mode: 'fit' });
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Emulation.clearDeviceMetricsOverride',
+      undefined,
+    );
+
+    resolveOverride();
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.clearDeviceMetricsOverride',
+        undefined,
+      ),
+    );
   });
 
   it('rehydrates a legacy owned tab into fit mode', async () => {
