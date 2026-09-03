@@ -629,6 +629,17 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'externalEditors/setOpenAction' },
   },
   {
+    path: 'openIn.editorOrder',
+    label: 'Open In editor order',
+    description: 'Preferred order for editors shown in Open In controls.',
+    category: 'per-feature',
+    type: 'array',
+    source: 'local-storage',
+    storageKey: 'settings:openInEditorsOrder',
+    defaultValue: [],
+    apply: { kind: 'local-storage-set', key: 'settings:openInEditorsOrder' },
+  },
+  {
     path: 'githubLinks.defaultAction',
     label: 'GitHub link default action',
     description: 'Default action for plain clicks on GitHub issue and pull request links.',
