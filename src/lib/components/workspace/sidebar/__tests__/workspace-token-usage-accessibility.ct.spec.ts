@@ -227,10 +227,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
     await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
     expect(await compositionValues()).toEqual([
-      { value: '550', share: '73%' },
-      { value: '50', share: '7%' },
+      { value: '550 tokens', share: '73% of total' },
       { value: '150', share: '20%' },
       { value: '0', share: '0%' },
+      { value: '50', share: '7%' },
     ]);
     const compositionSegments = details.locator('.composition-strip-segment');
     await expect(compositionSegments).toHaveCount(3);
@@ -391,10 +391,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(agentBeta).toBeFocused();
   await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
   expect(await compositionValues()).toEqual([
-    { value: '50', share: '33%' },
-    { value: '30', share: '20%' },
+    { value: '50 tokens', share: '33% of total' },
     { value: '70', share: '47%' },
     { value: '0', share: '0%' },
+    { value: '30', share: '20%' },
   ]);
   await expect(messageRows.nth(0)).toHaveText(/Human messages\s+3/);
   await expect(messageRows.nth(1)).toHaveText(/Agent messages\s+6/);
@@ -418,14 +418,14 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(finalModel).toBeFocused();
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
   expect(await compositionValues()).toEqual([
-    { value: '30', share: '60%' },
-    { value: '5', share: '10%' },
+    { value: '30 tokens', share: '60% of total' },
     { value: '15', share: '30%' },
     { value: '0', share: '0%' },
+    { value: '5', share: '10%' },
   ]);
   await expect(details.locator('.composition-strip-segment')).toHaveCount(3);
   await expect(details.locator('.composition-strip')).toHaveAccessibleName(
-    /Token composition, Cached context: 30 tokens, 60%.*Input context: 5 tokens, 10%.*Model output: 15 tokens, 30%/,
+    /Token composition, Cached context: 30 tokens, 60%.*Model output: 15 tokens, 30%.*Input context: 5 tokens, 10%/,
   );
 
   await longModel.focus();
@@ -544,14 +544,14 @@ test('retargets animated values smoothly with final-only accessibility and stabl
 
   await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
-  await expect(finalTargets).toHaveText(['50', '30', '70', '0']);
+  await expect(finalTargets).toHaveText(['50 tokens', '70', '0', '30']);
   expect(
     await animatedValues.evaluateAll((values) =>
       values.every((value) => value.ariaHidden === 'true'),
     ),
   ).toBe(true);
   await page.clock.runFor(75);
-  const midpoint = Number(await animatedValues.first().textContent());
+  const midpoint = Number.parseFloat((await animatedValues.first().textContent()) ?? '');
   expect(midpoint).toBeGreaterThan(50);
   expect(midpoint).toBeLessThan(550);
   expect(await geometry()).toEqual(initialGeometry);
@@ -565,7 +565,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
-  await expect(finalTargets).toHaveText(['30', '5', '15', '0']);
+  await expect(finalTargets).toHaveText(['30 tokens', '15', '0', '5']);
   expect(
     await finalTargets.evaluateAll((targets) =>
       targets.every((target) => target.ariaAtomic === 'true'),
@@ -575,13 +575,13 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   expect(midpointGeometry).toEqual(initialGeometry);
 
   await page.clock.runFor(350);
-  await expect(animatedValues).toHaveText(['30', '5', '15', '0']);
+  await expect(animatedValues).toHaveText(['30 tokens', '15', '0', '5']);
   expect(await geometry()).toEqual(initialGeometry);
 
   await finalModel.blur();
   await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
   await page.clock.runFor(350);
-  await expect(animatedValues).toHaveText(['550', '50', '150', '0']);
+  await expect(animatedValues).toHaveText(['550 tokens', '150', '0', '50']);
 });
 
 test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
@@ -652,7 +652,6 @@ test('renders the full reference table as a wide overlay from the real workspace
   const modelSection = page.getByTestId('token-usage-by-model');
   const details = page.getByTestId('token-usage-details');
   const composition = details.locator('section[aria-labelledby$="-composition"]');
-  const compositionHeader = composition.locator('.composition-header');
   const compositionStrip = composition.locator('.composition-strip');
   const compositionSegments = compositionStrip.locator('.composition-strip-segment');
   const compositionRows = details.locator('.composition-row');
@@ -705,16 +704,22 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows).toHaveCount(6);
   await expect(compositionStrip).toHaveRole('img');
   await expect(compositionStrip).toHaveAccessibleName(
-    /Token composition, Cached context: 550 tokens, 73%.*Input context: 50 tokens, 7%.*Model output: 150 tokens, 20%/,
+    /Token composition, Cached context: 550 tokens, 73%.*Model output: 150 tokens, 20%.*Input context: 50 tokens, 7%/,
   );
   await expect(compositionSegments).toHaveCount(3);
-  await expect(compositionHeader).toHaveText(/Metric\s+Value\s+Share/);
+  await expect(composition.locator('.composition-header')).toHaveCount(0);
   await expect(compositionRows.nth(0)).toContainText('Cached context');
-  await expect(compositionRows.nth(1)).toContainText('Input context');
-  await expect(compositionRows.nth(2)).toContainText('Human messages');
-  await expect(compositionRows.nth(3)).toContainText('Agent messages');
-  await expect(compositionRows.nth(4)).toContainText('Model output');
-  await expect(compositionRows.nth(5)).toContainText('Reasoning tokens');
+  await expect(
+    compositionRows.nth(0).locator('.composition-value .animated-number-value'),
+  ).toHaveText('550 tokens');
+  await expect(
+    compositionRows.nth(0).locator('.composition-context .animated-number-value'),
+  ).toHaveText('73% of total');
+  await expect(compositionRows.nth(1)).toContainText('Model output');
+  await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
+  await expect(compositionRows.nth(3)).toContainText('Human messages');
+  await expect(compositionRows.nth(4)).toContainText('Agent messages');
+  await expect(compositionRows.nth(5)).toContainText('Input context');
   await expect(messageCompositionRows.nth(0)).toHaveText(/Human messages\s+4/);
   await expect(messageCompositionRows.nth(1)).toHaveText(/Agent messages\s+7/);
   await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
@@ -759,7 +764,6 @@ test('renders the full reference table as a wide overlay from the real workspace
     navigatorStacks,
     breakdownDivider,
     compositionAlignment,
-    compositionHeaderAlignment,
     messageAlignment,
     breakdownAlignment,
     compositionBar,
@@ -850,7 +854,9 @@ test('renders the full reference table as a wide overlay from the real workspace
     details.locator('.breakdown-grid').evaluate((grid) => {
       const divider = getComputedStyle(grid, '::after');
       const secondSection = grid.querySelector('.breakdown-section + .breakdown-section')!;
-      const compositionHeader = grid.parentElement!.querySelector('.composition-header')!;
+      const composition = grid.parentElement!.querySelector<HTMLElement>(
+        'section[aria-labelledby$="-composition"]',
+      )!;
       const rows = Array.from(grid.parentElement!.querySelectorAll('.composition-row'));
       const neutralProbe = document.createElement('span');
       neutralProbe.style.color = 'hsl(var(--border))';
@@ -866,13 +872,11 @@ test('renders the full reference table as a wide overlay from the real workspace
         gridBorderBottomWidth: getComputedStyle(grid).borderBottomWidth,
         secondSectionBorderLeftWidth: getComputedStyle(secondSection).borderLeftWidth,
         secondSectionBorderLeftColor: getComputedStyle(secondSection).borderLeftColor,
-        headerBorderBottomWidth: getComputedStyle(compositionHeader).borderBottomWidth,
-        headerBorderBottomColor: getComputedStyle(compositionHeader).borderBottomColor,
         rowBorderTopWidths: rows.map((row) => getComputedStyle(row).borderTopWidth),
         lastRowBorderBottomWidth: getComputedStyle(rows.at(-1)!).borderBottomWidth,
         lastRowBottom: rows.at(-1)!.getBoundingClientRect().bottom,
-        compositionPaddingBottom: getComputedStyle(compositionHeader.parentElement!).paddingBottom,
-        compositionBottom: compositionHeader.parentElement!.getBoundingClientRect().bottom,
+        compositionPaddingBottom: getComputedStyle(composition).paddingBottom,
+        compositionBottom: composition.getBoundingClientRect().bottom,
         gridTop: grid.getBoundingClientRect().top,
         gridBottom: grid.getBoundingClientRect().bottom,
         detailsBottom: grid.parentElement!.getBoundingClientRect().bottom,
@@ -884,9 +888,6 @@ test('renders the full reference table as a wide overlay from the real workspace
         rowLeft: row.left,
       };
     }),
-    compositionHeader.evaluate((header) =>
-      Array.from(header.children).map((cell) => cell.getBoundingClientRect().toJSON()),
-    ),
     details.evaluate((element) => {
       const inputKey = element.querySelector('.composition-key[data-metric="input"]')!;
       const inputRow = inputKey.closest('.token-composition-row')!;
@@ -936,8 +937,8 @@ test('renders the full reference table as a wide overlay from the real workspace
         summaryGap:
           box.top -
           strip.parentElement!.querySelector('.token-summary')!.getBoundingClientRect().bottom,
-        headerGap:
-          strip.parentElement!.querySelector('.composition-header')!.getBoundingClientRect().top -
+        rowsGap:
+          strip.parentElement!.querySelector('.composition-row')!.getBoundingClientRect().top -
           box.bottom,
         gaps: segments.slice(1).map((segment, index) => {
           const previous = segments[index].getBoundingClientRect();
@@ -995,7 +996,6 @@ test('renders the full reference table as a wide overlay from the real workspace
         navigatorShare: style('.navigator-selection > :last-child'),
         summaryLabel: style('.token-summary > :first-child'),
         summaryTotal: style('.token-summary > :last-child'),
-        tableHeader: style('.composition-header'),
         metricLabel: style('.composition-metric'),
         metricValue: style('.composition-value'),
         metricShare: style('.composition-context'),
@@ -1026,7 +1026,6 @@ test('renders the full reference table as a wide overlay from the real workspace
     gridBorderTopWidth: '1px',
     gridBorderBottomWidth: '0px',
     secondSectionBorderLeftWidth: '1px',
-    headerBorderBottomWidth: '1px',
     rowBorderTopWidths: ['0px', '0px', '0px', '0px', '0px', '0px'],
     lastRowBorderBottomWidth: '0px',
     compositionPaddingBottom: '12px',
@@ -1034,8 +1033,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect([
     breakdownDivider.gridBorderTopColor,
     breakdownDivider.secondSectionBorderLeftColor,
-    breakdownDivider.headerBorderBottomColor,
-  ]).toEqual(Array(3).fill(breakdownDivider.neutralColor));
+  ]).toEqual(Array(2).fill(breakdownDivider.neutralColor));
   expect(
     Math.abs(breakdownDivider.compositionBottom - breakdownDivider.gridTop),
   ).toBeLessThanOrEqual(0.01);
@@ -1097,7 +1095,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         lastRadius,
         lastRight,
       }) =>
-        box.height === 8 &&
+        box.height === 6 &&
         segmentCount === 4 &&
         controls.every(
           (control) =>
@@ -1117,22 +1115,22 @@ test('renders the full reference table as a wide overlay from the real workspace
         Math.abs(lastRight - (box.x + box.width)) <= 0.04,
     ),
   ).toBe(true);
-  expect(compositionBar.box.height).toBe(8);
+  expect(compositionBar.box.height).toBe(6);
   expect(compositionBar.borderRadius).toBe('2px');
   expect(compositionBar.overflowX).toBe('hidden');
   expect(compositionBar.summaryGap).toBeCloseTo(8, 2);
-  expect(compositionBar.headerGap).toBeCloseTo(20, 2);
+  expect(compositionBar.rowsGap).toBeCloseTo(20, 2);
   expect(compositionBar.gaps.every((gap) => Math.abs(gap - 1) <= 0.02)).toBe(true);
   expect(compositionBar.segments.map(({ metric }) => metric)).toEqual([
     'cached',
-    'input',
     'output',
+    'input',
   ]);
   expect(new Set(compositionBar.segments.map(({ color }) => color)).size).toBe(3);
   const compositionUsableWidth = compositionBar.box.width - compositionBar.gaps.length;
   expect(compositionBar.segments[0].box.width / compositionUsableWidth).toBeCloseTo(550 / 750, 2);
-  expect(compositionBar.segments[1].box.width / compositionUsableWidth).toBeCloseTo(50 / 750, 2);
-  expect(compositionBar.segments[2].box.width / compositionUsableWidth).toBeCloseTo(150 / 750, 2);
+  expect(compositionBar.segments[1].box.width / compositionUsableWidth).toBeCloseTo(150 / 750, 2);
+  expect(compositionBar.segments[2].box.width / compositionUsableWidth).toBeCloseTo(50 / 750, 2);
   expect(
     compositionBar.segments.every((segment, index, segments) =>
       index === 0
@@ -1157,27 +1155,14 @@ test('renders the full reference table as a wide overlay from the real workspace
     navigatorShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
     summaryLabel: { fontSize: '13px', fontWeight: '400', textTransform: 'none' },
     summaryTotal: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
-    tableHeader: { fontSize: '13px', fontWeight: '400', textTransform: 'none' },
     metricLabel: { fontSize: '14px', fontWeight: '400' },
     metricValue: { fontSize: '14px', fontWeight: '400', textAlign: 'right' },
     metricShare: { fontSize: '13px', fontWeight: '400', textAlign: 'right' },
   });
   expect(typeHierarchy.summaryLabel.letterSpacing).toBe('normal');
-  expect(typeHierarchy.tableHeader.letterSpacing).toBe('normal');
   expect(typeHierarchy.summaryLabel.color).toBe(typeHierarchy.metricShare.color);
-  expect(typeHierarchy.tableHeader.color).toBe(typeHierarchy.metricShare.color);
   expect(typeHierarchy.navigatorShare.color).toBe(typeHierarchy.metricShare.color);
   expect(typeHierarchy.metricValue.color).not.toBe(typeHierarchy.metricShare.color);
-  expect(compositionHeaderAlignment).toHaveLength(3);
-  expect(compositionHeaderAlignment[0].x).toBeCloseTo(desktopRows[0].metric.x, 0);
-  expect(compositionHeaderAlignment[1].right).toBeCloseTo(
-    desktopRows[0].value.x + desktopRows[0].value.width,
-    0,
-  );
-  expect(compositionHeaderAlignment[2].right).toBeCloseTo(
-    desktopRows[0].context.x + desktopRows[0].context.width,
-    0,
-  );
   const navigatorButtons = details.locator('.breakdown-item-control');
   await expect(navigatorButtons).toHaveCount(8);
   await navigatorButtons.last().focus();
@@ -1263,7 +1248,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     messageAlignment.rows.every(
       ({ labelLeft, valueFontWeight, contextText }) =>
-        Math.abs(labelLeft - messageAlignment.inputLabelLeft - 16) <= 0.01 &&
+        Math.abs(labelLeft - messageAlignment.inputLabelLeft) <= 0.01 &&
         valueFontWeight === '400' &&
         contextText === '',
     ),

@@ -119,6 +119,14 @@
     return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
   }
 
+  function tokenValueLabel(value: number): string {
+    return m.workspace_tokenUsage_tokenValue_label({ tokens: compactWholeNumber(value) });
+  }
+
+  function shareOfTotalLabel(value: number): string {
+    return m.workspace_tokenUsage_shareOfTotal_label({ share: shareLabel(value) });
+  }
+
   function compactWholeNumber(value: number): string {
     return formatCompactNumber(value, { maximumFractionDigits: 0 });
   }
@@ -281,11 +289,6 @@
         tokens: entry.cacheReadTokens + entry.cacheCreationTokens,
       },
       {
-        id: 'input' as const,
-        label: m.workspace_tokenUsage_inputContext_label(),
-        tokens: entry.inputTokens,
-      },
-      {
         id: 'output' as const,
         label: m.workspace_tokenUsage_modelOutput_label(),
         tokens: entry.outputTokens,
@@ -294,6 +297,11 @@
         id: 'reasoning' as const,
         label: m.workspace_tokenUsage_reasoningTokens_label(),
         tokens: entry.thoughtTokens ?? 0,
+      },
+      {
+        id: 'input' as const,
+        label: m.workspace_tokenUsage_inputContext_label(),
+        tokens: entry.inputTokens,
       },
     ].map((row) => ({ ...row, share: share(row.tokens, entryProcessedTokens) }));
   }
@@ -570,7 +578,7 @@
           </div>
           {#if visibleCompositionRows.length > 0}
             <div
-              class="composition-strip mb-5 flex h-2 w-full min-w-0 overflow-hidden"
+              class="composition-strip mb-5 flex h-1.5 w-full min-w-0 overflow-hidden"
               role="img"
               aria-label={compositionSummary}
             >
@@ -584,57 +592,8 @@
               {/each}
             </div>
           {/if}
-          <div
-            class="composition-header min-w-0 border-b border-border pb-1 text-xs font-normal tracking-normal text-muted-foreground"
-          >
-            <span>{m.workspace_tokenUsage_metric_label()}</span>
-            <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
-            <span class="text-right">{m.workspace_tokenUsage_share_label()}</span>
-          </div>
           <dl>
             {#each compositionRows as row (row.id)}
-              <div
-                class="composition-row token-composition-row min-w-0 py-1"
-                data-zero={row.tokens === 0 ? 'true' : undefined}
-              >
-                <dt
-                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal {row.tokens ===
-                  0
-                    ? 'text-muted-foreground'
-                    : 'text-foreground'}"
-                >
-                  <span
-                    class="composition-key size-1.5 shrink-0 rounded-full"
-                    data-metric={row.id}
-                    data-zero={row.tokens === 0 ? 'true' : undefined}
-                    aria-hidden="true"
-                  ></span>
-                  <span class="min-w-0 truncate">{row.label}</span>
-                </dt>
-                <dd
-                  class="composition-value text-right text-sm font-normal tabular-nums {row.tokens ===
-                  0
-                    ? 'text-muted-foreground'
-                    : 'text-foreground'}"
-                >
-                  <AnimatedNumber
-                    value={row.tokens}
-                    format={compactWholeNumber}
-                    pulse={false}
-                    class="block w-full text-right"
-                  />
-                </dd>
-                <dd
-                  class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
-                >
-                  <AnimatedNumber
-                    value={row.share}
-                    format={shareLabel}
-                    pulse={false}
-                    class="block w-full text-right"
-                  />
-                </dd>
-              </div>
               {#if row.id === 'input' && crossFilterAvailable}
                 <div class="composition-row message-composition-row min-w-0 py-1">
                   <dt
@@ -677,6 +636,48 @@
                   <dd class="composition-context" aria-hidden="true"></dd>
                 </div>
               {/if}
+              <div
+                class="composition-row token-composition-row min-w-0 py-1"
+                data-zero={row.tokens === 0 ? 'true' : undefined}
+              >
+                <dt
+                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal {row.tokens ===
+                  0
+                    ? 'text-muted-foreground'
+                    : 'text-foreground'}"
+                >
+                  <span
+                    class="composition-key size-1.5 shrink-0 rounded-full"
+                    data-metric={row.id}
+                    data-zero={row.tokens === 0 ? 'true' : undefined}
+                    aria-hidden="true"
+                  ></span>
+                  <span class="min-w-0 truncate">{row.label}</span>
+                </dt>
+                <dd
+                  class="composition-value text-right text-sm font-normal tabular-nums {row.tokens ===
+                  0
+                    ? 'text-muted-foreground'
+                    : 'text-foreground'}"
+                >
+                  <AnimatedNumber
+                    value={row.tokens}
+                    format={row.id === 'cached' ? tokenValueLabel : compactWholeNumber}
+                    pulse={false}
+                    class="block w-full text-right"
+                  />
+                </dd>
+                <dd
+                  class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
+                >
+                  <AnimatedNumber
+                    value={row.share}
+                    format={row.id === 'cached' ? shareOfTotalLabel : shareLabel}
+                    pulse={false}
+                    class="block w-full text-right"
+                  />
+                </dd>
+              </div>
             {/each}
           </dl>
         </section>
@@ -711,7 +712,7 @@
                       </span>
                     </div>
                     <ol
-                      class="breakdown-stack flex h-2 w-full min-w-0 overflow-hidden bg-muted/60"
+                      class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
                       role="radiogroup"
                       aria-labelledby={`${detailsId}-agents`}
                     >
@@ -786,7 +787,7 @@
                       </span>
                     </div>
                     <ol
-                      class="breakdown-stack flex h-2 w-full min-w-0 overflow-hidden bg-muted/60"
+                      class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
                       role="radiogroup"
                       aria-labelledby={`${detailsId}-models`}
                     >
@@ -845,11 +846,10 @@
     z-index: var(--layer-popover);
   }
 
-  .composition-row,
-  .composition-header {
+  .composition-row {
     display: grid;
     grid-template-areas: 'metric value context';
-    grid-template-columns: minmax(0, 1fr) 3.5rem 3rem;
+    grid-template-columns: minmax(0, 1fr) 5rem 6rem;
     align-items: center;
     column-gap: 0.5rem;
   }
@@ -871,7 +871,7 @@
   }
 
   .message-composition-metric {
-    padding-inline-start: calc(0.375rem + 0.5rem + 1rem);
+    padding-inline-start: calc(0.375rem + 0.5rem);
   }
 
   .breakdown-stack-item {
