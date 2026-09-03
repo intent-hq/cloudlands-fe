@@ -207,11 +207,15 @@
 
   function handleThreadChange(value: string | string[]) {
     if (typeof value === 'string') {
-      if (collapsed) appStore.dispatch(setChiefCollapsed(false));
       selectedAgentId = value;
       appStore.dispatch(setChiefActiveAgentId(value));
       appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, value));
     }
+  }
+
+  function handleNewThreadClick() {
+    appStore.dispatch(setChiefCollapsed(false));
+    void createNewThread();
   }
 
   function handleDeleteThread(event: MouseEvent, agentId: string, threadTitle: string) {
@@ -222,7 +226,6 @@
 
   async function createNewThread() {
     if (isCreatingThread) return;
-    if (collapsed) appStore.dispatch(setChiefCollapsed(false));
     ensureChiefWorkspaceRegistered();
 
     const reduxState = appStore.state;
@@ -391,7 +394,7 @@
       >
         <button
           class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-          onclick={createNewThread}
+          onclick={handleNewThreadClick}
           disabled={isCreatingThread || collapsed}
           tabindex={collapsed ? -1 : undefined}
           aria-hidden={collapsed ? 'true' : undefined}
