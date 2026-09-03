@@ -20,6 +20,7 @@ export const WORKSPACE_TAB_CLIP_INSET_PX = WORKSPACE_PANEL_CORNER_RADIUS_PX;
 export const WORKSPACE_TAB_EDGE_FADE_WIDTH_PX = 24;
 export const WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX = 16;
 export const WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX = 8;
+export const WORKSPACE_TAB_CLOSED_SCROLLER_MARGIN_LEFT_PX = -6;
 
 export const WORKSPACE_TAB_MOTION_DURATION_MS = 200;
 export const WORKSPACE_TAB_MOTION_EASING = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
@@ -27,6 +28,12 @@ export const WORKSPACE_TAB_MOTION_EASING = 'cubic-bezier(0.215, 0.61, 0.355, 1)'
 export function getWorkspaceTabLeadingInsetPx(sidebarPanelOpen: boolean): number {
   const flareGap = sidebarPanelOpen ? 16 : 10;
   return WORKSPACE_TAB_FLARE_RADIUS_PX + flareGap;
+}
+
+export function getWorkspaceTabScrollerMarginLeftPx(sidebarPanelOpen: boolean): number {
+  return sidebarPanelOpen
+    ? WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX
+    : WORKSPACE_TAB_CLOSED_SCROLLER_MARGIN_LEFT_PX;
 }
 
 export function getWorkspaceTabScrollerPaddingLeftPx(leadingInsetPx: number): number {

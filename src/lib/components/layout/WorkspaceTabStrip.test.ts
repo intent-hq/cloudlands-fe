@@ -741,18 +741,22 @@ describe('WorkspaceTabStrip', () => {
   });
 
   it('changes the observable leading inset while preserving flare clearance', async () => {
-    const { rerender } = render(WorkspaceTabStrip, { props: { leadingInsetPx: 15 } });
+    const { rerender } = render(WorkspaceTabStrip, {
+      props: { leadingInsetPx: 15, scrollerMarginLeftPx: -6 },
+    });
     const tablist = screen.getByRole('tablist', {
       name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
     });
 
     expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
+    expect(getComputedStyle(tablist).marginLeft).toBe('-6px');
     expect(getComputedStyle(tablist).transitionDuration).toBe('200ms');
 
-    await rerender({ leadingInsetPx: 28 });
+    await rerender({ leadingInsetPx: 28, scrollerMarginLeftPx: 8 });
     expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
+    expect(getComputedStyle(tablist).marginLeft).toBe('8px');
 
-    await rerender({ leadingInsetPx: 4 });
+    await rerender({ leadingInsetPx: 4, scrollerMarginLeftPx: 8 });
     expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
   });
 

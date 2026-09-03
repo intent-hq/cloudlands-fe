@@ -80,6 +80,7 @@
     activeWorkspaceId?: string | null;
     horizontalPositionTrackingKey?: number;
     leadingInsetPx?: number;
+    scrollerMarginLeftPx?: number;
   }
 
   let {
@@ -88,6 +89,7 @@
     activeWorkspaceId,
     horizontalPositionTrackingKey = 0,
     leadingInsetPx = 28,
+    scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
   }: Props = $props();
 
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
@@ -839,11 +841,12 @@
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- The scroller starts 12px after the workspace panel curve. While content
+  <!-- The open scroller starts 12px after the workspace panel curve. While content
        is hidden on the left, a 16px transparent lead-in moves the effective
        clip/fade start to 28px after the curve without moving the first tab at
-       rest. The closed-state padding stays at the 6px flare radius to give the
-       logo about 10px of clear space before the flare.
+       rest. The closed scroller moves left so the visible logo-to-flare gap
+       matches the tab gap floor. Its 6px padding keeps the leading flare fully
+       inside the scrollport, so the clip and fade still move with the first tab.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -865,7 +868,7 @@
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     tabindex="-1"
-    style:margin-left={`${WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX}px`}
+    style:margin-left={`${scrollerMarginLeftPx}px`}
     style:padding-left={`${getWorkspaceTabScrollerPaddingLeftPx(leadingInsetPx)}px`}
     style:padding-bottom="2px"
     style:margin-bottom="-2px"

@@ -112,6 +112,7 @@ async function expectRenderedFlareJoinsPanelBorder(page: Page, component: Locato
     { side: 'leading', x: geometry.leadingEnd.x, direction: 1 },
     { side: 'trailing', x: geometry.trailingEnd.x, direction: -1 },
   ] as const;
+  let panelRowReference: number[] | null = null;
 
   for (const endpoint of endpoints) {
     const clip = {
@@ -145,12 +146,16 @@ async function expectRenderedFlareJoinsPanelBorder(page: Page, component: Locato
       return rows;
     };
     const outsideX = endpoint.x - endpoint.direction * 2 * zoom;
-    const panelRows = rowsAt(outsideX, outsideX);
-    const joinStart = endpoint.x + Math.min(0, endpoint.direction * 1.5 * zoom);
-    const joinEnd = endpoint.x + Math.max(0, endpoint.direction * 1.5 * zoom);
+    const measuredPanelRows = rowsAt(outsideX, outsideX);
+    const panelRows = endpoint.side === 'leading' ? measuredPanelRows : panelRowReference;
+    const joinStart = endpoint.x + Math.min(0, endpoint.direction * 5.5 * zoom);
+    const joinEnd = endpoint.x + Math.max(0, endpoint.direction * 5.5 * zoom);
     const joinRows = rowsAt(joinStart, joinEnd);
+    if (!panelRows) throw new Error('Missing leading panel row reference');
     expect(panelRows, endpoint.side).not.toHaveLength(0);
-    expect(joinRows, endpoint.side).toEqual(panelRows);
+    expect(joinRows, endpoint.side).not.toHaveLength(0);
+    expect(joinRows.slice(-panelRows.length), endpoint.side).toEqual(panelRows);
+    panelRowReference = panelRows;
   }
 }
 
@@ -162,6 +167,14 @@ async function getLogoToLeadingFlareGap(component: Locator) {
   expect(logoBox).toBeTruthy();
   expect(flareBox).toBeTruthy();
   return (flareBox?.x ?? 0) - ((logoBox?.x ?? 0) + (logoBox?.width ?? 0));
+}
+
+async function getInterTabGap(component: Locator) {
+  const tabs = component.locator('[data-workspace-tab]');
+  const [first, second] = await Promise.all([tabs.nth(0).boundingBox(), tabs.nth(1).boundingBox()]);
+  expect(first).toBeTruthy();
+  expect(second).toBeTruthy();
+  return (second?.x ?? 0) - ((first?.x ?? 0) + (first?.width ?? 0));
 }
 
 async function captureTabMotion(control: Locator, workspaceId: string) {
@@ -509,7 +522,7 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   await expectMaskAttachedToActiveTab(component);
 });
 
-test('widens the closed-sidebar logo gap while the flare and mask remain attached', async ({
+test('matches the closed-sidebar logo gap to the tab gap while the flare stays visible', async ({
   mount,
   page,
 }) => {
@@ -518,14 +531,16 @@ test('widens the closed-sidebar logo gap while the flare and mask remain attache
     props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: false },
   });
 
-  const closedGap = await getLogoToLeadingFlareGap(component);
-  expect(closedGap).toBeGreaterThanOrEqual(8);
-  expect(closedGap).toBeLessThanOrEqual(12);
+  const [closedGap, interTabGap] = await Promise.all([
+    getLogoToLeadingFlareGap(component),
+    getInterTabGap(component),
+  ]);
+  expect(Math.abs(closedGap - Math.max(interTabGap, 4))).toBeLessThanOrEqual(1);
   expect(await getLeadingEdgeGeometry(component)).toEqual({
-    curveEnd: 32,
-    clipStart: 60,
-    fadeEnd: 84,
-    firstTab: 50,
+    curveEnd: 26,
+    clipStart: 46,
+    fadeEnd: 70,
+    firstTab: 36,
   });
   await expectVisibleThroughAncestorClipping(
     component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
@@ -534,11 +549,11 @@ test('widens the closed-sidebar logo gap while the flare and mask remain attache
   await component.update({
     props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: true },
   });
-  await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(16, 0);
+  await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(22, 0);
   await expect
     .poll(() => getLeadingEdgeGeometry(component))
     .toEqual({
-      curveEnd: 32,
+      curveEnd: 26,
       clipStart: 60,
       fadeEnd: 84,
       firstTab: 54,

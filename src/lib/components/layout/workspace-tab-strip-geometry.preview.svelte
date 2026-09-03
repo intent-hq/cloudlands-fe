@@ -39,6 +39,7 @@
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     getWorkspaceTabBorderMaskImage,
     getWorkspaceTabLeadingInsetPx,
+    getWorkspaceTabScrollerMarginLeftPx,
     WINDOW_TITLEBAR_HEIGHT_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
@@ -56,6 +57,7 @@
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
   const leadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
+  const scrollerMarginLeftPx = $derived(getWorkspaceTabScrollerMarginLeftPx(sidebarPanelOpen));
 
   for (const [index, id] of ids.entries()) {
     const workspace: Workspace = {
@@ -94,14 +96,17 @@
 >
   <div class="window-title-bar" style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px">
     <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
-      <div class="fixed-controls" data-preview-logo>
-        <IntentNavigationIcon name="dandelion" size={16} />
+      <div class="fixed-controls">
+        <span class="preview-logo" data-preview-logo>
+          <IntentNavigationIcon name="dandelion" size={16} />
+        </span>
       </div>
       <div class="workspace-controls" data-titlebar-workspace-controls>
         <WorkspaceTabStrip
           {activeWorkspaceId}
           {leadingInsetPx}
-          horizontalPositionTrackingKey={leadingInsetPx}
+          {scrollerMarginLeftPx}
+          horizontalPositionTrackingKey={leadingInsetPx + scrollerMarginLeftPx}
           onActiveTabBoundsChange={(bounds) => (activeTabBounds = bounds)}
           onActiveTabTrackingChange={(tracking) => (activeTabTracking = tracking)}
         />
@@ -194,6 +199,13 @@
     width: 32px;
     height: 32px;
     flex: none;
+    place-items: center;
+  }
+
+  .preview-logo {
+    display: grid;
+    width: 20px;
+    height: 20px;
     place-items: center;
   }
 

@@ -40,6 +40,7 @@
     getCounterScaledTitlebarHeight,
     getWorkspaceTabBorderMaskImage,
     getWorkspaceTabLeadingInsetPx,
+    getWorkspaceTabScrollerMarginLeftPx,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
@@ -98,6 +99,11 @@
   // when a sidebar panel is open; tracks the panel width live.
   const sidebarPanelOpen = $derived(Boolean($panelItem$));
   const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
+  const workspaceTabScrollerMarginLeftPx = $derived(
+    getWorkspaceTabScrollerMarginLeftPx(
+      workspaceTabLeadingInsetPx === getWorkspaceTabLeadingInsetPx(true),
+    ),
+  );
   const panelOffset = $derived(
     sidebarPanelOpen
       ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft)
@@ -339,7 +345,10 @@
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={routedWorkspaceId}
           leadingInsetPx={workspaceTabLeadingInsetPx}
-          horizontalPositionTrackingKey={panelOffset + workspaceTabLeadingInsetPx}
+          scrollerMarginLeftPx={workspaceTabScrollerMarginLeftPx}
+          horizontalPositionTrackingKey={panelOffset +
+            workspaceTabLeadingInsetPx +
+            workspaceTabScrollerMarginLeftPx}
         />
         {#if !$onboardingActive$}
           <WorkspaceRepoLauncher />

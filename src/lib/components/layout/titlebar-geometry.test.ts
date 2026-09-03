@@ -4,6 +4,7 @@ import {
   getClippedWorkspaceTabBorderMaskBounds,
   getWorkspaceTabBorderMaskImage,
   getWorkspaceTabLeadingInsetPx,
+  getWorkspaceTabScrollerMarginLeftPx,
   getWorkspaceTabScrollerPaddingLeftPx,
   getWorkspaceTabScrollFadeState,
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
@@ -34,6 +35,8 @@ describe('shared title-bar geometry', () => {
       WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX +
         getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true)),
     ).toBe(18);
+    expect(getWorkspaceTabScrollerMarginLeftPx(true)).toBe(WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX);
+    expect(getWorkspaceTabScrollerMarginLeftPx(false)).toBe(-6);
   });
 
   it('shows edge fades only where scrolling hides tabs', () => {
