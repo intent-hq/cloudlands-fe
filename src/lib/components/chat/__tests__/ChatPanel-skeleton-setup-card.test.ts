@@ -43,7 +43,10 @@ const testState = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: testState.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ browser: { byWorkspaceId: {} } }),
+    dispatch: testState.dispatch,
+  });
 });
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
