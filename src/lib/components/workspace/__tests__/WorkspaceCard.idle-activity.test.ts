@@ -5,7 +5,7 @@
  * indicator without rendering local status dots or agent clusters.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { tick } from 'svelte';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
@@ -14,6 +14,7 @@ import {
   createTestWorkspaceId,
   createTestAgentId,
 } from '../../../../test/factories/workspace.factory';
+import { workspaceHoverCardIntentSession } from '../utils/workspace-hover-card-intent';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -89,6 +90,8 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
 }
 
 describe('WorkspaceCard compact agent metadata', () => {
+  beforeEach(() => workspaceHoverCardIntentSession.reset());
+
   it('uses the daemon display status without inferring state from activity', () => {
     const wsId = createTestWorkspaceId();
     const agentId = createTestAgentId();
@@ -380,6 +383,8 @@ describe('WorkspaceCard compact agent metadata', () => {
 describe('WorkspaceCard hover-intent delay', () => {
   const hoverCard = () => document.querySelector('[role="tooltip"]');
 
+  beforeEach(() => workspaceHoverCardIntentSession.reset());
+
   it('mounts the hover card only after the pointer rests on the row', async () => {
     vi.useFakeTimers();
     try {
@@ -445,7 +450,7 @@ describe('WorkspaceCard hover-intent delay', () => {
     }
   });
 
-  it('restarts the full delay when the pointer moves between workspace rows', async () => {
+  it('opens the next row immediately during a session and resets after cooldown', async () => {
     vi.useFakeTimers();
     try {
       const first = render(WorkspaceCard, {
@@ -458,16 +463,28 @@ describe('WorkspaceCard hover-intent delay', () => {
       const secondRow = second.container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
 
       await fireEvent.mouseEnter(firstRow);
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
+
       await fireEvent.mouseLeave(firstRow);
       await fireEvent.mouseEnter(secondRow);
+      vi.advanceTimersByTime(0);
+      await tick();
+      expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
+
+      await fireEvent.mouseLeave(secondRow);
+      vi.advanceTimersByTime(300);
+      await fireEvent.mouseEnter(firstRow);
       vi.advanceTimersByTime(399);
       await tick();
       expect(hoverCard()).toBeNull();
-
       vi.advanceTimersByTime(1);
       await tick();
-      expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.mouseLeave(firstRow);
+      vi.advanceTimersByTime(300);
     } finally {
       vi.useRealTimers();
     }

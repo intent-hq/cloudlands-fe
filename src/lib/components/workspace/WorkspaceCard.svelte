@@ -22,7 +22,7 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
-  import { WORKSPACE_HOVER_CARD_OPEN_DELAY_MS } from './utils/workspace-hover-card-intent';
+  import { workspaceHoverCardIntentSession } from './utils/workspace-hover-card-intent';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -193,12 +193,27 @@
   let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerWithinRow = false;
   let focusWithinRow = false;
+  let hoverCardOpenedFromPointer = false;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
       clearTimeout(hoverCardOpenTimer);
       hoverCardOpenTimer = null;
     }
+  }
+
+  function openHoverCardFromPointer() {
+    hoverCardVisible = true;
+    if (hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = true;
+    workspaceHoverCardIntentSession.notifyOpened();
+  }
+
+  function closeHoverCard() {
+    hoverCardVisible = false;
+    if (!hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = false;
+    workspaceHoverCardIntentSession.notifyClosed();
   }
 
   const activePullRequest = $derived.by(() => {
@@ -253,15 +268,15 @@
       clearHoverCardOpenTimer();
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
-        hoverCardVisible = true;
-      }, WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+        openHoverCardFromPointer();
+      }, workspaceHoverCardIntentSession.currentOpenDelay);
     }
   }
 
   function handleMouseLeave() {
     pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    if (!focusWithinRow) hoverCardVisible = false;
+    if (!focusWithinRow) closeHoverCard();
   }
 
   function handleFocusIn() {
@@ -273,13 +288,13 @@
   function handleFocusOut(event: FocusEvent) {
     if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
     focusWithinRow = false;
-    if (!pointerWithinRow) hoverCardVisible = false;
+    if (!pointerWithinRow) closeHoverCard();
   }
 
   $effect(() => {
     if (suppressHover) {
       clearHoverCardOpenTimer();
-      hoverCardVisible = false;
+      closeHoverCard();
     }
   });
 
@@ -314,6 +329,7 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
