@@ -54,7 +54,6 @@ const mocks = vi.hoisted(() => {
     reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
-    awaitingUtilityFooter: mutableReadable(false),
     transcriptHydration: mutableReadable('settled'),
     transcriptHydratedOnce: mutableReadable(true),
     transcriptSnapshotMeta: mutableReadable<
@@ -129,9 +128,6 @@ vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
-    select: () => false,
-  }),
-  selectAwaitingUtilityFooter: Object.assign(() => mocks.awaitingUtilityFooter, {
     select: () => false,
   }),
   selectChatError: Object.assign(() => mocks.chatError, { select: () => null }),
@@ -320,6 +316,9 @@ vi.mock('../AuroraBackground.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../BackgroundHooksRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../questions/QuestionWizard.svelte', async () => ({
@@ -531,7 +530,6 @@ beforeEach(() => {
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
-  mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
   mocks.transcriptSnapshotMeta.set(undefined);
@@ -2910,16 +2908,12 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
   });
 
-  it('reveals transcript and utility footer in the same flip on switch-back', async () => {
-    // Same-paint reveal: while EITHER gate holds (here the footer gate after
-    // the snapshot gate cleared), the skeleton stays up and the utility card
-    // stays unmounted; clearing the last gate flips both in one paint.
+  it('reveals the transcript as soon as the switch-back snapshot settles', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
     mocks.awaitingSwitchBackSnapshot.set(true);
-    mocks.awaitingUtilityFooter.set(true);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
@@ -2928,65 +2922,44 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
-    // The fresh snapshot applies but the footer sources are still settling:
-    // still one deferred surface — no partial reveal.
+    // Utility reads are not part of this transition: the fresh transcript
+    // snapshot is the only reveal condition.
     mocks.awaitingSwitchBackSnapshot.set(false);
-    await tick();
-    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
-
-    // Footer ready: transcript and utility card mount in the SAME flip.
-    mocks.awaitingUtilityFooter.set(false);
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
-  it('reveals transcript and utility footer in the same flip on first open', async () => {
-    // First open: hydration settles (latch true) with the footer gate armed —
-    // the skeleton keeps covering until the footer sources settle, then both
-    // reveal together.
+  it('reveals the transcript immediately after first-open hydration settles', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    mocks.awaitingUtilityFooter.set(true);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
 
-    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
-
-    mocks.awaitingUtilityFooter.set(false);
-    await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
-  it('reveals without the footer when the bounded fallback clears the gates', async () => {
-    // Fallback (footer sources never settled in the window): the saga clears
-    // both flags — the transcript reveals and the (empty-data) card mounts
-    // hidden; late footer data pops in afterwards (out of scope here).
+  it('reveals when bounded recovery clears a missing switch-back snapshot', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'retained', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
     mocks.awaitingSwitchBackSnapshot.set(true);
-    mocks.awaitingUtilityFooter.set(true);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
 
-    // chatSwitchBackRevealTimedOut clears BOTH gates in the reducer.
+    // chatSwitchBackRevealTimedOut clears the transcript snapshot gate.
     mocks.awaitingSwitchBackSnapshot.set(false);
-    mocks.awaitingUtilityFooter.set(false);
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
