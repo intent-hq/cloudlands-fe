@@ -1,13 +1,16 @@
 import type { AgentMessage } from '$shared/types';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+import { getAnsweredQuestionsMessageId } from './answer-message';
 
 /**
  * Pending Agent Q&A questions for the composer-slot wizard. The daemon's
  * three-state pending marker is authoritative when present: an empty string
- * clears the slot, while a message id permits only that question-bearing row.
- * Legacy sessions without the marker use the daemon's transcript-tail fallback.
- * Dependency-light on purpose — no stores or components.
+ * clears the slot, while a message id permits only that question-bearing row
+ * — and keeps it pending across later automatic/user turns until the daemon
+ * clears it (answer or dismissal). Legacy sessions without the marker use the
+ * daemon's transcript-tail fallback. Dependency-light on purpose — no stores
+ * or components.
  */
 
 export interface PendingQuestionSet {
@@ -36,15 +39,36 @@ function questionsOf(message: AgentMessage): Question[] {
 }
 
 /**
+ * True when a user row in `messages` carries the wizard's answer tag naming
+ * `messageId`. Bridges the window between the user hitting Send (the
+ * optimistic row mirrors the tag) and the daemon's `agent:updated` clearing
+ * the marker, so an answered set never pops back in.
+ */
+export function isQuestionSetAnswered(
+  messages: readonly AgentMessage[],
+  messageId: string,
+): boolean {
+  return messages.some(
+    (message) => message.role === 'user' && getAnsweredQuestionsMessageId(message) === messageId,
+  );
+}
+
+/**
  * Derive the pending question set, or null when there is none.
  *
- * Null whenever the agent's OWN turn is still active (`isTurnActive` mirrors
- * the canonical `selectAgentIsResponding` gate — NOT the broader
+ * With the daemon marker set, the marked question-bearing row stays pending
+ * regardless of `isTurnActive`: the marker is only written once the asking
+ * turn has ended, and later automatic/user turns must not hide the wizard.
+ * It is null only while that row is still streaming, once a tagged answer
+ * row names it, or while an optimistic pending user bubble is shown.
+ *
+ * Without the marker (legacy daemon) the transcript-tail fallback applies and
+ * is additionally null whenever the agent's OWN turn is active (`isTurnActive`
+ * mirrors the canonical `selectAgentIsResponding` gate — NOT the broader
  * `selectAgentIsRunning`, which stays true while the agent merely waits on
- * delegated agents and must not suppress the wizard), an optimistic pending
- * user bubble is shown, or the question-bearing message is still streaming.
- * When the marker is absent, trailing system rows are transparent and only a
- * question-bearing assistant row at the non-system tail is pending.
+ * delegated agents and must not suppress the wizard): trailing system rows
+ * are transparent and only a question-bearing assistant row at the
+ * non-system tail is pending.
  */
 export function derivePendingQuestions(
   messages: readonly AgentMessage[],
@@ -52,7 +76,7 @@ export function derivePendingQuestions(
   showingPendingUserMessage = false,
   pendingQuestionsMessageId?: string,
 ): PendingQuestionSet | null {
-  if (isTurnActive || showingPendingUserMessage || messages.length === 0) {
+  if (showingPendingUserMessage || messages.length === 0) {
     return null;
   }
   const marker = classifyPendingQuestionMarker(pendingQuestionsMessageId);
@@ -61,9 +85,12 @@ export function derivePendingQuestions(
   if (marker.kind === 'set') {
     const marked = messages.find((message) => message.id === marker.messageId);
     if (!marked || marked.role !== 'assistant' || marked.isStreaming) return null;
+    if (isQuestionSetAnswered(messages, marker.messageId)) return null;
     const questions = questionsOf(marked);
     return questions.length > 0 ? { messageId: marked.id, questions } : null;
   }
+
+  if (isTurnActive) return null;
 
   // Match the daemon's pre-marker fallback: trailing system rows are
   // transparent, but the first non-system row must itself be a

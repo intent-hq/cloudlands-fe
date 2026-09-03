@@ -2174,8 +2174,6 @@
   "chat_queuedMessages_sendNow_tooltip": "Jetzt senden (unterbricht den aktuellen Stream)",
   "chat_queuedMessages_remove_tooltip": "Entfernen",
   "chat_queuedMessages_edit_tooltip": "Bearbeiten",
-  "chat_queuedMessages_heldForQuestionsHint_one": "1 Nachricht wartet — zurückgehalten, bis Sie die Fragen des Agenten beantworten oder verwerfen",
-  "chat_queuedMessages_heldForQuestionsHint_many": "{count} Nachrichten warten — zurückgehalten, bis Sie die Fragen des Agenten beantworten oder verwerfen",
   "chat_backgroundHooks_row_ariaLabel": "Hintergrund-Hooks",
   "chat_backgroundHooks_running_label": "Läuft",
   "chat_backgroundHooks_runNow_label": "Jetzt ausführen",

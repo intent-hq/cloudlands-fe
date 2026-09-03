@@ -103,14 +103,49 @@ describe('derivePendingQuestions', () => {
     expect(pending!.questions.map((q) => q.header)).toEqual(['Auth method', 'Scope']);
   });
 
-  it('returns null while the agent is running', () => {
+  it('returns null while the agent is running (legacy fallback, no marker)', () => {
     const msg = assistantMessage([questionBlock()]);
     expect(derivePendingQuestions([msg], true)).toBeNull();
+  });
+
+  it('keeps a marked set pending while a later turn is running', () => {
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const transcript = [msg, userMessage('msg-u1')];
+    expect(derivePendingQuestions(transcript, true, false, 'msg-a1')).toMatchObject({
+      messageId: 'msg-a1',
+    });
+    const withStreamingReply = [
+      ...transcript,
+      assistantMessage([{ type: 'text', text: 'Working…' }], { id: 'msg-a2', isStreaming: true }),
+    ];
+    expect(derivePendingQuestions(withStreamingReply, true, false, 'msg-a1')).toMatchObject({
+      messageId: 'msg-a1',
+    });
   });
 
   it('returns null while the last assistant message is streaming', () => {
     const msg = assistantMessage([questionBlock()], { isStreaming: true });
     expect(derivePendingQuestions([msg], false)).toBeNull();
+  });
+
+  it('returns null while the MARKED message itself is still streaming', () => {
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1', isStreaming: true });
+    expect(derivePendingQuestions([msg], true, false, 'msg-a1')).toBeNull();
+    expect(derivePendingQuestions([msg], false, false, 'msg-a1')).toBeNull();
+  });
+
+  it('a tagged answer row hides a marked set before the daemon clears the marker', () => {
+    // The optimistic answer row mirrors the wire tag; the marker is still set
+    // until agent:updated lands, and the next turn is already active.
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const answered = [msg, answerMessage('msg-a1')];
+    expect(derivePendingQuestions(answered, true, false, 'msg-a1')).toBeNull();
+    expect(derivePendingQuestions(answered, false, false, 'msg-a1')).toBeNull();
+    // An answer for a different set does not resolve this one.
+    const otherAnswer = [msg, answerMessage('msg-other')];
+    expect(derivePendingQuestions(otherAnswer, false, false, 'msg-a1')).toMatchObject({
+      messageId: 'msg-a1',
+    });
   });
 
   it('ends the legacy fallback at a later user row', () => {
@@ -281,14 +316,70 @@ describe('wizard gate while waiting on delegated agents', () => {
     expect(pending!.questions[0].header).toBe('Auth method');
   });
 
-  it('still suppresses the wizard while the agent own turn is active (responding)', () => {
-    const state = stateWith(makeStoredSession({ isResponding: true }));
-    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
+  it('legacy (marker-less) sessions still suppress the wizard while the own turn is active', () => {
+    expect(
+      deriveWizardPendingQuestions(
+        stateWith(makeStoredSession({ isResponding: true })),
+        AGENT_ID,
+        transcript,
+      ),
+    ).toBeNull();
+    expect(
+      deriveWizardPendingQuestions(
+        stateWith(makeStoredSession({ isStreaming: true })),
+        AGENT_ID,
+        transcript,
+      ),
+    ).toBeNull();
   });
 
-  it('still suppresses the wizard while the agent own turn is streaming', () => {
-    const state = stateWith(makeStoredSession({ isStreaming: true }));
-    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
+  it('STICKY: a marked set stays visible while a later automatic/user turn runs', () => {
+    const runningLater = makeStoredSession({
+      isResponding: true,
+      isStreaming: true,
+      metadata: { pendingQuestionsMessageId: 'msg-a1' },
+    });
+    const state = stateWith(runningLater);
+    const laterTurn = [
+      ...transcript,
+      userMessage('msg-wake-report'),
+      assistantMessage([{ type: 'text', text: 'Handling the report…' }], {
+        id: 'msg-a2',
+        isStreaming: true,
+      }),
+    ];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, laterTurn)).toMatchObject({
+      messageId: 'msg-a1',
+    });
+  });
+
+  it('STICKY: the marked message still streaming (asking turn in flight) suppresses the wizard', () => {
+    const state = stateWith(
+      makeStoredSession({
+        isResponding: true,
+        isStreaming: true,
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      }),
+    );
+    const asking = [
+      transcript[0],
+      assistantMessage([questionBlock()], { id: 'msg-a1', isStreaming: true }),
+    ];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, asking)).toBeNull();
+  });
+
+  it('STICKY: the optimistic tagged answer row hides the wizard before the marker clears', () => {
+    // Send flips the own-turn gate on and appends the tagged optimistic row;
+    // the daemon's written clear (agent:updated) lands later.
+    const state = stateWith(
+      makeStoredSession({
+        isResponding: true,
+        isStreaming: true,
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      }),
+    );
+    const answered = [...transcript, answerMessage('msg-a1')];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, answered)).toBeNull();
   });
 
   it('a trailing user message (e.g. delegated-agent wake report) no longer supersedes', () => {
@@ -453,6 +544,48 @@ describe('wizard gate honors the authoritative pending marker', () => {
       messageId: marked.id,
     });
     expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
+
+    // Sticky across a running later turn; resolved by a tagged tail row.
+    state.agentSessions.byAgentId[AGENT_ID] = makeStoredSession({
+      messages: transcript,
+      isResponding: true,
+      metadata: { pendingQuestionsMessageId: marked.id },
+    });
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toMatchObject({
+      messageId: marked.id,
+    });
+    expect(
+      deriveWizardPendingQuestions(state, AGENT_ID, [...transcript, answerMessage(marked.id)]),
+    ).toBeNull();
+  });
+
+  it('keeps a recovered marked set visible across later turns until answered', () => {
+    const state = stateWith(
+      makeStoredSession({
+        isResponding: true,
+        metadata: { pendingQuestionsMessageId: 'msg-recovered' },
+      }),
+    );
+    state.chatState = {
+      byAgentId: {
+        [AGENT_ID]: {
+          pendingQuestionRecovery: {
+            messageId: 'msg-recovered',
+            status: 'found',
+            questions: [QUESTION],
+          },
+        },
+      },
+    } as StoreState['chatState'];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toMatchObject({
+      messageId: 'msg-recovered',
+    });
+    expect(
+      deriveWizardPendingQuestions(state, AGENT_ID, [
+        ...transcript,
+        answerMessage('msg-recovered'),
+      ]),
+    ).toBeNull();
   });
 
   it('keeps an authoritative marker fail-closed when recovery settles as not found', () => {
