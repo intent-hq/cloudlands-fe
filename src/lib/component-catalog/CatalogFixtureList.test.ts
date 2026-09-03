@@ -169,6 +169,20 @@ describe('CatalogFixtureList real previews', () => {
     expect(container.querySelectorAll('[data-catalog-sidebar-icon]')).toHaveLength(2);
   });
 
+  it('mounts the daemon-free subscription row catalog', async () => {
+    const { container } = renderEntry('subscription-rows');
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="subscription-rows-preview"]')).toBeTruthy();
+    });
+    expect(
+      container.querySelectorAll('[data-testid="event-subscriptions-card"]').length,
+    ).toBeGreaterThan(20);
+    expect(container.querySelector('[data-testid="delegation-group-section"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="agent-message-disclosure-header"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="hook-wake-attribution"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="pr-monitor-wake-attribution"]')).toBeTruthy();
+  });
+
   it('mounts and operates the canonical Settings Slider and FileInput previews', async () => {
     const sliderRender = renderEntry('slider');
     const slider = screen.getByRole('slider', { name: 'Catalog volume' });

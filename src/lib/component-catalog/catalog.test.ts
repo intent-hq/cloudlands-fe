@@ -27,7 +27,10 @@ describe('static component catalog', () => {
   });
 
   it('registers exactly one real preview renderer for every canonical fixture', () => {
-    const manifestIds = canonicalComponentManifest.map(({ id }) => id).sort();
+    const manifestIds = [
+      ...canonicalComponentManifest.map(({ id }) => id),
+      'subscription-rows',
+    ].sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(manifestIds);
 
     for (const component of canonicalComponentManifest) {
@@ -47,6 +50,7 @@ describe('static component catalog', () => {
     expect(groups.find(({ id }) => id === 'products')?.entries.map(({ slug }) => slug)).toEqual([
       'chat-polish',
       'proposal-card',
+      'subscription-rows',
     ]);
     expect(
       buildCatalogGroups([

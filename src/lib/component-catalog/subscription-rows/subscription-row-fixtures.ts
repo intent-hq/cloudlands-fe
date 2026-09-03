@@ -1,0 +1,256 @@
+import type { BackgroundHook } from '$features/hooks/background-hooks-service';
+import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
+import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
+import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+
+export type FixtureState = 'collapsed' | 'expanded';
+
+export interface AgentCardFixture {
+  id: string;
+  label: string;
+  count: number;
+  finishedCount: number;
+  state: FixtureState;
+}
+
+const agentCases: Array<[string, string, number, number]> = [
+  ['one-waiting', '1 waiting agent', 1, 0],
+  ['three-waiting', '3 waiting agents', 3, 0],
+  ['one-finished', '3 agents, 1 finished', 3, 1],
+  ['all-finished', 'All agents finished', 3, 3],
+  ['avatar-stack', 'Grouped avatar stack (6 agents)', 6, 0],
+];
+
+export const agentCardFixtures: AgentCardFixture[] = agentCases.flatMap(
+  ([id, label, count, finishedCount]) =>
+    (['collapsed', 'expanded'] as const).map((state) => ({
+      id: `${id}-${state}`,
+      label,
+      count,
+      finishedCount,
+      state,
+    })),
+);
+
+export interface LiveCardFixture {
+  id: string;
+  label: string;
+  state: FixtureState;
+  hooks?: BackgroundHook[];
+  prs?: PrMonitorRow[];
+  tabs?: PanelTab[];
+  hiddenTabs?: PanelTab[];
+  agents?: string[];
+  completedAgents?: string[];
+  woken?: boolean;
+}
+
+const hook = (id: string, overrides: Partial<BackgroundHook> = {}): BackgroundHook => ({
+  hookId: id,
+  workspaceId: '',
+  agentId: '',
+  name: `Hook ${id}`,
+  delayMs: 60000,
+  state: 'scheduled',
+  createdAt: '2026-09-01T09:00:00.000Z',
+  nextRunAt: '2099-09-01T09:05:00.000Z',
+  expiresAt: '2099-09-01T10:00:00.000Z',
+  runCount: 4,
+  ...overrides,
+});
+
+const snapshot = (overrides: Partial<PrMonitorSnapshot> = {}): PrMonitorSnapshot => ({
+  state: 'open',
+  isDraft: false,
+  hasConflicts: false,
+  isBehind: false,
+  mergeable: true,
+  checks: {
+    total: 4,
+    passed: 4,
+    failed: 0,
+    pending: 0,
+    failingRequired: 0,
+    pendingRequired: 0,
+    requiredKnown: true,
+  },
+  approvals: { decision: 'approved', have: 1, needed: 1, changesRequested: 0 },
+  threads: { unresolved: 0, resolutionRequired: true },
+  rulesKnown: true,
+  ...overrides,
+});
+
+const pr = (id: string, number: number, overrides: Partial<PrMonitorRow> = {}): PrMonitorRow => ({
+  monitorId: id,
+  workspaceId: '',
+  agentId: '',
+  repo: 'intent-hq/cloudlands-fe',
+  prNumber: number,
+  state: 'active',
+  pendingChanges: [],
+  hasPendingChanges: false,
+  createdAt: '2026-09-01T09:00:00.000Z',
+  updatedAt: '2026-09-01T09:04:00.000Z',
+  title: `Subscription row fixture ${number}`,
+  url: `https://github.com/intent-hq/cloudlands-fe/pull/${number}`,
+  lastSnapshot: snapshot(),
+  ...overrides,
+});
+
+const tab = (id: string, title: string, url: string): PanelTab => ({
+  id,
+  type: 'browser',
+  title,
+  browserUrl: url,
+  ownerAgentId: '',
+  closable: true,
+});
+
+const livePairs = (
+  id: string,
+  label: string,
+  data: Omit<LiveCardFixture, 'id' | 'label' | 'state'>,
+): LiveCardFixture[] =>
+  (['collapsed', 'expanded'] as const).map((state) => ({
+    id: `${id}-${state}`,
+    label,
+    state,
+    ...data,
+  }));
+
+export const liveCardFixtures: LiveCardFixture[] = [
+  ...livePairs('hook-one', '1 scheduled hook', { hooks: [hook('scheduled')] }),
+  ...livePairs('hook-running', 'Running hook', { hooks: [hook('running', { state: 'running' })] }),
+  ...livePairs('hook-error', 'Scheduled hook with last error', {
+    hooks: [hook('error', { lastError: 'Last run failed' })],
+  }),
+  ...livePairs('hook-three', '3 hooks', { hooks: [hook('one'), hook('two'), hook('three')] }),
+  ...livePairs('hook-perpetual', 'Perpetual hook', {
+    hooks: [hook('perpetual', { delayMs: 300000, runCount: 28 })],
+  }),
+  ...livePairs('pr-mergeable', 'Mergeable PR', { prs: [pr('mergeable', 2101)] }),
+  ...livePairs('pr-blocked', 'Blocked PR with failing checks', {
+    prs: [
+      pr('blocked', 2102, {
+        lastSnapshot: snapshot({
+          mergeable: false,
+          mergeBlockedReason: 'Required checks failed',
+          checks: {
+            total: 4,
+            passed: 2,
+            failed: 2,
+            pending: 0,
+            failingRequired: 2,
+            pendingRequired: 0,
+            requiredKnown: true,
+          },
+        }),
+      }),
+    ],
+  }),
+  ...livePairs('pr-pending', 'PR with pending checks', {
+    prs: [
+      pr('pending', 2103, {
+        lastSnapshot: snapshot({
+          checks: {
+            total: 4,
+            passed: 2,
+            failed: 0,
+            pending: 2,
+            failingRequired: 0,
+            pendingRequired: 2,
+            requiredKnown: true,
+          },
+        }),
+      }),
+    ],
+  }),
+  ...livePairs('pr-draft', 'Draft PR', {
+    prs: [pr('draft', 2104, { lastSnapshot: snapshot({ isDraft: true, mergeable: false }) })],
+  }),
+  ...livePairs('pr-changes', 'PR with changes pending', {
+    prs: [
+      pr('changes', 2105, {
+        hasPendingChanges: true,
+        pendingChanges: ['checks'],
+        pendingSince: '2026-09-01T09:03:00.000Z',
+      }),
+    ],
+  }),
+  ...livePairs('tab-active', '1 active browser tab', {
+    tabs: [tab('active', 'Active docs', 'https://example.test/docs')],
+  }),
+  ...livePairs('tab-hidden', '1 hidden browser tab', {
+    hiddenTabs: [tab('hidden', 'Hidden preview', 'https://example.test/preview')],
+  }),
+  ...livePairs('tab-mixed', '3 mixed browser tabs', {
+    tabs: [
+      tab('first', 'Reference', 'https://example.test/reference'),
+      tab('second', 'Dashboard', 'https://example.test/dashboard'),
+    ],
+    hiddenTabs: [tab('third', 'Hidden report', 'https://example.test/report')],
+  }),
+  ...livePairs('tab-long', 'Long browser tab title and URL', {
+    tabs: [
+      tab(
+        'long',
+        'An extremely long browser tab title that must truncate cleanly in narrow cards',
+        'https://example.test/a/very/long/path/that/must/truncate/without/wrapping?query=subscription-rows',
+      ),
+    ],
+  }),
+  ...livePairs('mixed', 'Agents, hooks, PRs, and tabs', {
+    agents: ['mixed-one', 'mixed-two'],
+    hooks: [hook('mixed')],
+    prs: [pr('mixed', 2106)],
+    tabs: [tab('mixed-tab', 'Mixed fixture documentation', 'https://example.test/mixed')],
+  }),
+  ...livePairs('completed-woken', 'Completed agents with woken-up pill', {
+    agents: ['done-one', 'done-two'],
+    completedAgents: ['done-one', 'done-two'],
+    woken: true,
+  }),
+];
+
+export const delegationGroups: Array<{ id: string; label: string; group: DelegationGroupStatus }> =
+  [
+    {
+      id: 'waiting',
+      label: 'Waiting delegation group',
+      group: {
+        groupId: 'waiting',
+        awaitMode: 'all',
+        expectedAgentIds: ['delegate-a', 'delegate-b'],
+        completedAgentIds: [],
+        deletedAgentIds: [],
+        agentStatuses: { 'delegate-a': 'responding', 'delegate-b': 'idle' },
+        delivered: false,
+      },
+    },
+    {
+      id: 'warning',
+      label: 'Delegation warning state',
+      group: {
+        groupId: 'warning',
+        awaitMode: 'all',
+        expectedAgentIds: ['delegate-c', 'delegate-d'],
+        completedAgentIds: ['delegate-c', 'delegate-d'],
+        deletedAgentIds: [],
+        agentStatuses: { 'delegate-c': 'completed', 'delegate-d': 'completed' },
+        delivered: false,
+      },
+    },
+    {
+      id: 'finished',
+      label: 'Finished delegation group',
+      group: {
+        groupId: 'finished',
+        awaitMode: 'all',
+        expectedAgentIds: ['delegate-e', 'delegate-f'],
+        completedAgentIds: ['delegate-e', 'delegate-f'],
+        deletedAgentIds: [],
+        agentStatuses: { 'delegate-e': 'completed', 'delegate-f': 'completed' },
+        delivered: true,
+      },
+    },
+  ];

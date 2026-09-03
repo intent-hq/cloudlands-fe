@@ -43,6 +43,23 @@ export const catalogEntries: CatalogEntry[] = [
     ],
   } satisfies CatalogEntry,
   {
+    slug: 'subscription-rows',
+    name: m.sandbox_subscriptionRows_title(),
+    description: m.sandbox_subscriptionRows_description(),
+    category: 'product',
+    source: 'src/lib/components/chat',
+    fixtures: [
+      {
+        id: 'all-permutations',
+        title: m.sandbox_subscriptionRows_fixture_title(),
+        states: ['agents', 'hooks', 'pull-requests', 'browser-tabs', 'mixed', 'headers'],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
+  {
     slug: 'proposal-card',
     name: 'Proposal Card',
     description: 'Static proposal presentation contracts without application state or daemon data.',
