@@ -36,7 +36,7 @@ const expectedProductToggleCounts = {
   'src/lib/components/settings/NotificationSettings.svelte': 3,
   'src/lib/components/settings/OpenInAppsSettings.svelte': 1,
   'src/lib/components/settings/RtkSettings.svelte': 1,
-  'src/lib/components/settings/WebSocketApiSettings.svelte': 2,
+  'src/lib/components/settings/WebSocketApiSettings.svelte': 3,
   'src/lib/components/settings/WorkspaceApiSettings.svelte': 1,
   'src/lib/components/settings/mcp/McpServerCard.svelte': 1,
   'src/lib/components/workspace/initializer/BranchSelector.svelte': 1,
@@ -124,7 +124,7 @@ function discoverCompatibilityUsages() {
 }
 
 describe('B2 caller metadata regression', () => {
-  it('keeps all 54 product Toggles on the compact external-label contract', () => {
+  it('keeps all 55 product Toggles on the compact external-label contract', () => {
     const productToggles = buildProductToggleLedger(repositoryRoot).filter(
       ({ exemption }) => exemption === null,
     );
@@ -135,7 +135,7 @@ describe('B2 caller metadata regression', () => {
     );
 
     expect(counts).toEqual(expectedProductToggleCounts);
-    expect(productToggles).toHaveLength(54);
+    expect(productToggles).toHaveLength(55);
     expect(
       productToggles.every(
         ({ selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, variant }) =>

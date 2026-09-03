@@ -165,8 +165,8 @@ describe('UI component inventory gate', () => {
     expect(binaryControls.every(({ exemption }) => exemption !== null)).toBe(true);
     expect(checkboxControls).toHaveLength(5);
     expect(checkboxControls.every(({ exemption }) => exemption !== null)).toBe(true);
-    expect(productToggles).toHaveLength(61);
-    expect(productToggles.filter(({ exemption }) => exemption === null)).toHaveLength(54);
+    expect(productToggles).toHaveLength(62);
+    expect(productToggles.filter(({ exemption }) => exemption === null)).toHaveLength(55);
     expect(
       productToggles
         .filter(({ exemption }) => exemption === null)

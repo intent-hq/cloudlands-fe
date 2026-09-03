@@ -18,7 +18,7 @@ const expectedCallers = {
   'src/lib/components/settings/NotificationSettings.svelte': 3,
   'src/lib/components/settings/OpenInAppsSettings.svelte': 1,
   'src/lib/components/settings/RtkSettings.svelte': 1,
-  'src/lib/components/settings/WebSocketApiSettings.svelte': 2,
+  'src/lib/components/settings/WebSocketApiSettings.svelte': 3,
   'src/lib/components/settings/WorkspaceApiSettings.svelte': 1,
   'src/lib/components/settings/mcp/McpServerCard.svelte': 1,
 } as const;
@@ -36,7 +36,7 @@ function repositoryPath(path: string): string {
 }
 
 describe('settings Toggle layout', () => {
-  it('keeps all 20 settings controls compact, textless, and accessibly named', () => {
+  it('keeps all 21 settings controls compact, textless, and accessibly named', () => {
     const callers = new Map<string, number>();
 
     for (const file of svelteFiles(settingsRoot)) {
@@ -55,6 +55,6 @@ describe('settings Toggle layout', () => {
     expect(
       Object.fromEntries([...callers].sort(([left], [right]) => left.localeCompare(right))),
     ).toEqual(expectedCallers);
-    expect([...callers.values()].reduce((total, count) => total + count, 0)).toBe(20);
+    expect([...callers.values()].reduce((total, count) => total + count, 0)).toBe(21);
   });
 });
