@@ -323,7 +323,7 @@
   "settings_listenTargets_description": "このデーモンがリモート接続を受け付けるアドレス。",
   "settings_listenTargets_allInterfaces_label": "すべてのインターフェース (0.0.0.0)",
   "settings_listenTargets_loopback_label": "127.0.0.1(ローカルホスト)",
-  "settings_listenTargets_loopbackRequired_note": "Tailcat トンネルは接続をローカルホストに転送するため、トンネル選択中は 127.0.0.1 がバインドされたままになります。",
+  "settings_listenTargets_loopbackAlwaysBound_note": "127.0.0.1 は常にバインドされます。このアプリと Tailcat トンネルはローカルホスト経由でデーモンに接続します。",
   "settings_listenTargets_coveredByAllInterfaces_note": "「すべてのインターフェース」はすべてのアドレスを対象とします。個別に選択するにはチェックを外してください。",
   "settings_listenTargets_tunnelOnly_note": "トンネルのみ:直接リスナーなし。デバイスはトンネル経由で接続します。",
   "settings_listenTargets_saveError": "リッスンターゲットの更新に失敗しました:{error}",

@@ -851,7 +851,7 @@ describe('WebSocketApiSettings', () => {
 
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5'] },
+          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5', '127.0.0.1'] },
         ]);
       });
     });
@@ -867,7 +867,7 @@ describe('WebSocketApiSettings', () => {
 
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5'] },
+          { path: 'server.bindAddress', value: ['192.168.1.2', '10.0.0.5', '127.0.0.1'] },
           { path: 'server.tunnel.enabled', value: false },
           { path: 'server.tunnel.only', value: false },
         ]);
@@ -943,9 +943,10 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
-    it('disabling the tunnel toggle from tunnel-only restores the persisted bind IPs', async () => {
+    it('disabling the tunnel toggle from tunnel-only restores the persisted bind IPs plus loopback', async () => {
       // Tunnel-only has no direct listeners; toggling the tunnel off must
-      // re-activate the persisted bindAddress so zero targets never persist.
+      // re-activate the persisted bindAddress (loopback-repaired) so zero
+      // targets never persist.
       mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: true }));
       mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
       render(WebSocketApiSettings);
@@ -958,7 +959,7 @@ describe('WebSocketApiSettings', () => {
 
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-          { path: 'server.bindAddress', value: ['192.168.1.2'] },
+          { path: 'server.bindAddress', value: ['192.168.1.2', '127.0.0.1'] },
           { path: 'server.tunnel.enabled', value: false },
           { path: 'server.tunnel.only', value: false },
         ]);
@@ -986,9 +987,9 @@ describe('WebSocketApiSettings', () => {
       expect(screen.queryByLabelText(/derp/i)).toBeNull();
     });
 
-    it('load-repair: tunnel on without loopback renders 127.0.0.1 checked+locked and the next change persists it', async () => {
-      // Daemon state persisted before the loopback rule: tunnel enabled but
-      // server.bindAddress carries only a specific IP.
+    it('load-repair: a bindAddress without loopback renders 127.0.0.1 checked+locked and the next change persists it', async () => {
+      // Daemon state persisted before the always-bound rule: tunnel enabled
+      // but server.bindAddress carries only a specific IP.
       mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
       mocks.mockPairingInfo.mockResolvedValue(PAIRING);
       render(WebSocketApiSettings);
@@ -1205,6 +1206,120 @@ describe('WebSocketApiSettings', () => {
 
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['127.0.0.1'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+      await waitFor(() => expect(screen.queryByRole('checkbox')).toBeNull());
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('false');
+    });
+
+    it('unchecking All interfaces in the selector persists loopback-only and keeps Listen targets open for hand-picking', async () => {
+      // The persisted state after the uncheck is loopback-only (Local Network
+      // Access would read OFF from derivation alone), but the user is mid-edit
+      // — the section must stay open with the specific IPs toggleable.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: false, only: false } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+        ).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
+      );
+      await fireEvent.click(
+        screen.getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+      );
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['127.0.0.1'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+      // The section stays open; once the save settles, the specific IPs are
+      // unchecked and toggleable again.
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).disabled,
+        ).toBe(false),
+      );
+      const specific = screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement;
+      expect(specific.checked).toBe(false);
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('true');
+
+      // Hand-pick a specific IP from the still-open section.
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          bindAddress: ['127.0.0.1', '10.0.0.5'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      await fireEvent.click(specific);
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+          { path: 'server.bindAddress', value: ['127.0.0.1', '10.0.0.5'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+    });
+
+    it('deselecting the last specific IP keeps Listen targets open; an explicit OFF then collapses it', async () => {
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          bindAddress: ['192.168.1.2', '127.0.0.1'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(screen.getByRole('checkbox', { name: '192.168.1.2' })).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
+      );
+      await fireEvent.click(screen.getByRole('checkbox', { name: '192.168.1.2' }));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['127.0.0.1'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).disabled,
+        ).toBe(false),
+      );
+      expect(
+        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
+      ).toBe(false);
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('true');
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('switch', { name: LOCAL_NETWORK() }));
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
           { path: 'server.bindAddress', value: ['127.0.0.1'] },
           { path: 'server.tunnel.enabled', value: false },
           { path: 'server.tunnel.only', value: false },
