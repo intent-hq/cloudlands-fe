@@ -8,22 +8,57 @@ interface FrameSample {
   responseAnimations: number;
 }
 
+type MotionStartWindow = typeof window & {
+  __disclosureMotionStarts?: Record<string, Promise<void>>;
+};
+
+function controlledContentSelector(id: string) {
+  return `[id=${JSON.stringify(id)}]`;
+}
+
 async function controlledContent(component: Locator, trigger: Locator) {
   const id = await trigger.getAttribute('aria-controls');
   if (!id) throw new Error('Expected disclosure trigger to control content');
-  return component.locator(`[id=${JSON.stringify(id)}]`);
+  return component.locator(controlledContentSelector(id));
 }
 
-async function expectAnimationRunning(locator: Locator) {
-  await expect
-    .poll(() =>
-      locator.evaluate((node) =>
-        node
-          .getAnimations({ subtree: true })
-          .some((animation) => animation.playState === 'running'),
+// Arm BEFORE the click that starts the motion (monorepo#4319): polling
+// `playState === 'running'` after the fact races the motion itself. Svelte
+// reverses an interrupted bidirectional transition over `duration * |t2 - t1|`,
+// so the outro that follows a rapid click lasts only as long as the intro had
+// progressed (tens of ms) and can finish — and unmount its node — before the
+// first poll evaluates under host load. Svelte dispatches `introstart` /
+// `outrostart` on the transitioned node right before it creates the WAAPI
+// animation; recording that (non-bubbling, so capture phase on the host root)
+// is a start signal that cannot be missed.
+async function armMotionStart(component: Locator, selector: string) {
+  await component.evaluate((root, key) => {
+    const state = window as MotionStartWindow;
+    state.__disclosureMotionStarts ??= {};
+    state.__disclosureMotionStarts[key] = new Promise<void>((resolve) => {
+      const onStart = (event: Event) => {
+        if (!(event.target instanceof Element) || !event.target.matches(key)) return;
+        root.removeEventListener('introstart', onStart, true);
+        root.removeEventListener('outrostart', onStart, true);
+        resolve();
+      };
+      root.addEventListener('introstart', onStart, true);
+      root.addEventListener('outrostart', onStart, true);
+    });
+  }, selector);
+}
+
+async function expectMotionStarted(component: Locator, selector: string) {
+  await component.evaluate((_root, key) => {
+    const started = (window as MotionStartWindow).__disclosureMotionStarts?.[key];
+    if (!started) throw new Error(`Motion start was not armed for ${key}`);
+    return Promise.race([
+      started,
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timed out waiting for motion start on ${key}`)), 5000),
       ),
-    )
-    .toBe(true);
+    ]);
+  }, selector);
 }
 
 async function expectAnimationsCleanedUp(locator: Locator) {
@@ -99,15 +134,18 @@ for (const config of [
     const trigger = component.getByTestId('response-group-disclosure');
     const responseContentId = await trigger.getAttribute('aria-controls');
     if (!responseContentId) throw new Error('Expected response disclosure content id');
+    const detailsSelector = controlledContentSelector(responseContentId);
     await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
     await startSampling(component, 48, responseContentId);
 
+    await armMotionStart(component, detailsSelector);
     await trigger.dispatchEvent('click');
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    await expectAnimationRunning(await controlledContent(component, trigger));
+    await expectMotionStarted(component, detailsSelector);
+    await armMotionStart(component, detailsSelector);
     await trigger.dispatchEvent('click');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await expectAnimationRunning(component);
+    await expectMotionStarted(component, detailsSelector);
     await trigger.dispatchEvent('click');
 
     const samples = await finishSampling(page);
@@ -182,17 +220,21 @@ test('reverses the outer subscription disclosure and keeps native keyboard contr
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const outer = component.getByTestId('event-subscriptions-summary');
+  const bodySelector = '[data-testid="event-subscriptions-body"]';
 
   await outer.focus();
+  await armMotionStart(component, bodySelector);
   await outer.dispatchEvent('click');
   await expect(outer).toHaveAttribute('aria-expanded', 'false');
-  await expectAnimationRunning(component);
+  await expectMotionStarted(component, bodySelector);
+  await armMotionStart(component, bodySelector);
   await outer.dispatchEvent('click');
   await expect(outer).toHaveAttribute('aria-expanded', 'true');
-  await expectAnimationRunning(component.getByTestId('event-subscriptions-body'));
+  await expectMotionStarted(component, bodySelector);
+  await armMotionStart(component, bodySelector);
   await outer.dispatchEvent('click');
   await expect(outer).toHaveAttribute('aria-expanded', 'false');
-  await expectAnimationRunning(component);
+  await expectMotionStarted(component, bodySelector);
   await outer.press('Enter');
 
   await expect(outer).toHaveAttribute('aria-expanded', 'true');
