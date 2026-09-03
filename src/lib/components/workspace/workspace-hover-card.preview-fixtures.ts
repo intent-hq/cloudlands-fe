@@ -94,7 +94,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Semantic status',
-    states: 'all 10 displayStatus values; absent; unknown',
+    states: 'all 11 displayStatus values; absent; unknown',
     expected:
       'Each canonical value uses normally cased product language in the right column only; absent and unknown values fall back to Not started.',
     coverage: 'semantic-status preview; status presentation tests',
@@ -327,6 +327,7 @@ const statuses = [
   'not_started',
   'idle',
   'complete',
+  'pr_queued',
   'pr_ready',
   'pr_open',
   'pr_merged',

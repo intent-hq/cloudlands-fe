@@ -131,6 +131,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  updateTabViewport,
 } from '../panel-layout-slice';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
@@ -191,6 +192,7 @@ const PERSIST_ACTIONS = [
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
+  updateTabViewport,
   updateFileTabPath,
   consumePendingFocus,
   reconcilePanelColumnCount,

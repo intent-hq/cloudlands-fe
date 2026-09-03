@@ -1,11 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
   runExternalContentUpdateEffect,
@@ -165,6 +158,7 @@ describe('external-update-effect', () => {
     const commentManager = {
       reapplyAnchorsForCurrentComments: vi.fn(async () => {}),
     };
+    const processMarkdownToHTML = vi.fn(async () => '<p>new</p>');
 
     const result = runExternalContentUpdateEffect({
       updateVersion: 3,
@@ -184,10 +178,10 @@ describe('external-update-effect', () => {
       setIsUpdatingFromExternal: (v) => {
         isUpdatingFromExternal = v;
       },
-      getWorkspaceId: () => undefined,
+      getWorkspaceId: () => 'workspace-1',
       getNoteId: () => 'note-1',
       getCommentManager: () => commentManager as any,
-      processMarkdownToHTML: async () => '<p>new</p>',
+      processMarkdownToHTML,
       processHTMLToMarkdown: () => 'new-md',
       createTextSelection: vi.fn(() => ({ selection: true })),
       logger,
@@ -202,6 +196,10 @@ describe('external-update-effect', () => {
 
     // Update happens
     expect(getSetContentHtml()).toBe('<p>new</p>');
+    expect(processMarkdownToHTML).toHaveBeenCalledWith('new-md', {
+      preserveAnchors: true,
+      workspaceId: 'workspace-1',
+    });
     expect(lastKnownContent).toBe('new-md');
     expect(hasUserEditedSinceLastSave).toBe(false);
 
@@ -515,7 +513,11 @@ describe('shouldSafetyNetTrigger', () => {
 
   it('returns false when content matches lastKnownContent (no divergence)', () => {
     expect(
-      shouldSafetyNetTrigger({ ...baseArgs, reduxContent: 'old content', lastKnownContent: 'old content' }),
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        reduxContent: 'old content',
+        lastKnownContent: 'old content',
+      }),
     ).toBe(false);
   });
 

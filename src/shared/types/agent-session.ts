@@ -283,6 +283,13 @@ export interface AgentSession {
   lastAgentResponse?: string;
 
   /**
+   * Number of transcript messages (PROTOCOL.md §5.5 `AgentLite` additive
+   * field), served on `agent.list`/`agent.get` when messages are stripped.
+   * Rendered verbatim.
+   */
+  messageCount?: number;
+
+  /**
    * Most recent tool call preview, from two wire sources sharing this field:
    * (a) the in-flight turn's live tool signal (PROTOCOL §7, tool-call arm of
    * `agent:stream:activity`, `{ name, status? }`) — push-applied by the

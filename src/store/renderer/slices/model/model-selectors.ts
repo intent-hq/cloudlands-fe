@@ -208,10 +208,44 @@ export const selectModelEffortLevels = store.createSelector(
     if (!modelId) return undefined;
     const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
     if (!models) return undefined;
-    const bareId = splitLegacyCompoundId(modelId).modelId;
-    const slashIndex = bareId.indexOf('/');
-    const baseId = slashIndex > 0 ? bareId.slice(0, slashIndex) : bareId;
+    const baseId = toBaseModelId(modelId);
     return getItem(models, baseId)?.effortLevels;
+  },
+);
+
+/** Bare base id: legacy compound prefix and `{model}/{effort}` suffix stripped. */
+function toBaseModelId(modelId: string): string {
+  const bareId = splitLegacyCompoundId(modelId).modelId;
+  const slashIndex = bareId.indexOf('/');
+  return slashIndex > 0 ? bareId.slice(0, slashIndex) : bareId;
+}
+
+/**
+ * Provider-aware companion to `selectModelEffortLevels` for surfaces holding
+ * an explicit (provider, model) pair (e.g. specialist `modelOptions` triples,
+ * PROTOCOL §5.11). Mirrors `selectModelDisplayName`: the active catalog
+ * resolves when its `availableModelsProviderId` provenance matches (or no
+ * provider is given); other providers resolve through the session-lifetime
+ * provider-models cache, whose rows may carry compound `provider:model`
+ * values. `undefined` on lookup miss.
+ */
+export const selectProviderModelEffortLevels = store.createSelector(
+  (
+    state,
+    providerId: string | undefined,
+    modelId: string | null | undefined,
+  ): string[] | undefined => {
+    if (!modelId) return undefined;
+    if (!providerId || providerId === state.model?.availableModelsProviderId) {
+      const levels = selectModelEffortLevels.select(state, modelId);
+      if (levels) return levels;
+    }
+    if (providerId) {
+      const baseId = toBaseModelId(modelId);
+      const cached = state.providerModels?.byProviderId[providerId];
+      return cached?.models.find((model) => toBaseModelId(model.value) === baseId)?.effortLevels;
+    }
+    return undefined;
   },
 );
 

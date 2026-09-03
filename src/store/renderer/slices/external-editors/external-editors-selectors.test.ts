@@ -8,6 +8,7 @@ import type { StoreState } from "../../types";
 import type { BackendTransportInfo } from "../daemon-health/daemon-health-types";
 import type { InstalledEditor } from "./external-editors-slice";
 import {
+  selectEditorOrder,
   selectInstalledEditors,
   selectInstalledEditorsFiltered,
   selectHiddenEditorIds,
@@ -61,6 +62,7 @@ function mockState(
     externalEditors: {
       selectedAction: "cursor",
       editors: createCollection<InstalledEditor, "id">("id", editors),
+      editorOrder: [],
       hiddenEditorIds: ["iterm2"],
       loading: false,
       error: null,
@@ -83,6 +85,18 @@ describe("external-editors selectors", () => {
     const state = mockState();
 
     expect(selectInstalledEditors.select(state)).toEqual(mockEditors);
+  });
+
+  it("orders detected editors by the persisted preference and appends unlisted detections", () => {
+    const state = mockState();
+    state.externalEditors.editorOrder = ["iterm2", "missing", "vscode"];
+
+    expect(selectInstalledEditors.select(state).map((editor) => editor.id)).toEqual([
+      "iterm2",
+      "vscode",
+      "finder",
+    ]);
+    expect(selectEditorOrder.select(state)).toEqual(["iterm2", "missing", "vscode"]);
   });
 
   it("filters to installed editors only", () => {

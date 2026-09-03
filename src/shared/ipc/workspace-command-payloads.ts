@@ -2,9 +2,13 @@ export type WorkspaceCommandPayload = {
   workspaceId: string;
 };
 
+export type BrowserTabViewport =
+  | { mode: 'fit' }
+  | { mode: 'preset'; presetId: string; width: number; height: number }
+  | { mode: 'custom'; width: number; height: number };
+
 /**
- * Emulated viewport of an agent-owned browser tab (monorepo#2857); owned
- * tabs are always emulated, unowned (user) tabs are always native.
+ * Exact or hidden-fit fallback viewport of an agent-owned browser tab.
  */
 export type BrowserEmulatedSize = {
   width: number;
@@ -40,9 +44,9 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
    */
   ownerAgentName?: string;
   /**
-   * Emulated viewport for agent opens (monorepo#2857); persisted with the
-   * tab so the size survives restart alongside `ownerAgentId`. Absent for
-   * user-opened tabs (unowned, always native).
+   * Explicit custom viewport for agent opens (monorepo#2857); persisted with
+   * the tab so the size survives restart alongside `ownerAgentId`. Absent
+   * when an agent open selects fit mode and for user-opened tabs.
    */
   emulatedSize?: BrowserEmulatedSize;
   /**
@@ -64,6 +68,11 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
 
 export type BrowserCloseTabPayload = WorkspaceCommandPayload & {
   tabId: string;
+};
+
+export type BrowserSetTabViewportPayload = {
+  tabId: string;
+  viewport: BrowserTabViewport;
 };
 
 export type BrowserTabNavigatedPayload = WorkspaceCommandPayload & {
@@ -118,6 +127,7 @@ export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {
    * unchanged there, only the size — so the renderer's record stays live.
    */
   emulatedSize?: BrowserEmulatedSize;
+  viewport?: BrowserTabViewport;
 };
 
 export function workspaceCommandPayload(workspaceId: unknown): WorkspaceCommandPayload | null {
@@ -147,4 +157,23 @@ export function isBrowserEmulatedSize(value: unknown): value is BrowserEmulatedS
     Number.isFinite(value.height) &&
     value.height > 0
   );
+}
+
+export function isBrowserTabViewport(value: unknown): value is BrowserTabViewport {
+  if (typeof value !== 'object' || value === null || !('mode' in value)) return false;
+  if (value.mode === 'fit') return true;
+  if (value.mode !== 'preset' && value.mode !== 'custom') return false;
+  if (
+    !('width' in value) ||
+    !('height' in value) ||
+    typeof value.width !== 'number' ||
+    !Number.isFinite(value.width) ||
+    value.width <= 0 ||
+    typeof value.height !== 'number' ||
+    !Number.isFinite(value.height) ||
+    value.height <= 0
+  ) {
+    return false;
+  }
+  return value.mode === 'custom' || ('presetId' in value && typeof value.presetId === 'string');
 }

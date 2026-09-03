@@ -52,7 +52,10 @@ const testState = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: testState.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ browser: { byWorkspaceId: {} } }),
+    dispatch: testState.dispatch,
+  });
 });
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -151,6 +154,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: testState.selector([]),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectChatAuroraEnabled: testState.selector(true),
   selectIsAgentMonospace: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({

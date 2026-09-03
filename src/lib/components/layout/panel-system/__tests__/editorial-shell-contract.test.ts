@@ -290,6 +290,13 @@ describe('editorial workspace shell presentation contract', () => {
       /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
     );
     expect(appLayout).toContain('class="workspace-main flex');
+    expect(appLayout).toContain(
+      'const shellTransparencyEnabled$ = selectShellTransparencyEnabled()',
+    );
+    expect(appLayout).toContain('data-shell-opaque={!$shellTransparencyEnabled$ || undefined}');
+    expect(appLayoutCss).toMatch(
+      /\.panel-layout-container\[data-shell-opaque\],[\s\S]*background-color:\s*hsl\(var\(--background\)\);/,
+    );
     expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
     expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');

@@ -22,8 +22,21 @@ const selectInstalledEditorsCollection = store.createSelector(
 /** Select all installed editors */
 export const selectInstalledEditors = store.createSelector(
   (state): InstalledEditor[] => {
-    return getItems(selectInstalledEditorsCollection.select(state));
+    const editors = getItems(selectInstalledEditorsCollection.select(state));
+    const order = state.externalEditors.editorOrder ?? [];
+    if (!order.length) return editors;
+    const byId = new Map(editors.map((editor) => [editor.id, editor]));
+    const ordered = order.flatMap((id) => {
+      const editor = byId.get(id);
+      return editor ? [editor] : [];
+    });
+    const orderedIds = new Set(order);
+    return [...ordered, ...editors.filter(({ id }) => !orderedIds.has(id))];
   }
+);
+
+export const selectEditorOrder = store.createSelector(
+  (state): string[] => state.externalEditors.editorOrder ?? [],
 );
 
 /** Select loading state */

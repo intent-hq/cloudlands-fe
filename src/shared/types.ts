@@ -257,6 +257,7 @@ export const WORKSPACE_DISPLAY_STATUS_VALUES = [
   'in_progress',
   'idle',
   'complete',
+  'pr_queued',
   'pr_ready',
   'pr_open',
   'pr_merged',

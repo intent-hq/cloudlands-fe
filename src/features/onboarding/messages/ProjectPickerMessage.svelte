@@ -52,6 +52,8 @@
     githubUrl?: string;
     projectName?: string;
     isValid: boolean;
+    /** Local folder exists but has no Git repo; the daemon must initialize it. */
+    initGit?: boolean;
   }
 
   interface Props {
@@ -75,6 +77,7 @@
   // Local repo state
   let localRepoPath = $state('');
   let localBranch = $state('');
+  let localInitGit = $state(false);
 
   // GitHub repo state — a picked repo is identified by its URL only; the
   // daemon owns the checkout location (picked-repo flow).
@@ -191,6 +194,7 @@
     if (data.type === 'local' && data.path) {
       localRepoPath = data.path;
       localScope = data.scope;
+      localInitGit = false;
       activeTab = 'local';
       localBranch = $branchByRepo$[data.path] || localBranch;
     } else if (data.type === 'github' && data.githubUrl) {
@@ -211,6 +215,7 @@
         localRepoPath = data.repoPath;
         localBranch = typeof data.branch === 'string' ? data.branch : '';
         localScope = data.scope;
+        localInitGit = false;
         activeTab = 'local';
       } else if (data.githubUrl) {
         githubUrl = data.githubUrl;
@@ -245,6 +250,7 @@
         branch: localBranch,
         scope: localScope,
         isValid: !!localRepoPath,
+        ...(localInitGit ? { initGit: true } : {}),
       };
     } else if (activeTab === 'github') {
       // Branch is chosen in the prompt/configuration step via the shared
@@ -358,12 +364,13 @@
         {#if activeTab === 'local'}
           <LocalRepoTab
             selectedPath={localRepoPath}
-            onSelect={(path, scope) => {
+            onSelect={(path, scope, initGit) => {
               localRepoPath = path;
               localScope = scope;
+              localInitGit = initGit === true;
               notifyParent();
             }}
-            onSelectAndAdvance={(path, scope) => {
+            onSelectAndAdvance={(path, scope, initGit) => {
               // Capture reactive prop before state changes invalidate it.
               // Use typeof guard: during component teardown the Svelte 5
               // reactive proxy can return a truthy non-callable value,
@@ -371,6 +378,7 @@
               const advance = onSelectAndAdvance;
               localRepoPath = path;
               localScope = scope;
+              localInitGit = initGit === true;
               notifyParent();
               if (typeof advance === 'function') advance();
             }}

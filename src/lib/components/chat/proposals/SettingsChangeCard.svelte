@@ -246,16 +246,14 @@
 </script>
 
 {#if showDismissed}
-  <div
-    class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
-  >
+  <div class="type-body px-3 py-2 text-muted-foreground">
     {m.chat_shared_discarded_label()}
     {proposal.preview.title}
   </div>
 {:else}
   <section
     bind:this={rootElement}
-    class="my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)"
+    class="min-w-0 w-full"
     data-proposal-kind={proposal.kind}
     data-apply-tool-call-id={proposal.applyToolCallId}
     title={proposal.applyToolCallId

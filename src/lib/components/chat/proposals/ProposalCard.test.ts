@@ -287,32 +287,13 @@ describe('ProposalCard', () => {
     expect(onDiscard).not.toHaveBeenCalled();
   });
 
-  it('uses a neutral outer border for completed cards when requested by the host', () => {
-    lifecycleSelectorState.status = 'applied';
-    const { container } = render(ProposalCard, {
-      props: {
-        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
-        neutralBorder: true,
-      },
-    });
-
-    const card = container.querySelector('[data-proposal-kind]');
-    expect(card?.className).toContain('border-border');
-    expect(card?.className).not.toContain('border-success');
-    expect(screen.getByRole('status').className).toContain('text-success');
-  });
-
-  it('uses the compact editorial surface and semantic status roles', () => {
+  it('uses the editorial type ramp without raw palette colors', () => {
     const { container } = render(ProposalCard, {
       props: {
         proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
       },
     });
 
-    const card = container.querySelector('[data-proposal-kind]');
-    expect(card?.className).toContain('rounded-(--radius-medium)');
-    expect(card?.className).toContain('bg-card');
-    expect(card?.className).toContain('shadow-(--elevation-raised)');
     expect(screen.getByRole('heading', { name: 'Change settings' }).className).toContain(
       'type-body',
     );

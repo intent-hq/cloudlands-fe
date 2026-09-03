@@ -15,6 +15,11 @@ body {
   background-color: transparent;
 }
 
+.panel-layout-container[data-shell-opaque],
+:where(.dark) .panel-layout-container[data-shell-opaque] {
+  background-color: hsl(var(--background));
+}
+
 .panel-layout-container::before {
   content: '';
   position: absolute;

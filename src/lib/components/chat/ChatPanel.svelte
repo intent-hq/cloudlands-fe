@@ -87,6 +87,8 @@
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { clearBrowserElementCapture } from '$store/renderer/slices/browser/browser-slice';
+  import { selectPendingBrowserElementCaptures } from '$store/renderer/slices/browser/browser-selectors';
   import {
     setWorkspace as setMultiPanelWorkspace,
     updatePanels as updateMultiPanels,
@@ -151,6 +153,11 @@
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import {
+    appendContextItemContent,
+    browserCaptureTargetsAgent,
+    browserCaptureToContextItems,
+  } from './browser-capture-context';
   import { createFileDropTarget } from '$lib/utils/file-drop';
   import type { DropSplit } from '$lib/utils/drop-split';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
@@ -316,7 +323,10 @@
   } from './temporary-turn-materialization';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
-  import { selectIsAgentMonospace } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectChatAuroraEnabled,
+    selectIsAgentMonospace,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     markAgentAsViewed,
     clearCurrentlyViewedAgent,
@@ -382,6 +392,7 @@
 
   const logger = createLogger('ChatPanel');
 
+  const chatAuroraEnabled$ = selectChatAuroraEnabled();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -455,6 +466,7 @@
 
   // Reactive subscription to all panel-layout tabs — triggers availablePanelContexts recompute on tab changes
   const allPanelLayoutTabs$ = selectPanelLayoutAllTabs(workspaceIdStore);
+  const pendingBrowserElementCaptures$ = selectPendingBrowserElementCaptures(workspaceIdStore);
 
   // Redux selectors for chat values — called at init time, reactive via Svelte store protocol
   // Broad selector rationale: ChatPanel passes the materialized session to
@@ -1840,6 +1852,27 @@
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
     },
+  });
+
+  $effect(() => {
+    const captures = $pendingBrowserElementCaptures$;
+    const workspaceId = workspace?.id;
+    if (!workspaceId || !agentId || !isActive || captures.length === 0) return;
+
+    const targeted = captures.filter((capture) => browserCaptureTargetsAgent(capture, agentId));
+    if (targeted.length === 0) return;
+
+    untrack(() => {
+      const existingIds = new Set(contextItems.map((item) => item.id));
+      const additions = targeted
+        .flatMap(browserCaptureToContextItems)
+        .filter((item) => !existingIds.has(item.id));
+      if (additions.length > 0) contextItems = [...contextItems, ...additions];
+    });
+    for (const capture of targeted) {
+      appStore.dispatch(clearBrowserElementCapture(workspaceId, capture.id));
+    }
+    void tick().then(() => inputComponent?.focus?.());
   });
 
   // Reference to QueuedMessageList for programmatic editing via Up arrow
@@ -4613,7 +4646,7 @@
   }
 
   // Build workspace context string for agent messages
-  function buildWorkspaceContextString(): string {
+  function buildWorkspaceContextString(items: ContextItem[] = []): string {
     const parts: string[] = [];
 
     // Add context from checked panels in the multi-panel context store
@@ -4659,7 +4692,7 @@
       parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
     }
 
-    return parts.join('\n');
+    return appendContextItemContent(parts.join('\n'), items);
   }
 
   // Input history navigation callbacks (terminal-like up/down arrow)
@@ -4824,7 +4857,7 @@
     flushPendingDraftWrite();
 
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString();
+    const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
@@ -5019,7 +5052,7 @@
     logger.info('Force submit triggered', { agentId });
 
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString();
+    const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
@@ -5355,7 +5388,7 @@
 >
   <!-- The regular Aurora belongs to the complete chat surface, not the inset
        composer lane. It inherits the real Panel radius for its own bottom clip. -->
-  {#if $agentSessionIsStreaming$ && !isChiefWorkspace}
+  {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
       class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
@@ -6451,7 +6484,7 @@
          ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
          ancestors clip with an 8px overflow-clip-margin), touching the app window's
          left/bottom edges. -->
-    {#if $agentSessionIsStreaming$ && isChiefWorkspace}
+    {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && isChiefWorkspace}
       <div
         class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
         style="height: calc(100% + 10rem);"

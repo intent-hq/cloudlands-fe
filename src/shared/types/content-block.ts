@@ -252,7 +252,7 @@ function getRemoteVideoSource(
   };
 }
 
-function getWorkspaceVideoSource(
+export function getWorkspaceVideoSource(
   value: unknown,
   currentWorkspaceId: string | undefined,
 ): Extract<VideoSource, { kind: 'workspace' }> | null {

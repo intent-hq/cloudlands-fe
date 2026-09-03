@@ -36,6 +36,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 import {
   selectAgentFontStyle,
+  selectChatAuroraEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
@@ -48,6 +49,7 @@ import {
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
   selectSpellcheckEnabled,
+  selectShellTransparencyEnabled,
   selectUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
@@ -67,6 +69,7 @@ import {
 } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 import {
   selectHiddenEditorIds,
+  selectEditorOrder,
   selectOpenAction,
 } from '$store/renderer/slices/external-editors/external-editors-selectors';
 import {
@@ -85,6 +88,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import {
   setAgentFontStyle,
+  setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -96,6 +100,7 @@ import {
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setSpellcheckEnabled,
+  setShellTransparencyEnabled,
   setUpdateChannel,
   setVolume,
   type FontStyle,
@@ -119,7 +124,9 @@ import {
   type SidebarSide,
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 import {
+  normalizeEditorOrder,
   setHiddenEditorIds,
+  setEditorOrder,
   setOpenAction,
 } from '$store/renderer/slices/external-editors/external-editors-slice';
 import { getProposalId } from './proposal-id';
@@ -275,6 +282,10 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectUpdateChannel.select(state);
     case 'preferences.spellcheckEnabled':
       return selectSpellcheckEnabled.select(state);
+    case 'appearance.chatAurora':
+      return selectChatAuroraEnabled.select(state);
+    case 'appearance.shellTransparency':
+      return selectShellTransparencyEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -329,6 +340,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectIsCollapsed.select(state);
     case 'openIn.defaultAction':
       return selectOpenAction.select(state);
+    case 'openIn.editorOrder':
+      return selectEditorOrder.select(state);
     case 'githubLinks.defaultAction':
       return selectGithubLinkDefaultAction.select(state);
     case 'openIn.hiddenEditors':
@@ -368,6 +381,12 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     }
     case 'preferences.spellcheckEnabled':
       appStore.dispatch(setSpellcheckEnabled(Boolean(value)));
+      return true;
+    case 'appearance.chatAurora':
+      appStore.dispatch(setChatAuroraEnabled(Boolean(value)));
+      return true;
+    case 'appearance.shellTransparency':
+      appStore.dispatch(setShellTransparencyEnabled(Boolean(value)));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));
@@ -522,6 +541,15 @@ async function applyPersistedSetting(
     return;
   }
   if (apply.kind === 'local-storage-set') {
+    if (path === 'openIn.editorOrder') {
+      if (!Array.isArray(value)) {
+        throw new Error(`Invalid value for setting "${path}": ${JSON.stringify(value)}`);
+      }
+      const normalizedOrder = normalizeEditorOrder(value);
+      writeLocalStorageValue(apply.key, normalizedOrder);
+      appStore.dispatch(setEditorOrder(normalizedOrder));
+      return;
+    }
     writeLocalStorageValue(apply.key, value);
     if (path === 'openIn.hiddenEditors' && Array.isArray(value)) {
       appStore.dispatch(setHiddenEditorIds(value.map(String)));
@@ -530,9 +558,7 @@ async function applyPersistedSetting(
   }
   // Remaining plan kinds (`user-mcp-settings`) have no writer on the proposal
   // path, so they must fail rather than fall through as applied.
-  throw new Error(
-    m.chat_settingsProposalActions_unsupportedPlan_error({ path, kind: apply.kind }),
-  );
+  throw new Error(m.chat_settingsProposalActions_unsupportedPlan_error({ path, kind: apply.kind }));
 }
 
 async function prepareSettingsChange(

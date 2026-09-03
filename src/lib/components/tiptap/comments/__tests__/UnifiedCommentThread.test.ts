@@ -1,15 +1,19 @@
 // @vitest-environment jsdom
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+
+const mockProcessMarkdownToHTML = vi.hoisted(() =>
+  vi.fn(async (content: string) => `<p>${content}</p>`),
+);
+
+vi.mock('$lib/utils/markdown-processor', () => ({
+  processMarkdownToHTML: mockProcessMarkdownToHTML,
+  processHTMLToMarkdown: vi.fn(() => ''),
+}));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -20,10 +24,7 @@ vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
   selectCommentById: { select: vi.fn(() => null) },
 }));
 
-import {
-  render,
-  fireEvent,
-} from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import UnifiedCommentThread from '../UnifiedCommentThread.svelte';
 import TooltipWrapper from './TooltipWrapper.svelte';
 
@@ -54,6 +55,28 @@ describe('UnifiedCommentThread', () => {
       document.body.innerHTML = '';
     }
     vi.clearAllTimers();
+    mockProcessMarkdownToHTML.mockClear();
+  });
+
+  it('passes the workspace to markdown conversion for comments and replies', async () => {
+    render(UnifiedCommentThread, {
+      props: {
+        comment: mockComment,
+        replies: mockReplies,
+        workspace: { id: 'workspace-1' } as any,
+      },
+    });
+
+    await waitFor(() => {
+      expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(mockComment.content, {
+        allowEmpty: true,
+        workspaceId: 'workspace-1',
+      });
+      expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(mockReplies[0].content, {
+        allowEmpty: true,
+        workspaceId: 'workspace-1',
+      });
+    });
   });
 
   it('renders in collapsed state', () => {

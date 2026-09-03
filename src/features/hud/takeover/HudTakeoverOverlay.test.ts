@@ -343,6 +343,7 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--muted-foreground) / 0.65)'],
     ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
     ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
+    ['pr_queued', 'QUEUED TO MERGE', 'hsl(var(--ring))'],
     ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
     ['workspace_complete', 'COMPLETE', 'hsl(var(--primary))'],
   ] as const)(

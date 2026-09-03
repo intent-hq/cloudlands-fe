@@ -424,8 +424,9 @@ export function mergeMonitoredPRs(
       htmlUrl: url,
       status: monitorDisplayStatus(monitor),
       // Monitor-row timestamps stand in for the PR's own (the snapshot does
-      // not carry them) so selectPrimaryPr's oldest-created / latest-updated
-      // ordering works when multiple monitored PRs compete.
+      // not carry them) so recency ordering (sortPRsByRecency, and the
+      // sidebar row's same-status tie-breaker in workspace-pr-presentation)
+      // works when multiple monitored PRs compete.
       createdAt: monitor.createdAt,
       updatedAt: monitor.updatedAt,
       monitorAgentId: monitor.agentId,
@@ -651,34 +652,6 @@ function compareMissingLast(
   if (a) return -1;
   if (b) return 1;
   return 0;
-}
-
-/**
- * Pick the primary PR for single-PR surfaces (workspace card/row pill, the
- * summarized Changes card) from the combined branch-linked + monitored pool
- * (see {@link mergeMonitoredPRs}): the oldest unmerged (open/draft) PR
- * (`createdAt` asc, PR number asc as tiebreak); otherwise the latest merged
- * PR (`updatedAt` desc, PR number desc); otherwise the first remaining
- * (closed) row. Missing timestamps sort last within their bucket.
- */
-export function selectPrimaryPr(prs: PRInfo[]): PRInfo | undefined {
-  const unmerged = prs.filter((pr) => pr.status === 'open' || pr.status === 'draft');
-  if (unmerged.length > 0) {
-    return [...unmerged].sort(
-      (a, b) =>
-        compareMissingLast(a.createdAt, b.createdAt, (x, y) => x.localeCompare(y)) ||
-        a.number - b.number,
-    )[0];
-  }
-  const merged = prs.filter((pr) => pr.status === 'merged');
-  if (merged.length > 0) {
-    return [...merged].sort(
-      (a, b) =>
-        compareMissingLast(a.updatedAt, b.updatedAt, (x, y) => y.localeCompare(x)) ||
-        b.number - a.number,
-    )[0];
-  }
-  return prs[0];
 }
 
 /**

@@ -267,10 +267,9 @@ describe('WorkspaceCard PR items', () => {
     expect(content).toContain('Open');
   });
 
-  it('renders every unique same-repo and cross-repo PR without a +N summary', () => {
+  it('renders a single icon for the earliest-in-flow PR when several are attributable', () => {
     const workspace = makeWorkspaceWithPr({
       pullRequests: [
-        makeWorkspaceWithPr().pullRequests![0],
         {
           id: 'pr-2',
           number: 43,
@@ -280,15 +279,20 @@ describe('WorkspaceCard PR items', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
+        makeWorkspaceWithPr().pullRequests![0],
+        {
+          id: 'pr-3',
+          number: 44,
+          url: 'https://github.com/acme/widgets/pull/44',
+          title: 'Draft follow-up',
+          status: PullRequestStatus.Open,
+          isDraft: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
       ],
     });
     mocks.monitors.push(
-      makeMonitor({
-        workspaceId: workspace.id,
-        repo: 'acme/widgets',
-        prNumber: 42,
-        url: 'https://github.com/acme/widgets/pull/42',
-      }),
       makeMonitor({
         workspaceId: workspace.id,
         repo: 'other-org/lib',
@@ -301,25 +305,107 @@ describe('WorkspaceCard PR items', () => {
     const { container } = render(WorkspaceCard, { props: { workspace } });
     const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
 
-    expect(new Set(items.map((item) => item.getAttribute('data-pr-identity')))).toEqual(
-      new Set(['acme/widgets#42', 'other-org/lib#42', 'acme/widgets#43']),
-    );
-    expect(
-      Object.fromEntries(
-        items.map((item) => [
-          item.getAttribute('data-pr-identity'),
-          item.getAttribute('data-pr-status'),
-        ]),
-      ),
-    ).toEqual({
-      'acme/widgets#42': 'open',
-      'other-org/lib#42': 'open',
-      'acme/widgets#43': 'merged',
-    });
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-pr-identity')).toBe('acme/widgets#44');
+    expect(items[0].getAttribute('data-pr-status')).toBe('draft');
     expect(container.querySelector('[data-testid="workspace-card-more-prs"]')).toBeNull();
     expect(container.querySelectorAll('[data-workspace-card-pr-number]')).toHaveLength(0);
-    expect(items.every((item) => item.querySelector('svg'))).toBe(true);
-    expect(items.every((item) => item.className.includes('size-5'))).toBe(true);
+    expect(items[0].querySelector('svg')).toBeTruthy();
+  });
+
+  it('prefers an open PR over a merged one for the single icon', () => {
+    const workspace = makeWorkspaceWithPr({
+      pullRequests: [
+        {
+          id: 'pr-2',
+          number: 43,
+          url: 'https://github.com/acme/widgets/pull/43',
+          title: 'Merged follow-up',
+          status: PullRequestStatus.Merged,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        makeWorkspaceWithPr().pullRequests![0],
+      ],
+    });
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+    const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
+
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-pr-identity')).toBe('acme/widgets#42');
+    expect(items[0].getAttribute('data-pr-status')).toBe('open');
+  });
+
+  it('shows the most recently updated PR when several share the earliest state', () => {
+    const workspace = makeWorkspaceWithPr({
+      pullRequests: [
+        {
+          id: 'pr-1',
+          number: 42,
+          url: 'https://github.com/acme/widgets/pull/42',
+          title: 'Older open PR',
+          status: PullRequestStatus.Open,
+          createdAt: '2026-08-01T00:00:00Z',
+          updatedAt: '2026-08-02T00:00:00Z',
+        },
+        {
+          id: 'pr-2',
+          number: 40,
+          url: 'https://github.com/acme/widgets/pull/40',
+          title: 'Recently updated open PR',
+          status: PullRequestStatus.Open,
+          createdAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-08-09T00:00:00Z',
+        },
+      ],
+    });
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+    const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
+
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-pr-identity')).toBe('acme/widgets#40');
+  });
+
+  it('falls back to the merged PR when only merged and closed PRs exist', () => {
+    const workspace = makeWorkspaceWithPr({
+      pullRequests: [
+        {
+          id: 'pr-1',
+          number: 42,
+          url: 'https://github.com/acme/widgets/pull/42',
+          title: 'Closed PR',
+          status: PullRequestStatus.Closed,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'pr-2',
+          number: 41,
+          url: 'https://github.com/acme/widgets/pull/41',
+          title: 'Merged PR',
+          status: PullRequestStatus.Merged,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+    const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
+
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-pr-status')).toBe('merged');
+  });
+
+  it('renders no PR item when the workspace has no pull requests', () => {
+    const { container } = render(WorkspaceCard, {
+      props: { workspace: makeWorkspaceWithPr({ pullRequests: [] }) },
+    });
+
+    expect(container.querySelector('[data-workspace-card-pr-item]')).toBeNull();
+    expect(container.querySelector('[data-workspace-card-pr-list]')).toBeNull();
   });
 
   it('keeps numbers in accessible names without visible number text', () => {
@@ -328,7 +414,6 @@ describe('WorkspaceCard PR items', () => {
 
     expect(item.querySelector('[data-workspace-card-pr-number]')).toBeNull();
     expect(item.textContent).not.toContain('#42');
-    expect(item.className).toContain('size-5');
     expect(item.getAttribute('aria-label')).toContain('acme/widgets #42');
     expect(item.getAttribute('aria-label')).toContain('Add feature');
     expect(item.getAttribute('aria-label')).toContain('Open');

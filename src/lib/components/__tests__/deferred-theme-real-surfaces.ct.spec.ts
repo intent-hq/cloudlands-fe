@@ -3,7 +3,6 @@ import path from 'node:path';
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import DeferredThemeRealSurfaceHost from './DeferredThemeRealSurfaceHost.svelte';
 
-test.describe.configure({ mode: 'serial' });
 test.setTimeout(60_000);
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
