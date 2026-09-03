@@ -369,13 +369,16 @@ describe('lifecycleIpcReadSaga', () => {
     await stop(run.task);
   });
 
-  it('cancels the deferred generation on unmount', async () => {
+  it('cancels the deferred fallback timer on unmount', async () => {
     const run = start();
     run.channel.put(workspaceMounted(WS));
     await settle();
     run.actions.length = 0;
+    expect(vi.getTimerCount()).toBe(1);
 
     run.send(workspaceUnmounted(WS));
+    await settle();
+    expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
     await settle();
 
@@ -388,11 +391,13 @@ describe('lifecycleIpcReadSaga', () => {
     run.channel.put(workspaceMounted(WS));
     await settle();
     run.actions.length = 0;
+    expect(vi.getTimerCount()).toBe(1);
 
     run.send(backendReconnected());
     await settle();
 
     expect(run.actions).toEqual(workspaceMountFanOut(WS, 2, true));
+    expect(vi.getTimerCount()).toBe(1);
     await stop(run.task);
   });
 
