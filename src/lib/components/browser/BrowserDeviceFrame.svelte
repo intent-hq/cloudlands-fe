@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, type Snippet } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
@@ -21,6 +21,9 @@
   let frameWidth = $state(viewport.width);
   // svelte-ignore state_referenced_locally - intentional initial size; the effect below syncs later prop changes
   let frameHeight = $state(viewport.height);
+  let container: HTMLDivElement;
+  let availableWidth = $state(0);
+  let availableHeight = $state(0);
   let dragging = $state(false);
   let pointerId: number | null = null;
   let startX = 0;
@@ -35,6 +38,13 @@
       height: formatInteger(frameHeight),
     }),
   );
+  const frameScale = $derived(
+    availableWidth > 0 && availableHeight > 0
+      ? Math.min(1, availableWidth / frameWidth, availableHeight / frameHeight)
+      : 1,
+  );
+  const renderedWidth = $derived(frameWidth * frameScale);
+  const renderedHeight = $derived(frameHeight * frameScale);
 
   $effect(() => {
     if (dragging) return;
@@ -91,15 +101,39 @@
     dispatchCurrentSize();
   }
 
+  onMount(() => {
+    const publishSize = (width: number, height: number) => {
+      availableWidth = width;
+      availableHeight = height;
+    };
+    publishSize(container.clientWidth, container.clientHeight);
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(([entry]) => {
+            publishSize(
+              entry?.contentRect.width ?? container.clientWidth,
+              entry?.contentRect.height ?? container.clientHeight,
+            );
+          });
+    observer?.observe(container);
+    return () => observer?.disconnect();
+  });
+
   onDestroy(() => clearTimeout(resizeTimer));
 </script>
 
-<div class="flex h-full w-full items-center justify-center overflow-hidden bg-muted/40">
+<div
+  bind:this={container}
+  class="flex h-full w-full items-center justify-center overflow-hidden bg-muted/40"
+  data-browser-device-frame-container
+>
   <div
     class="relative overflow-hidden border border-border bg-background shadow-sm {dragging
       ? 'ring-2 ring-primary/30'
       : ''}"
-    style="width: min(100%, {frameWidth}px); height: min(100%, {frameHeight}px);"
+    style:width="{renderedWidth}px"
+    style:height="{renderedHeight}px"
     data-browser-device-frame
     data-width={frameWidth}
     data-height={frameHeight}

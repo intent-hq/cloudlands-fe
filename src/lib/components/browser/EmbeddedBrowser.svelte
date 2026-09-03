@@ -679,6 +679,10 @@
         toggleDevTools();
       } else {
         const pickerMessage = parseElementPickerMessage(message);
+        if (pickerMessage && !isPickingElement) {
+          logger.debug('Ignored element picker message while picker was inactive');
+          return;
+        }
         if (pickerMessage?.type === 'cancelled') isPickingElement = false;
         if (pickerMessage?.type === 'malformed') {
           isPickingElement = false;
@@ -854,7 +858,22 @@
     }
   }
 
-  function dispatchBrowserCapture(imageData: string, element?: BrowserElement) {
+  function parseCapturedImage(dataUrl: string): { data: string; mimeType: string } {
+    const prefix = 'data:';
+    const marker = ';base64,';
+    const markerIndex = dataUrl.indexOf(marker, prefix.length);
+    const mimeType = dataUrl.slice(prefix.length, markerIndex);
+    const data = dataUrl.slice(markerIndex + marker.length);
+    if (!dataUrl.startsWith(prefix) || markerIndex < 0 || !mimeType.startsWith('image/') || !data) {
+      throw new Error('Captured image did not produce a valid base64 data URL');
+    }
+    return { data, mimeType };
+  }
+
+  function dispatchBrowserCapture(
+    image: { data: string; mimeType: string },
+    element?: BrowserElement,
+  ) {
     if (!tabId || !webviewRef) return;
     const pageUrl = element?.pageUrl || currentLoadedUrl();
     appStore.dispatch(
@@ -867,7 +886,7 @@
           viewport.mode === 'fit'
             ? { width: webviewRef.clientWidth, height: webviewRef.clientHeight }
             : { width: viewport.width, height: viewport.height },
-        image: { data: imageData, mimeType: 'image/png' },
+        image,
         ...(element ? { element } : {}),
       }),
     );
@@ -877,7 +896,7 @@
     if (!webviewRef?.capturePage || !webviewReady || !tabId) return;
     try {
       const image = await webviewRef.capturePage();
-      dispatchBrowserCapture(image.toDataURL());
+      dispatchBrowserCapture(parseCapturedImage(image.toDataURL()));
     } catch (error) {
       logger.error('Failed to capture browser screenshot', error);
       toast.error(m.browser_embedded_screenshotFailed_error());
@@ -896,7 +915,7 @@
     }
     try {
       const image = await webviewRef.capturePage(captureRect);
-      dispatchBrowserCapture(image.toDataURL(), element);
+      dispatchBrowserCapture(parseCapturedImage(image.toDataURL()), element);
     } catch (error) {
       logger.error('Failed to capture selected browser element', error);
       toast.error(m.browser_embedded_screenshotFailed_error());

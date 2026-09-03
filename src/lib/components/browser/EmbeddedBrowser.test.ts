@@ -482,6 +482,12 @@ describe('EmbeddedBrowser', () => {
         sourceRef: 'src/routes/settings/+page.svelte:42:2',
       };
 
+      await fireEvent.click(screen.getByTestId('browser-select-element'));
+      await waitFor(() =>
+        expect(screen.getByTestId('browser-select-element').getAttribute('aria-pressed')).toBe(
+          'true',
+        ),
+      );
       dispatchConsoleMessage(webview, 1, `__INTENT_ELEMENT_PICKED__:${JSON.stringify(element)}`);
 
       await waitFor(() =>
@@ -496,10 +502,32 @@ describe('EmbeddedBrowser', () => {
           pageUrl: 'https://picked.test/settings',
           title: 'picked.test',
           viewport: { width: 1280, height: 800 },
-          image: { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' },
+          image: { data: 'cG5n', mimeType: 'image/png' },
           element,
         },
       });
+      expect(captureActions()[0].payload.capture.image.data).not.toMatch(/^data:/);
+      expect(atob(captureActions()[0].payload.capture.image.data)).toBe('png');
+    });
+
+    it('ignores a picked payload while the picker is inactive', async () => {
+      const { webview } = await renderReadyBrowser();
+      const element = {
+        selector: '#save',
+        domPath: 'html>body>button#save',
+        tagName: 'button',
+        id: 'save',
+        className: '',
+        textSnippet: 'Save',
+        rect: { x: 10, y: 10, width: 100, height: 40 },
+        pageUrl: 'https://picked.test/settings',
+      };
+
+      dispatchConsoleMessage(webview, 1, `__INTENT_ELEMENT_PICKED__:${JSON.stringify(element)}`);
+      await Promise.resolve();
+
+      expect(webview.capturePage).not.toHaveBeenCalled();
+      expect(captureActions()).toHaveLength(0);
     });
 
     it('ignores malformed element picker messages', async () => {
@@ -612,8 +640,10 @@ describe('EmbeddedBrowser', () => {
         pageUrl: 'https://loaded.test/page',
         title: 'loaded.test',
         viewport: { width: 640, height: 400 },
-        image: { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' },
+        image: { data: 'cG5n', mimeType: 'image/png' },
       });
+      expect(capture.image.data).not.toMatch(/^data:/);
+      expect(atob(capture.image.data)).toBe('png');
       expect(capture).not.toHaveProperty('element');
     });
   });

@@ -21,7 +21,7 @@ export const browserElementPayloadSchema = z
   })
   .strict();
 
-export type BrowserElementPayload = z.infer<typeof browserElementPayloadSchema>;
+type BrowserElementPayload = z.infer<typeof browserElementPayloadSchema>;
 
 export type ElementPickerMessage =
   | { type: 'cancelled' }
