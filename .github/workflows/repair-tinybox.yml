@@ -1,0 +1,123 @@
+# THROWAWAY — intent-hq/monorepo#4304. Never merge. Inspects / repairs the
+# bundled node24 npm in every actions-runner install on the tinybox host.
+name: Repair tinybox node24 npm (throwaway)
+
+on:
+  pull_request:
+    paths: ['.github/workflows/repair-tinybox.yml']
+
+jobs:
+  repair:
+    name: probe ${{ matrix.probe }}
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, tinybox]
+    strategy:
+      fail-fast: false
+      matrix:
+        probe: [1, 2]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REPAIR_MODE: inspect
+      TARGET_SLOTS: 'tinybox-2 tinybox-5 tinybox-6'
+    steps:
+      - name: Inspect / repair runner externals
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "runner=$RUNNER_NAME host=$(hostname) arch=$(uname -m) mode=$REPAIR_MODE"
+          echo "user=$(id)"
+          echo "RUNNER_TOOL_CACHE=$RUNNER_TOOL_CACHE RUNNER_WORKSPACE=$RUNNER_WORKSPACE"
+          own_root="$(cd "$RUNNER_TOOL_CACHE/../.." && pwd)"
+          parent="$(dirname "$own_root")"
+          echo "own runner root: $own_root"
+          echo "::group::runner dirs under $parent"; ls -la "$parent"; echo "::endgroup::"
+
+          case "$(uname -m)" in
+            x86_64) arch=x64 ;; aarch64) arch=arm64 ;; *) echo "::error::unsupported arch"; exit 1 ;;
+          esac
+
+          sig() { [ -f "$1/lib/node_modules/npm/lib/cli.js" ] && echo OK || echo BROKEN; }
+          npmv() { "$1/bin/node" "$1/lib/node_modules/npm/bin/npm-cli.js" -v 2>&1 | tail -1; }
+
+          summary=""
+          failures=0
+          declare -A seen
+          for root in "$parent"/*/; do
+            root="${root%/}"
+            [ -f "$root/.runner" ] || continue
+            slot="$(grep -o '"agentName": *"[^"]*"' "$root/.runner" | sed 's/.*: *"//; s/"$//')"
+            echo "::group::$slot ($root)"
+            for ext in "$root"/externals*/node24; do
+              [ -d "$ext" ] || continue
+              real="$(realpath "$ext")"
+              [ -n "${seen[$real]:-}" ] && { echo "  $ext -> $real (already handled)"; continue; }
+              seen[$real]=1
+              ver="$("$real/bin/node" -v 2>&1)"
+              before="$(sig "$real")"
+              echo "  $real node=$ver npm-sig=$before npm-v=$(npmv "$real")"
+              ls -ld "$real" "$(dirname "$real")"
+              [ -w "$(dirname "$real")" ] && echo "  parent writable: yes" || echo "  parent writable: NO"
+              if [ "$before" = BROKEN ]; then
+                echo "  npm tree: $(find "$real/lib/node_modules/npm" -type f 2>/dev/null | wc -l) files; lib/: $(ls "$real/lib/node_modules/npm/lib" 2>/dev/null | wc -l) entries"
+                stat -c '  npm dir mtime: %y' "$real/lib/node_modules/npm" 2>/dev/null || true
+              fi
+              after="$before"
+              if [ "$REPAIR_MODE" = repair ] && [ "$before" = BROKEN ]; then
+                pdir="$(dirname "$real")"; ts="$(date +%s)"
+                lock="$pdir/.node24-repair-lock"
+                if ! mkdir "$lock" 2>/dev/null; then
+                  echo "  another repair job holds $lock; skipping"; after="LOCKED"
+                else
+                  if [ "$(sig "$real")" = OK ]; then
+                    echo "  already repaired by someone else; skipping"; after=OK
+                  else
+                    tmp="$pdir/.node24-repair-tmp-$ts"
+                    tb="node-$ver-linux-$arch.tar.gz"
+                    if mkdir -p "$tmp" \
+                      && curl -fsSL -o "$tmp/$tb" "https://nodejs.org/dist/$ver/$tb" \
+                      && curl -fsSL -o "$tmp/SHASUMS256.txt" "https://nodejs.org/dist/$ver/SHASUMS256.txt" \
+                      && (cd "$tmp" && grep " $tb\$" SHASUMS256.txt | sha256sum -c -) \
+                      && tar -xzf "$tmp/$tb" -C "$tmp" \
+                      && echo "  fresh tarball npm-v=$(npmv "$tmp/node-$ver-linux-$arch")"; then
+                      if mv "$real" "$real.broken.$ts" 2>&1; then
+                        if mv "$tmp/node-$ver-linux-$arch" "$real" 2>&1; then
+                          echo "  swapped; old tree kept at $real.broken.$ts"
+                        else
+                          echo "::error::swap-in failed for $real; rolling back"; mv "$real.broken.$ts" "$real"; failures=$((failures+1))
+                        fi
+                      else
+                        echo "::error::cannot move $real aside (perms?)"; failures=$((failures+1))
+                      fi
+                    else
+                      echo "::error::download/verify/extract failed for $ver $arch into $tmp"; failures=$((failures+1))
+                    fi
+                    rm -rf "$tmp"
+                    after="$(sig "$real")"
+                    echo "  after: node=$("$real/bin/node" -v 2>&1) npm-sig=$after npm-v=$(npmv "$real")"
+                  fi
+                  rmdir "$lock"
+                fi
+              fi
+              summary="$summary\n| $slot | $real | $ver | $before | $after |"
+            done
+            for tc in "$root"/_work/_tool/node/24.*/"$arch"; do
+              [ -d "$tc" ] || continue
+              tsig="$(sig "$tc")"
+              echo "  toolcache $tc npm-sig=$tsig"
+              if [ "$REPAIR_MODE" = repair ] && [ "$tsig" = BROKEN ]; then
+                vdir="$(dirname "$tc")"
+                rm -rf "$vdir" "$vdir.complete" && echo "  removed broken toolcache $vdir" || { echo "::error::cannot remove $vdir"; failures=$((failures+1)); }
+              fi
+            done
+            echo "::endgroup::"
+          done
+          {
+            echo "### $RUNNER_NAME on $(hostname) — mode=$REPAIR_MODE"
+            echo
+            echo "| slot | externals node24 | node | npm before | npm after |"
+            echo "|---|---|---|---|---|"
+            printf "$summary\n"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$failures" -eq 0 ] || { echo "::error::$failures repair step(s) failed"; exit 1; }
