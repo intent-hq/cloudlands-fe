@@ -533,15 +533,6 @@
         class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
         >{m.settings_footer_support()}</a
       >
-      <!-- tailcat ships bundled (resources/tailcat, BSD-3-Clause); its license
-           text is packaged next to the binary as tailcat.LICENSE. -->
-      <a
-        href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="mt-1 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-        >{m.settings_footer_tailcatAttribution()}</a
-      >
     </div>
   </aside>
 

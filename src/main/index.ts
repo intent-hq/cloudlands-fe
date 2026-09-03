@@ -384,6 +384,7 @@ import { setResolvedAppName } from './utils/resolve-app-title.js';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
+import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
@@ -676,7 +677,20 @@ app.whenReady().then(async () => {
       applicationVersion: aboutPanelInfo.applicationVersion,
       ...(aboutPanelInfo.intentdVersion ? { version: aboutPanelInfo.intentdVersion } : {}),
       copyright: aboutPanelInfo.copyright,
+      credits: formatThirdPartyCredits(),
     });
+  };
+
+  // Help → About dialog (all platforms; macOS additionally has the native
+  // about panel in the app menu).
+  const showAboutDialog = (): void => {
+    const options = buildAboutDialogOptions(aboutPanelInfo);
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, options);
+    } else {
+      dialog.showMessageBox(options);
+    }
   };
 
   // Set initial about panel options (macOS only)
@@ -1007,36 +1021,14 @@ app.whenReady().then(async () => {
     // Build the Help menu items
     const helpMenuItems: Electron.MenuItemConstructorOptions[] = [];
 
-    // Add About on Windows (macOS uses the app menu)
-    if (!isMacOS) {
-      helpMenuItems.push({
-        label: m.menu_about_app({ appName }),
-        click: () => {
-          const aboutMessage = [
-            `${aboutPanelInfo.applicationName}`,
-            m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
-            aboutPanelInfo.intentdVersion ? `${aboutPanelInfo.intentdVersion}` : '',
-            `${aboutPanelInfo.copyright}`,
-          ]
-            .filter(Boolean)
-            .join('\n');
+    // About (all platforms) — carries the third-party license credits
+    helpMenuItems.push({
+      label: m.menu_about_app({ appName }),
+      click: showAboutDialog,
+    });
 
-          const mainWindow = getMainWindow();
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: m.menu_about_app({ appName }),
-              message: aboutMessage,
-            });
-          } else {
-            dialog.showMessageBox({
-              type: 'info',
-              title: m.menu_about_app({ appName }),
-              message: aboutMessage,
-            });
-          }
-        },
-      });
+    // Check for Updates / Install CLI live in the app menu on macOS
+    if (!isMacOS) {
       helpMenuItems.push({
         label: m.menu_check_for_updates(),
         click: async () => {
@@ -1101,8 +1093,8 @@ app.whenReady().then(async () => {
           }
         },
       });
-      helpMenuItems.push({ type: 'separator' });
     }
+    helpMenuItems.push({ type: 'separator' });
 
     // Add Show Release Notes (cross-platform, works in dev too — the renderer
     // fetches on demand and falls back to "not available" when there are none)
