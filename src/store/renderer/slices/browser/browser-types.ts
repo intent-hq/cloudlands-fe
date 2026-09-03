@@ -43,10 +43,11 @@ export type BrowserElement = {
 export type BrowserElementCaptureInput = {
   tabId: string;
   ownerAgentId?: string;
+  targetAgentId?: string;
   pageUrl: string;
   title: string;
   viewport?: { width: number; height: number };
-  image: { data: string; mimeType: 'image/png' };
+  image: { data: string; mimeType: string };
   element?: BrowserElement;
 };
 

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
   writeTextToClipboard: vi.fn().mockResolvedValue(undefined),
   electronInvoke: vi.fn().mockResolvedValue(undefined),
+  selectMostRecentAgentTab: vi.fn(),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
@@ -15,6 +16,10 @@ vi.mock('$lib/utils/clipboard', () => ({
 
 vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
   selectPendingBrowserZoom: () => null,
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectMostRecentAgentTab: { select: mocks.selectMostRecentAgentTab },
 }));
 
 vi.mock('$store/renderer/store', () => ({
@@ -275,6 +280,31 @@ describe('EmbeddedBrowser', () => {
         '375 × 667',
       );
     });
+
+    it('keeps the same webview mounted while switching viewport modes', async () => {
+      const props = {
+        url: 'about:blank',
+        workspaceId: 'workspace-1',
+        ownerAgentId: 'agent-1',
+        ownerAgentName: 'Coordinator',
+      };
+      const rendered = render(EmbeddedBrowser, { props: { ...props, viewport: { mode: 'fit' } } });
+      const webview = rendered.container.querySelector('webview');
+
+      await rendered.rerender({
+        ...props,
+        viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
+      });
+      expect(rendered.container.querySelector('webview')).toBe(webview);
+      await rendered.rerender({
+        ...props,
+        viewport: { mode: 'custom', width: 900, height: 700 },
+      });
+      expect(rendered.container.querySelector('webview')).toBe(webview);
+      await rendered.rerender({ ...props, viewport: { mode: 'fit' } });
+      expect(rendered.container.querySelectorAll('webview')).toHaveLength(1);
+      expect(rendered.container.querySelector('webview')).toBe(webview);
+    });
   });
 
   describe('page identity address editing', () => {
@@ -375,6 +405,20 @@ describe('EmbeddedBrowser', () => {
       );
     });
 
+    it('keeps the webview source current across full and in-page navigation', async () => {
+      const { container } = renderPage();
+      const webview = container.querySelector('webview')!;
+      const navigate = new Event('did-navigate');
+      Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
+      webview.dispatchEvent(navigate);
+      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs'));
+
+      const inPage = new Event('did-navigate-in-page');
+      Object.defineProperty(inPage, 'url', { value: 'https://next.test/docs#api' });
+      webview.dispatchEvent(inPage);
+      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs#api'));
+    });
+
     it('shows the URL placeholder for a blank page and edits its full URL', async () => {
       const { getByRole } = render(EmbeddedBrowser, {
         props: { url: 'about:blank', workspaceId: 'workspace-1' },
@@ -466,6 +510,10 @@ describe('EmbeddedBrowser', () => {
     });
 
     it('captures a validated element using the fixed viewport scale', async () => {
+      mocks.selectMostRecentAgentTab.mockReturnValueOnce({
+        type: 'agent',
+        agentId: 'agent-focused',
+      });
       const { webview } = await renderReadyBrowser({
         ownerAgentId: 'agent-1',
         viewport: { mode: 'preset', presetId: 'desktop-1280x800', width: 1280, height: 800 },
@@ -499,6 +547,7 @@ describe('EmbeddedBrowser', () => {
         capture: {
           tabId: 'tab-1',
           ownerAgentId: 'agent-1',
+          targetAgentId: 'agent-focused',
           pageUrl: 'https://picked.test/settings',
           title: 'picked.test',
           viewport: { width: 1280, height: 800 },
@@ -637,6 +686,7 @@ describe('EmbeddedBrowser', () => {
       const capture = captureActions()[0].payload.capture;
       expect(capture).toMatchObject({
         tabId: 'tab-1',
+        targetAgentId: undefined,
         pageUrl: 'https://loaded.test/page',
         title: 'loaded.test',
         viewport: { width: 640, height: 400 },
@@ -645,6 +695,20 @@ describe('EmbeddedBrowser', () => {
       expect(capture.image.data).not.toMatch(/^data:/);
       expect(atob(capture.image.data)).toBe('png');
       expect(capture).not.toHaveProperty('element');
+    });
+
+    it('targets the owner when no agent tab appears in focus history', async () => {
+      const { webview } = await renderReadyBrowser({ ownerAgentId: 'agent-owner' });
+
+      await openOverflow();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Screenshot' }));
+
+      await waitFor(() => expect(webview.capturePage).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(captureActions()).toHaveLength(1));
+      expect(captureActions()[0].payload.capture).toMatchObject({
+        ownerAgentId: 'agent-owner',
+        targetAgentId: 'agent-owner',
+      });
     });
   });
 });

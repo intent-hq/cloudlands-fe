@@ -4,23 +4,21 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
 
-  type FixedViewport = Exclude<BrowserTabViewport, { mode: 'fit' }>;
-
   const MIN_VIEWPORT_PX = 320;
   const MAX_VIEWPORT_PX = 3840;
   const RESIZE_DEBOUNCE_MS = 150;
 
   interface Props {
-    viewport: FixedViewport;
+    viewport: BrowserTabViewport;
     onViewportChange: (viewport: BrowserTabViewport) => void;
     children?: Snippet;
   }
 
   let { viewport, onViewportChange, children }: Props = $props();
   // svelte-ignore state_referenced_locally - intentional initial size; the effect below syncs later prop changes
-  let frameWidth = $state(viewport.width);
+  let frameWidth = $state(viewport.mode === 'fit' ? MIN_VIEWPORT_PX : viewport.width);
   // svelte-ignore state_referenced_locally - intentional initial size; the effect below syncs later prop changes
-  let frameHeight = $state(viewport.height);
+  let frameHeight = $state(viewport.mode === 'fit' ? MIN_VIEWPORT_PX : viewport.height);
   let container: HTMLDivElement;
   let availableWidth = $state(0);
   let availableHeight = $state(0);
@@ -31,6 +29,7 @@
   let startWidth = 0;
   let startHeight = 0;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  const isFit = $derived(viewport.mode === 'fit');
 
   const dimensionsLabel = $derived(
     m.browser_viewport_dimensions_label({
@@ -39,7 +38,7 @@
     }),
   );
   const frameScale = $derived(
-    availableWidth > 0 && availableHeight > 0
+    !isFit && availableWidth > 0 && availableHeight > 0
       ? Math.min(1, availableWidth / frameWidth, availableHeight / frameHeight)
       : 1,
   );
@@ -47,7 +46,7 @@
   const renderedHeight = $derived(frameHeight * frameScale);
 
   $effect(() => {
-    if (dragging) return;
+    if (dragging || viewport.mode === 'fit') return;
     frameWidth = viewport.width;
     frameHeight = viewport.height;
   });
@@ -66,7 +65,7 @@
   }
 
   function handlePointerDown(event: PointerEvent): void {
-    if (event.button !== 0) return;
+    if (isFit || event.button !== 0) return;
     event.preventDefault();
     dragging = true;
     pointerId = event.pointerId;
@@ -125,35 +124,39 @@
 
 <div
   bind:this={container}
-  class="flex h-full w-full items-center justify-center overflow-hidden bg-muted/40"
+  class="flex h-full w-full items-center justify-center overflow-hidden {isFit
+    ? 'bg-background'
+    : 'bg-muted/40'}"
   data-browser-device-frame-container
 >
   <div
-    class="relative overflow-hidden border border-border bg-background shadow-sm {dragging
-      ? 'ring-2 ring-primary/30'
-      : ''}"
-    style:width="{renderedWidth}px"
-    style:height="{renderedHeight}px"
-    data-browser-device-frame
-    data-width={frameWidth}
-    data-height={frameHeight}
+    class="relative overflow-hidden bg-background {isFit
+      ? 'h-full w-full'
+      : `border border-border shadow-sm ${dragging ? 'ring-2 ring-primary/30' : ''}`}"
+    style:width={isFit ? undefined : `${renderedWidth}px`}
+    style:height={isFit ? undefined : `${renderedHeight}px`}
+    data-browser-device-frame={isFit ? undefined : ''}
+    data-width={isFit ? undefined : frameWidth}
+    data-height={isFit ? undefined : frameHeight}
   >
     {@render children?.()}
-    <span
-      class="pointer-events-none absolute bottom-1 left-1/2 z-10 -translate-x-1/2 rounded bg-background/90 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur"
-      data-browser-viewport-readout
-    >
-      {dimensionsLabel}
-    </span>
-    <button
-      type="button"
-      class="absolute bottom-0 right-0 z-20 size-5 cursor-nwse-resize touch-none border-0 bg-transparent p-0 after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b-2 after:border-r-2 after:border-muted-foreground"
-      aria-label={m.browser_viewport_resizeHandle_ariaLabel()}
-      data-testid="browser-device-resize-handle"
-      onpointerdown={handlePointerDown}
-      onpointermove={handlePointerMove}
-      onpointerup={handlePointerEnd}
-      onpointercancel={handlePointerEnd}
-    ></button>
+    {#if !isFit}
+      <span
+        class="pointer-events-none absolute bottom-1 left-1/2 z-10 -translate-x-1/2 rounded bg-background/90 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur"
+        data-browser-viewport-readout
+      >
+        {dimensionsLabel}
+      </span>
+      <button
+        type="button"
+        class="absolute bottom-0 right-0 z-20 size-5 cursor-nwse-resize touch-none border-0 bg-transparent p-0 after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b-2 after:border-r-2 after:border-muted-foreground"
+        aria-label={m.browser_viewport_resizeHandle_ariaLabel()}
+        data-testid="browser-device-resize-handle"
+        onpointerdown={handlePointerDown}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerEnd}
+        onpointercancel={handlePointerEnd}
+      ></button>
+    {/if}
   </div>
 </div>

@@ -25,6 +25,7 @@
   } from '$store/renderer/slices/browser/browser-slice';
   import type { BrowserElement } from '$store/renderer/slices/browser/browser-types';
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
+  import { selectMostRecentAgentTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     createEmbeddedBrowserNavigationSyncState,
     navigateEmbeddedBrowserWebview,
@@ -565,6 +566,7 @@
     // which is exactly what the address bar shows.
     addWebviewListener('did-navigate', (e: any) => {
       consoleErrorCount = 0;
+      currentWebviewUrl = e.url;
       displayUrl = e.url;
       pageTitle = '';
       faviconUrl = '';
@@ -578,6 +580,7 @@
     });
 
     addWebviewListener('did-navigate-in-page', (e: any) => {
+      currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
@@ -876,10 +879,13 @@
   ) {
     if (!tabId || !webviewRef) return;
     const pageUrl = element?.pageUrl || currentLoadedUrl();
+    const targetAgentId =
+      selectMostRecentAgentTab.select(appStore.state, _workspaceId)?.agentId ?? ownerAgentId;
     appStore.dispatch(
       browserElementCaptured(_workspaceId, {
         tabId,
         ownerAgentId,
+        targetAgentId,
         pageUrl,
         title: pageTitle || getHostname(pageUrl) || pageUrl,
         viewport:
@@ -1204,16 +1210,12 @@
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
     {#if isUrlValid && !isRecreatingWebview}
-      {#if viewport.mode === 'fit'}
+      <BrowserDeviceFrame
+        {viewport}
+        onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
+      >
         {@render browserWebview()}
-      {:else}
-        <BrowserDeviceFrame
-          {viewport}
-          onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
-        >
-          {@render browserWebview()}
-        </BrowserDeviceFrame>
-      {/if}
+      </BrowserDeviceFrame>
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->
       <div class="flex items-center justify-center h-full text-subtle">

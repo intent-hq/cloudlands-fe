@@ -10,6 +10,7 @@ const capture: BrowserElementCapture & { viewport: { width: number; height: numb
   id: 'capture-1',
   tabId: 'browser-1',
   ownerAgentId: 'agent-owner',
+  targetAgentId: 'agent-focused',
   pageUrl: 'https://example.com/account',
   title: 'Account',
   image: { data: 'base64-png', mimeType: 'image/png' },
@@ -51,22 +52,15 @@ describe('browser capture chat context', () => {
     expect(context.content).toContain('Viewport: 1440×900');
   });
 
-  it('prefers the focused active agent chat and otherwise falls back to the tab owner', () => {
+  it('matches only the agent resolved when the capture was created', () => {
+    expect(browserCaptureTargetsAgent(capture, 'agent-focused')).toBe(true);
+    expect(browserCaptureTargetsAgent(capture, 'agent-owner')).toBe(false);
     expect(
-      browserCaptureTargetsAgent(capture, 'agent-focused', {
-        type: 'agent',
-        agentId: 'agent-focused',
-      }),
+      browserCaptureTargetsAgent({ ...capture, targetAgentId: 'agent-owner' }, 'agent-owner'),
     ).toBe(true);
     expect(
-      browserCaptureTargetsAgent(capture, 'agent-owner', {
-        type: 'agent',
-        agentId: 'agent-focused',
-      }),
+      browserCaptureTargetsAgent({ ...capture, targetAgentId: undefined }, 'agent-owner'),
     ).toBe(false);
-    expect(
-      browserCaptureTargetsAgent(capture, 'agent-owner', { type: 'browser', agentId: undefined }),
-    ).toBe(true);
   });
 
   it('folds only selection content into the message context string', () => {

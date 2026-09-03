@@ -150,6 +150,7 @@ browserReducer.with(clearBrowserTabZoomRequest, (state, { payload: [wsId, tabId]
   return setWorkspaceState(state, wsId, { ...ws, pendingZoomByTabId: rest });
 });
 browserReducer.with(browserElementCaptured, (state, { payload: { wsId, capture } }) => {
+  if (!capture.targetAgentId) return state;
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, {
     ...ws,

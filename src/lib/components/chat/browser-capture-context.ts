@@ -1,5 +1,4 @@
 import type { BrowserElementCapture } from '$store/renderer/slices/browser/browser-types';
-import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { ContextItem } from './input/context-api';
 
 function captureHost(capture: BrowserElementCapture): string {
@@ -13,11 +12,8 @@ function captureHost(capture: BrowserElementCapture): string {
 export function browserCaptureTargetsAgent(
   capture: BrowserElementCapture,
   agentId: string,
-  focusedActiveTab: Pick<PanelTab, 'type' | 'agentId'> | undefined,
 ): boolean {
-  const targetAgentId =
-    focusedActiveTab?.type === 'agent' ? focusedActiveTab.agentId : capture.ownerAgentId;
-  return targetAgentId === agentId;
+  return capture.targetAgentId === agentId;
 }
 
 export function browserCaptureToContextItems(

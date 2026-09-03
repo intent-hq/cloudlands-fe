@@ -507,6 +507,33 @@ describe('viewport emulation modes', () => {
     });
   });
 
+  it('updates an owned tab retained size from a renderer-selected fixed viewport', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-owned-preset', 'agent-1', undefined, {
+      width: 1280,
+      height: 800,
+    });
+
+    service.setTabViewport('tab-owned-preset', {
+      mode: 'preset',
+      presetId: 'iphone-se',
+      width: 375,
+      height: 667,
+    });
+
+    expect(service.getTabEmulatedSize('tab-owned-preset')).toEqual({ width: 375, height: 667 });
+    expect(service.resizeTab('tab-owned-preset', 390)).toEqual({ width: 390, height: 667 });
+  });
+
+  it('keeps an owned tab retained size when switching to fit mode', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-owned-fit', 'agent-1', undefined, { width: 1024, height: 768 });
+
+    service.setTabViewport('tab-owned-fit', { mode: 'fit' });
+
+    expect(service.getTabEmulatedSize('tab-owned-fit')).toEqual({ width: 1024, height: 768 });
+  });
+
   it('clears device metrics for an unowned fit tab', async () => {
     const service = await loadService();
     const wc = fakeCdpWebview(64, {});

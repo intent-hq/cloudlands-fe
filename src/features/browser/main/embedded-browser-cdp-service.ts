@@ -1091,6 +1091,10 @@ class EmbeddedBrowserCdpService {
   /** Set a tab's renderer-selected viewport mode and apply it immediately. */
   setTabViewport(tabId: string, viewport: BrowserTabViewport): void {
     this.tabViewports.set(tabId, { ...viewport });
+    const ownership = this.tabOwnership.get(tabId);
+    if (ownership && viewport.mode !== 'fit') {
+      ownership.emulatedSize = { width: viewport.width, height: viewport.height };
+    }
     this.applyViewportEmulation(tabId);
   }
 

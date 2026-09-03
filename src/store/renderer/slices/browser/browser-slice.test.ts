@@ -87,6 +87,7 @@ describe('browserReducer', () => {
     const capture = {
       tabId: 'tab-a',
       ownerAgentId: 'agent-1',
+      targetAgentId: 'agent-1',
       pageUrl: 'https://example.com',
       title: 'Example',
       image: { data: 'data:image/png;base64,AA==', mimeType: 'image/png' as const },
@@ -135,6 +136,15 @@ describe('browserReducer', () => {
       expect(selectPendingBrowserElementCaptures.select({ browser: state } as any, 'ws-1')).toEqual(
         [{ ...capture, tabId: 'tab-b', id: 'capture-2' }],
       );
+    });
+
+    it('drops captures that have no target agent', () => {
+      const state = browserReducer(
+        initialState,
+        browserElementCaptured('ws-1', { ...capture, targetAgentId: undefined }, 'capture-1'),
+      );
+
+      expect(state).toBe(initialState);
     });
 
     it('returns the same state when the capture does not exist', () => {

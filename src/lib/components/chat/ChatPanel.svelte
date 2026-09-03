@@ -82,10 +82,7 @@
   } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import {
-    selectActiveTab as selectPanelLayoutActiveTab,
-    selectAllTabs as selectPanelLayoutAllTabs,
-  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { clearBrowserElementCapture } from '$store/renderer/slices/browser/browser-slice';
   import { selectPendingBrowserElementCaptures } from '$store/renderer/slices/browser/browser-selectors';
   import {
@@ -1835,10 +1832,7 @@
     const workspaceId = workspace?.id;
     if (!workspaceId || !agentId || !isActive || captures.length === 0) return;
 
-    const focusedActiveTab = selectPanelLayoutActiveTab.select(appStore.state, workspaceId);
-    const targeted = captures.filter((capture) =>
-      browserCaptureTargetsAgent(capture, agentId, focusedActiveTab),
-    );
+    const targeted = captures.filter((capture) => browserCaptureTargetsAgent(capture, agentId));
     if (targeted.length === 0) return;
 
     untrack(() => {
