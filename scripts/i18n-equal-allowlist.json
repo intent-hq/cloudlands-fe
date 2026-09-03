@@ -138,6 +138,7 @@
   "layout_commandPalette_agents_group": ["fr"],
   "layout_commandPalette_browser_group": ["de"],
   "layout_commandPalette_terminals_group": ["de"],
+  "layout_daemonStatus_connectionViaTailcat_label": ["fr"],
   "layout_daemonStatus_cpu_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
   "layout_daemonStatus_host_label": ["de", "es"],
   "layout_daemonStatus_phase_label": ["de", "fr"],

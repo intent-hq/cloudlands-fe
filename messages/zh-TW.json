@@ -2525,6 +2525,7 @@
   "layout_daemonStatus_status_label": "狀態",
   "layout_daemonStatus_notRunning_label": "未執行",
   "layout_daemonStatus_notConnected_description": "常駐程式未連線",
+  "layout_daemonStatus_connectionViaTailcat_label": "{target}（透過 tailcat）",
   "layout_daemonStatus_healthyState_label": "健康",
   "layout_daemonStatus_degradedState_label": "降級",
   "layout_daemonStatus_agentSlots_label": "智慧體槽位",

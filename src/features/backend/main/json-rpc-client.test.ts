@@ -438,13 +438,13 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     sockets[0].emit('close');
     expect(client.getConnectedVia()).toBeNull();
     await vi.advanceTimersByTimeAsync(100);
-    sockets[1].emit('connect', { host: TUNNEL_RACE_HOST });
+    sockets[1].emit('connect', { host: TUNNEL_RACE_HOST, via: 'tunnel' });
     expect(client.getConnectedVia()).toBe('tunnel');
 
     // Reconnect again through a direct host: the marker flips back.
     sockets[1].emit('close');
     await vi.advanceTimersByTimeAsync(100);
-    sockets[2].emit('secureConnect', { host: '10.0.0.5' });
+    sockets[2].emit('secureConnect', { host: '10.0.0.5', via: 'direct' });
     expect(client.getConnectedVia()).toBe('direct');
 
     // The `status → connected` broadcast already observes the fresh value.

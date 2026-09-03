@@ -19,16 +19,13 @@ import {
   type BackendConnectionConfig,
   createBackendSocket,
   describeBackendConfig,
+  type ConnectedVia,
   type HostCertMismatch,
   type RaceConnectInfo,
   resolveBackendConfig,
-  TUNNEL_RACE_HOST,
 } from './backend-connection';
 
 const logger = new Logger('JsonRpcClient');
-
-/** How the live connection reached the daemon: a direct host dial or the tailcat tunnel. */
-export type ConnectedVia = 'direct' | 'tunnel';
 
 export interface JsonRpcNotification {
   method: string;
@@ -135,9 +132,10 @@ export class JsonRpcClient extends EventEmitter {
   private readonly onHelloResult?: (result: unknown) => void;
 
   private socket: Duplex | null = null;
-  // Winning candidate host of the current connection (multi-host race only;
-  // null for a single-host dial and whenever no socket is connected).
-  private connectedHost: string | null = null;
+  // How the current connection's winning candidate reached the daemon
+  // (multi-host race only; null for a single-host dial and whenever no socket
+  // is connected).
+  private connectedVia: ConnectedVia | null = null;
   // Decoded text awaiting a newline. Raw bytes are run through `decoder` first so
   // a multi-byte UTF-8 character split across two `data` events reassembles
   // correctly before we split on '\n'.
@@ -208,8 +206,7 @@ export class JsonRpcClient extends EventEmitter {
    * on every (re)connect, since a reconnect can flip the winner.
    */
   getConnectedVia(): ConnectedVia | null {
-    if (this.connectedHost === null) return null;
-    return this.connectedHost === TUNNEL_RACE_HOST ? 'tunnel' : 'direct';
+    return this.connectedVia;
   }
 
   /** Begin connecting (idempotent). */
@@ -376,7 +373,7 @@ export class JsonRpcClient extends EventEmitter {
   private onConnected(info?: RaceConnectInfo): void {
     // Record the race winner BEFORE the status flips to `connected` so the
     // `status` broadcast already carries the right tunnel/direct marker.
-    this.connectedHost = typeof info?.host === 'string' && info.host ? info.host : null;
+    this.connectedVia = info?.via === 'tunnel' || info?.via === 'direct' ? info.via : null;
     // §5.17: when a hello provider is configured, present the persisted
     // identity as the FIRST frame on the fresh socket and hold the status at
     // `connecting` until the daemon answers — queued scoped work (`drafts.*`,
@@ -633,7 +630,7 @@ export class JsonRpcClient extends EventEmitter {
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;
-    this.connectedHost = null;
+    this.connectedVia = null;
     this.buffer = '';
     // Drop any partially-decoded multi-byte sequence so a reconnect starts clean.
     this.decoder = new StringDecoder('utf8');

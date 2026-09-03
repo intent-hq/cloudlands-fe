@@ -394,19 +394,31 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
   return duplex;
 }
 
-/** One racing attempt: a candidate host plus a factory for its socket. */
+/** How a race candidate reaches the daemon: a direct host dial or the tailcat tunnel. */
+export type ConnectedVia = 'direct' | 'tunnel';
+
+/**
+ * One racing attempt: a candidate host plus a factory for its socket. `via`
+ * marks the tunnel candidate explicitly (defaults to `'direct'`) so the
+ * winner classification never depends on the host label — a `wss` config can
+ * legitimately carry a direct host that happens to be named like
+ * {@link TUNNEL_RACE_HOST}.
+ */
 export interface RaceAttempt {
   host: string;
+  via?: ConnectedVia;
   create: () => Duplex;
 }
 
 /**
  * Payload of the race facade's `'connect'` event: the candidate host that won
- * ({@link TUNNEL_RACE_HOST} when the tunnel candidate won). Single-host sockets
- * emit a bare `'connect'`, so consumers must treat the payload as optional.
+ * ({@link TUNNEL_RACE_HOST} when the tunnel candidate won) and how it reached
+ * the daemon. Single-host sockets emit a bare `'connect'`, so consumers must
+ * treat the payload as optional.
  */
 export interface RaceConnectInfo {
   host: string;
+  via: ConnectedVia;
 }
 
 /** Overall bound on the multi-host race; matches the capture timeout. */
@@ -435,6 +447,7 @@ export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt 
   }
   return {
     host: TUNNEL_RACE_HOST,
+    via: 'tunnel',
     create: () =>
       createTunneledSocket({
         tcAddress,
@@ -486,6 +499,7 @@ export function raceDuplexSockets(
   let lastError: Error | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
+  const candidateVias = new Map<Duplex, ConnectedVia>();
   const mismatches: HostCertMismatch[] = [];
   const reportedMismatchHosts = new Set<string>();
 
@@ -613,7 +627,10 @@ export function raceDuplexSockets(
       if (!facade.destroyed) facade.destroy(error);
     });
     candidate.on('close', () => facade.push(null));
-    const info: RaceConnectInfo = { host: candidateHosts.get(candidate) ?? '' };
+    const info: RaceConnectInfo = {
+      host: candidateHosts.get(candidate) ?? '',
+      via: candidateVias.get(candidate) ?? 'direct',
+    };
     facade.emit('connect', info);
   };
 
@@ -630,6 +647,7 @@ export function raceDuplexSockets(
     }
     candidates.push(candidate);
     candidateHosts.set(candidate, attempt.host);
+    candidateVias.set(candidate, attempt.via ?? 'direct');
     // A failing candidate can emit `error` AND `close`; count it out only once.
     let counted = false;
     const failOnce = (error: Error): void => {
