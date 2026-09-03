@@ -43,7 +43,10 @@ const testState = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: testState.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ agentSubscriptionUI: { entries: {} } }),
+    dispatch: testState.dispatch,
+  });
 });
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -73,6 +76,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: testState.selector(null),
+  selectAgentSessionsById: testState.selector({}),
   selectAgentIsResponding: testState.selector(false),
   selectAgentIsRunning: testState.selector(false),
   selectAgentSessionIsStreaming: testState.selector(false),

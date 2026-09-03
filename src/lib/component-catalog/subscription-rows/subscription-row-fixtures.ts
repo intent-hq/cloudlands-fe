@@ -122,6 +122,12 @@ const livePairs = (
   }));
 
 export const liveCardFixtures: LiveCardFixture[] = [
+  {
+    id: 'agents-only-collapsed',
+    label: 'Agents only from store',
+    state: 'collapsed',
+    agents: ['agent-one', 'agent-two'],
+  },
   ...livePairs('hook-one', '1 scheduled hook', { hooks: [hook('scheduled')] }),
   ...livePairs('hook-running', 'Running hook', { hooks: [hook('running', { state: 'running' })] }),
   ...livePairs('hook-error', 'Scheduled hook with last error', {

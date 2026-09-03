@@ -91,7 +91,10 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {}, dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: { agentSubscriptionUI: { entries: {} } },
+    dispatch: mocks.dispatch,
+  });
 });
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -102,6 +105,7 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
+  selectAgentSessionsById: mocks.selector({}),
   selectAgentSessionIsStreaming: Object.assign(() => mocks.agentSessionIsStreaming, {
     select: () => false,
   }),

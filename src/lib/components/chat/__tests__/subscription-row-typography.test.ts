@@ -82,6 +82,8 @@ vi.mock('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-sele
     ]),
   selectAgentSubscriptionStatuses: () =>
     readable({ 'agent-a': 'running', 'agent-b': 'completed', 'agent-c': 'completed' }),
+  selectAgentSubscriptionLane: () =>
+    readable({ visible: true, count: 1, participantAgentIds: ['agent-a'] }),
   selectDelegationGroups: () => readable([]),
   selectWokenUpInfo: () => readable(null),
   selectWaitingState: () => readable('waiting'),
