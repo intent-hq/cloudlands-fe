@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { classifyPendingQuestionMarker, derivePendingQuestions } from '../pending-questions';
-import { buildAnswerMessageMetadata } from '../answer-message';
+import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageId } from '../answer-message';
 import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
@@ -87,6 +87,44 @@ describe('classifyPendingQuestionMarker', () => {
       kind: 'set',
       messageId: 'msg-question',
     });
+  });
+});
+
+describe('getAnsweredQuestionsMessageId', () => {
+  it('reads the row metadata tag', () => {
+    expect(getAnsweredQuestionsMessageId(answerMessage('msg-a1'))).toBe('msg-a1');
+    expect(getAnsweredQuestionsMessageId(userMessage())).toBeNull();
+    expect(getAnsweredQuestionsMessageId(undefined)).toBeNull();
+  });
+
+  it('falls back to a text block messageMetadata tag when the row is untagged', () => {
+    const blockTagged = {
+      id: 'msg-answer-block',
+      role: 'user',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: 'Q: Auth method\nA: OAuth',
+          messageMetadata: buildAnswerMessageMetadata('msg-a1'),
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    } as unknown as AgentMessage;
+    expect(getAnsweredQuestionsMessageId(blockTagged)).toBe('msg-a1');
+
+    const emptyId = {
+      id: 'msg-answer-empty',
+      role: 'user',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: 'Q: Auth method\nA: OAuth',
+          messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: '' },
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    } as unknown as AgentMessage;
+    expect(getAnsweredQuestionsMessageId(emptyId)).toBeNull();
   });
 });
 
@@ -557,6 +595,32 @@ describe('wizard gate honors the authoritative pending marker', () => {
     expect(
       deriveWizardPendingQuestions(state, AGENT_ID, [...transcript, answerMessage(marked.id)]),
     ).toBeNull();
+  });
+
+  it('resolves a history-only marked set from a tagged answer in a question-free tail', () => {
+    // The marked row lives only in the paged segment; the live tail carries
+    // no question-bearing row of its own.
+    const marked = assistantMessage([questionBlock()], { id: 'msg-old-question' });
+    const unanswered = [userMessage('msg-u9')];
+    const state = stateWith(
+      makeStoredSession({
+        messages: unanswered,
+        isResponding: true,
+        metadata: { pendingQuestionsMessageId: marked.id },
+      }),
+    );
+    state.agentSessions.historySegmentsByAgentId = {
+      [AGENT_ID]: { messages: [marked], gapToTail: true, oldestReached: false },
+    };
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, unanswered)).toMatchObject({
+      messageId: marked.id,
+    });
+    expect(
+      deriveWizardPendingQuestions(state, AGENT_ID, [...unanswered, answerMessage(marked.id)]),
+    ).toBeNull();
+    expect(
+      deriveWizardPendingQuestions(state, AGENT_ID, [...unanswered, answerMessage('msg-other')]),
+    ).toMatchObject({ messageId: marked.id });
   });
 
   it('keeps a recovered marked set visible across later turns until answered', () => {
