@@ -327,10 +327,12 @@
   data-workspace-hover-card-layout="landscape"
 >
   {#if isLoading || !workspace}<div class="px-6 pb-5 pt-5">
-      <div class="relative grid gap-0.5">
-        <Skeleton class="h-7 w-64" />
+      <div class="grid gap-0.5">
+        <div class="flex min-w-0 items-center justify-between gap-4">
+          <Skeleton class="h-7 min-w-0 max-w-64 flex-1" />
+          <Skeleton class="h-5 w-20 shrink-0" />
+        </div>
         <Skeleton class="h-4 w-40" />
-        <Skeleton class="absolute right-0 top-0 h-5 w-20" />
         <Skeleton class="mt-2 h-10 w-full" />
       </div>
       <div class="my-5 border-t border-border"></div>
@@ -344,18 +346,20 @@
       </div>
     </div>
   {:else}
-    <header
-      class="relative min-w-0 px-6 pt-5"
-      class:pb-5={!hasBodyContent}
-      data-workspace-hover-card-header
-    >
+    <header class="min-w-0 px-6 pt-5" class:pb-5={!hasBodyContent} data-workspace-hover-card-header>
       <div class="min-w-0" data-workspace-hover-card-identity>
-        <h2
-          class="type-display min-w-0 truncate pr-40 text-foreground"
-          data-workspace-hover-card-title
-        >
-          {workspace.title || m.workspace_links_untitled_label()}
-        </h2>
+        <div class="flex min-w-0 items-center justify-between gap-4">
+          <h2 class="type-display min-w-0 truncate text-foreground" data-workspace-hover-card-title>
+            {workspace.title || m.workspace_links_untitled_label()}
+          </h2>
+          <span
+            class="type-body flex shrink-0 items-center gap-1.5 text-foreground"
+            data-workspace-hover-card-status
+            ><WorkspaceStatusIcon status={statusState} size={16} decorative /><span class="truncate"
+              >{status.label}</span
+            ></span
+          >
+        </div>
         <div
           class="type-body mt-0.5 min-w-0 truncate text-muted-foreground"
           data-workspace-hover-card-repo
@@ -370,13 +374,6 @@
             {summary}
           </p>{/if}
       </div>
-      <span
-        class="type-body absolute right-6 top-5 flex min-w-0 items-center gap-1.5 text-foreground"
-        data-workspace-hover-card-status
-        ><WorkspaceStatusIcon status={statusState} size={16} decorative /><span class="truncate"
-          >{status.label}</span
-        ></span
-      >
     </header>
     {#if hasBodyContent}<div
         class="mx-6 my-5 border-t border-border"
