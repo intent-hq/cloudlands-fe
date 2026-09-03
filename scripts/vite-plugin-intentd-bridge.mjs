@@ -1,11 +1,15 @@
 // Keep socket resolution aligned with src/features/backend/main/intentd-data-dir.ts,
 // the source of truth for the FE's mirror of the daemon's platform defaults.
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 
 export const BRIDGE_PATH = '/intentd/ws';
+export const SANDBOX_HEALTH_PATH = '/__sandbox/health';
 export const MAX_MESSAGE_BYTES = 40 * 1024 * 1024;
+
+const SOCKET_CONNECT_TIMEOUT_MS = 250;
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const NEWLINE = Buffer.from('\n');
@@ -64,6 +68,115 @@ function normalizeSocketAddress(address) {
 
 function isLoopbackPeer(socket) {
   return isLoopbackHostname(normalizeSocketAddress(socket.remoteAddress));
+}
+
+function isLoopbackRequest(request) {
+  const host = request.headers.host;
+  if (typeof host !== 'string') return false;
+  try {
+    const hostname = new URL(`http://${host}`).hostname;
+    return isLoopbackHostname(hostname) && isLoopbackHostname(request.socket.localAddress);
+  } catch {
+    return false;
+  }
+}
+
+function probeSocket(socketPath, timeoutMs) {
+  return new Promise((resolve) => {
+    const socket = net.connect(socketPath);
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish({ reachable: true }));
+    socket.once('timeout', () => finish({ reachable: false, error: 'timeout' }));
+    socket.once('error', (error) =>
+      finish({ reachable: false, error: error.code || error.message || 'unknown' }),
+    );
+  });
+}
+
+function resolveGitInfo(root) {
+  const run = (...args) =>
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  try {
+    return { sha: run('rev-parse', 'HEAD'), branch: run('rev-parse', '--abbrev-ref', 'HEAD') };
+  } catch {
+    return { sha: 'unknown', branch: 'unknown' };
+  }
+}
+
+function clientModuleGraph(server) {
+  return server.environments?.client?.moduleGraph ?? server.moduleGraph;
+}
+
+function configuredEntriesAreWarm(server, moduleGraph) {
+  const entries = server.config?.server?.warmup?.clientFiles ?? [];
+  if (!entries.length) return true;
+  if (!moduleGraph?.idToModuleMap) return false;
+  const root = server.config.root;
+  const files = [...moduleGraph.idToModuleMap.values()]
+    .map((module) => module.file)
+    .filter((file) => typeof file === 'string')
+    .map((file) => file.replaceAll('\\', '/'));
+  return entries.every((entry) => {
+    const normalizedEntry = entry.replaceAll('\\', '/');
+    const absoluteEntry = path.resolve(root, entry).replaceAll('\\', '/');
+    return files.some((file) => {
+      const relativeFile = path.relative(root, file).replaceAll('\\', '/');
+      try {
+        return (
+          file === absoluteEntry ||
+          relativeFile === normalizedEntry ||
+          path.matchesGlob(file, absoluteEntry) ||
+          path.matchesGlob(relativeFile, normalizedEntry)
+        );
+      } catch {
+        return false;
+      }
+    });
+  });
+}
+
+async function writeHealthResponse(request, response, server, socketPath, timeoutMs, gitInfo) {
+  if (request.method !== 'GET') {
+    response.statusCode = 405;
+    response.setHeader('Allow', 'GET');
+    response.end();
+    return;
+  }
+  const origin = request.headers.origin;
+  if (
+    !isLoopbackRequest(request) ||
+    (origin !== undefined && !isSameLoopbackOrigin(origin, request.headers.host))
+  ) {
+    response.statusCode = 403;
+    response.end();
+    return;
+  }
+
+  const moduleGraph = clientModuleGraph(server);
+  const daemon = await probeSocket(socketPath, timeoutMs);
+  const entriesWarm = configuredEntriesAreWarm(server, moduleGraph);
+  const body = {
+    ok: daemon.reachable && entriesWarm,
+    vite: { ready: true },
+    daemon: { socket: socketPath, ...daemon },
+    warm: { moduleGraph: moduleGraph?.idToModuleMap?.size ?? 0, entriesWarm },
+    git: gitInfo,
+  };
+  response.statusCode = body.ok ? 200 : 503;
+  response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('Content-Type', 'application/json; charset=utf-8');
+  response.end(JSON.stringify(body));
 }
 
 function computeAccept(key) {
@@ -250,6 +363,8 @@ export function intentdBridgePlugin({
   socketPath = resolveIntentdSocketPath(),
   platform = process.platform,
   maxMessageBytes = MAX_MESSAGE_BYTES,
+  socketConnectTimeoutMs = SOCKET_CONNECT_TIMEOUT_MS,
+  gitInfo,
 } = {}) {
   return {
     name: 'intentd-same-origin-bridge',
@@ -281,7 +396,20 @@ export function intentdBridgePlugin({
         }
       });
 
+      const resolvedGitInfo = gitInfo ?? resolveGitInfo(server.config?.root ?? process.cwd());
+
       server.middlewares.use((request, response, next) => {
+        if (request.url === SANDBOX_HEALTH_PATH) {
+          void writeHealthResponse(
+            request,
+            response,
+            server,
+            socketPath,
+            socketConnectTimeoutMs,
+            resolvedGitInfo,
+          );
+          return;
+        }
         if (request.url !== BRIDGE_PATH) return next();
         if (!bridgeAvailable || !isLoopbackPeer(request.socket)) {
           response.statusCode = 403;
