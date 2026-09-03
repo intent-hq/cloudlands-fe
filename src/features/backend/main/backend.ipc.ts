@@ -27,6 +27,7 @@ import { EventEmitter } from 'node:events';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { isLoopbackHost } from '$shared/loopback-host';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
   AuthRejectedError,
@@ -1286,7 +1287,15 @@ function extractTcAddress(result: unknown): string | null {
  * change) refreshes the stored flag; the renderer gates the Update affordance
  * on it. The same response also refreshes the stored tailcat tunnel endpoint
  * (`tcAddress`, PROTOCOL §12.3) used as a connect-race candidate, so a
- * daemon gaining/losing its tunnel is reflected without re-pairing. A
+ * daemon gaining/losing its tunnel is reflected without re-pairing, and the
+ * candidate-host list (`localIps`) for records whose "detect all backend IPs"
+ * option is on — `server.pairingInfo` (the {@link refreshRemoteHosts} path)
+ * is local-only on the daemon, so this is how REMOTE records converge on the
+ * backend's current interfaces. `system.status` `localIps` is the DIAGNOSTIC
+ * surface (PROTOCOL §system.status): it keeps bound loopback entries and is
+ * empty while the listener is down, so loopback is filtered out first and an
+ * empty result leaves the stored list untouched (never wiping candidates on a
+ * listener-down answer). A
  * SUCCESSFUL response lacking a boolean field (a daemon too old to
  * report it — e.g. the machine's daemon was replaced/downgraded) is a
  * conclusive "unknown" and clears any previously-stored flag to `null`, so a
@@ -1306,12 +1315,18 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     const result = await client.request('system.status');
     const supported = extractUpdateSupported(result);
     const tcAddress = extractTcAddress(result);
+    // Loopback entries are only reachable from the backend itself (the
+    // daemon's pairing surfaces filter them the same way); an empty list
+    // after filtering (listener down, loopback-only bind) is not persisted.
+    const ips = (extractLocalIps(result) ?? []).filter((ip) => !isLoopbackHost(ip));
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
       const changed = await connectionsStore.setUpdateSupported(id, supported);
       const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
-      if (changed || tcChanged) await broadcastConnectionsChanged();
+      const hostsRefreshed = ips.length > 0 && (await connectionsStore.getDetectHosts(id));
+      if (hostsRefreshed) await connectionsStore.setHosts(id, ips);
+      if (changed || tcChanged || hostsRefreshed) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote updateSupported flag', {
@@ -1414,9 +1429,10 @@ export function refreshLocalUpdateSupported(): Promise<void> {
 
 /**
  * Pull the local-IP list out of a `server.pairingInfo` result (PROTOCOL §2 —
- * returns `{ token, certFingerprint, port, path, localIps, hostname }`).
- * Returns the non-empty string entries, else `null` when the shape is absent
- * or malformed.
+ * returns `{ token, certFingerprint, port, path, localIps, hostname }`) or a
+ * `system.status` result (same `localIps` field name; note that surface may
+ * include loopback entries — callers filter). Returns the non-empty string
+ * entries, else `null` when the shape is absent or malformed.
  */
 function extractLocalIps(result: unknown): string[] | null {
   if (result && typeof result === 'object') {
@@ -1441,9 +1457,12 @@ function extractLocalIps(result: unknown): string[] | null {
  * list tracks the backend's current interfaces on every connect, and the same
  * response also refreshes the stored tunnel tc address (PROTOCOL §12.3) —
  * conclusively, so a successful answer without the field clears a stale
- * address; the every-connect `system.status` capture
- * ({@link captureRemoteUpdateSupported}) covers records whose detectHosts is
- * off (this path early-returns for those).
+ * address. The every-connect `system.status` capture
+ * ({@link captureRemoteUpdateSupported}) is what actually refreshes remote
+ * records today: it covers the tc address for records whose detectHosts is
+ * off (this path early-returns for those) AND the candidate-host list from
+ * the remotely-served `localIps` (loopback-filtered) for records with
+ * detectHosts on.
  */
 async function refreshRemoteHosts(id: string): Promise<void> {
   try {
