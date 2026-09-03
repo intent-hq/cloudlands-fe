@@ -92,8 +92,10 @@ describe('SpecialistChangeCard', () => {
     expect(screen.getByRole('button', { name: 'Save specialist' })).toBeTruthy();
     expect(container.textContent).not.toContain('specialist-edit');
     const card = container.querySelector('[data-proposal-kind="specialist-edit"]');
-    expect(card?.className).toContain('rounded-(--radius-medium)');
-    expect(card?.className).toContain('bg-card');
+    expect(card?.className).toContain('w-full');
+    expect(card?.className).not.toContain('max-w-xl');
+    expect(card?.className).not.toContain('shadow');
+    expect(card?.className).not.toContain('bg-card');
     expect(
       screen.getByRole('heading', { name: 'Edit specialist: Review Buddy' }).className,
     ).toContain('type-body');
@@ -159,5 +161,4 @@ describe('SpecialistChangeCard', () => {
       selectedBulkItemIds: [],
     });
   });
-
 });
