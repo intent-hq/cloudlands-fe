@@ -537,8 +537,6 @@
   "settings_aiBehavior_modelOptions_hint_placeholder": "このモデルを使用する場面（任意）",
   "settings_aiBehavior_modelOptions_remove_ariaLabel": "モデルオプションを削除",
   "settings_aiBehavior_modelOptions_add": "モデルオプションを追加",
-  "settings_aiBehavior_modelOptions_effort_label": "労力: {level}",
-  "settings_aiBehavior_modelOptions_effortDefault_label": "デフォルト",
   "settings_aiBehavior_reset": "リセット",
   "settings_aiBehavior_systemPrompt_placeholder": "このスペシャリストの動作指示を入力...",
   "settings_aiBehavior_deleteSpecialist": "スペシャリストを削除",
