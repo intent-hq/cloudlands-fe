@@ -1,7 +1,7 @@
 /**
  * Wire-contract tests for the model catalog bridge seeder.
  *
- * Asserts the 8 `*:get-models` channels forward uniformly to the daemon's
+ * Asserts the `*:get-models` channels forward uniformly to the daemon's
  * per-provider model catalog (`models.list { providerId, forceRefresh }`,
  * PROTOCOL §6.7) and return honest envelopes: mapped rows on success,
  * daemon-provided `warning`/`stale` labeling on fallback, and
@@ -28,6 +28,7 @@ type Envelope = {
 };
 
 const ALL_CHANNELS: Array<[string, string]> = [
+  ["antigravity", "antigravity:get-models"],
   ["auggie", "auggie:get-models"],
   ["claude-code", "claude-code:get-models"],
   ["codex", "codex:get-models"],

@@ -238,6 +238,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'unsloth:get-models',
   },
 
+  // Google Antigravity Integration
+  ANTIGRAVITY: {
+    GET_MODELS: 'antigravity:get-models',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',

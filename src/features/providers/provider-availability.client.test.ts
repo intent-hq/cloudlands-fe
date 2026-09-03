@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderAvailabilityResult } from './provider-availability.client';
 import { getAvailableProviderIds, getProviderAvailability } from './provider-availability.client';
 
@@ -128,6 +122,20 @@ describe('provider availability client', () => {
     mocks.invoke.mockResolvedValue({ success: false, error: 'daemon unreachable' });
 
     await expect(getProviderAvailability()).rejects.toThrow('daemon unreachable');
+  });
+
+  it('reports transient discovery failure honestly and retries on the next call', async () => {
+    const available = createAvailabilityResult({ codex: true });
+    available.providers.antigravity = { available: true, authenticated: true };
+    mockAvailability(available);
+    expect((await getProviderAvailability()).providers.antigravity).toEqual({
+      available: true,
+      authenticated: true,
+    });
+    mocks.invoke.mockResolvedValueOnce({ success: false, error: 'discovery transport down' });
+    await expect(getProviderAvailability()).rejects.toThrow('discovery transport down');
+    mockAvailability(available);
+    expect((await getProviderAvailability()).providers.antigravity?.authenticated).toBe(true);
   });
 
   it('default result carries no fabricated hiddenProviders empty list (gating verdict unknown)', async () => {

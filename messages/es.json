@@ -6034,5 +6034,12 @@
   "workspace_agentsList_noSearchResults_label": "Ningún agente coincide con tu búsqueda.",
   "workspace_contextPanel_noSearchResults_label": "Ningún contexto coincide con tu búsqueda.",
   "workspace_sidebarSearch_clear_ariaLabel": "Borrar búsqueda",
-  "layout_allCard_archived_label": "Archivados"
+  "layout_allCard_archived_label": "Archivados",
+  "providers_antigravity_setup": "Instala el servidor ACP oficial por separado de agy. Mantén agy_acp_server.par y localharness_external en la misma carpeta. Configura la ruta del ejecutable del servidor o de un lanzador antigravity-acp.",
+  "providers_antigravity_summary": "Requiere el servidor ACP oficial, independiente de agy. Verificado con una cuenta personal de Google en macOS con Apple Silicon. No se informa del uso de tokens.",
+  "providers_antigravity_limits": "Verificado en macOS con Apple Silicon y una cuenta personal de Google. Esta versión de ACP no informa del uso de tokens. La ausencia de datos no significa un uso de cero.",
+  "providers_antigravity_loginHost": "Inicia sesión desde un terminal en el equipo que ejecuta el daemon:",
+  "providers_antigravity_missing": "No se detectó el servidor ACP oficial",
+  "providers_antigravity_authUnknown": "Estado de inicio de sesión desconocido. Actualiza para comprobarlo de nuevo.",
+  "providers_antigravity_discoveryUnavailable": "La detección de proveedores no está disponible. Vuelve a conectarte al daemon e inténtalo de nuevo."
 }

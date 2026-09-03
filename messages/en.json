@@ -6034,5 +6034,12 @@
   "workspace_agentsList_noSearchResults_label": "No agents match your search.",
   "workspace_contextPanel_noSearchResults_label": "No context matches your search.",
   "workspace_sidebarSearch_clear_ariaLabel": "Clear search",
-  "layout_allCard_archived_label": "Archived"
+  "layout_allCard_archived_label": "Archived",
+  "providers_antigravity_setup": "Install the official ACP server separately from agy. Keep agy_acp_server.par and localharness_external together. Set the executable path to the server or an antigravity-acp launcher.",
+  "providers_antigravity_summary": "Requires the official ACP server, separate from agy. Verified with personal Google sign-in on macOS Apple Silicon. Token usage is not reported.",
+  "providers_antigravity_limits": "Verified on macOS Apple Silicon with personal Google sign-in. This ACP build does not report token usage; missing usage does not mean zero.",
+  "providers_antigravity_loginHost": "Sign in from a terminal on the daemon host:",
+  "providers_antigravity_missing": "Official ACP server not detected",
+  "providers_antigravity_authUnknown": "Sign-in status unknown. Refresh to check again.",
+  "providers_antigravity_discoveryUnavailable": "Provider discovery is unavailable. Reconnect to the daemon and try again."
 }
