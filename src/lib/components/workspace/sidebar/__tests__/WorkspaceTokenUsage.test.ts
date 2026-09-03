@@ -1065,7 +1065,7 @@ describe('WorkspaceTokenUsage', () => {
     });
     mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
 
-    await renderTokenUsage();
+    await renderExpandedTokenUsage();
 
     expect(screen.getByTestId('workspace-token-usage')).not.toBeNull();
     expect(screen.getByTestId('token-usage-by-model').textContent).toContain('Model Big');
