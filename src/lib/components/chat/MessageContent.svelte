@@ -64,7 +64,6 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
-    getResponseGroupCurrentChildIndex,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -671,7 +670,6 @@
   groupIndex: number,
   childBlock: ContentBlock,
   childIndex: number,
-  suppressSpacing: boolean = false,
   nested: boolean = true,
 )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
@@ -682,16 +680,14 @@
   )}
   <div
     class={`${
-      suppressSpacing
-        ? ''
-        : reasoningSectionBoundary
-          ? NESTED_REASONING_SECTION_SEAM_CLASS
-          : getOperationalClusterSpacingClass(
-              group.children,
-              childIndex,
-              isVisibleGroupChild,
-              group.isReasoningPhase,
-            )
+      reasoningSectionBoundary
+        ? NESTED_REASONING_SECTION_SEAM_CLASS
+        : getOperationalClusterSpacingClass(
+            group.children,
+            childIndex,
+            isVisibleGroupChild,
+            group.isReasoningPhase,
+          )
     } ${
       nested
         ? isOperationalClusterBlock(childBlock)
@@ -730,28 +726,10 @@
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(
-              group,
-              blockIndex,
-              childBlock,
-              childIndex,
-              false,
-              false,
-            )}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex, false)}
           {/if}
         {/each}
       {:else}
-        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
-        {@const currentChildKey = currentChildIndex >= 0 ? childKeys[currentChildIndex] : undefined}
-        {#snippet currentChild()}
-          {@render renderResponseGroupChild(
-            group,
-            blockIndex,
-            group.children[currentChildIndex],
-            currentChildIndex,
-            true,
-          )}
-        {/snippet}
         <div
           class={getOperationalClusterSpacingClass(
             groupedBlocks,
@@ -769,8 +747,6 @@
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
-            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
-            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,

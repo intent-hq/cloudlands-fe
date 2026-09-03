@@ -133,6 +133,7 @@ function runDev(ports, cdpMode = false, devName = '') {
   // We avoid passing it through shell export strings because user-supplied
   // names can contain quotes/apostrophes that break nested shell quoting.
   process.env.DEV_NAME = devName || '';
+  process.env.VITE_DEV_NAME = process.env.DEV_NAME;
 
   const label = devName || (ports.instanceNum ? `Dev ${ports.instanceNum}` : 'Dev');
 

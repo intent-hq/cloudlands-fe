@@ -77,6 +77,7 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
+import { decorateWindowTitle } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
@@ -790,7 +791,7 @@ export function setupSystemIPC() {
         try {
           const window = BrowserWindow.fromWebContents(event.sender);
           if (window) {
-            window.setTitle(validated.title);
+            window.setTitle(decorateWindowTitle(validated.title));
           }
           return { success: true };
         } catch (error) {
