@@ -50,13 +50,18 @@
   <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
     <Fa icon={faBolt} size={14} class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
   </span>
-  <span class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap">
+  <span
+    class="grid min-w-0 flex-1 grid-cols-[minmax(4rem,max-content)_minmax(0,1fr)] items-baseline gap-1 overflow-hidden whitespace-nowrap"
+  >
     <span
-      class="min-w-0 truncate font-normal text-muted-foreground"
+      class="min-w-0 max-w-full truncate font-normal text-muted-foreground"
       title={attribution.rawName || attribution.displayName}
+      data-testid="hook-wake-primary-label"
     >
       {attribution.displayName}
     </span>
-    <span class="shrink-0 font-normal text-muted-foreground">{stateLabel}</span>
+    <span class="min-w-0 truncate font-normal text-muted-foreground" data-testid="hook-wake-status"
+      >{stateLabel}</span
+    >
   </span>
 </div>

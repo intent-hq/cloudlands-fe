@@ -164,7 +164,6 @@ describe('BackgroundHooksRow', () => {
     expect(summary.className).toContain('overflow-hidden');
     expect(label).toBeTruthy();
     expect(label.className).toContain('min-w-0');
-    expect(label.className).toContain('flex-1');
   });
 
   it('renders nothing when the agent has no active hooks', () => {

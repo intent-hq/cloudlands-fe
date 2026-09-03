@@ -88,12 +88,12 @@
     />
   </span>
   <span
-    class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap text-left"
+    class="grid min-w-0 flex-1 grid-cols-[minmax(4rem,max-content)_minmax(0,1fr)] items-baseline gap-1 overflow-hidden whitespace-nowrap text-left"
     data-testid="automated-wake-text-lane"
   >
     {#if presentation.kind === 'hook'}
       <span
-        class="min-w-0 truncate text-muted-foreground"
+        class="min-w-0 max-w-full truncate text-muted-foreground"
         title={presentation.attribution.rawName}
         data-testid="automated-wake-primary-label"
       >
@@ -104,7 +104,7 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto min-w-0 shrink justify-start overflow-hidden whitespace-nowrap text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="h-auto min-w-0 max-w-full justify-start overflow-hidden whitespace-nowrap text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
         title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
         onclick={openPr}
@@ -115,7 +115,7 @@
       </Button>
     {/if}
     <span
-      class="type-body shrink-0 whitespace-nowrap font-normal text-muted-foreground"
+      class="type-body min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
       data-testid="wake-status"
       title={statusLabel}
     >

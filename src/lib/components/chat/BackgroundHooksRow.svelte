@@ -240,17 +240,17 @@
             </span>
             <span
               id={titleId}
-              class="min-w-0 flex-1 truncate text-muted-foreground {embedded
+              class="min-w-0 flex-auto truncate text-muted-foreground {embedded
                 ? 'font-normal'
                 : 'font-medium'}"
               data-testid="background-hook-title">{hook.name}</span
             >
             <span
-              class="min-w-0 shrink truncate text-muted-foreground"
+              class="min-w-0 shrink-[999] truncate text-muted-foreground"
               data-testid="background-hook-state">{stateLabel(hook)}</span
             >
             {#if hook.nextRunAt}<span
-                class="min-w-0 shrink truncate text-muted-foreground"
+                class="min-w-0 shrink-[999] truncate text-muted-foreground"
                 data-testid="background-hook-next-run">{nextRunIn(hook)}</span
               >{/if}
             <span

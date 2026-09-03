@@ -69,16 +69,21 @@
       class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
     />
   </span>
-  <button
-    type="button"
-    class="min-w-0 shrink cursor-pointer truncate border-none bg-transparent p-0 text-left font-normal text-muted-foreground hover:underline"
-    data-testid="pr-monitor-wake-chip"
-    title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
-    onclick={handleOpenPr}
+  <span
+    class="grid min-w-0 flex-1 grid-cols-[minmax(4rem,max-content)_minmax(0,1fr)] items-baseline gap-1 overflow-hidden whitespace-nowrap"
   >
-    {chipLabel}
-  </button>
-  <span class="shrink-0 whitespace-nowrap font-normal text-muted-foreground"
-    >{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span
-  >
+    <button
+      type="button"
+      class="min-w-0 max-w-full cursor-pointer truncate border-none bg-transparent p-0 text-left font-normal text-muted-foreground hover:underline"
+      data-testid="pr-monitor-wake-chip"
+      title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
+      onclick={handleOpenPr}
+    >
+      {chipLabel}
+    </button>
+    <span
+      class="min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
+      data-testid="pr-monitor-wake-status">{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span
+    >
+  </span>
 </div>

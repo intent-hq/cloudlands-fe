@@ -249,6 +249,35 @@ test('uses one internal separator between embedded hooks without gaps or doubled
   expect(geometry[2].top).toBeCloseTo(geometry[1].bottom, 1);
 });
 
+test('preserves the hook name before secondary labels at 280px', async ({ mount }) => {
+  const component = await mount(BackgroundHooksRowGeometryHost, {
+    props: { embedded: true, width: 280 },
+  });
+  const summary = component.getByTestId('background-hook-summary');
+  const lanes = await summary.evaluate((row) => {
+    const measure = (testId: string) => {
+      const node = row.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
+      return {
+        width: node.getBoundingClientRect().width,
+        client: node.clientWidth,
+        scroll: node.scrollWidth,
+      };
+    };
+    return {
+      title: measure('background-hook-title'),
+      state: measure('background-hook-state'),
+      nextRun: measure('background-hook-next-run'),
+      containment: { client: row.clientWidth, scroll: row.scrollWidth },
+    };
+  });
+
+  expect(lanes.title.width).toBeGreaterThanOrEqual(64);
+  expect(lanes.title.width).toBeGreaterThan(lanes.state.width);
+  expect(lanes.title.width).toBeGreaterThan(lanes.nextRun.width);
+  expect([lanes.state, lanes.nextRun].some(({ client, scroll }) => scroll > client)).toBe(true);
+  expect(lanes.containment.scroll).toBeLessThanOrEqual(lanes.containment.client);
+});
+
 test('supports keyboard disclosure and reduced motion', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(BackgroundHooksRowGeometryHost, {
