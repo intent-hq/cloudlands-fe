@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getCounterScaledTitlebarHeight } from './titlebar-geometry';
+import {
+  getCounterScaledTitlebarHeight,
+  getWorkspaceTabLeadingInsetPx,
+  WORKSPACE_TAB_FLARE_RADIUS_PX,
+} from './titlebar-geometry';
 
 describe('shared title-bar geometry', () => {
   it.each([
@@ -12,5 +16,12 @@ describe('shared title-bar geometry', () => {
     [2, 17.5],
   ])('counter-scales the %sx zoom band to %spx', (zoomFactor, expectedHeight) => {
     expect(getCounterScaledTitlebarHeight(zoomFactor)).toBeCloseTo(expectedHeight);
+  });
+  it('keeps the closed and open tab insets outside the leading flare', () => {
+    expect(getWorkspaceTabLeadingInsetPx(false)).toBe(15);
+    expect(getWorkspaceTabLeadingInsetPx(true)).toBe(28);
+    expect(getWorkspaceTabLeadingInsetPx(false)).toBeGreaterThanOrEqual(
+      WORKSPACE_TAB_FLARE_RADIUS_PX,
+    );
   });
 });

@@ -18,6 +18,11 @@ export const WORKSPACE_TAB_FLARE_OUTER_PX =
 export const WORKSPACE_TAB_MOTION_DURATION_MS = 200;
 export const WORKSPACE_TAB_MOTION_EASING = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
 
+export function getWorkspaceTabLeadingInsetPx(sidebarPanelOpen: boolean): number {
+  const flareGap = sidebarPanelOpen ? 16 : 4 - WORKSPACE_TAB_BORDER_WIDTH_PX;
+  return WORKSPACE_TAB_FLARE_RADIUS_PX + flareGap;
+}
+
 function cubicCoordinate(progress: number, first: number, second: number): number {
   const inverse = 1 - progress;
   return (

@@ -71,6 +71,7 @@
     onActiveTabTrackingChange?: (tracking: boolean) => void;
     activeWorkspaceId?: string | null;
     horizontalPositionTrackingKey?: number;
+    leadingInsetPx?: number;
   }
 
   let {
@@ -78,6 +79,7 @@
     onActiveTabTrackingChange,
     activeWorkspaceId,
     horizontalPositionTrackingKey = 0,
+    leadingInsetPx = 28,
   }: Props = $props();
 
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
@@ -767,8 +769,10 @@
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- pl-7 keeps the active tab's 12px corner-flare SVG inside the padding box
-       and gives the first tab 24px of clearance after the -ml-1 strip offset.
+  <!-- The leading inset keeps the active tab's 12px corner-flare SVG inside
+       the padding box. It is 15px with the sidebar closed (4px before the
+       flare) and 28px with it open (the existing 24px net clearance after
+       the -ml-1 strip offset).
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -783,15 +787,18 @@
     bind:this={stripElement}
     data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pl-7 pr-3 -ml-1 scrollbar-none',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 -ml-1 scrollbar-none transition-[padding-left] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     tabindex="-1"
+    style:padding-left={`${Math.max(WORKSPACE_TAB_FLARE_RADIUS_PX, leadingInsetPx)}px`}
     style:padding-bottom="2px"
     style:margin-bottom="-2px"
+    style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+    style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
     data-workspace-tab-strip
     data-app-region-clip
     onpointermove={handleDragPointerMove}

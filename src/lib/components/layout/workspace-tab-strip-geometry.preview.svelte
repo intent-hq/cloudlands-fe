@@ -5,6 +5,7 @@
     activeWorkspaceId?: string;
     initialOpenWorkspaceIds?: string[];
     interactive?: boolean;
+    sidebarPanelOpen?: boolean;
   }
 
   const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
@@ -17,6 +18,8 @@
       'first-tab': { props: { activeWorkspaceId: ids[0] } },
       'middle-tab': { props: { activeWorkspaceId: ids[1] } },
       'open-close': { props: { initialOpenWorkspaceIds: ids.slice(0, 2), interactive: true } },
+      'sidebar-closed': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: false } },
+      'sidebar-open': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: true } },
     },
   });
 </script>
@@ -24,6 +27,7 @@
 <script lang="ts">
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { store } from '$store/renderer/configured-store';
   import {
     closeWorkspaceTab,
@@ -33,6 +37,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
+    getWorkspaceTabLeadingInsetPx,
     WINDOW_TITLEBAR_HEIGHT_PX,
     WORKSPACE_TAB_FLARE_RADIUS_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
@@ -45,9 +50,11 @@
     activeWorkspaceId,
     initialOpenWorkspaceIds = ids,
     interactive = false,
+    sidebarPanelOpen = true,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<{ left: number; width: number } | null>(null);
   let activeTabTracking = $state(false);
+  const leadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
 
   for (const [index, id] of ids.entries()) {
     const workspace: Workspace = {
@@ -86,10 +93,14 @@
 >
   <div class="window-title-bar" style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px">
     <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
-      <div class="fixed-controls"></div>
+      <div class="fixed-controls" data-preview-logo>
+        <IntentNavigationIcon name="dandelion" size={16} />
+      </div>
       <div class="workspace-controls" data-titlebar-workspace-controls>
         <WorkspaceTabStrip
           {activeWorkspaceId}
+          {leadingInsetPx}
+          horizontalPositionTrackingKey={leadingInsetPx}
           onActiveTabBoundsChange={(bounds) => (activeTabBounds = bounds)}
           onActiveTabTrackingChange={(tracking) => (activeTabTracking = tracking)}
         />
@@ -163,8 +174,11 @@
   }
 
   .fixed-controls {
-    width: 8px;
+    display: grid;
+    width: 32px;
+    height: 32px;
     flex: none;
+    place-items: center;
   }
 
   .workspace-controls {

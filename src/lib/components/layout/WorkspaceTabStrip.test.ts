@@ -456,7 +456,7 @@ describe('WorkspaceTabStrip', () => {
       const tablist = screen.getByRole('tablist', {
         name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
       });
-      expect(tablist.className).toContain('pl-7');
+      expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
       expect(tablist.className).toContain('pr-3');
       expect(tablist.className).toContain('-ml-1');
       expect(tablist.className).not.toContain('-ml-3');
@@ -677,7 +677,7 @@ describe('WorkspaceTabStrip', () => {
       name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
     });
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    expect(tablist.className).toContain('pl-7');
+    expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
     expect(tablist.className).toContain('-ml-1');
     expect(tablist.className).not.toContain('-ml-3');
     expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
@@ -728,6 +728,22 @@ describe('WorkspaceTabStrip', () => {
     });
 
     expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 100, width: 160 });
+  });
+
+  it('changes the observable leading inset while preserving flare clearance', async () => {
+    const { rerender } = render(WorkspaceTabStrip, { props: { leadingInsetPx: 15 } });
+    const tablist = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
+
+    expect(getComputedStyle(tablist).paddingLeft).toBe('15px');
+    expect(getComputedStyle(tablist).transitionDuration).toBe('200ms');
+
+    await rerender({ leadingInsetPx: 28 });
+    expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
+
+    await rerender({ leadingInsetPx: 4 });
+    expect(getComputedStyle(tablist).paddingLeft).toBe('12px');
   });
 
   it('keeps the close control outside the hover trigger and isolated from navigation', async () => {

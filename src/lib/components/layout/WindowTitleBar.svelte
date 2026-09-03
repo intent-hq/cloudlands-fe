@@ -38,6 +38,7 @@
   } from './titlebar-navigation';
   import {
     getCounterScaledTitlebarHeight,
+    getWorkspaceTabLeadingInsetPx,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
     WORKSPACE_TAB_FLARE_RADIUS_PX,
@@ -77,12 +78,14 @@
   const CONTROLS_GAP = 4; // gap-1 between titlebar control groups
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
   let controlsBaseLeft = $state(0);
+  let fixedControlsTrailingInset = $state(0);
 
   $effect(() => {
     const el = fixedControlsEl;
     if (!el) return;
     const measure = () => {
       controlsBaseLeft = el.offsetLeft + el.offsetWidth + CONTROLS_GAP;
+      fixedControlsTrailingInset = Number.parseFloat(getComputedStyle(el).paddingRight) || 0;
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -92,8 +95,12 @@
 
   // Align the workspace controls (tabs) with the left panel's right edge
   // when a sidebar panel is open; tracks the panel width live.
+  const sidebarPanelOpen = $derived(Boolean($panelItem$));
+  const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
   const panelOffset = $derived(
-    $panelItem$ ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft) : 0,
+    sidebarPanelOpen
+      ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft)
+      : -fixedControlsTrailingInset,
   );
 
   function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
@@ -330,7 +337,8 @@
           onActiveTabBoundsChange={handleActiveTabBoundsChange}
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={routedWorkspaceId}
-          horizontalPositionTrackingKey={panelOffset}
+          leadingInsetPx={workspaceTabLeadingInsetPx}
+          horizontalPositionTrackingKey={panelOffset + workspaceTabLeadingInsetPx}
         />
         {#if !$onboardingActive$}
           <WorkspaceRepoLauncher />

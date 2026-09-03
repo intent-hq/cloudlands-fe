@@ -64,6 +64,16 @@ async function expectMaskAttachedToActiveTab(component: Locator) {
   expect(Math.abs((maskBox?.width ?? 0) - 24 - (activeBox?.width ?? 0))).toBeLessThanOrEqual(1);
 }
 
+async function getLogoToLeadingFlareGap(component: Locator) {
+  const logoBox = await component.locator('[data-preview-logo]').boundingBox();
+  const flareBox = await component
+    .locator('[data-workspace-tab][data-active="true"] [data-workspace-tab-leading-flare]')
+    .boundingBox();
+  expect(logoBox).toBeTruthy();
+  expect(flareBox).toBeTruthy();
+  return (flareBox?.x ?? 0) - ((logoBox?.x ?? 0) + (logoBox?.width ?? 0));
+}
+
 async function captureTabMotion(control: Locator, workspaceId: string) {
   return control.evaluate(async (button, id) => {
     const frames: Array<{
@@ -197,12 +207,38 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   await expectMaskAttachedToActiveTab(component);
 });
 
+test('tightens the closed-sidebar inset while the flare and mask remain attached', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: false },
+  });
+
+  const closedGap = await getLogoToLeadingFlareGap(component);
+  expect(closedGap).toBeLessThanOrEqual(4);
+  await expectVisibleThroughAncestorClipping(
+    component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
+  );
+
+  await component.update({
+    props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: true },
+  });
+  await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(closedGap + 13, 0);
+  await expectMaskAttachedToActiveTab(component);
+});
+
 test('settles tab lifecycle changes immediately with reduced motion', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTabStripGeometryPreview, {
     props: { initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta'], interactive: true },
   });
   const tab = component.locator('[data-workspace-tab-motion="geometry-gamma"]');
+  await expect(component.locator('[data-workspace-tab-strip]')).toHaveCSS(
+    'transition-property',
+    'none',
+  );
 
   await component.locator('[data-open-tab]').click();
   await expect(tab).toHaveCount(1);
