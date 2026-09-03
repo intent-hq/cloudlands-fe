@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   workspaces: { list: vi.fn(), recentViews: vi.fn(), getTokenUsage: vi.fn(), getContext: vi.fn() },
   workspaceServiceList: vi.fn(),
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
-  events: { list: vi.fn() },
+  events: { queryPage: vi.fn() },
   skills: { list: vi.fn() },
   scripts: { list: vi.fn() },
   git: {
@@ -66,7 +66,10 @@ import {
   hydrateAgentsRequested,
   setAgentsLoaded,
 } from '../../workspace-agents/workspace-agents-slice';
-import { loadEventsRequested } from '../../workspace-events/workspace-events-slice';
+import {
+  loadEventsRequested,
+  loadOlderEventsRequested,
+} from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
@@ -92,7 +95,7 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function state(currentTabId: string | null = null) {
+function state(currentTabId: string | null = null, eventsNextToken: string | null = null) {
   return {
     tabState: { currentTabId },
     workspaceTasks: { byWorkspaceId: {} },
@@ -100,6 +103,9 @@ function state(currentTabId: string | null = null) {
     workspace: { workspaces: createCollection('id', []) },
     agentSessions: { byAgentId: {} },
     workspaceAgents: { byWorkspaceId: {} },
+    workspaceEvents: {
+      byWorkspaceId: eventsNextToken ? { [WS]: { nextToken: eventsNextToken } } : {},
+    },
     prStatus: { byWorkspaceId: {} },
   };
 }
@@ -143,7 +149,7 @@ describe('lifecycleReadSaga', () => {
     mocks.workspaces.getContext.mockResolvedValue([]);
     mocks.tasks.list.mockResolvedValue({ tasks: [], stats: { total: 0 } });
     mocks.tasks.listAgentLinks.mockResolvedValue({});
-    mocks.events.list.mockResolvedValue([]);
+    mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
     mocks.skills.list.mockResolvedValue([]);
     mocks.scripts.list.mockResolvedValue([]);
     mocks.git.prRefresh.mockResolvedValue({ outcome: 'unchanged', pullRequests: [] });
@@ -608,13 +614,17 @@ describe('lifecycleReadSaga', () => {
   });
 
   it('routes event, context, task-link, skill, script, and terminal reads exactly', async () => {
-    const event = { id: 'event-1', type: 'agent:created', wire_only: true };
+    const newestEvent = { id: 'event-2', type: 'agent:created', wire_only: true };
+    const oldestEvent = { id: 'event-1', type: 'agent:created', wire_only: true };
     const item = { id: 'context-1', type: 'note', title: 'Context', provider: 'internal' };
     const links = { 'note-1': { 'agent:a': { agentId: 'a', taskKey: 'agent:a' } } };
     const skill = { name: 'review', description: 'Review code', wire_only: 'keep' };
     const script = { id: 'script-1', name: 'test', command: 'pnpm test', wire_only: 1 };
     const terminal = { id: 'terminal-1', workspaceId: WS, title: 'Shell', wire_only: 'keep' };
-    mocks.events.list.mockResolvedValue([event]);
+    mocks.events.queryPage.mockResolvedValue({
+      items: [newestEvent, oldestEvent],
+      nextToken: 'older-events',
+    });
     mocks.workspaces.getContext.mockResolvedValue([item]);
     mocks.tasks.listAgentLinks.mockResolvedValue(links);
     mocks.skills.list.mockResolvedValue([skill]);
@@ -635,14 +645,39 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateTerminalsRequested(WS));
     await settle();
 
+    expect(mocks.events.queryPage.mock.calls).toEqual([[WS, { limit: 100 }]]);
     expect(run.actions).toEqual([
-      { type: 'workspaceEvents/eventsLoaded', payload: [WS, [event]] },
+      {
+        type: 'workspaceEvents/eventsLoaded',
+        payload: [WS, [oldestEvent, newestEvent], 'older-events'],
+      },
       { type: 'context/hydrateContextItems', payload: [WS, [item]] },
       { type: 'taskAgentAssociations/hydrateTaskAgentAssociations', payload: [WS, links] },
       { type: 'skills/setSkills', payload: [WS, [skill]] },
       { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: [script] } },
       { type: 'scripts/setInitialized', payload: [WS, true] },
       { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [terminal]] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('loads the next older events page from the stored cursor', async () => {
+    const newest = { id: 'event-2' };
+    const oldest = { id: 'event-1' };
+    mocks.events.queryPage.mockResolvedValue({ items: [newest, oldest], nextToken: null });
+    const run = start(state(null, 'older-cursor'));
+
+    run.channel.put(loadOlderEventsRequested(WS));
+    await settle();
+
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+    ]);
+    expect(run.actions).toEqual([
+      {
+        type: 'workspaceEvents/olderEventsLoaded',
+        payload: [WS, [oldest, newest], null],
+      },
     ]);
     await stop(run.task);
   });
@@ -1844,8 +1879,8 @@ describe('lifecycleReadSaga', () => {
   });
 
   it('does not cancel workspace reads on deletion before tab removal', async () => {
-    let resolve!: (value: unknown[]) => void;
-    mocks.events.list.mockReturnValue(
+    let resolve!: (value: { items: unknown[]; nextToken: string | null }) => void;
+    mocks.events.queryPage.mockReturnValue(
       new Promise((done) => {
         resolve = done;
       }),
@@ -1855,13 +1890,36 @@ describe('lifecycleReadSaga', () => {
     await settle();
     run.channel.put(workspaceDeleted(WS, []));
     await settle();
-    resolve([{ id: 'late' }]);
+    resolve({ items: [{ id: 'late' }], nextToken: null });
     await settle();
 
-    expect(mocks.events.list.mock.calls).toEqual([[WS]]);
+    expect(mocks.events.queryPage.mock.calls).toEqual([[WS, { limit: 100 }]]);
     expect(run.actions).toEqual([
-      { type: 'workspaceEvents/eventsLoaded', payload: [WS, [{ id: 'late' }]] },
+      { type: 'workspaceEvents/eventsLoaded', payload: [WS, [{ id: 'late' }], null] },
     ]);
+    await stop(run.task);
+  });
+
+  it('drops a late older-events page after workspace unmount', async () => {
+    let resolve!: (value: { items: unknown[]; nextToken: string | null }) => void;
+    mocks.events.queryPage.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = start(state(null, 'older-cursor'));
+
+    run.channel.put(loadOlderEventsRequested(WS));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    resolve({ items: [{ id: 'too-late' }], nextToken: null });
+    await settle();
+
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+    ]);
+    expect(run.actions).toEqual([]);
     await stop(run.task);
   });
 
@@ -2016,10 +2074,10 @@ describe('lifecycleReadSaga', () => {
 
     it('frees the slot held by a raced read cancelled by workspace unmount', async () => {
       const pending: Array<{ workspaceId: string; resolve: () => void }> = [];
-      mocks.events.list.mockImplementation(
+      mocks.events.queryPage.mockImplementation(
         (workspaceId: string) =>
-          new Promise<unknown[]>((done) => {
-            pending.push({ workspaceId, resolve: () => done([]) });
+          new Promise<{ items: unknown[]; nextToken: null }>((done) => {
+            pending.push({ workspaceId, resolve: () => done({ items: [], nextToken: null }) });
           }),
       );
       const run = start();
@@ -2045,7 +2103,7 @@ describe('lifecycleReadSaga', () => {
     const run = start();
     run.channel.put({ type: loadEventsRequested.type, payload: [] });
     await settle();
-    expect(mocks.events.list.mock.calls).toEqual([]);
+    expect(mocks.events.queryPage.mock.calls).toEqual([]);
     expect(run.actions).toEqual([]);
     await stop(run.task);
   });

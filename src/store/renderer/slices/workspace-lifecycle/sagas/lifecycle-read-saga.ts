@@ -82,7 +82,15 @@ import {
   selectRetiredAgentsLoaded,
   selectWorkspaceAgentIds,
 } from '../../workspace-agents/workspace-agents-selectors';
-import { eventsLoaded, loadEventsRequested } from '../../workspace-events/workspace-events-slice';
+import { selectOlderEventsNextToken } from '../../workspace-events/workspace-events-selectors';
+import {
+  eventsLoaded,
+  eventsLoadFailed,
+  loadEventsRequested,
+  loadOlderEventsRequested,
+  olderEventsLoaded,
+  olderEventsLoadFailed,
+} from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
@@ -113,6 +121,8 @@ const logger = createLogger('LifecycleReadSaga');
  * the TTL and the next trigger will retry immediately.
  */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
+/** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
+const EVENTS_PAGE_LIMIT = 100;
 
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
@@ -507,11 +517,40 @@ function* runWorkspaceRead(
 }
 
 function* refreshEvents(workspaceId: string): SagaGenerator<void> {
-  const events: Awaited<ReturnType<typeof appClient.events.list>> = yield* call(
-    [appClient.events, appClient.events.list],
-    workspaceId,
-  );
-  yield* put(eventsLoaded(workspaceId, events));
+  try {
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+      [appClient.events, appClient.events.queryPage],
+      workspaceId,
+      { limit: EVENTS_PAGE_LIMIT },
+    );
+    yield* put(eventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+  } catch (error) {
+    yield* put(
+      eventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
+    throw error;
+  }
+}
+
+function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
+  const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
+  if (!nextToken) {
+    yield* put(olderEventsLoaded(workspaceId, [], null));
+    return;
+  }
+  try {
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+      [appClient.events, appClient.events.queryPage],
+      workspaceId,
+      { limit: EVENTS_PAGE_LIMIT, nextToken },
+    );
+    yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+  } catch (error) {
+    yield* put(
+      olderEventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
+    throw error;
+  }
 }
 
 function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
@@ -606,6 +645,13 @@ function* eventsWorker(
   action: ReturnType<typeof loadEventsRequested>,
 ) {
   yield* runWorkspaceRead(scheduler, 'events', action.payload[0], refreshEvents);
+}
+
+function* olderEventsWorker(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof loadOlderEventsRequested>,
+) {
+  yield* runWorkspaceRead(scheduler, 'olderEvents', action.payload[0], refreshOlderEvents);
 }
 
 function* tokenUsageWorker(
@@ -779,6 +825,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         pendingForcedTaskReads,
       ),
       takeLeadingByWorkspace(loadEventsRequested, eventsWorker, scheduler),
+      takeLeadingByWorkspace(loadOlderEventsRequested, olderEventsWorker, scheduler),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
       takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
       takeLeadingByWorkspace(

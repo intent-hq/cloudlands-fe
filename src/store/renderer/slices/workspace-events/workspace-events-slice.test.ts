@@ -5,7 +5,12 @@ import {
   eventReceived,
   eventsCleared,
   eventsLoaded,
+  eventsLoadFailed,
   initialState,
+  loadEventsRequested,
+  loadOlderEventsRequested,
+  olderEventsLoaded,
+  olderEventsLoadFailed,
   setEventsLoading,
   workspaceEventsReducer,
 } from './workspace-events-slice';
@@ -103,6 +108,106 @@ describe('workspaceEventsReducer', () => {
     const state = workspaceEventsReducer(loadingState, eventsLoaded(WS_1, events));
     expect(state.byWorkspaceId[WS_1].events).toEqual(events);
     expect(state.byWorkspaceId[WS_1].loading).toBe(false);
+  });
+
+  it('tracks initial loading and failure state', () => {
+    let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({ loading: true, error: null });
+
+    state = workspaceEventsReducer(state, eventsLoadFailed(WS_1, 'offline'));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({ loading: false, error: 'offline' });
+  });
+
+  it('deduplicates an older page at its boundary and records the end state', () => {
+    let state = workspaceEventsReducer(
+      initialState,
+      eventsLoaded(
+        WS_1,
+        [
+          mockEvent('evt-2', WS_1, '2026-01-02T00:00:00.000Z'),
+          mockEvent('evt-3', WS_1, '2026-01-03T00:00:00.000Z'),
+        ],
+        'older-1',
+      ),
+    );
+    state = workspaceEventsReducer(state, loadOlderEventsRequested(WS_1));
+    state = workspaceEventsReducer(
+      state,
+      olderEventsLoaded(
+        WS_1,
+        [
+          mockEvent('evt-1', WS_1, '2026-01-01T00:00:00.000Z'),
+          mockEvent('evt-2', WS_1, '2026-01-02T00:00:00.000Z'),
+        ],
+        null,
+      ),
+    );
+
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      loadingOlder: false,
+      olderError: null,
+      nextToken: null,
+      endReached: true,
+    });
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      'evt-1',
+      'evt-2',
+      'evt-3',
+    ]);
+  });
+
+  it('marks an empty initial page as the end without dropping a live event', () => {
+    let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
+    state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent('evt-live')));
+    state = workspaceEventsReducer(state, eventsLoaded(WS_1, [], null));
+
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual(['evt-live']);
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      loading: false,
+      nextToken: null,
+      endReached: true,
+    });
+  });
+
+  it('preserves a live event interleaved with the initial page and deduplicates its echo', () => {
+    let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
+    state = workspaceEventsReducer(
+      state,
+      eventReceived(WS_1, mockEvent('evt-live', WS_1, '2026-01-03T00:00:00.000Z')),
+    );
+    state = workspaceEventsReducer(
+      state,
+      eventsLoaded(
+        WS_1,
+        [
+          mockEvent('evt-old', WS_1, '2026-01-01T00:00:00.000Z'),
+          mockEvent('evt-live', WS_1, '2026-01-03T00:00:00.000Z'),
+        ],
+        'older-1',
+      ),
+    );
+
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      'evt-old',
+      'evt-live',
+    ]);
+    expect(state.byWorkspaceId[WS_1].nextToken).toBe('older-1');
+  });
+
+  it('tracks an older-page failure without losing its cursor', () => {
+    let state = workspaceEventsReducer(
+      initialState,
+      eventsLoaded(WS_1, [mockEvent('evt-2')], 'older-1'),
+    );
+    state = workspaceEventsReducer(state, loadOlderEventsRequested(WS_1));
+    state = workspaceEventsReducer(state, olderEventsLoadFailed(WS_1, 'retry later'));
+
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      loadingOlder: false,
+      olderError: 'retry later',
+      nextToken: 'older-1',
+      endReached: false,
+    });
   });
 
   it('does not crash when eventsLoaded receives a malformed list', () => {
