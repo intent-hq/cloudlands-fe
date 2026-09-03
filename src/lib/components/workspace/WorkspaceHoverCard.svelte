@@ -365,7 +365,7 @@
           >
         </div>
         <div
-          class="type-caption mt-1 min-w-0 truncate text-muted-foreground/70"
+          class="type-caption mt-1 min-w-0 truncate text-muted-foreground"
           data-workspace-hover-card-repo
         >
           {repo}
@@ -413,7 +413,7 @@
                     class="type-body min-w-0 truncate text-foreground"
                     data-workspace-hover-card-agent-name>{row.name}</span
                   ><time
-                    class="type-caption whitespace-nowrap text-muted-foreground/70"
+                    class="type-caption whitespace-nowrap text-muted-foreground"
                     datetime={row.updated.dateTime}
                     aria-label={row.updated.accessible}
                     data-workspace-hover-card-agent-time>{row.updated.compact}</time
@@ -478,13 +478,13 @@
                     {pr.title || m.workspace_hoverCard_pullRequest_label()}
                   </span>
                   <span
-                    class="type-caption shrink-0 text-muted-foreground/70"
+                    class="type-caption shrink-0 text-muted-foreground"
                     data-workspace-hover-card-pr-status
                   >
                     {pr.accessibleStateLabel}
                   </span>
                   <span
-                    class="type-caption shrink-0 text-muted-foreground/70"
+                    class="type-caption shrink-0 text-muted-foreground"
                     data-workspace-hover-card-pr-number>#{pr.number}</span
                   >
                 </div>

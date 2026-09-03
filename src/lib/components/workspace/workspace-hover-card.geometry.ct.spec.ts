@@ -201,9 +201,19 @@ test('uses caption typography for metadata while primary labels remain body-size
       return { fontSize: style.fontSize, lineHeight: style.lineHeight };
     };
     const tokenStyle = (role: 'caption' | 'body') => {
+      const tokens =
+        role === 'caption'
+          ? {
+              fontSize: 'var(--text-caption-size)',
+              lineHeight: 'var(--text-caption-line-height)',
+            }
+          : {
+              fontSize: 'var(--text-body-size)',
+              lineHeight: 'var(--text-body-line-height)',
+            };
       const probe = document.createElement('span');
-      probe.style.fontSize = `var(--text-${role}-size)`;
-      probe.style.lineHeight = `var(--text-${role}-line-height)`;
+      probe.style.fontSize = tokens.fontSize;
+      probe.style.lineHeight = tokens.lineHeight;
       node.append(probe);
       const style = getComputedStyle(probe);
       const value = { fontSize: style.fontSize, lineHeight: style.lineHeight };
@@ -259,7 +269,7 @@ test('aligns PR icons and titles with agent rows', async ({ mount, page }) => {
   expect(prTitle!.x).toBeCloseTo(agentName!.x, 0);
 });
 
-test('uses lighter muted foreground only for the selected metadata', async ({ mount, page }) => {
+test('uses accessible muted foreground for secondary metadata', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 520 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('working'),
@@ -283,12 +293,27 @@ test('uses lighter muted foreground only for the selected metadata', async ({ mo
       return { color: renderedColor(style.color), fontSize: style.fontSize };
     };
     const probe = document.createElement('span');
-    probe.style.color = 'hsl(var(--muted-foreground) / 0.7)';
+    probe.style.color = 'hsl(var(--muted-foreground))';
     node.append(probe);
-    const lighterMuted = renderedColor(getComputedStyle(probe).color);
+    const mutedForeground = renderedColor(getComputedStyle(probe).color);
+
+    const relativeLuminance = ([red, green, blue]: number[]) => {
+      const [r, g, b] = [red, green, blue].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const background = renderedColor(getComputedStyle(node).backgroundColor);
+    const foregroundLuminance = relativeLuminance(mutedForeground);
+    const backgroundLuminance = relativeLuminance(background);
+    const contrastRatio =
+      (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+      (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
     probe.remove();
     return {
-      lighterMuted,
+      mutedForeground,
+      contrastRatio,
       repo: read('[data-workspace-hover-card-repo]'),
       timestamp: read('[data-workspace-hover-card-agent-time]'),
       prStatus: read('[data-workspace-hover-card-pr-status]'),
@@ -297,13 +322,12 @@ test('uses lighter muted foreground only for the selected metadata', async ({ mo
       prNumber: read('[data-workspace-hover-card-pr-number]'),
     };
   });
-  expect(styles.repo.color).toEqual(styles.lighterMuted);
-  expect(styles.timestamp.color).toEqual(styles.lighterMuted);
-  expect(styles.prStatus.color).toEqual(styles.lighterMuted);
-  expect(styles.prNumber.color).toEqual(styles.lighterMuted);
+  expect(styles.repo.color).toEqual(styles.mutedForeground);
+  expect(styles.timestamp.color).toEqual(styles.mutedForeground);
+  expect(styles.prStatus.color).toEqual(styles.mutedForeground);
+  expect(styles.prNumber.color).toEqual(styles.mutedForeground);
+  expect(styles.contrastRatio).toBeGreaterThanOrEqual(4.5);
   expect(styles.repo.fontSize).toBe(styles.workspaceStatus.fontSize);
-  expect(styles.workspaceStatus.color).not.toEqual(styles.lighterMuted);
-  expect(styles.agentDetail.color).not.toEqual(styles.lighterMuted);
   await expect(
     card.locator('[data-workspace-hover-card-status] [data-workspace-status]'),
   ).toHaveCount(1);
