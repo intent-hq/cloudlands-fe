@@ -151,6 +151,28 @@ playwright-cli -s=ui-preview-chat console error
 playwright-cli -s=ui-preview-chat close
 ```
 
+### Show your work with a video
+
+Record demos only when a video helps the reviewer understand a flow. Keep every recording under
+`.demo-artifacts/<timestamp>-<flow>/<flow>.webm`; `.demo-artifacts/` is git-ignored and videos must
+never be committed. When `playwright-cli` is available, open a clean session, start recording with
+`video-start <path>`, perform the flow, then run `video-stop` and close the session.
+
+If video recording is unavailable, the embedded browser can capture a sequence of screenshot frames.
+This is a fallback, not the preferred recording path: save numbered PNGs in the same artifact directory
+and, when `ffmpeg` is available, stitch them with `ffmpeg -framerate 8 -i frame-%04d.png -c:v libvpx-vp9
+-pix_fmt yuv420p <flow>.webm`. Keep the viewport fixed and capture at a steady interval.
+
+Before linking the result, verify it is non-empty with `test -s <path>`. Embed the verified recording
+in chat or a note with one line:
+
+```markdown
+![demo](intent://local/file/.demo-artifacts/<timestamp>-<flow>/<flow>.webm)
+```
+
+The file must belong to the message's workspace. Do not link a client-local capture or a sibling
+workspace artifact; copy or create the recording in the daemon workspace first.
+
 Call `ws.browser.listTabs` before `ws.browser.openTab` and reuse a matching URL. New
 agent tabs are hidden by default and can still be evaluated, inspected, and captured.
 Keep the tab open so Vite HMR updates it after source edits. Use `ws.browser.showTab`

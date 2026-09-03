@@ -10,9 +10,10 @@
    *
    * Rows carry the triple shape `{ provider?, model, hint, reasoningEffort? }`
    * with a BARE `model` id (PROTOCOL §5.11); the ModelPicker boundary still
-   * speaks compound ids, so picks split into provider + bare model and the
-   * row's pair recombines for display. Each row also renders a textual effort
-   * label ("Default" when the option inherits the model default).
+   * speaks compound ids, so the row's pair recombines for display while picks
+   * consume the resolved triple legs the picker emits. The effort level is
+   * chosen inside the picker dropdown (mirroring the main Model row) — there
+   * is no separate per-row effort control.
    */
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -22,7 +23,7 @@
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
+  import { selectProviderModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -70,32 +71,17 @@
   /**
    * Drop an effort level the newly picked model does not advertise, so a
    * model switch resets the row to Default instead of persisting a level the
-   * catalog no longer offers. `model` is a picker compound id.
+   * catalog no longer offers. The lookup is provider-scoped: a cross-provider
+   * pick consults the resolved provider's cached catalog, not the active one.
    */
-  function effortForModel(model: string, effort: string | undefined): string | undefined {
+  function effortForModel(
+    providerId: string | undefined,
+    modelId: string,
+    effort: string | undefined,
+  ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectModelEffortLevels.select(appStore.state, model);
+    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
     return levels?.includes(effort) ? effort : undefined;
-  }
-
-  // Textual per-row effort label so the level is readable at a glance
-  // (mirrors EffortPicker's level naming); unset reads as "Default", never
-  // blank.
-  const LEVEL_LABELS: Record<string, () => string> = {
-    none: () => m.chat_shared_valueOff_label(),
-    minimal: () => m.chat_effortPicker_level_minimal(),
-    low: () => m.chat_effortPicker_level_low(),
-    medium: () => m.chat_effortPicker_level_medium(),
-    high: () => m.chat_effortPicker_level_high(),
-    xhigh: () => m.chat_effortPicker_level_xhigh(),
-    max: () => m.chat_effortPicker_level_max(),
-  };
-
-  function effortLabel(row: SpecialistModelOption): string {
-    const level = row.reasoningEffort
-      ? (LEVEL_LABELS[row.reasoningEffort]?.() ?? row.reasoningEffort)
-      : m.settings_aiBehavior_modelOptions_effortDefault_label();
-    return m.settings_aiBehavior_modelOptions_effort_label({ level });
   }
 
   // Resync from the store only when the saved list diverges from the local
@@ -125,18 +111,23 @@
     rows = [...rows, { key: nextKey++, model: '', hint: '' }];
   }
 
-  function handleModelChange(index: number, compoundModelId: string) {
+  function handleModelChange(
+    index: number,
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!compoundModelId) return;
-    // Split the picker's compound id into the triple's provider + bare model
-    // (an empty legacy prefix never propagates as a real provider id).
-    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    // Prefer the resolved triple legs the picker emits (catalog-group
+    // attribution for bare cross-provider picks); fall back to splitting a
+    // legacy compound id (an empty prefix never propagates as a provider id).
+    const { providerId, modelId } = pick ?? splitLegacyCompoundId(compoundModelId);
     rows = rows.map((row, i) =>
       i === index
         ? {
             ...row,
             provider: providerId || undefined,
             model: modelId,
-            reasoningEffort: effortForModel(compoundModelId, row.reasoningEffort),
+            reasoningEffort: effortForModel(providerId || undefined, modelId, row.reasoningEffort),
           }
         : row,
     );
@@ -190,7 +181,7 @@
       <div class="shrink-0">
         <ModelPicker
           selectedModel={pickerModelId(row) || undefined}
-          onModelChange={(model) => handleModelChange(index, model)}
+          onModelChange={(model, pick) => handleModelChange(index, model, pick)}
           showDefaultOption={false}
           defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
           variant="default"
@@ -200,9 +191,6 @@
           onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
         />
       </div>
-      <span class="shrink-0 text-xs text-muted-foreground whitespace-nowrap" data-testid="effort-label">
-        {effortLabel(row)}
-      </span>
       <input
         type="text"
         value={row.hint}

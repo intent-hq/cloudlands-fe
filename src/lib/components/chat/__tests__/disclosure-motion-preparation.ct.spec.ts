@@ -224,6 +224,13 @@ test('accepts live response updates during collapse without stale detached conte
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(component.getByTestId('prepared-response-body')).toBeVisible();
+  // Let the expand motion settle before the pointer click that starts the
+  // collapse (monorepo#4267): while the details grow, the followed-bottom
+  // transcript re-pins every frame and shifts the trigger row up. Playwright
+  // verifies the hit target only on pointerdown, so a row that moves before
+  // mouseup lands the synthesized `click` on the common ancestor instead of the
+  // button and the toggle is silently dropped.
+  await expectAnimationsCleanedUp(await controlledContent(component, toggle));
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.waitForTimeout(35);
@@ -238,7 +245,18 @@ test('accepts live response updates during collapse without stale detached conte
   expect(
     await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
   ).toBe(true);
-  await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
+  const body = component.getByTestId('prepared-response-body');
+  await expect(body).toHaveCount(1);
+  await expect(body).toBeVisible();
+  expect(
+    await body.evaluate((node) => {
+      const groupContent = node.closest('[data-response-group-content]');
+      return groupContent?.closest('[data-operational-preview-content]') !== null;
+    }),
+  ).toBe(true);
+  expect(
+    await body.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
+  ).toBe(true);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
   ).toBeLessThanOrEqual(8);

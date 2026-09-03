@@ -6,6 +6,9 @@
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
+  import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
+  import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
+  import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
 
   import {
     openWorkspaceFile,
@@ -48,6 +51,14 @@
     renderRichFencesAsCode = false,
   }: Props = $props();
 
+  const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
+  const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
+  const markdownContent = $derived(
+    !hasVideoSegments && mediaSegments.length === 1 && mediaSegments[0].type === 'markdown'
+      ? mediaSegments[0].content
+      : content,
+  );
+
   // PERF: Detect content complexity to choose rendering strategy
   // - Simple: plain text, no markdown - render as <p>
   // - Static: has markdown - render the processed HTML directly (no TipTap)
@@ -89,9 +100,9 @@
   ];
 
   const contentComplexity = $derived.by(() => {
-    if (!content) return 'simple';
+    if (!markdownContent) return 'simple';
     // Check if needs markdown processing
-    if (needsProcessingPatterns.some((pattern) => pattern.test(content))) {
+    if (needsProcessingPatterns.some((pattern) => pattern.test(markdownContent))) {
       return 'static';
     }
     return 'simple';
@@ -260,14 +271,14 @@
 
     if (isStreaming) {
       // Use throttled streaming update
-      scheduleStreamingUpdate(content);
+      scheduleStreamingUpdate(markdownContent);
     } else {
       // Clean up pending updates when streaming ends
       if (wasStreaming) {
         cancelPendingUpdates();
       }
       // Direct update when not streaming
-      updateContentFull(content);
+      updateContentFull(markdownContent);
     }
   });
 
@@ -448,7 +459,27 @@
   {/if}
 {/snippet}
 
-{#if isStreaming}
+{#if hasVideoSegments}
+  <div class="markdown-video-segments {className}">
+    {#each mediaSegments as segment}
+      {#if segment.type === 'video'}
+        <ChatVideoBlock source={segment.source} name={segment.name} poster={segment.poster} />
+      {:else}
+        <RecursiveMarkdownViewer
+          content={segment.content}
+          {isStreaming}
+          {workspaceId}
+          onCodeBlockAction={_onCodeBlockAction}
+          {onFileClick}
+          {taskBlockRenderMode}
+          {chatImageThumbnails}
+          {forceExternalLinks}
+          {renderRichFencesAsCode}
+        />
+      {/if}
+    {/each}
+  </div>
+{:else if isStreaming}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
@@ -466,7 +497,7 @@
 {:else if contentComplexity === 'simple'}
   <!-- PERF: Simple text - render directly without any processing -->
   <div class="markdown-viewer simple-content {className}">
-    <p class="whitespace-pre-wrap">{content}</p>
+    <p class="whitespace-pre-wrap">{markdownContent}</p>
   </div>
 {:else}
   <!-- PERF: Static content - use processed HTML without TipTap -->

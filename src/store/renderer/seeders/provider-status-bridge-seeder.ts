@@ -70,6 +70,7 @@ import {
   toAuthVerdictMap,
   type ProviderAuthStatusParams,
   type ProviderAuthStatusResponse,
+  type ProviderAuthVerdict,
 } from "$shared/provider-auth-status";
 import type {
   NpxStatus,
@@ -114,11 +115,13 @@ const CODEX_ACP_BINARY = "codex-acp";
  * (intent-hq/intentd#339) as an id → verdict map. The daemon owns the
  * CLI/ACP probes and their caching; the wire `null` (unknown) folds to
  * undefined and an RPC failure folds to an empty map (every provider reads
- * as unknown, no indicator — honest degradation).
+ * as unknown, no indicator — honest degradation). Each verdict also carries
+ * the rendered identity line (`authDetails`) when the daemon sent one
+ * (protocol 9.4, intent-hq/intentd#1685).
  */
 async function getAuthVerdicts(
   options: ProviderAuthStatusParams = {},
-): Promise<Record<string, boolean | undefined>> {
+): Promise<Record<string, ProviderAuthVerdict>> {
   try {
     const response = await backendRequest<ProviderAuthStatusResponse>(
       PROVIDER_AUTH_STATUS_METHOD,
@@ -149,10 +152,15 @@ function computeHiddenProviders(): string[] {
     .map((entry) => entry.id);
 }
 
-/** Attach an auth verdict only when the provider is actually available. */
-function withAuth(status: ProviderStatus, authenticated: boolean | undefined): ProviderStatus {
-  if (status.available && authenticated !== undefined) {
-    status.authenticated = authenticated;
+/** Attach an auth verdict (and its identity line) only when the provider is
+ * actually available. */
+function withAuth(status: ProviderStatus, verdict: ProviderAuthVerdict | undefined): ProviderStatus {
+  if (!status.available || verdict === undefined) return status;
+  if (verdict.authenticated !== undefined) {
+    status.authenticated = verdict.authenticated;
+  }
+  if (verdict.authDetails !== undefined) {
+    status.authDetails = verdict.authDetails;
   }
   return status;
 }
@@ -260,7 +268,7 @@ async function checkAntigravityAvailability(): Promise<ProviderStatus> {
 }
 
 async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
-  const checkAuth = async (): Promise<boolean | undefined> =>
+  const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
 
   if (providerId === "antigravity") {
@@ -470,7 +478,8 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
     const check = await checkAuggie();
     if (
       check.available &&
-      (await getAuthVerdicts({ providerId: "auggie", force: true }))["auggie"] === true
+      (await getAuthVerdicts({ providerId: "auggie", force: true }))["auggie"]?.authenticated ===
+        true
     ) {
       return { success: true, data: { authenticated: true } };
     }

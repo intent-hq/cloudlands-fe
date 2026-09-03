@@ -243,7 +243,8 @@ export function setupAuggieIPC() {
       // (the daemon cannot host the OAuth interactive TTY session; the user
       // runs it in their own terminal).
       const authenticated =
-        (await getProviderAuthVerdict('auggie', { force: true }, backendClient)) === true;
+        (await getProviderAuthVerdict('auggie', { force: true }, backendClient))?.authenticated ===
+        true;
 
       if (authenticated) {
         return {

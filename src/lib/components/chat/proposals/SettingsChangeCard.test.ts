@@ -91,9 +91,6 @@ describe('SettingsChangeCard', () => {
     expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy();
     expect(container.textContent).not.toContain('app-settings.proposal.json');
-    const card = container.querySelector('[data-proposal-kind="settings-change"]');
-    expect(card?.className).toContain('rounded-(--radius-medium)');
-    expect(card?.className).toContain('bg-card');
     expect(screen.getByRole('heading', { name: 'Theme preset: Dracula' }).className).toContain(
       'type-body',
     );

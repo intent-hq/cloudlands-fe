@@ -13,18 +13,20 @@ import {
   toAuthVerdictMap,
   type ProviderAuthStatusParams,
   type ProviderAuthStatusResponse,
+  type ProviderAuthVerdict,
 } from '../provider-auth-status';
 
 const logger = new Logger('ProviderAuthStatus');
 
 /**
  * Sweep (or single-provider) auth status from the daemon as an id → verdict
- * map (`true` / `false` / `undefined` for the wire's `null` unknowns).
+ * map (`authenticated` is `true` / `false` / `undefined` for the wire's
+ * `null` unknowns; `authDetails` carries the rendered identity when sent).
  */
 export async function getProviderAuthVerdicts(
   options: ProviderAuthStatusParams = {},
   client?: JsonRpcClient,
-): Promise<Record<string, boolean | undefined>> {
+): Promise<Record<string, ProviderAuthVerdict>> {
   try {
     const response = await (client ?? getBackendClient()).request<ProviderAuthStatusResponse>(
       PROVIDER_AUTH_STATUS_METHOD,
@@ -45,7 +47,7 @@ export async function getProviderAuthVerdict(
   providerId: string,
   options: { force?: boolean } = {},
   client?: JsonRpcClient,
-): Promise<boolean | undefined> {
+): Promise<ProviderAuthVerdict | undefined> {
   const verdicts = await getProviderAuthVerdicts({ providerId, force: options.force }, client);
   return verdicts[providerId];
 }

@@ -8,7 +8,26 @@
  * (same picked-repo flow as CompactWorkspaceInitializer).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+
+const LOCAL_PATH = '/tmp/local-folder';
+const mocks = vi.hoisted(() => ({
+  localDirectoryStatus: null as Record<string, unknown> | null,
+}));
+
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: vi.fn(async (channel: string) =>
+    channel === 'file:getDirectoryStatus'
+      ? { success: true, data: mocks.localDirectoryStatus }
+      : undefined,
+  ),
+}));
+
+vi.mock('$lib/directory-picker-service', () => ({
+  pickDirectory: vi.fn(async ({ onSelect }: { onSelect: (path: string) => void }) =>
+    onSelect(LOCAL_PATH),
+  ),
+}));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -59,6 +78,19 @@ function mockDaemon(): Array<Record<string, unknown>> {
   return dirStatusCalls;
 }
 
+async function pickLocalFolder(
+  directoryStatus: Record<string, unknown>,
+): Promise<ProjectSelection[]> {
+  mocks.localDirectoryStatus = directoryStatus;
+  mockDaemon();
+  const selections: ProjectSelection[] = [];
+  render(ProjectPickerMessage, { props: { onProjectChange: (s) => selections.push(s) } });
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Browse for a folder' }));
+  await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH));
+  return selections;
+}
+
 /** Render the picker, switch to the GitHub tab, and return the URL input. */
 async function openGithubTab(
   onProjectChange: (selection: ProjectSelection) => void,
@@ -90,6 +122,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
   afterEach(() => {
     cleanup();
     backendRequestMock.mockReset();
+    mocks.localDirectoryStatus = null;
     sessionStorage.clear();
   });
 
@@ -174,5 +207,80 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
         }),
       ),
     );
+  });
+
+  it('marks an existing non-git folder for Git initialization', async () => {
+    const selections = await pickLocalFolder({
+      exists: true,
+      isDirectory: true,
+      isGitRepo: false,
+      isSubdirectoryOfGitRepo: false,
+      path: LOCAL_PATH,
+    });
+
+    expect(selections).toContainEqual(
+      expect.objectContaining({ type: 'local', initGit: true, isValid: true }),
+    );
+    expect(screen.getByRole('status')).toBeTruthy();
+  });
+
+  it('rejects a local path that is a regular file', async () => {
+    mocks.localDirectoryStatus = {
+      exists: true,
+      isDirectory: false,
+      isGitRepo: false,
+      isSubdirectoryOfGitRepo: false,
+      path: LOCAL_PATH,
+    };
+    mockDaemon();
+    const onProjectChange = vi.fn();
+    render(ProjectPickerMessage, { props: { onProjectChange } });
+    await waitFor(() => expect(onProjectChange).toHaveBeenCalled());
+    onProjectChange.mockClear();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Browse for a folder' }));
+
+    await waitFor(() => expect(onProjectChange).toHaveBeenCalled());
+    const selection = onProjectChange.mock.calls.at(-1)?.[0] as ProjectSelection;
+    expect(selection).toEqual(expect.objectContaining({ repoPath: '', isValid: false }));
+    expect(selection).not.toHaveProperty('initGit');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('does not mark a Git repository for initialization', async () => {
+    const selections = await pickLocalFolder({
+      exists: true,
+      isDirectory: true,
+      isGitRepo: true,
+      isSubdirectoryOfGitRepo: false,
+      path: LOCAL_PATH,
+    });
+
+    expect(
+      selections
+        .filter((selection) => selection.repoPath === LOCAL_PATH)
+        .every((selection) => !('initGit' in selection)),
+    ).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps scope without Git initialization for a subdirectory of a repository', async () => {
+    const selections = await pickLocalFolder({
+      exists: true,
+      isDirectory: true,
+      isGitRepo: false,
+      isSubdirectoryOfGitRepo: true,
+      relativePathFromGitRoot: 'packages/app',
+      path: LOCAL_PATH,
+    });
+
+    expect(selections).toContainEqual(
+      expect.objectContaining({ type: 'local', scope: 'packages/app' }),
+    );
+    expect(
+      selections
+        .filter((selection) => selection.repoPath === LOCAL_PATH)
+        .every((selection) => !('initGit' in selection)),
+    ).toBe(true);
   });
 });

@@ -22,7 +22,7 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
-  import { WORKSPACE_HOVER_CARD_OPEN_DELAY_MS } from './utils/workspace-hover-card-intent';
+  import { workspaceHoverCardIntentSession } from './utils/workspace-hover-card-intent';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -121,6 +121,8 @@
     highlightId?: string;
     /** Whether to suppress hover styling (when keyboard navigation is active) */
     suppressHover?: boolean;
+    /** Scope hover/focus action reveals to this card instead of an ancestor group. */
+    isolateHoverReveal?: boolean;
     class?: string;
     actions?: Snippet;
   }
@@ -152,6 +154,7 @@
     selected = false,
     highlightId,
     suppressHover = false,
+    isolateHoverReveal = false,
     class: className,
     actions,
   }: Props = $props();
@@ -193,12 +196,27 @@
   let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerWithinRow = false;
   let focusWithinRow = false;
+  let hoverCardOpenedFromPointer = false;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
       clearTimeout(hoverCardOpenTimer);
       hoverCardOpenTimer = null;
     }
+  }
+
+  function openHoverCardFromPointer() {
+    hoverCardVisible = true;
+    if (hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = true;
+    workspaceHoverCardIntentSession.notifyOpened();
+  }
+
+  function closeHoverCard() {
+    hoverCardVisible = false;
+    if (!hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = false;
+    workspaceHoverCardIntentSession.notifyClosed();
   }
 
   const activePullRequest = $derived.by(() => {
@@ -253,15 +271,15 @@
       clearHoverCardOpenTimer();
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
-        hoverCardVisible = true;
-      }, WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+        openHoverCardFromPointer();
+      }, workspaceHoverCardIntentSession.currentOpenDelay);
     }
   }
 
   function handleMouseLeave() {
     pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    if (!focusWithinRow) hoverCardVisible = false;
+    if (!focusWithinRow) closeHoverCard();
   }
 
   function handleFocusIn() {
@@ -273,13 +291,13 @@
   function handleFocusOut(event: FocusEvent) {
     if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
     focusWithinRow = false;
-    if (!pointerWithinRow) hoverCardVisible = false;
+    if (!pointerWithinRow) closeHoverCard();
   }
 
   $effect(() => {
     if (suppressHover) {
       clearHoverCardOpenTimer();
-      hoverCardVisible = false;
+      closeHoverCard();
     }
   });
 
@@ -314,6 +332,7 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
@@ -479,7 +498,8 @@
   <div
     bind:this={rowElement}
     class={cn(
-      'wc-root group relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      'wc-root relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      isolateHoverReveal ? 'group/wc' : 'group',
       isCurrent
         ? 'bg-background/60'
         : highlighted
@@ -550,7 +570,9 @@
                 ? 'opacity-0'
                 : suppressHover
                   ? ''
-                  : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                  : isolateHoverReveal
+                    ? 'group-hover/wc:opacity-0 group-focus-within/wc:opacity-0'
+                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
               : ''}"
             data-workspace-card-pin-indicator
             aria-hidden="true"
@@ -620,7 +642,9 @@
             ? 'opacity-0'
             : suppressHover
               ? ''
-              : 'group-hover:opacity-0 group-hover/message:opacity-0'
+              : isolateHoverReveal
+                ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
+                : 'group-hover:opacity-0 group-hover/message:opacity-0'
           : ''}"
         data-workspace-card-time
       >
@@ -636,12 +660,17 @@
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
-        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100 group-focus-within:opacity-100
+        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
+          {isolateHoverReveal
+          ? 'group-focus-within/wc:opacity-100'
+          : 'group-focus-within:opacity-100'}
           {highlighted
           ? 'opacity-100'
           : suppressHover
             ? 'opacity-0'
-            : 'opacity-0 group-hover:opacity-100'}"
+            : isolateHoverReveal
+              ? 'opacity-0 group-hover/wc:opacity-100'
+              : 'opacity-0 group-hover:opacity-100'}"
       >
         {#if onOpenInNewWindow}
           <SidebarOverflowMenu

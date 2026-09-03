@@ -21,6 +21,8 @@
 import { Logger } from '$shared/logger';
 import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
+import type { VideoSource } from '$shared/types/content-block';
+import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
 
 const logger = new Logger('MessageParser');
 
@@ -40,6 +42,7 @@ export interface ParsedContent {
     | 'mermaid'
     | 'workspace_card'
     | 'nav_link'
+    | 'video'
     | 'patch'
     | 'reference'
     | 'cli'
@@ -58,6 +61,11 @@ export interface ParsedContent {
     diagramData?: unknown; // Parsed DiagramPrimitive data
     workspaceCardData?: { workspaceIds: string[] };
     navLinkData?: { target: string; label?: string };
+    videoData?: {
+      source: Extract<VideoSource, { kind: 'workspace' }>;
+      name?: string;
+      poster?: string;
+    };
     patchData?: { filePath: string; diff: string; description?: string }; // Parsed patch data
     referenceData?: {
       semanticId?: string;
@@ -776,8 +784,32 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
   return null;
 }
 
-export function parseAgentMessage(content: string): ParsedContent[] {
+export function parseAgentMessage(content: string, workspaceId?: string): ParsedContent[] {
   if (!content) return [];
+
+  const mediaSegments = splitWorkspaceVideoMarkdown(content, workspaceId);
+  if (mediaSegments.some((segment) => segment.type === 'video')) {
+    return mergeConsecutiveTextBlocks(
+      mediaSegments.flatMap((segment): ParsedContent[] =>
+        segment.type === 'markdown'
+          ? parseAgentMessage(segment.content, workspaceId)
+          : [
+              {
+                type: 'video',
+                content: segment.name ?? '',
+                metadata: {
+                  videoData: {
+                    source: segment.source,
+                    name: segment.name,
+                    poster: segment.poster,
+                  },
+                },
+              },
+            ],
+      ),
+    );
+  }
+  content = mediaSegments[0]?.type === 'markdown' ? mediaSegments[0].content : content;
 
   // PERF: Single-pass extraction of all special blocks
   // Instead of running 5 separate regex passes, we find all special blocks at once

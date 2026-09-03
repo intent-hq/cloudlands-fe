@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveAppTitle, setResolvedAppName } from '../resolve-app-title';
+import { decorateWindowTitle, resolveAppTitle, setResolvedAppName } from '../resolve-app-title';
 
 const ENV_KEYS = ['NODE_ENV', 'DEV_NAME', 'DEV_INSTANCE', 'DEV_PORT'] as const;
 
@@ -50,6 +50,24 @@ describe('resolveAppTitle', () => {
     process.env.DEV_NAME = 'polish-ui';
 
     expect(resolveAppTitle()).toBe('Intent');
+  });
+
+  it('keeps the development instance name when a renderer title replaces the initial title', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.DEV_NAME = 'polish-ui';
+
+    expect(decorateWindowTitle('Terminal — Example workspace')).toBe(
+      'Terminal — Example workspace — Electron [polish-ui]',
+    );
+  });
+
+  it('does not decorate renderer titles in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DEV_NAME = 'polish-ui';
+
+    expect(decorateWindowTitle('Terminal — Example workspace')).toBe(
+      'Terminal — Example workspace',
+    );
   });
 
   it('sets and returns one development app name for the macOS application menu', () => {

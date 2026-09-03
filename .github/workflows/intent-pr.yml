@@ -4,12 +4,17 @@ on:
   pull_request:
     branches: ['main']
   # Merge-queue runs (intent-hq/monorepo#2893): the queue tests the actual
-  # merged tree before it lands on main, so merge_group runs the same heavy
-  # jobs as pull_request CI. Merge groups are created by the repo's own
-  # ruleset from already-filed PRs, so they need no same-repo fork guard.
+  # merged tree before it lands on main. The heavy jobs are tiered by event:
+  # checks / build-web / test run on BOTH pull_request and merge_group (fast
+  # PR signal, re-validated on the merged tree); test-integration / test-ct
+  # are merge-queue-only — they skip on pull_request (the gate accepts that
+  # skip) and run only on merge_group, where the gate requires their
+  # success. Merge groups are created by the repo's own ruleset from
+  # already-filed PRs, so they need no same-repo fork guard.
   # pr-title / conflict-markers / release-fast-path are PR-metadata /
   # PR-diff checks that stay pull_request-only — the gate accepts their
-  # skip on merge_group (release PRs therefore run full CI in the queue).
+  # skip on merge_group (release PRs therefore run full CI in the queue,
+  # including the merge-queue-only suites).
   merge_group:
 
 # Cancel in progress workflows on pull_requests.
@@ -36,15 +41,18 @@ jobs:
   # job in this workflow carries the same-repo guard, either directly via an
   # `if:` on `github.event.pull_request.head.repo.full_name ==
   # github.repository` or transitively through `needs` on a guarded job
-  # (checks / build-web / test / test-ct skip when the guarded route job
-  # skips, via their existing `needs.route.result == 'success'` condition)
+  # (checks / build-web / test / test-integration / test-ct skip when the
+  # guarded route job skips, via their existing `needs.route.result ==
+  # 'success'` condition; test-integration / test-ct additionally never run
+  # on pull_request at all — see their merge-queue-only guards)
   # — EXCEPT the
   # gate, which deliberately still runs on fork PRs so the required "CI
   # Gate" context fails red there (a skipped job would SATISFY a required
   # check; see the gate job's comment). Fork PRs are auto-closed by
   # close-fork-prs.yml.
 
-  # Decides where the heavy jobs (checks / build-web / test / test-ct) run:
+  # Decides where the heavy jobs (checks / build-web / test /
+  # test-integration / test-ct) run:
   # the local tinybox runner normally, or GH-hosted larger runners when the
   # tinybox queue is backed up or the fleet is unavailable (ported from
   # intentd's ci.yml route job). Runs on a small GH-hosted runner so the burst
@@ -319,8 +327,8 @@ jobs:
   # and intentd sidecar pin bumps (auto-pin-intentd.yml) change only the pin
   # value in intentd.version — in both cases the built/tested code is
   # identical to what main already validated and the heavy jobs (checks /
-  # build-web / test) add no signal — their wall time just delays the
-  # release. This job diffs the PR against its base and emits fast_path=true
+  # build-web / test / test-integration / test-ct) add no signal — their
+  # wall time just delays the release. This job diffs the PR against its base and emits fast_path=true
   # only when the diff has exactly one of those shapes (release: files ⊆
   # {CHANGELOG.md, package.json, .release-please-manifest.json}, pure
   # modifications, and every non-changelog change is a uniform old→new
@@ -333,8 +341,9 @@ jobs:
   # empty and falls back to full CI), and pr-title / conflict-markers / route
   # / gate still run on every PR. The only required context is "CI Gate"
   # (which always runs), and a job-level skip is safe for every heavy job —
-  # including the test-ct shard matrix, where skipping the job reports
-  # 'skipped' for the whole matrix (no per-leg required contexts exist).
+  # including the test and test-ct shard matrices, where skipping the job
+  # reports 'skipped' for the whole matrix (no per-leg required contexts
+  # exist).
   release-fast-path:
     name: Release PR Fast Path
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -535,15 +544,86 @@ jobs:
           echo "✓ dist/web/index.html present."
 
   test:
-    # Unsharded on the self-hosted Linux runner (tinybox): shards would each
-    # pay their own checkout/install overhead (and queued serially in the
-    # single-slot era), so one job stays cheaper — vitest parallelism uses
-    # the 64 cores within the single job.
+    # Two-way Vitest shard matrix (intent-hq/monorepo#4260). The job ran
+    # unsharded while the box had a single runner slot (shards would have
+    # queued serially there, each paying its own checkout/install); with 8
+    # tinybox slots plus the burst route that rationale is stale, and the
+    # unit step is the workflow's long pole (p50 ~7.5 min, p90 ~18 min on
+    # the burst runner) against ~0.5 min of per-leg setup. Vitest's
+    # --shard=N/2 is a stable partition of the sorted test-file list, so
+    # the two legs cover the full suite exactly once (shard-completeness
+    # proof in the #4260 follow-up PR). Integration tests moved to the
+    # separate unsharded test-integration job so they still run exactly
+    # once.
+    # Known trade-off: vitest.config.ts caps CI workers per JOB (min(16,
+    # cores/2), monorepo#3082), so two concurrent legs on one tinybox host
+    # can run 2x that fork count (plus the now-concurrent test-integration
+    # job). Per-leg wall time halves the exposure window and the 60s CI
+    # test timeout gives slack; if #3082-class load flakes reappear, halve
+    # the vitest.config.ts worker cap when --shard is in play.
     # Skipped at job level on release-fast-path PRs — see the checks job's
-    # comment for the full skip/fail-safe rationale.
-    name: Unit & Integration Tests
+    # comment for the full skip/fail-safe rationale (a job-level skip
+    # reports 'skipped' for the whole matrix; no per-leg required contexts
+    # exist — "CI Gate" is the only required check).
+    name: Unit Tests (shard ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    strategy:
+      # Let the sibling shard finish so one flaky leg doesn't hide the
+      # other leg's results (same rationale as test-ct).
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      # Same 4 GB cap as the pre-split job; each leg now accumulates half
+      # the per-worker state, so this only gains headroom (the CT jobs'
+      # OOM lesson — monorepo#3352 — was a job-wide 8 GB cap, not this).
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          # Per-runner-instance dest (see checks) — also what lets two
+          # shard legs share a tinybox $HOME without the monorepo#1239
+          # installer races.
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        # cache: 'pnpm' only on the burst path (see checks).
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm run test:unit --shard=${{ matrix.shard }}/2
+
+  test-integration:
+    # The integration suite from the pre-split Unit & Integration Tests job
+    # (intent-hq/monorepo#4260): unsharded, runs exactly once. Kept as its
+    # own routed job rather than a step on a unit shard so neither leg is
+    # asymmetrically longer and a unit-shard flake can't hide integration
+    # results. The suite itself is short (~1 min); setup dominates.
+    # MERGE-QUEUE-ONLY (see the trigger comment): skipped on pull_request
+    # — the gate accepts that skip unconditionally — and run only on
+    # merge_group, where the gate requires success. The route.result guard
+    # is kept so a route failure still skips the job (and fails the gate in
+    # the queue: fail-safe). release-fast-path is pull_request-only, so on
+    # merge_group its fast_path output is always empty and the `!= 'true'`
+    # term is vacuous there; it stays for symmetry with the other heavy
+    # jobs (a job skipped by its own `if:` never blocks on `needs`).
+    name: Integration Tests
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -569,13 +649,19 @@ jobs:
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Unit tests
-        run: pnpm run test:unit
+      - name: Generate i18n messages
+        # The integration vitest config has no paraglideVitePlugin (unlike
+        # vitest.config.ts, whose plugin writes src/shared/paraglide as a
+        # side effect); the pre-split job got the compiled messages from
+        # the unit step running first in the same checkout. Standalone,
+        # the job must compile them explicitly.
+        run: pnpm run generate:i18n
       - name: Integration tests
         run: pnpm run test:integration
 
   # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
-  # monorepo#2091). Routed through the probe like checks / build-web / test:
+  # monorepo#2091). Routed through the probe like checks / build-web / test
+  # / test-integration:
   # tinybox when healthy, gh-linux-8x on burst (the burst runner replaces
   # the old ubuntu-latest pin; its 8 cores / 32 GB also clear the 16 GB
   # ubuntu-latest VMs whose memory exhaustion killed shard legs,
@@ -591,18 +677,22 @@ jobs:
   # installed via the run-ct-tests.mjs launcher so their version matches the
   # CT-aligned playwright runner (1.58.x, NOT the repo's top-level playwright
   # — see monorepo#1586), and the binary cache is keyed on that same version.
-  # Skipped at job level on release-fast-path PRs — see the checks job's
-  # comment for the full skip/fail-safe rationale.
+  # MERGE-QUEUE-ONLY (see the trigger comment and test-integration): the
+  # ~20 min of shard wall time comes off every PR push; the suite runs once
+  # per queue entry against the merged tree instead, where the gate requires
+  # it. On pull_request the whole matrix reports 'skipped' and the gate
+  # accepts that skip unconditionally.
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
-    # The route.result guard subsumes the old explicit same-repo `if:` guard
-    # (fork-PR hardening note): fork PRs skip the guarded route job, and
-    # `needs.route.result == 'success'` then skips this matrix too — the
-    # same transitive guard as checks / build-web / test (a route failure
-    # also skips it; see the checks job's comment). Merge groups pass the
-    # route job's guard via its event check.
+    # The event check makes this matrix merge_group-only. The route.result
+    # guard is kept for the same reasons as test-integration: it subsumes
+    # the old explicit same-repo `if:` guard (fork-PR hardening note — fork
+    # PRs skip the guarded route job, and are pull_request events anyway),
+    # and a route failure in the queue skips this matrix and fails the gate
+    # there (fail-safe). The fast_path term is vacuous on merge_group (see
+    # test-integration).
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
@@ -824,17 +914,26 @@ jobs:
 
   # Single required status check for branch protection: fans in pr-title,
   # conflict-markers, and the heavy jobs (checks / build-web / test /
-  # test-ct). pr-title / conflict-markers must succeed outright on every PR;
+  # test-integration / test-ct). pr-title / conflict-markers must succeed
+  # outright on every PR;
   # on merge_group they are job-skipped (PR-metadata checks, already
   # validated on the PR) and the gate accepts the skip — event-aware, so PR
-  # semantics stay unweakened. The heavy jobs must succeed outright too,
-  # EXCEPT on release-fast-path PRs (fast_path == 'true'), where their
-  # job-level skip is the expected outcome (see release-fast-path). The
-  # acceptance keys on the fast-path OUTPUT — never on the skipped status
-  # itself — so a skip from any other cause (a route failure, or a failed
-  # release-fast-path job leaving the output empty) still fails the gate:
-  # fail-safe, not fail-open (mirrors intentd's event/shape-aware gate
-  # reasoning). test-ct is a shard matrix: its needs.result aggregates the
+  # semantics stay unweakened. The every-event heavy jobs (checks /
+  # build-web / test) must succeed outright too, EXCEPT on
+  # release-fast-path PRs (fast_path == 'true'), where their job-level skip
+  # is the expected outcome (see release-fast-path). The acceptance keys on
+  # the fast-path OUTPUT — never on the skipped status itself — so a skip
+  # from any other cause (a route failure, or a failed release-fast-path
+  # job leaving the output empty) still fails the gate: fail-safe, not
+  # fail-open (mirrors intentd's event/shape-aware gate reasoning). The
+  # merge-queue-only jobs (test-integration / test-ct) are event-aware the
+  # other way round: on pull_request their skip is BY DESIGN and accepted
+  # unconditionally (any other non-success result still fails); on
+  # merge_group they must succeed outright — release-fast-path never runs
+  # in the queue, so no fast-path skip exists there and a skip can only
+  # mean a route failure. Fork PRs stay red regardless: checks / build-web
+  # / test skip on them with fast_path empty, which check_heavy rejects.
+  # test and test-ct are shard matrices: their needs.result aggregates the
   # legs (success only when every shard passes; a job-level skip reports
   # 'skipped' for the whole matrix, same as before).
   gate:
@@ -852,7 +951,7 @@ jobs:
     # naturally — a red fail-safe backstop even if the close workflow is
     # disabled, delayed, or fails.
     if: always()
-    needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-ct]
+    needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-integration, test-ct]
     steps:
       - name: Check results
         env:
@@ -878,7 +977,8 @@ jobs:
           fi
           check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
           check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
-          # Heavy jobs: success, or skipped ONLY via the release-PR fast path.
+          # Every-event heavy jobs (checks / build-web / test): success, or
+          # skipped ONLY via the release-PR fast path.
           check_heavy() {
             if [ "$2" = "success" ]; then
               return 0
@@ -893,4 +993,29 @@ jobs:
           check_heavy "checks" "${{ needs.checks.result }}"
           check_heavy "build-web" "${{ needs.build-web.result }}"
           check_heavy "test" "${{ needs.test.result }}"
-          check_heavy "test-ct" "${{ needs.test-ct.result }}"
+          # Merge-queue-only jobs: skipped by design on pull_request (their
+          # `if:` is event-gated) — accepted unconditionally there; on
+          # merge_group they must succeed (release-fast-path is
+          # pull_request-only, so FAST_PATH is always empty in the queue and
+          # no fast-path skip acceptance applies).
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            check_queue_only() {
+              if [ "$2" != "success" ]; then
+                echo "$1 result '$2' not acceptable on merge_group (merge-queue-only job must run and pass)"
+                exit 1
+              fi
+            }
+          else
+            check_queue_only() {
+              if [ "$2" = "skipped" ]; then
+                echo "$1 skipped on ${{ github.event_name }} — merge-queue-only job, accepted"
+                return 0
+              fi
+              if [ "$2" != "success" ]; then
+                echo "$1 result '$2' not acceptable"
+                exit 1
+              fi
+            }
+          fi
+          check_queue_only "test-integration" "${{ needs.test-integration.result }}"
+          check_queue_only "test-ct" "${{ needs.test-ct.result }}"

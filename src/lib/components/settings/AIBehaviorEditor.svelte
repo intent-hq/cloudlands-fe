@@ -227,7 +227,10 @@
     return levels?.includes(effort) ? effort : undefined;
   }
 
-  function handleSpecialistModelChange(compoundModelId: string) {
+  function handleSpecialistModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!currentSpecialist) return;
 
     // Empty string = the inherit ("use global default") option was picked:
@@ -277,8 +280,13 @@
     }
 
     // Writes emit the bare model id only (PROTOCOL §5.11) — the provider
-    // rides the `codingAgent:` key, never a compound `model:` id.
-    const { providerId: newProvider, modelId: bareModelId } = parseCompoundModelId(compoundModelId);
+    // rides the `codingAgent:` key, never a compound `model:` id. Prefer the
+    // resolved triple legs the picker emits (catalog-group attribution for
+    // bare cross-provider picks); fall back to splitting a legacy compound id
+    // (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    const newProvider = resolved.providerId || $defaultProviderId$;
+    const bareModelId = resolved.modelId;
     _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
     // Reset the effort to Default when the newly picked model does not
@@ -399,7 +407,10 @@
     );
   }
 
-  function handleCreateModelChange(compoundModelId: string) {
+  function handleCreateModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     // Empty string = the inherit ("use global default") option was picked.
     if (!compoundModelId) {
       newCodingAgent = undefined;
@@ -407,8 +418,11 @@
       newEffort = effortForModel($selectedModel, newEffort);
       return;
     }
-    const { providerId } = parseCompoundModelId(compoundModelId);
-    newCodingAgent = providerId;
+    // Prefer the resolved triple legs the picker emits (catalog-group
+    // attribution for bare cross-provider picks); fall back to splitting a
+    // legacy compound id (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    newCodingAgent = resolved.providerId || $defaultProviderId$;
     newModel = compoundModelId;
     newEffort = effortForModel(compoundModelId, newEffort);
   }

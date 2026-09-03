@@ -17,6 +17,11 @@ export function resolveAppTitle(): string {
   return devInstance ? `Electron [Dev ${devInstance}]` : 'Electron [Dev]';
 }
 
+export function decorateWindowTitle(title: string): string {
+  if (process.env.NODE_ENV !== 'development') return title;
+  return `${title} — ${resolveAppTitle()}`;
+}
+
 export function setResolvedAppName(
   app: { setName(name: string): void },
   processTarget: { title: string } = process,

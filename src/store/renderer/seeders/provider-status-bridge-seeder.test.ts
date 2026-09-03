@@ -238,6 +238,45 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.codex).toEqual({ available: true, authenticated: false });
     });
 
+    it("attaches the identity line only to the provider that sent one (protocol 9.4)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            claude: { available: true, path: "/usr/local/bin/claude" },
+            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
+            codex: { available: true, path: "/usr/local/bin/codex" },
+            npx: { available: true, path: "/usr/local/bin/npx" },
+          },
+        },
+        "host.providerAuthStatus": {
+          providers: [
+            {
+              id: "claude-code",
+              authenticated: true,
+              identity: { email: "dev@example.com", orgName: "dev@example.com's Organization" },
+            },
+            { id: "codex", authenticated: true },
+          ],
+        },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      // The email-derived default org collapses to the bare email.
+      expect(response.data?.providers.claudeCode).toEqual({
+        available: true,
+        authenticated: true,
+        authDetails: "dev@example.com",
+      });
+      // No identity on the wire (pre-9.4 daemon or non-identity provider) →
+      // exactly the pre-identity shape.
+      expect(response.data?.providers.codex).toStrictEqual({ available: true, authenticated: true });
+    });
+
     it("attaches droid / grok / pi verdicts (previously unprobed FE-side)", async () => {
       routeDaemon({
         "host.checkAuggie": { available: false },
@@ -582,6 +621,34 @@ describe("provider-status-bridge-seeder", () => {
         success: true,
         providerId: "claude-code",
         data: { available: true, authenticated: true },
+      });
+    });
+
+    it("pipes the protocol-9.4 identity object into authDetails on the single recheck", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
+          if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
+          return { available: false };
+        },
+        "host.providerAuthStatus": {
+          providers: [
+            {
+              id: "claude-code",
+              authenticated: true,
+              identity: { email: "dev@example.com", orgName: "Example Org", subscriptionType: "max" },
+            },
+          ],
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "claude-code",
+        data: { available: true, authenticated: true, authDetails: "dev@example.com · Example Org" },
       });
     });
 
