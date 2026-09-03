@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { AgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -10,7 +10,6 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { selectIsChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 import ChiefCard from '../cards/ChiefCard.svelte';
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
@@ -50,19 +49,30 @@ describe('ChiefCard combined header', () => {
     appStore.dispatch(removeSession(agentId));
   });
 
-  it('keeps the labeled disclosure row visible while its chat content is collapsed', async () => {
+  it('toggles exactly once from every part of the collapsed header without opening the dropdown', async () => {
     const ontoggle = vi.fn();
     const { container, rerender } = render(ChiefCard, {
       props: { expanded: true, embedded: true, collapsed: true, ontoggle },
     });
+    const row = container.querySelector<HTMLElement>('[data-chief-header-row]');
     const toggle = screen.getByRole('button', { name: m.layout_chiefCard_title() });
+    const titleButton = screen.getByRole('button', { name: threadTitle });
     const content = container.querySelector<HTMLElement>('#combined-panel-chief-content');
 
+    expect(row).not.toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.getAttribute('aria-controls')).toBe('combined-panel-chief-content');
     expect(content?.hidden).toBe(true);
-    expect(screen.getAllByRole('button')).toHaveLength(3);
 
+    await fireEvent.click(titleButton);
+    expect(ontoggle).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('option')).toBeNull();
+
+    ontoggle.mockClear();
+    await fireEvent.click(row!);
+    expect(ontoggle).toHaveBeenCalledOnce();
+
+    ontoggle.mockClear();
     await fireEvent.click(toggle);
     expect(ontoggle).toHaveBeenCalledOnce();
 
@@ -71,20 +81,25 @@ describe('ChiefCard combined header', () => {
     expect(content?.hidden).toBe(false);
   });
 
-  it('expands the section when a thread is selected or a new thread is requested', async () => {
-    const { rerender } = render(ChiefCard, {
+  it('keeps the new-thread action mounted but unavailable while collapsed', async () => {
+    const { container, rerender } = render(ChiefCard, {
       props: { expanded: true, embedded: true, collapsed: true, ontoggle: vi.fn() },
     });
+    const newThread = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${m.layout_chiefCard_newThread_tooltip()}"]`,
+    );
+
+    expect(newThread).not.toBeNull();
+    expect(newThread?.disabled).toBe(true);
+    expect(newThread?.tabIndex).toBe(-1);
+    expect(newThread?.getAttribute('aria-hidden')).toBe('true');
+
+    await rerender({ expanded: true, embedded: true, collapsed: false, ontoggle: vi.fn() });
+    expect(newThread?.disabled).toBe(false);
+    expect(newThread?.tabIndex).toBe(0);
+    expect(newThread?.hasAttribute('aria-hidden')).toBe(false);
 
     await fireEvent.click(screen.getByRole('button', { name: threadTitle }));
-    await fireEvent.click(await screen.findByRole('option', { name: threadTitle }));
-    expect(selectIsChiefCollapsed.select(appStore.state)).toBe(false);
-
-    appStore.dispatch(setChiefCollapsed(true));
-    await rerender({ expanded: true, embedded: true, collapsed: true, ontoggle: vi.fn() });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
-    );
-    await waitFor(() => expect(selectIsChiefCollapsed.select(appStore.state)).toBe(false));
+    expect(await screen.findByRole('option', { name: threadTitle })).toBeTruthy();
   });
 });

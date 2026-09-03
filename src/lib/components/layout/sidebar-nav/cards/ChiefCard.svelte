@@ -196,6 +196,15 @@
     appStore.dispatch(openPanel('chief'));
   }
 
+  function handleHeaderRowClick() {
+    if (collapsed) ontoggle?.();
+  }
+
+  function handleToggleClick(event: MouseEvent) {
+    event.stopPropagation();
+    ontoggle?.();
+  }
+
   function handleThreadChange(value: string | string[]) {
     if (typeof value === 'string') {
       if (collapsed) appStore.dispatch(setChiefCollapsed(false));
@@ -295,67 +304,95 @@
   </div>
 {:else}
   <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
-    <div class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2">
+    <!-- Keyboard users can use either child button; the row click expands empty space. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2 {collapsed
+        ? 'cursor-pointer'
+        : ''}"
+      data-chief-header-row
+      onclick={handleHeaderRowClick}
+    >
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
-        <Dropdown
-          value={selectedAgentId ?? undefined}
-          options={threadOptions}
-          onchange={handleThreadChange}
-          searchable={false}
-          portal={true}
-          variant="inline"
-          size="xs"
-          class="min-w-0 max-w-full"
-          triggerClass="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
-          contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
-        >
-          {#snippet trigger()}
+        {#if collapsed && ontoggle}
+          <button
+            type="button"
+            class="flex h-7! min-w-0 max-w-full flex-1 items-center justify-start px-1.5! text-foreground"
+          >
             <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
-          {/snippet}
+          </button>
+        {:else}
+          <Dropdown
+            value={selectedAgentId ?? undefined}
+            options={threadOptions}
+            onchange={handleThreadChange}
+            searchable={false}
+            portal={true}
+            variant="inline"
+            size="xs"
+            class="min-w-0 max-w-full"
+            triggerClass="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
+            contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
+          >
+            {#snippet trigger()}
+              <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
+                {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+              </span>
+            {/snippet}
 
-          {#snippet item({ option, selected, highlighted }: DropdownItemProps)}
-            {@const thread = $chiefThreads$.find((candidate) => candidate.agentId === option.value)}
-            <div class="flex min-w-0 flex-1 items-center gap-1.5">
-              {#if thread?.isActive}
-                <span
-                  class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500"
-                  aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
-                ></span>
-              {:else}
-                <span class="h-1.5 w-1.5 shrink-0"></span>
-              {/if}
-              <span class="truncate {selected ? 'font-medium text-foreground' : ''}"
-                >{option.label}</span
+            {#snippet item({ option, selected, highlighted }: DropdownItemProps)}
+              {@const thread = $chiefThreads$.find(
+                (candidate) => candidate.agentId === option.value,
+              )}
+              <div class="flex min-w-0 flex-1 items-center gap-1.5">
+                {#if thread?.isActive}
+                  <span
+                    class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500"
+                    aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                  ></span>
+                {:else}
+                  <span class="h-1.5 w-1.5 shrink-0"></span>
+                {/if}
+                <span class="truncate {selected ? 'font-medium text-foreground' : ''}"
+                  >{option.label}</span
+                >
+              </div>
+              <span
+                role="button"
+                tabindex={-1}
+                class="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-destructive {highlighted
+                  ? 'opacity-100'
+                  : 'opacity-0'}"
+                onclick={(e) => handleDeleteThread(e, option.value, option.label)}
+                aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: option.label })}
+                title={m.layout_chiefCard_deleteThread_tooltip()}
               >
-            </div>
-            <span
-              role="button"
-              tabindex={-1}
-              class="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-destructive {highlighted
-                ? 'opacity-100'
-                : 'opacity-0'}"
-              onclick={(e) => handleDeleteThread(e, option.value, option.label)}
-              aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: option.label })}
-              title={m.layout_chiefCard_deleteThread_tooltip()}
-            >
-              <Fa icon={faTrash} size="xs" />
-            </span>
-          {/snippet}
+                <Fa icon={faTrash} size="xs" />
+              </span>
+            {/snippet}
 
-          {#snippet empty()}
-            <div class="type-caption px-3 py-4 text-center text-subtle">
-              {m.layout_chiefCard_noThreads_label()}
-            </div>
-          {/snippet}
-        </Dropdown>
+            {#snippet empty()}
+              <div class="type-caption px-3 py-4 text-center text-subtle">
+                {m.layout_chiefCard_noThreads_label()}
+              </div>
+            {/snippet}
+          </Dropdown>
+        {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-0.5">
+      <div
+        class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-150 motion-reduce:transition-none {collapsed
+          ? 'pointer-events-none -mr-1 w-0 opacity-0'
+          : 'mr-0 w-6 opacity-100'}"
+      >
         <button
-          class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={createNewThread}
-          disabled={isCreatingThread}
+          disabled={isCreatingThread || collapsed}
+          tabindex={collapsed ? -1 : undefined}
+          aria-hidden={collapsed ? 'true' : undefined}
           aria-label={m.layout_chiefCard_newThread_tooltip()}
           title={m.layout_chiefCard_newThread_tooltip()}
         >
@@ -374,12 +411,12 @@
           aria-expanded={!collapsed}
           aria-controls="combined-panel-chief-content"
           data-chief-section-toggle
-          onclick={ontoggle}
+          onclick={handleToggleClick}
         >
           <Fa
             icon={faChevronDown}
             size="xs"
-            class="shrink-0 transition-transform {collapsed ? '-rotate-90' : ''}"
+            class="shrink-0 transition-transform {collapsed ? 'rotate-90' : ''}"
           />
         </button>
       {/if}
