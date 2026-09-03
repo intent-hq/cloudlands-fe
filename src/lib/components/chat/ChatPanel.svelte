@@ -1278,6 +1278,8 @@
   // intermediate keystrokes don't trigger a full rewalk + turn re-render cascade.
   let debouncedSearchQuery = $state('');
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  type PendingSearchWork = { bindingKey: string };
+  let pendingSearchWork: PendingSearchWork | null = null;
   const SEARCH_DEBOUNCE_MS = 150;
   // Number of match-neighbors (before + after the current index) to force-render
   // via LazyTurn in addition to the current match's turn. Keeps initial search
@@ -1622,6 +1624,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (debouncedSearchQuery !== searchQuery) {
       debouncedSearchQuery = searchQuery;
     }
@@ -1637,6 +1640,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     showSearch = false;
     searchQuery = '';
     debouncedSearchQuery = '';
@@ -1660,24 +1664,50 @@
   // Handle search input changes — debounce the expensive match derivation so
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
+  function searchBindingKey(): string {
+    return `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  }
+
+  function armPendingSearch(work: PendingSearchWork) {
+    if (searchDebounceTimer !== null) return;
+    const timer = setTimeout(() => {
+      if (searchDebounceTimer !== timer) return;
+      searchDebounceTimer = null;
+      if (
+        isComponentDestroyed ||
+        !isActive ||
+        !showSearch ||
+        pendingSearchWork !== work ||
+        work.bindingKey !== searchBindingKey()
+      ) {
+        return;
+      }
+      pendingSearchWork = null;
+      if (debouncedSearchQuery === searchQuery) return;
+      debouncedSearchQuery = searchQuery;
+      triggerHighlight();
+    }, SEARCH_DEBOUNCE_MS);
+    searchDebounceTimer = timer;
+  }
+
   function handleSearchInput() {
     if (!isActive) return;
     currentSearchIndex = 0;
+    if (debouncedSearchQuery !== searchQuery) searchHighlightRequest += 1;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (!searchQuery.trim()) {
       debouncedSearchQuery = '';
       triggerHighlight();
       return;
     }
-    searchDebounceTimer = setTimeout(() => {
-      if (!isActive) return;
-      searchDebounceTimer = null;
-      debouncedSearchQuery = searchQuery;
-      triggerHighlight();
-    }, SEARCH_DEBOUNCE_MS);
+    if (debouncedSearchQuery === searchQuery) return;
+    const work = { bindingKey: searchBindingKey() };
+    pendingSearchWork = work;
+    armPendingSearch(work);
   }
 
   function openSearchFromSelection() {
@@ -1689,6 +1719,7 @@
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
+      pendingSearchWork = null;
       searchQuery = selectedText;
       debouncedSearchQuery = selectedText;
       currentSearchIndex = 0;
@@ -1703,11 +1734,31 @@
     });
   }
 
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastSearchBindingKey = searchBindingKey();
   $effect(() => {
-    if (isActive) return;
-    searchHighlightRequest += 1;
-    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
+    const bindingKey = searchBindingKey();
+    if (bindingKey !== lastSearchBindingKey) {
+      lastSearchBindingKey = bindingKey;
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      pendingSearchWork = null;
+      return;
+    }
+    if (!isActive) {
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      return;
+    }
+    const work = pendingSearchWork;
+    if (!work) return;
+    if (!showSearch || searchQuery === debouncedSearchQuery || work.bindingKey !== bindingKey) {
+      pendingSearchWork = null;
+      return;
+    }
+    armPendingSearch(work);
   });
 
   // Context items for the input
@@ -4531,6 +4582,8 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
+    searchHighlightRequest += 1;
+    pendingSearchWork = null;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;

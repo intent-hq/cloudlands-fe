@@ -412,6 +412,15 @@ function optimisticUserMessage(appMessageId: string, text: string) {
   };
 }
 
+function searchableAssistant(id: string, text: string) {
+  return {
+    id,
+    role: 'assistant',
+    contentBlocks: [{ type: 'text', text }],
+    timestamp: '2026-01-01T00:00:00.000Z',
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -426,6 +435,36 @@ function flushFrame() {
   const pending = frames;
   frames = [];
   for (const frame of pending) frame.callback(performance.now());
+}
+
+function installSearchHighlightSpy() {
+  const deleteHighlight = vi.fn();
+  Object.defineProperty(globalThis.CSS, 'highlights', {
+    configurable: true,
+    value: { delete: deleteHighlight, get: vi.fn(), set: vi.fn() },
+  });
+  return () => deleteHighlight.mock.calls.filter(([name]) => name === 'search-results').length;
+}
+
+async function openChatSearch(): Promise<HTMLInputElement> {
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: 'f',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  await tick();
+  return screen.getByRole('search').querySelector('input') as HTMLInputElement;
+}
+
+async function settleSearchHighlight() {
+  await vi.advanceTimersByTimeAsync(150);
+  await tick();
+  await tick();
+  while (frames.length > 0) flushFrame();
+  await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -516,6 +555,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -1693,6 +1733,264 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(setTimeoutSpy.mock.calls.filter(([, delay]) => delay === 400).length).toBeGreaterThan(
       schedulesBeforeReactivate,
     );
+  });
+
+  it('restarts a pending search debounce when a retained panel reactivates', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'reactivation needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByText('1 / 1')).toBeNull();
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('keeps one restartable search through rapid activation changes', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'rapid needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(highlightPasses()).toBe(0);
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('does not restart search after it closes while inactive', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'closed needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await fireEvent.keyDown(search, { key: 'Escape' });
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(highlightPasses()).toBe(0);
+  });
+
+  it('drops an inactive search restart when the agent binding changes', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'old needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-b',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    mocks.agentMessages.set([searchableAssistant('message-b', 'needle final')]);
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-b',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByText('1 / 1')).toBeNull();
+    expect(highlightPasses()).toBe(0);
+
+    await fireEvent.input(screen.getByRole('search').querySelector('input')!, {
+      target: { value: 'final' },
+    });
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('invalidates a late highlight generation as soon as a newer query arrives', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'old old final')]);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'old' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    await tick();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+
+    await fireEvent.input(search, { target: { value: 'final' } });
+    while (frames.length > 0) flushFrame();
+    await Promise.resolve();
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('clears restartable search work when the query returns to the published value', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle other')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await settleSearchHighlight();
+    expect(highlightPasses()).toBe(1);
+
+    await fireEvent.input(search, { target: { value: 'other' } });
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('invalidates a cleared search timer callback when destroyed', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+    const searchTimerCall = setTimeoutSpy.mock.calls.findLastIndex(([, delay]) => delay === 150);
+    expect(searchTimerCall).toBeGreaterThanOrEqual(0);
+    const staleCallback = setTimeoutSpy.mock.calls[searchTimerCall]?.[0] as () => void;
+
+    view.unmount();
+    staleCallback();
+    await tick();
+    while (frames.length > 0) flushFrame();
+    expect(highlightPasses()).toBe(0);
   });
 
   it('cancels pending turn highlights and open-message frames while inactive', async () => {
