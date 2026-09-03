@@ -98,6 +98,8 @@ describe('CatalogScene', () => {
           loading: {
             props: buttonPreview.states.loading.props,
             setup: () => {
+              expect(screen.getByRole('button', { name: 'Continue' })).not.toBeNull();
+              expect(screen.queryByRole('button', { name: 'Saving' })).toBeNull();
               setupLoading();
               return disposeLoading;
             },

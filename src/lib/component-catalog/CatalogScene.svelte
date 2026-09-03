@@ -126,24 +126,24 @@
         stateName = resolved.name;
         renderedScenes.push({ name: resolved.name, state: resolved.state });
       }
-      try {
-        for (const rendered of renderedScenes) {
+      Preview = loaded.component;
+      for (const rendered of renderedScenes) {
+        try {
           const dispose = rendered.state.setup?.();
           if (dispose) disposeSetups.push(dispose);
+        } catch (setupError) {
+          failScene('setup', setupError);
+          return;
         }
-      } catch (setupError) {
-        failScene('setup', setupError);
-        return;
+        scenes = [...scenes, rendered];
+        try {
+          await tick();
+        } catch (preparationError) {
+          failScene('preparation', preparationError);
+          return;
+        }
+        if (cancelled) return;
       }
-      scenes = renderedScenes;
-      Preview = loaded.component;
-      try {
-        await tick();
-      } catch (preparationError) {
-        failScene('preparation', preparationError);
-        return;
-      }
-      if (cancelled) return;
 
       try {
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
