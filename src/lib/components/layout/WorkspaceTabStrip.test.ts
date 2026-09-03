@@ -901,15 +901,31 @@ describe('WorkspaceTabStrip', () => {
       name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
     });
     const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    Object.defineProperty(strip, 'scrollLeft', { value: 120, writable: true });
+    let scrollLeft = 120;
+    const scrollLeftSetter = vi.fn((value: number) => {
+      scrollLeft = value;
+    });
+    Object.defineProperty(strip, 'scrollLeft', {
+      configurable: true,
+      get: () => scrollLeft,
+      set: scrollLeftSetter,
+    });
+    Object.defineProperties(strip, {
+      scrollWidth: { value: 800, configurable: true },
+      clientWidth: { value: 300, configurable: true },
+    });
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
     // Active tab scrolled out past the strip's left edge by the user.
     activeTab.getBoundingClientRect = () => ({ left: 20, right: 90, width: 70 }) as DOMRect;
     onActiveTabBoundsChange.mockClear();
 
     await fireEvent.scroll(strip);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
 
     expect(strip.scrollLeft).toBe(120);
+    expect(scrollLeftSetter).not.toHaveBeenCalled();
     expect(onActiveTabBoundsChange).toHaveBeenCalledWith(null);
   });
 

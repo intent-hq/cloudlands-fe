@@ -170,6 +170,7 @@
   // mask stays put while the tab slides. Poll via rAF for the full layout
   // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
+  const activeTabBoundsReporters = new Set<() => void>();
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
   let dragTracking = false;
@@ -268,6 +269,7 @@
       );
       hasHiddenTabsLeft = fadeState.left;
       hasHiddenTabsRight = fadeState.right;
+      activeTabBoundsReporters.forEach((report) => report());
     };
     updateOverflow();
     const observer = new ResizeObserver(updateOverflow);
@@ -460,6 +462,7 @@
     window.addEventListener('resize', scheduleClampAndReport);
     strip?.addEventListener('scroll', scheduleBoundsReport);
     activeTabBoundsPollers.add(scheduleClampAndReport);
+    activeTabBoundsReporters.add(scheduleBoundsReport);
     scheduleClampAndReport();
 
     return {
@@ -478,6 +481,7 @@
         cancelRead?.();
         cancelWrite?.();
         activeTabBoundsPollers.delete(scheduleClampAndReport);
+        activeTabBoundsReporters.delete(scheduleBoundsReport);
         resizeObserver.disconnect();
         window.removeEventListener('resize', scheduleClampAndReport);
         strip?.removeEventListener('scroll', scheduleBoundsReport);
