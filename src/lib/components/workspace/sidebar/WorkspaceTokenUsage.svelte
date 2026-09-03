@@ -570,7 +570,7 @@
           </div>
           {#if visibleCompositionRows.length > 0}
             <div
-              class="composition-strip mb-5 flex h-2.5 w-full min-w-0 overflow-hidden"
+              class="composition-strip mb-5 flex h-2 w-full min-w-0 overflow-hidden"
               role="img"
               aria-label={compositionSummary}
             >
@@ -593,19 +593,29 @@
           </div>
           <dl>
             {#each compositionRows as row (row.id)}
-              <div class="composition-row token-composition-row min-w-0 py-1">
+              <div
+                class="composition-row token-composition-row min-w-0 py-1"
+                data-zero={row.tokens === 0 ? 'true' : undefined}
+              >
                 <dt
-                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal text-foreground"
+                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal {row.tokens ===
+                  0
+                    ? 'text-muted-foreground'
+                    : 'text-foreground'}"
                 >
                   <span
                     class="composition-key size-1.5 shrink-0 rounded-full"
                     data-metric={row.id}
+                    data-zero={row.tokens === 0 ? 'true' : undefined}
                     aria-hidden="true"
                   ></span>
                   <span class="min-w-0 truncate">{row.label}</span>
                 </dt>
                 <dd
-                  class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
+                  class="composition-value text-right text-sm font-normal tabular-nums {row.tokens ===
+                  0
+                    ? 'text-muted-foreground'
+                    : 'text-foreground'}"
                 >
                   <AnimatedNumber
                     value={row.tokens}
@@ -701,7 +711,7 @@
                       </span>
                     </div>
                     <ol
-                      class="breakdown-stack flex h-2.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                      class="breakdown-stack flex h-2 w-full min-w-0 overflow-hidden bg-muted/60"
                       role="radiogroup"
                       aria-labelledby={`${detailsId}-agents`}
                     >
@@ -776,7 +786,7 @@
                       </span>
                     </div>
                     <ol
-                      class="breakdown-stack flex h-2.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                      class="breakdown-stack flex h-2 w-full min-w-0 overflow-hidden bg-muted/60"
                       role="radiogroup"
                       aria-labelledby={`${detailsId}-models`}
                     >
@@ -907,6 +917,10 @@
   :global(.dark) .composition-strip-segment[data-metric='input'],
   :global(.dark) .composition-key[data-metric='input'] {
     background: hsl(213 88% 68% / 84%);
+  }
+
+  .composition-key[data-zero='true'] {
+    background: hsl(var(--muted-foreground));
   }
 
   .breakdown-stack-item:first-child {
