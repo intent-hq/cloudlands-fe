@@ -349,7 +349,10 @@
     <header class="min-w-0 px-6 pt-5" class:pb-5={!hasBodyContent} data-workspace-hover-card-header>
       <div class="min-w-0" data-workspace-hover-card-identity>
         <div class="flex min-w-0 items-center justify-between gap-4">
-          <h2 class="type-display min-w-0 truncate text-foreground" data-workspace-hover-card-title>
+          <h2
+            class="type-body min-w-0 truncate font-medium! text-foreground"
+            data-workspace-hover-card-title
+          >
             {workspace.title || m.workspace_links_untitled_label()}
           </h2>
           <span
