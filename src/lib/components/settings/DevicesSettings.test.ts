@@ -87,6 +87,7 @@ const local: ConnectionRecord = {
   fingerprint: null,
   isLocal: true,
   status: 'connected',
+  detectedDeviceKind: 'laptop',
 };
 
 const remote: ConnectionRecord = {
@@ -98,6 +99,7 @@ const remote: ConnectionRecord = {
   fingerprint: 'AA:BB',
   isLocal: false,
   status: 'not-open',
+  detectedDeviceKind: 'macStudio',
 };
 
 describe('DevicesSettings', () => {
@@ -530,6 +532,46 @@ describe('DevicesSettings', () => {
       expect.objectContaining({ type: expect.stringMatching(/theme/i) }),
     );
     expect(mocks.rotate).not.toHaveBeenCalled();
+  });
+
+  it('shows the detected automatic icon and persists a remote override', async () => {
+    render(DevicesSettings);
+
+    await openAction('Edit');
+    const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
+    const picker = within(form).getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Automatic (Mac Studio)');
+
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.click(within(form).getByRole('button', { name: 'Update' }));
+
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'remote-1', deviceIcon: 'pottedPlant' }),
+    );
+  });
+
+  it('persists a local icon override through connections:update', async () => {
+    mocks.connections = [local];
+    render(DevicesSettings);
+
+    const picker = screen.getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Automatic (Laptop)');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({
+        id: 'local',
+        label: 'This machine',
+        accent: null,
+        deviceIcon: 'pottedPlant',
+      }),
+    );
   });
 
   it.each(['rose', 'orange'] as const)(

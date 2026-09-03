@@ -91,6 +91,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
+  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -202,6 +203,7 @@
       ? 'bg-yellow-500'
       : healthColors[$health$],
   );
+  const iconColorClass = $derived(dotColorClass.replace(/^bg-/, 'text-'));
 
   const triggerLabel = $derived(
     $health$ === 'healthy' && versionMismatch
@@ -433,7 +435,13 @@
       {#if currentRemoteName}
         <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
       {/if}
-      <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
+      <span class="flex size-2 shrink-0 items-center justify-center" aria-hidden="true">
+        <DeviceIcon
+          record={$currentConnection$ ?? { os: $stats$?.os }}
+          size={8}
+          class={iconColorClass}
+        />
+      </span>
     </button>
   {/snippet}
 
@@ -785,6 +793,7 @@
                   data-connection-accent={accent}
                 ></span>
               {/if}
+              <DeviceIcon record={conn} size={16} class="text-foreground" />
               <span class="min-w-0 flex-1 truncate">
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
