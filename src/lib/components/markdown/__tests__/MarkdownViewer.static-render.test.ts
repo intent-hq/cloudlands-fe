@@ -85,4 +85,28 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('code.language-diff')?.textContent).toContain('-old\n+new');
     expect(container.querySelector('[data-type="diff-block"]')).toBeNull();
   });
+
+  it('mounts a video component for standalone workspace video markdown', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/.demo-artifacts/demo.webm)',
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('[data-chat-video]')).toBeTruthy());
+  });
+
+  it('renders unsupported workspace media as a link instead of an image', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/.demo-artifacts/demo.mov)',
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('a')).toBeTruthy());
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('[data-chat-video]')).toBeNull();
+  });
 });

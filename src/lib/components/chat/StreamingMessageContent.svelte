@@ -431,13 +431,14 @@
     setupScript: { name: string; description: string; content: string } | null;
   };
 
-  // Cache for parsed text blocks - keyed by text content
+  // Cache for parsed text blocks - parsing also resolves workspace-relative media.
   let parsedTextCache = new Map<string, ParsedTextResult>();
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
+    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
     // Check cache first
-    const cached = parsedTextCache.get(text);
+    const cached = parsedTextCache.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -447,13 +448,13 @@
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
 
     // Cache the result (flatten accumulated streaming text so the Map retains flat strings)
-    parsedTextCache.set(flatstr(text), result);
+    parsedTextCache.set(cacheKey, result);
 
     // Limit cache size (LRU-style: remove oldest entries)
     if (parsedTextCache.size > MAX_CACHE_SIZE) {
@@ -682,6 +683,9 @@
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
     />
+  {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
+    {@const video = parsedBlock.metadata.videoData}
+    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}
