@@ -37,11 +37,13 @@ type GeometryWindow = Window & {
  *
  * `settle` waits for every finite animation under the split root to finish.
  * Under `prefers-reduced-motion: reduce` the app forces a 0.01ms
- * `transition-duration` on every element, so each inline `flex` write becomes
- * a CSS transition that only lands on a later frame: a synchronous read (or a
- * fixed frame count) can observe the previous or a mid-transition basis.
- * `getAnimations()` flushes style, so the transitions created by a write in
- * the current task are already visible to it.
+ * `transition-duration` on every element. `body.panel-resizing` disables
+ * transitions while the pointer is down, but the release write happens in the
+ * same task as that class is removed, so it becomes a CSS transition that only
+ * lands on a later frame: a synchronous read (or a fixed frame count) can
+ * observe the previous or a mid-transition basis. `getAnimations()` flushes
+ * style, so the transitions created by a write in the current task are
+ * already visible to it.
  */
 async function installGeometryReader(page: Page) {
   await page.evaluate(() => {
@@ -174,11 +176,13 @@ function describeGeometryMismatch(actual: Geometry, widths: number[], zoomFactor
 }
 
 /**
- * Waits for the committed geometry. Layout commits reach the DOM through the
- * store's cadenced selector delivery (throttled ticks scheduled via
- * setTimeout + requestAnimationFrame) and the viewport measurement's batched
- * layout read, so no fixed frame count is a valid "committed" signal; the
- * committed geometry itself is.
+ * Polls until the geometry converges to `widths`. Layout commits reach the
+ * DOM through the store's cadenced selector delivery (throttled ticks
+ * scheduled via setTimeout + requestAnimationFrame) and the viewport
+ * measurement's batched layout read, so no fixed frame count is a valid
+ * "committed" signal; the expected geometry itself is. Whether the store
+ * commit itself was persisted is proven by the reload reads, which remount
+ * from the store alone.
  */
 async function expectSettledGeometry(
   component: Locator,
@@ -194,6 +198,25 @@ async function expectSettledGeometry(
     .toEqual([]);
   if (!settled) throw new Error('Geometry never settled');
   return settled;
+}
+
+/**
+ * Post-release variant of `expectSettledGeometry`. On release the container
+ * pins each child's inline `flex` to the release widths and drops that pin in
+ * an animation frame it requests during the release task; a frame requested
+ * afterwards runs after it (registration order), and the pin drop re-renders
+ * the children from the store-delivered widths. Starting the poll only after
+ * that frame means the geometry it accepts is the store-driven layout, not the
+ * release pin the `pointerUp` snapshot already read.
+ */
+async function expectCommittedGeometry(
+  page: Page,
+  component: Locator,
+  widths: number[],
+  zoomFactor: number,
+): Promise<Geometry> {
+  await nextFrames(page, 1);
+  return expectSettledGeometry(component, widths, zoomFactor);
 }
 
 async function dragDivider(
@@ -219,7 +242,7 @@ async function dragDivider(
   const preview = await readSettledGeometry(component);
   await page.mouse.up();
   const pointerUp = await takePointerUpSnapshot(page);
-  const settled = await expectSettledGeometry(component, committedWidths, zoomFactor);
+  const settled = await expectCommittedGeometry(page, component, committedWidths, zoomFactor);
   return { preview, pointerUp, settled };
 }
 
@@ -262,7 +285,7 @@ async function dragDividerBeforeNextFrame(
     },
     { dividerIndex, visualDelta: cssDelta * zoomFactor },
   );
-  const settled = await expectSettledGeometry(component, committedWidths, zoomFactor);
+  const settled = await expectCommittedGeometry(page, component, committedWidths, zoomFactor);
   return { ...immediate, settled };
 }
 

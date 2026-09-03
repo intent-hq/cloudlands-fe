@@ -9,21 +9,24 @@ test.setTimeout(120_000);
  * animation in the subtree finished (Svelte transitions are WAAPI animations
  * that Svelte cancels on completion, hence the catch; looping status
  * indicators never finish and are skipped), then a layout flush so the read
- * sees the settled frame instead of an arbitrary wall-clock delay.
+ * sees the settled frame instead of an arbitrary wall-clock delay. The
+ * animation wait loops because a finished animation can start another one
+ * (an intro chained after an outro), which a single pass would miss.
  */
 async function settleLayout(scope: Locator) {
   await scope.evaluate(async (element) => {
     await document.fonts.ready;
-    await Promise.all(
-      element
+    for (;;) {
+      const running = element
         .getAnimations({ subtree: true })
         .filter(
           (animation) =>
             animation.playState === 'running' &&
             Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Infinity),
-        )
-        .map((animation) => animation.finished.catch(() => undefined)),
-    );
+        );
+      if (running.length === 0) break;
+      await Promise.all(running.map((animation) => animation.finished.catch(() => undefined)));
+    }
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
