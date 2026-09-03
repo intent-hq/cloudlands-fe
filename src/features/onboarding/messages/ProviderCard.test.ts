@@ -167,6 +167,9 @@ describe('ProviderCard needsLogin derivation', () => {
 });
 
 describe('ProviderCard identity line', () => {
+  const identityLine = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('div')).find((el) => el.textContent?.trim().startsWith('as '));
+
   it('renders the daemon-supplied identity next to the connected state for a ready card', () => {
     const { container } = render(ProviderCard, {
       props: {
@@ -175,10 +178,11 @@ describe('ProviderCard identity line', () => {
         selected: false,
       },
     });
-    expect(container.textContent).toContain('dev@example.com · Example Org');
+    expect(container.textContent).toContain('Connected');
+    expect(identityLine(container)?.textContent).toContain('dev@example.com · Example Org');
   });
 
-  it('renders no identity line when the daemon sent none', () => {
+  it('renders the bare connected state when the daemon sent no identity', () => {
     const { container } = render(ProviderCard, {
       props: {
         ...baseProps(),
@@ -186,7 +190,8 @@ describe('ProviderCard identity line', () => {
         selected: false,
       },
     });
-    expect(container.textContent).not.toContain('@');
+    expect(container.textContent).toContain('Connected');
+    expect(identityLine(container)).toBeUndefined();
   });
 
   it('does not render the identity line while the card needs login', () => {
@@ -197,6 +202,9 @@ describe('ProviderCard identity line', () => {
         selected: false,
       },
     });
+    expect(container.textContent).toContain('Log in');
+    expect(container.textContent).not.toContain('Connected');
+    expect(identityLine(container)).toBeUndefined();
     expect(container.textContent).not.toContain('dev@example.com');
   });
 });

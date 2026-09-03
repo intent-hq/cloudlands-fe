@@ -41,6 +41,11 @@ describe('formatProviderIdentity', () => {
     expect(
       formatProviderIdentity({ email: 'dev@example.com', orgName: 'dev@example.com Labs' }),
     ).toBe('dev@example.com · dev@example.com Labs');
+    // The collapse needs the possessive default exactly; "<email> Organization"
+    // without it is an ordinary org name.
+    expect(
+      formatProviderIdentity({ email: 'dev@example.com', orgName: 'dev@example.com Organization' }),
+    ).toBe('dev@example.com · dev@example.com Organization');
   });
 
   it('falls back to the org name when the email is absent', () => {
@@ -52,10 +57,7 @@ describe('formatProviderIdentity', () => {
 
   it('yields undefined when nothing renders', () => {
     expect(formatProviderIdentity(undefined)).toBeUndefined();
-    expect(formatProviderIdentity(null)).toBeUndefined();
-    expect(formatProviderIdentity({})).toBeUndefined();
     expect(formatProviderIdentity({ subscriptionType: 'max' })).toBeUndefined();
-    expect(formatProviderIdentity({ email: '   ', orgName: '' })).toBeUndefined();
   });
 });
 

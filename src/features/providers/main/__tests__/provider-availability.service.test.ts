@@ -563,6 +563,48 @@ describe('provider availability service', () => {
     });
   });
 
+  it('single recheck attaches the protocol-9.4 identity line and omits it without one', async () => {
+    routeBackend({
+      'host.providerAuthStatus': {
+        providers: [
+          {
+            id: 'claude-code',
+            authenticated: true,
+            identity: { email: 'dev@example.com', orgName: 'Example Org', subscriptionType: 'max' },
+          },
+        ],
+      },
+    });
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+      name === 'claude' || name === 'npx' ? `/usr/local/bin/${name}` : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const withIdentity = await handler({}, 'claude-code');
+    expect(withIdentity).toEqual({
+      success: true,
+      providerId: 'claude-code',
+      data: { available: true, authenticated: true, authDetails: 'dev@example.com · Example Org' },
+    });
+
+    // The same recheck against a daemon that sent no identity (pre-9.4 shape)
+    // yields no authDetails key at all.
+    routeBackend({
+      'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
+    });
+    const withoutIdentity = await handler({}, 'claude-code');
+    expect(withoutIdentity).toEqual({
+      success: true,
+      providerId: 'claude-code',
+      data: { available: true, authenticated: true },
+    });
+    expect(withoutIdentity.data).not.toHaveProperty('authDetails');
+  });
+
   it('single recheck resolves unsloth off both opencode and unsloth binaries without an auth probe', async () => {
     routeBackend({});
     mocks.findBinaryStrict.mockImplementation(async (name: string) =>
