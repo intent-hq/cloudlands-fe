@@ -843,9 +843,10 @@ export async function replaceSecret(
  * first; `hosts` persists only the deduplicated extras. A no-op for unknown
  * ids and for records whose `detectHosts` is `false` (the user opted out of
  * IP detection at add time). Fail-soft by design: candidate hosts are a
- * resilience nicety, never a hard requirement.
+ * resilience nicety, never a hard requirement. Resolves `true` only when the
+ * persisted list actually changed (so callers can gate a broadcast on it).
  */
-export async function setHosts(id: string, hosts: string[]): Promise<void> {
+export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
   const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to update
@@ -864,6 +865,7 @@ export async function setHosts(id: string, hosts: string[]): Promise<void> {
     return true;
   });
   if (changed) notifyMutated();
+  return changed;
 }
 
 /**

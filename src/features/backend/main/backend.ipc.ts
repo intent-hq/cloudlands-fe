@@ -1295,9 +1295,8 @@ function extractTcAddress(result: unknown): string | null {
  * surface (PROTOCOL §system.status): it keeps bound loopback entries and is
  * empty while the listener is down, so loopback is filtered out first and an
  * empty result leaves the stored list untouched (never wiping candidates on a
- * listener-down answer). A
- * SUCCESSFUL response lacking a boolean field (a daemon too old to
- * report it — e.g. the machine's daemon was replaced/downgraded) is a
+ * listener-down answer). A SUCCESSFUL response lacking a boolean field (a
+ * daemon too old to report it — e.g. the machine's daemon was replaced/downgraded) is a
  * conclusive "unknown" and clears any previously-stored flag to `null`, so a
  * stale `true` never keeps offering Update against a daemon whose capability
  * is no longer known (and likewise a stale `tcAddress` never keeps dialing a
@@ -1327,12 +1326,12 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
       // Re-check after the awaited writes above: a disconnect/replacement
       // during them must not let the disposed client's answer overwrite the
       // replacement connection's candidate list.
-      const hostsRefreshed =
+      const hostsChanged =
         ips.length > 0 &&
         (await connectionsStore.getDetectHosts(id)) &&
-        backendClients.get(id) === client;
-      if (hostsRefreshed) await connectionsStore.setHosts(id, ips);
-      if (changed || tcChanged || hostsRefreshed) await broadcastConnectionsChanged();
+        backendClients.get(id) === client &&
+        (await connectionsStore.setHosts(id, ips));
+      if (changed || tcChanged || hostsChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote updateSupported flag', {

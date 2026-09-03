@@ -1356,11 +1356,11 @@ describe('connections-store', () => {
 
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
     const store = await import('../connections-store');
-    await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBeUndefined();
+    await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBe(false);
 
     const optedOut = await store.add({ ...sampleConn, detectHosts: false });
     expect(await store.getDetectHosts(optedOut.id)).toBe(false);
-    await store.setHosts(optedOut.id, ['10.0.0.5']);
+    await expect(store.setHosts(optedOut.id, ['10.0.0.5'])).resolves.toBe(false);
     const remote = (await store.list()).find((c) => c.id === optedOut.id);
     expect(remote?.hosts).toEqual(['192.168.1.10']);
   });
@@ -1408,7 +1408,7 @@ describe('connections-store keychain sync surface', () => {
       const store = await import('../connections-store');
       const rec = await store.add(sampleConn);
       await store.setHostname(rec.id, 'studio.local');
-      await store.setHosts(rec.id, ['10.0.0.5']);
+      await expect(store.setHosts(rec.id, ['10.0.0.5'])).resolves.toBe(true);
       await store.__drainWriteChainForTesting();
 
       const listener = vi.fn();
@@ -1419,7 +1419,8 @@ describe('connections-store keychain sync surface', () => {
       // newer remote edit in keychain sync.
       vi.setSystemTime(1_700_000_005_000);
       await store.setHostname(rec.id, 'studio.local');
-      await store.setHosts(rec.id, [' 10.0.0.5 ']); // dedupes to the same list
+      // Dedupes to the same list: reports "unchanged" so callers skip their broadcast.
+      await expect(store.setHosts(rec.id, [' 10.0.0.5 '])).resolves.toBe(false);
       await store.__drainWriteChainForTesting();
 
       // Clock stays where the initial same-tick add → setHostname → setHosts

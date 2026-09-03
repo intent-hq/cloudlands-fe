@@ -42,7 +42,7 @@ const {
   mockSetDaemonVersion: vi.fn(async () => false),
   mockSetUpdateSupported: vi.fn(async () => false),
   mockSetTcAddress: vi.fn(async () => false),
-  mockSetHosts: vi.fn(async () => {}),
+  mockSetHosts: vi.fn(async () => true),
   mockGetDetectHosts: vi.fn(async () => true),
   // `system.status` result the fake client answers with; tests override.
   systemStatus: { value: {} as unknown },
@@ -898,7 +898,7 @@ describe('backend.ipc remote localIps capture on hello', () => {
     mod.disconnectBackendClient('conn-remote');
   });
 
-  it('broadcasts connections:changed when only the host list was refreshed', async () => {
+  it('broadcasts connections:changed only when the persisted host list actually changed', async () => {
     systemStatus.value = { localIps: ['172.96.161.227'] };
     const { mod, onHelloResult } = await connectRemote();
 
@@ -907,18 +907,30 @@ describe('backend.ipc remote localIps capture on hello', () => {
       { id: 1, isDestroyed: () => false, webContents: { send } } as never,
     ]);
 
-    // updateSupported and tcAddress unchanged → the hosts refresh alone
+    const broadcasts = () => send.mock.calls.filter(([c]) => c === 'connections:changed').length;
+
+    // updateSupported and tcAddress unchanged → a changed hosts list alone
     // still pushes the refreshed list so the edit panel's "Detected
     // addresses" updates.
     mockSetUpdateSupported.mockResolvedValueOnce(false);
     mockSetTcAddress.mockResolvedValueOnce(false);
+    mockSetHosts.mockResolvedValueOnce(true);
     onHelloResult({ server: { version: '0.9.0' } });
     await vi.waitFor(() => {
-      expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227']);
-      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
-        0,
-      );
+      expect(mockSetHosts).toHaveBeenCalledTimes(1);
+      expect(broadcasts()).toBe(1);
     });
+    expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227']);
+
+    // The routine every-connect hello with an identical list: the store
+    // skips the write and nothing is broadcast (no per-reconnect IPC churn).
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    mockSetTcAddress.mockResolvedValueOnce(false);
+    mockSetHosts.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetHosts).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(broadcasts()).toBe(1);
 
     mod.disconnectBackendClient('conn-remote');
   });
