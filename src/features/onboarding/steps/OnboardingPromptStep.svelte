@@ -87,8 +87,9 @@
     selectedModel?: string | undefined;
     /** Whether the user explicitly overrode the model (vs the resolved default). */
     modelWasOverridden?: boolean;
-    /** Callback when the user picks a model. */
-    onModelChange?: (model: string) => void;
+    /** Callback when the user picks a model — `pick` carries the resolved
+     * bare model id + provider legs (see ModelPicker's onModelChange). */
+    onModelChange?: (model: string, pick?: { providerId: string; modelId: string }) => void;
 
     // Suggestions
     visibleSuggestions: string[];

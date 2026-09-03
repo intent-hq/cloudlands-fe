@@ -19,7 +19,7 @@
  * Untouched servers never produce an `update`, so their keychain-held `env` /
  * `headers` secrets (redacted on the wire) are preserved; an *edited* server is
  * replaced wholesale per §5.22 semantics.
- *   - `providers.active` / `providers.enabled`            ↔ provider settings
+ *   - `model.defaultProvider` / `providers.enabled`       ↔ provider settings
  *   - `quickActions.defaultModel` / `.typeOverrides` /
  *     `.providerSettings`                                 ↔ quick actions
  *   - `git.autoCommit`                                    ↔ workspace settings
@@ -193,7 +193,7 @@ export class LiveSettingsClient implements SettingsClient {
 
   async getProviderSettings(): Promise<PersistedProviderSettings | null> {
     const settings = await this.list();
-    const activeProviderId = readString(settings, 'providers.active');
+    const activeProviderId = readString(settings, 'model.defaultProvider');
     const enabledProviders = readObject(settings, 'providers.enabled') as Record<
       string,
       boolean
@@ -208,7 +208,7 @@ export class LiveSettingsClient implements SettingsClient {
   async setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult> {
     return runMutation('settings.update', {
       changes: changesFrom({
-        'providers.active': settings.activeProviderId,
+        'model.defaultProvider': settings.activeProviderId,
         'providers.enabled': settings.enabledProviders,
       }),
     });

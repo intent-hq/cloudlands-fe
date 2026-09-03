@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => {
     initializerHydrated: false,
     persistedOnboardingFormState: null as Record<string, unknown> | null,
     // Store-visible active provider for the submit-time default commit
-    // (selectActiveProviderId reads state.providerSettings.activeProviderId).
+    // (selectActiveProviderId reads state.model.defaultProviderId).
     activeProviderId: '',
   };
 });
@@ -71,7 +71,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ providerSettings: { activeProviderId: mocks.activeProviderId } }),
+    state: () => ({ model: { defaultProviderId: mocks.activeProviderId } }),
     dispatch: mocks.dispatch,
   });
 });
@@ -1033,7 +1033,7 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     (
       window as unknown as {
         __mockOnboardingPromptStep: {
-          onModelChange: (model: string) => void;
+          onModelChange: (model: string, pick?: { providerId: string; modelId: string }) => void;
           onSubmit: () => void;
           setInputValue: (value: string) => void;
           setEffectiveDefaultModel: (value: {
@@ -1051,23 +1051,29 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     const result = renderPage();
     selectLocalRepo('/repo/a');
 
-    captured().onModelChange('pi:anthropic/claude-opus-4.7');
+    captured().onModelChange('anthropic/claude-opus-4.7', {
+      providerId: 'pi',
+      modelId: 'anthropic/claude-opus-4.7',
+    });
     await waitFor(() => {
-      expect(textOf(result, 'selected-model')).toBe('pi:anthropic/claude-opus-4.7');
+      expect(textOf(result, 'selected-model')).toBe('anthropic/claude-opus-4.7');
     });
     expect(textOf(result, 'model-was-overridden')).toBe('true');
 
     const selectModelAction = dispatchedActions().find((a) => a.type === 'model/selectModel');
     expect(selectModelAction).toBeDefined();
-    expect(selectModelAction?.payload).toEqual(['pi:anthropic/claude-opus-4.7']);
+    expect(selectModelAction?.payload).toEqual(['anthropic/claude-opus-4.7', 'pi']);
   });
 
-  it('persists the pick in the debounced onboarding form state', async () => {
+  it('persists the pick (bare model + provider) in the debounced onboarding form state', async () => {
     mocks.initializerHydrated = true;
 
     renderPage();
     selectLocalRepo('/repo/a');
-    captured().onModelChange('pi:anthropic/claude-opus-4.7');
+    captured().onModelChange('anthropic/claude-opus-4.7', {
+      providerId: 'pi',
+      modelId: 'anthropic/claude-opus-4.7',
+    });
 
     await waitFor(() => {
       const persistActions = dispatchedActions().filter(
@@ -1075,12 +1081,31 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       );
       const last = persistActions[persistActions.length - 1];
       const formState = last?.payload?.[0] as Record<string, unknown> | undefined;
-      expect(formState?.selectedModel).toBe('pi:anthropic/claude-opus-4.7');
+      expect(formState?.selectedModel).toBe('anthropic/claude-opus-4.7');
+      expect(formState?.selectedProvider).toBe('pi');
       expect(formState?.modelWasOverridden).toBe(true);
     });
   });
 
   it('restores a persisted mid-onboarding pick after hydration', async () => {
+    mocks.initializerHydrated = true;
+    mocks.persistedOnboardingFormState = {
+      projectSelection: null,
+      selectedModel: 'anthropic/claude-opus-4.7',
+      selectedProvider: 'pi',
+      modelWasOverridden: true,
+      step: 'configuring',
+    };
+
+    const result = renderPage();
+
+    await waitFor(() => {
+      expect(textOf(result, 'selected-model')).toBe('anthropic/claude-opus-4.7');
+    });
+    expect(textOf(result, 'model-was-overridden')).toBe('true');
+  });
+
+  it('splits a legacy persisted compound pick (no provider) at the hydration boundary', async () => {
     mocks.initializerHydrated = true;
     mocks.persistedOnboardingFormState = {
       projectSelection: null,
@@ -1092,19 +1117,21 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     const result = renderPage();
 
     await waitFor(() => {
-      expect(textOf(result, 'selected-model')).toBe('pi:anthropic/claude-opus-4.7');
+      expect(textOf(result, 'selected-model')).toBe('anthropic/claude-opus-4.7');
     });
     expect(textOf(result, 'model-was-overridden')).toBe('true');
   });
 
   it('threads the pick through resolveOnboardingModel into workspace.create initialAgent', async () => {
-    const PICKED = 'pi:anthropic/claude-opus-4.7';
-    mocks.resolveModel.mockImplementation(async (_state, userSelectedModel) => ({
-      provider: userSelectedModel ? 'pi' : 'auggie',
-      model: userSelectedModel ?? 'opus4.7',
-      behaviorPrompt: 'coordinator-prompt',
-      specialistId: 'spec-writer',
-    }));
+    const PICKED = 'anthropic/claude-opus-4.7';
+    mocks.resolveModel.mockImplementation(
+      async (_state, userPick?: { model: string; provider?: string }) => ({
+        provider: userPick?.provider ?? 'auggie',
+        model: userPick?.model ?? 'opus4.7',
+        behaviorPrompt: 'coordinator-prompt',
+        specialistId: 'spec-writer',
+      }),
+    );
     mocks.workspaceCreate.mockResolvedValue({
       ok: true,
       data: {
@@ -1120,12 +1147,15 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
 
     renderPage();
     selectLocalRepo('/repo/a');
-    captured().onModelChange(PICKED);
+    captured().onModelChange(PICKED, { providerId: 'pi', modelId: PICKED });
     captured().setInputValue('Build the thing');
     captured().onSubmit();
 
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
-    expect(mocks.resolveModel).toHaveBeenCalledWith(expect.anything(), PICKED);
+    expect(mocks.resolveModel).toHaveBeenCalledWith(expect.anything(), {
+      model: PICKED,
+      provider: 'pi',
+    });
     const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
       initialAgent: { model: string; provider: string; specialist: string };
     };
@@ -1175,7 +1205,7 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     },
   };
 
-  it('commits the default (never-touched) selection at submit: provider + compound model (monorepo#3044)', async () => {
+  it('commits the default (never-touched) selection at submit: provider + bare model (monorepo#3044)', async () => {
     mocks.resolveModel.mockImplementation(async () => ({
       provider: 'auggie',
       model: undefined,
@@ -1198,9 +1228,10 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')?.payload).toEqual([
       'auggie',
     ]);
-    // Bare preview id gets the resolved provider's compound prefix.
+    // Bare preview id is dispatched with the resolved provider leg.
     expect(actions.find((a) => a.type === 'model/selectModel')?.payload).toEqual([
-      'auggie:opus4.7',
+      'opus4.7',
+      'auggie',
     ]);
   });
 
@@ -1251,18 +1282,20 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
   });
 
   it('does not re-commit the provider at submit after an explicit pick (no double-dispatch)', async () => {
-    const PICKED = 'pi:anthropic/claude-opus-4.7';
-    mocks.resolveModel.mockImplementation(async (_state, userSelectedModel) => ({
-      provider: userSelectedModel ? 'pi' : 'auggie',
-      model: userSelectedModel,
-      behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
-    }));
+    const PICKED = 'anthropic/claude-opus-4.7';
+    mocks.resolveModel.mockImplementation(
+      async (_state, userPick?: { model: string; provider?: string }) => ({
+        provider: userPick?.provider ?? 'auggie',
+        model: userPick?.model,
+        behaviorPrompt: undefined,
+        specialistId: 'spec-writer',
+      }),
+    );
     mocks.workspaceCreate.mockResolvedValue(okCreateResult);
 
     renderPage();
     selectLocalRepo('/repo/a');
-    captured().onModelChange(PICKED);
+    captured().onModelChange(PICKED, { providerId: 'pi', modelId: PICKED });
     // The pick-time dispatch already persisted — the submit path must not
     // dispatch a second commit for the explicit pick.
     mocks.dispatch.mockClear();

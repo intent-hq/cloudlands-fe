@@ -59,15 +59,16 @@ import type { UserPreferencesState } from '$store/renderer/slices/user-preferenc
 import type { ProviderSettingsState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 /**
- * The daemon-persisted subset of provider settings (`providers.active` /
- * `providers.enabled`, PROTOCOL §5.12). The remaining ProviderSettingsState
- * fields are registry snapshots hydrated from `providers.catalog`, never
- * persisted through this seam.
+ * The daemon-persisted subset of provider settings (`model.defaultProvider` /
+ * `providers.enabled`, PROTOCOL §5.12). `activeProviderId` carries the default
+ * provider — the provider leg of the default model triple (the deprecated
+ * `providers.active` key is no longer read or written). The remaining
+ * ProviderSettingsState fields are registry snapshots hydrated from
+ * `providers.catalog`, never persisted through this seam.
  */
-export type PersistedProviderSettings = Pick<
-  ProviderSettingsState,
-  'activeProviderId' | 'enabledProviders'
->;
+export type PersistedProviderSettings = Pick<ProviderSettingsState, 'enabledProviders'> & {
+  activeProviderId: string;
+};
 import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
 import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import type { GitHubUser } from '$features/github-auth/types';

@@ -34,45 +34,19 @@ export const selectAllCatalogProviderIds = store.createSelector(
 
 /**
  * The effective default provider id, derived from user settings (the
- * registry carries no default designation): the provider prefix of the
- * global default model when it is a compound id, else the active provider
- * (`providers.active`). '' when neither resolves — an honestly unresolved
- * state (fresh state, settings not hydrated, or `providers.active` unset).
+ * registry carries no default designation): the default provider mirrored
+ * by the model slice (`model.defaultProvider`). '' when unresolved — an
+ * honest state (fresh state, settings not hydrated, or
+ * `model.defaultProvider` unset).
  * The FE never fabricates a default from the catalog: falling through to
  * the first catalog row would functionally reinstate the removed hardcoded
  * auggie default. Mirrors the daemon's `derived_default_provider`, which
  * resolves unset settings to None (§5.31 gate closed), not a registry row.
- *
- * Once the catalog is hydrated, a prefix that is not a known catalog
- * provider id (malformed/legacy compound string) is ignored and resolution
- * falls through to the next precedence step, so an unknown id never
- * mis-attributes bare model ids downstream.
- *
- * Known divergences from the spec's ideal ordering (accepted, documented on
- * the PR #759 review):
- * - The model lookup is keyed by `activeProviderId`, so when
- *   `providers.active` is unset the persisted global model is never
- *   consulted — a daemon-persisted compound `model.default` without
- *   `providers.active` (older FE / another client) resolves to ''
- *   (unresolved) rather than the model's provider.
- * - In steady state the compound branch is a legacy/transient-state guard,
- *   not the primary path: `providerModels[activeProviderId]` is
- *   write-normalized to the bare form (the model slice mirrors the active
- *   provider as its default), so `includes(':')` only fires on
- *   un-normalized state (pre-hydration persistence, older writers).
+ * Provider provenance lives in the triple's provider leg — model ids in the
+ * store are always bare and never consulted here.
  */
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
-  const catalogLoaded = state.providerCatalog?.loaded ?? false;
-  const catalogIds = state.providerCatalog?.providers.ids ?? [];
-  const activeProviderId = state.providerSettings?.activeProviderId ?? '';
-  const globalModel = activeProviderId
-    ? state.model?.providerModels?.[activeProviderId]
-    : undefined;
-  if (globalModel?.includes(':')) {
-    const { providerId } = splitLegacyCompoundId(globalModel);
-    if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
-  }
-  return activeProviderId;
+  return state.model?.defaultProviderId ?? '';
 });
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
