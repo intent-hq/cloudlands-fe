@@ -161,7 +161,9 @@
   const cardAriaLabel = $derived(
     hasEventSubscriptions || !browserTabsVisible
       ? heading
-      : m.chat_browserTabs_heading({ count: formatInteger(browserTabCount) }),
+      : browserTabCount === 1
+        ? m.chat_browserTabs_heading_one({ count: formatInteger(browserTabCount) })
+        : m.chat_browserTabs_heading_many({ count: formatInteger(browserTabCount) }),
   );
 
   $effect(() => {
@@ -346,7 +348,7 @@
       </div>
     {/if}
     {#if !isolatedPreview}
-      <!-- Parallel "Browser tabs (N)" section: stays visible while the events
+      <!-- Parallel browser-tabs section: stays visible while the events
            disclosure above is collapsed (it has its own expand state). -->
       <div
         class={hasEventSubscriptions ? 'border-t border-border' : ''}

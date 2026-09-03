@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * BrowserTabsRow rendering: collapsed-by-default "Browser tabs (N)" summary
- * counting the agent's owned browser tabs (visible + hidden, monorepo#2857),
- * expanded tab rows, and the click-to-reveal wiring — visible tabs
+ * BrowserTabsRow rendering: an inline single tab or collapsed-by-default
+ * multi-tab summary counting the agent's owned browser tabs (visible + hidden,
+ * monorepo#2857), expanded tab rows, and the click-to-reveal wiring — visible tabs
  * activate + focus via the panel layout manager (sidebar path), hidden tabs
  * reveal into a panel other than the one hosting the conversation, never
  * displacing the conversation tab or moving panel focus.
@@ -110,9 +110,32 @@ describe('BrowserTabsRow', () => {
     seedLayout();
     renderRow();
     const toggle = screen.getByTestId('browser-tabs-summary');
-    expect(screen.getByText('Browser tabs (2)')).toBeTruthy();
+    expect(screen.getByText('2 browser tabs')).toBeTruthy();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('browser-tabs-list')).toBeNull();
+  });
+
+  it('renders one browser tab inline and activates it without a disclosure', async () => {
+    layoutState.panels = {
+      p1: {
+        id: 'p1',
+        activeTabId: 'note-1',
+        tabs: [ownedTab('visible-1', 'Docs'), { id: 'note-1', type: 'note', title: 'Note' }],
+      },
+    };
+    renderRow();
+
+    expect(screen.queryByTestId('browser-tabs-summary')).toBeNull();
+    expect(screen.queryByTestId('browser-tabs-list')).toBeNull();
+    expect(screen.getByTestId('browser-tabs-row').getAttribute('aria-label')).toBe('1 browser tab');
+    const item = screen.getByTestId('browser-tab-item');
+    expect(screen.getByText('http://example.test/visible-1').classList).toContain(
+      'text-muted-foreground',
+    );
+
+    await fireEvent.click(item);
+    expect(setActiveTabMock).toHaveBeenCalledWith('visible-1', 'p1');
+    expect(focusPanelMock).toHaveBeenCalledWith('p1');
   });
 
   it('expands to list rows, marking hidden tabs, and persists across remounts', async () => {

@@ -2,8 +2,9 @@
   /**
    * BrowserTabsRow Component
    *
-   * Collapsible "Browser tabs (N)" section in the agent conversation footer
-   * listing the active agent's owned browser tabs — visible panel tabs plus
+   * Browser-tab section in the agent conversation footer, rendered inline for
+   * one tab and as a collapsible list for multiple tabs. It lists the active
+   * agent's owned browser tabs — visible panel tabs plus
    * hidden (user-closed, monorepo#2857) ones. Clicking a visible tab
    * activates it and focuses its panel (same path as the sidebar browser
    * list); clicking a hidden tab restores it into a panel OTHER than the one
@@ -101,7 +102,11 @@
     count = entries.length;
   });
 
-  const heading = $derived(m.chat_browserTabs_heading({ count: formatInteger(entries.length) }));
+  const heading = $derived(
+    entries.length === 1
+      ? m.chat_browserTabs_heading_one({ count: formatInteger(entries.length) })
+      : m.chat_browserTabs_heading_many({ count: formatInteger(entries.length) }),
+  );
 
   let expanded = $state(false);
   let disclosureKey = $state('');
@@ -147,6 +152,38 @@
   }
 </script>
 
+{#snippet tabItem(entry: BrowserTabEntry)}
+  <Button
+    variant="plain"
+    type="button"
+    class="justify-start! rounded-none text-left {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
+    data-testid="browser-tab-item"
+    data-browser-tab-id={entry.tab.id}
+    data-hidden={entry.hidden || undefined}
+    data-active={entry.active || undefined}
+    onclick={() => handleTabClick(entry)}
+  >
+    <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+      <span
+        class="size-1.5 shrink-0 rounded-full {entry.hidden
+          ? 'bg-muted-foreground/20'
+          : entry.active
+            ? 'bg-success'
+            : 'bg-muted-foreground/40'}"
+      ></span>
+    </span>
+    <span class="inline-flex min-w-0 flex-1 items-baseline gap-2 whitespace-nowrap">
+      <span class="max-w-full shrink-0 truncate" title={entry.tab.title}>{entry.tab.title}</span>
+      <span
+        class="min-w-0 flex-1 truncate text-muted-foreground"
+        title={entry.tab.browserUrl ?? ''}
+      >
+        {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
+      </span>
+    </span>
+  </Button>
+{/snippet}
+
 {#if entries.length > 0}
   <div
     class="w-full min-w-0 max-w-full"
@@ -154,89 +191,66 @@
     aria-label={heading}
     data-testid="browser-tabs-row"
   >
-    <Button
-      variant="plain"
-      type="button"
-      class="shrink whitespace-normal rounded-none border-0 text-left {SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
-      data-testid="browser-tabs-summary"
-      data-subscription-row="browser-tabs"
-      aria-expanded={expanded}
-      aria-controls={listId}
-      onclick={toggleExpanded}
-    >
-      <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
-        <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+    {#if entries.length === 1}
+      {@render tabItem(entries[0])}
+    {:else}
+      <Button
+        variant="plain"
+        type="button"
+        class="shrink whitespace-normal rounded-none border-0 text-left {SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
+        data-testid="browser-tabs-summary"
+        data-subscription-row="browser-tabs"
+        aria-expanded={expanded}
+        aria-controls={listId}
+        onclick={toggleExpanded}
+      >
+        <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+          <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+            <Fa
+              icon={faWindowMaximize}
+              size={14}
+              class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+            />
+          </span>
+          <span
+            class="whitespace-nowrap text-muted-foreground"
+            data-testid="browser-tabs-summary-title"
+          >
+            {heading}
+          </span>
+        </span>
+        <span class="min-w-0 flex-1" aria-hidden="true"></span>
+        <span
+          class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+          data-testid="browser-tabs-chevron"
+        >
           <Fa
-            icon={faWindowMaximize}
-            size={14}
-            class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+            icon={faChevronDown}
+            size={16}
+            class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expanded
+              ? ''
+              : 'rotate-90'}"
           />
         </span>
-        <span
-          class="whitespace-nowrap text-muted-foreground"
-          data-testid="browser-tabs-summary-title"
+      </Button>
+      {#if expanded}
+        <div
+          id={listId}
+          class="flex w-full min-w-0 max-w-full flex-col overflow-hidden {SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS}"
+          data-testid="browser-tabs-list"
+          transition:safeSubscriptionSlide
         >
-          {heading}
-        </span>
-      </span>
-      <span class="min-w-0 flex-1" aria-hidden="true"></span>
-      <span
-        class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
-        data-testid="browser-tabs-chevron"
-      >
-        <Fa
-          icon={faChevronDown}
-          size={16}
-          class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expanded
-            ? ''
-            : 'rotate-90'}"
-        />
-      </span>
-    </Button>
-    {#if expanded}
-      <div
-        id={listId}
-        class="flex w-full min-w-0 max-w-full flex-col overflow-hidden {SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS}"
-        data-testid="browser-tabs-list"
-        transition:safeSubscriptionSlide
-      >
-        {#each entries as entry (entry.tab.id)}
-          <div
-            class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
-            data-subscription-motion-row="browser-tab"
-            transition:safeSubscriptionRowTransition
-          >
-            <Button
-              variant="plain"
-              type="button"
-              class="justify-start! rounded-none text-left {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
-              data-testid="browser-tab-item"
-              data-browser-tab-id={entry.tab.id}
-              data-hidden={entry.hidden || undefined}
-              data-active={entry.active || undefined}
-              onclick={() => handleTabClick(entry)}
+          {#each entries as entry (entry.tab.id)}
+            <div
+              class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
+              data-subscription-motion-row="browser-tab"
+              transition:safeSubscriptionRowTransition
             >
-              <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
-                <span
-                  class="size-1.5 shrink-0 rounded-full {entry.hidden
-                    ? 'bg-muted-foreground/20'
-                    : entry.active
-                      ? 'bg-success'
-                      : 'bg-muted-foreground/40'}"
-                ></span>
-              </span>
-              <span class="inline-flex min-w-0 flex-1 items-baseline gap-2 whitespace-nowrap">
-                <span class="max-w-full shrink-0 truncate" title={entry.tab.title}
-                  >{entry.tab.title}</span
-                >
-                <span class="min-w-0 flex-1 truncate" title={entry.tab.browserUrl ?? ''}>
-                  {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
-                </span>
-              </span>
-            </Button>
-          </div>
-        {/each}
-      </div>
+              {@render tabItem(entry)}
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 {/if}
