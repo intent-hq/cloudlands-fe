@@ -47,19 +47,23 @@
   import {
     resetNotificationSettings,
     setAgentFontStyle,
+    setChatAuroraEnabled,
     setCodeFontFamily,
     setNoteFontStyle,
+    setShellTransparencyEnabled,
     setUpdateChannel,
     type AgentFontStyle,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectAgentFontStyle,
+    selectChatAuroraEnabled,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectNoteFontStyle,
+    selectShellTransparencyEnabled,
     selectUpdateChannel,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { isUpdateChannel } from '$features/auto-update/types';
@@ -90,6 +94,8 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
+  const chatAuroraEnabled = selectChatAuroraEnabled();
+  const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
 
@@ -157,6 +163,8 @@
     language: 'display',
     theme: 'display',
     appearance: 'display',
+    'chat-aurora': 'display',
+    'translucent-window': 'display',
     'font-style': 'display',
     'color-theme': 'display',
     'note-font': 'display',
@@ -684,6 +692,57 @@
                 class="px-6 py-5"
               >
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
+              </section>
+              <section
+                id="chat-aurora"
+                data-highlight-id="chat-aurora"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_appearance_chatAurora_label()}
+                    </p>
+                    <p class="text-xs text-subtle mt-1">
+                      {m.settings_appearance_chatAurora_description()}
+                    </p>
+                  </div>
+                  <Toggle
+                    variant="indicator"
+                    size="xs"
+                    class="mb-auto"
+                    pressed={$chatAuroraEnabled}
+                    onclick={() => appStore.dispatch(setChatAuroraEnabled(!$chatAuroraEnabled))}
+                    ariaLabel={m.settings_appearance_chatAurora_label()}
+                  />
+                </div>
+              </section>
+              <section
+                id="translucent-window"
+                data-highlight-id="translucent-window"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_appearance_translucentWindow_label()}
+                    </p>
+                    <p class="text-xs text-subtle mt-1">
+                      {m.settings_appearance_translucentWindow_description()}
+                    </p>
+                  </div>
+                  <Toggle
+                    variant="indicator"
+                    size="xs"
+                    class="mb-auto"
+                    pressed={$shellTransparencyEnabled}
+                    onclick={() =>
+                      appStore.dispatch(setShellTransparencyEnabled(!$shellTransparencyEnabled))}
+                    ariaLabel={m.settings_appearance_translucentWindow_label()}
+                  />
+                </div>
               </section>
             </div>
           </div>
