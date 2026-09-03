@@ -187,6 +187,14 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
     select: (_state: unknown, modelId?: string) =>
       modelId ? mocks.effortLevels.value[modelId] : undefined,
   },
+  // Provider-scoped effort lookup: keyed by `provider:model` when a provider
+  // is given, bare model id otherwise (mirrors the provider-aware selector).
+  selectProviderModelEffortLevels: {
+    select: (_state: unknown, providerId?: string, modelId?: string) =>
+      modelId
+        ? mocks.effortLevels.value[providerId ? `${providerId}:${modelId}` : modelId]
+        : undefined,
+  },
   selectModelDisplayName: {
     select: (_state: unknown, providerId: string, modelId: string) =>
       mocks.catalogModels.value.includes(`${providerId}:${modelId}`) ||
@@ -974,12 +982,55 @@ describe('AIBehaviorEditor specialist model reasoning', () => {
 
     expect(lastSave()).toMatchObject({ codingAgent: 'codex', model: 'bare-picked-model' });
   });
+
+  it('keeps a supported effort across a cross-provider pick (provider-scoped lookup)', async () => {
+    // The effort levels resolve only under the resolved provider's catalog —
+    // a provider-blind bare-id lookup would drop the level.
+    mocks.effortLevels.value = {
+      [EFFORT_MODEL]: ['low', 'high'],
+      'codex:bare-picked-model': ['low', 'high'],
+    };
+    mocks.explicitEffort.value = 'high';
+    renderSpecialist();
+
+    // The triple pick emits a BARE id + resolved provider leg; the effort
+    // check must consult that provider's catalog, not the active one.
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
+
+    expect(lastSave()).toMatchObject({
+      codingAgent: 'codex',
+      model: 'bare-picked-model',
+      reasoningEffort: 'high',
+    });
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+  });
+
+  it('drops the effort when the resolved provider catalog lacks the level', async () => {
+    // The same bare id advertises the level only under the ACTIVE catalog;
+    // the pick resolves to codex, whose catalog does not carry it.
+    mocks.effortLevels.value = {
+      [EFFORT_MODEL]: ['low', 'high'],
+      'bare-picked-model': ['low', 'high'],
+    };
+    mocks.explicitEffort.value = 'high';
+    renderSpecialist();
+
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
+
+    expect(lastSave()).toMatchObject({
+      codingAgent: 'codex',
+      model: 'bare-picked-model',
+      reasoningEffort: undefined,
+    });
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+  });
 });
 
 describe('AIBehaviorEditor create-specialist model reasoning', () => {
   afterEach(() => {
     cleanup();
     selectedModel$.set('');
+    mocks.effortLevels.value = {};
     mocks.dispatched.length = 0;
   });
 
@@ -1005,6 +1056,33 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(onDiscard).toHaveBeenCalledOnce();
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+  });
+
+  it('keeps a supported effort across a cross-provider pick (provider-scoped lookup)', async () => {
+    // The level resolves only under the resolved provider's catalog — a
+    // provider-blind bare-id lookup would reset the new-specialist effort.
+    mocks.effortLevels.value = { 'codex:bare-picked-model': ['low', 'high'] };
+    render(AIBehaviorEditor, {
+      activeView: { type: 'create-specialist' },
+    });
+
+    await fireEvent.click(screen.getByTestId('pick-reasoning'));
+    await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+
+    await fireEvent.input(screen.getByPlaceholderText('e.g., Code Reviewer'), {
+      target: { value: 'Reviewer' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
+
+    const save = mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
+      ?.payload[0] as Record<string, unknown>;
+    expect(save).toMatchObject({
+      name: 'Reviewer',
+      codingAgent: 'codex',
+      model: 'bare-picked-model',
+      reasoningEffort: 'high',
+    });
   });
 
   it('attributes a bare cross-provider pick to the provider resolved by the picker', async () => {
