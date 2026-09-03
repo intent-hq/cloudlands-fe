@@ -50,6 +50,14 @@ export const selectShowReasoningBlocks = store.createSelector((state) => {
   return state.userPreferences?.showReasoningBlocks ?? false;
 });
 
+export const selectChatAuroraEnabled = store.createSelector((state) => {
+  return state.userPreferences?.chatAuroraEnabled ?? true;
+});
+
+export const selectShellTransparencyEnabled = store.createSelector((state) => {
+  return state.userPreferences?.shellTransparencyEnabled ?? true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

@@ -92,6 +92,7 @@ describe('buildHardwareLedSnapshot', () => {
         makeWorkspace('ws-run', { activity: 'agent_running' }),
         makeWorkspace('ws-idle'),
         makeWorkspace('ws-done', { displayStatus: 'pr_ready' }),
+        makeWorkspace('ws-queued', { displayStatus: 'pr_queued' }),
       ],
     });
     const snapshot = buildHardwareLedSnapshot(state);
@@ -99,7 +100,7 @@ describe('buildHardwareLedSnapshot', () => {
       'running',
       'idle',
       'complete',
-      'unassigned',
+      'complete',
       'unassigned',
       'unassigned',
     ]);

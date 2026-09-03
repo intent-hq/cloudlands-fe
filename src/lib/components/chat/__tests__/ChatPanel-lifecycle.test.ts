@@ -62,6 +62,9 @@ const mocks = vi.hoisted(() => {
     >(undefined),
     fetchingOlderHistory: mutableReadable(false),
     fetchingHistorySeek: mutableReadable(false),
+    pendingBrowserCaptures: mutableReadable<unknown[]>([]),
+    focusedActiveTab: { type: 'agent', agentId: 'agent-a' } as
+      { type: string; agentId?: string } | undefined,
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
@@ -178,12 +181,17 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () =
   ),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectChatAuroraEnabled: mocks.selector(true),
   selectIsAgentMonospace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectActiveTab: { select: () => mocks.focusedActiveTab },
   selectAllTabs: mocks.selector([]),
   selectPanels: mocks.selector({}),
   selectHiddenTabs: mocks.selector([]),
+}));
+vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
+  selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
 }));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: mocks.selector([]),
@@ -490,6 +498,8 @@ beforeEach(() => {
   mocks.transcriptSnapshotMeta.set(undefined);
   mocks.fetchingOlderHistory.set(false);
   mocks.fetchingHistorySeek.set(false);
+  mocks.pendingBrowserCaptures.set([]);
+  mocks.focusedActiveTab = { type: 'agent', agentId: 'agent-a' };
   mocks.dividerSessionValue = { anchorId: null };
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
@@ -511,6 +521,127 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.pendingBrowserCaptures.set([
+      {
+        id: 'capture-1',
+        tabId: 'browser-1',
+        ownerAgentId: 'agent-owner',
+        targetAgentId: 'agent-a',
+        pageUrl: 'https://example.com/account',
+        title: 'Account',
+        image: { data: 'base64-png', mimeType: 'image/png' },
+        viewport: { width: 1440, height: 900 },
+        element: {
+          selector: 'button#save',
+          domPath: 'html > body > main > button#save',
+          tagName: 'BUTTON',
+          id: 'save',
+          className: 'primary',
+          textSnippet: 'Save changes',
+          rect: { x: 80, y: 120, width: 140, height: 36 },
+          pageUrl: 'https://example.com/account',
+          sourceRef: 'src/routes/account.svelte:42:3',
+        },
+      },
+    ]);
+
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(screen.getByTestId('mock-context-capture-1-image')).toBeTruthy();
+    expect(screen.getByTestId('mock-context-capture-1-context')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('mock-rich-input-editor'));
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'browser/clearElementCapture',
+      payload: ['workspace-a', 'capture-1'],
+    });
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Fix this element' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+
+    const sendAction = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .findLast((action) => action?.type === 'chatState/sendMessage');
+    expect(sendAction.payload.payload).toMatchObject({
+      wsId: 'workspace-a',
+      text: 'Fix this element',
+      imageBlocks: [{ type: 'image', data: 'base64-png', mimeType: 'image/png' }],
+    });
+    expect(sendAction.payload.payload.workspaceContextStr).toContain(
+      'DOM path: html > body > main > button#save',
+    );
+    expect(sendAction.payload.payload.workspaceContextStr).toContain(
+      'Source ref: src/routes/account.svelte:42:3',
+    );
+    expect(sendAction.payload.payload.workspaceContextStr).toContain('Viewport: 1440×900');
+  });
+
+  it.each([
+    ['image', 'capture-1-image'],
+    ['context', 'capture-1-context'],
+  ])('excludes a removed browser capture %s pill from the next send', async (kind, itemId) => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.pendingBrowserCaptures.set([
+      {
+        id: 'capture-1',
+        tabId: 'browser-1',
+        ownerAgentId: 'agent-a',
+        targetAgentId: 'agent-a',
+        pageUrl: 'https://example.com/account',
+        title: 'Account',
+        image: { data: 'base64-png', mimeType: 'image/png' },
+        element: {
+          selector: 'button#save',
+          domPath: 'html > body > main > button#save',
+          tagName: 'BUTTON',
+          id: 'save',
+          className: 'primary',
+          textSnippet: 'Save changes',
+          rect: { x: 80, y: 120, width: 140, height: 36 },
+          pageUrl: 'https://example.com/account',
+        },
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    await fireEvent.click(screen.getByTestId(`mock-context-${itemId}`));
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Fix this element' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+
+    const payload = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .findLast((action) => action?.type === 'chatState/sendMessage').payload.payload;
+    if (kind === 'image') {
+      expect(payload).not.toHaveProperty('imageBlocks');
+      expect(payload.workspaceContextStr).toContain('DOM path: html > body > main > button#save');
+    } else {
+      expect(payload.imageBlocks).toEqual([
+        { type: 'image', data: 'base64-png', mimeType: 'image/png' },
+      ]);
+      expect(payload.workspaceContextStr).toBe('');
+    }
+  });
+
   it('mounts the regular Aurora only while a streaming panel is active', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSessionIsStreaming.set(true);

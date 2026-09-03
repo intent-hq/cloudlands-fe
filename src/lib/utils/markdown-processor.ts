@@ -3,7 +3,11 @@ import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
 import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extension';
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
-import { rewriteIntentFileImageSrcs } from './workspace-file-image';
+import {
+  rewriteIntentFileImageSrcs,
+  workspaceFileImageUrlToIntentFileUrl,
+  workspaceFileMediaUrlToIntentFileUrl,
+} from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
@@ -488,7 +492,7 @@ export async function processMarkdownToHTML(
     if (content.includes('```ws-block')) {
       logger.debug('Content looks like HTML but has ws-blocks, processing anyway');
     } else {
-      return sanitizeMarkdownHTML(content);
+      return sanitizeMarkdownHTML(content, workspaceId);
     }
   }
 
@@ -589,7 +593,7 @@ export async function processMarkdownToHTML(
     if (isLargeContent) await yieldToEventLoop();
 
     // Sanitize the HTML to prevent XSS
-    htmlOut = sanitizeMarkdownHTML(htmlOut);
+    htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId);
     const t6 = isLargeContent ? performance.now() : 0;
 
     // Debug: Check if primitive divs survived sanitization
@@ -617,7 +621,7 @@ export async function processMarkdownToHTML(
   } catch (error) {
     logger.error('[markdown-processor] Failed to parse markdown:', error as Error);
     // Callers inject the result with {@html}, so the fallback must be sanitized too.
-    const fallback = sanitizeMarkdownHTML(`<p>${content}</p>`);
+    const fallback = sanitizeMarkdownHTML(`<p>${content}</p>`, workspaceId);
     setCachedMarkdown(cacheKey, fallback);
     return fallback;
   }
@@ -1059,9 +1063,9 @@ function convertSpanAnchorsToComments(html: string): string {
  */
 export function processHTMLToMarkdown(
   html: string,
-  options: { preserveAnchors?: boolean } = {},
+  options: { preserveAnchors?: boolean; workspaceId?: string } = {},
 ): string {
-  const { preserveAnchors = true } = options;
+  const { preserveAnchors = true, workspaceId } = options;
 
   // Check for primitive blocks in the HTML
   const hasPrimitiveType = html.includes('data-primitive-type');
@@ -1101,7 +1105,7 @@ export function processHTMLToMarkdown(
     div.innerHTML = htmlToProcess;
   } else {
     // Sanitize normally when not preserving anchors
-    const sanitized = sanitizeMarkdownHTML(htmlToProcess);
+    const sanitized = sanitizeMarkdownHTML(htmlToProcess, workspaceId);
     div.innerHTML = sanitized;
   }
 
@@ -1168,7 +1172,8 @@ export function processHTMLToMarkdown(
           }
         } else if (childEl.tagName === 'IMG') {
           // Handle inline images
-          const src = childEl.getAttribute('src') || '';
+          const rawSrc = childEl.getAttribute('src') || '';
+          const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
           const alt = childEl.getAttribute('alt') || '';
           const title = childEl.getAttribute('title');
           if (title) {
@@ -1176,6 +1181,11 @@ export function processHTMLToMarkdown(
           } else {
             result += `![${alt}](${src})`;
           }
+        } else if (childEl.tagName === 'VIDEO') {
+          const rawSrc = childEl.getAttribute('src') || '';
+          const src = workspaceFileMediaUrlToIntentFileUrl(rawSrc) ?? rawSrc;
+          const name = childEl.getAttribute('data-name') || '';
+          if (src) result += `![${name}](${src})`;
         } else if (
           childEl.tagName === 'DIV' &&
           (childEl.hasAttribute('data-type') || childEl.hasAttribute('data-primitive-type'))
@@ -1436,13 +1446,19 @@ export function processHTMLToMarkdown(
   const convertElement = (el: Element): string => {
     if (el.tagName === 'IMG') {
       // Handle image elements
-      const src = el.getAttribute('src') || '';
+      const rawSrc = el.getAttribute('src') || '';
+      const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
       const alt = el.getAttribute('alt') || '';
       const title = el.getAttribute('title');
       if (title) {
         return `![${alt}](${src} "${title}")\n\n`;
       }
       return `![${alt}](${src})\n\n`;
+    } else if (el.tagName === 'VIDEO') {
+      const rawSrc = el.getAttribute('src') || '';
+      const src = workspaceFileMediaUrlToIntentFileUrl(rawSrc) ?? rawSrc;
+      const name = el.getAttribute('data-name') || '';
+      return src ? `![${name}](${src})\n\n` : '';
     } else if (el.tagName === 'P') {
       return `${processInlineContent(el)}\n\n`;
     } else if (el.tagName === 'H1') {

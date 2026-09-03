@@ -1,12 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import { processHTMLToMarkdown } from '../markdown-processor';
+import { describe, it, expect } from 'vitest';
+import { processHTMLToMarkdown, processMarkdownToHTML } from '../markdown-processor';
 
 // jsdom is configured via the @vitest-environment comment above
 // No need to mock DOM - jsdom provides a real DOM implementation
@@ -80,6 +76,36 @@ describe('HTML to Markdown Conversion', () => {
     const html = '<p>Hello world</p><p>Second paragraph</p>';
     const result = processHTMLToMarkdown(html);
     expect(result).toBe('Hello world\n\nSecond paragraph');
+  });
+
+  it('should keep workspace images portable through a markdown round trip', async () => {
+    const markdown = 'Before ![d](intent://local/file/docs/d.png) after';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
+
+    expect(html).toContain('src="workspace-file://workspace-1/docs/d.png"');
+    expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(markdown);
+  });
+
+  it('should convert top-level workspace images back to short intent file links', () => {
+    const html = '<img src="workspace-file://workspace-1/docs/a%20b.png" alt="diagram">';
+
+    expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(
+      '![diagram](intent://local/file/docs/a%20b.png)',
+    );
+  });
+
+  it('keeps workspace videos portable through a comment edit round trip', async () => {
+    const markdown = '![clip](intent://local/file/x.mp4)';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
+
+    expect(html).toContain('src="workspace-file://workspace-1/x.mp4"');
+    expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(markdown);
+  });
+
+  it('should leave workspace asset image sources unchanged', () => {
+    const html = '<p><img src="workspace-asset://asset-1" alt="asset"></p>';
+
+    expect(processHTMLToMarkdown(html)).toBe('![asset](workspace-asset://asset-1)');
   });
 
   it('should use data-checked attribute as source of truth', () => {

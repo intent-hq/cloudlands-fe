@@ -3,7 +3,7 @@
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
   import {
-    selectModelEffortLevels,
+    selectProviderModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
 
@@ -216,14 +216,17 @@
   /**
    * Drop an effort level the given model does not advertise, so switching to
    * a model without that level resets the dropdown to Default instead of
-   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`).
+   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`). The
+   * lookup is provider-scoped: a cross-provider pick consults the resolved
+   * provider's cached catalog, not the active one.
    */
   function effortForModel(
-    compoundModelId: string | undefined,
+    providerId: string | undefined,
+    modelId: string | undefined,
     effort: string | undefined,
   ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectModelEffortLevels.select(appStore.state, compoundModelId);
+    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
     return levels?.includes(effort) ? effort : undefined;
   }
 
@@ -241,7 +244,11 @@
       specialistModelValue = undefined;
       // The effort level now applies to the inherited (daemon-resolved)
       // model — drop it when that model lacks the level.
-      const nextEffort = effortForModel(currentSpecialist.resolvedModel, specialistEffortValue);
+      const nextEffort = effortForModel(
+        currentSpecialist.resolvedProvider,
+        currentSpecialist.resolvedModel,
+        specialistEffortValue,
+      );
       specialistEffortValue = nextEffort;
       if (!isFileBased) return;
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
@@ -291,7 +298,7 @@
     specialistModelValue = compoundModelId;
     // Reset the effort to Default when the newly picked model does not
     // advertise the current level.
-    const nextEffort = effortForModel(compoundModelId, specialistEffortValue);
+    const nextEffort = effortForModel(newProvider || undefined, bareModelId, specialistEffortValue);
     specialistEffortValue = nextEffort;
 
     if (isFileBased) {
@@ -415,7 +422,7 @@
     if (!compoundModelId) {
       newCodingAgent = undefined;
       newModel = undefined;
-      newEffort = effortForModel($selectedModel, newEffort);
+      newEffort = effortForModel($defaultProviderId$ || undefined, $selectedModel, newEffort);
       return;
     }
     // Prefer the resolved triple legs the picker emits (catalog-group
@@ -424,7 +431,7 @@
     const resolved = pick ?? parseCompoundModelId(compoundModelId);
     newCodingAgent = resolved.providerId || $defaultProviderId$;
     newModel = compoundModelId;
-    newEffort = effortForModel(compoundModelId, newEffort);
+    newEffort = effortForModel(newCodingAgent || undefined, resolved.modelId, newEffort);
   }
 
   function handlePromptSave(prompt: string) {

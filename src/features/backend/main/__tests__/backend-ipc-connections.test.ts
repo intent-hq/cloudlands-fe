@@ -82,6 +82,9 @@ vi.mock('../json-rpc-client', () => {
     getStatus(): string {
       return this.status;
     }
+    getConnectedVia(): null {
+      return null;
+    }
     getReconnectAttempts(): number {
       return 0;
     }
@@ -1215,6 +1218,34 @@ describe('connections:* IPC handlers', () => {
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 
+  it('connections:update forwards detectHosts / syncExcluded flips to the store without revalidating', async () => {
+    const updated = { ...REMOTE, detectHosts: false, syncExcluded: true };
+    store.updateMetadata.mockResolvedValue(updated);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!(
+        {},
+        {
+          id: REMOTE.id,
+          label: REMOTE.label,
+          accent: 'violet',
+          detectHosts: false,
+          syncExcluded: true,
+        },
+      ),
+    ).resolves.toEqual({ status: 'updated', connection: updated });
+    expect(store.updateMetadata).toHaveBeenCalledWith(
+      REMOTE.id,
+      expect.objectContaining({ detectHosts: false, syncExcluded: true }),
+    );
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
   it('tests unsaved address values with the saved secret without saving or opening a window', async () => {
     mockCaptureFingerprint.mockResolvedValue({
       ok: true,
@@ -1502,6 +1533,40 @@ describe('connections:* IPC handlers', () => {
 
     expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(affectedBefore);
     expect(mod.getBackendClientForConnection(other.id)).toBe(otherBefore);
+  });
+
+  it('rebuilds an open pooled client when detectHosts flips off so it stops dialing the cleared extras', async () => {
+    const withExtras = { ...REMOTE, hosts: ['10.0.0.5', '192.168.1.5'] };
+    store.list.mockResolvedValue([LOCAL, withExtras]);
+    store.updateMetadata.mockImplementation(async () => {
+      const cleared = { ...REMOTE, detectHosts: false, hosts: [] };
+      store.list.mockResolvedValue([LOCAL, cleared]);
+      return cleared;
+    });
+    const { mod } = await loadModule();
+    const before = await mod.connectBackendClient(REMOTE.id);
+    expect((before.getConfig() as { hosts?: string[] }).hosts).toEqual(['10.0.0.5', '192.168.1.5']);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await handler!({}, { id: REMOTE.id, label: REMOTE.label, accent: 'blue', detectHosts: false });
+
+    const after = mod.getBackendClientForConnection(REMOTE.id);
+    expect(after).not.toBe(before);
+    expect((after!.getConfig() as { hosts?: string[] }).hosts).toEqual(['10.0.0.5']);
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+  });
+
+  it('does not rebuild an open pooled client for a metadata edit that leaves detectHosts as-is', async () => {
+    store.updateMetadata.mockResolvedValue({ ...REMOTE, label: 'Renamed' });
+    const { mod } = await loadModule();
+    const before = await mod.connectBackendClient(REMOTE.id);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await handler!({}, { id: REMOTE.id, label: 'Renamed', accent: 'blue', detectHosts: true });
+
+    expect(mod.getBackendClientForConnection(REMOTE.id)).toBe(before);
   });
 
   it('serializes connection tests so each uses a stable saved-secret snapshot', async () => {

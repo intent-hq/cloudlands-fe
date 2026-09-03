@@ -1,6 +1,10 @@
 import type { VideoSource } from '$shared/types/content-block';
 import { getWorkspaceVideoSource } from '$shared/types/content-block';
-import { intentFileImageUrlToWorkspaceFileUrl } from './workspace-file-image';
+import { parseWorkspaceFileImageUrl } from './image-actions';
+import {
+  intentFileImageUrlToWorkspaceFileUrl,
+  workspaceFileMediaUrlToIntentFileUrl,
+} from './workspace-file-image';
 
 export type WorkspaceVideoMarkdownSegment =
   | { type: 'markdown'; content: string }
@@ -11,13 +15,30 @@ export type WorkspaceVideoMarkdownSegment =
       poster?: string;
     };
 
-const IMAGE_LINE_RE = /^\s*!\[([^\]\n]*)\]\((?:<)?(intent:\/\/local\/[^)\s>]+)(?:>)?\)\s*$/;
+const IMAGE_LINE_RE =
+  /^\s*!\[([^\]\n]*)\]\((?:<)?((?:intent:\/\/local\/|workspace-file:\/\/)[^)\s>]+)(?:>)?\)\s*$/;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 function resolveVideoPath(path: unknown, workspaceId?: string) {
   if (typeof path !== 'string' || !path || path !== path.trim()) return null;
+  if (path.startsWith('workspace-file://')) {
+    const target = parseWorkspaceFileImageUrl(path);
+    if (!target || target.workspaceId !== workspaceId) return null;
+    const portableUrl = workspaceFileMediaUrlToIntentFileUrl(path);
+    return portableUrl ? getWorkspaceVideoSource(portableUrl, workspaceId) : null;
+  }
   const intentUrl = path.startsWith('intent://') ? path : `intent://local/file/${path}`;
   return getWorkspaceVideoSource(intentUrl, workspaceId);
+}
+
+function resolvesWorkspaceImage(path: string, workspaceId?: string): boolean {
+  if (path.startsWith('workspace-file://')) {
+    const target = parseWorkspaceFileImageUrl(path);
+    if (!target || target.workspaceId !== workspaceId) return false;
+    const portableUrl = workspaceFileMediaUrlToIntentFileUrl(path);
+    return !!portableUrl && !!intentFileImageUrlToWorkspaceFileUrl(portableUrl, workspaceId);
+  }
+  return !!intentFileImageUrlToWorkspaceFileUrl(path, workspaceId);
 }
 
 function isParagraphBoundary(lines: string[], index: number): boolean {
@@ -98,15 +119,15 @@ export function splitWorkspaceVideoMarkdown(
       continue;
     }
 
-    const [, alt, intentUrl] = image;
-    const source = getWorkspaceVideoSource(intentUrl, workspaceId);
+    const [, alt, mediaUrl] = image;
+    const source = resolveVideoPath(mediaUrl, workspaceId);
     if (source) {
       flushMarkdown();
       segments.push({ type: 'video', source, name: alt || undefined });
-    } else if (intentFileImageUrlToWorkspaceFileUrl(intentUrl, workspaceId)) {
+    } else if (resolvesWorkspaceImage(mediaUrl, workspaceId)) {
       markdownLines.push(lines[index]);
     } else {
-      markdownLines.push(`[${alt}](${intentUrl})`);
+      markdownLines.push(`[${alt}](${mediaUrl})`);
     }
   }
 
