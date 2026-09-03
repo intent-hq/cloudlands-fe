@@ -30,8 +30,6 @@ import {
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
-import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -355,31 +353,12 @@ export class UnifiedAgentFactory {
       }
 
       // Step 6.6: Model is daemon-resolved (single resolver, PROTOCOL §5.11).
-      // Pass the caller's explicit model through untouched; when absent, omit
-      // it from `agent.create` so the daemon applies its resolved default
-      // (specialist frontmatter > settings chain > provider CLI default). No
-      // client-side default-model synthesis.
-      let resolvedModel = normalized.model;
-
-      // Step 6.8: Safety-net — reject cross-provider compound model IDs.
-      // If the supplied model is a compound ID whose provider prefix doesn't
-      // match the target provider (e.g., "codex:opencode/big-pickle"), log a
-      // warning and drop it so the daemon resolves the target provider's own
-      // default instead of a cross-provider model leaking through.
-      if (resolvedModel && provider && resolvedModel.includes(':')) {
-        const defaultProviderId = isBackend
-          ? ''
-          : selectEffectiveDefaultProviderId.select(appStore.state);
-        const modelProvider = splitLegacyCompoundId(resolvedModel).providerId;
-        if ((modelProvider ?? defaultProviderId) !== provider) {
-          logger.warn('Safety net: cross-provider model mismatch in agent creation', {
-            resolvedModel,
-            modelProvider,
-            expectedProvider: provider,
-          });
-          resolvedModel = undefined;
-        }
-      }
+      // Pass the caller's explicit bare model id through untouched paired with
+      // the provider above; when absent, omit it from `agent.create` so the
+      // daemon applies its resolved default (specialist frontmatter > settings
+      // chain > provider CLI default). No client-side default-model synthesis
+      // and no model-string parsing — provider attribution is the caller's.
+      const resolvedModel = normalized.model;
 
       // Step 7: Create agent session object (system prompt will be built by backend)
       // The id starts as a provisional local value (config.id or a generated
@@ -397,6 +376,9 @@ export class UnifiedAgentFactory {
         messages: [],
         model: resolvedModel,
         provider, // Top-level ACP provider — immutable after creation
+        // Explicit reasoning-effort override (the triple's optional third
+        // leg); omitted ⇒ the daemon resolves the model's default effort.
+        reasoningEffort: normalized.reasoningEffort,
         // systemPrompt is built by backend, not included in frontend agent object
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -686,6 +668,7 @@ export class UnifiedAgentFactory {
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
       provider: config.provider, // Preserve provider for propagation to session
+      reasoningEffort: config.reasoningEffort, // Explicit effort override (triple's third leg)
       initialMessage: config.initialMessage,
       appMessageId: config.appMessageId,
       contextReferences: config.contextReferences || [],
@@ -758,6 +741,9 @@ export class UnifiedAgentFactory {
         ...(nameExplicitlySet !== undefined ? { nameExplicitlySet } : {}),
         model: agent.model ?? undefined, // Coerce null to undefined for wire format
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
+        // Explicit reasoning-effort override (Option B session field, §5.5);
+        // omitted so the daemon resolves the default when the caller sent none.
+        reasoningEffort: agent.reasoningEffort ?? undefined,
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
         prompt: behaviorPrompt, // Maps to wire `behaviorPrompt` (AgentCreateRequest.prompt)
         // Maps to wire `specialistId` (PROTOCOL §5.5) — the daemon persists the

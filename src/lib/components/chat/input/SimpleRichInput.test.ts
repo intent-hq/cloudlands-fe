@@ -188,6 +188,7 @@ const mockReduxState = vi.hoisted(
   (): {
     workspaceAgents: { byWorkspaceId: Record<string, any> };
     providerSettings: { activeProviderId: string };
+    readonly model: { defaultProviderId: string };
     hardwareConsole: { pttRecording: boolean; voiceTranscribing: boolean };
     skills: {
       byWorkspaceId: Record<
@@ -210,8 +211,13 @@ const mockReduxState = vi.hoisted(
     daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
     workspaceAgents: { byWorkspaceId: {} },
-    // Unset active provider — the §5.31 gate treats this as auggie (default)
+    // Unset default provider — the §5.31 gate resolves CLOSED for ''.
+    // Tests mutate providerSettings.activeProviderId; the model slice
+    // (where selectActiveProviderId reads from) mirrors it via this getter.
     providerSettings: { activeProviderId: '' },
+    get model() {
+      return { defaultProviderId: this.providerSettings.activeProviderId };
+    },
     // The composer mic button subscribes to these hardware-console flags
     hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     skills: { byWorkspaceId: {} },

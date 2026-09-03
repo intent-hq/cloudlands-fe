@@ -174,7 +174,7 @@ describe('B2 caller metadata regression', () => {
         { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
         { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 2 },
+        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 3 },
         { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
       ],
     };

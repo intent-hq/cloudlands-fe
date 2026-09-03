@@ -214,6 +214,7 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
       expect(
         (first.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement).disabled,
       ).toBe(true);
+      expect(first.getByText('Select a branch to continue')).toBeTruthy();
 
       await fireEvent.click(trigger);
       expect(onProjectChange).toHaveBeenCalledWith({ ...selection, branch: 'master' });
@@ -235,6 +236,25 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
       expect(onSubmit).toHaveBeenCalledOnce();
     },
   );
+
+  it('enables create without a branch when the local folder needs git initialization', async () => {
+    const onSubmit = vi.fn();
+    const projectSelection = {
+      ...local,
+      branch: '',
+      initGit: true,
+    } as unknown as Props['projectSelection'];
+    const result = render(OnboardingPromptStep, {
+      props: props({ projectSelection, onSubmit }),
+    });
+
+    expect(result.queryByRole('button', { name: 'Select branch' })).toBeNull();
+    expect(result.getByText('New git repository will be initialized in this folder')).toBeTruthy();
+    const create = result.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
 });
 
 describe('OnboardingPromptStep folder drop (path references, local daemon only)', () => {

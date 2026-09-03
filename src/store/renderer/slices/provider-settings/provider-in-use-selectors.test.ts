@@ -47,8 +47,8 @@ function mockState({
 } = {}): StoreState {
   return {
     providerCatalog,
-    providerSettings: { activeProviderId, enabledProviders: {} },
-    model: { ...modelInitialState, providerModels },
+    providerSettings: { enabledProviders: {} },
+    model: { ...modelInitialState, defaultProviderId: activeProviderId, providerModels },
     specialists: {
       ...specialistsInitialState,
       fileSpecialists: createCollection("id", fileSpecialists),

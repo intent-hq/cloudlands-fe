@@ -12,51 +12,17 @@ export function resolveDefaultModel(
 }
 
 /**
- * Normalize a model id for storage under `providerId`: bare iff the provider
- * is the registry default, `provider:model` otherwise. `defaultProviderId`
- * comes from the providerCatalog hydration (threaded by the model slice).
+ * Rehydrate-boundary splitter for a provider→model map: legacy persisted
+ * values may still carry a `provider:model` compound shape, so each value is
+ * split leniently down to its bare model id. The map key is the provider —
+ * a compound prefix inside a value is legacy noise and is dropped. In-store
+ * values are always bare; this is the only place compound values enter.
  */
-export function normalizeModelForProvider(
-  providerId: string,
-  model: string,
-  defaultProviderId: string,
-): string {
-  const { modelId } = splitLegacyCompoundId(model);
-
-  if (providerId === defaultProviderId) {
-    return modelId;
-  }
-
-  return `${providerId}:${modelId}`;
-}
-
-export function normalizeProviderModels(
-  models: Record<string, string>,
-  defaultProviderId: string,
-): Record<string, string> {
+export function toBareProviderModels(models: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(models).map(([providerId, model]) => [
       providerId,
-      normalizeModelForProvider(providerId, model, defaultProviderId),
+      splitLegacyCompoundId(model).modelId,
     ]),
   );
-}
-
-export function findAvailableModelMatch(
-  availableValues: string[],
-  providerId: string,
-  model: string,
-  defaultProviderId: string,
-): string | undefined {
-  const normalizedModel = normalizeModelForProvider(providerId, model, defaultProviderId);
-  if (availableValues.includes(normalizedModel)) {
-    return normalizedModel;
-  }
-
-  const { modelId: targetModelId } = splitLegacyCompoundId(normalizedModel);
-
-  return availableValues.find((availableValue) => {
-    const { modelId } = splitLegacyCompoundId(availableValue);
-    return availableValue === targetModelId || modelId === targetModelId;
-  });
 }

@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StoreState } from '$store/renderer/types';
 import type { ProviderAvailabilityResult } from '$features/providers/provider-availability.client';
 
@@ -37,7 +31,10 @@ const mockState = vi.hoisted(() => ({
   selectedModel: '',
   selectedModelByProvider: {} as Record<string, string>,
   availableModels: [] as Array<{ value: string; label: string; description?: string }>,
-  modelsByProvider: {} as Record<string, Array<{ value: string; label: string; description?: string }>>,
+  modelsByProvider: {} as Record<
+    string,
+    Array<{ value: string; label: string; description?: string }>
+  >,
   userOverrides: { modelOverrides: {} as Record<string, string> },
   specialists: [
     {
@@ -72,8 +69,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: makeSelector(() => mockState.specialists),
-  selectEffectiveBehaviorPrompt: makeSelector((_specialistId: string) =>
-    mockState.specialists[0]?.defaultBehaviorPrompt ?? '',
+  selectEffectiveBehaviorPrompt: makeSelector(
+    (_specialistId: string) => mockState.specialists[0]?.defaultBehaviorPrompt ?? '',
   ),
   selectUserOverrides: makeSelector(() => mockState.userOverrides),
 }));
@@ -98,7 +95,8 @@ vi.mock('$store/renderer/slices/model/model-slice', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => {},
@@ -126,19 +124,25 @@ import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.f
 // The resolver reads the default provider + tier tables straight off
 // state.providerCatalog (real selectors, not mocked) — hydrate it. The
 // effective default provider is settings-derived (never fabricated from the
-// catalog), so providerSettings mirrors the mocked active provider.
+// catalog), so model.defaultProviderId mirrors the mocked active provider.
 const fakeState = {
   providerCatalog: providerCatalogReducer(
     providerCatalogInitialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   ),
-  get providerSettings() {
-    return { activeProviderId: mockState.activeProviderId, enabledProviders: {} };
+  providerSettings: { enabledProviders: {} },
+  get model() {
+    return { defaultProviderId: mockState.activeProviderId };
   },
 } as unknown as StoreState;
 
 function setAvailability(
-  overrides: Partial<Record<keyof ProviderAvailabilityResult['providers'], { available: boolean; authenticated?: boolean }>>,
+  overrides: Partial<
+    Record<
+      keyof ProviderAvailabilityResult['providers'],
+      { available: boolean; authenticated?: boolean }
+    >
+  >,
 ) {
   const base: ProviderAvailabilityResult['providers'] = {
     auggie: { available: false, authenticated: undefined },
@@ -407,26 +411,44 @@ describe('resolveOnboardingModel', () => {
   });
 
   describe('user-selected model override (onboarding prompt-step picker)', () => {
-    it('returns the picked compound model with its provider, bypassing all other resolution', async () => {
+    it('returns the picked model with its provider leg, bypassing all other resolution', async () => {
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: true },
       });
       mockState.activeProviderId = 'auggie';
 
-      const result = await resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7');
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'anthropic/claude-opus-4.7',
+        provider: 'pi',
+      });
 
       expect(result.provider).toBe('pi');
-      expect(result.model).toBe('pi:anthropic/claude-opus-4.7');
+      expect(result.model).toBe('anthropic/claude-opus-4.7');
       expect(result.specialistId).toBe('spec-writer');
       expect(result.behaviorPrompt).toBe('coordinator-prompt');
     });
 
-    it('attributes a bare model id to the default provider', async () => {
+    it('splits a legacy compound pick without a provider leg at the boundary', async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'auggie';
+
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'pi:anthropic/claude-opus-4.7',
+      });
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe('anthropic/claude-opus-4.7');
+    });
+
+    it('attributes a bare model id without a provider leg to the default provider', async () => {
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'auggie';
 
-      const result = await resolveOnboardingModel(fakeState, 'sonnet4.5');
+      const result = await resolveOnboardingModel(fakeState, { model: 'sonnet4.5' });
 
       expect(result.provider).toBe('auggie');
       expect(result.model).toBe('sonnet4.5');
@@ -440,7 +462,10 @@ describe('resolveOnboardingModel', () => {
       mockState.activeProviderId = 'auggie';
       mockState.userOverrides = { modelOverrides: { 'spec-writer': 'opencode:x' } };
 
-      const result = await resolveOnboardingModel(fakeState, 'opus4.7');
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'opus4.7',
+        provider: 'auggie',
+      });
 
       expect(result.provider).toBe('auggie');
       expect(result.model).toBe('opus4.7');
@@ -453,10 +478,13 @@ describe('resolveOnboardingModel', () => {
       });
       mockState.activeProviderId = 'auggie';
 
-      const result = await resolveOnboardingModel(fakeState, 'opencode:anthropic/claude-4');
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'anthropic/claude-4',
+        provider: 'opencode',
+      });
 
       expect(result.provider).toBe('opencode');
-      expect(result.model).toBe('opencode:anthropic/claude-4');
+      expect(result.model).toBe('anthropic/claude-4');
     });
 
     it("throws when the picked model's provider is not installed (no silent switch)", async () => {
@@ -464,7 +492,7 @@ describe('resolveOnboardingModel', () => {
       mockState.activeProviderId = 'auggie';
 
       await expect(
-        resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7'),
+        resolveOnboardingModel(fakeState, { model: 'anthropic/claude-opus-4.7', provider: 'pi' }),
       ).rejects.toThrow(/'pi'/);
     });
 
@@ -476,9 +504,8 @@ describe('resolveOnboardingModel', () => {
       mockState.activeProviderId = 'auggie';
 
       await expect(
-        resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7'),
+        resolveOnboardingModel(fakeState, { model: 'anthropic/claude-opus-4.7', provider: 'pi' }),
       ).rejects.toThrow(/'pi'/);
     });
   });
 });
-

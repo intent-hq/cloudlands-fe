@@ -286,13 +286,15 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'read-only' },
   },
   {
-    path: 'providers.active',
-    label: 'Active coding agent',
+    // Provider leg of the default model triple. Replaces the deprecated
+    // `providers.active` key (unread by the daemon).
+    path: 'model.defaultProvider',
+    label: 'Default provider',
     description: 'Default provider/coding agent for new work.',
-    category: 'accounts',
+    category: 'agents',
     type: 'string',
-    source: 'local-storage',
-    storageKey: 'workspaces-active-provider',
+    source: 'daemon-settings',
+    storageKey: 'model.defaultProvider',
     defaultValue: 'auggie',
     apply: { kind: 'redux-action', action: 'providerSettings/setActiveProvider' },
   },
@@ -649,6 +651,17 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'open-combo-button-last-action',
     defaultValue: 'vscode',
     apply: { kind: 'redux-action', action: 'externalEditors/setOpenAction' },
+  },
+  {
+    path: 'openIn.editorOrder',
+    label: 'Open In editor order',
+    description: 'Preferred order for editors shown in Open In controls.',
+    category: 'per-feature',
+    type: 'array',
+    source: 'local-storage',
+    storageKey: 'settings:openInEditorsOrder',
+    defaultValue: [],
+    apply: { kind: 'local-storage-set', key: 'settings:openInEditorsOrder' },
   },
   {
     path: 'githubLinks.defaultAction',

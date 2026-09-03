@@ -21,7 +21,7 @@ describe('modelReloadSaga', () => {
     mocks.list.mockResolvedValue([{ value: 'sonnet4.5', label: 'Sonnet 4.5' }]);
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: 'auggie' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: 'auggie' } }) },
       reloadModelsWorker,
     ).toPromise();
 
@@ -47,7 +47,7 @@ describe('modelReloadSaga', () => {
     mocks.list.mockResolvedValue([]);
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: 'codex' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
       reloadModelsWorker,
     ).toPromise();
 
@@ -79,13 +79,13 @@ describe('modelReloadSaga', () => {
         }),
       )
       .mockResolvedValueOnce([{ value: 'gpt-5', label: 'GPT-5' }]);
-    const current = { providerSettings: { activeProviderId: 'auggie' } };
+    const current = { model: { defaultProviderId: 'auggie' } };
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga({ channel, dispatch, getState: () => current }, modelReloadSaga);
     channel.put(reloadModelsForProvider());
     await settle();
-    current.providerSettings.activeProviderId = 'codex';
+    current.model.defaultProviderId = 'codex';
     channel.put(reloadModelsForProvider());
     await settle();
     resolveFirst([{ value: 'stale', label: 'Stale' }]);

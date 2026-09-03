@@ -17,6 +17,10 @@ import {
   setEnabled,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import {
+  initialState as externalEditorsInitialState,
+  setEditorOrder,
+} from '$store/renderer/slices/external-editors/external-editors-slice';
+import {
   applyProposalRequested,
   undoProposalRequested,
 } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
@@ -79,6 +83,7 @@ function makeState(overrides: Partial<StoreState> = {}): StoreState {
   return {
     backgroundAgentSettings: backgroundAgentSettingsInitialState,
     mcpSettings: mcpSettingsInitialState,
+    externalEditors: externalEditorsInitialState,
     userPreferences: userPreferencesInitialState,
     settingsProposalHistory: { entries: {} },
     providerCatalog,
@@ -140,6 +145,56 @@ describe('settings-proposal-actions', () => {
         apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
       },
     ]);
+  });
+
+  it('applies normalized Open In editor order, persists it, and returns a reversible change', async () => {
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
+    mocks.getState.mockReturnValue(
+      makeState({
+        externalEditors: { ...externalEditorsInitialState, editorOrder: ['vscode', 'zed'] },
+      }),
+    );
+
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('openIn.editorOrder', ['zed', 42, 'zed', 'vscode'])),
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setEditorOrder(['zed', 'vscode']));
+    expect(setItem).toHaveBeenCalledWith(
+      'settings:openInEditorsOrder',
+      JSON.stringify(['zed', 'vscode']),
+    );
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'openIn.editorOrder',
+        value: ['vscode', 'zed'],
+        apply: { kind: 'local-storage-set', key: 'settings:openInEditorsOrder' },
+      },
+    ]);
+
+    setItem.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setEditorOrder(['vscode', 'zed']));
+    expect(setItem).toHaveBeenCalledWith(
+      'settings:openInEditorsOrder',
+      JSON.stringify(['vscode', 'zed']),
+    );
+  });
+
+  it('rejects a non-array Open In editor order value without writing it', async () => {
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
+
+    await expect(
+      applySettingsProposalWork(makeDetail(makeProposal('openIn.editorOrder', 'zed'))),
+    ).rejects.toThrow('Invalid value for setting "openIn.editorOrder": "zed"');
+
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: setEditorOrder.type }),
+    );
+    expect(setItem).not.toHaveBeenCalledWith('settings:openInEditorsOrder', expect.anything());
   });
 
   it('narrows font setting values without unsafe casts', async () => {

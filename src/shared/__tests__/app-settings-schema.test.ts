@@ -8,6 +8,16 @@ import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from '../theme-presets-manife
 import { UPDATE_CHANNELS } from '../../features/auto-update/types';
 
 describe('app settings schema', () => {
+  it('defines the persisted Open In editor order setting', () => {
+    expect(findAppSettingDefinition('openIn.editorOrder')).toMatchObject({
+      type: 'array',
+      source: 'local-storage',
+      storageKey: 'settings:openInEditorsOrder',
+      defaultValue: [],
+      apply: { kind: 'local-storage-set', key: 'settings:openInEditorsOrder' },
+    });
+  });
+
   it('defines the persisted GitHub link default action choices', () => {
     expect(findAppSettingDefinition('githubLinks.defaultAction')).toMatchObject({
       type: 'enum',

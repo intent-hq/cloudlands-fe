@@ -309,6 +309,9 @@ vi.mock('../AgentSubscriptions.svelte', async () => ({
 vi.mock('../AttentionRequestBanner.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
+vi.mock('../AuroraBackground.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 vi.mock('../BackgroundHooksRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
@@ -509,6 +512,43 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('mounts the regular Aurora only while a streaming panel is active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: false },
+    });
+    await tick();
+
+    expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    await tick();
+    await vi.runAllTimersAsync();
+    expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+  });
+
+  it('mounts the Chief Aurora when its inactive streaming panel becomes active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSessionIsStreaming.set(true);
+    const chiefWorkspace = workspace('__chief__');
+    const view = render(ChatPanel, {
+      props: { workspace: chiefWorkspace, agentId: 'chief-agent', isActive: false },
+    });
+    await tick();
+
+    expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+
+    await view.rerender({ workspace: chiefWorkspace, agentId: 'chief-agent', isActive: true });
+    await tick();
+    expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
+  });
+
   it('keeps an active response running on Escape and stops it from the visible control', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSessionIsStreaming.set(true);

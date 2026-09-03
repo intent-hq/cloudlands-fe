@@ -238,7 +238,18 @@ test('accepts live response updates during collapse without stale detached conte
   expect(
     await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
   ).toBe(true);
-  await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
+  const body = component.getByTestId('prepared-response-body');
+  await expect(body).toHaveCount(1);
+  await expect(body).toBeVisible();
+  expect(
+    await body.evaluate((node) => {
+      const groupContent = node.closest('[data-response-group-content]');
+      return groupContent?.closest('[data-operational-preview-content]') !== null;
+    }),
+  ).toBe(true);
+  expect(
+    await body.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
+  ).toBe(true);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
   ).toBeLessThanOrEqual(8);
