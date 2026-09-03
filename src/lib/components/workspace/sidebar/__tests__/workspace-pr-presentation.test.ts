@@ -72,6 +72,22 @@ describe('buildWorkspacePRPresentationModel', () => {
     expect(rows.map(({ number }) => number)).toEqual([2, 1, 3, 4]);
   });
 
+  it('breaks same-status ties by most recent update, then higher PR number', () => {
+    const rows = build(
+      [
+        makePR({ id: 'older', number: 12, updatedAt: '2026-08-01T00:00:00Z' }),
+        makePR({ id: 'newer', number: 5, updatedAt: '2026-08-09T00:00:00Z' }),
+        makePR({ id: 'no-timestamp', number: 20, updatedAt: undefined }),
+        makePR({ id: 'same-time-low', number: 7, updatedAt: '2026-08-09T00:00:00Z' }),
+      ],
+      null,
+      [],
+    );
+
+    expect(rows.every(({ status }) => status === 'open')).toBe(true);
+    expect(rows.map(({ number }) => number)).toEqual([7, 5, 12, 20]);
+  });
+
   it('uses the active PR only as the legacy fallback', () => {
     const active = makePR({ number: 9, title: 'Active fallback' });
     expect(build([], active, [])).toMatchObject([{ number: 9, title: 'Active fallback' }]);

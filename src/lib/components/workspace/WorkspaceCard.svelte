@@ -578,7 +578,7 @@
       {#if primaryPr}
         {@const pr = primaryPr}
         <span
-          class="wc-pr-list flex shrink-0 items-center"
+          class="flex shrink-0 items-center"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
@@ -881,26 +881,6 @@
 {/if}
 
 <style>
-  /* Interactive PR items are Button primitives whose base carries
-     `type-body`; that unlayered role class is declared after `.type-caption`
-     in app.css and would win the cascade, so the caption role is re-applied
-     here with scoped (higher-specificity) selectors to keep the pill's
-     typography identical to its non-interactive sibling. */
-  .wc-pr-list :global([data-slot='button']) {
-    font-size: var(--text-caption-size);
-    line-height: var(--text-caption-line-height);
-    font-weight: var(--text-caption-weight);
-    letter-spacing: var(--text-caption-tracking);
-  }
-
-  .wc-pr-list {
-    scrollbar-width: none;
-  }
-
-  .wc-pr-list::-webkit-scrollbar {
-    display: none;
-  }
-
   @container (max-width: 220px) {
     .wc-secondary {
       display: none;

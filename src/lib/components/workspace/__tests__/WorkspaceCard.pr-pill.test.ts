@@ -337,6 +337,77 @@ describe('WorkspaceCard PR items', () => {
     expect(items[0].getAttribute('data-pr-status')).toBe('open');
   });
 
+  it('shows the most recently updated PR when several share the earliest state', () => {
+    const workspace = makeWorkspaceWithPr({
+      pullRequests: [
+        {
+          id: 'pr-1',
+          number: 42,
+          url: 'https://github.com/acme/widgets/pull/42',
+          title: 'Older open PR',
+          status: PullRequestStatus.Open,
+          createdAt: '2026-08-01T00:00:00Z',
+          updatedAt: '2026-08-02T00:00:00Z',
+        },
+        {
+          id: 'pr-2',
+          number: 40,
+          url: 'https://github.com/acme/widgets/pull/40',
+          title: 'Recently updated open PR',
+          status: PullRequestStatus.Open,
+          createdAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-08-09T00:00:00Z',
+        },
+      ],
+    });
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+    const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
+
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-pr-identity')).toBe('acme/widgets#40');
+  });
+
+  it('falls back to the merged PR when only merged and closed PRs exist', () => {
+    const workspace = makeWorkspaceWithPr({
+      pullRequests: [
+        {
+          id: 'pr-1',
+          number: 42,
+          url: 'https://github.com/acme/widgets/pull/42',
+          title: 'Closed PR',
+          status: PullRequestStatus.Closed,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'pr-2',
+          number: 41,
+          url: 'https://github.com/acme/widgets/pull/41',
+          title: 'Merged PR',
+          status: PullRequestStatus.Merged,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+    const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
+
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-pr-status')).toBe('merged');
+  });
+
+  it('renders no PR item when the workspace has no pull requests', () => {
+    const { container } = render(WorkspaceCard, {
+      props: { workspace: makeWorkspaceWithPr({ pullRequests: [] }) },
+    });
+
+    expect(container.querySelector('[data-workspace-card-pr-item]')).toBeNull();
+    expect(container.querySelector('[data-workspace-card-pr-list]')).toBeNull();
+  });
+
   it('keeps numbers in accessible names without visible number text', () => {
     const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspaceWithPr() } });
     const item = container.querySelector('[data-workspace-card-pr-item]')!;
