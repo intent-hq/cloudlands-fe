@@ -52,6 +52,7 @@ vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backendMocks.request }),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('../../../../shared/main/host-exec', () => ({ hostExec: vi.fn() }));

@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.request }),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';

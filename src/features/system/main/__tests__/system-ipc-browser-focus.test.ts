@@ -33,6 +33,11 @@ vi.mock('electron', () => ({
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: vi.fn(),
 }));
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: vi.fn() }),
+  getBackendIdForIpcSender: vi.fn(() => 'local'),
+  onBackendReconnected: vi.fn(() => () => {}),
+}));
 
 vi.mock('../../../../shared/main/async-utils', () => ({
   findAuggieAsync: vi.fn(),
