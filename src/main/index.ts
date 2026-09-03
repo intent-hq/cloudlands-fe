@@ -1435,8 +1435,10 @@ app.whenReady().then(async () => {
   });
 
   // Rebuild menu when the main-process locale changes (renderer synced a new
-  // language preference over app:set-language-preference)
+  // language preference over app:set-language-preference); the macOS about
+  // panel's localized credits are re-applied for the same reason.
   app.on('main-locale-changed', () => {
+    applyAboutPanelOptions();
     rebuildMenu();
   });
 
