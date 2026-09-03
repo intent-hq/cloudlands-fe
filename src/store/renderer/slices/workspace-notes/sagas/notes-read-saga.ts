@@ -3,10 +3,7 @@ import { call, put, race, take } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLeadingByWorkspace,
   takeSingleFlightInContext,
@@ -20,6 +17,7 @@ import {
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
   selectNote,
+  workspaceNotesHydrationRequested,
   type NoteEventType,
 } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
@@ -36,9 +34,9 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
   );
 }
 
-function* hydrateWorkspaceNotes(workspaceId: string) {
+function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
-  if (current.loading || current.initialized) return;
+  if (current.loading || (!force && current.initialized)) return;
   try {
     // Slim projection (§5.2): the initial hydrate does not need full bodies —
     // sidebar surfaces read titles/tags/metadata, and slim rows carry
@@ -98,11 +96,11 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
   }
 }
 
-function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceMounted>) {
-  const [workspaceId] = action.payload;
+function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceNotesHydrationRequested>) {
+  const [workspaceId, , force] = action.payload;
   if (!workspaceId) return;
   yield* race({
-    hydrate: call(hydrateWorkspaceNotes, workspaceId),
+    hydrate: call(hydrateWorkspaceNotes, workspaceId, force),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
@@ -117,7 +115,7 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
 }
 
 export function* notesReadSaga() {
-  yield* takeLeadingByWorkspace(workspaceMounted, hydrateWorkspaceNotesWorker);
+  yield* takeLeadingByWorkspace(workspaceNotesHydrationRequested, hydrateWorkspaceNotesWorker);
   // Per-note single-flight with trailing coalesce: events for different notes
   // run concurrently (a global takeLeading would drop a second note's event
   // while the first is fetching), while a burst of events for one note
