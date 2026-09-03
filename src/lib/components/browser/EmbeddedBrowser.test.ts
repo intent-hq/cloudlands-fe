@@ -448,6 +448,17 @@ describe('EmbeddedBrowser', () => {
       );
     });
 
+    it('omits the hostname separator when the URL has no hostname', async () => {
+      const { container, getByRole } = renderPage({ url: 'file:///tmp/report.html' });
+      const titleEvent = new Event('page-title-updated');
+      Object.defineProperty(titleEvent, 'title', { value: 'Local report' });
+
+      container.querySelector('webview')!.dispatchEvent(titleEvent);
+
+      const identity = getByRole('button', { name: 'Edit browser address' });
+      await waitFor(() => expect(identity.textContent?.trim()).toBe('Local report'));
+    });
+
     it('keeps the webview source current across full and in-page navigation', async () => {
       const { container } = renderPage();
       const webview = container.querySelector('webview')!;

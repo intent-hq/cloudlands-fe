@@ -1145,7 +1145,7 @@
             <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
               >{identityTitle}</span
             >
-            {#if pageTitle && pageHostname !== pageTitle}
+            {#if pageTitle && pageHostname && pageHostname !== pageTitle}
               <!-- i18n-ignore (punctuation-only separator) -->
               <span class="shrink-0 text-muted-foreground" aria-hidden="true">·</span>
               <span class="max-w-[40%] truncate text-xs text-muted-foreground">{pageHostname}</span>
