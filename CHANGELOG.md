@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.130.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.129.1...v2.130.0) (2026-09-03)
+
+
+### 🚀 Features
+
+* **settings:** always bind loopback and allow hand-picking listen targets ([#2115](https://github.com/intent-hq/cloudlands-fe/issues/2115)) ([fb52741](https://github.com/intent-hq/cloudlands-fe/commit/fb527412e29422e482f564c9f60f0930d77f59ba))
+* **settings:** split idle reap into switch row and conditional minutes row ([#2114](https://github.com/intent-hq/cloudlands-fe/issues/2114)) ([c5f3d3e](https://github.com/intent-hq/cloudlands-fe/commit/c5f3d3e64dc3aa5fc708691acdc480c81aa92e90))
+
 ## [2.129.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.129.0...v2.129.1) (2026-09-03)
 
 
