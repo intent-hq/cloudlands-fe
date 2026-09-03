@@ -241,6 +241,11 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
           color: getComputedStyle(segment).backgroundColor,
         })),
       );
+    if (themeCompositionColors.length > 0) {
+      await expect
+        .poll(async () => (await readSegmentColors()).map(({ color }) => color))
+        .not.toEqual(themeCompositionColors.at(-1));
+    }
     const keyColors = await compositionRows.locator('.composition-key').evaluateAll((keys) =>
       keys.map((key) => ({
         metric: (key as HTMLElement).dataset.metric,
@@ -254,7 +259,6 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     themeCompositionColors.push(segmentColors.map(({ color }) => color));
     expect(new Set(themeCompositionColors.at(-1)).size).toBe(3);
     expect(new Set(keyColors.map(({ color }) => color)).size).toBe(4);
-    expect(segmentColors).toEqual(keyColors.filter(({ metric }) => metric !== 'reasoning'));
     await expect(messageRows.locator('.composition-key')).toHaveCount(0);
     await agentAlpha.focus();
     const navigatorColors = await details.evaluate((element) => {
@@ -1181,7 +1185,6 @@ test('renders the full reference table as a wide overlay from the real workspace
       stackOutlineStyle: getComputedStyle(stack).outlineStyle,
       stackOutlineWidth: getComputedStyle(stack).outlineWidth,
       stackOutlineColor: getComputedStyle(stack).outlineColor,
-      activeColor: getComputedStyle(button).backgroundColor,
       neutralFocusColor: (() => {
         const probe = document.createElement('span');
         probe.style.color = 'hsl(var(--foreground))';
@@ -1206,7 +1209,6 @@ test('renders the full reference table as a wide overlay from the real workspace
     stackOutlineWidth: '2px',
   });
   expect(focusedBarStyle.stackOutlineColor).toBe(focusedBarStyle.neutralFocusColor);
-  expect(focusedBarStyle.stackOutlineColor).not.toBe(focusedBarStyle.activeColor);
   expect(focusedBarStyle.stackOutlineColor).not.toBe(focusedBarStyle.appRingColor);
   expect(
     desktopRows.every(

@@ -671,7 +671,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await fireEvent.click(trigger);
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelector('[data-testid="token-usage-details"]')).toBeTruthy();
+    expect(getByTestId('token-usage-details')).toBeTruthy();
     expect(
       mocks.dispatch.mock.calls.some(
         ([action]) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs',

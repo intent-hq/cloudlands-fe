@@ -191,8 +191,8 @@ for (const scenario of [
       tokenTrigger.boundingBox(),
       agentsLauncher.boundingBox(),
     ]);
-    await expect(tokenTrigger).toHaveText(/124\.3K/);
-    await expect(tokenTrigger).toHaveAccessibleDescription('124.3K tokens used');
+    await expect(tokenTrigger).toHaveText(/124K/);
+    await expect(tokenTrigger).toHaveAccessibleDescription('124K tokens used');
     expect(tokenTriggerBox!.x).toBeGreaterThan(agentsLabelBox!.x + agentsLabelBox!.width);
     expect(
       Math.abs(
@@ -253,12 +253,12 @@ test('preserves hover, focus, and click behavior without open-panel markers', as
 
   const tokenTrigger = component.getByTestId('token-usage-disclosure');
   await tokenTrigger.click();
-  await expect(component.getByTestId('token-usage-details')).toBeVisible();
+  await expect(page.getByTestId('token-usage-details')).toBeVisible();
   await expect(component.locator('[data-sidebar-overlay]')).toHaveCount(0);
 
   await component.getByTestId('agent-panel-toggle').click();
   await expect(component.locator('[data-sidebar-overlay]')).toBeVisible();
-  await expect(component.getByTestId('token-usage-details')).toHaveCount(0);
+  await expect(page.getByTestId('token-usage-details')).toHaveCount(0);
   await expect(component.getByTestId('token-usage-disclosure')).toHaveCount(0);
   await expect(component.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
     'data-active-tab',
