@@ -1148,7 +1148,9 @@
             {#if pageTitle && pageHostname && pageHostname !== pageTitle}
               <!-- i18n-ignore (punctuation-only separator) -->
               <span class="shrink-0 text-muted-foreground" aria-hidden="true">·</span>
-              <span class="max-w-[40%] truncate text-xs text-muted-foreground">{pageHostname}</span>
+              <span class="browser-toolbar-hostname truncate text-xs text-muted-foreground"
+                >{pageHostname}</span
+              >
             {/if}
           </button>
         {/if}
@@ -1264,6 +1266,10 @@
 <style>
   .browser-toolbar {
     container-type: inline-size;
+  }
+
+  .browser-toolbar-hostname {
+    max-width: 40%;
   }
 
   @container (max-width: 399px) {
