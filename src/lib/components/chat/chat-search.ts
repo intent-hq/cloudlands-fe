@@ -93,7 +93,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
           );
           return;
         }
-        if (child.type === 'text') {
+        if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
           addText(
             child.text || child.content || '',
             chatSearchBlockPath(blockIndex, childIndex),
