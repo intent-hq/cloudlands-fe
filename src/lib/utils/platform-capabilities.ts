@@ -64,6 +64,21 @@ export function isElectronPlatform(): boolean {
   return getPlatform() === 'electron';
 }
 
+const ELECTRON_USER_AGENT_PATTERN = /\bElectron\/\d/;
+
+/**
+ * Whether the renderer is hosted by Electron, decided from the user agent
+ * rather than from `window.electronAPI` presence. Chromium embeds
+ * `Electron/<version>` in the default UA before any script runs, so this is
+ * answerable synchronously at module-evaluation time — unlike the preload
+ * bridge, which can be exposed after early renderer modules evaluate.
+ * Exported with an explicit `userAgent` for tests.
+ */
+export function isElectronRuntime(userAgent?: string): boolean {
+  const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
+  return typeof ua === 'string' && ELECTRON_USER_AGENT_PATTERN.test(ua);
+}
+
 /** Capability profile for a given platform. */
 export function capabilitiesForPlatform(platform: Platform): PlatformCapabilities {
   const electron = platform === 'electron';

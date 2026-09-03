@@ -7,8 +7,14 @@ import {
   getPlatform,
   hasCapability,
   isElectronPlatform,
+  isElectronRuntime,
   type PlatformCapabilities,
 } from './platform-capabilities';
+
+const ELECTRON_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Cloudlands/2.3.0 Chrome/136.0.7103.115 Electron/36.4.0 Safari/537.36';
+const CHROME_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
 describe('platform-capabilities', () => {
   describe('detectPlatform', () => {
@@ -92,6 +98,32 @@ describe('platform-capabilities', () => {
       } finally {
         (window as any).electronAPI = original;
       }
+    });
+  });
+
+  describe('isElectronRuntime', () => {
+    it('recognizes the Electron user agent without consulting window.electronAPI', () => {
+      const original = (window as any).electronAPI;
+      try {
+        delete (window as any).electronAPI;
+        expect(isElectronRuntime(ELECTRON_UA)).toBe(true);
+      } finally {
+        (window as any).electronAPI = original;
+      }
+    });
+
+    it('returns false for a plain browser user agent even when a mock electronAPI exists', () => {
+      expect((window as any).electronAPI).toBeDefined();
+      expect(isElectronRuntime(CHROME_UA)).toBe(false);
+    });
+
+    it('does not match "Electron" outside the Electron/<version> product token', () => {
+      expect(isElectronRuntime('Mozilla/5.0 ElectronFan/1.0 Chrome/136.0.0.0')).toBe(false);
+      expect(isElectronRuntime('')).toBe(false);
+    });
+
+    it('reads navigator.userAgent by default (jsdom is not Electron)', () => {
+      expect(isElectronRuntime()).toBe(false);
     });
   });
 });

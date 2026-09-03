@@ -23,6 +23,7 @@ import {
   getWebDaemonStatusSource,
   onWebDaemonStatusSourceRegistered,
 } from './client/live/web-daemon-status';
+import { isElectronRuntime } from './utils/platform-capabilities';
 
 /**
  * Whether the browser mock is allowed to activate: dev builds or explicit
@@ -481,12 +482,26 @@ const browserElectronAPI = {
  * Refuses to install outside dev builds / explicit opt-in (see
  * `isBrowserMockEnabled`), so a packaged run without a bridge fails loudly via
  * `UnbridgedMockIpcChannelError` instead of silently serving mock data.
+ *
+ * Also refuses inside an Electron renderer even when `window.electronAPI` is
+ * not present yet: the preload bridge can be exposed after early renderer
+ * modules evaluate, so bridge presence at import time is not a safe signal.
+ * The Electron check reads the user agent, which is available synchronously.
  */
 export function installBrowserMock(): boolean {
   if (typeof window === 'undefined') return false;
 
   // Dev-only affordance — never activate in packaged/daemon-bridged runs
   if (!isBrowserMockEnabled()) return false;
+
+  // Electron renderer — the preload bridge owns window.electronAPI, even if
+  // it has not been exposed yet (see intent-hq/monorepo#3606)
+  if (isElectronRuntime()) {
+    console.warn(
+      '[BrowserMock] Electron renderer detected — refusing to install the mock over the preload bridge',
+    );
+    return false;
+  }
 
   // Already have a real electronAPI — don't overwrite
   if ((window as any).electronAPI) return false;
