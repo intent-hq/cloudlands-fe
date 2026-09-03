@@ -151,6 +151,28 @@ playwright-cli -s=ui-preview-chat console error
 playwright-cli -s=ui-preview-chat close
 ```
 
+### Show your work with a video
+
+Record demos only when a video helps the reviewer understand a flow. Keep every recording under
+`.demo-artifacts/<timestamp>-<flow>/<flow>.webm`; `.demo-artifacts/` is git-ignored and videos must
+never be committed. When `playwright-cli` is available, open a clean session, start recording with
+`video-start <path>`, perform the flow, then run `video-stop` and close the session.
+
+If video recording is unavailable, the embedded browser can capture a sequence of screenshot frames.
+This is a fallback, not the preferred recording path: save numbered PNGs in the same artifact directory
+and, when `ffmpeg` is available, stitch them with `ffmpeg -framerate 8 -i frame-%04d.png -c:v libvpx-vp9
+-pix_fmt yuv420p <flow>.webm`. Keep the viewport fixed and capture at a steady interval.
+
+Before linking the result, verify it is non-empty with `test -s <path>`. Embed the verified recording
+in chat or a note with one line:
+
+```markdown
+![demo](intent://local/file/.demo-artifacts/<timestamp>-<flow>/<flow>.webm)
+```
+
+The file must belong to the message's workspace. Do not link a client-local capture or a sibling
+workspace artifact; copy or create the recording in the daemon workspace first.
+
 Call `ws.browser.listTabs` before `ws.browser.openTab` and reuse a matching URL. New
 agent tabs are hidden by default and can still be evaluated, inspected, and captured.
 Keep the tab open so Vite HMR updates it after source edits. Use `ws.browser.showTab`
@@ -263,10 +285,12 @@ related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
 select a conservative suite instead of silently skipping coverage.
 
-Expensive component and type checks share a host-wide lock. The command waits for at
-most 30 seconds by default and never stops the process that owns the lock. Set
-`VERIFY_CHANGED_LOCK_TIMEOUT_MS` to a bounded value of at most 300000 when a longer
-queue is useful.
+Only checks that genuinely conflict use host-wide locks, held for one check at a time:
+Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
+`vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
+checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
+Vitest. `VERIFY_CHANGED_LOCK_TIMEOUT_MS` overrides either wait but remains capped at
+300000 ms, and the command never stops the process that owns a lock.
 
 After any structural change (moving files, changing imports, extracting modules):
 
@@ -393,6 +417,32 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
   interaction or state, not the exact wording as the contract.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
+
+### Component tests (Playwright CT) — when and how
+
+Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
+real browser can observe: layout/geometry, focus and keyboard handling, native browser
+APIs, CSS/motion. State, wire, validation, and routing logic belong in Vitest — a CT spec
+is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxed on CI.
+
+- **Matrix cells must map to a named contract.** Loop over a width only when that width
+  is a real breakpoint under test, over both themes only when color/theme is under test,
+  over both zooms only when scaling is under test. A cross-product "for completeness" is
+  not a contract and multiplies CI time.
+- **One `test()` is one retry unit.** A loop of assertions inside a single `test()`
+  callback, or a file under `test.describe.configure({ mode: 'serial' })`, is retried and
+  reported as a block — one bad cell reruns the whole block and hides which cell broke.
+  Generate one `test()` per cell instead, and do not use serial mode unless tests truly
+  share ordered state.
+- **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
+  or, if it needs more time, tag the individual test
+  `{ tag: '@quarantine' }` — never a whole file. The CT job is merge-queue-only, so a
+  pass-on-retry ejects the PR from the queue rather than reddening a PR check.
+  Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
+  shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
+  not a parking lot — remove the tag in the PR that fixes the flake.
+- Motion specs that sample animation progress mid-flight are the historical flake source;
+  prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
 
 ### Testing — every feature/fix against a mock BE
 

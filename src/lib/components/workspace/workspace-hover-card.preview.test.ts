@@ -154,6 +154,7 @@ describe('workspace hover-card preview audit', () => {
       'not_started',
       'idle',
       'complete',
+      'pr_queued',
       'pr_ready',
       'pr_open',
       'pr_merged',

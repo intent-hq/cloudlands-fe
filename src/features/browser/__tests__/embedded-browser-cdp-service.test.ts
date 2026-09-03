@@ -51,6 +51,10 @@ type PanelTab = {
   closable?: boolean;
   ownerAgentId?: string;
   emulatedSize?: { width: number; height: number };
+  viewport?:
+    | { mode: 'fit' }
+    | { mode: 'preset'; presetId: string; width: number; height: number }
+    | { mode: 'custom'; width: number; height: number };
 };
 
 /** Fake live webview backing a mounted tab. */
@@ -159,6 +163,29 @@ describe('focusTab', () => {
       { tabId: 'tab-1', workspaceId: 'ws-1', pin: true },
     );
     service.unregisterTab('tab-1');
+  });
+});
+
+describe('openDevToolsPanel', () => {
+  it('opens DevTools and selects the requested built-in panel', async () => {
+    const service = await loadService();
+    const executeJavaScript = vi.fn().mockResolvedValue(undefined);
+    const wc = {
+      ...fakeWebview(43, 'http://a/'),
+      openDevTools: vi.fn(),
+      devToolsWebContents: {
+        isDestroyed: () => false,
+        executeJavaScript,
+      },
+    };
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-devtools', 43);
+
+    await service.openDevToolsPanel('tab-devtools', 'console');
+
+    expect(wc.openDevTools).toHaveBeenCalledTimes(1);
+    expect(executeJavaScript).toHaveBeenCalledWith('DevToolsAPI.showPanel("console")');
+    service.unregisterTab('tab-devtools');
   });
 });
 
@@ -402,6 +429,217 @@ describe('findModelTabByRequestedUrl (#2787, per-agent #2857)', () => {
   });
 });
 
+describe('viewport emulation modes', () => {
+  it('emulates an owned visible fit tab at its reported bounds with scale 1', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(60, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fit-visible', 60);
+    service.setTabOwner('tab-fit-visible', 'agent-1');
+    service.reportTabViewBounds('tab-fit-visible', 640, 420);
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 640, height: 420, scale: 1 }),
+      );
+    });
+    expect(service.getTabEffectiveViewportSize('tab-fit-visible')).toEqual({
+      width: 640,
+      height: 420,
+    });
+  });
+
+  it('uses the default fallback for an owned hidden fit tab', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(61, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fit-hidden', 61);
+    service.setTabOwner('tab-fit-hidden', 'agent-1');
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 1280, height: 800, scale: 1 }),
+      );
+    });
+  });
+
+  it('scales a preset down when it is larger than the panel', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(62, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-preset-large', 62);
+    service.setTabViewport('tab-preset-large', {
+      mode: 'preset',
+      presetId: 'large',
+      width: 800,
+      height: 600,
+    });
+    service.reportTabViewBounds('tab-preset-large', 400, 300);
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 800, height: 600, scale: 0.5 }),
+      );
+    });
+  });
+
+  it('does not upscale a preset smaller than the panel', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(63, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-preset-small', 63);
+    service.reportTabViewBounds('tab-preset-small', 800, 600);
+    service.setTabViewport('tab-preset-small', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 400, height: 300, scale: 1 }),
+      );
+    });
+  });
+
+  it('updates an owned tab retained size from a renderer-selected fixed viewport', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-owned-preset', 'agent-1', undefined, {
+      width: 1280,
+      height: 800,
+    });
+
+    service.setTabViewport('tab-owned-preset', {
+      mode: 'preset',
+      presetId: 'iphone-se',
+      width: 375,
+      height: 667,
+    });
+
+    expect(service.getTabEmulatedSize('tab-owned-preset')).toEqual({ width: 375, height: 667 });
+    expect(service.resizeTab('tab-owned-preset', 390)).toEqual({ width: 390, height: 667 });
+  });
+
+  it('keeps an owned tab retained size when switching to fit mode', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-owned-fit', 'agent-1', undefined, { width: 1024, height: 768 });
+
+    service.setTabViewport('tab-owned-fit', { mode: 'fit' });
+
+    expect(service.getTabEmulatedSize('tab-owned-fit')).toEqual({ width: 1024, height: 768 });
+  });
+
+  it('does not attach the debugger for a plain unowned fit tab', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(64, {});
+    wc.debugger.isAttached = () => false;
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-fit', 64);
+    service.setTabViewport('tab-user-fit', { mode: 'fit' });
+
+    expect(wc.debugger.attach).not.toHaveBeenCalled();
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalled();
+    expect(service.getTabEffectiveViewportSize('tab-user-fit')).toBeUndefined();
+  });
+
+  it('clears device metrics after an unowned tab returns from preset to fit', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(66, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-preset', 66);
+    service.setTabViewport('tab-user-preset', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.any(Object),
+      ),
+    );
+
+    service.setTabViewport('tab-user-preset', { mode: 'fit' });
+
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.clearDeviceMetricsOverride',
+        undefined,
+      ),
+    );
+  });
+
+  it('waits for an in-flight device metrics override before clearing it', async () => {
+    let resolveOverride!: () => void;
+    const override = new Promise<void>((resolve) => {
+      resolveOverride = resolve;
+    });
+    const service = await loadService();
+    const wc = fakeCdpWebview(67, {
+      'Emulation.setDeviceMetricsOverride': override,
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-in-flight', 67);
+    service.setTabViewport('tab-user-in-flight', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.any(Object),
+      ),
+    );
+
+    service.setTabViewport('tab-user-in-flight', { mode: 'fit' });
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Emulation.clearDeviceMetricsOverride',
+      undefined,
+    );
+
+    resolveOverride();
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.clearDeviceMetricsOverride',
+        undefined,
+      ),
+    );
+  });
+
+  it('rehydrates a legacy owned tab into fit mode', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(65, {});
+    mocks.fromId.mockReturnValue(wc);
+    mocks.getAllWebContents.mockReturnValue([wc]);
+    service.registerTab('tab-rehydrated-fit', 65);
+    wireRenderer([
+      {
+        tabId: 'tab-rehydrated-fit',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+      },
+    ]);
+    await service.listAllTabs('ws-1');
+    service.reportTabViewBounds('tab-rehydrated-fit', 700, 500);
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 700, height: 500, scale: 1 }),
+      );
+    });
+  });
+});
+
 describe('tab ownership registry (#2857)', () => {
   it('claimTab: first claim wins, second claimant gets already-claimed with the owner id', async () => {
     const service = await loadService();
@@ -548,6 +786,7 @@ describe('tab ownership registry (#2857)', () => {
         workspaceId: 'ws-1',
         ownerAgentId: 'agent-1',
         emulatedSize: { width: 390, height: 844 },
+        viewport: { mode: 'custom', width: 390, height: 844 },
       },
     );
   });

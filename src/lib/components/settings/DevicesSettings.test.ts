@@ -4,22 +4,21 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
-import type { ConnectionRecord } from '$shared/types/connections';
+import type { ConnectionRecord, KeychainSyncStateResult } from '$shared/types/connections';
 
 const mocks = vi.hoisted(() => ({
   loaded: true,
   connections: [] as ConnectionRecord[],
   pinnedVersion: null as string | null,
   connectedIds: [] as string[],
+  keychainSync: null as KeychainSyncStateResult | null,
   // Optional overrides for the shared eligibility predicates (null = real
   // implementation). Lets local-row tests exercise the eligible path without
   // depending on the predicate's local-entry handling.
   isDaemonBehindPin: null as
-    | (typeof import('$lib/utils/device-update-eligibility'))['isDaemonBehindPin']
-    | null,
+    (typeof import('$lib/utils/device-update-eligibility'))['isDaemonBehindPin'] | null,
   canRequestDeviceUpdate: null as
-    | (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate']
-    | null,
+    (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate'] | null,
   dispatch: vi.fn(),
   update: vi.fn(),
   test: vi.fn(),
@@ -27,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   forget: vi.fn(),
   updateBackend: vi.fn(),
+  setSyncEnabled: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -44,7 +44,7 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
   selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
   selectRemoteConnections: () =>
     mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
-  selectKeychainSyncState: () => mocks.readable(() => null),
+  selectKeychainSyncState: () => mocks.readable(() => mocks.keychainSync),
   selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
   selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
 }));
@@ -54,7 +54,9 @@ vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
   return {
     ...actual,
     isDaemonBehindPin: (...args: Parameters<typeof actual.isDaemonBehindPin>) =>
-      mocks.isDaemonBehindPin ? mocks.isDaemonBehindPin(...args) : actual.isDaemonBehindPin(...args),
+      mocks.isDaemonBehindPin
+        ? mocks.isDaemonBehindPin(...args)
+        : actual.isDaemonBehindPin(...args),
     canRequestDeviceUpdate: (...args: Parameters<typeof actual.canRequestDeviceUpdate>) =>
       mocks.canRequestDeviceUpdate
         ? mocks.canRequestDeviceUpdate(...args)
@@ -72,7 +74,7 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
-  setKeychainSyncEnabledRequested: vi.fn(),
+  setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
@@ -105,6 +107,7 @@ describe('DevicesSettings', () => {
     mocks.connections = [local, remote];
     mocks.pinnedVersion = null;
     mocks.connectedIds = [];
+    mocks.keychainSync = null;
     mocks.isDaemonBehindPin = null;
     mocks.canRequestDeviceUpdate = null;
     mocks.update.mockImplementation((params) => ({
@@ -136,6 +139,11 @@ describe('DevicesSettings', () => {
       type: 'connections/updateBackendRequested',
       payload: [id],
       promise: Promise.resolve({ ok: true }),
+    }));
+    mocks.setSyncEnabled.mockImplementation((enabled) => ({
+      type: 'connections/setKeychainSyncEnabledRequested',
+      payload: [enabled],
+      promise: Promise.resolve({ supported: true, enabled, status: null }),
     }));
   });
 
@@ -472,10 +480,7 @@ describe('DevicesSettings', () => {
         actual.canRequestDeviceUpdate({ ...conn, isLocal: false }, ids, pinned);
       mocks.pinnedVersion = '0.9.1';
       mocks.connectedIds = ['local'];
-      mocks.connections = [
-        { ...local, daemonVersion: '0.9.0', updateSupported: true },
-        remote,
-      ];
+      mocks.connections = [{ ...local, daemonVersion: '0.9.0', updateSupported: true }, remote];
       render(DevicesSettings);
 
       expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
@@ -575,6 +580,217 @@ describe('DevicesSettings', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ accent: null }));
+  });
+
+  describe('detect-IPs and push-to-cloud toggles', () => {
+    const detectSwitch = () =>
+      screen.getByRole('switch', { name: m.modals_connect_detectHosts_label() });
+    const cloudSwitch = () =>
+      screen.getByRole('switch', { name: m.settings_devices_pushToCloud_label() });
+
+    beforeEach(() => {
+      mocks.keychainSync = { supported: true, enabled: true, status: null };
+    });
+
+    it('reflects the saved flags and sends nothing for untouched toggles', async () => {
+      mocks.connections = [local, { ...remote, detectHosts: false, syncExcluded: true }];
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      expect(detectSwitch().getAttribute('aria-checked')).toBe('false');
+      expect(cloudSwitch().getAttribute('aria-checked')).toBe('false');
+      expect((screen.getByRole('button', { name: 'Update' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+
+      await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'Renamed' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      expect(mocks.update).toHaveBeenCalledWith({
+        id: 'remote-1',
+        label: 'Renamed',
+        accent: 'indigo',
+        host: '10.0.0.2',
+        port: 5181,
+      });
+    });
+
+    it('flips detect-IPs through the update call', async () => {
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      expect(detectSwitch().getAttribute('aria-checked')).toBe('true');
+      await fireEvent.click(detectSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ detectHosts: false }));
+      expect(mocks.update.mock.calls[0][0]).not.toHaveProperty('syncExcluded');
+      expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
+    });
+
+    it('asks for confirmation before excluding a synced device from the cloud', async () => {
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      expect(mocks.update).not.toHaveBeenCalled();
+      const warning = screen.getByRole('alert');
+      expect(within(warning).getByText(m.settings_devices_removeFromCloud_title())).toBeTruthy();
+
+      await fireEvent.click(within(warning).getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(cloudSwitch().getAttribute('aria-checked')).toBe('true');
+      expect(mocks.update).not.toHaveBeenCalled();
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      await fireEvent.click(
+        within(screen.getByRole('alert')).getByRole('button', {
+          name: m.settings_devices_removeFromCloud_confirm(),
+        }),
+      );
+      await waitFor(() =>
+        expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: true })),
+      );
+      expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
+    });
+
+    it('re-includes an excluded device and turns on machine-wide sync when it is off', async () => {
+      mocks.keychainSync = { supported: true, enabled: false, status: null };
+      mocks.connections = [local, { ...remote, syncExcluded: true }];
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      await waitFor(() =>
+        expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: false })),
+      );
+      await waitFor(() => expect(mocks.setSyncEnabled).toHaveBeenCalledWith(true));
+      expect(screen.queryByRole('alert')).toBeNull();
+      await waitFor(() =>
+        expect(screen.queryByRole('form', { name: 'Edit Studio Mac' })).toBeNull(),
+      );
+    });
+
+    it('leaves the machine-wide sync pref alone when the re-inclusion update is rejected', async () => {
+      mocks.keychainSync = { supported: true, enabled: false, status: null };
+      mocks.connections = [local, { ...remote, syncExcluded: true }];
+      mocks.update.mockImplementation((params) => ({
+        type: 'connections/updateRequested',
+        payload: [params],
+        promise: Promise.resolve({ status: 'failed', reason: 'connect-failed' }),
+      }));
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      await waitFor(() =>
+        expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: false })),
+      );
+      expect(await screen.findByRole('alert')).toBeTruthy();
+      expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+      expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
+    });
+
+    it('asks for cloud-removal confirmation again after a confirmed submit fails', async () => {
+      mocks.update.mockImplementation((params) => ({
+        type: 'connections/updateRequested',
+        payload: [params],
+        promise: Promise.resolve({ status: 'failed', reason: 'connect-failed' }),
+      }));
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      await fireEvent.click(
+        within(screen.getByRole('alert')).getByRole('button', {
+          name: m.settings_devices_removeFromCloud_confirm(),
+        }),
+      );
+      await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole('alert')).queryByText(m.settings_devices_removeFromCloud_title()),
+        ).toBeNull(),
+      );
+
+      // Toggle back on, then off again: the earlier consent must not carry over.
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      expect(
+        within(screen.getByRole('alert')).getByText(m.settings_devices_removeFromCloud_title()),
+      ).toBeTruthy();
+    });
+
+    it('dismisses the cloud-removal prompt when the toggle is flipped back on', async () => {
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+      expect(screen.getByRole('alert')).toBeTruthy();
+
+      await fireEvent.click(cloudSwitch());
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(cloudSwitch().getAttribute('aria-checked')).toBe('true');
+      expect((screen.getByRole('button', { name: 'Update' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it('re-includes without touching the sync pref when it is already on', async () => {
+      mocks.connections = [local, { ...remote, syncExcluded: true }];
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      await waitFor(() =>
+        expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: false })),
+      );
+      expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
+    });
+
+    it('keeps the panel open with an error when enabling sync after re-inclusion fails', async () => {
+      mocks.keychainSync = { supported: true, enabled: false, status: null };
+      mocks.connections = [local, { ...remote, syncExcluded: true }];
+      mocks.setSyncEnabled.mockImplementation((enabled) => ({
+        type: 'connections/setKeychainSyncEnabledRequested',
+        payload: [enabled],
+        promise: Promise.reject(new Error('keychain locked')),
+      }));
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      await fireEvent.click(cloudSwitch());
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      await waitFor(() => expect(mocks.setSyncEnabled).toHaveBeenCalledWith(true));
+      expect(await screen.findByRole('alert')).toBeTruthy();
+      expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+    });
+
+    it('disables the cloud toggle with an explanation where keychain sync is unsupported', async () => {
+      mocks.keychainSync = { supported: false, enabled: false, status: null };
+      render(DevicesSettings);
+      await openAction('Edit');
+
+      expect((cloudSwitch() as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByText(m.settings_backendSync_unsupported_description())).toBeTruthy();
+      expect((detectSwitch() as HTMLButtonElement).disabled).toBe(false);
+    });
   });
 
   it('replaces the first inline panel when a second device action opens', async () => {

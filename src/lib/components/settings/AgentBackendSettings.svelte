@@ -244,8 +244,8 @@
 
   /**
    * Reset the stepper to the daemon-acknowledged interval. While reaping is
-   * off the stepper is disabled and shows the value the toggle would restore,
-   * because 0 is not a value the stepper itself can hold.
+   * off the stepper is not rendered and holds the value the toggle would
+   * restore, because 0 is not a value the stepper itself can hold.
    */
   function syncIdleReapFromCommitted() {
     idleReapInput = String(idleReapMinutes > 0 ? idleReapMinutes : idleReapResumeMinutes);
@@ -635,40 +635,51 @@
     </div>
   {/if}
 
-  <!-- Idle reap minutes (hidden when the daemon does not report the path) -->
+  <!-- Idle reap toggle (hidden when the daemon does not report the path) -->
   {#if idleReapSupported}
     <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-foreground">
-          {m.settings_agentBackend_idleReap_label()}
-        </p>
-        <p class="text-xs text-subtle mt-0.5">
+        <label for="idleReapToggle" class="text-sm font-medium text-foreground">
+          {m.settings_agentBackend_idleReap_toggleLabel()}
+        </label>
+        <p id="idleReapDescription" class="text-xs text-subtle mt-0.5">
           {m.settings_agentBackend_idleReap_description({ current: idleReapDisplay })}
         </p>
-        <p class="text-xs text-subtle mt-0.5">
-          {m.settings_agentBackend_idleReap_boundsNote({
-            min: formatInteger(IDLE_REAP_MIN_MINUTES),
-            max: formatInteger(idleReapMaxMinutes),
-          })}
+        <p id="idleReapOffNote" class="text-xs text-subtle mt-0.5">
+          {m.settings_agentBackend_idleReap_offNote()}
         </p>
       </div>
-      <div class="shrink-0 w-56 flex items-center justify-end gap-3">
-        <span class="flex items-center gap-2 text-xs text-subtle">
-          {m.settings_agentBackend_idleReap_toggleLabel()}
-          <Switch
-            bind:checked={idleReapToggleOn}
-            onCheckedChange={handleIdleReapToggle}
-            size="sm"
-            ariaLabel={m.settings_agentBackend_idleReap_toggleLabel()}
-          />
-        </span>
-        <!--
-          The stepper follows the toggle, not the last daemon acknowledgement:
-          while a disable is in flight the daemon still reports the old
-          interval, and a stepper left live in that window would let an edit
-          queue a positive write behind the 0 and quietly undo the switch-off.
-        -->
-        <div class="w-24">
+      <div class="shrink-0">
+        <Switch
+          id="idleReapToggle"
+          bind:checked={idleReapToggleOn}
+          onCheckedChange={handleIdleReapToggle}
+          size="sm"
+          ariaDescribedby="idleReapDescription idleReapOffNote"
+        />
+      </div>
+    </div>
+
+    <!--
+      The minutes row follows the toggle, not the last daemon acknowledgement:
+      while a disable is in flight the daemon still reports the old interval,
+      and a stepper left in the DOM in that window would let an edit queue a
+      positive write behind the 0 and quietly undo the switch-off.
+    -->
+    {#if idleReapToggleOn}
+      <div class="flex items-start justify-between gap-4 pl-6">
+        <div class="flex-1 min-w-0">
+          <label for="idleReapMinutes" class="text-sm font-medium text-foreground">
+            {m.settings_agentBackend_idleReap_label()}
+          </label>
+          <p id="idleReapBoundsNote" class="text-xs text-subtle mt-0.5">
+            {m.settings_agentBackend_idleReap_boundsNote({
+              min: formatInteger(IDLE_REAP_MIN_MINUTES),
+              max: formatInteger(idleReapMaxMinutes),
+            })}
+          </p>
+        </div>
+        <div class="shrink-0 w-32">
           <Input
             id="idleReapMinutes"
             type="number"
@@ -676,8 +687,7 @@
             oninput={handleIdleReapInput}
             onblur={commitIdleReapInput}
             onkeydown={handleIdleReapKeydown}
-            disabled={!idleReapToggleOn}
-            aria-label={m.settings_agentBackend_idleReap_stepperLabel()}
+            aria-describedby="idleReapBoundsNote"
             min={String(IDLE_REAP_MIN_MINUTES)}
             max={String(idleReapMaxMinutes)}
             step="1"
@@ -685,6 +695,6 @@
           />
         </div>
       </div>
-    </div>
+    {/if}
   {/if}
 </div>

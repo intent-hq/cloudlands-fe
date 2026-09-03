@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   intentFileImageUrlToWorkspaceFileUrl,
+  intentFileMediaUrlToWorkspaceFile,
+  parseIntentFileTarget,
   rewriteIntentFileImageSrcs,
+  workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 
 const WS = 'ws-1234';
@@ -73,6 +76,41 @@ describe('intentFileImageUrlToWorkspaceFileUrl', () => {
   });
 });
 
+describe('intentFileMediaUrlToWorkspaceFile', () => {
+  it.each([
+    ['mp4', 'video'],
+    ['webm', 'video'],
+    ['png', 'image'],
+  ] as const)('returns the media kind for %s files', (extension, kind) => {
+    expect(
+      intentFileMediaUrlToWorkspaceFile(`intent://local/file/out/demo.${extension}`, WS),
+    ).toEqual({
+      url: `workspace-file://${WS}/out/demo.${extension}`,
+      kind,
+    });
+  });
+
+  it.each(['mov', 'svg'])('rejects non-allowlisted %s files', (extension) => {
+    expect(
+      intentFileMediaUrlToWorkspaceFile(`intent://local/file/out/demo.${extension}`, WS),
+    ).toBeNull();
+  });
+
+  it('maps workspace video URLs back to portable markdown URLs', () => {
+    expect(workspaceFileMediaUrlToIntentFileUrl(`workspace-file://${WS}/out/demo.mp4`)).toBe(
+      'intent://local/file/out/demo.mp4',
+    );
+  });
+
+  it('parses a safe workspace file target without requiring a supported media extension', () => {
+    expect(parseIntentFileTarget('intent://local/file/art/logo.svg', WS)).toEqual({
+      workspaceId: WS,
+      path: 'art/logo.svg',
+      encodedPath: 'art/logo.svg',
+    });
+  });
+});
+
 describe('rewriteIntentFileImageSrcs', () => {
   it('rewrites intent file image sources in img tags', () => {
     const html = '<p><img src="intent://local/file/docs/shot.png" alt="shot"></p>';
@@ -87,6 +125,14 @@ describe('rewriteIntentFileImageSrcs', () => {
 
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
       `<img src="workspace-file://${WS}/docs/shot.png" alt="shot">`,
+    );
+  });
+
+  it('emits a controlled video element for workspace video links', () => {
+    const html = '<p><img src="intent://local/file/out/demo.mp4" alt="demo"></p>';
+
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
+      `<p><video src="workspace-file://${WS}/out/demo.mp4" controls preload="metadata" playsinline class="markdown-video" data-name="demo"></video></p>`,
     );
   });
 
@@ -114,6 +160,14 @@ describe('rewriteIntentFileImageSrcs', () => {
     const html = '<img src="intent://local/file/../x.png" alt="">';
 
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
+  });
+
+  it.each(['svg', 'mov'])('marks unsupported %s media for a viewer placeholder', (extension) => {
+    const html = `<img src="intent://local/file/out/demo.${extension}" alt="demo">`;
+
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
+      `<img src="intent://local/file/out/demo.${extension}" alt="demo" data-media-unsupported="${extension}">`,
+    );
   });
 
   it('does not rewrite intent URLs outside img src attributes', () => {

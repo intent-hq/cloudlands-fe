@@ -5,6 +5,7 @@
   "agentOverview_hierarchyGraph_reviewCorral_label": ["de"],
   "agentOverview_timeScrubber_live_label": ["de"],
   "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "browser_viewport_dimensions_label": "*",
   "chat_agentCard_background_badge": ["ja", "ko", "de"],
   "chat_agentCard_menu_harnessVersion_label": ["zh-CN", "zh-TW", "de", "fr", "es"],
   "chat_harnessFeaturesModal_title": ["zh-CN", "zh-TW", "de", "fr", "es"],
@@ -138,6 +139,7 @@
   "layout_commandPalette_agents_group": ["fr"],
   "layout_commandPalette_browser_group": ["de"],
   "layout_commandPalette_terminals_group": ["de"],
+  "layout_daemonStatus_connectionViaTailcat_label": ["fr"],
   "layout_daemonStatus_cpu_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
   "layout_daemonStatus_host_label": ["de", "es"],
   "layout_daemonStatus_phase_label": ["de", "fr"],
@@ -270,6 +272,7 @@
   "ui_dropdownMenu_ariaLabel": ["fr"],
   "ui_imageActionsMenu_dimensions_label": "*",
   "ui_imageLightbox_image_alt": ["fr"],
+  "ui_videoActionsMenu_dimensions_label": "*",
   "ui_openCombo_copyBranch_shortLabel": ["de"],
   "ui_patchBlock_label": ["de"],
   "ui_shortcuts_chatCategory_title": ["de", "es"],
@@ -322,6 +325,5 @@
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
   "workspace_transfer_tableName_label": ["fr"],
-  "settings_section_git": "*",
-  "settings_devices_tunnel_badge": ["fr"]
+  "settings_section_git": "*"
 }

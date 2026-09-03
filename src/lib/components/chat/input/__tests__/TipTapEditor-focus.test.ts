@@ -4,10 +4,26 @@ import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import TipTapEditor from '../TipTapEditor.svelte';
 import TipTapEditorDeactivateHarness from './TipTapEditorDeactivateHarness.svelte';
+import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
 
 afterEach(() => cleanup());
 
 describe('TipTapEditor programmatic content updates', () => {
+  it('preserves a workspace video through the comment edit path', async () => {
+    const markdown = '![clip](intent://local/file/x.mp4)';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
+    const view = render(TipTapEditor, {
+      value: html,
+      workspace: { id: 'workspace-1' } as any,
+    });
+
+    await waitFor(() => expect(view.container.querySelector('video')).toBeTruthy());
+
+    expect(processHTMLToMarkdown(view.component.getHTML(), { workspaceId: 'workspace-1' })).toBe(
+      markdown,
+    );
+  });
+
   it('does not steal focus when a background chat restores its draft', async () => {
     const outsideEditor = document.createElement('textarea');
     document.body.append(outsideEditor);

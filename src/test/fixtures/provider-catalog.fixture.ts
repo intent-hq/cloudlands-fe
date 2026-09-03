@@ -95,6 +95,16 @@ export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
       visible: true,
     },
     {
+      id: 'antigravity',
+      displayName: 'Google Antigravity',
+      shortName: 'Antigravity',
+      command: 'antigravity-acp',
+      canBeDisabled: true,
+      loginCommandHint: 'intentd provider login antigravity',
+      loginDocsUrl: 'https://antigravity.google/docs/ide/extensions',
+      visible: true,
+    },
+    {
       id: 'mock',
       displayName: 'Mock (E2E)',
       shortName: 'Mock',
@@ -110,8 +120,6 @@ export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
  * Dispatch the mock catalog into a store (the shape used by appStore).
  * The store must already be initialized (`appStore.init()`).
  */
-export function seedProviderCatalog(store: {
-  dispatch: (action: unknown) => unknown;
-}): void {
+export function seedProviderCatalog(store: { dispatch: (action: unknown) => unknown }): void {
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
 }

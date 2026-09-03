@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   /**
    * ProviderCard
    *
@@ -87,8 +88,18 @@
   const needsLogin = $derived(
     provider.available && !provider.statusLoading && provider.authenticated === false,
   );
-  const ready = $derived(installed && !needsLogin);
-  const needsAction = $derived(!provider.statusLoading && (needsInstall || needsLogin));
+  const authUnknown = $derived(
+    provider.id === 'antigravity' &&
+      installed &&
+      provider.authenticated === undefined &&
+      !provider.statusLoading,
+  );
+  const ready = $derived(
+    installed && isProviderAuthenticationReady(provider.id, provider.authenticated),
+  );
+  const needsAction = $derived(
+    !provider.statusLoading && (needsInstall || needsLogin || authUnknown),
+  );
   const cardClickable = $derived(
     ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
   );
@@ -142,13 +153,15 @@
     onkeydown={handleKeydown}
     aria-label={checking
       ? m.onboarding_providerCard_checking_ariaLabel({ name: provider.name })
-      : provider.available && !needsLogin
+      : ready
         ? selected
           ? m.onboarding_providerCard_selected_ariaLabel({ name: provider.name })
           : m.onboarding_providerCard_use_ariaLabel({ name: provider.name })
-        : needsLogin
-          ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
-          : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
+        : authUnknown
+          ? m.providers_antigravity_authUnknown()
+          : needsLogin
+            ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+            : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
@@ -210,9 +223,6 @@
             title={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
             aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
           >
-            <!-- <span class="text-xs w-0 overflow-hidden group-hover/button:w-8 transition-all"
-              >Docs</span
-            > -->
             <Fa icon={faArrowUpRightFromSquare} size={11} />
           </button>
         {/if}
@@ -223,11 +233,17 @@
           {provider.description}
         </p>
       {/if}
+      {#if provider.id === 'antigravity' && (needsLogin || authUnknown)}
+        <p class="text-xs pb-3">
+          {m.providers_antigravity_loginHost()}
+          <code class="break-all">{provider.loginCommand}</code>
+        </p>
+      {/if}
 
       <div class="text-xs flex items-center gap-1.5">
         {#if checking}
           <span class="opacity-50">{m.onboarding_providerCard_checking_label()}</span>
-        {:else if provider.available && !needsLogin}
+        {:else if ready}
           <div class="flex items-center whitespace-nowrap min-w-0">
             <div class="flex items-center -ml-3.5" transition:slide={{ axis: 'x', duration: 200 }}>
               <div class="h-px bg-gradient-to-r from-transparent to-current w-3 mt-px"></div>
@@ -247,6 +263,8 @@
               {/if}
             </div>
           </div>
+        {:else if authUnknown}
+          <span>{m.providers_antigravity_authUnknown()}</span>
         {:else if needsLogin}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
@@ -260,7 +278,7 @@
         {/if}
 
         <div class="flex items-center gap-1.5">
-          {#if needsInstall || needsLogin}
+          {#if needsInstall || needsLogin || authUnknown}
             <button
               type="button"
               class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

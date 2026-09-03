@@ -4,48 +4,25 @@ import {
   it,
 } from "vitest";
 import {
-  findAvailableModelMatch,
-  normalizeModelForProvider,
-  normalizeProviderModels,
   resolveDefaultModel,
+  toBareProviderModels,
 } from "./model-selection-utils";
 
 const defaultProviderId = "auggie";
 
 describe("model-selection-utils", () => {
-  it("normalizes models for the default and non-default providers", () => {
+  it("splits legacy compound values down to bare model ids", () => {
     expect(
-      normalizeModelForProvider(defaultProviderId, `${defaultProviderId}:gpt5.4`, defaultProviderId)
-    ).toBe("gpt5.4");
-    expect(normalizeModelForProvider("codex", "gpt-5.3-codex/high", defaultProviderId)).toBe(
-      "codex:gpt-5.3-codex/high"
-    );
-  });
-
-  it("normalizes provider model maps", () => {
-    expect(
-      normalizeProviderModels(
-        {
-          [defaultProviderId]: `${defaultProviderId}:gpt5.4`,
-          codex: "gpt-5.3-codex/high",
-        },
-        defaultProviderId
-      )
+      toBareProviderModels({
+        [defaultProviderId]: `${defaultProviderId}:gpt5.4`,
+        codex: "codex:gpt-5.3-codex/high",
+        "claude-code": "sonnet4.5",
+      })
     ).toEqual({
       [defaultProviderId]: "gpt5.4",
-      codex: "codex:gpt-5.3-codex/high",
+      codex: "gpt-5.3-codex/high",
+      "claude-code": "sonnet4.5",
     });
-  });
-
-  it("matches available values by full ID or parsed model ID", () => {
-    const availableValues = ["codex:gpt-5.3-codex/high", "codex:gpt-5.3-codex/medium"];
-
-    expect(
-      findAvailableModelMatch(availableValues, "codex", "gpt-5.3-codex/high", defaultProviderId)
-    ).toBe("codex:gpt-5.3-codex/high");
-    expect(
-      findAvailableModelMatch(availableValues, "codex", "gpt-5.3-codex/medium", defaultProviderId)
-    ).toBe("codex:gpt-5.3-codex/medium");
   });
 
   it("resolves the CLI-marked default model and falls back to the first row", () => {

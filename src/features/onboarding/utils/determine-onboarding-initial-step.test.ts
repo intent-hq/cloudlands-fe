@@ -12,6 +12,7 @@ import {
   resolveFastPathSettlement,
 } from './determine-onboarding-initial-step';
 import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
+import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
 
 const base = {
   fullFlowRequested: false,
@@ -22,6 +23,19 @@ const base = {
 };
 
 describe('determineOnboardingInitialStep', () => {
+  it.each([undefined, false, true])(
+    'uses Antigravity auth=%s consistently with the setup gate',
+    (authenticated) => {
+      const ready = hasReadyProvider({ antigravity: { available: true, authenticated } });
+      expect(
+        determineOnboardingInitialStep({
+          ...base,
+          providersCheckedOnce: true,
+          hasReadyProvider: ready,
+        }).step,
+      ).toBe(authenticated === true ? 'project' : 'welcome');
+    },
+  );
   it('ready provider → project (not a fast-path)', () => {
     expect(determineOnboardingInitialStep({ ...base, hasReadyProvider: true })).toEqual({
       step: 'project',
@@ -37,9 +51,10 @@ describe('determineOnboardingInitialStep', () => {
   });
 
   it('pending check + persisted flag → project via provisional fast-path', () => {
-    expect(
-      determineOnboardingInitialStep({ ...base, hasCompletedProviderSetup: true }),
-    ).toEqual({ step: 'project', viaLocalFastPath: true });
+    expect(determineOnboardingInitialStep({ ...base, hasCompletedProviderSetup: true })).toEqual({
+      step: 'project',
+      viaLocalFastPath: true,
+    });
   });
 
   it('flag + ready provider → confirmed project, not a fast-path', () => {

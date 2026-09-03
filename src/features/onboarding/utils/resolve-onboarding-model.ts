@@ -13,7 +13,7 @@
  *   2. specialist.codingAgent (if the specialist pins one)
  *   3. the currently active provider from Redux (honors onboarding card click)
  *   4. the settings-derived effective default provider (when designated)
- *   5. the first usable provider
+ *   5. the first usable non-opt-in provider
  *
  * Model selection is daemon-owned (single resolver, PROTOCOL §5.11): the
  * returned `model` is set only for an explicit specialist user override that
@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
@@ -50,6 +51,17 @@ export interface ResolvedModelConfig {
   specialistId: string;
 }
 
+/** An explicit prompt-step picker pick: bare model id + its provider leg. */
+export interface OnboardingUserModelPick {
+  model: string;
+  /** Provider the pick belongs to; absent for legacy persisted picks without one. */
+  provider?: string;
+}
+
+/**
+ * Legacy boundary: attribute a persisted pre-triple compound id (specialist
+ * override / old persisted pick) to its prefix, else the fallback provider.
+ */
 function getProviderForModel(model: string, fallbackProvider: string): string {
   return splitLegacyCompoundId(model).providerId || fallbackProvider;
 }
@@ -70,15 +82,13 @@ function getProviderStatus(
     unsloth: availability.providers.unsloth,
     mock: availability.providers.mock,
     pi: availability.providers.pi,
+    antigravity: availability.providers.antigravity,
   };
   return map[providerId];
 }
 
 /** A provider is usable if it is installed AND authenticated. */
-function isProviderUsable(
-  availability: ProviderAvailabilityResult,
-  providerId: string,
-): boolean {
+function isProviderUsable(availability: ProviderAvailabilityResult, providerId: string): boolean {
   const status = getProviderStatus(availability, providerId);
   return !!status && status.available && status.authenticated === true;
 }
@@ -90,8 +100,13 @@ function isProviderUsable(
  * `authenticated === false`. Only intended for the user-explicit path, not
  * the auto-pick fallback chain.
  */
-function isProviderUserExplicitUsable(status: ProviderStatus | undefined): boolean {
-  return !!status && status.available && status.authenticated !== false;
+function isProviderUserExplicitUsable(
+  status: ProviderStatus | undefined,
+  providerId: string,
+): boolean {
+  return (
+    !!status && status.available && isProviderAuthenticationReady(providerId, status.authenticated)
+  );
 }
 
 /** Compute the ordered list of usable provider IDs. */
@@ -106,6 +121,7 @@ function getUsableProviderIds(availability: ProviderAvailabilityResult): string[
   if (isProviderUsable(availability, 'cortex')) ids.push('cortex');
   if (isProviderUsable(availability, 'pi')) ids.push('pi');
   if (isProviderUsable(availability, 'unsloth')) ids.push('unsloth');
+  if (isProviderUsable(availability, 'antigravity')) ids.push('antigravity');
   return ids;
 }
 
@@ -140,7 +156,7 @@ function resolveUsableProvider(
     tryUse(preferred.specialistCodingAgent, 'specialist-coding-agent') ??
     tryUse(preferred.activeProvider, 'active-provider') ??
     tryUse(preferred.defaultProvider, 'default-provider') ??
-    usable[0]
+    usable.find((providerId) => providerId !== 'antigravity')
   );
 }
 
@@ -150,14 +166,16 @@ function resolveUsableProvider(
  * Returns a provider that is guaranteed to be available + authenticated on
  * the user's machine.
  *
- * `userSelectedModel` is an explicit pick from the onboarding prompt-step
- * model picker: it wins outright (provider follows the compound id, bare ids
- * belong to the default provider) under the same user-explicit gate as a
- * provider-card click — relaxed auth, never silently switched away from.
+ * `userPick` is an explicit pick from the onboarding prompt-step model
+ * picker: it wins outright under the same user-explicit gate as a
+ * provider-card click — relaxed auth, never silently switched away from. The
+ * pick carries its own provider leg (bare model id + provider from the
+ * picker); a legacy persisted pick without one attributes to its compound
+ * prefix, else the default provider.
  */
 export async function resolveOnboardingModel(
   state: StoreState,
-  userSelectedModel?: string,
+  userPick?: OnboardingUserModelPick,
 ): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
@@ -167,22 +185,27 @@ export async function resolveOnboardingModel(
 
   const availability = await getProviderAvailability();
 
-  if (userSelectedModel) {
-    const pickedProvider = getProviderForModel(userSelectedModel, defaultProviderId);
+  if (userPick?.model) {
+    // Normalize a legacy compound pick at this boundary: the bare model leg
+    // is what the create request submits; the provider leg comes from the
+    // pick, else the compound prefix, else the default provider.
+    const pickedModel = splitLegacyCompoundId(userPick.model).modelId || userPick.model;
+    const pickedProvider =
+      userPick.provider || getProviderForModel(userPick.model, defaultProviderId);
     const pickedStatus = getProviderStatus(availability, pickedProvider);
-    if (!isProviderUserExplicitUsable(pickedStatus)) {
+    if (!isProviderUserExplicitUsable(pickedStatus, pickedProvider)) {
       throw new Error(
         m.onboarding_resolveModel_providerUnavailable_error({ provider: pickedProvider }),
       );
     }
     logger.info('Using user-selected onboarding model', {
-      model: userSelectedModel,
+      model: pickedModel,
       provider: pickedProvider,
       authenticated: pickedStatus?.authenticated,
     });
     return {
       provider: pickedProvider,
-      model: userSelectedModel,
+      model: pickedModel,
       behaviorPrompt,
       specialistId,
     };
@@ -208,7 +231,7 @@ export async function resolveOnboardingModel(
 
   if (userExplicit) {
     const activeStatus = getProviderStatus(availability, activeProvider);
-    if (isProviderUserExplicitUsable(activeStatus)) {
+    if (isProviderUserExplicitUsable(activeStatus, activeProvider)) {
       provider = activeProvider;
       logger.info('Honoring user-explicit provider selection', {
         activeProvider,
@@ -241,12 +264,13 @@ export async function resolveOnboardingModel(
   }
 
   // Model resolution is daemon-owned: only an explicit specialist user
-  // override that matches the resolved provider is submitted. Everything else
-  // (frontmatter model/tier, settings chain, provider CLI default) is
+  // override that matches the resolved provider is submitted (as its bare
+  // model leg — the override may be a persisted legacy compound). Everything
+  // else (frontmatter model/tier, settings chain, provider CLI default) is
   // resolved by the daemon at creation time.
   let resolvedModel: string | undefined;
   if (specialistOverride && overrideProvider === provider) {
-    resolvedModel = specialistOverride;
+    resolvedModel = splitLegacyCompoundId(specialistOverride).modelId || specialistOverride;
     logger.info('Using specialist model override', { specialistId, override: specialistOverride });
   }
 

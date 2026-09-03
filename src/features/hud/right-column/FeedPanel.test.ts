@@ -303,6 +303,7 @@ describe('FeedPanel WORKSPACE STATUS rows', () => {
       ['not_started', 'NOT STARTED'],
       ['complete', 'COMPLETE'],
       ['pr_ready', 'PR MERGEABLE'],
+      ['pr_queued', 'QUEUED TO MERGE'],
       ['pr_open', 'PR OPEN'],
       ['pr_merged', 'PR MERGED'],
     ];

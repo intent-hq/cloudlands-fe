@@ -33,7 +33,8 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: { auggie: true } },
+      providerSettings: { enabledProviders: { auggie: true } },
+      model: { defaultProviderId: 'auggie' },
       providerModels: { byProviderId: {}, clearEpoch: 0 },
       hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     }),
@@ -52,7 +53,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
-  selectEnabledProviderIds: () => mocks.readable(['auggie']),
+  selectModelFetchProviderIds: () => mocks.readable(['auggie']),
+  selectIsProviderModelAccessAllowed: () => mocks.readable(true),
   selectAvailableEnabledProviderIds: () => mocks.readable(['auggie']),
 }));
 

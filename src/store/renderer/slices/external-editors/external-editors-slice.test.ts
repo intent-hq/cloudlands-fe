@@ -15,6 +15,7 @@ import {
   initialState,
   isSpecialAction,
   setHiddenEditorIds,
+  setEditorOrder,
   setLoading,
   setOpenAction,
   toggleHiddenEditor,
@@ -126,6 +127,19 @@ describe("externalEditorsReducer", () => {
         createCollection<InstalledEditor, "id">("id")
       );
       expect(getItems(state.editors)).toHaveLength(1);
+    });
+
+    it("reconciles editor order while retaining preferences and appending new detections", () => {
+      const prev: ExternalEditorsState = {
+        ...initialState,
+        editorOrder: ["zed", "removed", "vscode"],
+      };
+      const state = externalEditorsReducer(
+        prev,
+        fetchEditorsSuccess([mockEditor, mockTerminal, { ...mockEditor, id: "zed" }], 999)
+      );
+
+      expect(state.editorOrder).toEqual(["zed", "vscode", "iterm2"]);
     });
 
     it("should normalize malformed editor records before storing", () => {
@@ -258,6 +272,17 @@ describe("externalEditorsReducer", () => {
 
       expect(state.error).toBeNull();
       expect(getItems(state.editors)).toEqual([mockEditor]);
+    });
+  });
+
+  describe("editor order actions", () => {
+    it("stores a normalized editor ID order", () => {
+      const state = externalEditorsReducer(
+        initialState,
+        setEditorOrder(["zed", "vscode", "zed", 42 as unknown as string])
+      );
+
+      expect(state.editorOrder).toEqual(["zed", "vscode"]);
     });
   });
 });

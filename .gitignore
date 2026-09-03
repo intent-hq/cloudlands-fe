@@ -66,8 +66,10 @@ out
 # Testing
 coverage
 test-results
+test-results-quarantine
 test-reports
 playwright-report
+playwright-report-quarantine
 test-harness-report.json
 .demo-artifacts/
 

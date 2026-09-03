@@ -45,8 +45,12 @@ import {
 function makeState(overrides: Partial<StoreState> = {}): StoreState {
   return {
     specialists: specialistsInitialState,
-    model: { ...modelInitialState, providerModels: { auggie: 'auggie:sonnet4.5' } },
-    providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
+    model: {
+      ...modelInitialState,
+      defaultProviderId: 'auggie',
+      providerModels: { auggie: 'auggie:sonnet4.5' },
+    },
+    providerSettings: { ...providerSettingsInitialState },
     specialistProposalHistory: { entries: {} },
     githubAuth: { isAuthenticated: false },
     ...overrides,

@@ -10,11 +10,11 @@ import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
   activeProviderPersistRejected,
   enablementPersistRejected,
-  hydrateActiveProvider,
   setActiveProvider,
   setProviderEnabled,
   toggleProvider,
 } from '../provider-settings-slice';
+import { hydrateDefaultProvider } from '../../model/model-slice';
 import {
   PROVIDER_SETTINGS_RETRY_DELAYS_MS,
   providerSettingsSaga,
@@ -62,12 +62,12 @@ describe('providerSettingsSaga', () => {
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([
-      [[{ path: 'providers.active', value: 'codex' }]],
+      [[{ path: 'model.defaultProvider', value: 'codex' }]],
     ]);
     release([]);
     await settle();
     expect(mocks.update.mock.calls).toEqual([
-      [[{ path: 'providers.active', value: 'codex' }]],
+      [[{ path: 'model.defaultProvider', value: 'codex' }]],
       [[{ path: 'providers.enabled', value: { codex: true } }]],
     ]);
     task.cancel();
@@ -115,7 +115,7 @@ describe('providerSettingsSaga', () => {
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([
-      [[{ path: 'providers.active', value: 'codex' }]],
+      [[{ path: 'model.defaultProvider', value: 'codex' }]],
       [[{ path: 'providers.enabled', value: { auggie: true, 'claude-code': true } }]],
     ]);
     task.cancel();
@@ -125,7 +125,7 @@ describe('providerSettingsSaga', () => {
   it('does not echo provider hydration actions', async () => {
     const channel = stdChannel();
     const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, providerSettingsSaga);
-    channel.put(hydrateActiveProvider('codex'));
+    channel.put(hydrateDefaultProvider('codex'));
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([]);
@@ -152,13 +152,13 @@ describe('providerSettingsSaga', () => {
       // The failed active-provider write is retried before the queued
       // enabled-providers write — order is preserved.
       expect(mocks.update.mock.calls).toEqual([
-        [[{ path: 'providers.active', value: 'codex' }]],
+        [[{ path: 'model.defaultProvider', value: 'codex' }]],
       ]);
 
       await vi.advanceTimersByTimeAsync(PROVIDER_SETTINGS_RETRY_DELAYS_MS[0]);
       expect(mocks.update.mock.calls).toEqual([
-        [[{ path: 'providers.active', value: 'codex' }]],
-        [[{ path: 'providers.active', value: 'codex' }]],
+        [[{ path: 'model.defaultProvider', value: 'codex' }]],
+        [[{ path: 'model.defaultProvider', value: 'codex' }]],
         [[{ path: 'providers.enabled', value: { codex: true } }]],
       ]);
       task.cancel();
@@ -180,7 +180,7 @@ describe('providerSettingsSaga', () => {
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([
-      [[{ path: 'providers.active', value: 'codex' }]],
+      [[{ path: 'model.defaultProvider', value: 'codex' }]],
     ]);
     expect(dispatch).toHaveBeenCalledWith(activeProviderPersistRejected('codex'));
     task.cancel();

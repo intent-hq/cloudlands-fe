@@ -1,6 +1,6 @@
 /**
- * Model catalog bridge — routes the 9 per-provider `*:get-models` channels
- * (auggie / claude-code / codex / cortex / droid / grok / opencode / pi /
+ * Model catalog bridge — routes the per-provider `*:get-models` channels
+ * (antigravity / auggie / claude-code / codex / cortex / droid / grok / opencode / pi /
  * unsloth) to the daemon's per-provider model catalog (`models.list { providerId,
  * forceRefresh }`, PROTOCOL §6.7) for daemon/web builds where no Electron
  * main process serves these channels.
@@ -20,6 +20,7 @@
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import {
+  ANTIGRAVITY_CHANNELS,
   AUGGIE_CHANNELS,
   CLAUDE_CODE_CHANNELS,
   CODEX_CHANNELS,
@@ -49,6 +50,7 @@ const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const PROVIDER_MODEL_CHANNELS: Array<[string, string]> = [
+  ["antigravity", ANTIGRAVITY_CHANNELS.GET_MODELS],
   ["auggie", AUGGIE_CHANNELS.GET_MODELS],
   ["claude-code", CLAUDE_CODE_CHANNELS.GET_MODELS],
   ["codex", CODEX_CHANNELS.GET_MODELS],

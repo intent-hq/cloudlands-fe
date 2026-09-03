@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { mount, onDestroy, unmount } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
+  import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
+  import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
+  import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
+  import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
+  import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
 
   import {
     openWorkspaceFile,
@@ -14,6 +20,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+
+  type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
 
   interface Props {
     content: string;
@@ -47,6 +55,14 @@
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
   }: Props = $props();
+
+  const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
+  const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
+  const markdownContent = $derived(
+    !hasVideoSegments && mediaSegments.length === 1 && mediaSegments[0].type === 'markdown'
+      ? mediaSegments[0].content
+      : content,
+  );
 
   // PERF: Detect content complexity to choose rendering strategy
   // - Simple: plain text, no markdown - render as <p>
@@ -89,9 +105,9 @@
   ];
 
   const contentComplexity = $derived.by(() => {
-    if (!content) return 'simple';
+    if (!markdownContent) return 'simple';
     // Check if needs markdown processing
-    if (needsProcessingPatterns.some((pattern) => pattern.test(content))) {
+    if (needsProcessingPatterns.some((pattern) => pattern.test(markdownContent))) {
       return 'static';
     }
     return 'simple';
@@ -260,14 +276,14 @@
 
     if (isStreaming) {
       // Use throttled streaming update
-      scheduleStreamingUpdate(content);
+      scheduleStreamingUpdate(markdownContent);
     } else {
       // Clean up pending updates when streaming ends
       if (wasStreaming) {
         cancelPendingUpdates();
       }
       // Direct update when not streaming
-      updateContentFull(content);
+      updateContentFull(markdownContent);
     }
   });
 
@@ -277,21 +293,22 @@
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
 
-  // Hover overlay: chat-transcript thumbnails get an image actions menu.
+  // Hover overlay: workspace-backed images get an image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
-  // trigger is positioned over whichever thumbnail is hovered.
+  // trigger is positioned over whichever image is hovered or focused.
   let hoveredImage = $state<HTMLImageElement | null>(null);
   let hoveredImagePosition = $state({ top: 0, left: 0 });
   let imageActionsOpen = $state(false);
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
-  function handleImageHover(event: MouseEvent): void {
-    if (!chatImageThumbnails) return;
+  function isWorkspaceImage(image: HTMLImageElement): boolean {
+    const src = image.getAttribute('src') || '';
+    return src.startsWith('workspace-file://') || src.startsWith('workspace-asset://');
+  }
+
+  function handleImageInteraction(event: MouseEvent | FocusEvent): void {
     const target = event.target;
-    if (
-      target instanceof HTMLImageElement &&
-      (target.getAttribute('src') || '').startsWith('workspace-file://')
-    ) {
+    if (target instanceof HTMLImageElement && isWorkspaceImage(target)) {
       if (hoveredImage === target) return;
       const container = event.currentTarget as HTMLElement;
       const imageRect = target.getBoundingClientRect();
@@ -312,6 +329,80 @@
     if (!imageActionsOpen) hoveredImage = null;
   }
 
+  function mediaFallbacks(node: HTMLElement) {
+    const mountedPlaceholders = new Map<HTMLElement, ReturnType<typeof mount>>();
+
+    function replaceMedia(
+      media: HTMLImageElement | HTMLVideoElement,
+      reason: MediaUnavailableReason,
+    ) {
+      const source = media.getAttribute('src') || '';
+      const workspaceFile = parseWorkspaceFileImageUrl(source);
+      const intentFile = parseIntentFileTarget(source, workspaceId);
+      const path = workspaceFile?.path ?? intentFile?.path;
+      const owningWorkspaceId = workspaceFile?.workspaceId ?? intentFile?.workspaceId;
+      const name =
+        media.getAttribute('data-name') ||
+        media.getAttribute('alt') ||
+        path?.split('/').pop() ||
+        undefined;
+      const host = document.createElement(media instanceof HTMLVideoElement ? 'div' : 'span');
+      host.className = 'media-unavailable-host';
+      media.replaceWith(host);
+      if (hoveredImage === media) hoveredImage = null;
+      mountedPlaceholders.set(
+        host,
+        mount(MediaUnavailable, {
+          target: host,
+          props: { name, reason, path, workspaceId: owningWorkspaceId },
+        }),
+      );
+    }
+
+    function reconcile() {
+      for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
+        if (isWorkspaceImage(image)) {
+          image.tabIndex = 0;
+          image.setAttribute('role', 'button');
+        }
+      }
+      for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
+        replaceMedia(media, 'unsupported');
+      }
+      for (const [host, component] of mountedPlaceholders) {
+        if (!node.contains(host)) {
+          void unmount(component);
+          mountedPlaceholders.delete(host);
+        }
+      }
+    }
+
+    function handleMediaError(event: Event) {
+      const media = event.target;
+      if (!(media instanceof HTMLImageElement || media instanceof HTMLVideoElement)) return;
+      const source = media.getAttribute('src') || '';
+      const reason =
+        source.startsWith('workspace-file://') || source.startsWith('workspace-asset://')
+          ? 'missing'
+          : 'load-failed';
+      replaceMedia(media, reason);
+    }
+
+    const observer = new MutationObserver(reconcile);
+    observer.observe(node, { childList: true, subtree: true });
+    node.addEventListener('error', handleMediaError, true);
+    queueMicrotask(reconcile);
+
+    return {
+      destroy() {
+        observer.disconnect();
+        node.removeEventListener('error', handleMediaError, true);
+        for (const component of mountedPlaceholders.values()) void unmount(component);
+        mountedPlaceholders.clear();
+      },
+    };
+  }
+
   // PERF: Single reusable link click handler - shared between streaming and static content
   // Routes all link clicks through the unified link handler for consistent behavior:
   // - Click → embedded browser panel (for http/https)
@@ -325,7 +416,7 @@
     // link, in which case the link wins)
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (src.startsWith('workspace-file://')) {
+      if (src.startsWith('workspace-file://') || src.startsWith('workspace-asset://')) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -411,6 +502,14 @@
   }
 
   function handleLinkKeydown(event: KeyboardEvent): void {
+    if (
+      event.target instanceof HTMLImageElement &&
+      isWorkspaceImage(event.target) &&
+      (event.key === 'Enter' || event.key === ' ')
+    ) {
+      handleLinkClick(event);
+      return;
+    }
     if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
     handleLinkClick(event);
   }
@@ -432,7 +531,7 @@
 <!-- simple: plain text, no markdown - just <p> -->
 <!-- static: processed HTML without TipTap (links, code blocks, task lists, tables, etc.) -->
 {#snippet imageActionsOverlay()}
-  {#if chatImageThumbnails && hoveredImage}
+  {#if hoveredImage}
     <div
       bind:this={imageActionsOverlayElement}
       class="absolute z-10"
@@ -448,16 +547,38 @@
   {/if}
 {/snippet}
 
-{#if isStreaming}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
+{#if hasVideoSegments}
+  <div class="markdown-video-segments {className}">
+    {#each mediaSegments as segment}
+      {#if segment.type === 'video'}
+        <ChatVideoBlock source={segment.source} name={segment.name} poster={segment.poster} />
+      {:else}
+        <RecursiveMarkdownViewer
+          content={segment.content}
+          {isStreaming}
+          {workspaceId}
+          onCodeBlockAction={_onCodeBlockAction}
+          {onFileClick}
+          {taskBlockRenderMode}
+          {chatImageThumbnails}
+          {forceExternalLinks}
+          {renderRichFencesAsCode}
+        />
+      {/if}
+    {/each}
+  </div>
+{:else if isStreaming}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_mouse_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
     class="markdown-viewer streaming-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={streamingContentElement}
+    use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
-    onmouseover={handleImageHover}
+    onmouseover={handleImageInteraction}
+    onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
@@ -466,20 +587,22 @@
 {:else if contentComplexity === 'simple'}
   <!-- PERF: Simple text - render directly without any processing -->
   <div class="markdown-viewer simple-content {className}">
-    <p class="whitespace-pre-wrap">{content}</p>
+    <p class="whitespace-pre-wrap">{markdownContent}</p>
   </div>
 {:else}
   <!-- PERF: Static content - use processed HTML without TipTap -->
   <!-- This path handles links, code blocks, task lists, tables, etc. without the overhead of TipTap -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_mouse_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
     class="markdown-viewer static-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={staticContentElement}
+    use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
-    onmouseover={handleImageHover}
+    onmouseover={handleImageInteraction}
+    onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
@@ -493,7 +616,7 @@
     imageUrl={lightboxImageUrl}
     imageName={lightboxImageAlt}
     openerElement={lightboxOpenerElement}
-    showActionsMenu={chatImageThumbnails}
+    showActionsMenu
   />
 {/if}
 
@@ -544,6 +667,21 @@
     white-space: pre-wrap;
     word-break: break-word;
     text-wrap: pretty;
+  }
+
+  .markdown-viewer :global(.markdown-video) {
+    display: block;
+    width: 100%;
+    max-width: 42rem;
+    aspect-ratio: 16 / 9;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    background: black;
+    object-fit: contain;
+  }
+
+  .markdown-viewer.chat-image-thumbnails :global(.markdown-video) {
+    cursor: pointer;
   }
 
   .markdown-viewer :global(strong) {
@@ -895,8 +1033,9 @@
     border-radius: 0.375rem;
   }
 
-  /* Inline workspace file images open in a lightbox on click */
-  .markdown-viewer :global(img[src^='workspace-file://']) {
+  /* Workspace-backed images open in a lightbox on click */
+  .markdown-viewer :global(img[src^='workspace-file://']),
+  .markdown-viewer :global(img[src^='workspace-asset://']) {
     cursor: zoom-in;
   }
 

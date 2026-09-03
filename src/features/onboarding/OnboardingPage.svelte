@@ -109,6 +109,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import { commitOnboardingDefaultModel } from '$features/onboarding/utils/commit-onboarding-default-model';
+  import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     parseContextMentions,
@@ -148,6 +149,7 @@
     selectWorkspaceInitializerOnboardingFormState,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -544,32 +546,42 @@
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
-  // User-picked model for the initial Coordinator agent (step 3 picker).
-  // undefined + false means the auto-resolved default applies (behavior
-  // identical to before the picker existed).
+  // User-picked model (bare id) + its provider for the initial Coordinator
+  // agent (step 3 picker). undefined + false means the auto-resolved default
+  // applies (behavior identical to before the picker existed).
   let onboardingSelectedModel = $state<string | undefined>(undefined);
+  let onboardingSelectedProvider = $state<string | undefined>(undefined);
   let onboardingModelWasOverridden = $state(false);
 
   // One-time restore of a persisted mid-onboarding model pick once the
-  // workspace-initializer state has hydrated.
+  // workspace-initializer state has hydrated. A legacy pre-triple compound id
+  // is split at this boundary; new persisted picks are bare and paired with
+  // the persisted selectedProvider.
   let onboardingModelRestoreApplied = false;
   $effect(() => {
     if (!isOnboarding || !$workspaceInitializerHydrated$ || onboardingModelRestoreApplied) return;
     onboardingModelRestoreApplied = true;
     const persisted = selectWorkspaceInitializerOnboardingFormState.select(appStore.state);
     if (persisted?.modelWasOverridden && persisted.selectedModel) {
-      onboardingSelectedModel = persisted.selectedModel;
+      const { providerId, modelId } = splitLegacyCompoundId(persisted.selectedModel);
+      onboardingSelectedModel = modelId;
+      onboardingSelectedProvider = persisted.selectedProvider ?? providerId ?? undefined;
       onboardingModelWasOverridden = true;
     }
   });
 
   /** User picked a model in the prompt-step picker: it also becomes the
    * global default (the model-selection persistence middleware owns writing
-   * it to the daemon settings catalog and any provider switch). */
-  function handleOnboardingModelChange(model: string) {
-    onboardingSelectedModel = model;
+   * it to the daemon settings catalog and any provider switch). The picker
+   * reports the resolved triple legs so no model-string parsing happens here. */
+  function handleOnboardingModelChange(
+    model: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
+    onboardingSelectedModel = pick?.modelId ?? model;
+    onboardingSelectedProvider = pick?.providerId;
     onboardingModelWasOverridden = true;
-    appStore.dispatch(selectModel(model));
+    appStore.dispatch(selectModel(pick?.modelId ?? model, pick?.providerId));
   }
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
@@ -620,6 +632,7 @@
     const skipIso = onboardingSkipIsolation;
     const step = $onboardingStep$;
     const pickedModel = onboardingSelectedModel;
+    const pickedProvider = onboardingSelectedProvider;
     const modelOverridden = onboardingModelWasOverridden;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
@@ -640,6 +653,7 @@
         skipIsolation: skipIso,
         selectedModel: pickedModel,
         modelWasOverridden: modelOverridden,
+        selectedProvider: pickedProvider,
         step,
       }),
     );
@@ -674,6 +688,7 @@
     if (onboardingTestPromptRunning) return;
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
+    if (!providerId) return;
     if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;
@@ -871,7 +886,8 @@
       projectIdentityChanged ||
       previous?.branch !== selection.branch ||
       previous?.scope !== selection.scope ||
-      previous?.isValid !== selection.isValid;
+      previous?.isValid !== selection.isValid ||
+      previous?.initGit !== selection.initGit;
 
     if (!selectionChanged) return;
 
@@ -1167,13 +1183,13 @@
     // Existing repositories cannot be created until BranchSelector resolves
     // (or the user manually enters) a branch. Snapshot the effective branch
     // before the prompt step unmounts so workspace.create never receives ''.
-    const isNewRepo = projectSelection.type === 'new';
+    const treatAsNewRepo = shouldTreatAsNewRepo(projectSelection);
     const currentBranch = projectSelection.branch;
     const effectiveBranch =
-      selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
+      selectedPRBranch && currentBranch !== selectedPRBranch && !treatAsNewRepo
         ? selectedPRBranch
         : currentBranch;
-    if (!isNewRepo && !effectiveBranch.trim()) {
+    if (!treatAsNewRepo && !effectiveBranch.trim()) {
       toast.error(m.onboarding_page_branchRequired_toast());
       return;
     }
@@ -1234,7 +1250,9 @@
         specialistId,
       } = await resolveOnboardingModel(
         reduxState,
-        onboardingModelWasOverridden ? onboardingSelectedModel : undefined,
+        onboardingModelWasOverridden && onboardingSelectedModel
+          ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
+          : undefined,
       );
 
       // The prompt-step picker is the authoritative source of the initial
@@ -1281,7 +1299,7 @@
         shouldPullSourceRepositoryBeforeCreate({
           branchBehind: onboardingBranchBehind,
           isLocalRepository: projectSelection.type === 'local',
-          isNewRepository: projectSelection.type === 'new',
+          isNewRepository: treatAsNewRepo,
           skipIsolation: onboardingSkipIsolation,
           pullEnabled: onboardingShouldPullBeforeCreate,
         })
@@ -1356,8 +1374,8 @@
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
         githubUrl: projectSelection.githubUrl,
-        baseRef: effectiveBranch,
-        isNewRepo,
+        baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
+        isNewRepo: treatAsNewRepo,
         skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,
         setupScript: setupScriptParam,

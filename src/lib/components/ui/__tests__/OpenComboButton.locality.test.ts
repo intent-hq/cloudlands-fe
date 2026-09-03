@@ -74,6 +74,60 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const manyMockEditors: InstalledEditor[] = [
+  ...mockEditors,
+  {
+    id: 'cursor',
+    name: 'Cursor',
+    shortLabel: 'Cursor',
+    appName: 'Cursor',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 90,
+    installed: true,
+  },
+  {
+    id: 'zed',
+    name: 'Zed',
+    shortLabel: 'Zed',
+    appName: 'Zed',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 80,
+    installed: true,
+  },
+  {
+    id: 'windsurf',
+    name: 'Windsurf',
+    shortLabel: 'Windsurf',
+    appName: 'Windsurf',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 70,
+    installed: true,
+  },
+  {
+    id: 'finder',
+    name: 'Finder',
+    shortLabel: 'Finder',
+    appName: 'Finder',
+    category: 'finder',
+    handlerType: 'finder',
+    priority: 0,
+    installed: true,
+  },
+  {
+    id: 'hidden-editor',
+    name: 'Hidden Editor',
+    shortLabel: 'Hidden',
+    appName: 'Hidden Editor',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 60,
+    installed: true,
+  },
+];
+
 const mockWorkspaces = [
   { id: 'ws-local' },
   { id: 'ws-remote', environmentConfig: { type: 'remote' } },
@@ -83,12 +137,16 @@ function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
   selectedAction = 'vscode',
+  editors: InstalledEditor[] = mockEditors,
+  hiddenEditorIds: string[] = [],
+  editorOrder: string[] = [],
 ): Partial<StoreState> {
   return {
     externalEditors: {
       selectedAction,
-      editors: createCollection<InstalledEditor, 'id'>('id', mockEditors),
-      hiddenEditorIds: [],
+      editors: createCollection<InstalledEditor, 'id'>('id', editors),
+      editorOrder,
+      hiddenEditorIds,
       loading: false,
       error: null,
       lastFetched: 0,
@@ -186,6 +244,65 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
     expect(actionLabels(container)).toEqual([
       'Visual Studio Code',
       'Finder',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('offers every installed non-hidden editor without duplicating the file manager', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, 'vscode', manyMockEditors, [
+      'hidden-editor',
+    ]);
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Cursor',
+      'Zed',
+      'Windsurf',
+      'Finder',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('does not restore a hidden file manager fallback', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, 'vscode', manyMockEditors, [
+      'hidden-editor',
+      'finder',
+    ]);
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Cursor',
+      'Zed',
+      'Windsurf',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('preserves selector-provided order when Finder is moved away from the end', async () => {
+    mockStoreState = makeState(
+      { mode: 'sidecar-uds' },
+      null,
+      'vscode',
+      manyMockEditors,
+      ['hidden-editor'],
+      ['zed', 'finder', 'vscode', 'windsurf', 'cursor', 'hidden-editor'],
+    );
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Zed',
+      'Finder',
+      'Visual Studio Code',
+      'Windsurf',
+      'Cursor',
       'Other',
       'Copy path',
       'Copy branch name',

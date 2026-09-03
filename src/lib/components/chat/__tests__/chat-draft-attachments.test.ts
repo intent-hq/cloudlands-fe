@@ -185,6 +185,25 @@ describe('deserializeDraftAttachments', () => {
     expect(items).toEqual([placed]);
   });
 
+  it('round-trips a content-backed selection item and remains compatible without content', () => {
+    const selection: ContextItem = {
+      id: 'browser-capture-1-context',
+      type: 'selection',
+      label: '<button> · example.com',
+      content:
+        '<browser-element-capture>\nDOM path: html > body > button\n</browser-element-capture>',
+    };
+
+    expect(deserializeDraftAttachments(serializeDraftAttachments([selection]))).toEqual([
+      selection,
+    ]);
+    expect(
+      deserializeDraftAttachments([
+        { id: 'legacy-selection', type: 'selection', label: 'Legacy selection' },
+      ]),
+    ).toEqual([{ id: 'legacy-selection', type: 'selection', label: 'Legacy selection' }]);
+  });
+
   it('round-trips a dropped-folder item (path + label) so an onboarding reload keeps the pill', () => {
     // Folders are never placed (the daemon rejects directories) — they
     // persist path-only and ride contextReferences at create time.

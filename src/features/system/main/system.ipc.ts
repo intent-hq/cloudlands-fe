@@ -77,6 +77,7 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
+import { decorateWindowTitle } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
@@ -89,6 +90,14 @@ const require = createRequire(import.meta.url);
 
 const logger = new Logger('SystemIPC');
 let nativeThemeBackgroundSyncInstalled = false;
+const WINDOW_OPEN_REQUEST_RETENTION_MS = 5 * 60 * 1000;
+const MAX_TRACKED_WINDOW_OPEN_REQUESTS = 256;
+
+type WindowOpenResult = { success: true; windowId: number } | { success: false; error: string };
+type WindowOpenRequestEntry = {
+  result: Promise<WindowOpenResult>;
+  settledAt?: number;
+};
 
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
@@ -562,6 +571,7 @@ export async function autoRepairCliSymlink(): Promise<void> {
 
 export function setupSystemIPC() {
   installNativeThemeBackgroundSync();
+  const handledWindowOpenRequests = new Map<string, WindowOpenRequestEntry>();
 
   // App info
   ipcMain.handle(
@@ -781,7 +791,7 @@ export function setupSystemIPC() {
         try {
           const window = BrowserWindow.fromWebContents(event.sender);
           if (window) {
-            window.setTitle(validated.title);
+            window.setTitle(decorateWindowTitle(validated.title));
           }
           return { success: true };
         } catch (error) {
@@ -999,20 +1009,65 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowOpenNewSchema,
       async (event, validated) => {
-        try {
-          const newWindow = await createAppWindow(
-            validated.route,
-            getBackendIdForIpcSender(event.sender),
-          );
-          return { success: true, windowId: newWindow.id };
-        } catch (error) {
-          logger.error('Failed to open new window', error as Error);
-          return {
-            success: false,
-            error:
-              error instanceof Error ? error.message : m.system_ipc_openNewWindowFailed_error(),
-          };
+        const openWindow = async (): Promise<WindowOpenResult> => {
+          try {
+            const newWindow = await createAppWindow(
+              validated.route,
+              getBackendIdForIpcSender(event.sender),
+            );
+            return { success: true, windowId: newWindow.id };
+          } catch (error) {
+            logger.error('Failed to open new window', error as Error);
+            return {
+              success: false,
+              error:
+                error instanceof Error ? error.message : m.system_ipc_openNewWindowFailed_error(),
+            };
+          }
+        };
+
+        if (!validated.requestId) return openWindow();
+
+        const now = Date.now();
+        for (const [requestId, entry] of handledWindowOpenRequests) {
+          if (
+            entry.settledAt !== undefined &&
+            entry.settledAt + WINDOW_OPEN_REQUEST_RETENTION_MS <= now
+          ) {
+            handledWindowOpenRequests.delete(requestId);
+          }
         }
+
+        const existing = handledWindowOpenRequests.get(validated.requestId);
+        if (existing) return existing.result;
+
+        while (handledWindowOpenRequests.size >= MAX_TRACKED_WINDOW_OPEN_REQUESTS) {
+          let oldestRequestId: string | undefined;
+          let oldestSettledAt = Number.POSITIVE_INFINITY;
+          for (const [requestId, entry] of handledWindowOpenRequests) {
+            if (entry.settledAt !== undefined && entry.settledAt < oldestSettledAt) {
+              oldestRequestId = requestId;
+              oldestSettledAt = entry.settledAt;
+            }
+          }
+          if (!oldestRequestId) {
+            return { success: false, error: m.system_ipc_openNewWindowFailed_error() };
+          }
+          handledWindowOpenRequests.delete(oldestRequestId);
+        }
+
+        const result = openWindow();
+        const entry: WindowOpenRequestEntry = { result };
+        handledWindowOpenRequests.set(validated.requestId, entry);
+        void result.then(
+          () => {
+            entry.settledAt = Date.now();
+          },
+          () => {
+            entry.settledAt = Date.now();
+          },
+        );
+        return result;
       },
       WINDOW_CHANNELS.OPEN_NEW,
     ),

@@ -40,7 +40,11 @@
     let destroyed = false;
     const md = contentPreviewData.markdown;
     if (md) {
-      processMarkdownToHTML(md, { allowEmpty: true, processPrimitives: false }).then((html) => {
+      processMarkdownToHTML(md, {
+        allowEmpty: true,
+        processPrimitives: false,
+        workspaceId,
+      }).then((html) => {
         if (destroyed) return;
         renderedHtml = html;
       });

@@ -29,13 +29,14 @@ describe('production HTML transforms', () => {
     const inlineScript = 'boot()';
     const hash = createHash('sha256').update(inlineScript, 'utf8').digest('base64');
     const html = hardenProductionScriptCsp(
-      `<html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';" /></head><body><script>${inlineScript}</script><script src="/app.js"></script></body></html>`,
+      `<html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src 'self' data: blob: https: workspace-asset: workspace-file:;" /></head><body><script>${inlineScript}</script><script src="/app.js"></script></body></html>`,
     );
 
     expect(html).toContain(`script-src 'self' 'sha256-${hash}'`);
     expect(html).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(html).not.toContain("'unsafe-eval'");
     expect(html).toContain("style-src 'self' 'unsafe-inline'");
+    expect(html).toContain("media-src 'self' data: blob: https: workspace-asset: workspace-file:;");
   });
 
   it('fails closed when production HTML has no CSP', () => {

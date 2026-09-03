@@ -87,6 +87,7 @@
   }: Props = $props();
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const markdownWorkspaceId = $derived(workspace?.id ?? routeWorkspaceId);
 
   function formatTimestamp(dateStr?: string) {
     if (!dateStr) return '';
@@ -121,7 +122,10 @@
     } else {
       internalIsEditing = true;
       const html = await Promise.resolve(
-        processMarkdownToHTML(comment.content || '', { allowEmpty: true }),
+        processMarkdownToHTML(comment.content || '', {
+          allowEmpty: true,
+          workspaceId: markdownWorkspaceId,
+        }),
       );
       internalEditHTML = html || '';
     }
@@ -133,7 +137,10 @@
     } else {
       try {
         const html = internalEditEditor?.getHTML?.() ?? '';
-        const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+        const md = processHTMLToMarkdown(html, {
+          preserveAnchors: false,
+          workspaceId: markdownWorkspaceId,
+        }).trim();
         if (!md) return cancelEdit();
         const v2 = selectCommentById.select(appStore.state, comment.id);
         if (v2) {
@@ -169,7 +176,9 @@
   $effect(() => {
     let destroyed = false;
     const content = comment.content || '';
-    Promise.resolve(processMarkdownToHTML(content, { allowEmpty: true })).then((h) => {
+    Promise.resolve(
+      processMarkdownToHTML(content, { allowEmpty: true, workspaceId: markdownWorkspaceId }),
+    ).then((h) => {
       if (destroyed) return;
       commentHtml = h || '';
       try {
