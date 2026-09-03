@@ -265,16 +265,14 @@ test('preserves the hook name before secondary labels at 280px', async ({ mount 
     };
     return {
       title: measure('background-hook-title'),
-      state: measure('background-hook-state'),
-      nextRun: measure('background-hook-next-run'),
+      status: measure('background-hook-state'),
       containment: { client: row.clientWidth, scroll: row.scrollWidth },
     };
   });
 
   expect(lanes.title.width).toBeGreaterThanOrEqual(64);
-  expect(lanes.title.width).toBeGreaterThan(lanes.state.width);
-  expect(lanes.title.width).toBeGreaterThan(lanes.nextRun.width);
-  expect([lanes.state, lanes.nextRun].some(({ client, scroll }) => scroll > client)).toBe(true);
+  expect(lanes.title.width).toBeGreaterThan(lanes.status.width);
+  expect(lanes.status.scroll).toBeGreaterThan(lanes.status.client);
   expect(lanes.containment.scroll).toBeLessThanOrEqual(lanes.containment.client);
 });
 

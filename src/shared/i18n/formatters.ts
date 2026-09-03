@@ -273,6 +273,23 @@ export function createFormatters(getLocale: () => string) {
     return hours === 0 ? unitOf('day', days) : `${unitOf('day', days)} ${unitOf('hour', hours)}`;
   }
 
+  /**
+   * Compact duration using only the largest salient unit. Sub-minute values
+   * round to the nearest second; larger values truncate to whole minutes,
+   * hours, or days so countdowns never overstate the remaining time.
+   */
+  function formatSalientDuration(durationMs: number): string {
+    if (!Number.isFinite(durationMs)) return '';
+    const locale = getLocale();
+    const unitOf = (unit: string, value: number) =>
+      numberFormat(locale, { style: 'unit', unit, unitDisplay: 'narrow' }).format(value);
+    const clampedMs = Math.max(0, durationMs);
+    if (clampedMs < 60_000) return unitOf('second', Math.round(clampedMs / 1000));
+    if (clampedMs < 3_600_000) return unitOf('minute', Math.floor(clampedMs / 60_000));
+    if (clampedMs < 86_400_000) return unitOf('hour', Math.floor(clampedMs / 3_600_000));
+    return unitOf('day', Math.floor(clampedMs / 86_400_000));
+  }
+
   /** Clock time, e.g. "2:30 PM" / "14:30"; `seconds` → "02:30:05 PM". */
   function formatTime(input: DateInput, options?: { seconds?: boolean }): string {
     const date = toDate(input);
@@ -379,6 +396,7 @@ export function createFormatters(getLocale: () => string) {
     formatRelativeTime,
     formatCompactRelativeTime,
     formatCompactDuration,
+    formatSalientDuration,
     formatTime,
     formatDate,
     formatShortDate,

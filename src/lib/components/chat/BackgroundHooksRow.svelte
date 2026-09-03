@@ -32,7 +32,7 @@
   import { Button } from '$lib/components/ui/button';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatCompactDuration, formatDateTime, formatInteger } from '$lib/i18n/format';
+  import { formatDateTime, formatInteger, formatSalientDuration } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
   import {
@@ -143,12 +143,6 @@
     expandedHookId = expandedHookId === hookId ? null : hookId;
   }
 
-  function stateLabel(hook: BackgroundHook): string {
-    return hook.state === 'running'
-      ? m.chat_backgroundHooks_running_label()
-      : m.chat_backgroundHooks_state_scheduled_label();
-  }
-
   // Reactive clock driving the countdown readouts: ticks once per second, but
   // only while a rendered hook has a timed target. Ephemeral UI state — the
   // actual row removal/state change still comes from `hook:*` events.
@@ -165,14 +159,21 @@
 
   /**
    * Relative timing shown beside localized absolute timestamps in the inline
-   * details. `formatCompactDuration` clamps negative durations to "0s".
+   * details. `formatSalientDuration` clamps negative durations to "0s".
    */
   function nextRunIn(hook: BackgroundHook): string {
-    return formatCompactDuration(new Date(hook.nextRunAt!).getTime() - now);
+    return formatSalientDuration(new Date(hook.nextRunAt!).getTime() - now);
   }
 
   function expiresIn(hook: BackgroundHook): string {
-    return formatCompactDuration(new Date(hook.expiresAt!).getTime() - now);
+    return formatSalientDuration(new Date(hook.expiresAt!).getTime() - now);
+  }
+
+  function summaryStatus(hook: BackgroundHook): string {
+    // `lastRunAt` records completion; run-started events carry no start timestamp.
+    if (hook.state === 'running') return m.chat_backgroundHooks_running_label();
+    if (!hook.nextRunAt) return m.chat_backgroundHooks_state_scheduled_label();
+    return m.chat_backgroundHooks_scheduledIn({ duration: nextRunIn(hook) });
   }
 
   /**
@@ -192,7 +193,7 @@
     if (hook.runAt) {
       return m.chat_backgroundHooks_details_onceAt_value({ time: formatDateTime(hook.runAt) });
     }
-    return hook.delayMs ? formatCompactDuration(hook.delayMs) : '—';
+    return hook.delayMs ? formatSalientDuration(hook.delayMs) : '—';
   }
 </script>
 
@@ -247,12 +248,8 @@
             >
             <span
               class="min-w-0 shrink-[999] truncate text-muted-foreground"
-              data-testid="background-hook-state">{stateLabel(hook)}</span
+              data-testid="background-hook-state">{summaryStatus(hook)}</span
             >
-            {#if hook.nextRunAt}<span
-                class="min-w-0 shrink-[999] truncate text-muted-foreground"
-                data-testid="background-hook-next-run">{nextRunIn(hook)}</span
-              >{/if}
             <span
               class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
               data-testid="background-hook-chevron"
