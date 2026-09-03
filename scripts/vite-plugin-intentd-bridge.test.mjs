@@ -109,6 +109,7 @@ async function setup({
   startDaemon = true,
   warmupEntries = ['src/routes/+page.svelte'],
   warmModules = ['src/routes/+page.svelte', 'src/hooks.client.ts'],
+  waitForRequestsIdle = async () => {},
 } = {}) {
   const socketPath = path.join(
     os.tmpdir(),
@@ -141,6 +142,7 @@ async function setup({
     httpServer: server,
     middlewares,
     config: { root, server: { warmup: { clientFiles: warmupEntries } } },
+    waitForRequestsIdle,
     moduleGraph: {
       idToModuleMap: new Map(
         warmModules.map((file, index) => [file, { file: path.resolve(root, file), index }]),
@@ -406,6 +408,24 @@ describe('intentd Vite bridge', () => {
       warm: { moduleGraph: 2, entriesWarm: true },
       git: TEST_GIT_INFO,
     });
+  });
+
+  it('waits for the configured warm-up import crawl before reporting health', async () => {
+    let finishWarmup;
+    const warmupFinished = new Promise((resolve) => {
+      finishWarmup = resolve;
+    });
+    const bridge = await setup({ waitForRequestsIdle: () => warmupFinished });
+    let responseReceived = false;
+    const responsePromise = requestHttp(bridge.port).then((response) => {
+      responseReceived = true;
+      return response;
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(responseReceived).toBe(false);
+    finishWarmup();
+    expect((await responsePromise).status).toBe(200);
   });
 
   it('reports an unhealthy sandbox when the daemon socket is missing', async () => {

@@ -163,6 +163,8 @@ async function writeHealthResponse(request, response, server, socketPath, timeou
     return;
   }
 
+  const warmupEntries = server.config?.server?.warmup?.clientFiles ?? [];
+  if (warmupEntries.length) await server.waitForRequestsIdle();
   const moduleGraph = clientModuleGraph(server);
   const daemon = await probeSocket(socketPath, timeoutMs);
   const entriesWarm = configuredEntriesAreWarm(server, moduleGraph);
