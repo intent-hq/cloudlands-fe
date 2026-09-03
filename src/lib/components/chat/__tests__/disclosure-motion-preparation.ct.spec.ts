@@ -224,6 +224,13 @@ test('accepts live response updates during collapse without stale detached conte
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(component.getByTestId('prepared-response-body')).toBeVisible();
+  // Let the expand motion settle before the pointer click that starts the
+  // collapse (monorepo#4267): while the details grow, the followed-bottom
+  // transcript re-pins every frame and shifts the trigger row up. Playwright
+  // verifies the hit target only on pointerdown, so a row that moves before
+  // mouseup lands the synthesized `click` on the common ancestor instead of the
+  // button and the toggle is silently dropped.
+  await expectAnimationsCleanedUp(await controlledContent(component, toggle));
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.waitForTimeout(35);
