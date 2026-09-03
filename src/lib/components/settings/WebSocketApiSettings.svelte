@@ -227,6 +227,10 @@
       tunnelEnabled = selection.tunnel;
       tunnelOnly = selection.tunnel && selection.ips.length === 0;
       toast.success(m.settings_listenTargets_saved());
+      // The listen targets changed the published fields (hosts from the new
+      // bind IPs, tc address from the tunnel toggle) — propagate them to the
+      // published self entry (no-op in main when unpublished/suppressed).
+      refreshSelfEntry();
       // The bound listeners changed — refresh the pairing info (port/IPs/tc).
       await loadStatus();
     } catch (error) {

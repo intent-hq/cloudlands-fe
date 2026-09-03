@@ -20,12 +20,19 @@ const defaultProviderId = 'auggie';
 
 function mockState(
   model: Partial<ModelState> = {},
-  providerSettings: Partial<ProviderSettingsState> = {},
+  // `activeProviderId` seeds `model.defaultProviderId` — the default provider
+  // lives in the model slice now that `providers.active` is retired.
+  providerSettings: Partial<ProviderSettingsState> & { activeProviderId?: string } = {},
   providerStatusMap: Record<string, ProviderStatus> = {},
 ): StoreState {
+  const { activeProviderId, ...settings } = providerSettings;
   return {
-    model: { ...modelInitialState, ...model },
-    providerSettings: { ...providerSettingsInitialState, ...providerSettings },
+    model: {
+      ...modelInitialState,
+      ...(activeProviderId !== undefined ? { defaultProviderId: activeProviderId } : {}),
+      ...model,
+    },
+    providerSettings: { ...providerSettingsInitialState, ...settings },
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap: {},
@@ -91,40 +98,24 @@ describe('selectSelectedModel', () => {
     expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
   });
 
-  it('ignores a foreign first row when replacing a stale persisted model', () => {
+  it('keeps the persisted model when the catalog was loaded for another provider', () => {
+    // Provenance gate: availableModelsProviderId names the provider the
+    // catalog rows belong to — a foreign catalog never validates (or
+    // replaces) another provider's persisted pick.
     const providerId = 'claude-code';
     const state = mockState(
       {
         availableModels: createCollection<AuggieModel, 'value'>('value', [
-          { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex' },
-          { value: 'claude-fable-5[1m]', label: 'Claude Fable 5' },
+          { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', isDefault: true },
         ]),
-        availableModelsProviderId: providerId,
+        availableModelsProviderId: 'codex',
         providerModels: { [providerId]: 'fable-5' },
         defaultProviderId: providerId,
       },
       { activeProviderId: providerId },
     );
 
-    expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
-  });
-
-  it('ignores a foreign default row when replacing a stale persisted model', () => {
-    const providerId = 'claude-code';
-    const state = mockState(
-      {
-        availableModels: createCollection<AuggieModel, 'value'>('value', [
-          { value: 'claude-fable-5[1m]', label: 'Claude Fable 5' },
-          { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', isDefault: true },
-        ]),
-        availableModelsProviderId: providerId,
-        providerModels: { [providerId]: 'fable-5' },
-        defaultProviderId: providerId,
-      },
-      { activeProviderId: providerId },
-    );
-
-    expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
+    expect(selectSelectedModel.select(state)).toBe('fable-5');
   });
 
   it('preserves a valid provider-specific Claude Code model ID', () => {
@@ -162,10 +153,9 @@ describe('selectSelectedModel', () => {
     const availableModels = createCollection<AuggieModel, 'value'>('value', [
       { value: 'opus4.7', label: 'Claude Opus 4.7' },
       { value: 'sonnet4.5', label: 'Claude Sonnet 4.5', isDefault: true },
-      { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
     ]);
     const state = mockState(
-      { availableModels, defaultProviderId },
+      { availableModels, availableModelsProviderId: defaultProviderId, defaultProviderId },
       { activeProviderId: defaultProviderId, enabledProviders: {} },
       { [defaultProviderId]: { available: true } },
     );
@@ -179,6 +169,7 @@ describe('selectSelectedModel', () => {
           { value: 'opus4.7', label: 'Claude Opus 4.7' },
           { value: 'sonnet4.5', label: 'Claude Sonnet 4.5' },
         ]),
+        availableModelsProviderId: defaultProviderId,
         defaultProviderId,
       },
       { activeProviderId: defaultProviderId, enabledProviders: {} },
@@ -213,6 +204,7 @@ describe('selectHasResolvableModel', () => {
         availableModels: createCollection<AuggieModel, 'value'>('value', [
           { value: 'opus4.7', label: 'Claude Opus 4.7' },
         ]),
+        availableModelsProviderId: defaultProviderId,
         defaultProviderId,
       },
       { activeProviderId: defaultProviderId, enabledProviders: {} },
@@ -252,6 +244,7 @@ describe('selectHasResolvableProvider', () => {
         availableModels: createCollection<AuggieModel, 'value'>('value', [
           { value: 'opus4.7', label: 'Claude Opus 4.7' },
         ]),
+        availableModelsProviderId: defaultProviderId,
         defaultProviderId,
       },
       { activeProviderId: defaultProviderId, enabledProviders: {} },
@@ -266,25 +259,25 @@ describe('selectModelDisplayName', () => {
   const catalogState = () =>
     mockState({
       defaultProviderId,
+      availableModelsProviderId: defaultProviderId,
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'sonnet4.6', label: 'Claude Sonnet 4.6' },
-        { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
       ]),
     });
 
-  it('resolves a provider-prefixed catalog entry for a non-default provider', () => {
-    expect(selectModelDisplayName.select(catalogState(), 'codex', 'gpt-5-codex')).toBe(
-      'GPT-5 Codex',
-    );
-  });
-
-  it('resolves a bare catalog entry for the default provider', () => {
+  it('resolves a bare catalog entry for the provider the catalog was loaded for', () => {
     expect(selectModelDisplayName.select(catalogState(), defaultProviderId, 'sonnet4.6')).toBe(
       'Claude Sonnet 4.6',
     );
   });
 
-  it('does not resolve a bare entry for a non-default provider', () => {
+  it('strips a legacy compound prefix from the model id before the lookup', () => {
+    expect(
+      selectModelDisplayName.select(catalogState(), defaultProviderId, 'auggie:sonnet4.6'),
+    ).toBe('Claude Sonnet 4.6');
+  });
+
+  it('does not resolve an entry for a provider the catalog was not loaded for', () => {
     expect(selectModelDisplayName.select(catalogState(), 'codex', 'sonnet4.6')).toBeUndefined();
   });
 
@@ -308,13 +301,13 @@ describe('selectModelEffortLevels', () => {
       defaultProviderId,
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'sonnet4.6', label: 'Claude Sonnet 4.6' },
-        { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: efforts },
+        { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: efforts },
         { value: 'opus4.7', label: 'Claude Opus 4.7', effortLevels: ['low', 'high'] },
       ]),
     });
 
   it('returns effortLevels for a catalog row that carries them', () => {
-    expect(selectModelEffortLevels.select(catalogState(), 'codex:gpt-5.3-codex')).toEqual(efforts);
+    expect(selectModelEffortLevels.select(catalogState(), 'gpt-5.3-codex')).toEqual(efforts);
     expect(selectModelEffortLevels.select(catalogState(), 'opus4.7')).toEqual(['low', 'high']);
   });
 
@@ -325,24 +318,12 @@ describe('selectModelEffortLevels', () => {
     expect(selectModelEffortLevels.select(catalogState(), null)).toBeUndefined();
   });
 
-  it('strips a legacy codex compound {model}/{effort} suffix before the lookup', () => {
+  it('strips legacy compound prefixes and {model}/{effort} suffixes before the lookup', () => {
+    expect(selectModelEffortLevels.select(catalogState(), 'codex:gpt-5.3-codex')).toEqual(efforts);
     expect(selectModelEffortLevels.select(catalogState(), 'codex:gpt-5.3-codex/xhigh')).toEqual(
       efforts,
     );
-  });
-
-  it('falls back to the default-provider prefixed row for a bare session model id', () => {
-    const state = mockState({
-      defaultProviderId,
-      availableModels: createCollection<AuggieModel, 'value'>('value', [
-        {
-          value: `${defaultProviderId}:sonnet4.6`,
-          label: 'Claude Sonnet 4.6',
-          effortLevels: efforts,
-        },
-      ]),
-    });
-    expect(selectModelEffortLevels.select(state, 'sonnet4.6')).toEqual(efforts);
+    expect(selectModelEffortLevels.select(catalogState(), 'gpt-5.3-codex/high')).toEqual(efforts);
   });
 
   it('returns undefined when the model slice is absent', () => {
@@ -357,7 +338,7 @@ describe('selectAgentModelEffortLevels', () => {
     const base = mockState({
       defaultProviderId,
       availableModels: createCollection<AuggieModel, 'value'>('value', [
-        { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
+        { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
     });
     const state = {
@@ -476,7 +457,7 @@ describe('selectAgentModelEffortLevels', () => {
     const base = mockState({
       defaultProviderId,
       availableModels: createCollection<AuggieModel, 'value'>('value', [
-        { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
+        { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
     });
     const state = {

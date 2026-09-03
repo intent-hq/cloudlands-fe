@@ -1021,6 +1021,10 @@ export const SpecialistWriteSchema = z
     modelOptions: z
       .array(
         z.object({
+          provider: z
+            .string()
+            .refine((value) => value.trim() !== '', 'Provider must be non-empty when present')
+            .optional(),
           model: z.string().min(1, 'Model is required'),
           hint: z.string(),
           reasoningEffort: z.string().optional(),

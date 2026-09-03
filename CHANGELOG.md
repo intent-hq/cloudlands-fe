@@ -4,6 +4,39 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.126.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.126.1...v2.126.2) (2026-09-03)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.8 ([#2070](https://github.com/intent-hq/cloudlands-fe/issues/2070)) ([e028d7f](https://github.com/intent-hq/cloudlands-fe/commit/e028d7f9455a57e1de41b5f49acbf40df3ad196e))
+
+## [2.126.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.126.0...v2.126.1) (2026-09-02)
+
+
+### 🐛 Bug Fixes
+
+* **titlebar:** Preserve Mac sidebar clearance when zooming ([#2060](https://github.com/intent-hq/cloudlands-fe/issues/2060)) ([fc832bc](https://github.com/intent-hq/cloudlands-fe/commit/fc832bcee63af6b56502028c11b6ab81e766cdeb))
+
+## [2.126.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.125.0...v2.126.0) (2026-09-02)
+
+
+### 🚀 Features
+
+* connect to server via intent://pair deep links ([#2043](https://github.com/intent-hq/cloudlands-fe/issues/2043)) ([3e78979](https://github.com/intent-hq/cloudlands-fe/commit/3e789794d3d22c65dc247598e5739b1b7b2cda65))
+* devices and advanced settings UI for the tailcat tunnel ([#2030](https://github.com/intent-hq/cloudlands-fe/issues/2030)) ([b62657d](https://github.com/intent-hq/cloudlands-fe/commit/b62657d6dee5ae14e091df4950926fbf1b9829f5))
+* dial remote backends through a bundled tailcat tunnel client ([#2013](https://github.com/intent-hq/cloudlands-fe/issues/2013)) ([f9aa9be](https://github.com/intent-hq/cloudlands-fe/commit/f9aa9bef87d005474c1a119353ae936eeefe26e8))
+* retire compound-model-id helpers for the model triple ([#2041](https://github.com/intent-hq/cloudlands-fe/issues/2041)) ([4c793d0](https://github.com/intent-hq/cloudlands-fe/commit/4c793d0458d0c1dc7ac34dde0b0c5b7bb4ce12b3))
+* **settings:** reorganize WebSocket API settings with a top-level tunnel toggle ([#2042](https://github.com/intent-hq/cloudlands-fe/issues/2042)) ([1819c26](https://github.com/intent-hq/cloudlands-fe/commit/1819c26e09df74f6a83c6232b3d6e9c9a21bac68))
+* sync tc address across devices via keychain and refresh flows ([#2024](https://github.com/intent-hq/cloudlands-fe/issues/2024)) ([4c90307](https://github.com/intent-hq/cloudlands-fe/commit/4c90307b2c692f22819301a42454c8e7fb6587fc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.6 ([#2048](https://github.com/intent-hq/cloudlands-fe/issues/2048)) ([28316b1](https://github.com/intent-hq/cloudlands-fe/commit/28316b1b783158d0011ede9a3655dca12837af15))
+* bump intentd sidecar to v0.9.7 ([#2053](https://github.com/intent-hq/cloudlands-fe/issues/2053)) ([24ecbe7](https://github.com/intent-hq/cloudlands-fe/commit/24ecbe78c777de5406d6eb0155e9272761765c0c))
+* filter loopback addresses from the keychain registry and keep the self entry fresh ([#2044](https://github.com/intent-hq/cloudlands-fe/issues/2044)) ([0b9e2ce](https://github.com/intent-hq/cloudlands-fe/commit/0b9e2ced33b7f4845b484f5353b5cb24e3e66343))
+
 ## [2.125.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.124.1...v2.125.0) (2026-09-02)
 
 

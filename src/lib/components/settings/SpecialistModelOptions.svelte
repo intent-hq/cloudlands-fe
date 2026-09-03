@@ -7,6 +7,12 @@
    * or the effort changes on a committed row, or a committed row is removed.
    * The parent persists the committed list via `saveFileSpecialist` (empty
    * list ⇒ key omitted on the wire so inheritance is preserved).
+   *
+   * Rows carry the triple shape `{ provider?, model, hint, reasoningEffort? }`
+   * with a BARE `model` id (PROTOCOL §5.11); the ModelPicker boundary still
+   * speaks compound ids, so picks split into provider + bare model and the
+   * row's pair recombines for display. Each row also renders a textual effort
+   * label ("Default" when the option inherits the model default).
    */
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -14,6 +20,7 @@
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { m } from '$shared/paraglide/messages.js';
   import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -41,24 +48,54 @@
   function committed(list: Row[]): SpecialistModelOption[] {
     return list
       .filter((row) => row.model !== '')
-      .map(({ model, hint, reasoningEffort }) => ({
+      .map(({ provider, model, hint, reasoningEffort }) => ({
+        // Omit unset keys so the wire keeps inherit semantics
+        // (PROTOCOL §5.11 — never null/"" on a modelOptions entry).
+        ...(provider ? { provider } : {}),
         model,
         hint,
-        // Omit the key when unset so the wire keeps inherit semantics
-        // (PROTOCOL §5.11 — never null/"" on a modelOptions entry).
         ...(reasoningEffort ? { reasoningEffort } : {}),
       }));
   }
 
   /**
+   * Compound id for the ModelPicker boundary (display + catalog lookups).
+   * The picker still speaks `provider:model` ids; the row stores the triple.
+   */
+  function pickerModelId(row: SpecialistModelOption): string {
+    if (!row.model) return '';
+    return row.provider ? `${row.provider}:${row.model}` : row.model;
+  }
+
+  /**
    * Drop an effort level the newly picked model does not advertise, so a
    * model switch resets the row to Default instead of persisting a level the
-   * catalog no longer offers.
+   * catalog no longer offers. `model` is a picker compound id.
    */
   function effortForModel(model: string, effort: string | undefined): string | undefined {
     if (!effort) return undefined;
     const levels = selectModelEffortLevels.select(appStore.state, model);
     return levels?.includes(effort) ? effort : undefined;
+  }
+
+  // Textual per-row effort label so the level is readable at a glance
+  // (mirrors EffortPicker's level naming); unset reads as "Default", never
+  // blank.
+  const LEVEL_LABELS: Record<string, () => string> = {
+    none: () => m.chat_shared_valueOff_label(),
+    minimal: () => m.chat_effortPicker_level_minimal(),
+    low: () => m.chat_effortPicker_level_low(),
+    medium: () => m.chat_effortPicker_level_medium(),
+    high: () => m.chat_effortPicker_level_high(),
+    xhigh: () => m.chat_effortPicker_level_xhigh(),
+    max: () => m.chat_effortPicker_level_max(),
+  };
+
+  function effortLabel(row: SpecialistModelOption): string {
+    const level = row.reasoningEffort
+      ? (LEVEL_LABELS[row.reasoningEffort]?.() ?? row.reasoningEffort)
+      : m.settings_aiBehavior_modelOptions_effortDefault_label();
+    return m.settings_aiBehavior_modelOptions_effort_label({ level });
   }
 
   // Resync from the store only when the saved list diverges from the local
@@ -74,6 +111,7 @@
       saved.length === local.length &&
       saved.every(
         (opt, i) =>
+          (opt.provider ?? undefined) === (local[i].provider ?? undefined) &&
           opt.model === local[i].model &&
           opt.hint === local[i].hint &&
           (opt.reasoningEffort ?? undefined) === (local[i].reasoningEffort ?? undefined),
@@ -89,11 +127,15 @@
 
   function handleModelChange(index: number, compoundModelId: string) {
     if (!compoundModelId) return;
+    // Split the picker's compound id into the triple's provider + bare model
+    // (an empty legacy prefix never propagates as a real provider id).
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
     rows = rows.map((row, i) =>
       i === index
         ? {
             ...row,
-            model: compoundModelId,
+            provider: providerId || undefined,
+            model: modelId,
             reasoningEffort: effortForModel(compoundModelId, row.reasoningEffort),
           }
         : row,
@@ -147,7 +189,7 @@
     <div class="flex items-center gap-2">
       <div class="shrink-0">
         <ModelPicker
-          selectedModel={row.model || undefined}
+          selectedModel={pickerModelId(row) || undefined}
           onModelChange={(model) => handleModelChange(index, model)}
           showDefaultOption={false}
           defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
@@ -158,6 +200,9 @@
           onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
         />
       </div>
+      <span class="shrink-0 text-xs text-muted-foreground whitespace-nowrap" data-testid="effort-label">
+        {effortLabel(row)}
+      </span>
       <input
         type="text"
         value={row.hint}

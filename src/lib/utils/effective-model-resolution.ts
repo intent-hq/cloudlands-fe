@@ -1,5 +1,5 @@
 /**
- * Submit-provider derivation for the workspace-creation path
+ * Submit-triple derivation for the workspace-creation path
  * (CompactWorkspaceInitializer).
  *
  * Default-model resolution is daemon-owned (single resolver, PROTOCOL §5.11):
@@ -11,21 +11,20 @@
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 
 /**
- * Derive the provider to submit alongside an explicit user-picked model so FE
- * intent and daemon spawn can never diverge. Mirrors the daemon's
- * resolve_provider_id precedence: a non-empty legacy compound model prefix
- * (persisted pre-triple state) wins, and with no explicit model (or an empty
- * prefix like ':sonnet', which the daemon also filters) the form's selected
- * provider is kept. Note the daemon resolves a bare model id to the submitted
- * provider field — it is this function that pre-resolves the provider field
- * for bare ids (they attribute to the default provider), so FE intent and
- * daemon spawn agree on the default provider for bare model ids.
+ * Normalize an explicit user-picked model into the submit triple legs — a
+ * bare model id plus its provider — so FE intent and daemon spawn can never
+ * diverge. This is the ONE sanctioned legacy boundary for the form: new picks
+ * are already bare and paired with `selectedProvider`, while a persisted
+ * pre-triple compound id (`provider:model`) is split here — a non-empty
+ * prefix wins as the provider, an empty prefix like ':sonnet' falls back to
+ * the form's selected provider. With no explicit model the daemon resolves
+ * the default in `selectedProvider`'s context.
  */
-export function resolveSubmitProvider(
-  resolvedModel: string | undefined,
+export function resolveSubmitModelAndProvider(
+  explicitModel: string | undefined,
   selectedProvider: string,
-  defaultProviderId: string,
-): string {
-  if (!resolvedModel) return selectedProvider;
-  return (splitLegacyCompoundId(resolvedModel).providerId ?? defaultProviderId) || selectedProvider;
+): { model: string | undefined; provider: string } {
+  if (!explicitModel) return { model: undefined, provider: selectedProvider };
+  const { providerId, modelId } = splitLegacyCompoundId(explicitModel);
+  return { model: modelId || undefined, provider: providerId || selectedProvider };
 }
