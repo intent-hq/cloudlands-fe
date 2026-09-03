@@ -220,6 +220,7 @@ describe('daemonHealthSaga', () => {
             daemonVersion: '1.0.0',
             pinnedVersion: '2.0.0',
             updateSupported: true,
+            exactVersionUpdateSupported: true,
           },
         };
       }
@@ -263,6 +264,7 @@ describe('daemonHealthSaga', () => {
             daemonVersion: '3.0.0',
             pinnedVersion: '2.0.0',
             updateSupported: true,
+            exactVersionUpdateSupported: true,
           },
         };
       }

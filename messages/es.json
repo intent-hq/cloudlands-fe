@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "Abrir",
   "layout_daemonStatus_update_action": "Actualizar",
   "layout_daemonStatus_update_tooltip": "Actualizar el intentd de este backend de v{daemonVersion} a v{pinnedVersion}",
-  "layout_daemonStatus_updateRequested_toast": "Actualización solicitada — el backend instalará el intentd más reciente y se reiniciará.",
-  "layout_daemonStatus_updateUnsupported_toast": "El intentd de este backend es demasiado antiguo para aceptar solicitudes de actualización remota. Actualízalo manualmente en su máquina.",
+  "layout_daemonStatus_updateRequested_toast": "Solicitando la versión de intentd incluida. Esperando el reinicio y la verificación de versión…",
+  "layout_daemonStatus_updateUnsupported_toast": "Este demonio o su supervisor no puede instalar una versión exacta de forma segura. Actualiza ambos manualmente en esa máquina y vuelve a conectarte.",
   "layout_daemonStatus_updateNotConnected_toast": "No hay conexión con este backend — conéctate antes de solicitar una actualización.",
-  "layout_daemonStatus_updateFailed_toast": "El backend no pudo iniciar la actualización: {message}",
+  "layout_daemonStatus_updateFailed_toast": "No se pudo completar la actualización a la versión exacta: {message}. Revisa los registros del demonio; puede ser necesaria una actualización manual.",
   "layout_daemonStatus_updateRequestError_toast": "No se pudo enviar la solicitud de actualización. Inténtalo de nuevo.",
   "layout_daemonStatus_daemonBehind_toast": "{name} ejecuta intentd v{daemonVersion}, por detrás de la v{pinnedVersion} de esta aplicación.",
   "layout_daemonStatus_forget_action": "Olvidar",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "Ningún agente coincide con tu búsqueda.",
   "workspace_contextPanel_noSearchResults_label": "Ningún contexto coincide con tu búsqueda.",
   "workspace_sidebarSearch_clear_ariaLabel": "Borrar búsqueda",
-  "layout_allCard_archived_label": "Archivados"
+  "layout_allCard_archived_label": "Archivados",
+  "layout_daemonStatus_updateCompleted_toast": "Se verificó que el backend ejecuta intentd {version}.",
+  "layout_daemonStatus_updateInvalidPin_toast": "Esta aplicación no tiene una versión de intentd incluida válida. Reinstala la aplicación antes de actualizar el backend.",
+  "layout_daemonStatus_updateBusy_toast": "Ya hay una actualización en curso para este backend. Espera a que termine.",
+  "layout_daemonStatus_updateTimeout_toast": "No se pudo verificar la versión solicitada a tiempo. La actualización remota puede seguir en curso. Revisa la conexión y los registros del demonio.",
+  "layout_daemonStatus_updateMismatch_toast": "El backend se reinició con intentd {actualVersion}, no con la versión {version} solicitada. Revisa los registros del demonio y actualízalo manualmente; no se solicitó ninguna versión alternativa."
 }

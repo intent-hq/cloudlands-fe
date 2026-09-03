@@ -16,6 +16,7 @@ import {
   __resetConnectionModeForTesting,
   getDaemonVersionInfo,
   getLocalUpdateSupported,
+  getLocalExactVersionUpdateSupported,
   setConnectionMode,
   setDaemonVersionInfo,
   setLocalUpdateSupported,
@@ -935,6 +936,50 @@ describe('backend.ipc remote localIps capture on hello', () => {
     mod.disconnectBackendClient('conn-remote');
   });
 
+  it.each([
+    { exactSupported: true, hostsChanged: false, broadcasts: 1 },
+    { exactSupported: undefined, hostsChanged: true, broadcasts: 1 },
+    { exactSupported: true, hostsChanged: true, broadcasts: 1 },
+    { exactSupported: undefined, hostsChanged: false, broadcasts: 0 },
+  ])(
+    'joint hello capture broadcasts $broadcasts times for exact=$exactSupported, hostsChanged=$hostsChanged',
+    async ({ exactSupported, hostsChanged, broadcasts }) => {
+      systemStatus.value = {
+        updateSupported: true,
+        ...(exactSupported === undefined ? {} : { exactVersionUpdateSupported: exactSupported }),
+        localIps: ['127.0.0.1', '172.96.161.227'],
+      };
+      mockSetUpdateSupported.mockResolvedValueOnce(false);
+      mockSetTcAddress.mockResolvedValueOnce(false);
+      mockSetHosts.mockResolvedValueOnce(hostsChanged);
+      const { mod, onHelloResult, remoteRequest } = await connectRemote();
+      const send = vi.fn();
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+        { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+      ]);
+
+      onHelloResult({ server: { version: '0.9.0' } });
+      await vi.waitFor(() => expect(mockSetHosts).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(remoteRequest).toHaveBeenCalledWith('system.status');
+      expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227']);
+      const changes = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changes).toHaveLength(broadcasts);
+      if (broadcasts > 0) {
+        expect(changes[0][1]).toMatchObject({
+          connections: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'conn-remote',
+              exactVersionUpdateSupported: exactSupported ?? null,
+            }),
+          ]),
+        });
+      }
+      mod.disconnectBackendClient('conn-remote');
+    },
+  );
+
   it('never captures for the local backend (pooled local client)', async () => {
     systemStatus.value = { localIps: ['172.96.161.227'] };
     const { getBackendClient } = await import('../backend.ipc');
@@ -986,6 +1031,18 @@ describe('backend.ipc local external updateSupported capture on hello', () => {
     // The local flag lives in connection-mode state, never the store.
     expect(mockSetUpdateSupported).not.toHaveBeenCalled();
   });
+
+  it.each([true, false, undefined])(
+    'captures exact local sitter capability independently of legacy support: %s',
+    async (exactVersionUpdateSupported) => {
+      const onHelloResult = await freshLocalOnHelloResult();
+      setConnectionMode('external');
+      systemStatus.value = { updateSupported: true, exactVersionUpdateSupported };
+      onHelloResult({});
+      await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(true));
+      expect(getLocalExactVersionUpdateSupported()).toBe(exactVersionUpdateSupported ?? null);
+    },
+  );
 
   it('captures an explicit false (unsupported is conclusive)', async () => {
     const onHelloResult = await freshLocalOnHelloResult();

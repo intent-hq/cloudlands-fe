@@ -30,7 +30,7 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
-  handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  handler: (async () => ({})) as (method: string, params?: unknown) => Promise<unknown>,
   calls: [] as string[],
 }));
 
@@ -53,7 +53,11 @@ vi.mock('../json-rpc-client', () => {
       this.listeners.set(event, arr);
       return this;
     }
-    off(): this {
+    off(event: string, handler: (arg: unknown) => void): this {
+      this.listeners.set(
+        event,
+        (this.listeners.get(event) ?? []).filter((h) => h !== handler),
+      );
       return this;
     }
     emit(event: string, arg?: unknown): void {
@@ -69,9 +73,9 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
-    request = vi.fn(async (method: string) => {
+    request = vi.fn(async (method: string, params?: unknown) => {
       rpc.calls.push(method);
-      return rpc.handler(method);
+      return rpc.handler(method, params);
     });
     registerMethod(): () => void {
       return () => {};
@@ -112,8 +116,9 @@ vi.mock('../../../browser/main/browser-exec-reverse', () => ({
 
 // Deterministic intentd version pin (the real reader would read the repo's
 // live intentd.version file, making list-shape assertions drift on every bump).
+const pin = vi.hoisted(() => ({ version: '0.1.0' as string | null }));
 vi.mock('../intentd-version-pin', () => ({
-  readPinnedVersion: vi.fn(() => '0.1.0'),
+  readPinnedVersion: vi.fn(() => pin.version),
 }));
 
 // Preserve the real PinMismatchError + resolveBackendConfig; stub captureFingerprint.
@@ -305,6 +310,7 @@ beforeEach(() => {
   lifecycle.events = [];
   rpc.handler = async () => ({});
   rpc.calls = [];
+  pin.version = '0.1.0';
   // Sensible defaults; individual tests override.
   store.getActiveId.mockResolvedValue('local');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
@@ -327,6 +333,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.doUnmock('../backend.ipc');
+  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
@@ -912,16 +919,150 @@ describe('connections:* IPC handlers', () => {
     });
   });
 
-  it('connections:update-backend routes system.requestUpdate to the pooled client', async () => {
+  it('requests the trusted pin rather than alpha tip and waits for a verified reconnect', async () => {
+    pin.version = '0.10.0';
+    let runningVersion = '0.9.0';
+    rpc.handler = async (method, params) => {
+      if (method === 'system.status')
+        return {
+          version: runningVersion,
+          updateSupported: true,
+          exactVersionUpdateSupported: true,
+        };
+      if (method === 'system.requestUpdateVersion')
+        return { ok: true, accepted: true, version: (params as { version: string }).version };
+      return {};
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      emit(event: string, arg?: unknown): void;
+      request: ReturnType<typeof vi.fn>;
+    };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    // A renderer cannot override the app pin with the newer alpha tip.
+    const result = findHandler('connections:update-backend')!(
+      {},
+      { id: 'remote-1', version: '0.11.0' },
+    );
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() =>
+      expect(remote.request).toHaveBeenCalledWith('system.requestUpdateVersion', {
+        version: '0.10.0',
+      }),
+    );
+    expect(settled).toBe(false);
+    runningVersion = '0.10.0';
+    remote.emit('status', 'disconnected');
+    remote.emit('status', 'connected');
+    remote.emit('reconnected');
+    await expect(result).resolves.toEqual({ ok: true, version: '0.10.0' });
+    expect(store.setDaemonVersion).toHaveBeenCalledWith('remote-1', '0.10.0');
+    expect(rpc.calls.filter((m) => m === 'system.status')).toHaveLength(2);
+    expect(rpc.calls).not.toContain('system.requestUpdate');
+  });
+
+  it.each([true, undefined])(
+    'verifies an already-running target without any update request or reconnect: capability %s',
+    async (exactVersionUpdateSupported) => {
+      rpc.handler = async () => ({ version: '0.1.0', exactVersionUpdateSupported });
+      store.list.mockResolvedValue([LOCAL, { ...REMOTE, daemonVersion: '0.0.9' }]);
+      const { mod } = await loadModule();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+        status: string;
+        request: ReturnType<typeof vi.fn>;
+      };
+      remote.status = 'connected';
+      mod.registerBackendHandlers();
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+      ).resolves.toEqual({ ok: true, version: '0.1.0' });
+      expect(remote.request).toHaveBeenCalledExactlyOnceWith('system.status');
+      expect(rpc.calls).not.toContain('system.requestUpdateVersion');
+      expect(rpc.calls).not.toContain('system.requestUpdate');
+      expect(store.setDaemonVersion).toHaveBeenCalledWith('remote-1', '0.1.0');
+    },
+  );
+
+  it('does not report no-op success if its client is disposed while refreshing metadata', async () => {
+    rpc.handler = async () => ({ version: '0.1.0', exactVersionUpdateSupported: true });
+    let release!: (value: boolean) => void;
+    store.setDaemonVersion.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        release = resolve;
+      }),
+    );
     const { mod } = await loadModule();
     const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
     remote.status = 'connected';
     mod.registerBackendHandlers();
-    const handler = findHandler('connections:update-backend');
-    expect(handler).toBeDefined();
+    const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+    await vi.waitFor(() =>
+      expect(store.setDaemonVersion).toHaveBeenCalledWith('remote-1', '0.1.0'),
+    );
+    mod.disconnectBackendClient('remote-1');
+    await expect(result).resolves.toEqual({ ok: false, reason: 'not-connected' });
+    release(true);
+    expect(rpc.calls).toEqual(['system.status']);
+  });
 
-    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
-    expect(rpc.calls).toContain('system.requestUpdate');
+  it('retains an early reconnect but waits for the matching acceptance before verifying', async () => {
+    let acknowledge!: (value: unknown) => void;
+    let statusCalls = 0;
+    rpc.handler = async (method) =>
+      method === 'system.status'
+        ? { version: ++statusCalls === 1 ? '0.0.9' : '0.1.0', exactVersionUpdateSupported: true }
+        : new Promise((resolve) => {
+            acknowledge = resolve;
+          });
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      emit(event: string): void;
+    };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+    await vi.waitFor(() => expect(rpc.calls).toContain('system.requestUpdateVersion'));
+    remote.emit('reconnected');
+    expect(statusCalls).toBe(1);
+    acknowledge({ ok: true, accepted: true, version: '0.1.0' });
+    await expect(result).resolves.toEqual({ ok: true, version: '0.1.0' });
+    expect(statusCalls).toBe(2);
+  });
+
+  it('rejects a version observation if another reconnect happens during metadata refresh', async () => {
+    let statusCalls = 0;
+    rpc.handler = async (method) =>
+      method === 'system.status'
+        ? { version: ++statusCalls === 1 ? '0.0.9' : '0.1.0', exactVersionUpdateSupported: true }
+        : { ok: true, accepted: true, version: '0.1.0' };
+    let release!: (value: boolean) => void;
+    store.setDaemonVersion.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      emit(event: string): void;
+    };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+    await vi.waitFor(() => expect(rpc.calls).toContain('system.requestUpdateVersion'));
+    remote.emit('reconnected');
+    await vi.waitFor(() =>
+      expect(store.setDaemonVersion).toHaveBeenCalledWith('remote-1', '0.1.0'),
+    );
+    remote.emit('reconnected');
+    release(true);
+    await expect(result).resolves.toEqual({ ok: false, reason: 'not-connected' });
   });
 
   it('connections:update-backend rejects the local id as unsupported in sidecar/unknown mode', async () => {
@@ -948,18 +1089,30 @@ describe('connections:* IPC handlers', () => {
     connectionMode.__resetConnectionModeForTesting();
   });
 
-  it('connections:update-backend routes the local id to the pooled local client in external mode', async () => {
+  it('verifies the external local daemon through its own pooled client', async () => {
+    let statusCalls = 0;
+    rpc.handler = async (method) =>
+      method === 'system.status'
+        ? {
+            version: ++statusCalls === 1 ? '0.0.9' : '0.1.0',
+            updateSupported: true,
+            exactVersionUpdateSupported: true,
+          }
+        : { ok: true, accepted: true, version: '0.1.0' };
     const { mod } = await loadModule();
     const connectionMode = await import('../connection-mode');
     connectionMode.setConnectionMode('external');
     mod.registerBackendHandlers();
-    const local = mod.getBackendClient() as unknown as { status: string };
+    const local = mod.getBackendClient() as unknown as {
+      status: string;
+      emit(event: string): void;
+    };
     local.status = 'connected';
-
-    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
-      ok: true,
-    });
-    expect(rpc.calls).toContain('system.requestUpdate');
+    const result = findHandler('connections:update-backend')!({}, { id: 'local' });
+    await vi.waitFor(() => expect(rpc.calls).toContain('system.requestUpdateVersion'));
+    local.emit('reconnected');
+    await expect(result).resolves.toEqual({ ok: true, version: '0.1.0' });
+    expect(connectionMode.getDaemonVersionInfo()?.daemonVersion).toBe('0.1.0');
     connectionMode.__resetConnectionModeForTesting();
   });
 
@@ -1026,10 +1179,10 @@ describe('connections:* IPC handlers', () => {
   it('connections:update-backend maps -32601 to unsupported (daemon too old)', async () => {
     const { JsonRpcError } = await import('../json-rpc-errors');
     rpc.handler = async (method) => {
-      if (method === 'system.requestUpdate') {
+      if (method === 'system.requestUpdateVersion') {
         throw new JsonRpcError({ code: -32601, message: 'Method not found' });
       }
-      return {};
+      return { exactVersionUpdateSupported: true };
     };
     const { mod } = await loadModule();
     const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
@@ -1044,10 +1197,10 @@ describe('connections:* IPC handlers', () => {
   it('connections:update-backend surfaces a structured daemon failure', async () => {
     const { JsonRpcError } = await import('../json-rpc-errors');
     rpc.handler = async (method) => {
-      if (method === 'system.requestUpdate') {
-        throw new JsonRpcError({ code: -32000, message: 'daemon is not sitter-supervised' });
+      if (method === 'system.requestUpdateVersion') {
+        throw new JsonRpcError({ code: -32603, message: 'daemon is not sitter-supervised' });
       }
-      return {};
+      return { exactVersionUpdateSupported: true };
     };
     const { mod } = await loadModule();
     const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
@@ -1061,6 +1214,279 @@ describe('connections:* IPC handlers', () => {
       reason: 'failed',
       message: 'daemon is not sitter-supervised',
     });
+  });
+
+  it.each([
+    null,
+    'v0.1.0',
+    '0.1.0+build',
+    '0.1.0-beta..1',
+    '../0.1.0',
+    'https://example.com/0.1.0',
+    '18446744073709551616.1.0',
+    '^0.1.0',
+    '0.1.0\n',
+    '0.1.0\r',
+  ])('rejects missing/malformed bundled pins without updating: %s', async (version) => {
+    pin.version = version;
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    await expect(
+      findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+    ).resolves.toEqual({ ok: false, reason: 'invalid-pin' });
+    expect(rpc.calls).not.toContain('system.requestUpdateVersion');
+    expect(rpc.calls).not.toContain('system.requestUpdate');
+  });
+
+  it.each([undefined, null, false, 'true'])(
+    'refuses old daemon/sitter capability without falling back: %s',
+    async (capability) => {
+      rpc.handler = async () => ({
+        updateSupported: true,
+        exactVersionUpdateSupported: capability,
+      });
+      const { mod } = await loadModule();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+      remote.status = 'connected';
+      mod.registerBackendHandlers();
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+      ).resolves.toEqual({ ok: false, reason: 'unsupported' });
+      expect(rpc.calls).toEqual(['system.status']);
+    },
+  );
+
+  it.each([{ ok: true }, { ok: true, accepted: true, version: '0.2.0' }, null])(
+    'rejects a server that ignores exact parameters: %j',
+    async (ack) => {
+      rpc.handler = async (method) =>
+        method === 'system.status' ? { exactVersionUpdateSupported: true } : ack;
+      const { mod } = await loadModule();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+      remote.status = 'connected';
+      mod.registerBackendHandlers();
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+      ).resolves.toEqual({ ok: false, reason: 'invalid-ack' });
+      expect(rpc.calls).not.toContain('system.requestUpdate');
+    },
+  );
+
+  it.each(['0.9.0', '0.11.0', undefined])(
+    'does not report completion on a reconnect running %s instead of the pin',
+    async (version) => {
+      pin.version = '0.10.0';
+      rpc.handler = async (method) =>
+        method === 'system.status'
+          ? { exactVersionUpdateSupported: true, version }
+          : { ok: true, accepted: true, version: '0.10.0' };
+      const { mod } = await loadModule();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+        status: string;
+        emit(event: string): void;
+      };
+      remote.status = 'connected';
+      mod.registerBackendHandlers();
+      const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+      await vi.waitFor(() => expect(rpc.calls).toContain('system.requestUpdateVersion'));
+      remote.emit('reconnected');
+      await expect(result).resolves.toEqual({
+        ok: false,
+        reason: 'version-mismatch',
+        version: '0.10.0',
+        actualVersion: version,
+      });
+    },
+  );
+
+  it('preserves an exact prerelease pin and ignores other backends reconnecting', async () => {
+    pin.version = '1.2.3-beta.1';
+    store.list.mockResolvedValue([LOCAL, REMOTE, { ...REMOTE, id: 'remote-2' }]);
+    let statusCalls = 0;
+    rpc.handler = async (method) =>
+      method === 'system.status'
+        ? {
+            exactVersionUpdateSupported: true,
+            version: ++statusCalls <= 2 ? '1.2.3-beta.0' : '1.2.3-beta.1',
+          }
+        : { ok: true, accepted: true, version: '1.2.3-beta.1' };
+    const { mod } = await loadModule();
+    const first = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      emit(event: string): void;
+      request: ReturnType<typeof vi.fn>;
+    };
+    const second = (await mod.connectBackendClient('remote-2')) as unknown as typeof first;
+    first.status = second.status = 'connected';
+    mod.registerBackendHandlers();
+    const update = findHandler('connections:update-backend')!;
+    const result = update({}, { id: 'remote-1' });
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() =>
+      expect(first.request).toHaveBeenCalledWith('system.requestUpdateVersion', {
+        version: '1.2.3-beta.1',
+      }),
+    );
+    await expect(update({}, { id: 'remote-1' })).resolves.toEqual({ ok: false, reason: 'busy' });
+    second.emit('reconnected');
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(second.request).not.toHaveBeenCalled();
+    const otherResult = update({}, { id: 'remote-2' });
+    await vi.waitFor(() =>
+      expect(second.request).toHaveBeenCalledWith('system.requestUpdateVersion', {
+        version: '1.2.3-beta.1',
+      }),
+    );
+    second.emit('reconnected');
+    await expect(otherResult).resolves.toEqual({ ok: true, version: '1.2.3-beta.1' });
+    expect(settled).toBe(false);
+    first.emit('reconnected');
+    await expect(result).resolves.toEqual({ ok: true, version: '1.2.3-beta.1' });
+  });
+
+  it('times out a failed restart and removes the in-flight guard', async () => {
+    rpc.handler = async (method) =>
+      method === 'system.status'
+        ? { exactVersionUpdateSupported: true }
+        : { ok: true, accepted: true, version: '0.1.0' };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    vi.useFakeTimers();
+    const update = findHandler('connections:update-backend')!;
+    const result = update({}, { id: 'remote-1' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await expect(result).resolves.toEqual({ ok: false, reason: 'timeout', version: '0.1.0' });
+    rpc.handler = async () => ({ exactVersionUpdateSupported: false });
+    await expect(update({}, { id: 'remote-1' })).resolves.toEqual({
+      ok: false,
+      reason: 'unsupported',
+    });
+  });
+
+  it('never sends an update after a timed-out capability check answers late', async () => {
+    let resolveStatus!: (value: unknown) => void;
+    rpc.handler = async () =>
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      });
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    vi.useFakeTimers();
+    const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await expect(result).resolves.toMatchObject({ ok: false, reason: 'timeout' });
+    resolveStatus({ version: '0.0.9', exactVersionUpdateSupported: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(rpc.calls).toEqual(['system.status']);
+    expect(store.setDaemonVersion).not.toHaveBeenCalled();
+  });
+
+  it('cancels verification when the target is disposed and never updates a replacement client', async () => {
+    rpc.handler = async (method) =>
+      method === 'system.status'
+        ? { exactVersionUpdateSupported: true }
+        : { ok: true, accepted: true, version: '0.1.0' };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+    await vi.waitFor(() => expect(rpc.calls).toContain('system.requestUpdateVersion'));
+    mod.disconnectBackendClient('remote-1');
+    await expect(result).resolves.toEqual({ ok: false, reason: 'not-connected' });
+    expect(store.setDaemonVersion).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [-32602, 'invalid exact version'],
+    [-32603, 'requested exact release is unavailable'],
+    [-32603, 'downgrade is not supported'],
+    [-32603, 'sitter does not support exact updates'],
+  ])('surfaces exact update rejection %s without falling back', async (code, message) => {
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'system.requestUpdateVersion')
+        throw new JsonRpcError({ code: Number(code), message: String(message) });
+      return { exactVersionUpdateSupported: true };
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    await expect(
+      findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+    ).resolves.toEqual({ ok: false, reason: 'failed', message });
+    expect(rpc.calls).toEqual(['system.status', 'system.requestUpdateVersion']);
+  });
+
+  it('reports status-refresh failure after restart instead of using the cached hello version', async () => {
+    let statusCalls = 0;
+    rpc.handler = async (method) => {
+      if (method === 'system.status') {
+        if (++statusCalls > 1) throw new Error('status unavailable after restart');
+        return { exactVersionUpdateSupported: true };
+      }
+      return { ok: true, accepted: true, version: '0.1.0' };
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      emit(event: string): void;
+    };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = findHandler('connections:update-backend')!({}, { id: 'remote-1' });
+    await vi.waitFor(() => expect(rpc.calls).toContain('system.requestUpdateVersion'));
+    remote.emit('reconnected');
+    await expect(result).resolves.toMatchObject({ ok: false, reason: 'failed' });
+    expect(store.setDaemonVersion).not.toHaveBeenCalled();
+  });
+
+  it('captures exact capability per connection, clears it on disconnect, and never infers it from legacy support', async () => {
+    rpc.handler = async () => ({ updateSupported: true, exactVersionUpdateSupported: true });
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      hello(value: unknown): void;
+      emit(event: string, value: string): void;
+    };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    remote.hello({ server: { version: '0.9.0' } });
+    const list = findHandler('connections:list')!;
+    await vi.waitFor(async () =>
+      expect(await list({}, {})).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({ id: 'remote-1', exactVersionUpdateSupported: true }),
+        ]),
+      }),
+    );
+    remote.emit('status', 'disconnected');
+    expect(
+      ((await list({}, {})) as { connections: Array<Record<string, unknown>> }).connections.find(
+        (c) => c.id === 'remote-1',
+      ),
+    ).not.toHaveProperty('exactVersionUpdateSupported');
+    rpc.handler = async () => ({ updateSupported: true });
+    remote.status = 'connected';
+    remote.hello({ server: { version: '0.9.0' } });
+    await vi.waitFor(async () =>
+      expect(await list({}, {})).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({ id: 'remote-1', exactVersionUpdateSupported: null }),
+        ]),
+      }),
+    );
   });
 
   it('connections:capture-fingerprint returns the presented fingerprint', async () => {
@@ -1556,6 +1982,78 @@ describe('connections:* IPC handlers', () => {
     expect((after!.getConfig() as { hosts?: string[] }).hosts).toEqual(['10.0.0.5']);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
   });
+
+  it.each(['capability', 'verification'] as const)(
+    'cancels exact-update %s when detectHosts replaces the pooled client',
+    async (phase) => {
+      let releaseStatus!: (value: unknown) => void;
+      const pendingStatus = new Promise((resolve) => (releaseStatus = resolve));
+      let statusCalls = 0;
+      rpc.handler = async (method) => {
+        if (method === 'system.status') {
+          return phase === 'capability' || ++statusCalls > 1
+            ? pendingStatus
+            : { version: '0.0.9', exactVersionUpdateSupported: true };
+        }
+        return { ok: true, accepted: true, version: '0.1.0' };
+      };
+      store.list.mockResolvedValue([LOCAL, { ...REMOTE, hosts: ['10.0.0.5', '192.168.1.5'] }]);
+      store.updateMetadata.mockImplementation(async () => {
+        const updated = { ...REMOTE, detectHosts: false, hosts: [] };
+        store.list.mockResolvedValue([LOCAL, updated]);
+        return updated;
+      });
+      const { mod } = await loadModule();
+      const before = await mod.connectBackendClient(REMOTE.id);
+      const oldClient = before as unknown as { emit: (event: string, value: unknown) => void };
+      oldClient.emit('status', 'connected');
+      mod.registerBackendHandlers();
+      const result = findHandler('connections:update-backend')!({}, { id: REMOTE.id });
+      await vi.waitFor(() =>
+        expect(rpc.calls).toContain(
+          phase === 'capability' ? 'system.status' : 'system.requestUpdateVersion',
+        ),
+      );
+      if (phase === 'verification') {
+        oldClient.emit('reconnected', undefined);
+        await vi.waitFor(() => expect(statusCalls).toBe(2));
+      }
+
+      await findHandler('connections:update')!(
+        {},
+        {
+          id: REMOTE.id,
+          label: REMOTE.label,
+          accent: 'blue',
+          detectHosts: false,
+        },
+      );
+
+      await expect(result).resolves.toEqual({ ok: false, reason: 'not-connected' });
+      const replacement = mod.getBackendClientForConnection(REMOTE.id)!;
+      expect(replacement).not.toBe(before);
+      expect((replacement.getConfig() as { hosts?: string[] }).hosts).toEqual(['10.0.0.5']);
+      // A late answer/reconnect from the disposed client cannot finish the update
+      // or send any part of it through the replacement connection.
+      releaseStatus({ version: '0.1.0', exactVersionUpdateSupported: true });
+      oldClient.emit('status', 'disconnected');
+      oldClient.emit('status', 'connected');
+      oldClient.emit('reconnected', undefined);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(replacement.request).not.toHaveBeenCalled();
+      expect(store.setDaemonVersion).not.toHaveBeenCalled();
+      expect(vi.mocked(before.request).mock.calls.map(([method]) => method)).toEqual(
+        phase === 'capability'
+          ? ['system.status']
+          : ['system.status', 'system.requestUpdateVersion', 'system.status'],
+      );
+      if (phase === 'verification') {
+        expect(before.request).toHaveBeenCalledWith('system.requestUpdateVersion', {
+          version: '0.1.0',
+        });
+      }
+    },
+  );
 
   it('does not rebuild an open pooled client for a metadata edit that leaves detectHosts as-is', async () => {
     store.updateMetadata.mockResolvedValue({ ...REMOTE, label: 'Renamed' });

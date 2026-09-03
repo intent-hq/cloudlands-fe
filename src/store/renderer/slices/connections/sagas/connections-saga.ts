@@ -19,7 +19,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
-import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
+import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
 import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
@@ -216,19 +216,45 @@ async function invokeUpdateBackend(params: UpdateBackendParams): Promise<UpdateB
  * Toast the structured `connections:update-backend` outcome. Lazy imports
  * (same pattern as the boot-fallback toast) keep the saga module light.
  */
-async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void> {
+async function showUpdateBackendToast(id: string, result?: UpdateBackendResult): Promise<void> {
   const [{ toast }, { m }] = await Promise.all([
     import('svelte-sonner'),
     import('$shared/paraglide/messages.js'),
   ]);
-  if (result.ok) {
-    toast.success(m.layout_daemonStatus_updateRequested_toast());
-  } else if (result.reason === 'unsupported') {
-    toast.error(m.layout_daemonStatus_updateUnsupported_toast());
+  const options = { id: `connections-update-${id}` };
+  if (!result) {
+    toast.info(m.layout_daemonStatus_updateRequested_toast(), {
+      ...options,
+      duration: Number.POSITIVE_INFINITY,
+    });
+  } else if (result.ok) {
+    toast.success(
+      m.layout_daemonStatus_updateCompleted_toast({ version: result.version }),
+      options,
+    );
+  } else if (result.reason === 'unsupported' || result.reason === 'invalid-ack') {
+    toast.error(m.layout_daemonStatus_updateUnsupported_toast(), options);
   } else if (result.reason === 'not-connected') {
-    toast.error(m.layout_daemonStatus_updateNotConnected_toast());
+    toast.error(m.layout_daemonStatus_updateNotConnected_toast(), options);
+  } else if (result.reason === 'invalid-pin') {
+    toast.error(m.layout_daemonStatus_updateInvalidPin_toast(), options);
+  } else if (result.reason === 'busy') {
+    toast.error(m.layout_daemonStatus_updateBusy_toast(), options);
+  } else if (result.reason === 'timeout') {
+    toast.error(m.layout_daemonStatus_updateTimeout_toast(), options);
+  } else if (result.reason === 'version-mismatch') {
+    toast.error(
+      m.layout_daemonStatus_updateMismatch_toast({
+        version: result.version ?? '',
+        actualVersion: result.actualVersion ?? '?',
+      }),
+      options,
+    );
   } else {
-    toast.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
+    toast.error(
+      m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }),
+      options,
+    );
   }
 }
 
@@ -237,12 +263,17 @@ async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void
  * unavailable) — internal error text like "electronAPI is not available" is
  * not user-oriented, unlike daemon-side 'failed' messages.
  */
-async function showUpdateBackendRequestErrorToast(): Promise<void> {
+async function showUpdateBackendRequestErrorToast(id: string): Promise<void> {
   const [{ toast }, { m }] = await Promise.all([
     import('svelte-sonner'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.error(m.layout_daemonStatus_updateRequestError_toast());
+  toast.error(m.layout_daemonStatus_updateRequestError_toast(), { id: `connections-update-${id}` });
+}
+
+async function dismissUpdateBackendToast(id: string): Promise<void> {
+  const { toast } = await import('svelte-sonner');
+  toast.dismiss(`connections-update-${id}`);
 }
 
 type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
@@ -257,7 +288,7 @@ async function showDaemonBehindPinToast(
   conn: ConnectionRecord,
   daemonVersion: string,
   pinnedVersion: string,
-  onUpdate: () => void,
+  onUpdate: (() => void) | undefined,
 ): Promise<void> {
   const [{ toast }, { m }] = await Promise.all([
     import('svelte-sonner'),
@@ -279,7 +310,9 @@ async function showDaemonBehindPinToast(
       // Sticky: never auto-dismisses — announceDaemonsBehindPin dismisses it
       // programmatically once the backend stops qualifying.
       duration: Number.POSITIVE_INFINITY,
-      action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
+      ...(onUpdate
+        ? { action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate } }
+        : { description: m.layout_daemonStatus_updateUnsupported_toast() }),
     },
   );
 }
@@ -365,21 +398,24 @@ function* announceDaemonsBehindPin(
       if (previousToasted.has(conn.id)) toasted.add(conn.id);
       continue;
     }
-    const evaluatedValue = `${daemonVersion}|${conn.updateSupported}`;
+    const evaluatedValue = `${daemonVersion}|${conn.updateSupported}|${conn.exactVersionUpdateSupported}|${pinnedVersion}`;
     evaluated.set(conn.id, evaluatedValue);
     if (previous.get(conn.id) === evaluatedValue) {
       // Unchanged re-broadcast: the sticky toast (if raised) is still valid.
       if (previousToasted.has(conn.id)) toasted.add(conn.id);
       continue;
     }
-    if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
-    yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
-      const action = updateBackendRequested(conn.id);
-      // Failure feedback is the update saga's toast; the unobserved promise
-      // must not surface as an unhandled rejection.
-      action.promise.catch(() => {});
-      updateActions.put(action);
-    });
+    if (conn.updateSupported !== true || !isDaemonBehindPin(conn, pinnedVersion)) continue;
+    const onUpdate = canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)
+      ? () => {
+          const action = updateBackendRequested(conn.id);
+          // Failure feedback is the update saga's toast; the unobserved promise
+          // must not surface as an unhandled rejection.
+          action.promise.catch(() => {});
+          updateActions.put(action);
+        }
+      : undefined;
+    yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, onUpdate);
     toasted.add(conn.id);
   }
   // A previously raised toast whose backend stopped qualifying (disconnected,
@@ -573,20 +609,23 @@ function* openConnection(action: ReturnType<typeof openConnectionRequested>): Sa
 function* updateBackend(action: ReturnType<typeof updateBackendRequested>): SagaGenerator<void> {
   let settled = false;
   try {
+    yield* call(showUpdateBackendToast, action.payload[0]);
     const result = yield* call(invokeUpdateBackend, { id: action.payload[0] });
-    yield* call(showUpdateBackendToast, result);
+    yield* call(showUpdateBackendToast, action.payload[0], result);
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
     // An IPC-level failure (validation, bridge unavailable) — daemon-side
     // failures come back as structured non-ok results, not throws.
     const resolved = toError(error);
-    yield* call(showUpdateBackendRequestErrorToast);
+    yield* call(showUpdateBackendRequestErrorToast, action.payload[0]);
     yield* put(action.failure(resolved));
     settled = true;
   } finally {
-    if (!settled && (yield* cancelled()))
+    if (!settled && (yield* cancelled())) {
+      yield* call(dismissUpdateBackendToast, action.payload[0]);
       yield* put(action.failure(new Error('Backend update request was cancelled')));
+    }
   }
 }
 

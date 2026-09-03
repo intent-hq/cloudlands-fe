@@ -52,6 +52,7 @@ let connectionMode: ConnectionMode = 'unknown';
 let daemonVersionInfo: DaemonVersionInfo | null = null;
 let orphanedSidecarInfo: OrphanedSidecarState | null = null;
 let localUpdateSupported: boolean | null = null;
+let localExactVersionUpdateSupported: boolean | null = null;
 
 /** Current connection mode (resolved during `startIntentdSidecar`). */
 export function getConnectionMode(): ConnectionMode {
@@ -99,6 +100,15 @@ export function setLocalUpdateSupported(supported: boolean | null): void {
   localUpdateSupported = supported;
 }
 
+/** Live exact-version capability of the adopted local daemon and its sitter. */
+export function getLocalExactVersionUpdateSupported(): boolean | null {
+  return localExactVersionUpdateSupported;
+}
+
+export function setLocalExactVersionUpdateSupported(supported: boolean | null): void {
+  localExactVersionUpdateSupported = supported;
+}
+
 /**
  * Test seam: reset module state for testing.
  * @internal
@@ -108,4 +118,5 @@ export function __resetConnectionModeForTesting(): void {
   daemonVersionInfo = null;
   orphanedSidecarInfo = null;
   localUpdateSupported = null;
+  localExactVersionUpdateSupported = null;
 }

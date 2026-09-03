@@ -104,6 +104,7 @@ export interface BackendTransportInfo {
    * the field) and in every non-external-uds mode.
    */
   updateSupported?: boolean;
+  exactVersionUpdateSupported?: boolean;
   /** The bundled intentd.version pin, reported in every transport mode. */
   pinnedVersion?: string;
   /**

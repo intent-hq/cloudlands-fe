@@ -5,6 +5,7 @@ const remote = (daemonVersion?: string | null, updateSupported: boolean | null =
   id: 'remote-1',
   daemonVersion,
   updateSupported,
+  exactVersionUpdateSupported: true,
 });
 
 describe('isDaemonBehindPin', () => {
@@ -73,7 +74,12 @@ describe('canRequestDeviceUpdate', () => {
   it('is true for the connected local entry with an external daemon behind and update support', () => {
     expect(
       canRequestDeviceUpdate(
-        { id: 'local', daemonVersion: '0.9.0', updateSupported: true },
+        {
+          id: 'local',
+          daemonVersion: '0.9.0',
+          updateSupported: true,
+          exactVersionUpdateSupported: true,
+        },
         ['local'],
         '0.10.0',
       ),
@@ -102,6 +108,38 @@ describe('canRequestDeviceUpdate', () => {
         '0.10.0',
       ),
     ).toBe(false);
+  });
+
+  it.each([undefined, null, false])(
+    'never infers exact support from legacy support: %s',
+    (capability) => {
+      expect(
+        canRequestDeviceUpdate(
+          { ...remote('0.9.0'), exactVersionUpdateSupported: capability },
+          ['remote-1'],
+          '0.10.0',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    'v0.10.0',
+    '^0.10.0',
+    '0.10.0+build',
+    '0.10.0-beta..1',
+    '0.10.0-01',
+    '00.10.0',
+    '../0.10.0',
+    '18446744073709551616.1.0',
+  ])('rejects malformed exact pin %s', (pin) => {
+    expect(canRequestDeviceUpdate(remote('0.9.0'), ['remote-1'], pin)).toBe(false);
+  });
+
+  it('preserves valid exact prerelease pin eligibility', () => {
+    expect(canRequestDeviceUpdate(remote('0.10.0-beta.1'), ['remote-1'], '0.10.0-beta.2')).toBe(
+      true,
+    );
   });
 
   it('does not affect isDaemonBehindPin (informational badge stays)', () => {

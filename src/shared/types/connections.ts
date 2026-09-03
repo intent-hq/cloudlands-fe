@@ -149,6 +149,8 @@ export interface ConnectionRecord {
    * for an adopted external daemon over UDS (absent for the spawned sidecar).
    */
   updateSupported?: boolean | null;
+  /** Live daemon AND sitter exact-target capability. Never inferred from legacy support. */
+  exactVersionUpdateSupported?: boolean | null;
   /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record
@@ -397,23 +399,27 @@ export interface UpdateBackendParams {
 }
 
 /**
- * `connections:update-backend` result. Structured rather than thrown so the
- * renderer can toast a specific message per failure mode:
- *   - `ok: true`        → `system.requestUpdate` was accepted; the remote's
- *                          sitter will install the newer version and restart
- *                          the daemon (the FE reconnects automatically).
- *   - `'not-connected'` → no live pooled client for that id (saved but
- *                          disconnected remote, or the id is unknown).
- *   - `'unsupported'`   → the daemon rejected the method (JSON-RPC -32601:
- *                          too old to know `system.requestUpdate`) or the id
- *                          was the local entry (never updated this way).
- *   - `'failed'`        → the daemon returned a structured error (e.g. not
- *                          sitter-supervised, non-unix host); `message`
- *                          carries the daemon's error text.
+ * Main holds updates through reconnect. Success means fresh system.status.version
+ * matches the bundled pin (including an already-at-target no-op), NOT mere acceptance.
+ * The renderer never supplies the target version.
  */
 export type UpdateBackendResult =
-  | { ok: true }
-  | { ok: false; reason: 'not-connected' | 'unsupported' | 'failed'; message?: string };
+  | { ok: true; version: string }
+  | {
+      ok: false;
+      reason:
+        | 'not-connected'
+        | 'unsupported'
+        | 'failed'
+        | 'invalid-pin'
+        | 'invalid-ack'
+        | 'busy'
+        | 'timeout'
+        | 'version-mismatch';
+      message?: string;
+      version?: string;
+      actualVersion?: string;
+    };
 
 // ============================================================================
 // Push-event payloads (main → renderer)

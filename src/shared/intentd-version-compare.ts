@@ -14,6 +14,19 @@
  */
 export type PinComparison = 'equal' | 'older' | 'newer' | 'unknown';
 
+/** Exact published target syntax; never accepts aliases, build metadata, or leading v. */
+export function isExactIntentdVersion(version: string): boolean {
+  const match =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?$/.exec(
+      version,
+    );
+  return (
+    match !== null &&
+    match[0] === version &&
+    match.slice(1, 4).every((core) => BigInt(core) <= 18446744073709551615n)
+  );
+}
+
 /** Parse `X.Y.Z[-pre][+build]` (tolerates a leading `v`). */
 function parseSemver(version: string): { core: number[]; pre: string[] } | null {
   const match = version

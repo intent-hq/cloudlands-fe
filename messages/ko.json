@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "열기",
   "layout_daemonStatus_update_action": "업데이트",
   "layout_daemonStatus_update_tooltip": "이 백엔드의 intentd를 v{daemonVersion}에서 v{pinnedVersion}(으)로 업데이트합니다",
-  "layout_daemonStatus_updateRequested_toast": "업데이트를 요청했습니다 — 백엔드가 최신 intentd를 설치하고 다시 시작합니다.",
-  "layout_daemonStatus_updateUnsupported_toast": "이 백엔드의 intentd가 너무 오래되어 원격 업데이트 요청을 받을 수 없습니다. 해당 머신에서 수동으로 업데이트하세요.",
+  "layout_daemonStatus_updateRequested_toast": "앱에 포함된 intentd 버전을 요청하고 있습니다. 재시작 및 버전 확인을 기다리는 중…",
+  "layout_daemonStatus_updateUnsupported_toast": "이 데몬 또는 감독 프로세스는 정확한 버전을 안전하게 설치할 수 없습니다. 해당 기기에서 둘 다 수동으로 업데이트한 후 다시 연결하세요.",
   "layout_daemonStatus_updateNotConnected_toast": "이 백엔드에 연결되어 있지 않습니다 — 업데이트를 요청하기 전에 연결하세요.",
-  "layout_daemonStatus_updateFailed_toast": "백엔드가 업데이트를 시작하지 못했습니다: {message}",
+  "layout_daemonStatus_updateFailed_toast": "정확한 버전으로의 업데이트를 완료하지 못했습니다: {message}. 데몬 로그를 확인하세요. 수동 업데이트가 필요할 수 있습니다.",
   "layout_daemonStatus_updateRequestError_toast": "업데이트 요청을 보내지 못했습니다. 다시 시도해 주세요.",
   "layout_daemonStatus_daemonBehind_toast": "{name}이(가) intentd v{daemonVersion}을 실행 중이며, 이 앱의 v{pinnedVersion}보다 이전 버전입니다.",
   "layout_daemonStatus_forget_action": "삭제",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "검색과 일치하는 에이전트가 없습니다.",
   "workspace_contextPanel_noSearchResults_label": "검색과 일치하는 컨텍스트가 없습니다.",
   "workspace_sidebarSearch_clear_ariaLabel": "검색 지우기",
-  "layout_allCard_archived_label": "보관됨"
+  "layout_allCard_archived_label": "보관됨",
+  "layout_daemonStatus_updateCompleted_toast": "백엔드에서 intentd {version} 실행을 확인했습니다.",
+  "layout_daemonStatus_updateInvalidPin_toast": "이 앱에 유효한 intentd 고정 버전 정보가 없습니다. 백엔드를 업데이트하기 전에 앱을 다시 설치하세요.",
+  "layout_daemonStatus_updateBusy_toast": "이 백엔드의 업데이트가 이미 진행 중입니다. 완료될 때까지 기다리세요.",
+  "layout_daemonStatus_updateTimeout_toast": "요청한 버전을 시간 내에 확인하지 못했습니다. 원격 업데이트가 아직 진행 중일 수 있습니다. 연결과 데몬 로그를 확인하세요.",
+  "layout_daemonStatus_updateMismatch_toast": "백엔드가 요청한 {version} 대신 intentd {actualVersion}으로 재시작되었습니다. 데몬 로그를 확인하고 수동으로 업데이트하세요. 대체 버전은 요청하지 않았습니다."
 }

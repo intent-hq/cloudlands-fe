@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "打开",
   "layout_daemonStatus_update_action": "更新",
   "layout_daemonStatus_update_tooltip": "将此后端的 intentd 从 v{daemonVersion} 更新到 v{pinnedVersion}",
-  "layout_daemonStatus_updateRequested_toast": "已请求更新 — 后端将安装较新的 intentd 并重新启动。",
-  "layout_daemonStatus_updateUnsupported_toast": "此后端的 intentd 版本过旧，无法接受远程更新请求。请在其所在机器上手动更新。",
+  "layout_daemonStatus_updateRequested_toast": "正在请求应用内置的 intentd 版本。等待重启和版本验证…",
+  "layout_daemonStatus_updateUnsupported_toast": "此守护进程或其监督进程无法安全安装指定版本。请在该设备上手动更新两者，然后重新连接。",
   "layout_daemonStatus_updateNotConnected_toast": "未连接到此后端 — 请先连接再请求更新。",
-  "layout_daemonStatus_updateFailed_toast": "后端无法启动更新：{message}",
+  "layout_daemonStatus_updateFailed_toast": "无法完成指定版本更新：{message}。请检查守护进程日志；可能需要手动更新。",
   "layout_daemonStatus_updateRequestError_toast": "无法发送更新请求。请重试。",
   "layout_daemonStatus_daemonBehind_toast": "{name} 正在运行 intentd v{daemonVersion}，落后于此应用的 v{pinnedVersion}。",
   "layout_daemonStatus_forget_action": "忘记",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "没有与搜索匹配的智能体。",
   "workspace_contextPanel_noSearchResults_label": "没有与搜索匹配的上下文。",
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜索",
-  "layout_allCard_archived_label": "已归档"
+  "layout_allCard_archived_label": "已归档",
+  "layout_daemonStatus_updateCompleted_toast": "已确认后端正在运行 intentd {version}。",
+  "layout_daemonStatus_updateInvalidPin_toast": "此应用缺少有效的内置 intentd 固定版本信息。请重新安装应用后再更新后端。",
+  "layout_daemonStatus_updateBusy_toast": "此后端已有更新正在进行。请等待更新完成。",
+  "layout_daemonStatus_updateTimeout_toast": "未能在规定时间内验证请求的版本。远程更新可能仍在进行。请检查连接和守护进程日志。",
+  "layout_daemonStatus_updateMismatch_toast": "后端重启后运行的是 intentd {actualVersion}，而非请求的 {version}。请检查守护进程日志并手动更新；未请求任何替代版本。"
 }

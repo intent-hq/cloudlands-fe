@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "Open",
   "layout_daemonStatus_update_action": "Update",
   "layout_daemonStatus_update_tooltip": "Update this backend's intentd from v{daemonVersion} to v{pinnedVersion}",
-  "layout_daemonStatus_updateRequested_toast": "Update requested — the backend will install the newer intentd and restart.",
-  "layout_daemonStatus_updateUnsupported_toast": "This backend's intentd is too old to accept remote update requests. Update it manually on its machine.",
+  "layout_daemonStatus_updateRequested_toast": "Requesting the bundled intentd version. Waiting for restart and version verification…",
+  "layout_daemonStatus_updateUnsupported_toast": "This daemon or its supervisor cannot safely install an exact version. Update both manually on that machine, then reconnect.",
   "layout_daemonStatus_updateNotConnected_toast": "Not connected to this backend — connect to it before requesting an update.",
-  "layout_daemonStatus_updateFailed_toast": "The backend could not start the update: {message}",
+  "layout_daemonStatus_updateFailed_toast": "The exact-version update could not complete: {message}. Check the daemon logs; a manual update may be required.",
   "layout_daemonStatus_updateRequestError_toast": "Could not send the update request. Please try again.",
   "layout_daemonStatus_daemonBehind_toast": "{name} is running intentd v{daemonVersion}, behind this app's v{pinnedVersion}.",
   "layout_daemonStatus_forget_action": "Forget",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "No agents match your search.",
   "workspace_contextPanel_noSearchResults_label": "No context matches your search.",
   "workspace_sidebarSearch_clear_ariaLabel": "Clear search",
-  "layout_allCard_archived_label": "Archived"
+  "layout_allCard_archived_label": "Archived",
+  "layout_daemonStatus_updateCompleted_toast": "Verified the backend is running intentd {version}.",
+  "layout_daemonStatus_updateInvalidPin_toast": "This app has no valid bundled intentd version pin. Reinstall the app before updating the backend.",
+  "layout_daemonStatus_updateBusy_toast": "An update for this backend is already in progress. Wait for it to finish.",
+  "layout_daemonStatus_updateTimeout_toast": "Could not verify the requested version in time. The remote update may still be running. Check the connection and daemon logs.",
+  "layout_daemonStatus_updateMismatch_toast": "The backend restarted with intentd {actualVersion}, not the requested {version}. Check its daemon logs and update manually; no fallback was requested."
 }
