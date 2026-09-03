@@ -206,8 +206,9 @@ The remote-first Loop A is:
    `ws.browser.listTabs`. Reuse a matching tab or call `ws.browser.openTab` with
    `http://daemon.localhost:<port>/` (plus any route/query).
 3. Poll the tab for the expected DOM or accessibility content. A first tunneled open of
-   a fresh pre-warmed app typically hydrates in about 45–60 seconds. If only the splash
-   is visible, keep polling; do not restart the service. Before pre-warming, a cold
+   a fresh pre-warmed app takes roughly one to three minutes to hydrate depending on host
+   load (fastest observed: about 45 seconds). If only the splash is visible, keep polling;
+   do not restart the service. Subsequent loads are fast; before pre-warming, a cold
    tunneled load took about 10 minutes.
 4. Capture a browser screenshot, set the representative image as the workspace status
    image, and call `ws.browser.showTab` without focus so the human can inspect the live
