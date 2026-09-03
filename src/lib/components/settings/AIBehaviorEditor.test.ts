@@ -66,6 +66,9 @@ const mocks = vi.hoisted(() => {
     // Model ids the loaded `availableModels` catalog knows about — drives the
     // selectModelDisplayName lookup that gates default-effort clearing.
     catalogModels: { value: [] as string[] },
+    // Raw store state for the unmocked selectors (e.g. the default provider
+    // read by selectEffectiveDefaultProviderId).
+    storeState: { value: {} as Record<string, unknown> },
     dispatched: [] as { type: string; payload: unknown[] }[],
     getUserRule: vi.fn(async () => ({ content: 'Original instructions' })),
     updateUserRule: vi.fn(async () => ({ success: true })),
@@ -85,7 +88,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => mocks.storeState.value,
     dispatch: (action: { type: string; payload: unknown[] }) => {
       mocks.dispatched.push(action);
     },
@@ -1024,6 +1027,58 @@ describe('AIBehaviorEditor specialist model reasoning', () => {
     });
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
   });
+
+  // Inherit path: the effort re-validates against the daemon-resolved
+  // provider/model pair, so the level must be looked up under that provider.
+  const INHERITED_MODEL = 'gpt-5.3-codex';
+  function renderPinnedSpecialistResolvingTo(providerId: string, modelId: string) {
+    mocks.explicitEffort.value = 'high';
+    mocks.isFileBased.value = true;
+    mocks.fileSpecialist.value = {
+      ...specialist,
+      source: 'project',
+      codingAgent: 'codex',
+      model: 'pinned-model',
+      reasoningEffort: 'high',
+      behaviorPrompt: 'bundled prompt',
+    };
+    mocks.specialists$.set([
+      { ...specialist, resolvedProvider: providerId, resolvedModel: modelId },
+    ]);
+    render(AIBehaviorEditor, { activeView: { type: 'specialist', id: 'implementor' } });
+  }
+
+  it('keeps a supported effort when inheriting a model resolved under another provider', async () => {
+    // The level is advertised only under the resolved provider's catalog — a
+    // provider-blind lookup by bare id would drop it on inherit.
+    mocks.effortLevels.value = { [`codex:${INHERITED_MODEL}`]: ['low', 'high'] };
+    renderPinnedSpecialistResolvingTo('codex', INHERITED_MODEL);
+
+    await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
+
+    expect(lastSave()).toMatchObject({
+      id: 'implementor',
+      model: undefined,
+      reasoningEffort: 'high',
+    });
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+  });
+
+  it('drops the effort when the inherited model lacks the level under its resolved provider', async () => {
+    // Only the ACTIVE catalog advertises the level for this bare id; the
+    // daemon resolved the inherited model to codex, which does not carry it.
+    mocks.effortLevels.value = { [INHERITED_MODEL]: ['low', 'high'] };
+    renderPinnedSpecialistResolvingTo('codex', INHERITED_MODEL);
+
+    await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
+
+    expect(lastSave()).toMatchObject({
+      id: 'implementor',
+      model: undefined,
+      reasoningEffort: undefined,
+    });
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+  });
 });
 
 describe('AIBehaviorEditor create-specialist model reasoning', () => {
@@ -1031,6 +1086,7 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
     cleanup();
     selectedModel$.set('');
     mocks.effortLevels.value = {};
+    mocks.storeState.value = {};
     mocks.dispatched.length = 0;
   });
 
@@ -1082,6 +1138,59 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
       codingAgent: 'codex',
       model: 'bare-picked-model',
       reasoningEffort: 'high',
+    });
+  });
+
+  // Inherit path: reverting to the global default re-validates the effort
+  // against the default provider + global default model pair.
+  async function pickEffortThenInherit() {
+    render(AIBehaviorEditor, {
+      activeView: { type: 'create-specialist' },
+    });
+    await fireEvent.click(screen.getByTestId('pick-reasoning'));
+    await fireEvent.click(screen.getByTestId('pick-default'));
+  }
+
+  async function submitCreate() {
+    await fireEvent.input(screen.getByPlaceholderText('e.g., Code Reviewer'), {
+      target: { value: 'Reviewer' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
+    return mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
+      ?.payload[0] as Record<string, unknown>;
+  }
+
+  it('keeps a supported effort when reverting to the inherited default model (provider-scoped lookup)', async () => {
+    // The global default model's level is advertised only under the default
+    // provider's catalog — a provider-blind lookup by bare id would drop it.
+    mocks.storeState.value = { model: { defaultProviderId: 'codex' } };
+    selectedModel$.set('gpt-5.3-codex');
+    mocks.effortLevels.value = { 'codex:gpt-5.3-codex': ['low', 'high'] };
+    await pickEffortThenInherit();
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+
+    expect(await submitCreate()).toMatchObject({
+      name: 'Reviewer',
+      codingAgent: undefined,
+      model: undefined,
+      reasoningEffort: 'high',
+    });
+  });
+
+  it('drops the effort when the inherited default model lacks the level under the default provider', async () => {
+    // Only the ACTIVE catalog advertises the level for the default model's
+    // bare id; the default provider (codex) does not carry it.
+    mocks.storeState.value = { model: { defaultProviderId: 'codex' } };
+    selectedModel$.set('gpt-5.3-codex');
+    mocks.effortLevels.value = { 'gpt-5.3-codex': ['low', 'high'] };
+    await pickEffortThenInherit();
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+
+    expect(await submitCreate()).toMatchObject({
+      name: 'Reviewer',
+      codingAgent: undefined,
+      model: undefined,
+      reasoningEffort: undefined,
     });
   });
 
