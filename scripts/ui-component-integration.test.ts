@@ -206,6 +206,38 @@ describe('Gate C structural ratchets', () => {
     }
   });
 
+  it('tracks aliased Toggle imports and rejects expression-valued variants', () => {
+    const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'aliased-toggle-guardrail-'));
+    try {
+      const productRoot = path.join(syntheticRoot, 'src/features/example');
+      mkdirSync(productRoot, { recursive: true });
+      writeFileSync(
+        path.join(productRoot, 'Example.svelte'),
+        `<script>
+import { Toggle as AliasedToggle } from '$lib/components/ui/toggle';
+import DirectToggle from '$lib/components/ui/toggle/toggle.svelte';
+const dynamicVariant = 'group';
+</script>
+<AliasedToggle size="xs" ariaLabel={m.valid()} />
+<AliasedToggle size="xs" ariaLabel={m.dynamic()} variant={dynamicVariant} />
+<DirectToggle size="xs" ariaLabel={m.direct()} variant={undefined} />
+`,
+      );
+
+      expect(buildProductToggleLedger(syntheticRoot)).toMatchObject([
+        { line: 6, hasVariant: false, variant: null },
+        { line: 7, hasVariant: true, variant: null },
+        { line: 8, hasVariant: true, variant: null },
+      ]);
+      expect(productToggleGuardrailFailures(syntheticRoot)).toEqual([
+        'src/features/example/Example.svelte:7: product Toggle violates the compact binary-control contract (use the default variant without an explicit variant prop)',
+        'src/features/example/Example.svelte:8: product Toggle violates the compact binary-control contract (use the default variant without an explicit variant prop)',
+      ]);
+    } finally {
+      rmSync(syntheticRoot, { recursive: true, force: true });
+    }
+  });
+
   it('records only explicit semantic and test/catalog binary-control exemptions', () => {
     const syntheticRoot = mkdtempSync(path.join(os.tmpdir(), 'binary-control-exemptions-'));
     try {

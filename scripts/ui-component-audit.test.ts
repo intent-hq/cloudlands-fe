@@ -153,6 +153,7 @@ describe('UI component inventory gate', () => {
       size: string | null;
       hasAriaLabel: boolean;
       hasSourceDerivedAriaLabel: boolean;
+      hasVariant: boolean;
       variant: string | null;
       exemption: string | null;
     }>;
@@ -170,11 +171,12 @@ describe('UI component inventory gate', () => {
       productToggles
         .filter(({ exemption }) => exemption === null)
         .every(
-          ({ selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, variant }) =>
+          ({ selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, hasVariant, variant }) =>
             selfClosing &&
             size === 'xs' &&
             hasAriaLabel &&
             hasSourceDerivedAriaLabel &&
+            !hasVariant &&
             variant === null,
         ),
     ).toBe(true);

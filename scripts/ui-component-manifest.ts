@@ -54,6 +54,7 @@ export interface ProductToggleLedgerEntry {
   size: string | null;
   hasAriaLabel: boolean;
   hasSourceDerivedAriaLabel: boolean;
+  hasVariant: boolean;
   variant: string | null;
   exemption: string | null;
 }
@@ -366,29 +367,27 @@ function binaryControlImportKind(
   return null;
 }
 
-function importsToggle(file: string, source: string): boolean {
-  return imports(source).some(({ specifier }) => {
-    const alias = '$lib/components/ui/toggle';
-    if (
-      specifier === alias ||
-      specifier === `${alias}/index` ||
-      specifier === `${alias}/index.ts` ||
-      specifier === `${alias}/index.js` ||
-      specifier === `${alias}/toggle.svelte`
-    ) {
-      return true;
-    }
-    if (!specifier.startsWith('.')) return false;
-    const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
-    const root = `${UI_ROOT}/toggle`;
-    return (
-      resolved === root ||
-      resolved === `${root}/index` ||
-      resolved === `${root}/index.ts` ||
-      resolved === `${root}/index.js` ||
-      resolved === `${root}/toggle.svelte`
-    );
-  });
+function toggleImportKind(file: string, specifier: string): 'barrel' | 'component' | null {
+  const alias = '$lib/components/ui/toggle';
+  if (specifier === `${alias}/toggle.svelte`) return 'component';
+  if (
+    specifier === alias ||
+    specifier === `${alias}/index` ||
+    specifier === `${alias}/index.ts` ||
+    specifier === `${alias}/index.js`
+  ) {
+    return 'barrel';
+  }
+  if (!specifier.startsWith('.')) return null;
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+  const root = `${UI_ROOT}/toggle`;
+  if (resolved === `${root}/toggle.svelte`) return 'component';
+  return resolved === root ||
+    resolved === `${root}/index` ||
+    resolved === `${root}/index.ts` ||
+    resolved === `${root}/index.js`
+    ? 'barrel'
+    : null;
 }
 
 interface SvelteNode {
@@ -404,6 +403,46 @@ interface SvelteNode {
     value?: unknown;
   }>;
   [key: string]: unknown;
+}
+
+interface ScriptNode {
+  type?: string;
+  source?: { value?: unknown };
+  specifiers?: Array<{
+    type?: string;
+    imported?: { name?: string };
+    local?: { name?: string };
+  }>;
+}
+
+interface SvelteAst {
+  fragment: unknown;
+  instance?: { content?: { body?: ScriptNode[] } };
+}
+
+function toggleComponentNames(file: string, ast: SvelteAst): Set<string> {
+  const names = new Set<string>();
+  for (const statement of ast.instance?.content?.body ?? []) {
+    if (statement.type !== 'ImportDeclaration' || typeof statement.source?.value !== 'string') {
+      continue;
+    }
+    const kind = toggleImportKind(file, statement.source.value);
+    if (!kind) continue;
+    for (const specifier of statement.specifiers ?? []) {
+      const localName = specifier.local?.name;
+      if (!localName) continue;
+      if (
+        (kind === 'barrel' &&
+          specifier.type === 'ImportSpecifier' &&
+          specifier.imported?.name === 'Toggle') ||
+        (kind === 'component' &&
+          (specifier.type === 'ImportDefaultSpecifier' || specifier.imported?.name === 'default'))
+      ) {
+        names.add(localName);
+      }
+    }
+  }
+  return names;
 }
 
 function visitSvelteNodes(value: unknown, visitor: (node: SvelteNode) => void): void {
@@ -445,12 +484,15 @@ export function buildProductToggleLedger(root = process.cwd()): ProductToggleLed
   for (const absolute of walk(path.join(root, 'src')).filter((file) => file.endsWith('.svelte'))) {
     const file = path.relative(root, absolute).split(path.sep).join('/');
     const source = fs.readFileSync(absolute, 'utf8');
-    if (!importsToggle(file, source)) continue;
-    const ast = parse(source, { modern: true });
+    if (!imports(source).some(({ specifier }) => toggleImportKind(file, specifier))) continue;
+    const ast = parse(source, { modern: true }) as unknown as SvelteAst;
+    const componentNames = toggleComponentNames(file, ast);
+    if (componentNames.size === 0) continue;
     visitSvelteNodes(ast.fragment, (node) => {
       if (
         node.type !== 'Component' ||
-        node.name !== 'Toggle' ||
+        !node.name ||
+        !componentNames.has(node.name) ||
         node.start === undefined ||
         node.end === undefined
       ) {
@@ -462,6 +504,9 @@ export function buildProductToggleLedger(root = process.cwd()): ProductToggleLed
       const ariaLabelAttribute = node.attributes?.find(
         (attribute) => attribute.type === 'Attribute' && attribute.name === 'ariaLabel',
       );
+      const hasVariant = node.attributes?.some(
+        (attribute) => attribute.type === 'Attribute' && attribute.name === 'variant',
+      );
       entries.push({
         file,
         line: source.slice(0, node.start).split('\n').length,
@@ -471,6 +516,7 @@ export function buildProductToggleLedger(root = process.cwd()): ProductToggleLed
         hasSourceDerivedAriaLabel:
           ariaLabelAttribute !== undefined &&
           hasSourceDerivedAttributeExpression(ariaLabelAttribute),
+        hasVariant: hasVariant === true,
         variant,
         exemption: binaryControlExemption(file, 'toggle-contract'),
       });
@@ -483,7 +529,7 @@ export function productToggleGuardrailFailures(root = process.cwd()): string[] {
   return buildProductToggleLedger(root)
     .filter(({ exemption }) => exemption === null)
     .flatMap(
-      ({ file, line, selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, variant }) => {
+      ({ file, line, selfClosing, size, hasAriaLabel, hasSourceDerivedAriaLabel, hasVariant }) => {
         const violations: string[] = [];
         if (!selfClosing) {
           violations.push('render no inline content and keep the visible label external');
@@ -496,7 +542,7 @@ export function productToggleGuardrailFailures(root = process.cwd()): string[] {
             'replace the literal ariaLabel with a localized/source-derived expression',
           );
         }
-        if (variant !== null) {
+        if (hasVariant) {
           violations.push('use the default variant without an explicit variant prop');
         }
         return violations.length
