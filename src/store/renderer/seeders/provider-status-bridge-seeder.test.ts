@@ -9,26 +9,22 @@
  * states surface as-is, no mock@example.com fake positives, and the FE never
  * runs an auth-check command via `host.exec` itself.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
-vi.mock("$lib/client/live/backend-transport", () => ({
+vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
 }));
 
 // The seeder reads known provider ids / gating metadata from the
 // providerCatalog slice — provide a hydrated §5.38-shaped mock state without
 // booting the full store (whose middleware would drag in live services).
-vi.mock("$store/renderer/store", async () => {
-  const { createAppStoreMockModule } = await import(
-    "$store/renderer/utils/test-helpers/store-mock"
-  );
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    "$store/renderer/slices/provider-catalog/provider-catalog-slice"
-  );
-  const { MOCK_PROVIDER_CATALOG } = await import(
-    "../../../test/fixtures/provider-catalog.fixture"
-  );
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
@@ -36,22 +32,23 @@ vi.mock("$store/renderer/store", async () => {
   return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
 });
 
-import { backendRequest } from "$lib/client/live/backend-transport";
-import { mockInvoke } from "$shared/ipc-mock-router";
-import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
-import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
-import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
-import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { mockInvoke } from '$shared/ipc-mock-router';
+import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
+import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
+import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 
 const mockedRequest = vi.mocked(backendRequest);
 
 /** Route daemon methods to canned PROTOCOL-shaped responses. */
 type MethodResponses = Record<string, unknown | ((params: unknown) => unknown)>;
 function routeDaemon(responses: MethodResponses): void {
+  responses = { 'host.providerDiscovery': { providers: [] }, ...responses };
   mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
     if (!(method in responses)) throw new Error(`unexpected daemon method: ${method}`);
     const entry = responses[method];
-    return typeof entry === "function" ? (entry as (p: unknown) => unknown)(params) : entry;
+    return typeof entry === 'function' ? (entry as (p: unknown) => unknown)(params) : entry;
   });
 }
 
@@ -66,20 +63,20 @@ const NO_TOOLS = {
     droid: { available: false },
     grok: { available: false },
     unsloth: { available: false },
-    "codex-acp": { available: false },
+    'codex-acp': { available: false },
     npx: { available: false },
   },
 };
 
 /** Provider ids the daemon's providerAuthStatus sweep covers. */
 const AUTH_PROVIDER_IDS = [
-  "auggie",
-  "claude-code",
-  "codex",
-  "opencode",
-  "pi",
-  "droid",
-  "grok",
+  'auggie',
+  'claude-code',
+  'codex',
+  'opencode',
+  'pi',
+  'droid',
+  'grok',
 ] as const;
 
 /**
@@ -104,90 +101,140 @@ function authOne(id: string, authenticated: boolean | null) {
 
 type Envelope<T> = { success: boolean; data?: T; error?: string };
 
-describe("provider-status-bridge-seeder", () => {
-  it.each([true, false, null])("uses daemon discovery and preserves Antigravity auth=%s in the renderer bridge", async (authenticated) => {
-    routeDaemon({
-      "host.providerDiscovery": { providers: [{ id: "antigravity", installed: true, resolvedPath: "/configured/agy_acp_server.par" }] },
-      "host.providerAuthStatus": authOne("antigravity", authenticated),
-    });
-    const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(PROVIDERS_CHANNELS.CHECK_SINGLE, { providerId: "antigravity", force: true });
-    expect(response).toMatchObject({ success: true, data: { available: true, hasNpxFallback: false } });
-    expect(response.data?.authenticated).toBe(authenticated ?? undefined);
-    expect(mockedRequest).not.toHaveBeenCalledWith("host.findBinary", expect.anything());
-    expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
-  });
+describe('provider-status-bridge-seeder', () => {
+  it.each([true, false, null])(
+    'uses daemon discovery and preserves Antigravity auth=%s in the renderer bridge',
+    async (authenticated) => {
+      routeDaemon({
+        'host.providerDiscovery': {
+          providers: [
+            { id: 'antigravity', installed: true, resolvedPath: '/configured/agy_acp_server.par' },
+          ],
+        },
+        'host.providerAuthStatus': authOne('antigravity', authenticated),
+      });
+      const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(
+        PROVIDERS_CHANNELS.CHECK_SINGLE,
+        { providerId: 'antigravity', force: true },
+      );
+      expect(response).toMatchObject({
+        success: true,
+        data: { available: true, hasNpxFallback: false },
+      });
+      expect(response.data?.authenticated).toBe(authenticated ?? undefined);
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
+    },
+  );
   beforeAll(async () => {
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
-    await import("./provider-status-bridge-seeder");
+    await import('./provider-status-bridge-seeder');
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus", () => {
-    it("reports nothing installed honestly — no fake mock@example.com positives", async () => {
+  describe('providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus', () => {
+    it.each([PROVIDERS_CHANNELS.GET_AVAILABILITY, PROVIDERS_CHANNELS.CHECK_SINGLE])(
+      'preserves an Antigravity discovery failure through %s',
+      async (channel) => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.providerAuthStatus': authSweep(),
+          'host.providerDiscovery': () => {
+            throw new Error('discovery transport down');
+          },
+        });
+        const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+          channel,
+          channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? { providerId: 'antigravity' } : undefined,
+        );
+        expect(response).toEqual({
+          success: false,
+          error: 'discovery transport down',
+          ...(channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? { providerId: 'antigravity' } : {}),
+        });
+        expect(mockedRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+      },
+    );
+
+    it('treats a successful discovery without Antigravity as unavailable', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": NO_TOOLS,
-        "host.providerAuthStatus": authSweep(),
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+      expect(response.success).toBe(true);
+      expect(response.data?.providers.antigravity?.available).toBe(false);
+    });
+
+    it('reports nothing installed honestly — no fake mock@example.com positives', async () => {
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
-      expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
+      expect(mockedRequest).toHaveBeenCalledWith('host.checkAuggie');
+      expect(mockedRequest).toHaveBeenCalledWith('host.toolAvailability', {
         tools: [
-          "claude",
-          "codex",
-          "cortex",
-          "opencode",
-          "pi",
-          "droid",
-          "grok",
-          "unsloth",
-          "codex-acp",
-          "npx",
+          'claude',
+          'codex',
+          'cortex',
+          'opencode',
+          'pi',
+          'droid',
+          'grok',
+          'unsloth',
+          'codex-acp',
+          'npx',
         ],
       });
       // The auth sweep carries no providerId / force — the daemon's cache
       // is respected on the aggregate path.
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {});
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {});
       expect(response.success).toBe(true);
       expect(response.data?.hasAnyProvider).toBe(false);
       expect(response.data?.providers.auggie).toEqual({ available: false });
       expect(response.data?.providers.mock).toEqual({ available: false });
       // Env-var gated providers stay hidden (default-deny).
-      expect(response.data?.hiddenProviders).toEqual(expect.arrayContaining(["mock"]));
-      expect(response.data?.hiddenProviders).not.toContain("cortex");
+      expect(response.data?.hiddenProviders).toEqual(expect.arrayContaining(['mock']));
+      expect(response.data?.hiddenProviders).not.toContain('cortex');
       // The FE never runs auth-check commands itself.
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
     });
 
     it("derives auggie auth from the daemon's providerAuthStatus sweep when installed", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.toolAvailability": NO_TOOLS,
-        "host.providerAuthStatus": authSweep({ auggie: true }),
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep({ auggie: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {});
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {});
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
       expect(response.data?.hasAnyProvider).toBe(true);
       expect(response.data?.providers.auggie).toEqual({ available: true, authenticated: true });
     });
 
-    it("surfaces a logged-out auggie as authenticated:false (actionable, not fake-positive)", async () => {
+    it('surfaces a logged-out auggie as authenticated:false (actionable, not fake-positive)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.toolAvailability": NO_TOOLS,
-        "host.providerAuthStatus": authSweep({ auggie: false }),
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep({ auggie: false }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -200,37 +247,37 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("propagates daemon RPC failures as an explicit failure (never a fabricated all-unavailable result)", async () => {
-      mockedRequest.mockRejectedValue(new Error("transport down"));
+    it('propagates daemon RPC failures as an explicit failure (never a fabricated all-unavailable result)', async () => {
+      mockedRequest.mockRejectedValue(new Error('transport down'));
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(response).toEqual({ success: false, error: "transport down" });
+      expect(response).toEqual({ success: false, error: 'transport down' });
     });
 
-    it("attaches per-provider verdicts from one sweep — claude-code in, codex out", async () => {
+    it('attaches per-provider verdicts from one sweep — claude-code in, codex out', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            claude: { available: true, path: "/usr/local/bin/claude" },
-            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
-            codex: { available: true, path: "/usr/local/bin/codex" },
-            npx: { available: true, path: "/usr/local/bin/npx" },
+            claude: { available: true, path: '/usr/local/bin/claude' },
+            'codex-acp': { available: true, path: '/usr/local/bin/codex-acp' },
+            codex: { available: true, path: '/usr/local/bin/codex' },
+            npx: { available: true, path: '/usr/local/bin/npx' },
           },
         },
-        "host.providerAuthStatus": authSweep({ "claude-code": true, codex: false }),
+        'host.providerAuthStatus': authSweep({ 'claude-code': true, codex: false }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {});
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {});
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
       expect(response.data?.providers.claudeCode).toEqual({
         available: true,
         authenticated: true,
@@ -238,26 +285,26 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.codex).toEqual({ available: true, authenticated: false });
     });
 
-    it("attaches the identity line only to the provider that sent one (protocol 9.4)", async () => {
+    it('attaches the identity line only to the provider that sent one (protocol 9.4)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            claude: { available: true, path: "/usr/local/bin/claude" },
-            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
-            codex: { available: true, path: "/usr/local/bin/codex" },
-            npx: { available: true, path: "/usr/local/bin/npx" },
+            claude: { available: true, path: '/usr/local/bin/claude' },
+            'codex-acp': { available: true, path: '/usr/local/bin/codex-acp' },
+            codex: { available: true, path: '/usr/local/bin/codex' },
+            npx: { available: true, path: '/usr/local/bin/npx' },
           },
         },
-        "host.providerAuthStatus": {
+        'host.providerAuthStatus': {
           providers: [
             {
-              id: "claude-code",
+              id: 'claude-code',
               authenticated: true,
-              identity: { email: "dev@example.com", orgName: "dev@example.com's Organization" },
+              identity: { email: 'dev@example.com', orgName: "dev@example.com's Organization" },
             },
-            { id: "codex", authenticated: true },
+            { id: 'codex', authenticated: true },
           ],
         },
       });
@@ -270,25 +317,28 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.claudeCode).toEqual({
         available: true,
         authenticated: true,
-        authDetails: "dev@example.com",
+        authDetails: 'dev@example.com',
       });
       // No identity on the wire (pre-9.4 daemon or non-identity provider) →
       // exactly the pre-identity shape.
-      expect(response.data?.providers.codex).toStrictEqual({ available: true, authenticated: true });
+      expect(response.data?.providers.codex).toStrictEqual({
+        available: true,
+        authenticated: true,
+      });
     });
 
-    it("attaches droid / grok / pi verdicts (previously unprobed FE-side)", async () => {
+    it('attaches droid / grok / pi verdicts (previously unprobed FE-side)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            pi: { available: true, path: "/usr/local/bin/pi" },
-            droid: { available: true, path: "/usr/local/bin/droid" },
-            grok: { available: true, path: "/usr/local/bin/grok" },
+            pi: { available: true, path: '/usr/local/bin/pi' },
+            droid: { available: true, path: '/usr/local/bin/droid' },
+            grok: { available: true, path: '/usr/local/bin/grok' },
           },
         },
-        "host.providerAuthStatus": authSweep({ pi: true, droid: false, grok: null }),
+        'host.providerAuthStatus': authSweep({ pi: true, droid: false, grok: null }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -301,17 +351,17 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.grok).toEqual({ available: true });
     });
 
-    it("keys unsloth availability off both opencode AND the unsloth CLI (available ⇒ authenticated)", async () => {
+    it('keys unsloth availability off both opencode AND the unsloth CLI (available ⇒ authenticated)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            opencode: { available: true, path: "/usr/local/bin/opencode" },
-            unsloth: { available: true, path: "/usr/local/bin/unsloth" },
+            opencode: { available: true, path: '/usr/local/bin/opencode' },
+            unsloth: { available: true, path: '/usr/local/bin/unsloth' },
           },
         },
-        "host.providerAuthStatus": authSweep(),
+        'host.providerAuthStatus': authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -327,16 +377,16 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.opencode).toEqual({ available: true });
     });
 
-    it("reports unsloth unavailable when opencode is present but the unsloth CLI is missing", async () => {
+    it('reports unsloth unavailable when opencode is present but the unsloth CLI is missing', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            opencode: { available: true, path: "/usr/local/bin/opencode" },
+            opencode: { available: true, path: '/usr/local/bin/opencode' },
           },
         },
-        "host.providerAuthStatus": authSweep(),
+        'host.providerAuthStatus': authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -347,16 +397,16 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.opencode).toEqual({ available: true });
     });
 
-    it("reports unsloth unavailable when the unsloth CLI is present but opencode is missing", async () => {
+    it('reports unsloth unavailable when the unsloth CLI is present but opencode is missing', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            unsloth: { available: true, path: "/usr/local/bin/unsloth" },
+            unsloth: { available: true, path: '/usr/local/bin/unsloth' },
           },
         },
-        "host.providerAuthStatus": authSweep(),
+        'host.providerAuthStatus': authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -366,11 +416,11 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.unsloth).toEqual({ available: false });
     });
 
-    it("does not attach verdicts to unavailable providers", async () => {
+    it('does not attach verdicts to unavailable providers', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": NO_TOOLS,
-        "host.providerAuthStatus": authSweep({ codex: true }),
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -380,12 +430,12 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.codex).toEqual({ available: false });
     });
 
-    it("degrades auth to unknown when only the providerAuthStatus RPC fails", async () => {
+    it('degrades auth to unknown when only the providerAuthStatus RPC fails', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.toolAvailability": NO_TOOLS,
-        "host.providerAuthStatus": () => {
-          throw new Error("transport down");
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': () => {
+          throw new Error('transport down');
         },
       });
 
@@ -397,16 +447,16 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.auggie).toEqual({ available: true });
     });
 
-    it("warns when the claude CLI is installed but npx is missing (adapter runs via npx)", async () => {
+    it('warns when the claude CLI is installed but npx is missing (adapter runs via npx)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            claude: { available: true, path: "/usr/local/bin/claude" },
+            claude: { available: true, path: '/usr/local/bin/claude' },
           },
         },
-        "host.providerAuthStatus": authSweep({ "claude-code": true }),
+        'host.providerAuthStatus': authSweep({ 'claude-code': true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -420,17 +470,17 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("reports codex available on the real CLI alone (no local adapter needed)", async () => {
+    it('reports codex available on the real CLI alone (no local adapter needed)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            codex: { available: true, path: "/usr/local/bin/codex" },
-            npx: { available: true, path: "/usr/local/bin/npx" },
+            codex: { available: true, path: '/usr/local/bin/codex' },
+            npx: { available: true, path: '/usr/local/bin/npx' },
           },
         },
-        "host.providerAuthStatus": authSweep({ codex: true }),
+        'host.providerAuthStatus': authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -444,16 +494,16 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("warns when the codex CLI is installed but neither codex-acp nor npx can run the adapter", async () => {
+    it('warns when the codex CLI is installed but neither codex-acp nor npx can run the adapter', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            codex: { available: true, path: "/usr/local/bin/codex" },
+            codex: { available: true, path: '/usr/local/bin/codex' },
           },
         },
-        "host.providerAuthStatus": authSweep({ codex: true }),
+        'host.providerAuthStatus': authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -467,17 +517,17 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("does not warn on codex when a local codex-acp is present even without npx", async () => {
+    it('does not warn on codex when a local codex-acp is present even without npx', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            codex: { available: true, path: "/usr/local/bin/codex" },
-            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
+            codex: { available: true, path: '/usr/local/bin/codex' },
+            'codex-acp': { available: true, path: '/usr/local/bin/codex-acp' },
           },
         },
-        "host.providerAuthStatus": authSweep({ codex: true }),
+        'host.providerAuthStatus': authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -491,16 +541,16 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("keeps codex unavailable when only the codex-acp adapter is installed (CLI missing)", async () => {
+    it('keeps codex unavailable when only the codex-acp adapter is installed (CLI missing)', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: false },
-        "host.toolAvailability": {
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
           tools: {
             ...NO_TOOLS.tools,
-            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
+            'codex-acp': { available: true, path: '/usr/local/bin/codex-acp' },
           },
         },
-        "host.providerAuthStatus": authSweep(),
+        'host.providerAuthStatus': authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -510,73 +560,73 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.codex).toEqual({ available: false });
       expect(response.data?.hasAnyProvider).toBe(false);
       // The FE never runs auth-check commands itself.
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
     });
   });
 
-  describe("providers:check-single → host.checkAuggie / host.findBinary + host.providerAuthStatus", () => {
-    it("rechecks auggie (string arg) with a forced single-provider auth verdict", async () => {
+  describe('providers:check-single → host.checkAuggie / host.findBinary + host.providerAuthStatus', () => {
+    it('rechecks auggie (string arg) with a forced single-provider auth verdict', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.providerAuthStatus": authOne("auggie", true),
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.providerAuthStatus': authOne('auggie', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "auggie");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'auggie');
 
       // Single rechecks follow "Login" / "Check again" clicks — force
       // bypasses the daemon's auth cache.
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
-        providerId: "auggie",
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'auggie',
         force: true,
       });
       expect(response).toEqual({
         success: true,
-        providerId: "auggie",
+        providerId: 'auggie',
         data: { available: true, authenticated: true },
       });
     });
 
-    it("rides the daemon auth cache when the request carries force:false", async () => {
+    it('rides the daemon auth cache when the request carries force:false', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.providerAuthStatus": authOne("auggie", true),
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.providerAuthStatus': authOne('auggie', true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, {
-        providerId: "auggie",
+        providerId: 'auggie',
         force: false,
       });
 
       // Passive bulk loads (onboarding first mount) read the daemon's cached
       // verdict instead of re-probing every CLI.
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
-        providerId: "auggie",
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'auggie',
         force: false,
       });
       expect(response).toEqual({
         success: true,
-        providerId: "auggie",
+        providerId: 'auggie',
         data: { available: true, authenticated: true },
       });
     });
 
-    it("rechecks claude-code with an npx probe — warning set when npx is missing", async () => {
+    it('rechecks claude-code with an npx probe — warning set when npx is missing', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          return name === "claude"
-            ? { available: true, path: "/usr/local/bin/claude" }
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
             : { available: false };
         },
-        "host.providerAuthStatus": authOne("claude-code", true),
+        'host.providerAuthStatus': authOne('claude-code', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "npx" });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'npx' });
       expect(response).toEqual({
         success: true,
-        providerId: "claude-code",
+        providerId: 'claude-code',
         data: {
           available: true,
           authenticated: true,
@@ -585,97 +635,105 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("does not warn when the npx probe itself fails (unknown, not confirmed absence)", async () => {
+    it('does not warn when the npx probe itself fails (unknown, not confirmed absence)', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
-          throw new Error("transport down");
+          if (name === 'claude') return { available: true, path: '/usr/local/bin/claude' };
+          throw new Error('transport down');
         },
-        "host.providerAuthStatus": authOne("claude-code", true),
+        'host.providerAuthStatus': authOne('claude-code', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
 
       expect(response).toEqual({
         success: true,
-        providerId: "claude-code",
+        providerId: 'claude-code',
         data: { available: true, authenticated: true },
       });
     });
 
-    it("rechecks claude-code without a warning when npx is present", async () => {
+    it('rechecks claude-code without a warning when npx is present', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
-          if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
+          if (name === 'claude') return { available: true, path: '/usr/local/bin/claude' };
+          if (name === 'npx') return { available: true, path: '/usr/local/bin/npx' };
           return { available: false };
         },
-        "host.providerAuthStatus": authOne("claude-code", true),
+        'host.providerAuthStatus': authOne('claude-code', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
 
       expect(response).toEqual({
         success: true,
-        providerId: "claude-code",
+        providerId: 'claude-code',
         data: { available: true, authenticated: true },
       });
     });
 
-    it("pipes the protocol-9.4 identity object into authDetails on the single recheck", async () => {
+    it('pipes the protocol-9.4 identity object into authDetails on the single recheck', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
-          if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
+          if (name === 'claude') return { available: true, path: '/usr/local/bin/claude' };
+          if (name === 'npx') return { available: true, path: '/usr/local/bin/npx' };
           return { available: false };
         },
-        "host.providerAuthStatus": {
+        'host.providerAuthStatus': {
           providers: [
             {
-              id: "claude-code",
+              id: 'claude-code',
               authenticated: true,
-              identity: { email: "dev@example.com", orgName: "Example Org", subscriptionType: "max" },
+              identity: {
+                email: 'dev@example.com',
+                orgName: 'Example Org',
+                subscriptionType: 'max',
+              },
             },
           ],
         },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
 
       expect(response).toEqual({
         success: true,
-        providerId: "claude-code",
-        data: { available: true, authenticated: true, authDetails: "dev@example.com · Example Org" },
+        providerId: 'claude-code',
+        data: {
+          available: true,
+          authenticated: true,
+          authDetails: 'dev@example.com · Example Org',
+        },
       });
     });
 
-    it("rechecks codex against the real CLI — warning when neither codex-acp nor npx resolves", async () => {
+    it('rechecks codex against the real CLI — warning when neither codex-acp nor npx resolves', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          return name === "codex"
-            ? { available: true, path: "/usr/local/bin/codex" }
+          return name === 'codex'
+            ? { available: true, path: '/usr/local/bin/codex' }
             : { available: false };
         },
-        "host.providerAuthStatus": authOne("codex", true),
+        'host.providerAuthStatus': authOne('codex', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "npx" });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex' });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex-acp' });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'npx' });
       // Auth comes from the daemon's forced single-provider verdict.
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
-        providerId: "codex",
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'codex',
         force: true,
       });
       expect(response).toEqual({
         success: true,
-        providerId: "codex",
+        providerId: 'codex',
         data: {
           available: true,
           authenticated: true,
@@ -685,309 +743,300 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("rechecks codex without a warning when npx can run the pinned adapter fallback", async () => {
+    it('rechecks codex without a warning when npx can run the pinned adapter fallback', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
-          if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
+          if (name === 'codex') return { available: true, path: '/usr/local/bin/codex' };
+          if (name === 'npx') return { available: true, path: '/usr/local/bin/npx' };
           return { available: false };
         },
-        "host.providerAuthStatus": authOne("codex", true),
+        'host.providerAuthStatus': authOne('codex', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
       expect(response).toEqual({
         success: true,
-        providerId: "codex",
+        providerId: 'codex',
         data: { available: true, authenticated: true, hasNpxFallback: true },
       });
     });
 
-    it("rechecks codex without a warning when a local codex-acp is present even without npx", async () => {
+    it('rechecks codex without a warning when a local codex-acp is present even without npx', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
-          if (name === "codex-acp") return { available: true, path: "/usr/local/bin/codex-acp" };
+          if (name === 'codex') return { available: true, path: '/usr/local/bin/codex' };
+          if (name === 'codex-acp') return { available: true, path: '/usr/local/bin/codex-acp' };
           return { available: false };
         },
-        "host.providerAuthStatus": authOne("codex", true),
+        'host.providerAuthStatus': authOne('codex', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
       // A local adapter alone suppresses the warning — npx is only the fallback.
       expect(response).toEqual({
         success: true,
-        providerId: "codex",
+        providerId: 'codex',
         data: { available: true, authenticated: true, hasNpxFallback: true },
       });
     });
 
-    it("does not warn on codex when the adapter probes fail (unknown, not confirmed absence)", async () => {
+    it('does not warn on codex when the adapter probes fail (unknown, not confirmed absence)', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
-          throw new Error("transport down");
+          if (name === 'codex') return { available: true, path: '/usr/local/bin/codex' };
+          throw new Error('transport down');
         },
-        "host.providerAuthStatus": authOne("codex", true),
+        'host.providerAuthStatus': authOne('codex', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
       expect(response).toEqual({
         success: true,
-        providerId: "codex",
+        providerId: 'codex',
         data: { available: true, authenticated: true, hasNpxFallback: true },
       });
     });
 
-    it("reports codex unavailable when the real CLI is missing even if codex-acp is installed", async () => {
+    it('reports codex unavailable when the real CLI is missing even if codex-acp is installed', async () => {
       routeDaemon({
-        "host.findBinary": (params) => {
+        'host.findBinary': (params) => {
           const { name } = params as { name: string };
-          return name === "codex-acp"
-            ? { available: true, path: "/usr/local/bin/codex-acp" }
+          return name === 'codex-acp'
+            ? { available: true, path: '/usr/local/bin/codex-acp' }
             : { available: false };
         },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex' });
       expect(response).toEqual({
         success: true,
-        providerId: "codex",
+        providerId: 'codex',
         data: { available: false, hasNpxFallback: true },
       });
       // No auth verdict is fetched for an uninstalled CLI.
-      expect(mockedRequest).not.toHaveBeenCalledWith(
-        "host.providerAuthStatus",
-        expect.anything(),
-      );
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.providerAuthStatus', expect.anything());
     });
 
-    it("rechecks pi with a forced auth verdict (daemon owns the probe)", async () => {
+    it('rechecks pi with a forced auth verdict (daemon owns the probe)', async () => {
       routeDaemon({
-        "host.findBinary": { available: true, path: "/usr/local/bin/pi" },
-        "host.providerAuthStatus": authOne("pi", true),
+        'host.findBinary': { available: true, path: '/usr/local/bin/pi' },
+        'host.providerAuthStatus': authOne('pi', true),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "pi");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'pi');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "pi" });
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
-        providerId: "pi",
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'pi' });
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'pi',
         force: true,
       });
       expect(response).toEqual({
         success: true,
-        providerId: "pi",
+        providerId: 'pi',
         data: { available: true, authenticated: true },
       });
     });
 
-    it("rechecks droid with the daemon verdict — logged-out surfaces as false", async () => {
+    it('rechecks droid with the daemon verdict — logged-out surfaces as false', async () => {
       routeDaemon({
-        "host.findBinary": { available: true, path: "/usr/local/bin/droid" },
-        "host.providerAuthStatus": authOne("droid", false),
+        'host.findBinary': { available: true, path: '/usr/local/bin/droid' },
+        'host.providerAuthStatus': authOne('droid', false),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "droid");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'droid');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
-        providerId: "droid",
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'droid',
         force: true,
       });
       expect(response).toEqual({
         success: true,
-        providerId: "droid",
+        providerId: 'droid',
         data: { available: true, authenticated: false },
       });
     });
 
-    it("rechecks unsloth off both opencode AND the unsloth CLI — local-only, so available ⇒ authenticated", async () => {
+    it('rechecks unsloth off both opencode AND the unsloth CLI — local-only, so available ⇒ authenticated', async () => {
       routeDaemon({
-        "host.findBinary": (params: unknown) => {
+        'host.findBinary': (params: unknown) => {
           const name = (params as { name?: string }).name;
-          return name === "opencode" || name === "unsloth"
+          return name === 'opencode' || name === 'unsloth'
             ? { available: true, path: `/usr/local/bin/${name}` }
             : { available: false };
         },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'unsloth');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "opencode" });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "unsloth" });
-      expect(mockedRequest).not.toHaveBeenCalledWith(
-        "host.providerAuthStatus",
-        expect.anything(),
-      );
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'opencode' });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'unsloth' });
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.providerAuthStatus', expect.anything());
       expect(response).toEqual({
         success: true,
-        providerId: "unsloth",
+        providerId: 'unsloth',
         data: { available: true, authenticated: true },
       });
     });
 
-    it("rechecks unsloth as unavailable when opencode is missing", async () => {
+    it('rechecks unsloth as unavailable when opencode is missing', async () => {
       routeDaemon({
-        "host.findBinary": (params: unknown) =>
-          (params as { name?: string }).name === "unsloth"
-            ? { available: true, path: "/usr/local/bin/unsloth" }
+        'host.findBinary': (params: unknown) =>
+          (params as { name?: string }).name === 'unsloth'
+            ? { available: true, path: '/usr/local/bin/unsloth' }
             : { available: false },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'unsloth');
 
       expect(response).toEqual({
         success: true,
-        providerId: "unsloth",
+        providerId: 'unsloth',
         data: { available: false },
       });
     });
 
-    it("rechecks unsloth as unavailable when the unsloth CLI is missing", async () => {
+    it('rechecks unsloth as unavailable when the unsloth CLI is missing', async () => {
       routeDaemon({
-        "host.findBinary": (params: unknown) =>
-          (params as { name?: string }).name === "opencode"
-            ? { available: true, path: "/usr/local/bin/opencode" }
+        'host.findBinary': (params: unknown) =>
+          (params as { name?: string }).name === 'opencode'
+            ? { available: true, path: '/usr/local/bin/opencode' }
             : { available: false },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'unsloth');
 
       expect(response).toEqual({
         success: true,
-        providerId: "unsloth",
+        providerId: 'unsloth',
         data: { available: false },
       });
     });
 
-    it("folds a wire null verdict to no authenticated field (unknown, no indicator)", async () => {
+    it('folds a wire null verdict to no authenticated field (unknown, no indicator)', async () => {
       routeDaemon({
-        "host.findBinary": { available: true, path: "/usr/local/bin/grok" },
-        "host.providerAuthStatus": authOne("grok", null),
+        'host.findBinary': { available: true, path: '/usr/local/bin/grok' },
+        'host.providerAuthStatus': authOne('grok', null),
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "grok");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'grok');
 
       expect(response).toEqual({
         success: true,
-        providerId: "grok",
+        providerId: 'grok',
         data: { available: true },
       });
     });
 
-    it("resolves cortex presence via host.findBinary without an auth probe (ungated)", async () => {
+    it('resolves cortex presence via host.findBinary without an auth probe (ungated)', async () => {
       routeDaemon({
-        "host.findBinary": { available: true, path: "/usr/local/bin/cortex" },
+        'host.findBinary': { available: true, path: '/usr/local/bin/cortex' },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "cortex");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'cortex');
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "cortex" });
-      expect(mockedRequest).not.toHaveBeenCalledWith(
-        "host.providerAuthStatus",
-        expect.anything(),
-      );
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'cortex' });
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.providerAuthStatus', expect.anything());
       expect(response).toEqual({
         success: true,
-        providerId: "cortex",
+        providerId: 'cortex',
         data: { available: true },
       });
     });
 
-    it("degrades auth to unknown when the providerAuthStatus RPC fails", async () => {
+    it('degrades auth to unknown when the providerAuthStatus RPC fails', async () => {
       routeDaemon({
-        "host.findBinary": { available: true, path: "/usr/local/bin/opencode" },
-        "host.providerAuthStatus": () => {
-          throw new Error("transport down");
+        'host.findBinary': { available: true, path: '/usr/local/bin/opencode' },
+        'host.providerAuthStatus': () => {
+          throw new Error('transport down');
         },
       });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "opencode");
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'opencode');
 
       expect(response).toEqual({
         success: true,
-        providerId: "opencode",
+        providerId: 'opencode',
         data: { available: true },
       });
     });
 
-    it("rejects unknown providers without touching the daemon", async () => {
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "not-a-provider");
+    it('rejects unknown providers without touching the daemon', async () => {
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'not-a-provider');
 
       expect(response).toEqual({
         success: false,
-        providerId: "not-a-provider",
-        error: "Unknown provider: not-a-provider",
+        providerId: 'not-a-provider',
+        error: 'Unknown provider: not-a-provider',
       });
       expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 
-  describe("providers:get-paths → host.providerDiscovery", () => {
+  describe('providers:get-paths → host.providerDiscovery', () => {
     it("maps every provider's resolvedPath plus the unsloth secondary path", async () => {
       // PROTOCOL §5.14 host.providerDiscovery-shaped snapshot: all providers,
       // dual-binary unsloth carries secondaryCommand/secondaryResolved(+Path).
       routeDaemon({
-        "host.providerDiscovery": {
+        'host.providerDiscovery': {
           providers: [
             {
-              id: "auggie",
-              displayName: "Auggie",
-              command: "auggie",
+              id: 'auggie',
+              displayName: 'Auggie',
+              command: 'auggie',
               installed: true,
-              resolvedPath: "/usr/local/bin/auggie",
+              resolvedPath: '/usr/local/bin/auggie',
               hasNpxFallback: false,
               npxOnly: false,
             },
             {
-              id: "claude-code",
-              displayName: "Claude Code",
-              command: "npx",
+              id: 'claude-code',
+              displayName: 'Claude Code',
+              command: 'npx',
               installed: true,
-              resolvedPath: "/usr/local/bin/npx",
+              resolvedPath: '/usr/local/bin/npx',
               hasNpxFallback: false,
               npxOnly: true,
-              npxPackage: "@agentclientprotocol/claude-agent-acp@1.2.3",
+              npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
             },
             {
-              id: "grok",
-              displayName: "Grok",
-              command: "grok",
+              id: 'grok',
+              displayName: 'Grok',
+              command: 'grok',
               installed: true,
-              resolvedPath: "/home/user/.grok/bin/grok",
+              resolvedPath: '/home/user/.grok/bin/grok',
               hasNpxFallback: false,
               npxOnly: false,
             },
             {
-              id: "unsloth",
-              displayName: "Unsloth",
-              command: "opencode",
+              id: 'unsloth',
+              displayName: 'Unsloth',
+              command: 'opencode',
               installed: true,
-              resolvedPath: "/home/user/.opencode/bin/opencode",
+              resolvedPath: '/home/user/.opencode/bin/opencode',
               hasNpxFallback: false,
               npxOnly: false,
-              secondaryCommand: "unsloth",
+              secondaryCommand: 'unsloth',
               secondaryResolved: true,
-              secondaryResolvedPath: "/usr/local/bin/unsloth",
+              secondaryResolvedPath: '/usr/local/bin/unsloth',
             },
             {
-              id: "codex",
-              displayName: "Codex",
-              command: "codex",
+              id: 'codex',
+              displayName: 'Codex',
+              command: 'codex',
               installed: false,
               hasNpxFallback: true,
               npxOnly: false,
             },
           ],
-          npx: { resolvedPath: "/usr/local/bin/npx", version: "10.2.4", versionOk: true },
+          npx: { resolvedPath: '/usr/local/bin/npx', version: '10.2.4', versionOk: true },
         },
       });
 
@@ -999,38 +1048,38 @@ describe("provider-status-bridge-seeder", () => {
         }>
       >(PROVIDERS_CHANNELS.GET_PATHS);
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerDiscovery", {});
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
       expect(response).toEqual({
         success: true,
         data: {
           paths: {
-            auggie: "/usr/local/bin/auggie",
-            "claude-code": "/usr/local/bin/npx",
-            grok: "/home/user/.grok/bin/grok",
-            unsloth: "/home/user/.opencode/bin/opencode",
+            auggie: '/usr/local/bin/auggie',
+            'claude-code': '/usr/local/bin/npx',
+            grok: '/home/user/.grok/bin/grok',
+            unsloth: '/home/user/.opencode/bin/opencode',
             codex: null,
           },
-          secondaryPaths: { unsloth: "/usr/local/bin/unsloth" },
+          secondaryPaths: { unsloth: '/usr/local/bin/unsloth' },
           // npx rides the same discovery round-trip so the onboarding bulk
           // check can read it without the aggregated auth sweep.
-          npx: { resolvedPath: "/usr/local/bin/npx", version: "10.2.4", versionOk: true },
+          npx: { resolvedPath: '/usr/local/bin/npx', version: '10.2.4', versionOk: true },
         },
       });
     });
 
-    it("keys an unresolved dual-binary secondary as null (secondaryResolvedPath omitted)", async () => {
+    it('keys an unresolved dual-binary secondary as null (secondaryResolvedPath omitted)', async () => {
       routeDaemon({
-        "host.providerDiscovery": {
+        'host.providerDiscovery': {
           providers: [
             {
-              id: "unsloth",
-              displayName: "Unsloth",
-              command: "opencode",
+              id: 'unsloth',
+              displayName: 'Unsloth',
+              command: 'opencode',
               installed: false,
-              resolvedPath: "/home/user/.opencode/bin/opencode",
+              resolvedPath: '/home/user/.opencode/bin/opencode',
               hasNpxFallback: false,
               npxOnly: false,
-              secondaryCommand: "unsloth",
+              secondaryCommand: 'unsloth',
               secondaryResolved: false,
             },
           ],
@@ -1049,15 +1098,15 @@ describe("provider-status-bridge-seeder", () => {
       expect(response).toEqual({
         success: true,
         data: {
-          paths: { unsloth: "/home/user/.opencode/bin/opencode" },
+          paths: { unsloth: '/home/user/.opencode/bin/opencode' },
           secondaryPaths: { unsloth: null },
           npx: { resolvedPath: null, version: null, versionOk: false },
         },
       });
     });
 
-    it("degrades to empty maps instead of failing the read when the RPC fails", async () => {
-      mockedRequest.mockRejectedValue(new Error("transport down"));
+    it('degrades to empty maps instead of failing the read when the RPC fails', async () => {
+      mockedRequest.mockRejectedValue(new Error('transport down'));
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.GET_PATHS);
 
@@ -1068,112 +1117,113 @@ describe("provider-status-bridge-seeder", () => {
     });
   });
 
-  describe("*:check-availability → host.findBinary", () => {
+  describe('*:check-availability → host.findBinary', () => {
     it("resolves each provider's binary and reports presence honestly", async () => {
       routeDaemon({
-        "host.findBinary": (params: unknown) => ({
-          available: (params as { name: string }).name === "codex",
-          path: "/usr/local/bin/codex",
+        'host.findBinary': (params: unknown) => ({
+          available: (params as { name: string }).name === 'codex',
+          path: '/usr/local/bin/codex',
         }),
       });
 
-      await expect(mockInvoke("codex:check-availability")).resolves.toEqual({
+      await expect(mockInvoke('codex:check-availability')).resolves.toEqual({
         success: true,
         available: true,
       });
-      await expect(mockInvoke("claude-code:check-availability")).resolves.toEqual({
+      await expect(mockInvoke('claude-code:check-availability')).resolves.toEqual({
         success: true,
         available: false,
       });
       // codex keys off the real CLI, not the codex-acp adapter.
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex' });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'claude' });
     });
 
-    it("probes the cortex CLI via host.findBinary (no longer feature-code gated)", async () => {
+    it('probes the cortex CLI via host.findBinary (no longer feature-code gated)', async () => {
       routeDaemon({
-        "host.findBinary": (params: unknown) => ({
-          available: (params as { name: string }).name === "cortex",
-          path: "/usr/local/bin/cortex",
+        'host.findBinary': (params: unknown) => ({
+          available: (params as { name: string }).name === 'cortex',
+          path: '/usr/local/bin/cortex',
         }),
       });
-      await expect(mockInvoke("cortex:check-availability")).resolves.toEqual({
+      await expect(mockInvoke('cortex:check-availability')).resolves.toEqual({
         success: true,
         available: true,
       });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "cortex" });
+      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'cortex' });
     });
 
-    it("propagates daemon RPC failures (callers fold the rejection to false + warn)", async () => {
+    it('propagates daemon RPC failures (callers fold the rejection to false + warn)', async () => {
       routeDaemon({
-        "host.findBinary": () => {
-          throw new Error("transport down");
+        'host.findBinary': () => {
+          throw new Error('transport down');
         },
       });
-      await expect(mockInvoke("droid:check-availability")).rejects.toThrow("transport down");
+      await expect(mockInvoke('droid:check-availability')).rejects.toThrow('transport down');
     });
   });
 
-  describe("auggie:install / auggie:authenticate → manual guidance + daemon auth verdict", () => {
-    it("returns the manual npm install instructions (no fabricated install flow)", async () => {
-      const response = await mockInvoke<
-        Envelope<{ instructions?: string[]; command?: string }>
-      >(AUGGIE_CHANNELS.INSTALL);
+  describe('auggie:install / auggie:authenticate → manual guidance + daemon auth verdict', () => {
+    it('returns the manual npm install instructions (no fabricated install flow)', async () => {
+      const response = await mockInvoke<Envelope<{ instructions?: string[]; command?: string }>>(
+        AUGGIE_CHANNELS.INSTALL,
+      );
       expect(response.success).toBe(true);
-      expect(response.data?.instructions?.[0]).toContain("Install the Auggie CLI");
-      expect(response.data?.command).toBe("npm install -g @augmentcode/auggie");
+      expect(response.data?.instructions?.[0]).toContain('Install the Auggie CLI');
+      expect(response.data?.command).toBe('npm install -g @augmentcode/auggie');
       expect(mockedRequest).not.toHaveBeenCalled();
     });
 
-    it("resolves authenticated:true when the daemon verdict passes", async () => {
+    it('resolves authenticated:true when the daemon verdict passes', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.providerAuthStatus": authOne("auggie", true),
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.providerAuthStatus': authOne('auggie', true),
       });
       const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(
         AUGGIE_CHANNELS.AUTHENTICATE,
-        { action: "start" },
+        { action: 'start' },
       );
       expect(response).toEqual({ success: true, data: { authenticated: true } });
-      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
-        providerId: "auggie",
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'auggie',
         force: true,
       });
     });
 
-    it("returns `auggie login` instructions when installed but logged out", async () => {
+    it('returns `auggie login` instructions when installed but logged out', async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
-        "host.providerAuthStatus": authOne("auggie", false),
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.providerAuthStatus': authOne('auggie', false),
       });
       const response = await mockInvoke<
         Envelope<{ instructions?: string[]; command?: string; authenticated?: boolean }>
-      >(AUGGIE_CHANNELS.AUTHENTICATE, { action: "start" });
+      >(AUGGIE_CHANNELS.AUTHENTICATE, { action: 'start' });
       expect(response.success).toBe(true);
       expect(response.data?.authenticated).toBeUndefined();
-      expect(response.data?.command).toBe("auggie login");
+      expect(response.data?.command).toBe('auggie login');
     });
 
-    it("points at the install step when the CLI is missing entirely", async () => {
-      routeDaemon({ "host.checkAuggie": { available: false } });
-      const response = await mockInvoke<
-        Envelope<{ instructions?: string[]; command?: string }>
-      >(AUGGIE_CHANNELS.AUTHENTICATE, { action: "start" });
+    it('points at the install step when the CLI is missing entirely', async () => {
+      routeDaemon({ 'host.checkAuggie': { available: false } });
+      const response = await mockInvoke<Envelope<{ instructions?: string[]; command?: string }>>(
+        AUGGIE_CHANNELS.AUTHENTICATE,
+        { action: 'start' },
+      );
       expect(response.success).toBe(true);
-      expect(response.data?.instructions?.[0]).toContain("not installed");
-      expect(response.data?.command).toBe("npm install -g @augmentcode/auggie");
+      expect(response.data?.instructions?.[0]).toContain('not installed');
+      expect(response.data?.command).toBe('npm install -g @augmentcode/auggie');
     });
 
-    it("folds a checkAuggie RPC failure into a failure envelope (renders as guidance)", async () => {
+    it('folds a checkAuggie RPC failure into a failure envelope (renders as guidance)', async () => {
       routeDaemon({
-        "host.checkAuggie": () => {
-          throw new Error("transport down");
+        'host.checkAuggie': () => {
+          throw new Error('transport down');
         },
       });
       const response = await mockInvoke<Envelope<never>>(AUGGIE_CHANNELS.AUTHENTICATE, {
-        action: "start",
+        action: 'start',
       });
-      expect(response).toEqual({ success: false, error: "transport down" });
+      expect(response).toEqual({ success: false, error: 'transport down' });
     });
   });
 });

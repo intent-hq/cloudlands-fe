@@ -53,7 +53,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
-  selectEnabledProviderIds: () => mocks.readable(['auggie']),
+  selectModelFetchProviderIds: () => mocks.readable(['auggie']),
+  selectIsProviderModelAccessAllowed: () => mocks.readable(true),
   selectAvailableEnabledProviderIds: () => mocks.readable(['auggie']),
 }));
 

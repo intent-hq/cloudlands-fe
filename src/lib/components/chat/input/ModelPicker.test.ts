@@ -198,7 +198,12 @@ const mockAgentSession$ = writable<
 >(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
-  selectEnabledProviderIds: () => enabledProviderIds$,
+  selectModelFetchProviderIds: () =>
+    derived(
+      [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
+      ([checked, enabled, available]) => (checked ? available : enabled),
+    ),
+  selectIsProviderModelAccessAllowed: () => readable(true),
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 

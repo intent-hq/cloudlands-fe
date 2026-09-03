@@ -13,7 +13,7 @@
  *   2. specialist.codingAgent (if the specialist pins one)
  *   3. the currently active provider from Redux (honors onboarding card click)
  *   4. the settings-derived effective default provider (when designated)
- *   5. the first usable provider
+ *   5. the first usable non-opt-in provider
  *
  * Model selection is daemon-owned (single resolver, PROTOCOL §5.11): the
  * returned `model` is set only for an explicit specialist user override that
@@ -156,7 +156,7 @@ function resolveUsableProvider(
     tryUse(preferred.specialistCodingAgent, 'specialist-coding-agent') ??
     tryUse(preferred.activeProvider, 'active-provider') ??
     tryUse(preferred.defaultProvider, 'default-provider') ??
-    usable[0]
+    usable.find((providerId) => providerId !== 'antigravity')
   );
 }
 

@@ -251,8 +251,6 @@
 
   const readyProviderIds = $derived(visibleProviders.filter(isProviderReady).map((p) => p.id));
 
-  const hasAnyProvider = $derived(readyProviderIds.length > 0);
-
   /** Which card should render as "selected" — mirrors the provider
    *  resolveOnboardingModel would pick for the common no-override case
    *  (active provider if ready, else Auggie, else first ready). */
@@ -265,7 +263,8 @@
   );
 
   $effect(() => {
-    onAvailabilityChange?.(hasAnyProvider);
+    // An unselected opt-in provider must not unlock Continue or its shortcut.
+    onAvailabilityChange?.(selectedProviderId !== undefined);
   });
 
   $effect(() => {
