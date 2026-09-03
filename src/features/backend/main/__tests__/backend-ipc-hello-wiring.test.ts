@@ -814,10 +814,33 @@ describe('backend.ipc remote localIps capture on hello', () => {
     await vi.waitFor(() => {
       expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227', '100.85.97.67']);
     });
-    expect(remoteRequest.mock.calls.map(([m]) => m)).toContain('system.status');
+    // PROTOCOL: `system.status` takes no params — the exact wire call.
+    expect(remoteRequest).toHaveBeenCalledWith('system.status');
     expect(mockGetDetectHosts).toHaveBeenCalledWith('conn-remote');
 
     mod.disconnectBackendClient('conn-remote');
+  });
+
+  it('drops the host write when the pooled client is replaced during the preceding store writes', async () => {
+    systemStatus.value = { updateSupported: true, localIps: ['172.96.161.227'] };
+    // Hold the tcAddress write open so the disconnect lands mid-capture,
+    // AFTER the initial stale-client check already passed.
+    let releaseTcAddress!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseTcAddress = resolve));
+    mockSetTcAddress.mockImplementationOnce(async () => {
+      await gate;
+      return false;
+    });
+    const { mod, onHelloResult } = await connectRemote();
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetTcAddress).toHaveBeenCalledTimes(1));
+
+    mod.disconnectBackendClient('conn-remote');
+    releaseTcAddress();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockSetHosts).not.toHaveBeenCalled();
   });
 
   it('filters bound loopback entries out before persisting (diagnostic surface keeps them)', async () => {

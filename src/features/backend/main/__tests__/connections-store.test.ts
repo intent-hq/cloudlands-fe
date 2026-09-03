@@ -1422,9 +1422,11 @@ describe('connections-store keychain sync surface', () => {
       await store.setHosts(rec.id, [' 10.0.0.5 ']); // dedupes to the same list
       await store.__drainWriteChainForTesting();
 
+      // Clock stays where the initial same-tick add → setHostname → setHosts
+      // chain left it (each capture stamped strictly past the previous).
       const file = path.join(tmpDir, 'backend-connections.json');
       const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
-      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_002);
       expect(listener).not.toHaveBeenCalled();
       unsubscribe();
     } finally {
@@ -1471,6 +1473,41 @@ describe('connections-store keychain sync surface', () => {
       expect(parsed.connections[0].updatedAt).toBe(1_700_000_002_000);
       expect(listener).toHaveBeenCalledTimes(1);
       unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setHosts stamps strictly past the record clock so a same-tick refresh never moves it backwards', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      // setTcAddress forced the clock one past add's stamp; a setHosts in the
+      // SAME millisecond (the every-connect system.status capture writes
+      // both back to back) must land strictly after it, not at Date.now().
+      await store.setTcAddress(rec.id, 'tc7f2a91.tailcat.net');
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      await store.__drainWriteChainForTesting();
+      const file = path.join(tmpDir, 'backend-connections.json');
+      let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_002);
+
+      // A record carrying a future clock (synced from a clock-ahead device)
+      // keeps winning: the refresh stamps past it rather than behind it.
+      const futureClock = 1_700_000_500_000;
+      await store.applyRemoteSyncRecord({
+        ...(await store.listSyncRecords())[0],
+        hosts: ['10.0.0.5'],
+        updatedAt: futureClock,
+      });
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setHosts(rec.id, ['10.0.0.5', '192.168.1.5']);
+      await store.__drainWriteChainForTesting();
+      parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].hosts).toEqual(['10.0.0.5', '192.168.1.5']);
+      expect(parsed.connections[0].updatedAt).toBe(futureClock + 1);
     } finally {
       vi.useRealTimers();
     }

@@ -1324,7 +1324,13 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     if (backendClients.get(id) === client) {
       const changed = await connectionsStore.setUpdateSupported(id, supported);
       const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
-      const hostsRefreshed = ips.length > 0 && (await connectionsStore.getDetectHosts(id));
+      // Re-check after the awaited writes above: a disconnect/replacement
+      // during them must not let the disposed client's answer overwrite the
+      // replacement connection's candidate list.
+      const hostsRefreshed =
+        ips.length > 0 &&
+        (await connectionsStore.getDetectHosts(id)) &&
+        backendClients.get(id) === client;
       if (hostsRefreshed) await connectionsStore.setHosts(id, ips);
       if (changed || tcChanged || hostsRefreshed) await broadcastConnectionsChanged();
     }

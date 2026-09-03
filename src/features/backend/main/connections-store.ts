@@ -856,7 +856,10 @@ export async function setHosts(id: string, hosts: string[]): Promise<void> {
     // edit in keychain sync).
     if (JSON.stringify(extras) === JSON.stringify(conn.hosts ?? [])) return false;
     conn.hosts = extras;
-    conn.updatedAt = Date.now();
+    // Strictly past the record's current clock (like setHostname/setTcAddress)
+    // so a same-millisecond or clock-ahead record never moves backwards and
+    // the refreshed routes win LWW reconciliation.
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
     await writeState(state);
     return true;
   });
