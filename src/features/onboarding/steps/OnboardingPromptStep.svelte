@@ -42,6 +42,7 @@
   } from '$lib/components/chat/input/image-context-items';
   import { splitDroppedItems } from '$lib/utils/drop-split';
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
+  import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
 
   const COORDINATOR_SPECIALIST_ID = 'spec-writer';
 
@@ -177,10 +178,11 @@
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
 
+  const treatAsNewRepo = $derived(
+    projectSelection ? shouldTreatAsNewRepo(projectSelection) : false,
+  );
   const hasResolvedBranch = $derived(
-    projectSelection?.type === 'new' ||
-      Boolean(projectSelection?.branch.trim()) ||
-      Boolean(selectedPRBranch.trim()),
+    treatAsNewRepo || Boolean(projectSelection?.branch.trim()) || Boolean(selectedPRBranch.trim()),
   );
 
   // Drag and drop state
@@ -193,6 +195,15 @@
   // (not a boolean) so overlapping conversions don't clear the gate early.
   let processingImageCount = $state(0);
   const isProcessingImages = $derived(processingImageCount > 0);
+  const createDisabledReason = $derived.by(() => {
+    if (!onboardingInputValue.trim()) return m.onboarding_promptStep_enterPrompt_description();
+    if (!hasResolvedBranch) return m.onboarding_promptStep_selectBranch_description();
+    if (isProcessingImages) return m.onboarding_promptStep_imagesProcessing_description();
+    if (hasBlockingAttachments(stagedContextItems)) {
+      return m.onboarding_promptStep_blockingAttachments_description();
+    }
+    return null;
+  });
 
   // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
   // §5.11): `specialist.list` with the onboarding provider context returns
@@ -720,7 +731,14 @@
 
     <div class="onboarding-metadata-stack flex w-full min-w-0 flex-col gap-2">
       <!-- Branch picker -->
-      {#if projectSelection?.type === 'local' && projectSelection?.repoPath}
+      {#if projectSelection?.type === 'local' && projectSelection?.repoPath && treatAsNewRepo}
+        <div
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground"
+          in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+        >
+          {m.onboarding_promptStep_initGit_description()}
+        </div>
+      {:else if projectSelection?.type === 'local' && projectSelection?.repoPath}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -862,7 +880,7 @@
     </div>
 
     <!-- Use PR branch suggestion -->
-    {#if selectedPRBranch && projectSelection?.branch !== selectedPRBranch && projectSelection?.type !== 'new'}
+    {#if selectedPRBranch && projectSelection?.branch !== selectedPRBranch && !treatAsNewRepo}
       <div class="mt-1">
         <button
           class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary hover:text-primary/80 cursor-pointer"
@@ -896,15 +914,12 @@
 
     <!-- Create button (blocked while the branch is unresolved, an image is
       still converting, or a staged pill is placing/failed) -->
-    <div class="onboarding-create-action flex items-center gap-3 pt-2">
+    <div class="onboarding-create-action flex flex-col items-start gap-2 pt-2">
       <Button
         class="group/button"
         size="xl"
         variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
-        disabled={!onboardingInputValue.trim() ||
-          !hasResolvedBranch ||
-          isProcessingImages ||
-          hasBlockingAttachments(stagedContextItems)}
+        disabled={createDisabledReason !== null}
         onclick={handleSubmit}
       >
         {m.onboarding_promptStep_createWorkspace_label()}
@@ -917,6 +932,9 @@
           class="transform -translate-x-0.75 transition-all group-hover/button:translate-x-0 ml-1 opacity-50"
         />
       </Button>
+      {#if createDisabledReason}
+        <p class="text-xs text-muted-foreground">{createDisabledReason}</p>
+      {/if}
     </div>
   {/if}
 </div>

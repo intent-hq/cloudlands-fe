@@ -30,12 +30,15 @@
     /** Path of the currently selected repo (for highlight state). */
     selectedPath?: string;
     /** Called when the user clicks a repo row or picks a folder. */
-    onSelect: (path: string, scope?: string) => void;
+    onSelect: (path: string, scope?: string, initGit?: boolean) => void;
     /** Called when user presses Enter - should select AND advance to next step */
-    onSelectAndAdvance?: (path: string, scope?: string) => void;
+    onSelectAndAdvance?: (path: string, scope?: string, initGit?: boolean) => void;
   }
 
   interface DirectoryStatus {
+    exists?: boolean;
+    isDirectory?: boolean;
+    isGitRepo?: boolean;
     relativePathFromGitRoot?: string;
     isSubdirectoryOfGitRepo?: boolean;
   }
@@ -51,6 +54,7 @@
   let listContainerRef = $state<HTMLDivElement | null>(null);
   /** Manually picked folders (via the folder picker) that aren't in known repos. */
   let manuallyAddedPaths = $state<string[]>([]);
+  let initGitPath = $state('');
 
   // Build recent repos list
   const recentRepos = $derived.by(() => {
@@ -149,11 +153,25 @@
     const advanceCb = onSelectAndAdvance;
     const selectCb = onSelect;
     const status = await getDirectoryStatus(path);
+    if (status?.isDirectory === false) {
+      initGitPath = '';
+      selectCb('');
+      return;
+    }
     const scope = status?.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : undefined;
+    const initGit =
+      !!status &&
+      !!status.exists &&
+      !!status.isDirectory &&
+      !status.isGitRepo &&
+      !status.isSubdirectoryOfGitRepo;
+    initGitPath = initGit ? path : '';
     if (advance && advanceCb) {
-      advanceCb(path, scope);
+      if (initGit) advanceCb(path, scope, true);
+      else advanceCb(path, scope);
     } else {
-      selectCb(path, scope);
+      if (initGit) selectCb(path, scope, true);
+      else selectCb(path, scope);
     }
   }
 
@@ -347,6 +365,15 @@
               <path d="M9 5l7 7-7 7" />
             </svg>
           </button>
+          {#if isCommitted && initGitPath === repo.path}
+            <div
+              role="status"
+              class="mx-3 mb-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+            >
+              {m.workspace_repoSelector_notGitRepository_label()}
+              {m.onboarding_localRepoTab_initializeGit_description()}
+            </div>
+          {/if}
         {/each}
       </div>
     {:else if searchQuery}
@@ -354,7 +381,9 @@
         {m.onboarding_localRepoTab_noMatches_label({ query: searchQuery })}
       </div>
     {:else}
-      <div class="py-4 text-center text-sm text-muted-foreground">{m.onboarding_localRepoTab_noRecent_label()}</div>
+      <div class="py-4 text-center text-sm text-muted-foreground">
+        {m.onboarding_localRepoTab_noRecent_label()}
+      </div>
     {/if}
   </div>
 </div>
