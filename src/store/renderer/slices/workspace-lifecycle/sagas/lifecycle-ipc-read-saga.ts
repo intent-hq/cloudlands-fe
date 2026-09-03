@@ -82,6 +82,7 @@ import {
   loadWorkspaceTasksSucceeded,
 } from '../../workspace-tasks/workspace-tasks-slice';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
+import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import {
   backendReconnected,
   workspaceHydrationBranchRequested,
@@ -238,6 +239,15 @@ function* dispatchHydrationBranch(
   action: ReturnType<typeof workspaceHydrationBranchRequested>,
 ): SagaGenerator<void> {
   const [workspaceId, branch, , force] = action.payload;
+  if (branch === 'skills' || branch === 'fileExplorer') {
+    const workspace = yield* selectWorkspaceById.effect(workspaceId);
+    const hasWorkspacePath = [
+      workspace?.worktreePath,
+      workspace?.repositoryPath,
+      workspace?.path,
+    ].some((path) => path?.trim());
+    if (!hasWorkspacePath) return;
+  }
   switch (branch) {
     case 'tasks':
       yield* put(
