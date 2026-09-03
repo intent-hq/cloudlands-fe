@@ -309,12 +309,14 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.queryByTestId('agent-subscriptions-card')).toBeNull();
   });
 
-  it('pushes standalone and slim woken-up pills to the trailing edge', async () => {
+  it('renders standalone and slim woken-up indicators as trailing muted text', async () => {
     const wakeInfo = { eventCount: 1, eventTypes: ['agent:idle'], timestamp: Date.now() };
     const standaloneWorkspaceId = 'ws-woken-standalone';
     await renderWithSnapshot(standaloneWorkspaceId, snapshot());
     appStore.dispatch(setWokenUp(standaloneWorkspaceId, PARENT, wakeInfo));
-    expect((await screen.findByTestId('standalone-woken-up-pill')).classList).toContain('ml-auto');
+    const standaloneIndicator = await screen.findByTestId('standalone-woken-up-pill');
+    expect(standaloneIndicator.classList).toContain('ml-auto');
+    expect(standaloneIndicator.className).not.toMatch(/rounded-full|bg-muted\/50|p[xy]-/);
 
     cleanup();
 
@@ -324,7 +326,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       snapshot([oneShotSubscription('watch-woken', slimWorkspaceId, ['agent-a'])]),
     );
     appStore.dispatch(setWokenUp(slimWorkspaceId, PARENT, wakeInfo));
-    expect((await screen.findByTestId('status-woken-up-pill')).classList).toContain('ml-auto');
+    const slimIndicator = await screen.findByTestId('status-woken-up-pill');
+    expect(slimIndicator.classList).toContain('ml-auto');
+    expect(slimIndicator.classList).toContain('text-muted-foreground!');
+    expect(slimIndicator.className).not.toMatch(/rounded-full|bg-muted\/50|p[xy]-/);
   });
 
   it('renders one agent directly without a waiting disclosure', async () => {

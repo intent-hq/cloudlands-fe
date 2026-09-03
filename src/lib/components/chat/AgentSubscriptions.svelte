@@ -692,7 +692,7 @@
     onfocusin={rememberFocusedRowControl}
   >
     {#if isCompleted || $wokenUpInfo$}
-      <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
+      <!-- Slim status row: transitional "Completed" state and/or "Woken up" indicator -->
       <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS}>
         {#if isCompleted}
           <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} transition:fade={{ duration: 200 }}>
@@ -720,9 +720,7 @@
             <Tooltip.Root delayDuration={0}>
               <Tooltip.Trigger class="ml-auto">
                 <span
-                  class="ml-auto inline-flex min-w-0 items-center gap-1 truncate whitespace-nowrap {isCompleted
-                    ? 'rounded-full bg-muted/50 px-1.5 py-0.5'
-                    : ''} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  class="ml-auto inline-flex min-w-0 items-center gap-1 truncate whitespace-nowrap {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
                   data-testid="status-woken-up-pill"
                   transition:fade={{ duration: 200 }}
                 >
