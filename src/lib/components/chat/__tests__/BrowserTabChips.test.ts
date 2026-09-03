@@ -42,9 +42,10 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => {
 });
 
 import BrowserTabChips from '../BrowserTabChips.svelte';
+import type { BrowserTabEntry } from '../browser-tab-entries';
 import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
-const ownedTab = (id: string, title = id) => ({
+const ownedTab = (id: string, title = id): BrowserTabEntry['tab'] => ({
   id,
   type: 'browser',
   title,
@@ -122,6 +123,36 @@ describe('BrowserTabChips', () => {
     seedLayout(0);
     renderChips();
     expect(screen.queryByTestId('browser-tab-chips')).toBeNull();
+  });
+
+  it('renders preview entries without routing clicks through the product store', async () => {
+    seedLayout(1);
+    const entries: BrowserTabEntry[] = [
+      {
+        tab: ownedTab('preview-visible', 'Preview visible'),
+        panelId: 'preview-panel',
+        active: true,
+        hidden: false,
+      },
+      {
+        tab: ownedTab('preview-hidden', 'Preview hidden'),
+        active: false,
+        hidden: true,
+      },
+    ];
+
+    render(BrowserTabChips, { workspaceId: 'ws-1', agentId: 'agent-1', entries });
+    const chips = screen.getAllByTestId('browser-tab-chip');
+    expect(chips.map((chip) => chip.getAttribute('data-browser-tab-id'))).toEqual([
+      'preview-visible',
+      'preview-hidden',
+    ]);
+    await fireEvent.click(chips[0]);
+    await fireEvent.click(chips[1]);
+
+    expect(setActiveTabMock).not.toHaveBeenCalled();
+    expect(focusPanelMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it.each([

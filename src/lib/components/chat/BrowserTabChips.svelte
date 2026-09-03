@@ -18,16 +18,18 @@
   interface Props {
     workspaceId: string;
     agentId: string;
+    entries?: BrowserTabEntry[];
   }
 
-  let { workspaceId, agentId }: Props = $props();
+  let { workspaceId, agentId, entries: previewEntries }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial snapshot for store construction.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => workspaceIdStore.set(workspaceId));
   const panels$ = selectPanels(workspaceIdStore);
   const hiddenTabs$ = selectHiddenTabs(workspaceIdStore);
-  const entries = $derived(getBrowserTabEntries($panels$, $hiddenTabs$, agentId));
+  const storeEntries = $derived(getBrowserTabEntries($panels$, $hiddenTabs$, agentId));
+  const entries = $derived(previewEntries ?? storeEntries);
   const heading = $derived(
     entries.length === 1
       ? m.chat_browserTabs_heading_one({ count: formatInteger(entries.length) })
@@ -64,6 +66,7 @@
   }
 
   function handleTabClick(entry: BrowserTabEntry) {
+    if (previewEntries) return;
     if (entry.hidden) {
       const panels = selectPanels.select(appStore.state, workspaceId);
       const conversationPanel = Object.values(panels).find((panel) =>

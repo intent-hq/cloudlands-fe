@@ -20,57 +20,34 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import BrowserTabChips from '$lib/components/chat/BrowserTabChips.svelte';
-  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { store } from '$store/renderer/store';
-  import {
-    clearPanelLayout,
-    initializeLayout,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import type { BrowserTabEntry } from '$lib/components/chat/browser-tab-entries';
 
   let { count, width }: BrowserTabChipsPreviewProps = $props();
   const workspaceId = 'browser-tab-chips-preview';
   const agentId = 'browser-tab-chips-agent';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   const labels = ['Intent docs', 'Dashboard', 'Pull request', 'Long reference page', 'Preview'];
 
-  $effect(() => {
-    store.dispatch(
-      initializeLayout(workspaceId, {
-        root: { type: 'panel', panelId: 'browser-preview-panel' },
-        panels: {
-          'browser-preview-panel': {
-            id: 'browser-preview-panel',
-            activeTabId: 'agent-preview-tab',
-            tabs: [
-              {
-                id: 'agent-preview-tab',
-                type: 'agent',
-                title: 'Agent',
-                agentId,
-                closable: true,
-              },
-              ...labels.slice(0, count).map((title, index) => ({
-                id: `browser-preview-${index}`,
-                type: 'browser' as const,
-                title,
-                browserUrl: `https://preview-${index}.example.test/`,
-                ownerAgentId: agentId,
-                closable: true,
-              })),
-            ],
-          },
+  function buildEntries(entryCount: number): BrowserTabEntry[] {
+    return labels.slice(0, entryCount).map((title, index) => {
+      const hidden = entryCount > 1 && index === entryCount - 1;
+      return {
+        tab: {
+          id: `browser-preview-${index}`,
+          type: 'browser',
+          title,
+          browserUrl: `https://preview-${index}.example.test/`,
+          ownerAgentId: agentId,
+          closable: true,
         },
-        focusedPanelId: 'browser-preview-panel',
-      }),
-    );
-  });
+        ...(hidden ? {} : { panelId: 'browser-preview-panel' }),
+        active: index === 0,
+        hidden,
+      };
+    });
+  }
 
-  onDestroy(() => {
-    store.dispatch(clearPanelLayout(workspaceId));
-    disposeStore();
-  });
+  const entries = $derived(buildEntries(count));
 </script>
 
 <section
@@ -86,7 +63,7 @@
     <span class="h-2.5 w-24 shrink rounded-full bg-muted"></span>
     <span class="min-w-0 flex-1"></span>
     <span class="flex min-w-0 items-center gap-1.5">
-      <BrowserTabChips {workspaceId} {agentId} />
+      <BrowserTabChips {workspaceId} {agentId} {entries} />
       <span class="size-6 shrink-0 rounded-md bg-muted/60"></span>
     </span>
   </div>
