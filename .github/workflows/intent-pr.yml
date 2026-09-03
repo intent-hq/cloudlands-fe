@@ -926,7 +926,10 @@ jobs:
         # (and the CI Gate) green while the failure stays visible in the
         # step log and the artifact below. Separate output directories so
         # a quarantine failure cannot overwrite the required lane's report.
-        if: matrix.shard == 1
+        # !cancelled() replaces the implicit success() guard so the lane
+        # still runs when the required step on this shard is red -- the
+        # bundle was built before either test step, so it is still usable.
+        if: ${{ !cancelled() && matrix.shard == 1 }}
         id: quarantine
         continue-on-error: true
         env:
@@ -934,7 +937,7 @@ jobs:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
         run: pnpm run test:ct --grep @quarantine --pass-with-no-tests --reporter=list,html --output=test-results-quarantine
       - name: Upload quarantine report
-        if: matrix.shard == 1 && steps.quarantine.outcome == 'failure'
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.quarantine.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-ct-report-quarantine
