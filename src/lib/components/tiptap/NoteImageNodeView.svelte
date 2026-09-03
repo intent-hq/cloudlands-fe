@@ -5,9 +5,12 @@
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
+  import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
   import { m } from '$shared/paraglide/messages.js';
 
-  let { node, selected, editor }: NodeViewProps = $props();
+  let { node, selected, editor, extension }: NodeViewProps = $props();
 
   let imageUrl = $derived<string>(node.attrs.src ?? '');
   let imageName = $derived<string>(
@@ -15,6 +18,23 @@
   );
   let lightboxOpen = $state(false);
   let openerElement: HTMLElement | null = $state(null);
+  let failedImageUrl = $state<string | null>(null);
+  let configuredWorkspaceId = $derived<string | undefined>(extension.options.workspaceId);
+  let workspaceFile = $derived(parseWorkspaceFileImageUrl(imageUrl));
+  let intentFile = $derived(parseIntentFileTarget(imageUrl, configuredWorkspaceId));
+  let unavailableReason = $derived<'missing' | 'unsupported' | 'load-failed' | null>(
+    node.attrs.mediaUnsupported
+      ? 'unsupported'
+      : failedImageUrl === imageUrl
+        ? workspaceFile || imageUrl.startsWith('workspace-asset://')
+          ? 'missing'
+          : 'load-failed'
+        : null,
+  );
+  let unavailablePath = $derived(workspaceFile?.path ?? intentFile?.path);
+  let unavailableWorkspaceId = $derived(
+    workspaceFile?.workspaceId ?? intentFile?.workspaceId ?? configuredWorkspaceId,
+  );
 
   function openLightbox(event: MouseEvent, opener?: HTMLElement) {
     event.preventDefault();
@@ -41,30 +61,40 @@
   <!-- Editable clicks must bubble to ProseMirror selection; read-only clicks open the lightbox. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="group relative inline-block max-w-full" onclick={handleImageClick}>
-    <img
-      src={imageUrl}
-      alt={imageName}
-      title={node.attrs.title ?? undefined}
-      class="note-image max-w-full rounded-md"
-      ondblclick={handleImageDoubleClick}
-      draggable="true"
-    />
-    <div
-      class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-      contenteditable="false"
-    >
-      {#if editor.isEditable}
-        <button
-          type="button"
-          class="flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring"
-          onclick={openLightbox}
-          aria-label={m.chat_imageBlock_viewFullSize_ariaLabel({ alt: imageName })}
-        >
-          <Fa icon={faExpand} size="sm" />
-        </button>
-      {/if}
-      <ImageActionsMenu {imageUrl} {imageName} triggerClass="data-[state=open]:opacity-100" />
-    </div>
+    {#if unavailableReason}
+      <MediaUnavailable
+        name={imageName}
+        reason={unavailableReason}
+        path={unavailablePath}
+        workspaceId={unavailableWorkspaceId}
+      />
+    {:else}
+      <img
+        src={imageUrl}
+        alt={imageName}
+        title={node.attrs.title ?? undefined}
+        class="note-image max-w-full rounded-md"
+        ondblclick={handleImageDoubleClick}
+        onerror={() => (failedImageUrl = imageUrl)}
+        draggable="true"
+      />
+      <div
+        class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+        contenteditable="false"
+      >
+        {#if editor.isEditable}
+          <button
+            type="button"
+            class="flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring"
+            onclick={openLightbox}
+            aria-label={m.chat_imageBlock_viewFullSize_ariaLabel({ alt: imageName })}
+          >
+            <Fa icon={faExpand} size="sm" />
+          </button>
+        {/if}
+        <ImageActionsMenu {imageUrl} {imageName} triggerClass="data-[state=open]:opacity-100" />
+      </div>
+    {/if}
   </div>
 </NodeViewWrapper>
 

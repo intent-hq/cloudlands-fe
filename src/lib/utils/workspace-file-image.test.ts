@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   intentFileImageUrlToWorkspaceFileUrl,
   intentFileMediaUrlToWorkspaceFile,
+  parseIntentFileTarget,
   rewriteIntentFileImageSrcs,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
@@ -100,6 +101,14 @@ describe('intentFileMediaUrlToWorkspaceFile', () => {
       'intent://local/file/out/demo.mp4',
     );
   });
+
+  it('parses a safe workspace file target without requiring a supported media extension', () => {
+    expect(parseIntentFileTarget('intent://local/file/art/logo.svg', WS)).toEqual({
+      workspaceId: WS,
+      path: 'art/logo.svg',
+      encodedPath: 'art/logo.svg',
+    });
+  });
 });
 
 describe('rewriteIntentFileImageSrcs', () => {
@@ -151,6 +160,14 @@ describe('rewriteIntentFileImageSrcs', () => {
     const html = '<img src="intent://local/file/../x.png" alt="">';
 
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
+  });
+
+  it.each(['svg', 'mov'])('marks unsupported %s media for a viewer placeholder', (extension) => {
+    const html = `<img src="intent://local/file/out/demo.${extension}" alt="demo">`;
+
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
+      `<img src="intent://local/file/out/demo.${extension}" alt="demo" data-media-unsupported="${extension}">`,
+    );
   });
 
   it('does not rewrite intent URLs outside img src attributes', () => {

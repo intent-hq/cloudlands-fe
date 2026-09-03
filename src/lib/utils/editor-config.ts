@@ -453,6 +453,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         NoteImage.configure({
           inline: false,
           allowBase64: true,
+          workspaceId: workspace?.id,
           HTMLAttributes: {
             class: 'note-image max-w-full rounded-md',
           },
@@ -866,6 +867,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         NoteImage.configure({
           inline: false,
           allowBase64: true,
+          workspaceId: workspace?.id,
           HTMLAttributes: {
             class: 'note-image max-w-full rounded-md',
           },

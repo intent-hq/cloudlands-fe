@@ -5,7 +5,7 @@
  * EditorView is constructed for chat transcript messages.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import MarkdownViewer from '../MarkdownViewer.svelte';
 
 describe('MarkdownViewer static rendering', () => {
@@ -79,6 +79,59 @@ describe('MarkdownViewer static rendering', () => {
 
     await fireEvent.click(video);
     expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('replaces a missing workspace image with its file placeholder and actions', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![missing](intent://local/file/out/missing%20image.png)',
+        workspaceId: 'ws-abc',
+      },
+    });
+    await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
+    const image = container.querySelector<HTMLImageElement>('img')!;
+
+    await fireEvent.error(image);
+
+    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing image.png'));
+  });
+
+  it('replaces unsupported workspace media with an unsupported placeholder', async () => {
+    render(MarkdownViewer, {
+      props: {
+        content: '![logo](intent://local/file/assets/logo.svg)',
+        workspaceId: 'ws-abc',
+      },
+    });
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toContain('logo');
+    expect(status.textContent).toContain('not supported');
+    expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
+  });
+
+  it('replaces a missing workspace video with its file placeholder', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/out/demo.mp4)',
+        workspaceId: 'ws-abc',
+      },
+    });
+    await waitFor(() => expect(container.querySelector('video')).toBeTruthy());
+    const video = container.querySelector<HTMLVideoElement>('video')!;
+
+    await fireEvent.error(video);
+
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('demo');
+    expect(status.textContent).toContain('File is missing');
   });
 
   it('renders Mermaid fenced blocks as visible source when requested', async () => {

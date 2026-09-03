@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { mount, onDestroy, unmount } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
@@ -9,6 +9,9 @@
   import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
+  import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
+  import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
 
   import {
     openWorkspaceFile,
@@ -17,6 +20,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+
+  type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
 
   interface Props {
     content: string;
@@ -327,6 +332,74 @@
     if (!imageActionsOpen) hoveredImage = null;
   }
 
+  function mediaFallbacks(node: HTMLElement) {
+    const mountedPlaceholders = new Map<HTMLElement, ReturnType<typeof mount>>();
+
+    function replaceMedia(
+      media: HTMLImageElement | HTMLVideoElement,
+      reason: MediaUnavailableReason,
+    ) {
+      const source = media.getAttribute('src') || '';
+      const workspaceFile = parseWorkspaceFileImageUrl(source);
+      const intentFile = parseIntentFileTarget(source, workspaceId);
+      const path = workspaceFile?.path ?? intentFile?.path;
+      const owningWorkspaceId = workspaceFile?.workspaceId ?? intentFile?.workspaceId;
+      const name =
+        media.getAttribute('data-name') ||
+        media.getAttribute('alt') ||
+        path?.split('/').pop() ||
+        undefined;
+      const host = document.createElement(media instanceof HTMLVideoElement ? 'div' : 'span');
+      host.className = 'media-unavailable-host';
+      media.replaceWith(host);
+      if (hoveredImage === media) hoveredImage = null;
+      mountedPlaceholders.set(
+        host,
+        mount(MediaUnavailable, {
+          target: host,
+          props: { name, reason, path, workspaceId: owningWorkspaceId },
+        }),
+      );
+    }
+
+    function reconcile() {
+      for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
+        replaceMedia(media, 'unsupported');
+      }
+      for (const [host, component] of mountedPlaceholders) {
+        if (!node.contains(host)) {
+          void unmount(component);
+          mountedPlaceholders.delete(host);
+        }
+      }
+    }
+
+    function handleMediaError(event: Event) {
+      const media = event.target;
+      if (!(media instanceof HTMLImageElement || media instanceof HTMLVideoElement)) return;
+      const source = media.getAttribute('src') || '';
+      const reason =
+        source.startsWith('workspace-file://') || source.startsWith('workspace-asset://')
+          ? 'missing'
+          : 'load-failed';
+      replaceMedia(media, reason);
+    }
+
+    const observer = new MutationObserver(reconcile);
+    observer.observe(node, { childList: true, subtree: true });
+    node.addEventListener('error', handleMediaError, true);
+    queueMicrotask(reconcile);
+
+    return {
+      destroy() {
+        observer.disconnect();
+        node.removeEventListener('error', handleMediaError, true);
+        for (const component of mountedPlaceholders.values()) void unmount(component);
+        mountedPlaceholders.clear();
+      },
+    };
+  }
+
   // PERF: Single reusable link click handler - shared between streaming and static content
   // Routes all link clicks through the unified link handler for consistent behavior:
   // - Click → embedded browser panel (for http/https)
@@ -506,6 +579,7 @@
     class="markdown-viewer streaming-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={streamingContentElement}
+    use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
     onmouseover={handleImageHover}
@@ -528,6 +602,7 @@
     class="markdown-viewer static-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={staticContentElement}
+    use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
     onmouseover={handleImageHover}

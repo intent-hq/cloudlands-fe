@@ -26,6 +26,12 @@ export interface WorkspaceFileMedia {
   kind: WorkspaceFileMediaKind;
 }
 
+export interface IntentFileTarget {
+  workspaceId: string;
+  path: string;
+  encodedPath: string;
+}
+
 function mediaKindForPath(filePath: string): WorkspaceFileMediaKind | null {
   if (IMAGE_EXTENSION_RE.test(filePath)) return 'image';
   if (VIDEO_EXTENSION_RE.test(filePath)) return 'video';
@@ -52,14 +58,13 @@ function isValidWorkspaceId(id: string): boolean {
  * URL into a `workspace-file://{workspaceId}/{percent-encoded-path}` URL.
  *
  * Returns null when the URL is not a workspace file link, the path is unsafe
- * (traversal, empty or absolute segments, drive letters), the extension is not
- * in the image allowlist, or the workspace ID cannot be resolved and verified
- * against `currentWorkspaceId`.
+ * (traversal, empty or absolute segments, drive letters), or the workspace ID
+ * cannot be resolved and verified against `currentWorkspaceId`.
  */
-export function intentFileMediaUrlToWorkspaceFile(
+export function parseIntentFileTarget(
   intentUrl: string,
   currentWorkspaceId?: string,
-): WorkspaceFileMedia | null {
+): IntentFileTarget | null {
   if (!intentUrl.startsWith('intent://')) return null;
 
   // Parse raw (un-normalized) segments so "." / ".." dot segments are
@@ -109,11 +114,19 @@ export function intentFileMediaUrlToWorkspaceFile(
   // Reject Windows drive-letter prefixes (C:foo, C:/foo) like the link handler.
   if (/^[A-Za-z]:/.test(decodedSegments[0])) return null;
 
-  const kind = mediaKindForPath(decodedSegments[decodedSegments.length - 1]);
-  if (!kind) return null;
-
   const encodedPath = decodedSegments.map((s) => encodeURIComponent(s)).join('/');
-  return { url: `workspace-file://${workspaceId}/${encodedPath}`, kind };
+  return { workspaceId, path: decodedSegments.join('/'), encodedPath };
+}
+
+export function intentFileMediaUrlToWorkspaceFile(
+  intentUrl: string,
+  currentWorkspaceId?: string,
+): WorkspaceFileMedia | null {
+  const target = parseIntentFileTarget(intentUrl, currentWorkspaceId);
+  if (!target) return null;
+  const kind = mediaKindForPath(target.path);
+  if (!kind) return null;
+  return { url: `workspace-file://${target.workspaceId}/${target.encodedPath}`, kind };
 }
 
 /** Backward-compatible image-only URL conversion. */
@@ -204,8 +217,17 @@ export function rewriteIntentFileImageSrcs(html: string, currentWorkspaceId?: st
     // marked entity-encodes ampersands inside attribute values
     const src = srcMatch[1].replace(/&amp;/g, '&');
     if (!src.startsWith('intent://')) return match;
-    const media = intentFileMediaUrlToWorkspaceFile(src, currentWorkspaceId);
-    if (!media) return match;
+    const target = parseIntentFileTarget(src, currentWorkspaceId);
+    if (!target) return match;
+    const kind = mediaKindForPath(target.path);
+    if (!kind) {
+      const extension = target.path.split('.').pop()?.toLowerCase() ?? '';
+      return match.replace(/>$/, ` data-media-unsupported="${escapeAttr(extension)}">`);
+    }
+    const media: WorkspaceFileMedia = {
+      url: `workspace-file://${target.workspaceId}/${target.encodedPath}`,
+      kind,
+    };
     if (media.kind === 'image') {
       return match.replace(srcMatch[1], escapeAttr(media.url));
     }

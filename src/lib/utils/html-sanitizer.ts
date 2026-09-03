@@ -254,6 +254,7 @@ export function sanitizeMarkdownHTML(html: string): string {
       'playsinline',
       'poster',
       'data-name', // Video attributes
+      'data-media-unsupported', // Unsupported workspace media placeholder marker
       'data-primitive',
       'data-primitive-type',
       'data-primitive-id',

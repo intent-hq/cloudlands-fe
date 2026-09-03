@@ -79,7 +79,7 @@ describe('ChatVideoBlock', () => {
     expect(transcript.scrollTop).toBe(23);
   });
 
-  it('keeps a stable placeholder when a frame is unavailable and rejects unsafe posters', async () => {
+  it('shows a load-failed placeholder when a remote frame is unavailable', async () => {
     render(ChatVideoBlock, {
       props: { source: remoteSource, poster: 'javascript:alert(1)' },
     });
@@ -87,9 +87,33 @@ describe('ChatVideoBlock', () => {
     const snapshot = playButton.querySelector('video')!;
     expect(snapshot.getAttribute('poster')).toBeNull();
     await fireEvent.error(snapshot);
-    expect(snapshot.className).toContain('opacity-0');
-    expect(playButton.querySelector('svg')).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toContain('preview unavailable');
+    expect(screen.getByRole('status').textContent).toContain('could not load');
+    expect(screen.queryByRole('button', { name: /play/i })).toBeNull();
+  });
+
+  it('shows workspace file actions when a workspace video is missing', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(ChatVideoBlock, {
+      props: {
+        source: {
+          kind: 'workspace',
+          url: 'workspace-file://ws-1/out/missing%20demo.mp4',
+          mimeType: 'video/mp4',
+        },
+        name: 'missing demo.mp4',
+      },
+    });
+
+    const video = screen.getByRole('button', { name: /play/i }).querySelector('video')!;
+    await fireEvent.error(video);
+    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing demo.mp4'));
+    expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
   });
 
   it('accepts a workspace-file poster', () => {

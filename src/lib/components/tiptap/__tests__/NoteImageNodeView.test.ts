@@ -6,16 +6,24 @@ import NoteImageNodeView from '../NoteImageNodeView.svelte';
 
 afterEach(cleanup);
 
-function makeProps(editable: boolean): NodeViewProps {
+function makeProps(
+  editable: boolean,
+  attrs: Record<string, unknown> = {
+    src: 'workspace-asset://asset-123',
+    alt: 'Note image',
+    title: null,
+  },
+): NodeViewProps {
   const editorElement = document.createElement('div');
   editorElement.tabIndex = 0;
   document.body.appendChild(editorElement);
   return {
     node: {
-      attrs: { src: 'workspace-asset://asset-123', alt: 'Note image', title: null },
+      attrs,
     },
     selected: false,
     editor: { isEditable: editable, view: { dom: editorElement } },
+    extension: { options: { workspaceId: 'workspace-1' } },
     updateAttributes: vi.fn(),
   } as unknown as NodeViewProps;
 }
@@ -38,5 +46,37 @@ describe('NoteImageNodeView', () => {
     await fireEvent.dblClick(image);
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
+  it('replaces a missing workspace file with path actions', async () => {
+    render(NoteImageNodeView, {
+      props: makeProps(false, {
+        src: 'workspace-file://workspace-1/docs/missing.png',
+        alt: 'Missing image',
+        title: null,
+      }),
+    });
+
+    await fireEvent.error(screen.getByRole('img', { name: 'Missing image' }));
+
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('missing');
+    expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
+  });
+
+  it('renders unsupported note images as a placeholder without loading them', () => {
+    render(NoteImageNodeView, {
+      props: makeProps(false, {
+        src: 'intent://local/file/art/logo.svg',
+        alt: 'Vector logo',
+        title: null,
+        mediaUnsupported: 'svg',
+      }),
+    });
+
+    expect(screen.queryByRole('img', { name: 'Vector logo' })).toBeNull();
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('unsupported');
+    expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
   });
 });
