@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   /**
    * EmbeddedBrowser - Main content component using Electron's webview tag
    *
@@ -58,6 +59,7 @@
   import { parseElementPickerMessage } from './element-picker-payload';
   import { elementPickerScript } from './element-picker-script';
   import type { EmbeddedBrowserWebview } from './embedded-browser-webview';
+  import { observeToolbarCollapse, type ToolbarCollapseState } from './toolbar-collapse';
 
   const logger = createLogger('EmbeddedBrowser');
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
@@ -176,6 +178,11 @@
   let webviewReady = $state(false);
   let consoleErrorCount = $state(0);
   let isPickingElement = $state(false);
+  let toolbarCollapse = $state<ToolbarCollapseState>('full');
+
+  function handleToolbarCollapse(state: ToolbarCollapseState): void {
+    toolbarCollapse = state;
+  }
 
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
@@ -1009,33 +1016,39 @@
 
 <div class="flex flex-col h-full bg-background">
   <!-- Browser Toolbar -->
-  <div class="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-muted/30 px-2">
+  <div
+    class="browser-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-border bg-muted/30 px-2"
+    data-browser-toolbar
+    use:observeToolbarCollapse={handleToolbarCollapse}
+  >
     <!-- Navigation controls -->
     <div class="flex gap-0.5">
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={goBack}
-        disabled={!canGoBack}
-        tooltip={m.browser_embedded_goBack_tooltip()}
-        tooltipShortcut="alt+←"
-        tooltipSide="bottom"
-        aria-label={m.browser_embedded_goBack_ariaLabel()}
-      >
-        <Fa icon={faArrowLeft} size="xs" />
-      </Button>
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={goForward}
-        disabled={!canGoForward}
-        tooltip={m.browser_embedded_goForward_tooltip()}
-        tooltipShortcut="alt+→"
-        tooltipSide="bottom"
-        aria-label={m.browser_embedded_goForward_ariaLabel()}
-      >
-        <Fa icon={faArrowRight} size="xs" />
-      </Button>
+      <div class="browser-toolbar-history flex gap-0.5">
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={goBack}
+          disabled={!canGoBack}
+          tooltip={m.browser_embedded_goBack_tooltip()}
+          tooltipShortcut="alt+←"
+          tooltipSide="bottom"
+          aria-label={m.browser_embedded_goBack_ariaLabel()}
+        >
+          <Fa icon={faArrowLeft} size="xs" />
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={goForward}
+          disabled={!canGoForward}
+          tooltip={m.browser_embedded_goForward_tooltip()}
+          tooltipShortcut="alt+→"
+          tooltipSide="bottom"
+          aria-label={m.browser_embedded_goForward_ariaLabel()}
+        >
+          <Fa icon={faArrowRight} size="xs" />
+        </Button>
+      </div>
       <Button
         variant="ghost-light"
         size="icon-xs"
@@ -1087,7 +1100,9 @@
         >
           <span class="w-full truncate text-sm font-medium text-foreground">{identityTitle}</span>
           {#if pageHostname}
-            <span class="flex w-full items-center gap-1 text-xs text-muted-foreground">
+            <span
+              class="browser-toolbar-hostname flex w-full items-center gap-1 text-xs text-muted-foreground"
+            >
               {#if isSecure}
                 <Fa icon={faLock} class="shrink-0 text-emerald-500" size="xs" />
               {/if}
@@ -1099,7 +1114,7 @@
     </div>
 
     <!-- Element picker -->
-    <div class="h-7 w-7 shrink-0" data-browser-select-element-slot>
+    <div class="browser-toolbar-picker h-7 w-7 shrink-0" data-browser-select-element-slot>
       <BrowserElementPickerButton
         active={isPickingElement}
         disabled={!webviewReady || !tabId}
@@ -1108,7 +1123,7 @@
     </div>
 
     <!-- Viewport mode -->
-    <div class="flex shrink-0 items-center" data-browser-viewport-slot>
+    <div class="browser-toolbar-viewport flex shrink-0 items-center" data-browser-viewport-slot>
       <BrowserViewportMenu
         {viewport}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
@@ -1119,6 +1134,16 @@
       <BrowserOverflowMenu
         errorCount={consoleErrorCount}
         disabled={!webviewReady}
+        collapsed={toolbarCollapse === 'controls-collapsed'}
+        {canGoBack}
+        {canGoForward}
+        canSelectElement={webviewReady && !!tabId}
+        selectingElement={isPickingElement}
+        {viewport}
+        onGoBack={goBack}
+        onGoForward={goForward}
+        onToggleElementPicker={() => void toggleElementPicker()}
+        onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
         onOpenExternal={openInExternalBrowser}
         onCopyUrl={copyCurrentUrl}
         onScreenshot={captureScreenshot}
@@ -1197,3 +1222,23 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .browser-toolbar {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 559px) {
+    .browser-toolbar-hostname {
+      display: none;
+    }
+  }
+
+  @container (max-width: 399px) {
+    .browser-toolbar-history,
+    .browser-toolbar-picker,
+    .browser-toolbar-viewport {
+      display: none;
+    }
+  }
+</style>

@@ -53,6 +53,29 @@ import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { navigateToAgent } from '$lib/utils/workspace-navigation';
 import { elementPickerScript } from './element-picker-script';
 
+class ToolbarResizeObserver {
+  static instances: ToolbarResizeObserver[] = [];
+  target?: Element;
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    ToolbarResizeObserver.instances.push(this);
+  }
+
+  observe(target: Element) {
+    this.target = target;
+  }
+
+  disconnect() {}
+
+  fire(width: number) {
+    if (!this.target) throw new Error('ResizeObserver target was not observed');
+    this.callback(
+      [{ target: this.target, contentRect: { width } } as unknown as ResizeObserverEntry],
+      this as unknown as ResizeObserver,
+    );
+  }
+}
+
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => {
   cleanup();
@@ -541,6 +564,38 @@ describe('EmbeddedBrowser', () => {
           panel,
         });
       }
+    });
+
+    it('makes collapsed controls reachable through overflow below 400px', async () => {
+      ToolbarResizeObserver.instances = [];
+      vi.stubGlobal('ResizeObserver', ToolbarResizeObserver);
+      const onViewportChange = vi.fn();
+      const { webview } = await renderReadyBrowser({ onViewportChange });
+      const toolbarObserver = ToolbarResizeObserver.instances.find((observer) =>
+        observer.target?.hasAttribute('data-browser-toolbar'),
+      );
+
+      toolbarObserver?.fire(399);
+      await openOverflow();
+      expect(screen.getByRole('menuitem', { name: 'Go back' })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: 'Go forward' })).toBeTruthy();
+      const picker = screen.getByRole('menuitem', { name: 'Select an element from the page' });
+      await fireEvent.click(picker);
+      await waitFor(() =>
+        expect(webview.executeJavaScript).toHaveBeenCalledWith(elementPickerScript),
+      );
+
+      await openOverflow();
+      const viewportMenu = screen.getByRole('menuitem', { name: 'Viewport mode: Fit panel' });
+      viewportMenu.focus();
+      await fireEvent.keyDown(viewportMenu, { key: 'ArrowRight' });
+      await fireEvent.click(await screen.findByRole('menuitemradio', { name: /iPhone SE/ }));
+      expect(onViewportChange).toHaveBeenCalledWith({
+        mode: 'preset',
+        presetId: 'iphone-se',
+        width: 375,
+        height: 667,
+      });
     });
 
     it('dispatches the visible page as a PNG capture without an element', async () => {

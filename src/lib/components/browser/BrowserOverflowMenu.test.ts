@@ -43,4 +43,43 @@ describe('BrowserOverflowMenu', () => {
     expect(copy.nextElementSibling).toBe(firstSeparator);
     expect(firstSeparator.nextElementSibling).toBe(screenshot);
   });
+
+  it('places collapsed toolbar actions before the existing menu section', async () => {
+    render(BrowserOverflowMenu, {
+      props: {
+        collapsed: true,
+        canGoBack: true,
+        canGoForward: true,
+        canSelectElement: true,
+        onGoBack: vi.fn(),
+        onGoForward: vi.fn(),
+        onToggleElementPicker: vi.fn(),
+        onViewportChange: vi.fn(),
+        onOpenExternal: vi.fn(),
+        onCopyUrl: vi.fn(),
+        onScreenshot: vi.fn(),
+        onOpenConsole: vi.fn(),
+        onOpenSource: vi.fn(),
+        onOpenInspector: vi.fn(),
+        onReloadWithoutCache: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByTestId('browser-overflow-trigger'));
+
+    const back = await screen.findByRole('menuitem', { name: 'Go back' });
+    const forward = screen.getByRole('menuitem', { name: 'Go forward' });
+    const picker = screen.getByRole('menuitem', { name: 'Select an element from the page' });
+    const viewport = screen.getByRole('menuitem', { name: 'Viewport mode: Fit panel' });
+    const external = screen.getByRole('menuitem', { name: 'Open in external browser' });
+
+    expect(screen.getAllByRole('menuitem').slice(0, 5)).toEqual([
+      back,
+      forward,
+      picker,
+      viewport,
+      external,
+    ]);
+    expect(viewport.nextElementSibling?.getAttribute('data-slot')).toBe('menu-separator');
+  });
 });
