@@ -1,31 +1,30 @@
 <script lang="ts" module>
   import { definePreview } from './preview-definition';
 
-  interface BrowserTabChipsPreviewProps {
+  interface BrowserTabsMenuPreviewProps {
     count: number;
     width: number;
   }
 
-  export const preview = definePreview<BrowserTabChipsPreviewProps>({
-    id: 'browser-tab-chips',
+  export const preview = definePreview<BrowserTabsMenuPreviewProps>({
+    id: 'browser-tabs-menu',
     title: 'Browser tabs in an agent header',
     defaultState: 'five-tabs',
     states: {
       'one-tab': { props: { count: 1, width: 640 } },
       'three-tabs': { props: { count: 3, width: 640 } },
       'five-tabs': { props: { count: 5, width: 640 } },
-      narrow: { props: { count: 5, width: 380 } },
     },
   });
 </script>
 
 <script lang="ts">
-  import BrowserTabChips from '$lib/components/chat/BrowserTabChips.svelte';
+  import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import type { BrowserTabEntry } from '$lib/components/chat/browser-tab-entries';
 
-  let { count, width }: BrowserTabChipsPreviewProps = $props();
-  const workspaceId = 'browser-tab-chips-preview';
-  const agentId = 'browser-tab-chips-agent';
+  let { count, width }: BrowserTabsMenuPreviewProps = $props();
+  const workspaceId = 'browser-tabs-menu-preview';
+  const agentId = 'browser-tabs-menu-agent';
   const labels = ['Intent docs', 'Dashboard', 'Pull request', 'Long reference page', 'Preview'];
 
   function buildEntries(entryCount: number): BrowserTabEntry[] {
@@ -53,7 +52,7 @@
 <section
   class="overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-sm"
   style:width={`${width}px`}
-  data-browser-tab-chips-preview
+  data-browser-tabs-menu-preview
   data-preview-count={count}
 >
   <div
@@ -63,7 +62,7 @@
     <span class="h-2.5 w-24 shrink rounded-full bg-muted"></span>
     <span class="min-w-0 flex-1"></span>
     <span class="flex min-w-0 items-center gap-1.5">
-      <BrowserTabChips {workspaceId} {agentId} {entries} />
+      <BrowserTabsMenu {workspaceId} {agentId} {entries} />
       <span class="size-6 shrink-0 rounded-md bg-muted/60"></span>
     </span>
   </div>

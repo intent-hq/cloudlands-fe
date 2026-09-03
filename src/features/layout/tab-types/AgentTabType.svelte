@@ -20,7 +20,7 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
-  import BrowserTabChips from '$lib/components/chat/BrowserTabChips.svelte';
+  import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import type { ChatNavigationState } from '$lib/components/chat/chat-message-navigation';
   import * as Menu from '$lib/components/ui/menu';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
@@ -240,7 +240,7 @@
 {#snippet agentPrimaryActions()}
   <div class="flex min-w-0 items-center gap-1.5">
     {#if tab.agentId}
-      <BrowserTabChips {workspaceId} agentId={tab.agentId} />
+      <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
     {/if}
     <ChatMessageNavigator
       messages={chatNavigationState.userMessages}

@@ -1,21 +1,16 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { dispatchMock, focusPanelMock, layoutState, resizeState, setActiveTabMock } = vi.hoisted(
-  () => ({
-    dispatchMock: vi.fn(),
-    focusPanelMock: vi.fn(),
-    setActiveTabMock: vi.fn(),
-    layoutState: {
-      panels: {} as Record<string, any>,
-      hiddenTabs: [] as any[],
-    },
-    resizeState: {
-      callback: null as ResizeObserverCallback | null,
-    },
-  }),
-);
+const { dispatchMock, focusPanelMock, layoutState, setActiveTabMock } = vi.hoisted(() => ({
+  dispatchMock: vi.fn(),
+  focusPanelMock: vi.fn(),
+  setActiveTabMock: vi.fn(),
+  layoutState: {
+    panels: {} as Record<string, any>,
+    hiddenTabs: [] as any[],
+  },
+}));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({
@@ -41,7 +36,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => {
   return { selectPanels, selectHiddenTabs };
 });
 
-import BrowserTabChips from '../BrowserTabChips.svelte';
+import BrowserTabsMenu from '../BrowserTabsMenu.svelte';
 import type { BrowserTabEntry } from '../browser-tab-entries';
 import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
@@ -82,30 +77,9 @@ function seedLayout(visibleCount: number, hiddenCount = 0) {
   );
 }
 
-function renderChips() {
-  return render(BrowserTabChips, { workspaceId: 'ws-1', agentId: 'agent-1' });
+function renderMenu() {
+  return render(BrowserTabsMenu, { workspaceId: 'ws-1', agentId: 'agent-1' });
 }
-
-async function resizeHeader(width: number) {
-  await waitFor(() => expect(resizeState.callback).not.toBeNull());
-  resizeState.callback?.(
-    [{ contentRect: { width } } as unknown as ResizeObserverEntry],
-    {} as ResizeObserver,
-  );
-}
-
-beforeEach(() => {
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      constructor(callback: ResizeObserverCallback) {
-        resizeState.callback = callback;
-      }
-      observe() {}
-      disconnect() {}
-    },
-  );
-});
 
 afterEach(() => {
   cleanup();
@@ -114,15 +88,13 @@ afterEach(() => {
   setActiveTabMock.mockClear();
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
-  resizeState.callback = null;
-  vi.unstubAllGlobals();
 });
 
-describe('BrowserTabChips', () => {
+describe('BrowserTabsMenu', () => {
   it('renders nothing when the agent owns no browser tabs', () => {
     seedLayout(0);
-    renderChips();
-    expect(screen.queryByTestId('browser-tab-chips')).toBeNull();
+    renderMenu();
+    expect(screen.queryByTestId('browser-tabs-trigger')).toBeNull();
   });
 
   it('renders preview entries without routing clicks through the product store', async () => {
@@ -141,14 +113,18 @@ describe('BrowserTabChips', () => {
       },
     ];
 
-    render(BrowserTabChips, { workspaceId: 'ws-1', agentId: 'agent-1', entries });
-    const chips = screen.getAllByTestId('browser-tab-chip');
-    expect(chips.map((chip) => chip.getAttribute('data-browser-tab-id'))).toEqual([
+    render(BrowserTabsMenu, { workspaceId: 'ws-1', agentId: 'agent-1', entries });
+    await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const items = await screen.findAllByTestId('browser-tabs-menu-item');
+    expect(items.map((item) => item.getAttribute('data-browser-tab-id'))).toEqual([
       'preview-visible',
       'preview-hidden',
     ]);
-    await fireEvent.click(chips[0]);
-    await fireEvent.click(chips[1]);
+    await fireEvent.click(items[0]);
+
+    await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const reopenedItems = await screen.findAllByTestId('browser-tabs-menu-item');
+    await fireEvent.click(reopenedItems[1]);
 
     expect(setActiveTabMock).not.toHaveBeenCalled();
     expect(focusPanelMock).not.toHaveBeenCalled();
@@ -156,27 +132,23 @@ describe('BrowserTabChips', () => {
   });
 
   it.each([
-    [1, 1, null],
-    [3, 3, null],
-    [5, 3, '+2'],
-  ])('renders %i owned tabs as %i direct chips with overflow %s', (count, direct, overflow) => {
+    [1, '1 browser tab'],
+    [3, '3 browser tabs'],
+    [5, '5 browser tabs'],
+  ])('renders %i owned tabs as one labeled trigger', (count, label) => {
     seedLayout(count);
-    renderChips();
+    renderMenu();
 
-    expect(screen.getAllByTestId('browser-tab-chip')).toHaveLength(direct);
-    if (overflow) {
-      expect(screen.getByTestId('browser-tab-chips-overflow').textContent?.trim()).toBe(overflow);
-    } else {
-      expect(screen.queryByTestId('browser-tab-chips-overflow')).toBeNull();
-    }
+    expect(screen.getAllByTestId('browser-tabs-trigger')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: label })).toBeTruthy();
   });
 
-  it('lists all owned tabs in visible-then-hidden order from the overflow menu', async () => {
+  it('lists all owned tabs in visible-then-hidden order', async () => {
     seedLayout(4, 1);
-    renderChips();
+    renderMenu();
 
-    await fireEvent.click(screen.getByTestId('browser-tab-chips-overflow'));
-    const items = await screen.findAllByTestId('browser-tab-chips-menu-item');
+    await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const items = await screen.findAllByTestId('browser-tabs-menu-item');
     expect(items.map((item) => item.getAttribute('data-browser-tab-id'))).toEqual([
       'visible-1',
       'visible-2',
@@ -186,24 +158,14 @@ describe('BrowserTabChips', () => {
     ]);
   });
 
-  it('collapses below 400px to one count chip opening the full menu', async () => {
-    seedLayout(3);
-    renderChips();
-    await resizeHeader(399);
-
-    await waitFor(() => expect(screen.queryAllByTestId('browser-tab-chip')).toHaveLength(0));
-    expect(screen.getByTestId('browser-tab-chips-overflow').textContent?.trim()).toBe('+3');
-    await fireEvent.click(screen.getByTestId('browser-tab-chips-overflow'));
-    expect(await screen.findAllByTestId('browser-tab-chips-menu-item')).toHaveLength(3);
-  });
-
   it('marks hidden tabs as dimmed and reveals them away from the conversation panel', async () => {
     seedLayout(1, 1);
-    renderChips();
+    renderMenu();
+    await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
 
     const hidden = screen
-      .getAllByTestId('browser-tab-chip')
-      .find((chip) => chip.getAttribute('data-browser-tab-id') === 'hidden-1')!;
+      .getAllByTestId('browser-tabs-menu-item')
+      .find((item) => item.getAttribute('data-browser-tab-id') === 'hidden-1')!;
     expect(hidden.getAttribute('data-hidden')).toBe('true');
     expect(hidden.classList).toContain('opacity-60');
     await fireEvent.click(hidden);
@@ -221,9 +183,10 @@ describe('BrowserTabChips', () => {
 
   it('activates and focuses visible tabs through the panel layout manager', async () => {
     seedLayout(1);
-    renderChips();
+    renderMenu();
 
-    await fireEvent.click(screen.getByTestId('browser-tab-chip'));
+    await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    await fireEvent.click(await screen.findByTestId('browser-tabs-menu-item'));
     expect(setActiveTabMock).toHaveBeenCalledWith('visible-1', 'browser');
     expect(focusPanelMock).toHaveBeenCalledWith('browser');
     expect(dispatchMock).not.toHaveBeenCalled();

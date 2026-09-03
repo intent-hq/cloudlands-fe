@@ -381,12 +381,12 @@ describe('AgentTabType primary header actions', () => {
     });
 
     const primary = await screen.findByTestId('header-primary-actions');
-    const chips = await screen.findByTestId('browser-tab-chips');
+    const browserTabs = await screen.findByTestId('browser-tabs-trigger');
     const navigator = await screen.findByTestId('chat-header-navigation-controls');
-    expect(primary.contains(chips)).toBe(true);
+    expect(primary.contains(browserTabs)).toBe(true);
     expect(primary.contains(navigator)).toBe(true);
     expect(
-      chips.compareDocumentPosition(navigator) & Node.DOCUMENT_POSITION_FOLLOWING,
+      browserTabs.compareDocumentPosition(navigator) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 });
