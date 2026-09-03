@@ -165,7 +165,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function isPlanEntry(value: unknown): value is PlanEntry {
+function isPlanEntry(value: unknown): value is PlanEntry {
   if (!isRecord(value)) return false;
   return (
     typeof value.content === 'string' &&

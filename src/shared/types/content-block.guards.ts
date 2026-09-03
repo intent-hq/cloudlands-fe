@@ -5,8 +5,7 @@
  * These guards narrow the type and provide type safety for specific block types.
  */
 
-import type { ContentBlock, PlanContentBlock, VideoContentBlock } from './content-block';
-import { isPlanContentBlock as isPlanContentBlockImpl } from './content-block';
+import type { ContentBlock, VideoContentBlock } from './content-block';
 
 /**
  * Check if a ContentBlock is a text block
@@ -45,11 +44,6 @@ export function isToolResultBlock(
  */
 export function isThinkingBlock(block: ContentBlock): block is ContentBlock {
   return block.type === 'thinking';
-}
-
-/** Check if a ContentBlock is a bounded ACP execution-plan snapshot. */
-export function isPlanContentBlock(block: ContentBlock): block is PlanContentBlock {
-  return isPlanContentBlockImpl(block);
 }
 
 /**
