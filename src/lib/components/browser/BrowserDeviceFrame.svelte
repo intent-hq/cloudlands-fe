@@ -106,7 +106,7 @@
   >
     {@render children?.()}
     <span
-      class="pointer-events-none absolute bottom-1 left-1/2 z-10 -translate-x-1/2 rounded bg-background/90 px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm backdrop-blur"
+      class="pointer-events-none absolute bottom-1 left-1/2 z-10 -translate-x-1/2 rounded bg-background/90 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur"
       data-browser-viewport-readout
     >
       {dimensionsLabel}

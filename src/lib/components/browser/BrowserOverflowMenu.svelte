@@ -15,7 +15,7 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import Input from '$lib/components/ui/input/input.svelte';
+  import { Input } from '$lib/components/ui/input';
   import * as Menu from '$lib/components/ui/menu';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -154,7 +154,7 @@
         {#if errorCount > 0}
           <Badge
             variant="destructive"
-            class="absolute -right-1.5 -top-1.5 h-4 min-w-4 px-1 text-[10px] leading-none"
+            class="absolute -right-1.5 -top-1.5 h-4 min-w-4 px-1 text-xs leading-none"
             data-testid="browser-console-error-badge"
           >
             {errorCount > 9 ? '9+' : formatInteger(errorCount)}

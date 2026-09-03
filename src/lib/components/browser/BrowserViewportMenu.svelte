@@ -2,7 +2,7 @@
   import Fa from 'svelte-fa';
   import { faChevronDown, faRotate } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
-  import Input from '$lib/components/ui/input/input.svelte';
+  import { Input } from '$lib/components/ui/input';
   import * as Menu from '$lib/components/ui/menu';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';

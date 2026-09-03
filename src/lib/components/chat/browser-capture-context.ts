@@ -31,15 +31,20 @@ export function browserCaptureToContextItems(
   const label = element ? `<${element.tagName.toLowerCase()}> · ${host}` : capture.title || host;
   const details = [
     '<browser-element-capture>',
+    // i18n-ignore (structured agent context, not user-facing UI)
     `Page URL: ${capture.pageUrl}`,
+    // i18n-ignore (structured agent context, not user-facing UI)
     `Page title: ${capture.title}`,
     ...(element
       ? [
           `DOM path: ${element.domPath}`,
           `CSS selector: ${element.selector}`,
+          // i18n-ignore (structured agent context, not user-facing UI)
           `Text snippet: ${element.textSnippet}`,
+          // i18n-ignore (structured agent context, not user-facing UI)
           ...(element.sourceRef ? [`Source ref: ${element.sourceRef}`] : []),
           ...(viewport ? [`Viewport: ${viewport.width}×${viewport.height}`] : []),
+          // i18n-ignore (structured agent context, not user-facing UI)
           `Element bounds: ${element.rect.width}×${element.rect.height} at (${element.rect.x}, ${element.rect.y})`,
         ]
       : []),
