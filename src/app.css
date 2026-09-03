@@ -102,16 +102,17 @@ kbd {
   font-family: var(--font-ui);
 }
 
-/* Interactive elements use pointer cursors unless a more specific utility overrides them. */
-:where(button:not(:disabled), a[href], [role='button']:not([aria-disabled='true'])) {
-  cursor: pointer;
-}
-
+/* Interactive elements use pointer cursors by default. Layered so Tailwind cursor
+   utilities can override this semantic fallback. */
 /* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback.
    Layered so Tailwind utilities (e.g. `focus-visible:outline-none` from the Input
    component's `noFocusStyle` opt-out) can override these rules — unlayered author
    CSS would otherwise beat every layered utility under Tailwind v4. */
 @layer base {
+  :where(button:not(:disabled), a[href], [role='button']:not([aria-disabled='true'])) {
+    cursor: pointer;
+  }
+
   :focus:not(:focus-visible) {
     outline: none;
   }

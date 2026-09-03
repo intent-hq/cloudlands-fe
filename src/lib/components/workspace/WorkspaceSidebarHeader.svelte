@@ -479,7 +479,7 @@
         />
       {:else}
         <button
-          class="type-title relative z-10 cursor-pointer rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
+          class="type-title relative z-10 cursor-text rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                  transition-all duration-150 leading-normal line-clamp-3
                 focus-visible:outline focus-visible:outline-1
@@ -516,7 +516,7 @@
         placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
     {:else if workspace}
       <button
-        class="type-body cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+        class="type-body cursor-text rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                max-w-full overflow-hidden line-clamp-2 break-words whitespace-normal
                transition-all duration-150 leading-snug
                hover:text-foreground hover:opacity-80
@@ -578,7 +578,7 @@
               contentClass="border-0!"
               contentContainerClass="p-0! space-y-0!"
               showArrow={false}
-              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left leading-5 text-muted-foreground
+              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-text items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left leading-5 text-muted-foreground
                      transition-all duration-150 hover:text-foreground
                      focus-visible:outline focus-visible:outline-1
                      focus-visible:outline-ring focus-visible:outline-offset-[-1px]

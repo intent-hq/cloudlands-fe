@@ -151,7 +151,7 @@
     <button
       class={cn(
         textClass,
-        'relative z-10 bg-transparent border-none cursor-pointer text-left',
+        'relative z-10 bg-transparent border-none cursor-text text-left',
         'truncate transition-opacity hover:opacity-80',
         disabled && 'cursor-default opacity-50',
       )}
