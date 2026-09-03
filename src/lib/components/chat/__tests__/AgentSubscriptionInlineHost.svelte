@@ -37,6 +37,7 @@
     parentBackground?: ParentBackground;
     agentStateScenario?: AgentStateScenario;
     taskSets?: TaskProgressItem[][];
+    showOutsideTarget?: boolean;
   }
 
   let {
@@ -53,6 +54,7 @@
     parentBackground = 'background',
     agentStateScenario = 'responding',
     taskSets = [],
+    showOutsideTarget = false,
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -196,6 +198,10 @@
     return reverseAgents ? rows.reverse() : rows;
   });
 </script>
+
+{#if showOutsideTarget}
+  <button type="button" class="fixed top-1 right-1" data-testid="outside-target">Outside</button>
+{/if}
 
 {#snippet mixedPreview()}
   <div class="px-3 py-2 text-muted-foreground" data-testid="mixed-subscription-preview">

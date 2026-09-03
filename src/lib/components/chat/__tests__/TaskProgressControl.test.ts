@@ -410,6 +410,117 @@ describe('TaskProgressControl', () => {
     expect(await screen.findByRole('tooltip', { hidden: true })).toBeTruthy();
   });
 
+  it.each(['status-stack', 'checklist'] as const)(
+    'keeps the %s tooltip dismissed after an outside pointer close until a new help cycle',
+    async (presentation) => {
+      render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      const tooltipTrigger = trigger.parentElement;
+      if (!tooltipTrigger) throw new Error('Task progress tooltip trigger wrapper is missing');
+      const outside = document.createElement('button');
+      document.body.append(outside);
+
+      await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+      await screen.findByRole('tooltip', { hidden: true });
+      await fireEvent.click(trigger);
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await fireEvent.pointerDown(outside, { pointerType: 'mouse', button: 0 });
+      outside.focus();
+      await fireEvent.focusIn(outside);
+      await fireEvent.pointerUp(outside, { pointerType: 'mouse', button: 0 });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+
+      await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+      await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      expect(document.querySelector('[role="tooltip"]:not([data-state="closed"])')).toBeNull();
+
+      await fireEvent.pointerLeave(trigger, { pointerType: 'mouse' });
+      await fireEvent.pointerLeave(tooltipTrigger, { pointerType: 'mouse' });
+      await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+      await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+      await waitFor(() =>
+        expect(document.querySelector('[role="tooltip"]:not([data-state="closed"])')).toBeTruthy(),
+      );
+
+      await fireEvent.pointerLeave(trigger, { pointerType: 'mouse' });
+      await fireEvent.pointerLeave(tooltipTrigger, { pointerType: 'mouse' });
+      await fireEvent.click(trigger);
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await fireEvent.pointerDown(outside, { pointerType: 'mouse', button: 0 });
+      outside.focus();
+      await fireEvent.focusIn(outside);
+      await fireEvent.pointerUp(outside, { pointerType: 'mouse', button: 0 });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+      expect(document.querySelector('[role="tooltip"]:not([data-state="closed"])')).toBeNull();
+
+      trigger.focus();
+      await fireEvent.focusIn(trigger);
+      await waitFor(() =>
+        expect(document.querySelector('[role="tooltip"]:not([data-state="closed"])')).toBeTruthy(),
+      );
+      outside.remove();
+    },
+  );
+
+  it.each(['status-stack', 'checklist'] as const)(
+    'clears pending %s tooltip suppression when the outside pointer is cancelled',
+    async (presentation) => {
+      render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      const outside = document.createElement('button');
+      document.body.append(outside);
+
+      await fireEvent.click(trigger);
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await fireEvent.pointerDown(outside, {
+        pointerType: 'mouse',
+        pointerId: 7,
+        button: 0,
+      });
+      await fireEvent.pointerCancel(outside, { pointerType: 'mouse', pointerId: 7 });
+      await fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+
+      await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+      await waitFor(() =>
+        expect(document.querySelector('[role="tooltip"]:not([data-state="closed"])')).toBeTruthy(),
+      );
+      outside.remove();
+    },
+  );
+
+  it.each(['status-stack', 'checklist'] as const)(
+    'clears dismissed %s tooltip suppression when the task trigger remounts',
+    async (presentation) => {
+      const view = render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      const outside = document.createElement('button');
+      document.body.append(outside);
+
+      await fireEvent.click(trigger);
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await fireEvent.pointerDown(outside, { pointerType: 'mouse', button: 0 });
+      outside.focus();
+      await fireEvent.focusIn(outside);
+      await fireEvent.pointerUp(outside, { pointerType: 'mouse', button: 0 });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+
+      await view.rerender({ tasks: [], presentation });
+      expect(screen.queryByTestId('task-progress-trigger')).toBeNull();
+      await view.rerender({ tasks, presentation });
+      const remountedTrigger = screen.getByTestId('task-progress-trigger');
+      await fireEvent.pointerMove(remountedTrigger, { pointerType: 'mouse' });
+      await waitFor(() =>
+        expect(document.querySelector('[role="tooltip"]:not([data-state="closed"])')).toBeTruthy(),
+      );
+      outside.remove();
+    },
+  );
+
   it('uses one atomic status node and coalesces task update bursts without an initial announcement', async () => {
     vi.useFakeTimers();
     const view = render(TaskProgressControl, { props: { tasks } });

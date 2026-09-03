@@ -236,6 +236,39 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     await trigger.click();
     await expect(popover).toBeHidden();
 
+    await page.mouse.move(1, 1);
+    await trigger.hover();
+    await expect(tooltip).toBeVisible();
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await component.getByTestId('before-trigger').click();
+    await expect(popover).toBeHidden();
+    await expect(component.getByTestId('before-trigger')).toBeFocused();
+    await trigger.hover();
+    await page.waitForTimeout(350);
+    await expect(tooltip).toHaveCount(0);
+    await page.mouse.move(1, 1);
+    await trigger.hover();
+    await expect(tooltip).toBeVisible();
+
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await component.getByTestId('before-trigger').click();
+    await expect(popover).toBeHidden();
+    await expect(tooltip).toHaveCount(0);
+    await page.keyboard.press('Tab');
+    await expect(trigger).toBeFocused();
+    await expect(tooltip).toBeVisible();
+
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await component.getByTestId('before-trigger').click();
+    await expect(popover).toBeHidden();
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await trigger.click();
+    await expect(popover).toBeHidden();
+
     await trigger.press('Enter');
     await expect(popover).toBeVisible();
     await trigger.press('Enter');
@@ -267,6 +300,46 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     await expect(tooltip).toBeVisible();
   });
 }
+
+test('clears tooltip suppression after pointer cancellation and task-trigger remount', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(TaskProgressControlHost, { props: { tasks: [...tasks] } });
+  let trigger = component.getByTestId('task-progress-trigger');
+  const outside = component.getByTestId('before-trigger');
+  const popover = page.getByTestId('task-progress-popover');
+  const tooltip = page.getByRole('tooltip', { name: 'Task progress: 1 of 7 completed' });
+
+  await trigger.click();
+  await expect(popover).toBeVisible();
+  await outside.dispatchEvent('pointerdown', {
+    pointerType: 'mouse',
+    pointerId: 17,
+    button: 0,
+    isPrimary: true,
+  });
+  await outside.dispatchEvent('pointercancel', {
+    pointerType: 'mouse',
+    pointerId: 17,
+    isPrimary: true,
+  });
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await trigger.hover();
+  await expect(tooltip).toBeVisible();
+
+  await trigger.click();
+  await expect(popover).toBeVisible();
+  await outside.click();
+  await expect(popover).toBeHidden();
+  await component.update({ props: { tasks: [] } });
+  await expect(trigger).toHaveCount(0);
+  await component.update({ props: { tasks: [...tasks] } });
+  trigger = component.getByTestId('task-progress-trigger');
+  await trigger.hover();
+  await expect(tooltip).toBeVisible();
+});
 
 for (const presentation of ['status-stack', 'checklist'] as const) {
   test(`gives the ${presentation} trigger immediate layout-safe press feedback`, async ({

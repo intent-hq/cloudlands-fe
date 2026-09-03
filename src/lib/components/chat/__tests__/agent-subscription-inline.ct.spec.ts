@@ -148,6 +148,41 @@ test('keeps delegated checklist controls visible for non-hover primary input', a
   await client.detach();
 });
 
+test('isolates outside-dismissed task help between delegated row controls', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: {
+      agentCount: 2,
+      taskSets: [delegatedTaskSets[0], delegatedTaskSets[2]].map((tasks) => [...tasks]),
+      showOutsideTarget: true,
+    },
+  });
+  const rows = component.getByTestId('agent-list-item');
+  const triggers = component.getByTestId('task-progress-trigger');
+  const firstTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[0] });
+  const secondTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[2] });
+
+  await rows.first().hover();
+  await triggers.first().hover();
+  await expect(firstTooltip).toBeVisible();
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await component.getByTestId('outside-target').click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).not.toBeVisible();
+
+  await triggers.first().hover();
+  await page.waitForTimeout(350);
+  await expect(firstTooltip).not.toBeVisible();
+  await triggers.nth(1).focus();
+  await expect(secondTooltip).toBeVisible();
+
+  await page.mouse.move(0, 0);
+  await triggers.first().hover();
+  await expect(firstTooltip).toBeVisible();
+});
+
 async function measure(component: Locator, page: Page) {
   await expect(component.getByTestId('agent-card-preview')).toBeVisible();
   await expect(component.getByTestId('agent-card-trailing-slot').locator('[title]')).toHaveCount(1);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { on } from 'svelte/events';
   import { Popover } from 'bits-ui';
   import Fa from 'svelte-fa';
   import {
@@ -32,6 +33,10 @@
   let contentElement: HTMLElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
   let preserveOutsideFocusOnClose = $state(false);
+  let suppressTooltipAfterOutsideDismissal = $state(false);
+  let pointerTooltipResetArmed = false;
+  let keyboardTooltipResetArmed = false;
+  let outsideDismissalPointerId: number | null = null;
   let announcement = $state('');
   let announcementTimer: ReturnType<typeof setTimeout> | undefined;
   let previousTaskStates: Map<string, string> | undefined;
@@ -64,6 +69,10 @@
   );
 
   $effect(() => {
+    if (tasks.length === 0) {
+      open = false;
+      resetTooltipSuppression();
+    }
     const nextTaskStates = new Map(
       tasks.map((task) => [task.id, `${task.status}\u0000${task.title}`]),
     );
@@ -86,6 +95,23 @@
         title: changedTask.title,
       });
     }, ANNOUNCEMENT_DELAY_MS);
+  });
+
+  $effect(() => {
+    const ownerWindow = triggerElement?.ownerDocument.defaultView;
+    if (!ownerWindow) return;
+    const removePointerDown = on(ownerWindow, 'pointerdown', handleWindowPointerDown, {
+      capture: true,
+    });
+    const removePointerCancel = on(ownerWindow, 'pointercancel', handleWindowPointerCancel, {
+      capture: true,
+    });
+    const removeFocusIn = on(ownerWindow, 'focusin', handleFocusOutside, { capture: true });
+    return () => {
+      removePointerDown();
+      removePointerCancel();
+      removeFocusIn();
+    };
   });
 
   onDestroy(() => {
@@ -114,9 +140,63 @@
 
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
-    if (!nextOpen) return;
+    if (!nextOpen) {
+      outsideDismissalPointerId = null;
+      return;
+    }
+    resetTooltipSuppression();
     const panel = triggerElement?.closest('[data-panel-id]');
     collisionBoundary = panel ? [panel] : [];
+  }
+
+  function handleWindowPointerDown(event: PointerEvent) {
+    if (!open || event.button !== 0 || !(event.target instanceof Node)) return;
+    if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
+    outsideDismissalPointerId = event.pointerId;
+    suppressTooltipForOutsideDismissal();
+  }
+
+  function handleWindowPointerCancel(event: PointerEvent) {
+    if (outsideDismissalPointerId !== event.pointerId) return;
+    resetTooltipSuppression();
+  }
+
+  function suppressTooltipForOutsideDismissal() {
+    suppressTooltipAfterOutsideDismissal = true;
+    pointerTooltipResetArmed = false;
+    keyboardTooltipResetArmed = false;
+  }
+
+  function resetTooltipSuppression() {
+    suppressTooltipAfterOutsideDismissal = false;
+    pointerTooltipResetArmed = false;
+    keyboardTooltipResetArmed = false;
+    outsideDismissalPointerId = null;
+  }
+
+  function handleTriggerPointerEnter(event: PointerEvent) {
+    if (event.pointerType === 'touch' || open || !suppressTooltipAfterOutsideDismissal) return;
+    pointerTooltipResetArmed = true;
+  }
+
+  function handleTriggerPointerLeave(event: PointerEvent) {
+    if (
+      event.pointerType === 'touch' ||
+      open ||
+      !suppressTooltipAfterOutsideDismissal ||
+      !pointerTooltipResetArmed
+    )
+      return;
+    resetTooltipSuppression();
+  }
+
+  function handleTriggerBlur() {
+    if (!open && suppressTooltipAfterOutsideDismissal) keyboardTooltipResetArmed = true;
+  }
+
+  function handleTriggerFocus() {
+    if (open || !suppressTooltipAfterOutsideDismissal || !keyboardTooltipResetArmed) return;
+    resetTooltipSuppression();
   }
 
   function handleTriggerKeydown(event: KeyboardEvent) {
@@ -133,6 +213,7 @@
   function handleFocusOutside(event: FocusEvent) {
     if (!open || !(event.target instanceof Node)) return;
     if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
+    if (suppressTooltipAfterOutsideDismissal) keyboardTooltipResetArmed = true;
     preserveOutsideFocusOnClose = true;
     handleOpenChange(false);
   }
@@ -186,7 +267,12 @@
 
 {#if tasks.length > 0}
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
-    <TooltipShortcut label={progressLabel} side="bottom" delayDuration={300} disabled={open}>
+    <TooltipShortcut
+      label={progressLabel}
+      side="bottom"
+      delayDuration={300}
+      disabled={open || suppressTooltipAfterOutsideDismissal}
+    >
       <Popover.Trigger
         bind:ref={triggerElement}
         type="button"
@@ -194,6 +280,10 @@
         aria-label={progressLabel}
         aria-expanded={open}
         onkeydown={handleTriggerKeydown}
+        onpointerenter={handleTriggerPointerEnter}
+        onpointerleave={handleTriggerPointerLeave}
+        onblur={handleTriggerBlur}
+        onfocus={handleTriggerFocus}
         data-row-task-action
         data-testid="task-progress-trigger"
       >
