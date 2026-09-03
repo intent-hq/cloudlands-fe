@@ -123,8 +123,8 @@
     class={cn(
       'pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
       isEditing
-        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-muted/50'
-        : 'inset-0 border-transparent bg-transparent',
+        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+        : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent',
     )}
   ></span>
   {#if isEditing}
