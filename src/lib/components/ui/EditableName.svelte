@@ -121,8 +121,10 @@
   <span
     aria-hidden="true"
     class={cn(
-      'pointer-events-none absolute -inset-x-1.5 -inset-y-1 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
-      isEditing ? 'scale-100 opacity-100' : 'scale-[0.98] opacity-0',
+      'pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
+      isEditing
+        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-muted/50'
+        : 'inset-0 border-transparent bg-transparent',
     )}
   ></span>
   {#if isEditing}
