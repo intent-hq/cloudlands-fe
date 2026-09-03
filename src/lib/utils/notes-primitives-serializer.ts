@@ -178,9 +178,31 @@ function parseMarkdownToPrimitives(
 
         // Normalize reference primitives
         if (parsed.type === 'reference') {
-          // Ensure target exists with required fields
+          let hoistedShortFormField = false;
+
+          // Ensure target exists and hoist the documented short-form fields when needed
           if (!parsed.target) {
-            parsed.target = { kind: 'symbol', semanticId: '' };
+            parsed.target = {};
+          }
+          if (!parsed.target.semanticId && !parsed.target.filePath) {
+            if (parsed.semanticId) {
+              parsed.target.semanticId = parsed.semanticId;
+              hoistedShortFormField = true;
+            }
+            if (parsed.filePath || parsed.path) {
+              parsed.target.filePath = parsed.filePath || parsed.path;
+              hoistedShortFormField = true;
+            }
+            if (
+              (parsed.startLine !== undefined || parsed.endLine !== undefined) &&
+              !parsed.target.range
+            ) {
+              parsed.target.range = {
+                startLine: parsed.startLine ?? 1,
+                endLine: parsed.endLine ?? parsed.startLine ?? 1,
+              };
+              hoistedShortFormField = true;
+            }
           }
 
           // Normalize simplified target format:
@@ -201,17 +223,13 @@ function parseMarkdownToPrimitives(
             delete parsed.target.endLine;
           }
 
-          // Normalize kind: convert "line-range" to "file_range"
-          if (parsed.target.kind === 'line-range') {
-            parsed.target.kind = 'file_range';
-          }
-
-          // Ensure target.kind exists - infer from context
-          if (!parsed.target.kind) {
-            // If has range or semanticId contains line range markers (e.g., #L7-40), it's a file_range
-            const hasRange = !!parsed.target.range;
-            const hasLineRange = parsed.target.semanticId?.includes('#L');
-            parsed.target.kind = hasRange || hasLineRange ? 'file_range' : 'symbol';
+          // Match the daemon's reference kind rule for hoisted or incomplete targets
+          const hasValidKind =
+            parsed.target.kind === 'symbol' || parsed.target.kind === 'file_range';
+          if (hoistedShortFormField || !hasValidKind) {
+            parsed.target.kind = parsed.target.semanticId?.includes('#symbol:')
+              ? 'symbol'
+              : 'file_range';
           }
         }
 

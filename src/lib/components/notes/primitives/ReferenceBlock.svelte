@@ -25,11 +25,16 @@
 
   const logger = createLogger('ReferenceBlock');
 
+  type ShortFormReferencePrimitive = ReferencePrimitive & {
+    semanticId?: string;
+    filePath?: string;
+  };
+
   // TipTap NodeViewProps
   let { node, extension }: NodeViewProps = $props();
 
   // Get primitive data from node
-  let primitive = $derived(node?.attrs?.data as ReferencePrimitive);
+  let primitive = $derived(node?.attrs?.data as ShortFormReferencePrimitive);
 
   // Component state
   let expanded = $state(false);
@@ -43,7 +48,11 @@
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Get semantic ID (provided or derived from filePath + range)
-  let semanticId = $derived(primitive ? getSemanticId(primitive.target) : null);
+  let semanticId = $derived(
+    primitive
+      ? getSemanticId(primitive.target) || primitive.semanticId || primitive.filePath || null
+      : null,
+  );
   // Parse semantic ID
   let parsedId = $derived(semanticId ? parseSemanticId(semanticId) : null);
   // Get type from new format or legacy format
