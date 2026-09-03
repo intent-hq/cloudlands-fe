@@ -2001,6 +2001,64 @@ describe('connections-store keychain sync surface', () => {
     expect((await store.listSyncRecords())[0].detectHosts).toBe(true);
   });
 
+  it('detectHosts=false converges fleet-wide: the flip out-clocks a same-tick refresh, and a peer that pulls it clears its extras and stops refreshing', async () => {
+    vi.useFakeTimers();
+    const localTmp = tmpDir;
+    const peerTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'backend-connections-peer-'));
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      const [before] = await store.listSyncRecords();
+      expect(before.hosts).toEqual([sampleConn.host, '10.0.0.5']);
+
+      // Flip in the same millisecond as the last refresh: the write must
+      // still land strictly past the record's clock, or the reconcile would
+      // treat the flip and a peer's refresh at that clock as in-sync.
+      await store.updateMetadata(rec.id, {
+        label: sampleConn.label,
+        accent: null,
+        detectHosts: false,
+      });
+      const [flipped] = await store.listSyncRecords();
+      expect(flipped.updatedAt).toBeGreaterThan(before.updatedAt);
+      expect(flipped).toMatchObject({ detectHosts: false, hosts: [sampleConn.host] });
+      await store.__drainWriteChainForTesting();
+
+      // The peer's side: pulling the flip clears its extras and disables its
+      // refreshes, so later pairing-info updates no longer repopulate them.
+      tmpDir = peerTmp;
+      vi.resetModules();
+      const peer = await import('../connections-store');
+      await peer.applyRemoteSyncRecord(before);
+      const peerRec = (await peer.list()).find((c) => c.host === sampleConn.host)!;
+      expect(peerRec.hosts).toEqual([sampleConn.host, '10.0.0.5']);
+
+      expect(await peer.applyRemoteSyncRecord(flipped)).toBe(true);
+      expect((await peer.list()).find((c) => c.id === peerRec.id)).toMatchObject({
+        detectHosts: false,
+        hosts: [sampleConn.host],
+      });
+      await peer.setHosts(peerRec.id, ['10.0.0.5', '10.0.0.6']);
+      expect((await peer.list()).find((c) => c.id === peerRec.id)).toMatchObject({
+        detectHosts: false,
+        hosts: [sampleConn.host],
+      });
+      const [peerSynced] = await peer.listSyncRecords();
+      expect(peerSynced).toMatchObject({
+        detectHosts: false,
+        hosts: [sampleConn.host],
+        updatedAt: flipped.updatedAt,
+      });
+      await peer.__drainWriteChainForTesting();
+    } finally {
+      tmpDir = localTmp;
+      await fs.rm(peerTmp, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
   it('legacy state without syncExcluded is read as synced (back-compat)', async () => {
     await fs.writeFile(
       path.join(tmpDir, 'backend-connections.json'),

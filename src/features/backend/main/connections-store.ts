@@ -736,8 +736,14 @@ export async function updateMetadata(
       if (!nextDetectHosts) conn.hosts = [];
     }
     if (exclusionChanged) conn.syncExcluded = nextExcluded;
+    // Stamp strictly past the record's own clock (as setTcAddress does): a
+    // same-millisecond edit must out-clock the state it replaces, or the LWW
+    // reconcile treats equal clocks as in-sync and a peer's stale copy —
+    // e.g. a host-list refresh that beat a detectHosts=false flip — ties
+    // with, instead of losing to, this write.
     const now = Math.max(
       Date.now(),
+      (conn.updatedAt ?? 0) + 1,
       ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
       matchingTombstone ? matchingTombstone.updatedAt + 1 : 0,
     );
