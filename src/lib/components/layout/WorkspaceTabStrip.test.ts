@@ -608,6 +608,40 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
+  it('does not start a hover session when focus opens the tab under the pointer', async () => {
+    vi.useFakeTimers();
+    const view = render(WorkspaceTabStrip);
+    try {
+      const alphaRoot = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      const beta = screen.getByRole('tab', { name: /Beta/ });
+      const betaRoot = beta.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+
+      await enterTabTooltip(betaRoot);
+      await fireEvent.focusIn(beta);
+      await tick();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
+
+      await fireEvent.focusOut(beta, { relatedTarget: document.body });
+      await leaveTabTooltip(betaRoot);
+      await enterTabTooltip(alphaRoot);
+      vi.advanceTimersByTime(399);
+      await tick();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeNull();
+
+      vi.advanceTimersByTime(1);
+      await tick();
+      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
+
+      await leaveTabTooltip(alphaRoot);
+      vi.advanceTimersByTime(300);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it('clears a pending tab hover open when the strip is destroyed', async () => {
     vi.useFakeTimers();
     try {

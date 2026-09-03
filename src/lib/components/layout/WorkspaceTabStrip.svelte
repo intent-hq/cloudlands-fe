@@ -74,7 +74,7 @@
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
   let workspaceHoverCardOpenDelay = $state(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
   const openWorkspaceHoverCardIds = new Set<string>();
-  const pointerWorkspaceHoverCardIds = new Set<string>();
+  const pointerOpenEligibleWorkspaceHoverCardIds = new Set<string>();
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -175,7 +175,7 @@
       unsubscribeHoverCardIntent();
       openWorkspaceHoverCardIds.forEach(() => workspaceHoverCardIntentSession.notifyClosed());
       openWorkspaceHoverCardIds.clear();
-      pointerWorkspaceHoverCardIds.clear();
+      pointerOpenEligibleWorkspaceHoverCardIds.clear();
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     };
   });
@@ -183,7 +183,7 @@
   function handleWorkspaceHoverCardOpenChange(workspaceId: string, open: boolean) {
     if (
       open &&
-      pointerWorkspaceHoverCardIds.has(workspaceId) &&
+      pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId) &&
       !openWorkspaceHoverCardIds.has(workspaceId)
     ) {
       openWorkspaceHoverCardIds.add(workspaceId);
@@ -800,8 +800,8 @@
             use:registerTabSurface={workspaceId}
             role="presentation"
             onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
-            onmouseenter={() => pointerWorkspaceHoverCardIds.add(workspaceId)}
-            onmouseleave={() => pointerWorkspaceHoverCardIds.delete(workspaceId)}
+            onmouseenter={() => pointerOpenEligibleWorkspaceHoverCardIds.add(workspaceId)}
+            onmouseleave={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
             {#if isCurrent}
@@ -865,6 +865,7 @@
                 class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => handleTabClick(event, workspaceId)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
+                onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
                 role="tab"
                 aria-selected={isCurrent}
                 aria-current={isCurrent ? 'page' : undefined}
