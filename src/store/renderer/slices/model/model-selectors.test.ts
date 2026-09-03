@@ -7,6 +7,7 @@ import {
   selectHasResolvableProvider,
   selectModelDisplayName,
   selectModelEffortLevels,
+  selectProviderModelEffortLevels,
   selectSelectedModel,
 } from './model-selectors';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -329,6 +330,77 @@ describe('selectModelEffortLevels', () => {
   it('returns undefined when the model slice is absent', () => {
     expect(
       selectModelEffortLevels.select({} as unknown as StoreState, 'sonnet4.6'),
+    ).toBeUndefined();
+  });
+});
+
+describe('selectProviderModelEffortLevels', () => {
+  const codexEfforts = ['low', 'medium', 'high'];
+  const stateWithCache = () => {
+    const base = mockState({
+      defaultProviderId,
+      availableModelsProviderId: defaultProviderId,
+      availableModels: createCollection<AuggieModel, 'value'>('value', [
+        { value: 'gpt5.6-sol', label: 'GPT-5.6 Sol', effortLevels: ['low', 'max'] },
+      ]),
+    });
+    return {
+      ...base,
+      providerModels: {
+        byProviderId: {
+          codex: {
+            models: [
+              { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: codexEfforts },
+              { value: 'codex:gpt-5.2', label: 'GPT-5.2' },
+            ],
+            fetchedAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+        clearEpoch: 0,
+      },
+    } as unknown as StoreState;
+  };
+
+  it('resolves the active catalog when the provider matches its provenance', () => {
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), defaultProviderId, 'gpt5.6-sol'),
+    ).toEqual(['low', 'max']);
+  });
+
+  it('resolves another provider through the provider-models cache (compound rows)', () => {
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), 'codex', 'gpt-5.3-codex'),
+    ).toEqual(codexEfforts);
+    // A {model}/{effort} suffix strips before the cache match.
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), 'codex', 'gpt-5.3-codex/high'),
+    ).toEqual(codexEfforts);
+  });
+
+  it('does not resolve a cross-provider model against the active catalog', () => {
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), 'codex', 'gpt5.6-sol'),
+    ).toBeUndefined();
+  });
+
+  it('falls back to the bare-id active-catalog lookup when no provider is given', () => {
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), undefined, 'gpt5.6-sol'),
+    ).toEqual(['low', 'max']);
+  });
+
+  it('returns undefined for unknown providers/models, effort-less rows, or absent slices', () => {
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), 'unknown', 'gpt-5.3-codex'),
+    ).toBeUndefined();
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), 'codex', 'gpt-5.2'),
+    ).toBeUndefined();
+    expect(
+      selectProviderModelEffortLevels.select(stateWithCache(), 'codex', undefined),
+    ).toBeUndefined();
+    expect(
+      selectProviderModelEffortLevels.select({} as unknown as StoreState, 'codex', 'gpt-5.3-codex'),
     ).toBeUndefined();
   });
 });

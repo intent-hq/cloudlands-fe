@@ -36,9 +36,13 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable([]),
-  selectModelEffortLevels: {
-    select: (_state: unknown, modelId?: string) =>
-      modelId ? mocks.effortLevels.value[modelId] : undefined,
+  // Provider-scoped effort lookup: keyed by `provider:model` when a provider
+  // is given, bare model id otherwise (mirrors the provider-aware selector).
+  selectProviderModelEffortLevels: {
+    select: (_state: unknown, providerId?: string, modelId?: string) =>
+      modelId
+        ? mocks.effortLevels.value[providerId ? `${providerId}:${modelId}` : modelId]
+        : undefined,
   },
 }));
 
@@ -147,6 +151,28 @@ describe('SpecialistModelOptions reasoning', () => {
     expect(onCommit).toHaveBeenCalledWith([
       { provider: 'codex', model: 'bare-picked-model', hint: '' },
     ]);
+  });
+
+  it('keeps a supported effort across a cross-provider pick (provider-scoped lookup)', async () => {
+    // The effort levels resolve only under the resolved provider's catalog —
+    // a provider-blind bare-id lookup would drop the level.
+    mocks.effortLevels.value = { 'codex:bare-picked-model': ['low', 'high'] };
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, {
+      savedOptions: [
+        { provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: '', reasoningEffort: 'high' },
+      ],
+      onCommit,
+    });
+
+    // The triple pick emits a BARE id + resolved provider leg; the effort
+    // check must consult that provider's catalog, not the active one.
+    await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+
+    expect(onCommit).toHaveBeenCalledWith([
+      { provider: 'codex', model: 'bare-picked-model', hint: '', reasoningEffort: 'high' },
+    ]);
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
   });
 
   it('clears a committed row effort back to inherit', async () => {

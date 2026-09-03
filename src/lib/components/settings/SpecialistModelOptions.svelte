@@ -23,7 +23,7 @@
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
+  import { selectProviderModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -71,11 +71,16 @@
   /**
    * Drop an effort level the newly picked model does not advertise, so a
    * model switch resets the row to Default instead of persisting a level the
-   * catalog no longer offers. `model` is a picker compound id.
+   * catalog no longer offers. The lookup is provider-scoped: a cross-provider
+   * pick consults the resolved provider's cached catalog, not the active one.
    */
-  function effortForModel(model: string, effort: string | undefined): string | undefined {
+  function effortForModel(
+    providerId: string | undefined,
+    modelId: string,
+    effort: string | undefined,
+  ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectModelEffortLevels.select(appStore.state, model);
+    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
     return levels?.includes(effort) ? effort : undefined;
   }
 
@@ -122,7 +127,7 @@
             ...row,
             provider: providerId || undefined,
             model: modelId,
-            reasoningEffort: effortForModel(compoundModelId, row.reasoningEffort),
+            reasoningEffort: effortForModel(providerId || undefined, modelId, row.reasoningEffort),
           }
         : row,
     );
