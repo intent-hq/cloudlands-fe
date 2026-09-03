@@ -68,6 +68,7 @@
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -814,7 +815,7 @@
                   <span class="min-w-0 flex-1" aria-hidden="true"></span>
                 {/if}
                 <span
-                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                  class="h-6 w-6 justify-center {SUBSCRIPTION_TRAILING_CONTROLS_CLASS}"
                   data-testid="one-shot-collapse-toggle"
                 >
                   <Fa
@@ -878,7 +879,7 @@
                     })}
                   </span>
                   <span
-                    class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                    class="h-6 w-6 justify-center {SUBSCRIPTION_TRAILING_CONTROLS_CLASS}"
                     data-testid="finished-agent-chevron"
                   >
                     <Fa
