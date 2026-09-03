@@ -49,6 +49,25 @@ describe('app settings schema', () => {
     expect(definition?.description).toContain('disabled');
   });
 
+  it('defines persisted appearance preferences that default to enabled', () => {
+    expect(findAppSettingDefinition('appearance.chatAurora')).toMatchObject({
+      category: 'theme',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'chat:auroraEnabled',
+      defaultValue: true,
+      apply: { kind: 'redux-action', action: 'userPreferences/setChatAuroraEnabled' },
+    });
+    expect(findAppSettingDefinition('appearance.shellTransparency')).toMatchObject({
+      category: 'theme',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'appearance:shellTransparencyEnabled',
+      defaultValue: true,
+      apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
+    });
+  });
+
   it('exposes theme preset IDs as enum values', () => {
     const definition = findAppSettingDefinition('theme.activePresetId');
 

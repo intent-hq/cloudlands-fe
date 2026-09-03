@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const testState = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -34,11 +35,21 @@ const testState = vi.hoisted(() => {
       vi.fn(() => readable(value)),
       { select: vi.fn(() => value) },
     );
+  const selectorFrom = <T>(get: () => T) =>
+    Object.assign(
+      vi.fn(() => ({
+        subscribe: (run: (value: T) => void) => (run(get()), () => {}),
+      })),
+      { select: vi.fn(get) },
+    );
   return {
     dispatch: vi.fn(),
+    agentSessionIsStreaming: false,
+    chatAuroraEnabled: true,
     panelTabs,
     panel,
     selector,
+    selectorFrom,
     readable,
     panelManager: {
       getPanelIds: vi.fn(() => ['panel-1']),
@@ -90,7 +101,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: testState.selector(null),
   selectAgentIsResponding: testState.selector(false),
   selectAgentIsRunning: testState.selector(false),
-  selectAgentSessionIsStreaming: testState.selector(false),
+  selectAgentSessionIsStreaming: testState.selectorFrom(() => testState.agentSessionIsStreaming),
   selectAgentSessionStreamingContent: testState.selector(''),
   selectAgentMessages: testState.selector([]),
   selectAgentHistoryMessages: testState.selector([]),
@@ -151,6 +162,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: testState.selector([]),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectChatAuroraEnabled: testState.selectorFrom(() => testState.chatAuroraEnabled),
   selectIsAgentMonospace: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -239,9 +251,9 @@ vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => (
 
 const workspace = { id: 'ws-1', title: 'Workspace' };
 
-async function renderChatPanel(isActive: boolean) {
+async function renderChatPanel(isActive: boolean, targetWorkspace = workspace) {
   const ChatPanel = (await import('../ChatPanel.svelte')).default;
-  render(ChatPanel, { props: { workspace, agentId: 'agent-1', isActive } });
+  render(ChatPanel, { props: { workspace: targetWorkspace, agentId: 'agent-1', isActive } });
   await Promise.resolve();
 }
 
@@ -258,6 +270,8 @@ function updatePanelActions() {
 describe('ChatPanel multi-panel context ownership', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.agentSessionIsStreaming = false;
+    testState.chatAuroraEnabled = true;
     testState.panel.title = 'app.ts';
     testState.panelTabs.emit([]);
     vi.stubGlobal(
@@ -288,6 +302,21 @@ describe('ChatPanel multi-panel context ownership', () => {
     await waitFor(() => expect(dispatchedTypes()).toContain('multiPanelContext/setWorkspace'));
     expect(dispatchedTypes()).toContain('multiPanelContext/updatePanels');
   });
+
+  it.each([
+    ['regular', workspace],
+    ['Chief', { ...workspace, id: CHIEF_WORKSPACE_ID }],
+  ])(
+    'does not mount the %s Aurora host while streaming when the preference is disabled',
+    async (_kind, targetWorkspace) => {
+      testState.agentSessionIsStreaming = true;
+      testState.chatAuroraEnabled = false;
+
+      await renderChatPanel(true, targetWorkspace);
+
+      expect(screen.queryByTestId('composer-aurora-host')).toBeNull();
+    },
+  );
 
   it('does not produce a fresh availablePanelContexts reference for unchanged panel data', async () => {
     await renderChatPanel(true);
