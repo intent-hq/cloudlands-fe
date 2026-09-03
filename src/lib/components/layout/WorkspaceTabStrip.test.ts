@@ -734,8 +734,8 @@ describe('WorkspaceTabStrip', () => {
     });
 
     expect(onActiveTabBoundsChange).toHaveBeenCalledWith({
-      left: 94,
-      width: 172,
+      left: 100,
+      width: 160,
       fadeRight: { start: 476, end: 500 },
     });
   });

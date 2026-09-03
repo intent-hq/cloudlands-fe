@@ -1,8 +1,8 @@
-import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import sharp from 'sharp';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import {
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
-  WORKSPACE_TAB_FLARE_RADIUS_PX,
   WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
 } from './titlebar-geometry';
 
@@ -65,12 +65,8 @@ async function expectMaskAttachedToActiveTab(component: Locator) {
   const maskBox = await component.locator('[data-active-tab-border-mask]').boundingBox();
   expect(activeBox).toBeTruthy();
   expect(maskBox).toBeTruthy();
-  expect(
-    Math.abs((maskBox?.x ?? 0) + WORKSPACE_TAB_FLARE_RADIUS_PX - (activeBox?.x ?? 0)),
-  ).toBeLessThanOrEqual(1);
-  expect(
-    Math.abs((maskBox?.width ?? 0) - 2 * WORKSPACE_TAB_FLARE_RADIUS_PX - (activeBox?.width ?? 0)),
-  ).toBeLessThanOrEqual(1);
+  expect(Math.abs((maskBox?.x ?? 0) - (activeBox?.x ?? 0))).toBeLessThanOrEqual(1);
+  expect(Math.abs((maskBox?.width ?? 0) - (activeBox?.width ?? 0))).toBeLessThanOrEqual(1);
 }
 
 async function getFlareEndpointGeometry(component: Locator) {
@@ -107,6 +103,57 @@ async function getFlareEndpointGeometry(component: Locator) {
   });
 }
 
+async function expectRenderedFlareJoinsPanelBorder(page: Page, component: Locator, zoom: number) {
+  const geometry = await getFlareEndpointGeometry(component);
+  const panel = await component.locator('[data-preview-panel]').boundingBox();
+  expect(panel).toBeTruthy();
+  const panelTop = panel?.y ?? 0;
+  const endpoints = [
+    { side: 'leading', x: geometry.leadingEnd.x, direction: 1 },
+    { side: 'trailing', x: geometry.trailingEnd.x, direction: -1 },
+  ] as const;
+
+  for (const endpoint of endpoints) {
+    const clip = {
+      x: Math.floor(endpoint.x - 4 * zoom),
+      y: Math.floor(panelTop - 4 * zoom),
+      width: Math.ceil(8 * zoom),
+      height: Math.ceil(8 * zoom),
+    };
+    const image = await page.screenshot({ animations: 'disabled', clip });
+    const { data, info } = await sharp(image)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const scale = info.width / clip.width;
+    const isDark = (x: number, y: number) => {
+      const pixelX = Math.max(0, Math.min(info.width - 1, Math.floor((x - clip.x) * scale)));
+      const pixelY = Math.max(0, Math.min(info.height - 1, y));
+      const offset = (pixelY * info.width + pixelX) * info.channels;
+      return (data[offset] + data[offset + 1] + data[offset + 2]) / 3 < 128;
+    };
+    const rowsAt = (fromX: number, toX: number) => {
+      const rows: number[] = [];
+      for (let y = 0; y < info.height; y += 1) {
+        for (let x = fromX; x <= toX; x += 0.25 / scale) {
+          if (isDark(x, y)) {
+            rows.push(y);
+            break;
+          }
+        }
+      }
+      return rows;
+    };
+    const outsideX = endpoint.x - endpoint.direction * 2 * zoom;
+    const panelRows = rowsAt(outsideX, outsideX);
+    const joinStart = endpoint.x + Math.min(0, endpoint.direction * 1.5 * zoom);
+    const joinEnd = endpoint.x + Math.max(0, endpoint.direction * 1.5 * zoom);
+    const joinRows = rowsAt(joinStart, joinEnd);
+    expect(panelRows, endpoint.side).not.toHaveLength(0);
+    expect(joinRows, endpoint.side).toEqual(panelRows);
+  }
+}
+
 async function getLogoToLeadingFlareGap(component: Locator) {
   const logoBox = await component.locator('[data-preview-logo]').boundingBox();
   const flareBox = await component
@@ -119,7 +166,7 @@ async function getLogoToLeadingFlareGap(component: Locator) {
 
 async function captureTabMotion(control: Locator, workspaceId: string) {
   return control.evaluate(
-    async (button, { id, radius }) => {
+    async (button, { id }) => {
       const frames: Array<{
         width: number | null;
         activeId: string | null;
@@ -139,9 +186,9 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
         const maskRect = mask?.getBoundingClientRect();
         const stripRect = strip?.getBoundingClientRect();
         const expectedMaskLeft =
-          activeRect && stripRect ? Math.max(activeRect.left - radius, stripRect.left) : null;
+          activeRect && stripRect ? Math.max(activeRect.left, stripRect.left) : null;
         const expectedMaskRight =
-          activeRect && stripRect ? Math.min(activeRect.right + radius, stripRect.right) : null;
+          activeRect && stripRect ? Math.min(activeRect.right, stripRect.right) : null;
         frames.push({
           width: motion?.getBoundingClientRect().width ?? null,
           activeId: active?.dataset.workspaceTab ?? null,
@@ -157,10 +204,7 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
       }
       return frames;
     },
-    {
-      id: workspaceId,
-      radius: WORKSPACE_TAB_FLARE_RADIUS_PX,
-    },
+    { id: workspaceId },
   );
 }
 
@@ -344,7 +388,7 @@ test('keeps the border fade aligned when the active flare or body enters it', as
           maskOffset: maskBox.x - activeBox.x,
         };
       })
-      .toEqual({ activeOffset, maskOffset: -WORKSPACE_TAB_FLARE_RADIUS_PX });
+      .toEqual({ activeOffset, maskOffset: 0 });
     const fade = await getBorderMaskFadeStops(component);
     expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(
       fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
@@ -374,9 +418,19 @@ test('removes both edge fades when every tab fits', async ({ mount }) => {
   await expect(component.locator('[data-active-tab-border-mask]')).toHaveCSS('mask-image', 'none');
 });
 
-test('joins both flare strokes to the tab and titlebar borders at 1x and 2x', async ({ mount }) => {
+test('renders both flare strokes on the panel border rows at 1x and 2x', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(WorkspaceTabStripGeometryPreview, {
     props: { activeWorkspaceId: 'geometry-beta' },
+  });
+  await component.evaluate((root) => {
+    (root as HTMLElement).style.setProperty('--sidebar', '0 0% 100%');
+    (root as HTMLElement).style.setProperty('--border', '0 0% 0%');
+    for (const path of root.querySelectorAll<SVGPathElement>('path.stroke-border')) {
+      path.style.stroke = 'rgb(0 0 0)';
+    }
   });
   for (const zoom of [1, 2]) {
     await component.evaluate((root, value) => {
@@ -390,12 +444,7 @@ test('joins both flare strokes to the tab and titlebar borders at 1x and 2x', as
     expect(Math.abs(geometry.trailingStart.x - geometry.tabRightBorderCenter)).toBeLessThanOrEqual(
       0.5,
     );
-    expect(Math.abs(geometry.leadingEnd.y - geometry.titlebarBorderCenter)).toBeLessThanOrEqual(
-      0.5,
-    );
-    expect(Math.abs(geometry.trailingEnd.y - geometry.titlebarBorderCenter)).toBeLessThanOrEqual(
-      0.5,
-    );
+    await expectRenderedFlareJoinsPanelBorder(page, component, zoom);
   }
 });
 

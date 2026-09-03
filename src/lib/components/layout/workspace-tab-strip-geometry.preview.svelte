@@ -122,6 +122,7 @@
     {/if}
     <div></div>
   </div>
+  <div class="preview-panel" data-preview-panel></div>
 </div>
 
 {#if interactive}
@@ -160,6 +161,18 @@
     height: 1px;
     background: hsl(var(--sidebar));
     pointer-events: none;
+  }
+
+  .preview-panel {
+    position: absolute;
+    z-index: -1;
+    top: 100%;
+    left: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: 16px;
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--sidebar));
   }
 
   .preview-controls {

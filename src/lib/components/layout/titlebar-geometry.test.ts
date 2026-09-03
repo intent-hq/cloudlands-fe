@@ -47,7 +47,7 @@ describe('shared title-bar geometry', () => {
     expect(WORKSPACE_TAB_FLARE_RADIUS_PX).toBe(WORKSPACE_TAB_CORNER_RADIUS_PX);
   });
 
-  it('clips the expanded active-tab mask to the scroller', () => {
+  it('clips the active-tab body mask to the scroller', () => {
     expect(
       getClippedWorkspaceTabBorderMaskBounds(
         { left: 92, right: 252 },
@@ -78,6 +78,13 @@ describe('shared title-bar geometry', () => {
         20,
       ),
     ).toBeNull();
+    expect(
+      getClippedWorkspaceTabBorderMaskBounds(
+        { left: 100, right: 220 },
+        { left: 112, right: 180 },
+        20,
+      ),
+    ).toEqual({ left: 92, width: 68 });
   });
 
   it('aligns the border mask gradient with the scroller fade range', () => {
@@ -90,7 +97,7 @@ describe('shared title-bar geometry', () => {
 
     expect(bounds).not.toBeNull();
     expect(getWorkspaceTabBorderMaskImage(bounds!)).toBe(
-      'linear-gradient(to right, transparent 10px, black 34px, black 90px, transparent 114px)',
+      'linear-gradient(to right, transparent 4px, black 28px, black 84px, transparent 108px)',
     );
     expect(getWorkspaceTabBorderMaskImage({ left: 80, width: 120 })).toBe('none');
   });

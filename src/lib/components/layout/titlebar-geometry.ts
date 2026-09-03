@@ -68,8 +68,8 @@ export function getClippedWorkspaceTabBorderMaskBounds(
   titlebarLeft: number,
   fadeEdges: { left: boolean; right: boolean } = { left: false, right: false },
 ): WorkspaceTabBorderMaskBounds | null {
-  const left = Math.max(tabRect.left - WORKSPACE_TAB_FLARE_RADIUS_PX, scrollerRect.left);
-  const right = Math.min(tabRect.right + WORKSPACE_TAB_FLARE_RADIUS_PX, scrollerRect.right);
+  const left = Math.max(tabRect.left, scrollerRect.left);
+  const right = Math.min(tabRect.right, scrollerRect.right);
   if (right <= left) return null;
   return {
     left: left - titlebarLeft,
