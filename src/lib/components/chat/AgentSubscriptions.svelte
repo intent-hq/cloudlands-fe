@@ -41,6 +41,7 @@
 
   import {
     selectAgentSubscriptions,
+    selectAgentSubscriptionLane,
     selectAgentSubscriptionStatuses,
     selectDelegationGroups,
     selectWokenUpInfo,
@@ -159,6 +160,7 @@
   const resolvedWorkspace = $derived($workspaceById ?? null);
 
   const subs$ = selectAgentSubscriptions(workspaceIdStore, agentIdStore);
+  const subscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const groups$ = selectDelegationGroups(workspaceIdStore, agentIdStore);
   const agentStatuses$ = selectAgentSubscriptionStatuses(workspaceIdStore, agentIdStore);
   const wokenUpInfo$ = selectWokenUpInfo(workspaceIdStore, agentIdStore);
@@ -442,9 +444,11 @@
   const showSubscriptionRow = $derived(isCompleted || waitingAgentRows.length > 0);
 
   $effect(() => {
-    visible = showSubscriptionRow || !!$wokenUpInfo$;
-    count = activeAgentRows.length;
-    participantAgentIds = activeAgentRows.map((row) => row.agentId);
+    visible = isolatedPreview ? showSubscriptionRow || !!$wokenUpInfo$ : $subscriptionLane$.visible;
+    count = isolatedPreview ? activeAgentRows.length : $subscriptionLane$.count;
+    participantAgentIds = isolatedPreview
+      ? activeAgentRows.map((row) => row.agentId)
+      : $subscriptionLane$.participantAgentIds;
     participantAvatarItems = getHeaderStackItems(activeAgentRows);
   });
 

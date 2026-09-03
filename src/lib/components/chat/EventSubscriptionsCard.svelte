@@ -30,6 +30,9 @@
   import { safeSubscriptionSlide } from './subscription-disclosure';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
   import { selectAgentPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectAgentSubscriptionLane } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+  import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
 
   interface Props {
     workspaceId: string;
@@ -54,16 +57,13 @@
     isolatedPreview,
     previewContent,
   }: Props = $props();
-  let agentsVisible = $state(false);
   let hooksVisible = $state(false);
   let prsVisible = $state(false);
   let browserTabsVisible = $state(false);
-  let agentCount = $state(0);
   let hookCount = $state(0);
   let prCount = $state(0);
   let browserTabCount = $state(0);
-  let participantAgentIds = $state<string[]>([]);
-  let participantAvatarItems = $state<AgentAvatarStackItem[]>([]);
+  let previewParticipantAvatarItems = $state<AgentAvatarStackItem[]>([]);
   let isCollapsed = $state(false);
   let desiredCollapsed = $state(false);
   let bodyIsClosing = $state(false);
@@ -79,6 +79,8 @@
   });
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
+  const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
+  const agentSessionsById$ = selectAgentSessionsById();
   const storedHookCount = $derived(
     $hooks$.filter(
       (hook) =>
@@ -92,23 +94,42 @@
     storedHookCount > 0 ? storedHookCount : isCollapsed ? 0 : hookCount,
   );
   const effectivePrCount = $derived(storedPrCount > 0 ? storedPrCount : isCollapsed ? 0 : prCount);
+  const storedParticipantAvatarItems = $derived(
+    $agentSubscriptionLane$.participantAgentIds.map((participantAgentId): AgentAvatarStackItem => {
+      const session = $agentSessionsById$[participantAgentId];
+      return {
+        key: participantAgentId,
+        agentId: participantAgentId,
+        specialist: session?.metadata?.specialist ?? session?.agentMetadata?.specialist ?? null,
+        state: getAvatarStateForSession(session),
+      };
+    }),
+  );
   const hasEventSubscriptions = $derived(
-    isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hasHooks || hasPrs,
+    isolatedPreview
+      ? isolatedPreview.count > 0
+      : $agentSubscriptionLane$.visible || hasHooks || hasPrs,
   );
   const hasSubscriptions = $derived(hasEventSubscriptions || browserTabsVisible);
   const totalCount = $derived(
-    isolatedPreview ? isolatedPreview.count : agentCount + effectiveHookCount + effectivePrCount,
+    isolatedPreview
+      ? isolatedPreview.count
+      : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount,
   );
 
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
     isolatedPreview?.mode === 'agents' ||
-      (!isolatedPreview && agentsVisible && !hasHooks && !hasPrs),
+      (!isolatedPreview && $agentSubscriptionLane$.visible && !hasHooks && !hasPrs),
   );
   const agentOnlyCount = $derived(
-    isolatedPreview?.mode === 'agents' ? (isolatedPreview.agents?.length ?? 0) : agentCount,
+    isolatedPreview?.mode === 'agents'
+      ? (isolatedPreview.agents?.length ?? 0)
+      : $agentSubscriptionLane$.count,
   );
-  const collapsedStackItems = $derived(participantAvatarItems);
+  const collapsedStackItems = $derived(
+    isolatedPreview ? previewParticipantAvatarItems : storedParticipantAvatarItems,
+  );
 
   const heading = $derived.by(() => {
     if (isolatedPreview && !isAgentOnly) {
@@ -265,8 +286,7 @@
                 agents: isolatedPreview.agents ?? [],
                 initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
               }}
-              bind:participantAgentIds
-              bind:participantAvatarItems
+              bind:participantAvatarItems={previewParticipantAvatarItems}
             />
           </div>
           {#if isolatedPreview.mode === 'mixed'}
@@ -281,7 +301,7 @@
         {:else}
           <div
             class={isAgentOnly ? '' : 'border-t border-border'}
-            class:hidden={!agentsVisible}
+            class:hidden={!$agentSubscriptionLane$.visible}
             data-testid="event-subscriptions-agents"
           >
             <AgentSubscriptions
@@ -290,10 +310,10 @@
               {compact}
               embedded
               forceWaitingHeader
-              bind:visible={agentsVisible}
-              bind:count={agentCount}
-              bind:participantAgentIds
-              bind:participantAvatarItems
+              visible={$agentSubscriptionLane$.visible}
+              count={$agentSubscriptionLane$.count}
+              participantAgentIds={$agentSubscriptionLane$.participantAgentIds}
+              participantAvatarItems={storedParticipantAvatarItems}
             />
           </div>
           <div

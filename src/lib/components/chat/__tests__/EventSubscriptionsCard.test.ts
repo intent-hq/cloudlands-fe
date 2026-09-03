@@ -10,6 +10,7 @@ const { liveSubscriptions } = vi.hoisted(() => ({
   liveSubscriptions: {
     hooks: [] as Array<{ agentId: string; state: string }>,
     monitors: [] as Array<{ agentId: string; state: string }>,
+    agents: {} as Record<string, string[]>,
   },
 }));
 
@@ -41,6 +42,30 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async () => {
       ),
   };
 });
+vi.mock(
+  '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors',
+  async () => {
+    const { derived } = await import('svelte/store');
+    return {
+      selectAgentSubscriptionLane: (
+        _workspaceId: unknown,
+        agentId: import('svelte/store').Readable<string>,
+      ) =>
+        derived(agentId, ($agentId) => {
+          const participantAgentIds = liveSubscriptions.agents[$agentId] ?? [];
+          return {
+            visible: participantAgentIds.length > 0,
+            count: participantAgentIds.length,
+            participantAgentIds,
+          };
+        }),
+    };
+  },
+);
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return { selectAgentSessionsById: () => readable({}) };
+});
 
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 
@@ -53,6 +78,10 @@ beforeEach(() => {
     agentId,
     state: 'active',
   }));
+  liveSubscriptions.agents = {
+    agents: ['agent-one'],
+    'agents-hooks-prs': ['agent-one'],
+  };
 });
 
 afterEach(() => {
@@ -103,6 +132,35 @@ describe('EventSubscriptionsCard', () => {
     expect(card.className).toContain('shadow-sm');
     expect(screen.getByTestId(testId)).toBeTruthy();
     expect(screen.getByText('Subscribed to 1 event')).toBeTruthy();
+  });
+
+  it('renders a persisted-collapsed agents-only header and avatar stack from store state', async () => {
+    liveSubscriptions.agents['stored-agents'] = ['agent-one', 'agent-two'];
+    setEventSubscriptionsExpanded('workspace-a', 'stored-agents', false);
+
+    const card = await renderCard('stored-agents');
+
+    expect(card.parentElement?.classList.contains('hidden')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Waiting for 2 agents' })).toBeTruthy();
+    expect(card.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(2);
+    expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
+  });
+
+  it('keeps the store-backed mixed count and avatars stable across collapse', async () => {
+    const agentId = 'stored-mixed';
+    liveSubscriptions.agents[agentId] = ['agent-one', 'agent-two'];
+    liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
+    liveSubscriptions.monitors = [{ agentId, state: 'active' }];
+    setEventSubscriptionsExpanded('workspace-a', agentId, false);
+
+    const card = await renderCard(agentId);
+    const toggle = screen.getByRole('button', { name: 'Subscribed to 4 events' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(card.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(2);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Subscribed to 4 events' })).toBeTruthy();
   });
 
   it('composes all event categories without nested cards', async () => {
