@@ -81,6 +81,24 @@ describe('MarkdownViewer static rendering', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
+  it('offers image actions for a note workspace asset without chat thumbnails', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '![note image](workspace-asset://asset-123)' },
+    });
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    await waitFor(() => expect(image.tabIndex).toBe(0));
+    image.focus();
+    const trigger = await screen.findByRole('button', { name: /image options/i });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+  });
+
   it('replaces a missing workspace image with its file placeholder and actions', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {

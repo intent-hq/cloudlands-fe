@@ -297,21 +297,22 @@
   let videoLightboxName = $state<string | undefined>(undefined);
   let videoLightboxOpenerElement = $state<HTMLElement | null>(null);
 
-  // Hover overlay: chat-transcript thumbnails get an image actions menu.
+  // Hover overlay: workspace-backed images get an image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
-  // trigger is positioned over whichever thumbnail is hovered.
+  // trigger is positioned over whichever image is hovered or focused.
   let hoveredImage = $state<HTMLImageElement | null>(null);
   let hoveredImagePosition = $state({ top: 0, left: 0 });
   let imageActionsOpen = $state(false);
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
-  function handleImageHover(event: MouseEvent): void {
-    if (!chatImageThumbnails) return;
+  function isWorkspaceImage(image: HTMLImageElement): boolean {
+    const src = image.getAttribute('src') || '';
+    return src.startsWith('workspace-file://') || src.startsWith('workspace-asset://');
+  }
+
+  function handleImageInteraction(event: MouseEvent | FocusEvent): void {
     const target = event.target;
-    if (
-      target instanceof HTMLImageElement &&
-      (target.getAttribute('src') || '').startsWith('workspace-file://')
-    ) {
+    if (target instanceof HTMLImageElement && isWorkspaceImage(target)) {
       if (hoveredImage === target) return;
       const container = event.currentTarget as HTMLElement;
       const imageRect = target.getBoundingClientRect();
@@ -363,6 +364,9 @@
     }
 
     function reconcile() {
+      for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
+        if (isWorkspaceImage(image)) image.tabIndex = 0;
+      }
       for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
         replaceMedia(media, 'unsupported');
       }
@@ -429,7 +433,7 @@
     // link, in which case the link wins)
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (src.startsWith('workspace-file://')) {
+      if (src.startsWith('workspace-file://') || src.startsWith('workspace-asset://')) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -536,7 +540,7 @@
 <!-- simple: plain text, no markdown - just <p> -->
 <!-- static: processed HTML without TipTap (links, code blocks, task lists, tables, etc.) -->
 {#snippet imageActionsOverlay()}
-  {#if chatImageThumbnails && hoveredImage}
+  {#if hoveredImage}
     <div
       bind:this={imageActionsOverlayElement}
       class="absolute z-10"
@@ -573,7 +577,7 @@
     {/each}
   </div>
 {:else if isStreaming}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_mouse_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
     class="markdown-viewer streaming-content {className}"
@@ -582,7 +586,8 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
-    onmouseover={handleImageHover}
+    onmouseover={handleImageInteraction}
+    onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
@@ -596,7 +601,7 @@
 {:else}
   <!-- PERF: Static content - use processed HTML without TipTap -->
   <!-- This path handles links, code blocks, task lists, tables, etc. without the overhead of TipTap -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_mouse_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
     class="markdown-viewer static-content {className}"
@@ -605,7 +610,8 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
-    onmouseover={handleImageHover}
+    onmouseover={handleImageInteraction}
+    onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
@@ -619,7 +625,7 @@
     imageUrl={lightboxImageUrl}
     imageName={lightboxImageAlt}
     openerElement={lightboxOpenerElement}
-    showActionsMenu={chatImageThumbnails}
+    showActionsMenu
   />
 {/if}
 
@@ -1046,8 +1052,9 @@
     border-radius: 0.375rem;
   }
 
-  /* Inline workspace file images open in a lightbox on click */
-  .markdown-viewer :global(img[src^='workspace-file://']) {
+  /* Workspace-backed images open in a lightbox on click */
+  .markdown-viewer :global(img[src^='workspace-file://']),
+  .markdown-viewer :global(img[src^='workspace-asset://']) {
     cursor: zoom-in;
   }
 
