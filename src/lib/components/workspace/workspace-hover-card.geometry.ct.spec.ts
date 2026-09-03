@@ -44,7 +44,7 @@ for (const scene of landscapeRows) {
     const [cardBox, activityBox, pullRequestsBox, titleBox, statusBox] = await Promise.all([
       card.boundingBox(),
       activity.boundingBox(),
-      pullRequests.boundingBox(),
+      scene.hasPr ? pullRequests.boundingBox() : Promise.resolve(null),
       title.boundingBox(),
       status.boundingBox(),
     ]);
@@ -206,7 +206,7 @@ test('keeps sections accessible without visible headings or internal row divider
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('landscape-wide'),
   });
-  await expect(preview.locator('h3')).toHaveCount(0);
+  await expect(preview.locator('[data-workspace-hover-card] h3')).toHaveCount(0);
   await expect(preview.locator('[data-workspace-hover-card-activity]')).toHaveAccessibleName(
     'Agents',
   );
