@@ -389,6 +389,22 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].lastMessageId).toBe('m-2');
     });
 
+    it('applies an AgentLite hydration when only the wire messageCount changes', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messageCount: 0 })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { messageCount: 3 })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].messages).toEqual([]);
+      expect(next.byAgentId['a1'].messageCount).toBe(3);
+    });
+
     it('applies an upsert when only hasUnread flips on an otherwise-equivalent session (marker convergence)', () => {
       const state = agentSessionReducer(
         initialState,

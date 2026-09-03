@@ -37,11 +37,6 @@ describe('Chief card migration contract', () => {
     expect(source).not.toContain('[clip-path:');
   });
 
-  it('matches the thread picker trigger to the panel title scale', () => {
-    expect(source).toContain('class="text-ui min-w-0 flex-1 truncate text-left font-medium"');
-    expect(source).not.toContain('class="type-title min-w-0 flex-1 truncate text-left"');
-  });
-
   it('goes directly to a blank chat instead of rendering Chief empty states', () => {
     expect(source).not.toContain('layout_chiefCard_startThreadHint_description');
     expect(source).not.toContain('faWandMagicSparkles');

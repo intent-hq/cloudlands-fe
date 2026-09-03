@@ -319,6 +319,8 @@
           <button
             type="button"
             class="flex h-7! min-w-0 max-w-full flex-1 items-center justify-start px-1.5! text-foreground"
+            aria-expanded="false"
+            aria-controls="combined-panel-chief-content"
           >
             <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}

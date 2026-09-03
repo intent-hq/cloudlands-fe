@@ -1,4 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const mod = await import('../../../../test/mocks/backend-transport.mock');
+  return mod.mockBackendTransportModule;
+});
+
+import {
+  installMockBackend,
+  resetMockBackend,
+} from '../../../../test/mocks/backend-transport.mock';
+import { LiveAgentsClient } from '$lib/client/live/live-agents-client';
 import type { StoreState } from '../../types';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -247,6 +258,60 @@ describe('sidebar nav Chief selectors', () => {
       expect.objectContaining({ agentId: chief.id, messageCount: 3 }),
     ]);
   });
+
+  it.each([
+    { agentId: 'agent-chief-wire-normalized-populated', messageCount: 3, expectedAgentId: null },
+    {
+      agentId: 'agent-chief-wire-normalized-blank',
+      messageCount: 0,
+      expectedAgentId: 'agent-chief-wire-normalized-blank',
+    },
+  ])(
+    'uses messageCount=$messageCount after AgentLite normalization and store hydration',
+    async ({ agentId, messageCount, expectedAgentId }) => {
+      const backend = installMockBackend();
+      backend.onRequest('agent.list', () => ({
+        agents: [
+          {
+            id: agentId,
+            workspaceId: CHIEF_WORKSPACE_ID,
+            name: 'Chief of Staff',
+            nameExplicitlySet: false,
+            status: 'idle',
+            isActive: false,
+            isStreaming: false,
+            isProcessing: false,
+            isResponding: false,
+            isWaitingOnTool: false,
+            isWaitingForOtherAgents: false,
+            waitingForAgentIds: [],
+            turnInFlight: false,
+            createdAt: '2026-01-01T15:00:00.000Z',
+            updatedAt: '2026-01-01T15:00:00.000Z',
+            messageCount,
+            metadata: {
+              specialist: CHIEF_SPECIALIST_ID,
+              chiefPromptVersion: CHIEF_PROMPT_VERSION,
+            },
+          },
+        ],
+      }));
+
+      try {
+        const normalizedSessions = await new LiveAgentsClient().list(CHIEF_WORKSPACE_ID);
+        const agentSessions = agentSessionReducer(
+          agentSessionInitialState,
+          bulkUpsertSessions(normalizedSessions, { preserveExplicitRuntimeFlags: false }),
+        );
+        const state = { agentSessions } as unknown as StoreState;
+
+        expect(agentSessions.byAgentId[agentId]).toMatchObject({ messageCount, messages: [] });
+        expect(selectReusableChiefThread.select(state)?.agentId ?? null).toBe(expectedAgentId);
+      } finally {
+        resetMockBackend();
+      }
+    },
+  );
 
   it('reuses an unloaded Chief thread without wire message signals', () => {
     const chief = session(

@@ -60,8 +60,11 @@ describe('ChiefCard combined header', () => {
     const content = container.querySelector<HTMLElement>('#combined-panel-chief-content');
 
     expect(row).not.toBeNull();
+    expect(toggle.hasAttribute('data-chief-section-toggle')).toBe(true);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.getAttribute('aria-controls')).toBe('combined-panel-chief-content');
+    expect(titleButton.getAttribute('aria-expanded')).toBe('false');
+    expect(titleButton.getAttribute('aria-controls')).toBe('combined-panel-chief-content');
     expect(content?.hidden).toBe(true);
 
     await fireEvent.click(titleButton);
