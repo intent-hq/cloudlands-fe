@@ -79,9 +79,9 @@ describe('Settings deterministic mock-BE contracts', () => {
   it('pins the Accounts immediate provider write request and applied response', async () => {
     const request = {
       method: 'settings.update',
-      params: { changes: [{ path: 'providers.active', value: 'codex' }] },
+      params: { changes: [{ path: 'model.defaultProvider', value: 'codex' }] },
     };
-    mockBackend(request, { applied: [{ path: 'providers.active', value: 'codex' }] });
+    mockBackend(request, { applied: [{ path: 'model.defaultProvider', value: 'codex' }] });
 
     await expect(
       client.settings.setProviderSettings({ activeProviderId: 'codex' }),

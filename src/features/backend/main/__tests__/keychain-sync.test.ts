@@ -276,6 +276,26 @@ describe('reconcile', () => {
     expect(upserts).toEqual([]);
   });
 
+  it('a detectHosts=false flip stamped past a peer refresh wins: pushed, the refreshed IPs are not pulled back', async () => {
+    // A peer that has not pulled the flip yet refreshed its candidate list
+    // at clock T; the flip was stamped strictly past T, so LWW keeps the
+    // cleared list and the flip propagates instead of the resurrected IPs.
+    const peerRefresh = rec({
+      hosts: ['192.168.1.10', '10.0.0.5', '10.0.0.6'],
+      updatedAt: NOW - 1000,
+    });
+    const flip = rec({ hosts: ['192.168.1.10'], detectHosts: false, updatedAt: NOW - 999 });
+    const { client, upserts } = fakeClient([item(peerRefresh)]);
+    const { adapter, applied } = fakeAdapter([flip]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.pulled).toEqual([]);
+    expect(applied).toEqual([]);
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({ kind: 'record', record: flip });
+  });
+
   it('remote tombstone newer than local live: deletes locally, no purge before TTL', async () => {
     const stone = tombstone({ updatedAt: NOW - 1000 });
     const { client, deletes } = fakeClient([item(stone)]);

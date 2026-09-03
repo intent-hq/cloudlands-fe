@@ -91,13 +91,14 @@ vi.mock('$store/renderer/store', async () => {
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
-  // providers.active designates auggie — the settings-derived effective
+  // model.defaultProvider designates auggie — the settings-derived effective
   // default (the catalog never fabricates one from its first row). Mirrors
   // the mocked selectActiveProviderId below.
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+      providerSettings: { enabledProviders: {} },
+      model: { defaultProviderId: 'auggie' },
       providerModels: { byProviderId: mocks.providerModelsByProviderId, clearEpoch: 0 },
     }),
   });

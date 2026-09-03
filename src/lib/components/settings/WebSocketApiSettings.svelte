@@ -76,6 +76,7 @@
   // gates the whole tunnel surface: false on daemons predating the
   // `server.tunnel.*` settings, so the UI degrades to the plain IP selector.
   let bindIps = $state<string[]>([]);
+  let bindAddressSupported = $state(false);
   let tunnelEnabled = $state(false);
   let tunnelOnly = $state(false);
   let tunnelSupported = $state(false);
@@ -149,6 +150,7 @@
       const bindAddress = settings.find(
         (s: { path: string; value: unknown }) => s.path === 'server.bindAddress',
       );
+      bindAddressSupported = bindAddress !== undefined;
       bindIps = parseBindAddress(bindAddress?.value);
       const tunnelSetting = settings.find(
         (s: { path: string; value: unknown }) => s.path === 'server.tunnel.enabled',
@@ -227,6 +229,10 @@
       tunnelEnabled = selection.tunnel;
       tunnelOnly = selection.tunnel && selection.ips.length === 0;
       toast.success(m.settings_listenTargets_saved());
+      // The listen targets changed the published fields (hosts from the new
+      // bind IPs, tc address from the tunnel toggle) — propagate them to the
+      // published self entry (no-op in main when unpublished/suppressed).
+      refreshSelfEntry();
       // The bound listeners changed — refresh the pairing info (port/IPs/tc).
       await loadStatus();
     } catch (error) {
@@ -243,6 +249,16 @@
 
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
+
+  // "Enable Local Network Access" is a view over server.bindAddress (no
+  // daemon setting of its own): ON whenever a non-loopback target is bound.
+  // Tunnel-only has no direct listeners (the persisted bindAddress is kept
+  // only for later restoration), so it reads OFF there; toggling ON from
+  // that posture emits 0.0.0.0 + tunnel.only=false.
+  // Because this is pure derivation, the Listen targets section (gated on
+  // it) also hides as soon as a selector change lands loopback-only — that
+  // state IS "Local Network Access OFF", so the collapse is intended.
+  const localNetworkEnabled = $derived(!tunnelOnly && bindIps.some((ip) => ip !== LOOPBACK));
 
   /**
    * Force loopback into a bind set while the tunnel is on: the tailcat
@@ -271,6 +287,53 @@
       void handleListenTargetChange({ ips, tunnel: false });
     } else {
       void handleListenTargetChange({ ips: withLoopbackLock(bindIps), tunnel: true });
+    }
+  }
+
+  /**
+   * The "Enable Local Network Access" toggle rewrites the bind set: OFF
+   * narrows it to loopback only (the tunnel, when on, still forwards to
+   * 127.0.0.1), ON widens it to all interfaces. The tunnel state is carried
+   * through untouched.
+   */
+  function handleLocalNetworkToggle() {
+    if (listenSaving) return;
+    void handleListenTargetChange({
+      ips: localNetworkEnabled ? [LOOPBACK] : [ALL_INTERFACES],
+      tunnel: tunnelEnabled,
+    });
+  }
+
+  /**
+   * Loopback-only enable default: the daemon binds loopback only out of the
+   * box, so turning the WebSocket API on from that state widens the bind set
+   * to all interfaces (Local Network Access ON). This applies on EVERY enable
+   * from loopback-only, not just the first — an explicit Local Network Access
+   * OFF followed by disable/enable re-applies the default by design.
+   * A bindAddress the user already customized beyond loopback is left alone,
+   * the tunnel is untouched, and a persisted tunnel-only posture is respected
+   * (writing 0.0.0.0 there would contradict tunnel.only=true). Runs under
+   * listenSaving so the LNA/tunnel toggles cannot issue a concurrent
+   * bindAddress write.
+   * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
+   */
+  async function maybeDefaultLocalNetworkAccess() {
+    if (!bindAddressSupported || localNetworkEnabled || tunnelOnly || listenSaving) return;
+    listenSaving = true;
+    try {
+      await appClient.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
+      bindIps = [ALL_INTERFACES];
+      refreshSelfEntry();
+      // The bound listeners changed — refresh the pairing info (port/IPs).
+      await loadStatus();
+    } catch (error) {
+      toast.error(
+        m.settings_listenTargets_saveError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      listenSaving = false;
     }
   }
 
@@ -304,6 +367,7 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
+        await maybeDefaultLocalNetworkAccess();
         await maybeAutoPublish();
       } else {
         await maybeAutoUnpublish();
@@ -602,6 +666,94 @@
       </div>
     </section>
 
+    {#if enabled && tunnelSupported}
+      <div transition:slide={{ duration: 200 }} class="space-y-4">
+        <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
+             old daemons predating the server.tunnel.* settings. -->
+        <section data-tunnel-toggle-row>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_tunnel_enable_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_tunnel_enable_description()}{' '}<a
+                  href="https://github.com/tailscale/tailcat"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
+                >
+              </p>
+            </div>
+            <Toggle
+              pressed={tunnelEnabled}
+              onclick={handleTunnelToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              disabled={toggleBusy || listenSaving}
+              ariaLabel={m.settings_tunnel_enable_label()}
+            />
+          </div>
+        </section>
+
+        <!-- This daemon's own tailcat tunnel address (copyable) — shown only
+             while the tunnel is on and the daemon reports one. -->
+        {#if tunnelEnabled && tcAddress}
+          <section data-tunnel-address-row>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm text-muted-foreground">
+                {m.settings_tunnel_tcAddress_label()}
+              </span>
+              <div class="flex items-center gap-2 shrink-0">
+                <code
+                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                  title={tcAddress}>{tcAddress}</code
+                >
+                <button
+                  type="button"
+                  onclick={handleCopyTcAddress}
+                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                  title={m.settings_tunnel_tcAddress_copy()}
+                >
+                  <Fa icon={faCopy} size="sm" />
+                </button>
+              </div>
+            </div>
+          </section>
+        {/if}
+      </div>
+    {/if}
+
+    {#if enabled && bindAddressSupported}
+      <div transition:slide={{ duration: 200 }}>
+        <!-- Local Network Access: a view over server.bindAddress (ON when a
+             non-loopback target is bound). Absent on daemons that do not
+             report server.bindAddress. -->
+        <section data-local-network-toggle-row>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_wsApi_localNetworkAccess_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_wsApi_localNetworkAccess_description()}
+              </p>
+            </div>
+            <Toggle
+              pressed={localNetworkEnabled}
+              onclick={handleLocalNetworkToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              disabled={toggleBusy || listenSaving}
+              ariaLabel={m.settings_wsApi_localNetworkAccess_label()}
+            />
+          </div>
+        </section>
+      </div>
+    {/if}
+
     <!-- Port (always visible) -->
     <section>
       {#snippet portValidation()}
@@ -609,7 +761,7 @@
         <!-- i18n-ignore (template expression, not user-facing text) -->
         {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
         <div class="flex items-center justify-between gap-3">
-          <span class="text-sm text-muted-foreground">{m.settings_wsApi_port_label()}</span>
+          <span class="text-sm font-medium text-foreground">{m.settings_wsApi_port_label()}</span>
           <div class="flex items-center gap-2">
             <div class="shrink-0 w-32">
               <Input
@@ -637,45 +789,24 @@
         {#if !isValid}
           <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
         {/if}
-        {#if enabled && port}
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_wsApi_port_currentlyBound({ port: String(port) })}
-          </p>
-        {/if}
       {/snippet}
       {@render portValidation()}
     </section>
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
-        {#if tunnelSupported}
-          <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
-               old daemons predating the server.tunnel.* settings. -->
-          <section data-tunnel-toggle-row>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm font-medium text-foreground">
-                  {m.settings_tunnel_enable_label()}
-                </p>
-                <p class="text-xs text-subtle mt-1">
-                  {m.settings_tunnel_enable_description()}{' '}<a
-                    href="https://github.com/tailscale/tailcat"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
-                  >
-                </p>
-              </div>
-              <Toggle
-                pressed={tunnelEnabled}
-                onclick={handleTunnelToggle}
-                variant="indicator"
-                size="xs"
-                class="mb-auto"
-                disabled={listenSaving}
-                ariaLabel={m.settings_tunnel_enable_label()}
-              />
-            </div>
+        <!-- Listen targets: the daemon's bound IPs. Shown only while Local
+             Network Access is ON; the tunnel is toggled above, not in the
+             selector. -->
+        {#if localNetworkEnabled}
+          <section transition:slide={{ duration: 200 }}>
+            <ListenTargetSelector
+              availableIps={localIps}
+              selectedIps={tunnelOnly ? [] : bindIps}
+              tunnelSelected={tunnelEnabled}
+              saving={listenSaving}
+              onchange={handleListenTargetChange}
+            />
           </section>
         {/if}
 
@@ -719,45 +850,6 @@
                   ? m.settings_wsApi_publishSelf_republish_label()
                   : m.settings_wsApi_publishSelf_button_label()}
               </Button>
-            </div>
-          </section>
-        {/if}
-
-        <!-- Listen targets: the daemon's bound IPs. Rendered only once
-             loaded; the tunnel is toggled above, not in the selector. -->
-        <section>
-          <ListenTargetSelector
-            availableIps={localIps}
-            selectedIps={tunnelOnly ? [] : bindIps}
-            tunnelSelected={tunnelEnabled}
-            saving={listenSaving}
-            onchange={handleListenTargetChange}
-          />
-        </section>
-
-        <!-- This daemon's own tailcat tunnel address (copyable) — surfaced
-             here, where pairing happens, whenever the daemon reports one;
-             absent on old daemons or with the tunnel down. -->
-        {#if tcAddress}
-          <section data-tunnel-address-row>
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm text-muted-foreground">
-                {m.settings_tunnel_tcAddress_label()}
-              </span>
-              <div class="flex items-center gap-2 shrink-0">
-                <code
-                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-                  title={tcAddress}>{tcAddress}</code
-                >
-                <button
-                  type="button"
-                  onclick={handleCopyTcAddress}
-                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-                  title={m.settings_tunnel_tcAddress_copy()}
-                >
-                  <Fa icon={faCopy} size="sm" />
-                </button>
-              </div>
             </div>
           </section>
         {/if}

@@ -6,9 +6,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
   isBrowserEmulatedSize,
+  isBrowserTabViewport,
   isWorkspaceCommandPayload,
   type BrowserCloseTabPayload,
   type BrowserEmulatedSize,
+  type BrowserTabViewport,
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
@@ -53,6 +55,9 @@ function browserTab(
   emulatedSize?: BrowserEmulatedSize,
   ownerAgentName?: string,
 ): Omit<PanelTab, 'id'> {
+  const viewport: BrowserTabViewport = emulatedSize
+    ? { mode: 'custom', ...emulatedSize }
+    : { mode: 'fit' };
   return {
     type: 'browser',
     title: 'Browser',
@@ -70,6 +75,7 @@ function browserTab(
     // Persist the emulated viewport alongside the owner so the tab
     // rehydrates at its actual size after restart (monorepo#2857).
     ...(emulatedSize === undefined ? {} : { emulatedSize }),
+    viewport,
   };
 }
 
@@ -83,7 +89,17 @@ function tabOwnerAction(
   ownerAgentId: string,
   emulatedSize?: BrowserEmulatedSize,
   ownerAgentName?: string,
+  viewport?: BrowserTabViewport,
 ): ReturnType<typeof setTabOwnerAgent> {
+  if (viewport !== undefined)
+    return setTabOwnerAgent(
+      workspaceId,
+      tabId,
+      ownerAgentId,
+      emulatedSize,
+      ownerAgentName,
+      viewport,
+    );
   if (ownerAgentName !== undefined)
     return setTabOwnerAgent(workspaceId, tabId, ownerAgentId, emulatedSize, ownerAgentName);
   if (emulatedSize !== undefined)
@@ -494,6 +510,7 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
           ...(isBrowserEmulatedSize(tab.emulatedSize) ? { emulatedSize: tab.emulatedSize } : {}),
         }
       : {}),
+    ...(isBrowserTabViewport(tab.viewport) ? { viewport: tab.viewport } : {}),
     ...(hidden ? { hidden: true } : {}),
   });
   const browserTabs = [
@@ -553,6 +570,7 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
       data.ownerAgentId,
       isBrowserEmulatedSize(data.emulatedSize) ? data.emulatedSize : undefined,
       ownerAgentName,
+      isBrowserTabViewport(data.viewport) ? data.viewport : undefined,
     ),
   );
 }

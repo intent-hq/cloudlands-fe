@@ -239,6 +239,13 @@
     return '';
   });
 
+  // i18n-ignore (development instance identifier supplied by the launcher)
+  const devTitleText = $derived(
+    import.meta.env.DEV && import.meta.env.VITE_DEV_NAME
+      ? `${displayText || 'Intent'} · [${import.meta.env.VITE_DEV_NAME}]`
+      : '',
+  );
+
   // Update the native window title when displayText changes
   $effect(() => {
     const title = displayText || 'Intent';
@@ -334,6 +341,15 @@
 
     <!-- Right column: global status and settings -->
     <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
+      {#if devTitleText}
+        <span
+          class="max-w-[min(45vw,40rem)] truncate px-2 text-xs text-muted-foreground"
+          title={devTitleText}
+          data-dev-instance-title
+        >
+          {devTitleText}
+        </span>
+      {/if}
       {@render titlebarUtilities(true)}
     </div>
     {#if activeTabBounds}
@@ -379,7 +395,7 @@
 
   .window-title-bar:global(.window-title-bar-mac) {
     --titlebar-control-shift: 8px;
-    padding-left: 60px; /* Space for macOS traffic lights */
+    padding-left: 80px; /* Native traffic-light clearance inside the counter-scaled titlebar */
   }
 
   .window-title-bar:global(.window-title-bar-windows) {

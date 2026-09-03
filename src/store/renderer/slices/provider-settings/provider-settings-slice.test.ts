@@ -4,14 +4,11 @@ import {
   it,
 } from "vitest";
 import {
-  activeProviderPersistRejected,
   enablementPersistRejected,
   ensureEnabledIfUnset,
-  hydrateActiveProvider,
   initialState as bareInitialState,
   loadEnabledProvidersFromStorage,
   providerSettingsReducer,
-  setActiveProvider,
   setProviderEnabled,
   toggleProvider,
   type ProviderSettingsState,
@@ -32,76 +29,8 @@ describe("providerSettingsReducer", () => {
     expect(state).toEqual(bareInitialState);
   });
 
-  it("snapshots catalog metadata without adopting any provider as active", () => {
-    expect(bareInitialState.activeProviderId).toBe("");
-    // The registry carries no default designation — hydration never sets an
-    // active provider on its own.
-    expect(initialState.activeProviderId).toBe("");
-    // Hydration must not clobber a settings-hydrated active provider.
-    const hydratedFirst = providerSettingsReducer(
-      { ...bareInitialState, activeProviderId: "codex" },
-      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-    );
-    expect(hydratedFirst.activeProviderId).toBe("codex");
-  });
-
-  describe("active provider actions", () => {
-    it("should update activeProviderId", () => {
-      const state = providerSettingsReducer(initialState, setActiveProvider("claude-code"));
-      expect(state.activeProviderId).toBe("claude-code");
-      expect(state.pendingActiveProviderId).toBe("claude-code");
-    });
-
-    it("should not mutate previous state when setting active provider", () => {
-      const prev = { ...initialState };
-      const state = providerSettingsReducer(prev, setActiveProvider("claude-code"));
-      expect(prev.activeProviderId).toBe(initialState.activeProviderId);
-      expect(state.activeProviderId).toBe("claude-code");
-    });
-
-    it("should set activeProviderId from hydration", () => {
-      const state = providerSettingsReducer(initialState, hydrateActiveProvider("codex"));
-      expect(state.activeProviderId).toBe("codex");
-      expect(state.pendingActiveProviderId).toBeNull();
-    });
-
-    it("should overwrite an existing active provider during hydration", () => {
-      const prev: ProviderSettingsState = {
-        ...initialState,
-        activeProviderId: "claude-code",
-      };
-      const state = providerSettingsReducer(prev, hydrateActiveProvider("auggie"));
-      expect(state.activeProviderId).toBe("auggie");
-    });
-
-    it("keeps a newer local active provider over a stale hydration until confirmation", () => {
-      const selected = providerSettingsReducer(initialState, setActiveProvider("claude-code"));
-      const stale = providerSettingsReducer(selected, hydrateActiveProvider("auggie"));
-      expect(stale).toBe(selected);
-      expect(stale.activeProviderId).toBe("claude-code");
-
-      const confirmed = providerSettingsReducer(stale, hydrateActiveProvider("claude-code"));
-      expect(confirmed.activeProviderId).toBe("claude-code");
-      expect(confirmed.pendingActiveProviderId).toBeNull();
-
-      const remoteChange = providerSettingsReducer(confirmed, hydrateActiveProvider("codex"));
-      expect(remoteChange.activeProviderId).toBe("codex");
-    });
-
-    it("retires only the matching pending active provider after daemon rejection", () => {
-      const claude = providerSettingsReducer(initialState, setActiveProvider("claude-code"));
-      const codex = providerSettingsReducer(claude, setActiveProvider("codex"));
-      const oldRejection = providerSettingsReducer(
-        codex,
-        activeProviderPersistRejected("claude-code"),
-      );
-      expect(oldRejection).toBe(codex);
-
-      const rejected = providerSettingsReducer(codex, activeProviderPersistRejected("codex"));
-      expect(rejected.activeProviderId).toBe("codex");
-      expect(rejected.pendingActiveProviderId).toBeNull();
-    });
-  });
+  // The default-provider (active provider) state moved to the model slice —
+  // its guarded hydration/rejection behavior is covered in model-slice.test.ts.
 
   describe("enabled providers actions", () => {
     it("should enable a provider", () => {

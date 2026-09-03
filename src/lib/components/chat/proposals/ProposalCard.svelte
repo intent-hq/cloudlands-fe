@@ -50,7 +50,6 @@
   interface Props {
     proposal: Proposal;
     disabled?: boolean;
-    neutralBorder?: boolean;
     onApply?: (detail: ProposalActionDetail) => void;
     onDiscard?: (detail: ProposalActionDetail) => void;
     onUndo?: (proposalId: string) => void;
@@ -82,7 +81,6 @@
   let {
     proposal,
     disabled = false,
-    neutralBorder = false,
     onApply,
     onDiscard,
     onUndo,
@@ -208,11 +206,11 @@
   const metadataIdPrefix = $derived(`proposal-${toDomId(proposalId)}`);
   const cardClass = $derived.by(() => {
     if (isWorkspaceCreate) {
-      return isWorkspaceCreated && !neutralBorder
+      return isWorkspaceCreated
         ? 'min-w-0 w-full rounded-(--radius-medium) border border-success/40 bg-card p-4 shadow-(--elevation-raised) sm:p-5'
         : 'min-w-0 w-full rounded-(--radius-medium) border border-border bg-card p-4 shadow-(--elevation-raised) sm:p-5';
     }
-    return isApplied && !neutralBorder
+    return isApplied
       ? 'min-w-0 w-full overflow-hidden rounded-(--radius-medium) border border-success/40 bg-card shadow-(--elevation-raised)'
       : 'min-w-0 w-full overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)';
   });
@@ -829,9 +827,7 @@
 </script>
 
 {#if showDismissed}
-  <div
-    class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
-  >
+  <div class="type-body px-3 py-2 text-muted-foreground">
     {m.chat_shared_discarded_label()}
     {proposal.preview.title}
   </div>

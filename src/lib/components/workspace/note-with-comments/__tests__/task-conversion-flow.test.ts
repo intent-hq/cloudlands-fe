@@ -641,6 +641,10 @@ describe('NoteWithComments task conversion regression', () => {
   it('recreates the editor with a new owner when the workspace changes', async () => {
     const view = await renderInitializedNote();
     expect(editorWorkspaceIds.at(-1)).toBe(WORKSPACE_ID);
+    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
+      'Baseline content',
+      expect.objectContaining({ workspaceId: WORKSPACE_ID }),
+    );
 
     await view.rerender({
       workspace: { id: 'ws-2' } as any,
@@ -652,6 +656,20 @@ describe('NoteWithComments task conversion regression', () => {
     });
 
     await waitFor(() => expect(editorWorkspaceIds.at(-1)).toBe('ws-2'));
+    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
+      'Baseline content',
+      expect.objectContaining({ workspaceId: 'ws-2' }),
+    );
+  });
+
+  it('passes the owner workspace to background conversion for large notes', async () => {
+    const content = 'x'.repeat(5001);
+    await renderInitializedNote('large-note', content);
+
+    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
+      content,
+      expect.objectContaining({ workspaceId: WORKSPACE_ID }),
+    );
   });
 
   it('does not retain the old owner when workspace changes during editor initialization', async () => {

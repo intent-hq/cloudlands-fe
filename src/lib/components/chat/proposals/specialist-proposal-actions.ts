@@ -166,9 +166,14 @@ export async function applySpecialistProposalWork(
   const fallbackModel = current
     ? selectEffectiveModel.select(state, current.id)
     : selectSelectedModel.select(state);
-  const model = stringField(proposal, detail, 'model', fallbackModel).trim();
+  // Writes emit bare model ids only (PROTOCOL §5.11): a legacy compound
+  // proposal/fallback model splits into the bare id plus its provider, the
+  // prefix winning as the codingAgent (`|| fallback` so a malformed empty
+  // prefix never propagates as a "real" provider id).
+  const rawModel = stringField(proposal, detail, 'model', fallbackModel).trim();
+  const { providerId: modelProviderId, modelId: model } = splitLegacyCompoundId(rawModel);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
-  const providerId = splitLegacyCompoundId(model).providerId ?? defaultProviderId;
+  const providerId = modelProviderId || defaultProviderId;
   const description = stringField(
     proposal,
     detail,
@@ -186,9 +191,12 @@ export async function applySpecialistProposalWork(
     id,
     name,
     description: description || m.settings_aiBehavior_customSpecialistFallback(),
+    // A compound model's provider prefix outranks the payload/effective
+    // codingAgent, mirroring the daemon's split-on-read precedence.
     codingAgent:
-      payload.codingAgent ??
-      (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),
+      modelProviderId ||
+      (payload.codingAgent ??
+        (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId)),
     model,
     roleReminder: payload.roleReminder ?? current?.roleReminder,
     behaviorPrompt: prompt,

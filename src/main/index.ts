@@ -338,7 +338,6 @@ import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/set
 import {
   setupSystemIPC,
   isFocusedWindowInWorkspace,
-  isFocusedWindowBrowserActive,
   getFocusedWindowWorkspaceId,
   getAllOpenWorkspaceIds,
   installIntentCli,
@@ -358,6 +357,7 @@ import { m } from '../shared/paraglide/messages.js';
 import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspace-command';
 import { openNewWindowFromMenu } from './menu-new-window';
 import { toggleWindowDevTools } from './menu-devtools-toggle';
+import { handleMenuZoom } from './menu-zoom';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
@@ -384,6 +384,7 @@ import { setResolvedAppName } from './utils/resolve-app-title.js';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
+import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
@@ -676,7 +677,20 @@ app.whenReady().then(async () => {
       applicationVersion: aboutPanelInfo.applicationVersion,
       ...(aboutPanelInfo.intentdVersion ? { version: aboutPanelInfo.intentdVersion } : {}),
       copyright: aboutPanelInfo.copyright,
+      credits: formatThirdPartyCredits(),
     });
+  };
+
+  // Help → About dialog (all platforms; macOS additionally has the native
+  // about panel in the app menu).
+  const showAboutDialog = (): void => {
+    const options = buildAboutDialogOptions(aboutPanelInfo);
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, options);
+    } else {
+      dialog.showMessageBox(options);
+    }
   };
 
   // Set initial about panel options (macOS only)
@@ -1007,36 +1021,14 @@ app.whenReady().then(async () => {
     // Build the Help menu items
     const helpMenuItems: Electron.MenuItemConstructorOptions[] = [];
 
-    // Add About on Windows (macOS uses the app menu)
-    if (!isMacOS) {
-      helpMenuItems.push({
-        label: m.menu_about_app({ appName }),
-        click: () => {
-          const aboutMessage = [
-            `${aboutPanelInfo.applicationName}`,
-            m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
-            aboutPanelInfo.intentdVersion ? `${aboutPanelInfo.intentdVersion}` : '',
-            `${aboutPanelInfo.copyright}`,
-          ]
-            .filter(Boolean)
-            .join('\n');
+    // About (all platforms) — carries the third-party license credits
+    helpMenuItems.push({
+      label: m.menu_about_app({ appName }),
+      click: showAboutDialog,
+    });
 
-          const mainWindow = getMainWindow();
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: m.menu_about_app({ appName }),
-              message: aboutMessage,
-            });
-          } else {
-            dialog.showMessageBox({
-              type: 'info',
-              title: m.menu_about_app({ appName }),
-              message: aboutMessage,
-            });
-          }
-        },
-      });
+    // Check for Updates / Install CLI live in the app menu on macOS
+    if (!isMacOS) {
       helpMenuItems.push({
         label: m.menu_check_for_updates(),
         click: async () => {
@@ -1101,8 +1093,8 @@ app.whenReady().then(async () => {
           }
         },
       });
-      helpMenuItems.push({ type: 'separator' });
     }
+    helpMenuItems.push({ type: 'separator' });
 
     // Add Show Release Notes (cross-platform, works in dev too — the renderer
     // fetches on demand and falls back to "not available" when there are none)
@@ -1397,46 +1389,17 @@ app.whenReady().then(async () => {
           {
             label: m.menu_actual_size(),
             accelerator: 'CmdOrCtrl+0',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (!focusedWindow || focusedWindow.isDestroyed()) return;
-              // Route zoom to main app or webview based on renderer-tracked panel focus
-              if (isFocusedWindowBrowserActive()) {
-                sendWorkspaceCommand('menu:reset-zoom');
-              } else {
-                focusedWindow.webContents.setZoomLevel(0);
-              }
-            },
+            click: () => handleMenuZoom('menu:reset-zoom', sendWorkspaceCommand),
           },
           {
             label: m.menu_zoom_in(),
             accelerator: 'CmdOrCtrl+=',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (!focusedWindow || focusedWindow.isDestroyed()) return;
-              if (isFocusedWindowBrowserActive()) {
-                sendWorkspaceCommand('menu:zoom-in');
-              } else {
-                focusedWindow.webContents.setZoomLevel(
-                  focusedWindow.webContents.getZoomLevel() + 0.5,
-                );
-              }
-            },
+            click: () => handleMenuZoom('menu:zoom-in', sendWorkspaceCommand),
           },
           {
             label: m.menu_zoom_out(),
             accelerator: 'CmdOrCtrl+-',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (!focusedWindow || focusedWindow.isDestroyed()) return;
-              if (isFocusedWindowBrowserActive()) {
-                sendWorkspaceCommand('menu:zoom-out');
-              } else {
-                focusedWindow.webContents.setZoomLevel(
-                  focusedWindow.webContents.getZoomLevel() - 0.5,
-                );
-              }
-            },
+            click: () => handleMenuZoom('menu:zoom-out', sendWorkspaceCommand),
           },
           { type: 'separator' },
           { role: 'togglefullscreen', label: m.menu_toggle_fullscreen() },
@@ -1472,8 +1435,10 @@ app.whenReady().then(async () => {
   });
 
   // Rebuild menu when the main-process locale changes (renderer synced a new
-  // language preference over app:set-language-preference)
+  // language preference over app:set-language-preference); the macOS about
+  // panel's localized credits are re-applied for the same reason.
   app.on('main-locale-changed', () => {
+    applyAboutPanelOptions();
     rebuildMenu();
   });
 

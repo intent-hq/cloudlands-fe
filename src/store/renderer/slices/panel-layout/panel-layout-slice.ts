@@ -23,6 +23,7 @@ import { removeScript } from '../scripts/scripts-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
+  BrowserTabViewport,
   PanelTab,
   PanelTabType,
   PanelState,
@@ -1693,6 +1694,24 @@ export const updateTabFavicon = createAction<[wsId: string, tabId: string, favic
   'panelLayout/updateTabFavicon',
 );
 
+export const updateTabViewport = createAction<
+  [wsId: string, tabId: string, viewport: BrowserTabViewport]
+>('panelLayout/updateTabViewport');
+
+function browserTabViewportEqual(
+  left: BrowserTabViewport | undefined,
+  right: BrowserTabViewport,
+): boolean {
+  if (left?.mode !== right.mode) return false;
+  if (right.mode === 'fit') return true;
+  if (left.mode === 'fit') return false;
+  return (
+    left.width === right.width &&
+    left.height === right.height &&
+    (right.mode !== 'preset' || (left.mode === 'preset' && left.presetId === right.presetId))
+  );
+}
+
 /**
  * Record the agent owning a browser tab (claimTab / agent openTab adopting an
  * existing tab, monorepo#2857). Persisted with the layout so ownership
@@ -1708,6 +1727,7 @@ export const setTabOwnerAgent = createAction<
     ownerAgentId: string,
     emulatedSize?: { width: number; height: number },
     ownerAgentName?: string,
+    viewport?: BrowserTabViewport,
   ]
 >('panelLayout/setTabOwnerAgent');
 
@@ -3025,8 +3045,11 @@ panelLayoutReducer.with(
 // --- Set Tab Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(
   setTabOwnerAgent,
-  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName] }) => {
+  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName, viewport] }) => {
     const ws = getWorkspaceState(state, wsId);
+    const nextViewport =
+      viewport ??
+      (emulatedSize === undefined ? undefined : { mode: 'custom' as const, ...emulatedSize });
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
       if (tabIdx >= 0) {
@@ -3036,6 +3059,7 @@ panelLayoutReducer.with(
           (emulatedSize === undefined ||
             (tab.emulatedSize?.width === emulatedSize.width &&
               tab.emulatedSize?.height === emulatedSize.height)) &&
+          (nextViewport === undefined || browserTabViewportEqual(tab.viewport, nextViewport)) &&
           (ownerAgentName === undefined || tab.ownerAgentName === ownerAgentName);
         if (unchanged) return state;
         const newTabs = panel.tabs.map((t, i) =>
@@ -3044,6 +3068,7 @@ panelLayoutReducer.with(
                 ...t,
                 ownerAgentId,
                 ...(emulatedSize === undefined ? {} : { emulatedSize }),
+                ...(nextViewport === undefined ? {} : { viewport: nextViewport }),
                 // An undefined name keeps any previously persisted one — a
                 // notification that couldn't resolve the name must not erase
                 // it (monorepo#3438).
@@ -3066,6 +3091,7 @@ panelLayoutReducer.with(
         (emulatedSize === undefined ||
           (hiddenTab.emulatedSize?.width === emulatedSize.width &&
             hiddenTab.emulatedSize?.height === emulatedSize.height)) &&
+        (nextViewport === undefined || browserTabViewportEqual(hiddenTab.viewport, nextViewport)) &&
         (ownerAgentName === undefined || hiddenTab.ownerAgentName === ownerAgentName);
       if (unchanged) return state;
       return setWorkspaceState(state, wsId, {
@@ -3074,6 +3100,7 @@ panelLayoutReducer.with(
           id: tabId,
           ownerAgentId,
           ...(emulatedSize === undefined ? {} : { emulatedSize }),
+          ...(nextViewport === undefined ? {} : { viewport: nextViewport }),
           ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
         }),
       });
@@ -3081,6 +3108,36 @@ panelLayoutReducer.with(
     return state;
   },
 );
+// --- Update Browser Tab Viewport ---
+panelLayoutReducer.with(updateTabViewport, (state, { payload: [wsId, tabId, viewport] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    const tab = panel.tabs.find(
+      (candidate) => candidate.id === tabId && candidate.type === 'browser',
+    );
+    if (!tab) continue;
+    if (browserTabViewportEqual(tab.viewport, viewport)) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: {
+        ...ws.panels,
+        [pId]: {
+          ...panel,
+          tabs: panel.tabs.map((candidate) =>
+            candidate.id === tabId ? { ...candidate, viewport } : candidate,
+          ),
+        },
+      },
+    });
+  }
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab || hiddenTab.type !== 'browser') return state;
+  if (browserTabViewportEqual(hiddenTab.viewport, viewport)) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    hiddenTabs: updateItem(ws.hiddenTabs, { id: tabId, viewport }),
+  });
+});
 // --- Update Tab Favicon ---
 panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
   const ws = getWorkspaceState(state, wsId);

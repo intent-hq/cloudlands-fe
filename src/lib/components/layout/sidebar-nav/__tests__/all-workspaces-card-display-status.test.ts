@@ -244,11 +244,13 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
   it('renders sections in the canonical lifecycle order', async () => {
     // Canonical fixed section order: failed, blocked, needs_attention,
-    // not_started, in_progress, idle, complete, pr_open, pr_ready, pr_merged.
-    // In particular: idle directly after in_progress, complete before pr_open,
-    // and pr_open before pr_ready (open → mergeable → merged progression).
+    // not_started, in_progress, idle, complete, pr_open, pr_ready, pr_queued,
+    // pr_merged. In particular: idle directly after in_progress, complete
+    // before pr_open, and pr_open before pr_ready before pr_queued
+    // (open → mergeable → queued → merged progression).
     const statuses = [
       'pr_merged',
+      'pr_queued',
       'pr_ready',
       'pr_open',
       'complete',
@@ -286,6 +288,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
         'Completed',
         'PR Open',
         'PR Mergeable',
+        'Queued to merge',
         'PR Merged',
       ]);
     });

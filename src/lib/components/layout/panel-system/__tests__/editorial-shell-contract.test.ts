@@ -197,7 +197,8 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar).toContain('--titlebar-control-shift: 0px');
     expect(titlebar).toContain('--titlebar-control-shift: 8px');
-    expect(titlebar).toContain('padding-left: 60px');
+    // Native-control clearance is measured against WindowTitleBar in
+    // test/titlebar-workspace-controls.spec.ts, not inferred from CSS spelling.
     expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
     expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
@@ -289,6 +290,13 @@ describe('editorial workspace shell presentation contract', () => {
       /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
     );
     expect(appLayout).toContain('class="workspace-main flex');
+    expect(appLayout).toContain(
+      'const shellTransparencyEnabled$ = selectShellTransparencyEnabled()',
+    );
+    expect(appLayout).toContain('data-shell-opaque={!$shellTransparencyEnabled$ || undefined}');
+    expect(appLayoutCss).toMatch(
+      /\.panel-layout-container\[data-shell-opaque\],[\s\S]*background-color:\s*hsl\(var\(--background\)\);/,
+    );
     expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
     expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');

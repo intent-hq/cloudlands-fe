@@ -4,8 +4,8 @@
  * Read-only markdown renders as static processed HTML — no ProseMirror
  * EditorView is constructed for chat transcript messages.
  */
-import { render, waitFor } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { describe, expect, it, vi } from 'vitest';
 import MarkdownViewer from '../MarkdownViewer.svelte';
 
 describe('MarkdownViewer static rendering', () => {
@@ -60,6 +60,101 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('pre code')?.textContent).toContain('const x = 1;');
   });
 
+  it('renders a workspace video once with the accessible snapshot and modal player', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/out/demo.mp4)',
+        workspaceId: 'ws-abc',
+        chatImageThumbnails: true,
+      },
+    });
+
+    const snapshot = await screen.findByRole('button', { name: /play demo/i });
+    expect(container.querySelectorAll('[data-chat-video]')).toHaveLength(1);
+    expect(container.querySelector('video')?.getAttribute('src')).toBe(
+      'workspace-file://ws-abc/out/demo.mp4',
+    );
+
+    await fireEvent.click(snapshot);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByTestId('chat-video-player')).toBeTruthy();
+  });
+
+  it.each(['Enter', ' '])('opens workspace image lightbox with %s', async (key) => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![diagram](intent://local/file/docs/diagram.png)',
+        workspaceId: 'ws-abc',
+      },
+    });
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    await fireEvent.keyDown(image, { key });
+
+    expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
+  });
+
+  it('offers image actions for a note workspace asset without chat thumbnails', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '![note image](workspace-asset://asset-123)' },
+    });
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    await waitFor(() => expect(image.tabIndex).toBe(0));
+    image.focus();
+    const trigger = await screen.findByRole('button', { name: /image options/i });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+  });
+
+  it('replaces a missing workspace image with its file placeholder and actions', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![missing](intent://local/file/out/missing%20image.png)',
+        workspaceId: 'ws-abc',
+      },
+    });
+    await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
+    const image = container.querySelector<HTMLImageElement>('img')!;
+
+    await fireEvent.error(image);
+
+    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing image.png'));
+  });
+
+  it('replaces a missing workspace video with its file placeholder', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/out/demo.mp4)',
+        workspaceId: 'ws-abc',
+      },
+    });
+    await waitFor(() => expect(container.querySelector('video')).toBeTruthy());
+    const video = container.querySelector<HTMLVideoElement>('video')!;
+
+    await fireEvent.error(video);
+
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('demo');
+    expect(status.textContent).toContain('File is missing');
+  });
+
   it('renders Mermaid fenced blocks as visible source when requested', async () => {
     const { container } = render(MarkdownViewer, {
       props: {
@@ -84,5 +179,18 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(container.querySelector('code.language-diff')).toBeTruthy());
     expect(container.querySelector('code.language-diff')?.textContent).toContain('-old\n+new');
     expect(container.querySelector('[data-type="diff-block"]')).toBeNull();
+  });
+
+  it('renders unsupported workspace media as a link instead of an image', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![demo](intent://local/file/.demo-artifacts/demo.mov)',
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('a')).toBeTruthy());
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('[data-chat-video]')).toBeNull();
   });
 });

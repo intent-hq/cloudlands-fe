@@ -53,8 +53,8 @@ function isUnavailable(
 /**
  * FE mirror of the §5.31 provider gate: `agent.enhancePrompt` is auggie-only.
  * The daemon derives the effective provider from settings (provider of
- * `model.default`, else `providers.active`) and no longer treats an unset
- * `providers.active` as auggie — callers pass the settings-derived effective
+ * `model.default`, else `model.defaultProvider`) and does not treat an unset
+ * default provider as auggie — callers pass the settings-derived effective
  * provider (`selectEffectiveDefaultProviderId`), and the affordance is hidden
  * unless it resolves to auggie ('' before hydration is honestly unavailable).
  */

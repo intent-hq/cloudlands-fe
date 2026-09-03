@@ -468,7 +468,8 @@ describe('UnifiedAgentFactory', () => {
     it('refuses to create an agent when the active provider (implicit, no explicit config.provider) is confirmed unavailable', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: {
           hasCheckedOnce: true,
           providerStatusMap: { 'claude-code': { available: false } },
@@ -488,7 +489,8 @@ describe('UnifiedAgentFactory', () => {
     it('creates the agent normally when the active provider is available', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: {
           hasCheckedOnce: true,
           providerStatusMap: { 'claude-code': { available: true } },
@@ -506,7 +508,8 @@ describe('UnifiedAgentFactory', () => {
     it('does not gate an explicit config.provider on availability (caller intent honored)', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: {
           hasCheckedOnce: true,
           providerStatusMap: { 'claude-code': { available: false } },
@@ -525,7 +528,8 @@ describe('UnifiedAgentFactory', () => {
     it('does not refuse implicit creation while availability is still unknown (hasCheckedOnce false)', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: { hasCheckedOnce: false, providerStatusMap: {} },
       };
 

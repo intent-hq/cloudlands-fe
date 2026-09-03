@@ -3,7 +3,8 @@
  * (PROTOCOL §5.16 `drafts.set`/`drafts.get` optional `attachments` array).
  *
  * The daemon stores attachments verbatim as an opaque JSON array, so the FE
- * owns the shape: a projection of image, placed-attachment, and staged
+ * owns the shape: a projection of image, content-backed selection,
+ * placed-attachment, and staged
  * (path-only, pre-placement) `ContextItem`s with the non-serializable `File`
  * handle dropped. Image thumbnails rehydrate from `imageData`/`imageMimeType`;
  * placed attachments persist only the registry `attachmentId` + metadata;
@@ -35,13 +36,15 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
         (item.imageData && item.imageMimeType) ||
         item.attachmentId ||
         item.sourcePath ||
-        (item.type === 'folder' && item.path),
+        (item.type === 'folder' && item.path) ||
+        (item.type === 'selection' && item.content),
     )
     .map((item) => ({
       id: item.id,
       type: item.type,
       label: item.label,
       ...(item.description !== undefined ? { description: item.description } : {}),
+      ...(item.content !== undefined ? { content: item.content } : {}),
       ...(item.path !== undefined ? { path: item.path } : {}),
       ...(item.imageData !== undefined ? { imageData: item.imageData } : {}),
       ...(item.imageMimeType !== undefined ? { imageMimeType: item.imageMimeType } : {}),
@@ -77,6 +80,7 @@ export function deserializeDraftAttachments(attachments: DraftAttachment[]): Con
     type: (a.type as ContextItem['type']) || 'file',
     label: a.label,
     ...(a.description !== undefined ? { description: a.description } : {}),
+    ...(a.content !== undefined ? { content: a.content } : {}),
     ...(a.path !== undefined ? { path: a.path } : {}),
     ...(a.imageData !== undefined ? { imageData: a.imageData } : {}),
     ...(a.imageMimeType !== undefined ? { imageMimeType: a.imageMimeType } : {}),

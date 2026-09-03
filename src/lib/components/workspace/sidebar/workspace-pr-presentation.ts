@@ -38,9 +38,18 @@ export interface WorkspacePRPresentationRow {
   monitorOnly: boolean;
 }
 
+/**
+ * PR lifecycle order: rows sort earliest-in-flow first, so the first row is
+ * the least-progressed PR (a draft ahead of an open PR ahead of a merged one).
+ * The workspace card renders only that first row, so the same-status
+ * tie-breaker is user-visible: among PRs in the same state the most recently
+ * updated one wins (`updatedAt` desc, missing timestamps last), then the
+ * higher PR number, then the repo-qualified identity. Merge readiness from a
+ * monitor snapshot does not take part in the ranking.
+ */
 const PR_STATUS_ORDER: Record<PRInfo['status'], number> = {
-  open: 0,
-  draft: 1,
+  draft: 0,
+  open: 1,
   merged: 2,
   closed: 3,
 };
@@ -101,7 +110,8 @@ function getPRStatusPresentation(
 /**
  * Build presentation rows for every PR attributable to a workspace. The pool
  * keeps the existing branch/active fallback and monitor wire semantics, then
- * deduplicates by case-insensitive, repo-qualified GitHub identity.
+ * deduplicates by case-insensitive, repo-qualified GitHub identity. Rows are
+ * sorted earliest-in-flow first (see `PR_STATUS_ORDER`).
  */
 export function buildWorkspacePRPresentationModel({
   workspacePRs,

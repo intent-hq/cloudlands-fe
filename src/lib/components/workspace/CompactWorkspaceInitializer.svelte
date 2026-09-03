@@ -122,7 +122,7 @@
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-  import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
+  import { resolveSubmitModelAndProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
@@ -482,14 +482,21 @@
         : ($orchestrator$?.id ?? null),
   );
   // Validate saved model against current provider - stale models from a different provider
-  // (e.g., 'claude-code:default' when active provider is now 'opencode') should be discarded
+  // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
   // since they won't exist in the current model list and cause a flash of the wrong model.
+  // A persisted bare model id is attributed to the provider persisted alongside it;
+  // only a legacy pre-triple compound id carries its own prefix.
   const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
+  const restoredModelProvider =
+    savedState?.selectedModel !== undefined
+      ? savedState?.selectedProvider
+      : lastSubmittedAgent?.selectedProvider;
   const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
     !restoredModel ||
-    (splitLegacyCompoundId(restoredModel).providerId ?? $defaultProviderId$) ===
-      currentProviderAtInit;
+    (splitLegacyCompoundId(restoredModel).providerId ??
+      restoredModelProvider ??
+      $defaultProviderId$) === currentProviderAtInit;
 
   let selectedModel = $state<string | undefined>(
     isModelForCurrentProvider ? restoredModel : undefined,
@@ -612,10 +619,13 @@
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
     if (modelPickedThisSession) return;
     const model = settings.selectedModel;
+    // A persisted bare model id belongs to the provider persisted with it;
+    // only a legacy pre-triple compound id carries its own prefix.
     const savedModelAccepted =
       !!model &&
-      (splitLegacyCompoundId(model).providerId ?? $defaultProviderId$) ===
-        ($activeProviderId$ || $defaultProviderId$);
+      (splitLegacyCompoundId(model).providerId ??
+        settings.selectedProvider ??
+        $defaultProviderId$) === ($activeProviderId$ || $defaultProviderId$);
     if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
@@ -1981,17 +1991,12 @@
       // With no explicit pick the daemon applies its own resolved default at
       // creation time (the same value the picker previews via
       // `resolvedModel`), so no client-side tier/preference fallback runs.
-      const resolvedModel = modelWasOverridden && selectedModel ? selectedModel : undefined;
-
-      // Derive the submitted provider from the explicit model (if any) so
-      // intent and daemon spawn can never diverge: the daemon's
-      // resolve_provider_id gives a compound model prefix precedence over the
-      // provider field, and a bare model id resolves to the default provider.
-      // With no explicit model, keep the form's selected provider.
-      const submitProvider = resolveSubmitProvider(
-        resolvedModel,
+      // The submitted triple legs are the bare model id paired with the
+      // form's selected provider; a persisted pre-triple compound id is
+      // normalized at this one legacy boundary.
+      const { model: resolvedModel, provider: submitProvider } = resolveSubmitModelAndProvider(
+        modelWasOverridden && selectedModel ? selectedModel : undefined,
         selectedProvider,
-        $defaultProviderId$,
       );
 
       // Staged non-image attachments cannot ride the create request: the
@@ -2235,6 +2240,7 @@
           modelWasOverridden,
           selectedReasoningEffort,
           isTeamMode,
+          selectedProvider,
         }),
       );
 

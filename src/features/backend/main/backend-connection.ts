@@ -218,7 +218,10 @@ export function describeBackendConfig(config: BackendConnectionConfig): string {
 
 /**
  * Distinct candidate hosts for a `wss` config: the primary `host` first, then
- * the `hosts` extras, trimmed and deduplicated in order.
+ * the `hosts` extras, trimmed and deduplicated in order. No loopback
+ * filtering here — pairing URIs and tests legitimately dial loopback; the
+ * legacy-record sanitize lives in the store's `candidateHosts`, which feeds
+ * synced records into this config.
  */
 export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   const seen = new Set<string>();
@@ -391,10 +394,31 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
   return duplex;
 }
 
-/** One racing attempt: a candidate host plus a factory for its socket. */
+/** How a race candidate reaches the daemon: a direct host dial or the tailcat tunnel. */
+export type ConnectedVia = 'direct' | 'tunnel';
+
+/**
+ * One racing attempt: a candidate host plus a factory for its socket. `via`
+ * marks the tunnel candidate explicitly (defaults to `'direct'`) so the
+ * winner classification never depends on the host label — a `wss` config can
+ * legitimately carry a direct host that happens to be named like
+ * {@link TUNNEL_RACE_HOST}.
+ */
 export interface RaceAttempt {
   host: string;
+  via?: ConnectedVia;
   create: () => Duplex;
+}
+
+/**
+ * Payload of the race facade's `'connect'` event: the candidate host that won
+ * ({@link TUNNEL_RACE_HOST} when the tunnel candidate won) and how it reached
+ * the daemon. Single-host sockets emit a bare `'connect'`, so consumers must
+ * treat the payload as optional.
+ */
+export interface RaceConnectInfo {
+  host: string;
+  via: ConnectedVia;
 }
 
 /** Overall bound on the multi-host race; matches the capture timeout. */
@@ -423,6 +447,7 @@ export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt 
   }
   return {
     host: TUNNEL_RACE_HOST,
+    via: 'tunnel',
     create: () =>
       createTunneledSocket({
         tcAddress,
@@ -459,6 +484,9 @@ export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt 
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
  *   set cannot hang the client's connect (the reconnect loop retries).
+ * - The facade's `'connect'` event carries a {@link RaceConnectInfo} naming
+ *   the winning candidate host, so the connection layer can tell a tunnel win
+ *   from a direct one.
  */
 export function raceDuplexSockets(
   attempts: RaceAttempt[],
@@ -471,6 +499,7 @@ export function raceDuplexSockets(
   let lastError: Error | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
+  const candidateVias = new Map<Duplex, ConnectedVia>();
   const mismatches: HostCertMismatch[] = [];
   const reportedMismatchHosts = new Set<string>();
 
@@ -598,7 +627,11 @@ export function raceDuplexSockets(
       if (!facade.destroyed) facade.destroy(error);
     });
     candidate.on('close', () => facade.push(null));
-    facade.emit('connect');
+    const info: RaceConnectInfo = {
+      host: candidateHosts.get(candidate) ?? '',
+      via: candidateVias.get(candidate) ?? 'direct',
+    };
+    facade.emit('connect', info);
   };
 
   for (const attempt of attempts) {
@@ -614,6 +647,7 @@ export function raceDuplexSockets(
     }
     candidates.push(candidate);
     candidateHosts.set(candidate, attempt.host);
+    candidateVias.set(candidate, attempt.via ?? 'direct');
     // A failing candidate can emit `error` AND `close`; count it out only once.
     let counted = false;
     const failOnce = (error: Error): void => {

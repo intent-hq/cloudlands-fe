@@ -64,7 +64,7 @@
       </HoverCard>
     </div>
   {:else}
-    <div class="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
+    <div class="grid items-start gap-5">
       {#each cards as card (card.key)}
         <article class="grid min-w-0 gap-2" data-preview-scenario={card.key}>
           <div>
@@ -72,7 +72,8 @@
             <p class="text-xs leading-5 text-muted-foreground">{card.expected}</p>
           </div>
           <div
-            class="flex min-h-52 min-w-0 justify-center bg-muted/20 p-3 {layout === 'narrow'
+            class="flex min-h-52 min-w-0 items-start justify-center bg-muted/20 p-3 {layout ===
+            'narrow'
               ? 'max-w-[300px]'
               : ''}"
             data-preview-layout={layout}

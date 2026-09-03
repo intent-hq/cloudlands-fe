@@ -59,15 +59,16 @@ import type { UserPreferencesState } from '$store/renderer/slices/user-preferenc
 import type { ProviderSettingsState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 /**
- * The daemon-persisted subset of provider settings (`providers.active` /
- * `providers.enabled`, PROTOCOL §5.12). The remaining ProviderSettingsState
- * fields are registry snapshots hydrated from `providers.catalog`, never
- * persisted through this seam.
+ * The daemon-persisted subset of provider settings (`model.defaultProvider` /
+ * `providers.enabled`, PROTOCOL §5.12). `activeProviderId` carries the default
+ * provider — the provider leg of the default model triple (the deprecated
+ * `providers.active` key is no longer read or written). The remaining
+ * ProviderSettingsState fields are registry snapshots hydrated from
+ * `providers.catalog`, never persisted through this seam.
  */
-export type PersistedProviderSettings = Pick<
-  ProviderSettingsState,
-  'activeProviderId' | 'enabledProviders'
->;
+export type PersistedProviderSettings = Pick<ProviderSettingsState, 'enabledProviders'> & {
+  activeProviderId: string;
+};
 import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
 import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import type { GitHubUser } from '$features/github-auth/types';
@@ -1781,7 +1782,7 @@ export interface SpecialistDef {
    * `list`/`get` when the resolved list is non-empty, omitted otherwise
    * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
    */
-  modelOptions?: { model: string; hint: string; reasoningEffort?: string }[];
+  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
   /**
    * Reasoning-effort level for the specialist's model (additive, PROTOCOL
    * §5.11): one of the model's catalog `effortLevels`. Omitted when the
@@ -2139,6 +2140,8 @@ export interface DraftAttachment {
   type: string;
   label: string;
   description?: string;
+  /** Opaque text carried by content-backed context items such as selections. */
+  content?: string;
   path?: string;
   imageData?: string;
   imageMimeType?: string;

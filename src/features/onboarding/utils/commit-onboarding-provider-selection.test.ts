@@ -107,7 +107,10 @@ describe('no-click welcome-step advance regression (empty enabled set on step 4)
       providerSettingsInitialState,
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
     );
-    let model = modelReducer(modelInitialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    // The model slice is kept pre-catalog-hydration here: at
+    // providerCatalogLoaded it installs a first-row default-provider
+    // fallback, and this regression needs the genuine nothing-active state.
+    let model = modelInitialState;
     let availability = agentAvailabilityReducer(
       agentAvailabilityInitialState,
       checkSingleProviderRequested('claude-code'),
