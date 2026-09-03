@@ -43,18 +43,6 @@ const mocks = vi.hoisted(() => {
   const toastError = vi.fn();
   const handleLink = vi.fn();
   const progressActions = [] as WorkspaceProgressAction[];
-  const activePrSummary = {
-    current: null as null | {
-      number: number;
-      url: string;
-      repo?: string;
-      chipLabel: string;
-      title?: string;
-      status: string;
-      actionLabel: string;
-      actionTooltip: string;
-    },
-  };
   const notes = [] as Note[];
   const taskState = {
     initialized: true,
@@ -102,7 +90,6 @@ const mocks = vi.hoisted(() => {
     toastError,
     handleLink,
     progressActions,
-    activePrSummary,
     notes,
     taskState,
     workspaceEntity,
@@ -130,7 +117,6 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
-  selectWorkspaceActivePrSummary: mocks.selector(() => mocks.activePrSummary.current),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
 }));
@@ -324,7 +310,6 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.toastError.mockReset();
     mocks.handleLink.mockReset();
     mocks.progressActions.length = 0;
-    mocks.activePrSummary.current = null;
     mocks.storeState.workspace.pendingTitleMutations = {};
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
@@ -557,7 +542,7 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.queryByRole('button', { name: 'Add workspace status' })).toBeNull();
   });
 
-  it('renders one View PR action directly after a long status description', async () => {
+  it('does not render the View PR action under the status (the Changes launcher owns PR access)', async () => {
     mocks.progressActions.push({
       id: 'view-pr',
       label: 'View PR',
@@ -566,99 +551,13 @@ describe('WorkspaceProgressCard status message', () => {
       url: 'https://github.com/intent-hq/monorepo/pull/42',
     });
     const { container } = await renderProgressCard({
-      statusMessage: 'A long workspace description that wraps before the pull request action.',
-    });
-    const status = screen.getByRole('button', { name: 'Edit workspace status' });
-    const viewPr = screen.getByRole('button', { name: 'View PR' });
-
-    expect(container.querySelectorAll('[data-workspace-view-pr]')).toHaveLength(1);
-    expect(status.compareDocumentPosition(viewPr) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    await fireEvent.click(viewPr);
-    expect(mocks.handleLink).toHaveBeenCalledWith('https://github.com/intent-hq/monorepo/pull/42', {
-      workspaceId: 'ws-1',
+      statusMessage: 'A workspace description that used to be followed by the pull request action.',
     });
 
-    mocks.workspaceEntity.statusMessage = undefined;
-    expect(screen.queryByRole('button', { name: 'Add workspace status' })).toBeNull();
-  });
-
-  it('renders the View PR chip with the status icon, number, and title', async () => {
-    mocks.activePrSummary.current = {
-      number: 42,
-      url: 'https://github.com/intent-hq/monorepo/pull/42',
-      repo: 'intent-hq/monorepo',
-      chipLabel: 'monorepo #42',
-      title: 'Add dark mode support',
-      status: 'merged',
-      actionLabel: 'monorepo #42: Add dark mode support',
-      actionTooltip: 'Open pull request monorepo#42.',
-    };
-    mocks.progressActions.push({
-      id: 'view-pr',
-      label: 'monorepo #42: Add dark mode support',
-      iconKey: 'code-branch',
-      tooltip: 'Open pull request monorepo#42.',
-      url: 'https://github.com/intent-hq/monorepo/pull/42',
-    });
-    const { container } = await renderProgressCard();
-
-    const viewPr = container.querySelector<HTMLElement>('[data-workspace-view-pr]')!;
-    expect(viewPr.textContent).toContain('monorepo #42: Add dark mode support');
-    const icon = viewPr.querySelector<HTMLElement>('.fa-icon')!;
-    expect(icon.dataset.icon).toBe('code-merge');
-    expect(icon.className).toContain('text-purple-500');
-  });
-
-  it('falls back to the action iconKey when there is no active PR summary', async () => {
-    mocks.progressActions.push({
-      id: 'view-pr',
-      label: 'View PR',
-      iconKey: 'code-branch',
-      tooltip: 'Open the pull request.',
-      url: 'https://github.com/intent-hq/monorepo/pull/42',
-    });
-    const { container } = await renderProgressCard();
-
-    const viewPr = container.querySelector<HTMLElement>('[data-workspace-view-pr]')!;
-    const icon = viewPr.querySelector<HTMLElement>('.fa-icon')!;
-    expect(icon.dataset.icon).toBe('code-branch');
-    expect(icon.className).not.toContain('text-purple-500');
-  });
-
-  it('survives the View PR action flipping to undefined mid-render (monorepo#2543)', async () => {
-    type TooltipProps = { content: unknown; disabled: unknown };
-    const tooltipProps: TooltipProps[] = [];
-    const withRegistry = globalThis as { __mockTooltipProps?: TooltipProps[] };
-    withRegistry.__mockTooltipProps = tooltipProps;
-    try {
-      mocks.progressActions.push({
-        id: 'view-pr',
-        label: 'View PR',
-        iconKey: 'code-branch',
-        tooltip: 'Open the pull request.',
-        url: 'https://github.com/intent-hq/monorepo/pull/42',
-      });
-      const { container } = await renderProgressCard();
-      expect(container.querySelectorAll('[data-workspace-view-pr]')).toHaveLength(1);
-
-      const viewPrTooltip = tooltipProps.find((p) => p.content === 'Open the pull request.');
-      expect(viewPrTooltip).toBeDefined();
-      expect(viewPrTooltip!.disabled).toBe(false);
-
-      mocks.progressActions.length = 0;
-      mocks.notifySelectors();
-
-      // The teardown race: the Tooltip's lazy prop getters re-evaluate after
-      // the action flipped to undefined but before the {#if} block tears down.
-      expect(viewPrTooltip!.disabled).toBe(true);
-      expect(viewPrTooltip!.content).toBeUndefined();
-
-      await waitFor(() => {
-        expect(container.querySelector('[data-workspace-view-pr]')).toBeNull();
-      });
-    } finally {
-      delete withRegistry.__mockTooltipProps;
-    }
+    expect(screen.getByRole('button', { name: 'Edit workspace status' })).toBeTruthy();
+    expect(container.querySelector('[data-workspace-view-pr]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'View PR' })).toBeNull();
+    expect(mocks.handleLink).not.toHaveBeenCalled();
   });
 
   it('hides empty task progress once canonical tasks are initialized', async () => {

@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "ブランチ名をクリップボードにコピーしました",
   "workspace_sidebarHeader_branchCopyFailed_error": "ブランチ名をコピーできませんでした",
   "workspace_sidebarHeader_status_ariaLabel": "ワークスペースのステータス",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "プルリクエスト（{count}）",
   "workspace_sidebar_openInBrowser_tooltip": "ブラウザーで開く",
   "workspace_skills_title": "スキル",
   "workspace_devScripts_actionFailed_error": "{name} を実行できませんでした: {error}",

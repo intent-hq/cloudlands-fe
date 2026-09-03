@@ -319,6 +319,7 @@
   "workspace_progressCard_base_label": ["es", "fr"],
   "workspace_setupScriptEditor_variables_label": ["fr", "es"],
   "workspace_sidebarHeader_base_label": ["es", "fr"],
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": ["es", "fr"],
   "workspace_skills_title": ["de"],
   "workspace_terminalDock_shell_label": ["de", "es", "fr"],
   "workspace_tokenUsage_agentFallback_label": ["de", "fr"],

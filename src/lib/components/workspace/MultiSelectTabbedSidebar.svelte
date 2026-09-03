@@ -1,9 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines -- splitting this workspace sidebar is outside launcher-only scope */
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
-  import { handleLink } from '$features/navigation/link-handler';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import type { AgentSession } from '$shared/types';
   import './multi-select-sidebar-transitions.css';
   import {
@@ -66,7 +64,9 @@
     faPencil,
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
-  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
+  import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
+  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
   import { onDestroy, onMount, tick } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
@@ -82,6 +82,7 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
+  import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import WorkspaceTerminalDock from './WorkspaceTerminalDock.svelte';
   import WorkspaceShellList from './WorkspaceShellList.svelte';
@@ -90,7 +91,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
-    selectWorkspaceActivePrSummary,
+    selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -182,7 +183,27 @@
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   const workspace = selectWorkspaceById(workspaceIdStore);
-  const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
+  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  // Every PR attributable to the workspace (branch PRs, cross-repo entries,
+  // agent PR monitors), deduplicated and ordered by status priority.
+  const workspacePrRows = $derived.by(() => {
+    const ws = $workspace;
+    if (!ws) return [];
+    const workspaceRepo =
+      ws.repositoryOwner && ws.repositoryName
+        ? `${ws.repositoryOwner}/${ws.repositoryName}`
+        : undefined;
+    return buildWorkspacePRPresentationModel({
+      workspacePRs: ws.pullRequests,
+      activePR: $activePullRequest$ ?? ws.activePullRequest,
+      monitors: $prMonitors$,
+      workspaceRepo,
+      buildPrUrl: (prNumber, fallbackUrl) =>
+        constructPrUrl(prNumber, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+      getDisplayTitle: (pr) => pr.title,
+    });
+  });
   const notes = selectAllNotes(workspaceIdStore);
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
@@ -1014,6 +1035,8 @@
                               label={m.menu_new_terminal()}
                               onclick={createTerminal}
                             />
+                          {:else if tabId === 'changes' && workspacePrRows.length > 0}
+                            <SidebarPrDropdown rows={workspacePrRows} {workspaceId} side="bottom" />
                           {/if}
                           <SidebarHeaderAction
                             icon="close"
@@ -1390,25 +1413,8 @@
                         data-sidebar-agents-unread-dot
                       ></span>
                     {/if}
-                    {#if tab.id === 'changes' && $activePrSummary$}
-                      {@const pr = $activePrSummary$}
-                      {@const prStatus = getActivePrStatusPresentation(pr.status)}
-                      <Button
-                        variant="plain"
-                        size="icon"
-                        class="pointer-events-auto relative z-20 ml-auto size-6 shrink-0 cursor-pointer rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground"
-                        aria-label={pr.actionLabel}
-                        title={pr.actionTooltip}
-                        data-sidebar-pr-link
-                        data-sidebar-pr-url={pr.url}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={(event) => {
-                          event.stopPropagation();
-                          handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) });
-                        }}
-                      >
-                        <Fa icon={prStatus.icon} class="size-4! {prStatus.className}" />
-                      </Button>
+                    {#if tab.id === 'changes' && workspacePrRows.length > 0}
+                      <SidebarPrDropdown rows={workspacePrRows} {workspaceId} class="ml-auto" />
                     {/if}
                     {#if tab.id === 'agents'}
                       <span id={`sidebar-launcher-agent-count-${workspaceId}`} class="sr-only">

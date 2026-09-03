@@ -1684,6 +1684,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "Branch name copied to clipboard",
   "workspace_sidebarHeader_branchCopyFailed_error": "Failed to copy branch name",
   "workspace_sidebarHeader_status_ariaLabel": "Workspace status",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "Pull requests ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "Open in browser",
   "workspace_skills_title": "Skills",
   "workspace_devScripts_actionFailed_error": "Could not run {name}: {error}",

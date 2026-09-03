@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "브랜치 이름이 클립보드에 복사됨",
   "workspace_sidebarHeader_branchCopyFailed_error": "브랜치 이름을 복사하지 못했습니다",
   "workspace_sidebarHeader_status_ariaLabel": "작업 공간 상태",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "풀 리퀘스트 ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "브라우저에서 열기",
   "workspace_skills_title": "스킬",
   "workspace_devScripts_actionFailed_error": "{name}을(를) 실행할 수 없습니다: {error}",
