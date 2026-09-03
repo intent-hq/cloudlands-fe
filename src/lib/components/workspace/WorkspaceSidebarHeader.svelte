@@ -460,7 +460,7 @@
     <div class="relative flex w-full min-w-0 items-center">
       <span
         aria-hidden="true"
-        class="pointer-events-none absolute -inset-x-1 -inset-y-0.5 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+        class="pointer-events-none absolute -inset-x-1.5 -inset-y-1 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
           ? 'scale-100 opacity-100'
           : 'scale-[0.98] opacity-0'}"
       ></span>
@@ -471,7 +471,7 @@
           bind:value={editedTitle}
           onblur={saveTitle}
           onkeydown={handleTitleKeydown}
-          class="type-title relative z-10 w-full rounded border-none bg-transparent py-0.5 text-foreground
+          class="edit-input type-title relative z-10 w-full rounded border-none bg-transparent py-0.5 text-foreground
                  outline-none leading-normal
                  focus:ring-none! focus:outline-none!
                  transition-all duration-150"
@@ -653,3 +653,9 @@
     </DropdownMenu>
   </div>
 </div>
+
+<style>
+  input.edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

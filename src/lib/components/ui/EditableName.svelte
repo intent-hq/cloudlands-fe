@@ -121,7 +121,7 @@
   <span
     aria-hidden="true"
     class={cn(
-      'pointer-events-none absolute -inset-x-1 -inset-y-0.5 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
+      'pointer-events-none absolute -inset-x-1.5 -inset-y-1 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
       isEditing ? 'scale-100 opacity-100' : 'scale-[0.98] opacity-0',
     )}
   ></span>
@@ -138,7 +138,7 @@
       }}
       class={cn(
         textClass,
-        'relative z-10 bg-transparent border-none outline-none px-0',
+        'edit-input relative z-10 bg-transparent border-none outline-none px-0',
         'focus:ring-0! focus:outline-none! focus:ring-transparent!',
         'min-w-[60px]',
       )}
@@ -162,3 +162,9 @@
     </button>
   {/if}
 </div>
+
+<style>
+  input.edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

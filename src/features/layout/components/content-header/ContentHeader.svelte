@@ -151,7 +151,7 @@
         <div class="relative inline-flex min-w-0 items-center">
           <span
             aria-hidden="true"
-            class="pointer-events-none absolute -inset-x-1 -inset-y-0.5 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+            class="pointer-events-none absolute -inset-x-1.5 -inset-y-1 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
               ? 'scale-100 opacity-100'
               : 'scale-[0.98] opacity-0'}"
           ></span>
@@ -162,7 +162,7 @@
               bind:value={editedTitle}
               onblur={saveTitle}
               onkeydown={handleTitleKeydown}
-              class="relative z-10 text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
+              class="edit-input relative z-10 text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
               style="field-sizing: content;"
             />
           {:else}
@@ -249,3 +249,9 @@
     {/if}
   </div>
 </div>
+
+<style>
+  input.edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>
