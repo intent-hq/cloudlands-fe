@@ -118,7 +118,7 @@ async function getLogoToLeadingFlareGap(component: Locator) {
 
 async function captureTabMotion(control: Locator, workspaceId: string) {
   return control.evaluate(
-    async (button, { id, radius, fadeWidth }) => {
+    async (button, { id, radius }) => {
       const frames: Array<{
         width: number | null;
         activeId: string | null;
@@ -137,18 +137,10 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
         const activeRect = active?.getBoundingClientRect();
         const maskRect = mask?.getBoundingClientRect();
         const stripRect = strip?.getBoundingClientRect();
-        const opaqueLeft =
-          stripRect && strip?.dataset.fadeLeft === 'true' ? stripRect.left + fadeWidth : null;
-        const opaqueRight =
-          stripRect && strip?.dataset.fadeRight === 'true' ? stripRect.right - fadeWidth : null;
         const expectedMaskLeft =
-          activeRect && stripRect
-            ? Math.max(activeRect.left - radius, opaqueLeft ?? stripRect.left)
-            : null;
+          activeRect && stripRect ? Math.max(activeRect.left - radius, stripRect.left) : null;
         const expectedMaskRight =
-          activeRect && stripRect
-            ? Math.min(activeRect.right + radius, opaqueRight ?? stripRect.right)
-            : null;
+          activeRect && stripRect ? Math.min(activeRect.right + radius, stripRect.right) : null;
         frames.push({
           width: motion?.getBoundingClientRect().width ?? null,
           activeId: active?.dataset.workspaceTab ?? null,
@@ -167,9 +159,27 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
     {
       id: workspaceId,
       radius: WORKSPACE_TAB_FLARE_RADIUS_PX,
-      fadeWidth: WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
     },
   );
+}
+
+async function getBorderMaskFadeStops(component: Locator) {
+  return component.evaluate((root) => {
+    const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]');
+    const mask = root.querySelector<HTMLElement>('[data-active-tab-border-mask]');
+    if (!strip || !mask) throw new Error('Missing strip or border mask');
+    const stripRect = strip.getBoundingClientRect();
+    const maskRect = mask.getBoundingClientRect();
+    const stops = [...getComputedStyle(mask).maskImage.matchAll(/(-?[\d.]+)px/g)].map((match) =>
+      Number(match[1]),
+    );
+    return {
+      stripLeft: stripRect.left,
+      stripRight: stripRect.right,
+      maskLeft: maskRect.left,
+      stops,
+    };
+  });
 }
 
 test('keeps flares mounted and synchronizes visibility through activation and clipping', async ({
@@ -234,12 +244,18 @@ test('clips the mask during user scroll and restores it without transition lag',
     .poll(async () => {
       const [stripBox, maskBox] = await Promise.all([strip.boundingBox(), mask.boundingBox()]);
       if (!stripBox || !maskBox) return false;
-      return (
-        maskBox.x >= stripBox.x + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX &&
-        maskBox.x + maskBox.width <= stripBox.x + stripBox.width - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX
-      );
+      return maskBox.x >= stripBox.x && maskBox.x + maskBox.width <= stripBox.x + stripBox.width;
     })
     .toBe(true);
+  const fade = await getBorderMaskFadeStops(component);
+  expect(fade.stops).toHaveLength(4);
+  expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(fade.stripLeft, 1);
+  expect(fade.stops[1] - fade.stops[0]).toBe(WORKSPACE_TAB_EDGE_FADE_WIDTH_PX);
+  expect(fade.maskLeft + fade.stops[2]).toBeCloseTo(
+    fade.stripRight - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+    1,
+  );
+  expect(fade.maskLeft + fade.stops[3]).toBeCloseTo(fade.stripRight, 1);
   await strip.evaluate((element) => (element.scrollLeft = element.scrollWidth));
   await expect(strip).toHaveAttribute('data-fade-left', 'true');
   await expect(strip).toHaveAttribute('data-fade-right', 'false');
@@ -253,6 +269,49 @@ test('clips the mask during user scroll and restores it without transition lag',
   await page.waitForTimeout(250);
   await strip.evaluate((element) => (element.scrollLeft = 0));
   await expect(mask).toHaveCount(0);
+});
+
+test('keeps the border fade aligned when the active flare or body enters it', async ({ mount }) => {
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { activeWorkspaceId: 'geometry-beta' },
+  });
+  const strip = component.locator('[data-workspace-tab-strip]');
+  const active = component.locator('[data-workspace-tab][data-active="true"]');
+  const mask = component.locator('[data-active-tab-border-mask]');
+
+  for (const activeOffset of [28, 12]) {
+    await strip.evaluate((element, targetOffset) => {
+      const activeTab = document.querySelector<HTMLElement>(
+        '[data-workspace-tab][data-active="true"]',
+      );
+      if (!activeTab) throw new Error('Missing active tab');
+      element.scrollLeft +=
+        activeTab.getBoundingClientRect().left -
+        element.getBoundingClientRect().left -
+        targetOffset;
+    }, activeOffset);
+    await expect(strip).toHaveAttribute('data-fade-left', 'true');
+    await expect
+      .poll(async () => {
+        const [stripBox, activeBox, maskBox] = await Promise.all([
+          strip.boundingBox(),
+          active.boundingBox(),
+          mask.boundingBox(),
+        ]);
+        if (!stripBox || !activeBox || !maskBox) return null;
+        return {
+          activeOffset: activeBox.x - stripBox.x,
+          maskOffset: maskBox.x - activeBox.x,
+        };
+      })
+      .toEqual({ activeOffset, maskOffset: -WORKSPACE_TAB_FLARE_RADIUS_PX });
+    const fade = await getBorderMaskFadeStops(component);
+    expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(fade.stripLeft, 1);
+    expect(fade.maskLeft + fade.stops[1]).toBeCloseTo(
+      fade.stripLeft + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+      1,
+    );
+  }
 });
 
 test('removes both edge fades when every tab fits', async ({ mount }) => {
@@ -269,6 +328,7 @@ test('removes both edge fades when every tab fits', async ({ mount }) => {
   await expect(strip).toHaveAttribute('data-fade-left', 'false');
   await expect(strip).toHaveAttribute('data-fade-right', 'false');
   await expect(strip).toHaveCSS('mask-image', 'none');
+  await expect(component.locator('[data-active-tab-border-mask]')).toHaveCSS('mask-image', 'none');
 });
 
 test('joins both flare strokes to the tab and titlebar borders at 1x and 2x', async ({ mount }) => {

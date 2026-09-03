@@ -37,10 +37,12 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
+    getWorkspaceTabBorderMaskImage,
     getWorkspaceTabLeadingInsetPx,
     WINDOW_TITLEBAR_HEIGHT_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
+    type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
 
@@ -51,7 +53,7 @@
     interactive = false,
     sidebarPanelOpen = true,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
-  let activeTabBounds = $state<{ left: number; width: number } | null>(null);
+  let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
   const leadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
 
@@ -111,6 +113,7 @@
         class="active-tab-mask"
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
+        style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
         style:transition={activeTabTracking
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}

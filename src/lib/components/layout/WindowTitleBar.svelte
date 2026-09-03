@@ -38,11 +38,13 @@
   } from './titlebar-navigation';
   import {
     getCounterScaledTitlebarHeight,
+    getWorkspaceTabBorderMaskImage,
     getWorkspaceTabLeadingInsetPx,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
+    type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
@@ -59,7 +61,7 @@
   }
 
   let { workspaceId }: Props = $props();
-  let activeTabBounds = $state<{ left: number; width: number } | null>(null);
+  let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
@@ -102,7 +104,7 @@
       : -fixedControlsTrailingInset,
   );
 
-  function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
+  function handleActiveTabBoundsChange(bounds: WorkspaceTabBorderMaskBounds | null) {
     activeTabBounds = bounds;
   }
 
@@ -367,6 +369,7 @@
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
+        style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
         style:transition={activeTabTracking
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}

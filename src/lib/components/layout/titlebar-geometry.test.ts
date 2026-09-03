@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getCounterScaledTitlebarHeight,
   getClippedWorkspaceTabBorderMaskBounds,
+  getWorkspaceTabBorderMaskImage,
   getWorkspaceTabLeadingInsetPx,
   getWorkspaceTabScrollerPaddingLeftPx,
   getWorkspaceTabScrollFadeState,
@@ -60,7 +61,12 @@ describe('shared title-bar geometry', () => {
         20,
         { left: true, right: true },
       ),
-    ).toEqual({ left: 80 + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX, width: 72 });
+    ).toEqual({
+      left: 80,
+      width: 120,
+      fadeLeft: { start: 80, end: 80 + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX },
+      fadeRight: { start: 200 - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX, end: 200 },
+    });
     expect(
       getClippedWorkspaceTabBorderMaskBounds(
         { left: 40, right: 80 },
@@ -68,5 +74,20 @@ describe('shared title-bar geometry', () => {
         20,
       ),
     ).toBeNull();
+  });
+
+  it('aligns the border mask gradient with the scroller fade range', () => {
+    const bounds = getClippedWorkspaceTabBorderMaskBounds(
+      { left: 112, right: 252 },
+      { left: 100, right: 220 },
+      20,
+      { left: true, right: true },
+    );
+
+    expect(bounds).not.toBeNull();
+    expect(getWorkspaceTabBorderMaskImage(bounds!)).toBe(
+      'linear-gradient(to right, transparent -6px, black 18px, black 90px, transparent 114px)',
+    );
+    expect(getWorkspaceTabBorderMaskImage({ left: 80, width: 120 })).toBe('none');
   });
 });

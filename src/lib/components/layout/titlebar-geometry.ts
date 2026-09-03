@@ -49,18 +49,54 @@ interface HorizontalRect {
   right: number;
 }
 
+interface FadeRange {
+  start: number;
+  end: number;
+}
+
+export interface WorkspaceTabBorderMaskBounds {
+  left: number;
+  width: number;
+  fadeLeft?: FadeRange;
+  fadeRight?: FadeRange;
+}
+
 export function getClippedWorkspaceTabBorderMaskBounds(
   tabRect: HorizontalRect,
   scrollerRect: HorizontalRect,
   titlebarLeft: number,
   fadeEdges: { left: boolean; right: boolean } = { left: false, right: false },
-): { left: number; width: number } | null {
-  const opaqueLeft = scrollerRect.left + (fadeEdges.left ? WORKSPACE_TAB_EDGE_FADE_WIDTH_PX : 0);
-  const opaqueRight = scrollerRect.right - (fadeEdges.right ? WORKSPACE_TAB_EDGE_FADE_WIDTH_PX : 0);
-  const left = Math.max(tabRect.left - WORKSPACE_TAB_FLARE_RADIUS_PX, opaqueLeft);
-  const right = Math.min(tabRect.right + WORKSPACE_TAB_FLARE_RADIUS_PX, opaqueRight);
+): WorkspaceTabBorderMaskBounds | null {
+  const left = Math.max(tabRect.left - WORKSPACE_TAB_FLARE_RADIUS_PX, scrollerRect.left);
+  const right = Math.min(tabRect.right + WORKSPACE_TAB_FLARE_RADIUS_PX, scrollerRect.right);
   if (right <= left) return null;
-  return { left: left - titlebarLeft, width: right - left };
+  return {
+    left: left - titlebarLeft,
+    width: right - left,
+    ...(fadeEdges.left && {
+      fadeLeft: {
+        start: scrollerRect.left - titlebarLeft,
+        end: scrollerRect.left + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX - titlebarLeft,
+      },
+    }),
+    ...(fadeEdges.right && {
+      fadeRight: {
+        start: scrollerRect.right - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX - titlebarLeft,
+        end: scrollerRect.right - titlebarLeft,
+      },
+    }),
+  };
+}
+
+export function getWorkspaceTabBorderMaskImage(bounds: WorkspaceTabBorderMaskBounds): string {
+  if (!bounds.fadeLeft && !bounds.fadeRight) return 'none';
+  const leftStops = bounds.fadeLeft
+    ? `transparent ${bounds.fadeLeft.start - bounds.left}px, black ${bounds.fadeLeft.end - bounds.left}px`
+    : 'black 0';
+  const rightStops = bounds.fadeRight
+    ? `black ${bounds.fadeRight.start - bounds.left}px, transparent ${bounds.fadeRight.end - bounds.left}px`
+    : 'black 100%';
+  return `linear-gradient(to right, ${leftStops}, ${rightStops})`;
 }
 
 function cubicCoordinate(progress: number, first: number, second: number): number {

@@ -733,7 +733,11 @@ describe('WorkspaceTabStrip', () => {
       horizontalPositionTrackingKey: 288,
     });
 
-    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 94, width: 172 });
+    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({
+      left: 94,
+      width: 172,
+      fadeRight: { start: 476, end: 500 },
+    });
   });
 
   it('changes the observable leading inset while preserving flare clearance', async () => {

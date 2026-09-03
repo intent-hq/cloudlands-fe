@@ -69,11 +69,12 @@
     getClippedWorkspaceTabBorderMaskBounds,
     getWorkspaceTabScrollerPaddingLeftPx,
     getWorkspaceTabScrollFadeState,
+    type WorkspaceTabBorderMaskBounds,
     workspaceTabMotionEasing,
   } from './titlebar-geometry';
 
   interface Props {
-    onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
+    onActiveTabBoundsChange?: (bounds: WorkspaceTabBorderMaskBounds | null) => void;
     onActiveTabTrackingChange?: (tracking: boolean) => void;
     activeWorkspaceId?: string | null;
     horizontalPositionTrackingKey?: number;
