@@ -783,12 +783,16 @@ test('renders the full reference table as a wide overlay from the real workspace
         const box = (selector: string) =>
           row.querySelector(selector)!.getBoundingClientRect().toJSON();
         const metricElement = row.querySelector('.composition-metric')!;
+        const markerElement = row.querySelector('.composition-key')!;
         const valueElement = row.querySelector('.composition-value')!;
         const contextElement = row.querySelector('.composition-context')!;
         return {
+          isZero: row.getAttribute('data-zero') === 'true',
           row: row.getBoundingClientRect().toJSON(),
           metric: box('.composition-metric'),
           metricFontSize: Number.parseFloat(getComputedStyle(metricElement).fontSize),
+          metricColor: getComputedStyle(metricElement).color,
+          markerColor: getComputedStyle(markerElement).backgroundColor,
           metricClientWidth: metricElement.clientWidth,
           metricScrollWidth: metricElement.scrollWidth,
           value: box('.composition-value'),
@@ -1093,7 +1097,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         lastRadius,
         lastRight,
       }) =>
-        box.height === 10 &&
+        box.height === 8 &&
         segmentCount === 4 &&
         controls.every(
           (control) =>
@@ -1113,7 +1117,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         Math.abs(lastRight - (box.x + box.width)) <= 0.04,
     ),
   ).toBe(true);
-  expect(compositionBar.box.height).toBe(10);
+  expect(compositionBar.box.height).toBe(8);
   expect(compositionBar.borderRadius).toBe('2px');
   expect(compositionBar.overflowX).toBe('hidden');
   expect(compositionBar.summaryGap).toBeCloseTo(8, 2);
@@ -1213,9 +1217,12 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     desktopRows.every(
       ({
+        isZero,
         row,
         metric,
         metricFontSize,
+        metricColor,
+        markerColor,
         metricClientWidth,
         metricScrollWidth,
         value,
@@ -1235,7 +1242,11 @@ test('renders the full reference table as a wide overlay from the real workspace
         contextDisplay !== 'none' &&
         valueAlign === 'right' &&
         contextAlign === 'right' &&
-        valueColor !== contextColor &&
+        (isZero
+          ? metricColor === contextColor &&
+            markerColor === contextColor &&
+            valueColor === contextColor
+          : valueColor !== contextColor) &&
         valueFontWeight === '400' &&
         contextFontWeight === '400' &&
         metric.x < value.x &&
