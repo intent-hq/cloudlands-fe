@@ -125,7 +125,7 @@
     scenario(
       'mixed-order',
       'Mixed statuses (ordering)',
-      'Badge shows 4; rows sort open → draft → merged → closed and the lead glyph is green.',
+      'Badge shows 4; rows sort draft → open → merged → closed and the lead glyph follows the draft row.',
       rows({
         pullRequests: [
           pr(110, { status: PullRequestStatus.Closed }),
@@ -304,7 +304,7 @@
           <p class="text-xs leading-5 text-muted-foreground">{item.expected}</p>
         </div>
         <div
-          class="flex h-[360px] w-[320px] flex-col justify-end rounded-lg border border-border bg-sidebar p-2"
+          class="flex h-90 w-80 flex-col justify-end rounded-lg border border-border bg-sidebar p-2"
         >
           {@render launcher(item.rows)}
         </div>
@@ -324,7 +324,7 @@
               <div
                 class="max-h-64 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-sm"
               >
-                <SidebarPrList rows={item.rows} onSelect={() => {}} class="w-full" />
+                <SidebarPrList rows={item.rows} onSelect={() => {}} interactive={false} />
               </div>
             {:else}
               <p class="px-2 py-1 text-xs text-muted-foreground" data-preview-empty>

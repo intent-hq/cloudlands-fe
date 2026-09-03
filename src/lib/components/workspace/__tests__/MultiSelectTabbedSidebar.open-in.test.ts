@@ -444,7 +444,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const prIcon = trigger.querySelector<HTMLElement>('.fa-icon')!;
     expect(prIcon.dataset.icon).toBe('code-pull-request');
     expect(prIcon.className).toContain('text-success');
-    expect(launcher.querySelector('[data-sidebar-pr-link]')).toBeNull();
+    // The menu content is portaled, so a closed menu renders no rows anywhere.
+    expect(document.body.querySelector('[data-sidebar-pr-link]')).toBeNull();
     expect(launcher.textContent).not.toContain('1,373');
     expect(
       resource
@@ -457,7 +458,13 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
     );
-    const links = [...launcher.querySelectorAll<HTMLButtonElement>('[data-sidebar-pr-link]')];
+    const menu = await waitFor(() => {
+      const found = document.body.querySelector<HTMLElement>('[role="menu"]');
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    const links = [...menu.querySelectorAll<HTMLElement>('[data-sidebar-pr-link]')];
+    expect(links.every((link) => link.getAttribute('role') === 'menuitem')).toBe(true);
     expect(links.map((link) => link.dataset.sidebarPrUrl)).toEqual([openPrUrl, mergedPrUrl]);
     expect(links.map((link) => link.dataset.prStatus)).toEqual(['open', 'merged']);
     expect(links[0].textContent).toContain('An open pull request');
@@ -500,7 +507,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(trigger.dataset.sidebarPrCount).toBe('1');
     await fireEvent.click(trigger);
     const link = await waitFor(() => {
-      const found = card.querySelector<HTMLButtonElement>('[data-sidebar-pr-link]');
+      const found = document.body.querySelector<HTMLElement>(
+        '[role="menu"] [data-sidebar-pr-link]',
+      );
       expect(found).toBeTruthy();
       return found!;
     });
@@ -518,7 +527,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
     expect(container.querySelector('[data-sidebar-pr-trigger]')).toBeNull();
-    expect(container.querySelector('[data-sidebar-pr-link]')).toBeNull();
+    expect(document.body.querySelector('[data-sidebar-pr-link]')).toBeNull();
     expect(container.querySelector('[data-sidebar-changes-resource]')).not.toBeNull();
   });
 
