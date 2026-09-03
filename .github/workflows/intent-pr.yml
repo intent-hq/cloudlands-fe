@@ -855,6 +855,7 @@ jobs:
             done
           fi
       - name: Build CT bundle
+        id: ct-build
         # The full CT Vite bundle transforms more than 7,400 modules and
         # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
         # Playwright CT has no standalone build command, so this uses
@@ -905,7 +906,7 @@ jobs:
           # --fail-on-flaky-tests turns a pass-on-retry into a red shard
           # instead of silent 3x runtime: a flaky test must be fixed or
           # explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert @quarantine --fail-on-flaky-tests --reporter=list,html
+          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html
       - name: Upload playwright report
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (monorepo#2887).
@@ -927,17 +928,20 @@ jobs:
         # step log and the artifact below. Separate output directories so
         # a quarantine failure cannot overwrite the required lane's report.
         # !cancelled() replaces the implicit success() guard so the lane
-        # still runs when the required step on this shard is red -- the
-        # bundle was built before either test step, so it is still usable.
-        if: ${{ !cancelled() && matrix.shard == 1 }}
+        # still runs when the required step on this shard is red; gating on
+        # the build step's outcome keeps it from re-running the 8 GB Vite
+        # build under the 4 GB cap when setup itself already failed.
+        # The tag regex is word-anchored so a future '@quarantine-*' tag or
+        # a title that merely mentions the word does not match.
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' }}
         id: quarantine
         continue-on-error: true
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
-        run: pnpm run test:ct --grep @quarantine --pass-with-no-tests --reporter=list,html --output=test-results-quarantine
+        run: pnpm run test:ct --grep '@quarantine\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine
       - name: Upload quarantine report
-        if: ${{ !cancelled() && matrix.shard == 1 && steps.quarantine.outcome == 'failure' }}
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' && steps.quarantine.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-ct-report-quarantine
