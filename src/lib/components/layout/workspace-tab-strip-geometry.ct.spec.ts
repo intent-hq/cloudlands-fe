@@ -1,6 +1,9 @@
 import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
-import { WORKSPACE_TAB_FLARE_RADIUS_PX } from './titlebar-geometry';
+import {
+  WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+  WORKSPACE_TAB_FLARE_RADIUS_PX,
+} from './titlebar-geometry';
 
 async function expectVisibleThroughAncestorClipping(target: Locator) {
   const result = await target.evaluate((element) => {
@@ -115,7 +118,7 @@ async function getLogoToLeadingFlareGap(component: Locator) {
 
 async function captureTabMotion(control: Locator, workspaceId: string) {
   return control.evaluate(
-    async (button, { id, radius }) => {
+    async (button, { id, radius, fadeWidth }) => {
       const frames: Array<{
         width: number | null;
         activeId: string | null;
@@ -134,10 +137,18 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
         const activeRect = active?.getBoundingClientRect();
         const maskRect = mask?.getBoundingClientRect();
         const stripRect = strip?.getBoundingClientRect();
+        const opaqueLeft =
+          stripRect && strip?.dataset.fadeLeft === 'true' ? stripRect.left + fadeWidth : null;
+        const opaqueRight =
+          stripRect && strip?.dataset.fadeRight === 'true' ? stripRect.right - fadeWidth : null;
         const expectedMaskLeft =
-          activeRect && stripRect ? Math.max(activeRect.left - radius, stripRect.left) : null;
+          activeRect && stripRect
+            ? Math.max(activeRect.left - radius, opaqueLeft ?? stripRect.left)
+            : null;
         const expectedMaskRight =
-          activeRect && stripRect ? Math.min(activeRect.right + radius, stripRect.right) : null;
+          activeRect && stripRect
+            ? Math.min(activeRect.right + radius, opaqueRight ?? stripRect.right)
+            : null;
         frames.push({
           width: motion?.getBoundingClientRect().width ?? null,
           activeId: active?.dataset.workspaceTab ?? null,
@@ -153,7 +164,11 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
       }
       return frames;
     },
-    { id: workspaceId, radius: WORKSPACE_TAB_FLARE_RADIUS_PX },
+    {
+      id: workspaceId,
+      radius: WORKSPACE_TAB_FLARE_RADIUS_PX,
+      fadeWidth: WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+    },
   );
 }
 
@@ -208,24 +223,52 @@ test('clips the mask during user scroll and restores it without transition lag',
   const strip = component.locator('[data-workspace-tab-strip]');
   const mask = component.locator('[data-active-tab-border-mask]');
   await page.waitForTimeout(250);
+  await expect(strip).toHaveAttribute('data-fade-left', 'false');
+  await expect(strip).toHaveAttribute('data-fade-right', 'true');
+  await expect(strip).not.toHaveCSS('mask-image', 'none');
   await strip.evaluate((element) => (element.scrollLeft = 100));
+  await expect(strip).toHaveAttribute('data-fade-left', 'true');
+  await expect(strip).toHaveAttribute('data-fade-right', 'true');
   await expect(mask).toHaveCSS('transition', 'none');
   await expect
     .poll(async () => {
       const [stripBox, maskBox] = await Promise.all([strip.boundingBox(), mask.boundingBox()]);
       if (!stripBox || !maskBox) return false;
-      return maskBox.x >= stripBox.x && maskBox.x + maskBox.width <= stripBox.x + stripBox.width;
+      return (
+        maskBox.x >= stripBox.x + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX &&
+        maskBox.x + maskBox.width <= stripBox.x + stripBox.width - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX
+      );
     })
     .toBe(true);
   await strip.evaluate((element) => (element.scrollLeft = element.scrollWidth));
+  await expect(strip).toHaveAttribute('data-fade-left', 'true');
+  await expect(strip).toHaveAttribute('data-fade-right', 'false');
   await expect(mask).toHaveCount(0);
   await strip.evaluate((element) => (element.scrollLeft = 0));
+  await expect(strip).toHaveAttribute('data-fade-left', 'false');
+  await expect(strip).toHaveAttribute('data-fade-right', 'true');
   await expectMaskAttachedToActiveTab(component);
 
   await component.update({ props: { activeWorkspaceId: 'geometry-gamma' } });
   await page.waitForTimeout(250);
   await strip.evaluate((element) => (element.scrollLeft = 0));
   await expect(mask).toHaveCount(0);
+});
+
+test('removes both edge fades when every tab fits', async ({ mount }) => {
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: {
+      activeWorkspaceId: 'geometry-alpha',
+      initialOpenWorkspaceIds: ['geometry-alpha'],
+    },
+  });
+  const strip = component.locator('[data-workspace-tab-strip]');
+  await expect
+    .poll(() => strip.evaluate((element) => element.scrollWidth <= element.clientWidth))
+    .toBe(true);
+  await expect(strip).toHaveAttribute('data-fade-left', 'false');
+  await expect(strip).toHaveAttribute('data-fade-right', 'false');
+  await expect(strip).toHaveCSS('mask-image', 'none');
 });
 
 test('joins both flare strokes to the tab and titlebar borders at 1x and 2x', async ({ mount }) => {
@@ -314,7 +357,7 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   await expectMaskAttachedToActiveTab(component);
 });
 
-test('tightens the closed-sidebar inset while the flare and mask remain attached', async ({
+test('widens the closed-sidebar logo gap while the flare and mask remain attached', async ({
   mount,
   page,
 }) => {
@@ -324,7 +367,8 @@ test('tightens the closed-sidebar inset while the flare and mask remain attached
   });
 
   const closedGap = await getLogoToLeadingFlareGap(component);
-  expect(closedGap).toBeLessThanOrEqual(4);
+  expect(closedGap).toBeGreaterThanOrEqual(8);
+  expect(closedGap).toBeLessThanOrEqual(12);
   await expectVisibleThroughAncestorClipping(
     component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
   );
@@ -332,7 +376,7 @@ test('tightens the closed-sidebar inset while the flare and mask remain attached
   await component.update({
     props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: true },
   });
-  await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(closedGap + 13, 0);
+  await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(16, 0);
   await expectMaskAttachedToActiveTab(component);
 });
 

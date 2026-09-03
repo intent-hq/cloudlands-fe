@@ -56,6 +56,7 @@
   import {
     WORKSPACE_TAB_BORDER_WIDTH_PX,
     WORKSPACE_TAB_CORNER_RADIUS_PX,
+    WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
     WORKSPACE_TAB_FLARE_BOTTOM_PX,
     WORKSPACE_TAB_FLARE_INNER_PX,
     WORKSPACE_TAB_FLARE_OFFSET_PX,
@@ -64,7 +65,10 @@
     WORKSPACE_TAB_FLARE_SIZE_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
+    WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
     getClippedWorkspaceTabBorderMaskBounds,
+    getWorkspaceTabScrollerPaddingLeftPx,
+    getWorkspaceTabScrollFadeState,
     workspaceTabMotionEasing,
   } from './titlebar-geometry';
 
@@ -138,6 +142,18 @@
   let activeStreamsVersion = $state(0);
   let stripElement = $state<HTMLDivElement | null>(null);
   let isOverflowing = $state(false);
+  let hasHiddenTabsLeft = $state(false);
+  let hasHiddenTabsRight = $state(false);
+  const workspaceTabMaskImage = $derived.by(() => {
+    if (!isOverflowing) return 'none';
+    const leftStops = hasHiddenTabsLeft
+      ? `transparent 0, black ${WORKSPACE_TAB_EDGE_FADE_WIDTH_PX}px`
+      : 'black 0';
+    const rightStops = hasHiddenTabsRight
+      ? `black calc(100% - ${WORKSPACE_TAB_EDGE_FADE_WIDTH_PX}px), transparent 100%`
+      : 'black 100%';
+    return `linear-gradient(to right, ${leftStops}, ${rightStops})`;
+  });
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
@@ -243,11 +259,22 @@
     void renderedTabOrder;
     const updateOverflow = () => {
       isOverflowing = strip.scrollWidth > strip.clientWidth;
+      const fadeState = getWorkspaceTabScrollFadeState(
+        strip.scrollLeft,
+        strip.scrollWidth,
+        strip.clientWidth,
+      );
+      hasHiddenTabsLeft = fadeState.left;
+      hasHiddenTabsRight = fadeState.right;
     };
     updateOverflow();
     const observer = new ResizeObserver(updateOverflow);
     observer.observe(strip);
-    return () => observer.disconnect();
+    strip.addEventListener('scroll', updateOverflow);
+    return () => {
+      observer.disconnect();
+      strip.removeEventListener('scroll', updateOverflow);
+    };
   });
 
   $effect(() => {
@@ -350,6 +377,9 @@
         if (scrollDelta !== 0) scrollTarget = strip.scrollLeft + scrollDelta;
       }
       if (scrollTarget === null && (!titlebarRect || !stripRect)) return;
+      const fadeEdges = strip
+        ? getWorkspaceTabScrollFadeState(strip.scrollLeft, strip.scrollWidth, strip.clientWidth)
+        : undefined;
 
       if (writePending) cancelWrite?.();
       writePending = true;
@@ -360,7 +390,12 @@
         if (!titlebarRect || !stripRect) return;
         if (scrollTarget === null) {
           onActiveTabBoundsChange?.(
-            getClippedWorkspaceTabBorderMaskBounds(tabRect, stripRect, titlebarRect.left),
+            getClippedWorkspaceTabBorderMaskBounds(
+              tabRect,
+              stripRect,
+              titlebarRect.left,
+              fadeEdges,
+            ),
           );
           return;
         }
@@ -377,6 +412,13 @@
             movedTabRect,
             movedStripRect,
             movedTitlebarRect.left,
+            strip
+              ? getWorkspaceTabScrollFadeState(
+                  strip.scrollLeft,
+                  strip.scrollWidth,
+                  strip.clientWidth,
+                )
+              : undefined,
           ),
         );
       });
@@ -791,10 +833,10 @@
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- The leading inset keeps the active tab's 6px corner-flare SVG inside
-       the padding box. It is 9px with the sidebar closed (4px before the
-       flare) and 22px with it open (the existing 24px net clearance after
-       the -ml-1 strip offset).
+  <!-- The scroller starts 12px farther right so its clip clears the workspace
+       panel curve. Reducing the open-state padding by the same amount keeps
+       the first tab fixed; the closed-state padding stays at the 6px flare
+       radius to give the logo 10px of clear space before the flare.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -809,19 +851,23 @@
     bind:this={stripElement}
     data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 -ml-1 scrollbar-none transition-[padding-left] motion-reduce:transition-none',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     tabindex="-1"
-    style:padding-left={`${Math.max(WORKSPACE_TAB_FLARE_RADIUS_PX, leadingInsetPx)}px`}
+    style:margin-left={`${WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX}px`}
+    style:padding-left={`${getWorkspaceTabScrollerPaddingLeftPx(leadingInsetPx)}px`}
     style:padding-bottom="2px"
     style:margin-bottom="-2px"
+    style:mask-image={workspaceTabMaskImage}
     style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
     style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
     data-workspace-tab-strip
+    data-fade-left={hasHiddenTabsLeft}
+    data-fade-right={hasHiddenTabsRight}
     data-app-region-clip
     onpointermove={handleDragPointerMove}
     onpointerup={handleDragPointerUp}

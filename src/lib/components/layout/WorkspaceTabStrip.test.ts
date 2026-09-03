@@ -456,9 +456,10 @@ describe('WorkspaceTabStrip', () => {
       const tablist = screen.getByRole('tablist', {
         name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
       });
-      expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
+      expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
+      expect(getComputedStyle(tablist).marginLeft).toBe('8px');
       expect(tablist.className).toContain('pr-3');
-      expect(tablist.className).toContain('-ml-1');
+      expect(tablist.className).not.toContain('-ml-1');
       expect(tablist.className).not.toContain('-ml-3');
       expect(tablist.className).toContain('-mr-2.5');
       expect(screen.getAllByRole('tab')).toHaveLength(3);
@@ -677,8 +678,9 @@ describe('WorkspaceTabStrip', () => {
       name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
     });
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
-    expect(tablist.className).toContain('-ml-1');
+    expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
+    expect(getComputedStyle(tablist).marginLeft).toBe('8px');
+    expect(tablist.className).not.toContain('-ml-1');
     expect(tablist.className).not.toContain('-ml-3');
     expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(firstTab.classList).toContain('rounded-t-md');
@@ -740,11 +742,11 @@ describe('WorkspaceTabStrip', () => {
       name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
     });
 
-    expect(getComputedStyle(tablist).paddingLeft).toBe('15px');
+    expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
     expect(getComputedStyle(tablist).transitionDuration).toBe('200ms');
 
     await rerender({ leadingInsetPx: 28 });
-    expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
+    expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
 
     await rerender({ leadingInsetPx: 4 });
     expect(getComputedStyle(tablist).paddingLeft).toBe('6px');

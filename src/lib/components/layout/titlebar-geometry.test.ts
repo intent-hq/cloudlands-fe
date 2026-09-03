@@ -3,8 +3,12 @@ import {
   getCounterScaledTitlebarHeight,
   getClippedWorkspaceTabBorderMaskBounds,
   getWorkspaceTabLeadingInsetPx,
+  getWorkspaceTabScrollerPaddingLeftPx,
+  getWorkspaceTabScrollFadeState,
+  WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
   WORKSPACE_TAB_CORNER_RADIUS_PX,
   WORKSPACE_TAB_FLARE_RADIUS_PX,
+  WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
 } from './titlebar-geometry';
 
 describe('shared title-bar geometry', () => {
@@ -20,11 +24,21 @@ describe('shared title-bar geometry', () => {
     expect(getCounterScaledTitlebarHeight(zoomFactor)).toBeCloseTo(expectedHeight);
   });
   it('keeps the closed and open tab insets outside the leading flare', () => {
-    expect(getWorkspaceTabLeadingInsetPx(false)).toBe(9);
+    expect(getWorkspaceTabLeadingInsetPx(false)).toBe(16);
     expect(getWorkspaceTabLeadingInsetPx(true)).toBe(22);
-    expect(getWorkspaceTabLeadingInsetPx(false)).toBeGreaterThanOrEqual(
-      WORKSPACE_TAB_FLARE_RADIUS_PX,
-    );
+    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(false))).toBe(6);
+    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true))).toBe(10);
+    expect(
+      WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX +
+        getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true)),
+    ).toBe(18);
+  });
+
+  it('shows edge fades only where scrolling hides tabs', () => {
+    expect(getWorkspaceTabScrollFadeState(0, 500, 300)).toEqual({ left: false, right: true });
+    expect(getWorkspaceTabScrollFadeState(100, 500, 300)).toEqual({ left: true, right: true });
+    expect(getWorkspaceTabScrollFadeState(200, 500, 300)).toEqual({ left: true, right: false });
+    expect(getWorkspaceTabScrollFadeState(0, 300, 300)).toEqual({ left: false, right: false });
   });
   it('uses one radius for the tab corners and flares', () => {
     expect(WORKSPACE_TAB_CORNER_RADIUS_PX).toBe(6);
@@ -39,6 +53,14 @@ describe('shared title-bar geometry', () => {
         20,
       ),
     ).toEqual({ left: 80, width: 120 });
+    expect(
+      getClippedWorkspaceTabBorderMaskBounds(
+        { left: 92, right: 252 },
+        { left: 100, right: 220 },
+        20,
+        { left: true, right: true },
+      ),
+    ).toEqual({ left: 80 + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX, width: 72 });
     expect(
       getClippedWorkspaceTabBorderMaskBounds(
         { left: 40, right: 80 },
