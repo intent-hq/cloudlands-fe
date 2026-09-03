@@ -57,18 +57,19 @@ describe('NotesPanel completed-task indicator', () => {
     );
 
     const onOpenNote = vi.fn();
-    render(NotesPanel, { props: { workspaceId: WORKSPACE_ID, onOpenNote } });
+    const { container } = render(NotesPanel, {
+      props: { workspaceId: WORKSPACE_ID, onOpenNote },
+    });
 
     const noteButton = screen.getByRole('button', { name: 'Complete note' });
     const toggle = screen.getByRole('button', { name: 'Complete' });
+    expect(container.querySelector('button button')).toBeNull();
+    expect(noteButton.contains(toggle)).toBe(false);
     expect(toggle.textContent?.trim()).toBe('');
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
     expect(toggle.hasAttribute('disabled')).toBe(true);
+    expect(toggle.closest('[title]')).toBeTruthy();
 
-    await fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
-    expect(onOpenNote).toHaveBeenLastCalledWith('complete-note');
-    onOpenNote.mockClear();
     await fireEvent.click(noteButton);
     expect(onOpenNote).toHaveBeenLastCalledWith('complete-note');
   });
