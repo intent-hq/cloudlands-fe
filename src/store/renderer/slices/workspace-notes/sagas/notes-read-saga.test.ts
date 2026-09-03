@@ -5,10 +5,7 @@ import { appClient } from '$lib/client';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -18,11 +15,14 @@ import {
   noteEventReceived,
   selectNote,
   workspaceNotesReducer,
+  workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
 import { notesReadSaga } from './notes-read-saga';
 
 const WS = 'ws-notes-read';
 const NOW = '2026-01-01T00:00:00.000Z';
+const workspaceMounted = (workspaceId: string) =>
+  workspaceNotesHydrationRequested(workspaceId, 1, false);
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -242,6 +242,20 @@ describe('notesReadSaga', () => {
 
     expect(list.mock.calls).toEqual([]);
     expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('forces an initialized workspace refresh for a reconnect generation', async () => {
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([]);
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
+    const run = harness([note('seeded')]);
+
+    run.channel.put(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
+    expect(run.actions).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [] })]);
     run.task.cancel();
     await run.task.toPromise();
   });

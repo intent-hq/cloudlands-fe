@@ -22,8 +22,13 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { CACHE_TTL_MS, fetchEditors } from '../../external-editors/external-editors-slice';
 import { loadGithubRepos } from '../../github-repos/github-repos-slice';
 import { loadKnownRepos } from '../../known-repos/known-repos-slice';
+import { initialState as initialConnectionsState } from '../../connections/connections-slice';
+import { initialState as initialPanelLayoutState } from '../../panel-layout/panel-layout-slice';
+import { initialState as initialSidebarNavState } from '../../sidebar-nav/sidebar-nav-slice';
 import {
   initialState as initialWorkspaceLifecycleState,
+  backendReconnected,
+  workspaceHydrationBranchRequested,
   workspaceHydrationRequested,
   workspaceLifecycleReducer,
   workspaceMounted,
@@ -32,6 +37,7 @@ import {
   workspaceUnmounted,
 } from '../workspace-lifecycle-slice';
 import { lifecycleIpcReadSaga } from './lifecycle-ipc-read-saga';
+import { WORKSPACE_HYDRATION_IDLE_FALLBACK_MS } from './workspace-read-scheduler';
 
 const WS = 'ws-ipc-lifecycle';
 const NOW = new Date('2026-07-31T00:00:00.000Z');
@@ -52,26 +58,44 @@ function state() {
       lastFetched: 0,
     },
     git: { byWorkspaceId: {} },
+    connections: initialConnectionsState,
+    panelLayout: initialPanelLayoutState,
+    sidebarNav: initialSidebarNavState,
     workspaceLifecycle: initialWorkspaceLifecycleState,
   };
 }
 
-function workspaceMountFanOut(workspaceId: string): ObservedAction[] {
+function workspaceMountFanOut(
+  workspaceId: string,
+  generation = 1,
+  force = false,
+): ObservedAction[] {
   return [
-    { type: 'workspaceTasks/ensureWorkspaceTasksLoaded', payload: [workspaceId] },
+    {
+      type: force
+        ? 'workspaceTasks/loadWorkspaceTasksRequested'
+        : 'workspaceTasks/ensureWorkspaceTasksLoaded',
+      payload: [workspaceId],
+    },
+    { type: 'workspaceAgents/hydrateAgentsRequested', payload: [workspaceId] },
+    { type: 'terminals/hydrateTerminalsRequested', payload: [workspaceId] },
+    {
+      type: 'taskAgentAssociations/hydrateTaskAgentAssociationsRequested',
+      payload: [workspaceId],
+    },
+    { type: 'workspaceNotes/hydrationRequested', payload: [workspaceId, generation, force] },
+  ];
+}
+
+function workspaceDeferredFanOut(workspaceId: string): ObservedAction[] {
+  return [
     { type: 'workspaceEvents/loadEventsRequested', payload: [workspaceId] },
     { type: 'scripts/refreshScripts', payload: [workspaceId] },
     { type: 'skills/loadSkillsRequested', payload: [workspaceId] },
     { type: 'prStatus/refreshRequested', payload: [workspaceId, false, false] },
     { type: 'changes/loadWorkspaceDataRequested', payload: [workspaceId] },
-    { type: 'workspaceAgents/hydrateAgentsRequested', payload: [workspaceId] },
-    { type: 'terminals/hydrateTerminalsRequested', payload: [workspaceId] },
     { type: 'fileExplorer/hydrateFileExplorerRequested', payload: [workspaceId] },
     { type: 'context/initContextForWorkspace', payload: [workspaceId] },
-    {
-      type: 'taskAgentAssociations/hydrateTaskAgentAssociationsRequested',
-      payload: [workspaceId],
-    },
   ];
 }
 
@@ -92,7 +116,8 @@ function start(
       channel,
       dispatch: (action: ObservedAction) => {
         reduceLifecycle(action);
-        actions.push(action);
+        if (action.type !== workspaceHydrationBranchRequested.type) actions.push(action);
+        channel.put(action);
         onDispatch?.(action, channel);
       },
       getState: () => current,
@@ -111,9 +136,7 @@ function start(
 }
 
 function startHydrationHarness() {
-  return start(state(), (action, channel) => {
-    if (action.type === workspaceMounted.type) channel.put(action);
-  });
+  return start();
 }
 
 async function stop(task: ReturnType<typeof runSaga>) {
@@ -304,6 +327,75 @@ describe('lifecycleIpcReadSaga', () => {
     await stop(run.task);
   });
 
+  it('keeps deferred reads out of first reveal and flushes them at the bounded fallback', async () => {
+    const run = start();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+
+    expect(run.actions).toEqual(workspaceMountFanOut(WS));
+    run.actions.length = 0;
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS - 1);
+    expect(run.actions).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(run.actions).toEqual(workspaceDeferredFanOut(WS));
+    await stop(run.task);
+  });
+
+  it('promotes a deferred read when its restored active panel becomes visible', async () => {
+    const current = state();
+    const run = start(current);
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.actions.length = 0;
+    current.panelLayout = {
+      ...initialPanelLayoutState,
+      byWorkspaceId: {
+        [WS]: {
+          panels: {
+            panel: {
+              activeTabId: 'activity',
+              tabs: [{ id: 'activity', type: 'activity', title: 'Activity', closable: true }],
+            },
+          },
+        },
+      },
+    } as never;
+
+    run.channel.put({ type: 'panelLayout/openTab', payload: { wsId: WS } } as never);
+    await settle();
+
+    expect(run.actions).toEqual([{ type: 'workspaceEvents/loadEventsRequested', payload: [WS] }]);
+    await stop(run.task);
+  });
+
+  it('cancels the deferred generation on unmount', async () => {
+    const run = start();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.actions.length = 0;
+
+    run.send(workspaceUnmounted(WS));
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
+    await settle();
+
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('starts a forced fresh generation after reconnect', async () => {
+    const run = start();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.actions.length = 0;
+
+    run.send(backendReconnected());
+    await settle();
+
+    expect(run.actions).toEqual(workspaceMountFanOut(WS, 2, true));
+    await stop(run.task);
+  });
+
   it('hydrates the first workspace visit and coalesces a revisit in the same session', async () => {
     const run = startHydrationHarness();
     run.send(workspaceHydrationRequested(WS));
@@ -328,7 +420,7 @@ describe('lifecycleIpcReadSaga', () => {
       workspaceMounted(WS),
       ...workspaceMountFanOut(WS),
       workspaceMounted(WS),
-      ...workspaceMountFanOut(WS),
+      ...workspaceMountFanOut(WS, 2),
     ]);
     await stop(run.task);
   });
@@ -352,7 +444,7 @@ describe('lifecycleIpcReadSaga', () => {
     ]);
     expect(run.actions.filter((action) => action.payload?.[0] === secondWorkspaceId)).toEqual([
       workspaceMounted(secondWorkspaceId),
-      ...workspaceMountFanOut(secondWorkspaceId),
+      ...workspaceMountFanOut(secondWorkspaceId, 2),
     ]);
     await stop(run.task);
   });
@@ -382,7 +474,7 @@ describe('lifecycleIpcReadSaga', () => {
     run.send(workspaceHydrationRequested(WS));
     await settle();
 
-    expect(run.actions).toEqual([workspaceMounted(WS), ...workspaceMountFanOut(WS)]);
+    expect(run.actions).toEqual([workspaceMounted(WS), ...workspaceMountFanOut(WS, 2)]);
     await stop(run.task);
   });
 
@@ -407,7 +499,7 @@ describe('lifecycleIpcReadSaga', () => {
       workspaceMountFanOut(WS),
     );
     expect(run.actions.filter((action) => action.payload?.[0] === secondWorkspaceId)).toEqual(
-      workspaceMountFanOut(secondWorkspaceId),
+      workspaceMountFanOut(secondWorkspaceId, 2),
     );
     await stop(run.task);
   });
