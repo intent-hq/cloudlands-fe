@@ -236,6 +236,9 @@
       getDisplayTitle: (pr) => pr.title,
     });
   });
+  // Rows are sorted earliest-in-flow first (draft → open → merged → closed);
+  // the compact row shows only that PR so the sidebar stays scannable.
+  const primaryPr = $derived<WorkspacePRPresentationRow | undefined>(workspacePrRows[0]);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -572,45 +575,44 @@
         </span>
       {/if}
 
-      {#if workspacePrRows.length > 0}
+      {#if primaryPr}
+        {@const pr = primaryPr}
         <span
-          class="wc-pr-list flex min-w-0 max-w-11/20 shrink items-center gap-0.5 overflow-x-auto"
+          class="wc-pr-list flex shrink-0 items-center"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
-          {#each workspacePrRows as pr (pr.identity)}
-            <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>
-              {#if pr.url}
-                <Button
-                  variant="plain"
-                  class="size-5 shrink-0 rounded-sm !p-0 {pr.backgroundClass} {pr.foregroundClass}"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  data-workspace-card-pr-item
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                  onclick={(event) => {
-                    event.stopPropagation();
-                    const workspaceId = workspace.id;
-                    void import('$features/navigation/link-handler').then(({ handleLink }) =>
-                      handleLink(pr.url, { workspaceId, event }),
-                    );
-                  }}
-                >
-                  <Fa icon={pr.statusIcon} size="xs" />
-                </Button>
-              {:else}
-                <span
-                  class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm {pr.backgroundClass} {pr.foregroundClass}"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  data-workspace-card-pr-item
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                >
-                  <Fa icon={pr.statusIcon} size="xs" />
-                </span>
-              {/if}
-            </Tooltip>
-          {/each}
+          <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>
+            {#if pr.url}
+              <Button
+                variant="plain"
+                class="size-5 shrink-0 rounded-sm !p-0 {pr.foregroundClass}"
+                aria-label={getWorkspacePrLabel(pr)}
+                data-workspace-card-pr-item
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  const workspaceId = workspace.id;
+                  void import('$features/navigation/link-handler').then(({ handleLink }) =>
+                    handleLink(pr.url, { workspaceId, event }),
+                  );
+                }}
+              >
+                <Fa icon={pr.statusIcon} size={14} />
+              </Button>
+            {:else}
+              <span
+                class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm {pr.foregroundClass}"
+                aria-label={getWorkspacePrLabel(pr)}
+                data-workspace-card-pr-item
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+              >
+                <Fa icon={pr.statusIcon} size={14} />
+              </span>
+            {/if}
+          </Tooltip>
         </span>
       {/if}
 

@@ -56,7 +56,7 @@ function build(
 }
 
 describe('buildWorkspacePRPresentationModel', () => {
-  it('returns every branch-linked PR in deterministic status order', () => {
+  it('returns every branch-linked PR in lifecycle order, earliest state first', () => {
     const rows = build(
       [
         makePR({ id: 'closed', number: 4, status: PullRequestStatus.Closed }),
@@ -68,8 +68,8 @@ describe('buildWorkspacePRPresentationModel', () => {
       [],
     );
 
-    expect(rows.map(({ status }) => status)).toEqual(['open', 'draft', 'merged', 'closed']);
-    expect(rows.map(({ number }) => number)).toEqual([1, 2, 3, 4]);
+    expect(rows.map(({ status }) => status)).toEqual(['draft', 'open', 'merged', 'closed']);
+    expect(rows.map(({ number }) => number)).toEqual([2, 1, 3, 4]);
   });
 
   it('uses the active PR only as the legacy fallback', () => {
@@ -233,16 +233,16 @@ describe('buildWorkspacePRPresentationModel', () => {
       })),
     ).toEqual([
       {
-        status: 'open',
-        foregroundClass: 'text-success',
-        backgroundClass: 'bg-success/10',
-        accessibleStateLabel: 'Open',
-      },
-      {
         status: 'draft',
         foregroundClass: 'text-muted-foreground',
         backgroundClass: 'bg-muted',
         accessibleStateLabel: 'Draft',
+      },
+      {
+        status: 'open',
+        foregroundClass: 'text-success',
+        backgroundClass: 'bg-success/10',
+        accessibleStateLabel: 'Open',
       },
       {
         status: 'merged',
