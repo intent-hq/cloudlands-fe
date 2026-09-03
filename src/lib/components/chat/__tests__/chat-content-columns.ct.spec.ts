@@ -10,6 +10,21 @@ import {
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
+const transcriptInsetCases = [
+  {
+    width: 600,
+    expectedLeftInset: '16px',
+    expectedComposerInset: '16px',
+    label: 'below the panel breakpoint',
+  },
+  {
+    width: 680,
+    expectedLeftInset: '49.6px',
+    expectedComposerInset: '24px',
+    label: 'above the panel breakpoint',
+  },
+] as const;
+
 const bottomSurfaceGeometry = (locator: Locator) =>
   locator.evaluate((node) => {
     const box = node.getBoundingClientRect();
@@ -115,6 +130,65 @@ test('matches the wide side and lower composer spacing', async ({ mount, page })
   await expect(promptLayer).toHaveAttribute('data-has-transcript-utility', 'false');
   await expect(component.getByTestId('chat-composer-lane')).toHaveCSS('padding-bottom', '24px');
 });
+
+for (const { width, expectedLeftInset, expectedComposerInset, label } of transcriptInsetCases) {
+  test(`uses the regular transcript inset ${label}`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    const component = await mount(ChatPanelOperationalGeometryHost, {
+      props: { theme: 'light', zoom: 1, width },
+    });
+
+    await expect(component.getByTestId('chat-transcript-inner')).toHaveCSS(
+      'padding-left',
+      expectedLeftInset,
+    );
+    await expect(component.getByTestId('chat-transcript-inner')).toHaveCSS(
+      'padding-right',
+      expectedLeftInset,
+    );
+    await expect(component.getByTestId('chat-composer-lane')).toHaveCSS(
+      'padding-left',
+      expectedComposerInset,
+    );
+    await expect(component.getByTestId('chat-composer-lane')).toHaveCSS(
+      'padding-right',
+      expectedComposerInset,
+    );
+    await expect(component.getByTestId('chat-composer-lane')).toHaveCSS(
+      'padding-bottom',
+      expectedComposerInset,
+    );
+
+    if (width < 640) {
+      const [avatarBox, titleBox, iconBox, summaryBox] = await Promise.all([
+        component.getByTestId('panel-header-agent-avatar-slot').boundingBox(),
+        component.locator('[data-panel-header-title]').boundingBox(),
+        component.locator('[data-operational-icon-box]').first().boundingBox(),
+        component.locator('[data-operational-summary]').first().boundingBox(),
+      ]);
+
+      expect(avatarBox).not.toBeNull();
+      expect(titleBox).not.toBeNull();
+      expect(iconBox).not.toBeNull();
+      expect(summaryBox).not.toBeNull();
+      expect(Math.abs(center(avatarBox!) - center(iconBox!))).toBeLessThanOrEqual(1);
+      expect(Math.abs(titleBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
+    } else {
+      await component
+        .getByTestId('chat-transcript-scroll-viewport')
+        .evaluate((node) => node.scrollTo(0, node.scrollHeight));
+      await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
+      await expect(component.getByTestId('pinned-prompt-overlay-lane')).toHaveCSS(
+        'padding-left',
+        expectedLeftInset,
+      );
+      await expect(component.getByTestId('pinned-prompt-overlay-lane')).toHaveCSS(
+        'padding-right',
+        expectedLeftInset,
+      );
+    }
+  });
+}
 
 test('keeps the nested composer inset without a narrow scroll owner', async ({ mount, page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
