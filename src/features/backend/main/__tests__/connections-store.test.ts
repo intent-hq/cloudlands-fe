@@ -163,6 +163,33 @@ describe('connections-store', () => {
     ).toBeNull();
   });
 
+  it('accepts optional detectHosts / syncExcluded flips through the update IPC schema', async () => {
+    const { ConnectionsUpdateSchema } = await import('../../../../main/ipc-schemas');
+    const parsed = ConnectionsUpdateSchema.parse({
+      id: 'remote-1',
+      label: 'Studio Mac',
+      accent: null,
+      detectHosts: false,
+      syncExcluded: true,
+    });
+    expect(parsed).toMatchObject({ detectHosts: false, syncExcluded: true });
+    const omitted = ConnectionsUpdateSchema.parse({
+      id: 'remote-1',
+      label: 'Studio Mac',
+      accent: null,
+    });
+    expect(omitted.detectHosts).toBeUndefined();
+    expect(omitted.syncExcluded).toBeUndefined();
+    expect(
+      ConnectionsUpdateSchema.safeParse({
+        id: 'remote-1',
+        label: 'Studio Mac',
+        accent: null,
+        syncExcluded: 'yes',
+      }).success,
+    ).toBe(false);
+  });
+
   it('updateMetadata changes name and accent without rewriting the bearer token', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
@@ -1855,6 +1882,123 @@ describe('connections-store keychain sync surface', () => {
     expect(parsed.tombstones[0].excluded).toBe(false);
     const records = await store.listSyncRecords();
     expect(records).toEqual([expect.objectContaining({ deleted: true })]);
+  });
+
+  it('updateMetadata syncExcluded true keeps the local record and writes a synced tombstone for its cloud copy', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const before = (await store.listSyncRecords())[0].updatedAt;
+
+    const updated = await store.updateMetadata(rec.id, {
+      label: sampleConn.label,
+      accent: null,
+      syncExcluded: true,
+    });
+    await store.__drainWriteChainForTesting();
+
+    expect(updated).toMatchObject({ id: rec.id, syncExcluded: true });
+    expect((await store.list()).find((c) => c.id === rec.id)?.syncExcluded).toBe(true);
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+
+    // The live record leaves the sync listing; a NON-excluded tombstone for
+    // its identity takes its place so the reconcile deletes the keychain copy.
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      deleted: true,
+      host: sampleConn.host,
+      port: sampleConn.port,
+      fingerprint: sampleConn.fingerprint,
+    });
+    expect(records[0].updatedAt).toBeGreaterThanOrEqual(before);
+
+    // The echoed tombstone (or a stale live copy) never touches the local-only record.
+    expect(await store.applyRemoteSyncRecord(records[0])).toBe(false);
+    expect((await store.list()).find((c) => c.id === rec.id)).toBeDefined();
+  });
+
+  it('a later plain edit of an excluded record leaves its pending cloud-delete tombstone in place', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    const [tombstone] = await store.listSyncRecords();
+
+    await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'teal' });
+
+    const records = await store.listSyncRecords();
+    expect(records).toEqual([expect.objectContaining({ deleted: true })]);
+    expect(records[0].updatedAt).toBe(tombstone.updatedAt);
+  });
+
+  it('updateMetadata syncExcluded false re-publishes the record strictly past its own tombstone', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    const [tombstone] = await store.listSyncRecords();
+
+    const included = await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: null,
+      syncExcluded: false,
+    });
+    await store.__drainWriteChainForTesting();
+
+    expect(included.syncExcluded).toBe(false);
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ token: 'secret-token', host: sampleConn.host });
+    expect(records[0].deleted).toBeUndefined();
+    // Ties favor the delete in the reconcile, so the clock must be strictly newer.
+    expect(records[0].updatedAt).toBeGreaterThan(tombstone.updatedAt);
+    const file = path.join(tmpDir, 'backend-connections.json');
+    expect(JSON.parse(await fs.readFile(file, 'utf8')).tombstones).toHaveLength(0);
+  });
+
+  it('updateMetadata with an unchanged syncExcluded flag is a no-op write', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, accent: null, syncExcluded: true });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const before = await fs.readFile(file, 'utf8');
+
+    await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+    await store.__drainWriteChainForTesting();
+
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect(await store.listSyncRecords()).toHaveLength(0);
+  });
+
+  it('updateMetadata detectHosts false drops detected extras and stops refreshes; true re-enables them', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHosts(rec.id, ['10.0.0.5']);
+    expect((await store.list()).find((c) => c.id === rec.id)).toMatchObject({
+      detectHosts: true,
+      hosts: [sampleConn.host, '10.0.0.5'],
+    });
+
+    const off = await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: null,
+      detectHosts: false,
+    });
+    expect(off).toMatchObject({ detectHosts: false, hosts: [sampleConn.host] });
+    expect(await store.getDetectHosts(rec.id)).toBe(false);
+    await store.setHosts(rec.id, ['10.0.0.6']);
+    expect((await store.list()).find((c) => c.id === rec.id)?.hosts).toEqual([sampleConn.host]);
+
+    const on = await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: null,
+      detectHosts: true,
+    });
+    expect(on.detectHosts).toBe(true);
+    await store.setHosts(rec.id, ['10.0.0.6']);
+    expect((await store.list()).find((c) => c.id === rec.id)?.hosts).toEqual([
+      sampleConn.host,
+      '10.0.0.6',
+    ]);
+    expect((await store.listSyncRecords())[0].detectHosts).toBe(true);
   });
 
   it('legacy state without syncExcluded is read as synced (back-compat)', async () => {

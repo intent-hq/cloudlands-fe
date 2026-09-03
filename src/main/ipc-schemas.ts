@@ -1111,6 +1111,8 @@ export const ConnectionsUpdateSchema = z
     host: z.string().trim().min(1, 'Host is required').optional(),
     port: z.number().int().min(1).max(65_535).optional(),
     confirmedFingerprint: z.string().trim().min(1).optional(),
+    detectHosts: z.boolean().optional(),
+    syncExcluded: z.boolean().optional(),
   })
   .refine((value) => (value.host === undefined) === (value.port === undefined), {
     message: 'Host and port must be supplied together',

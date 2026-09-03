@@ -1215,6 +1215,34 @@ describe('connections:* IPC handlers', () => {
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 
+  it('connections:update forwards detectHosts / syncExcluded flips to the store without revalidating', async () => {
+    const updated = { ...REMOTE, detectHosts: false, syncExcluded: true };
+    store.updateMetadata.mockResolvedValue(updated);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!(
+        {},
+        {
+          id: REMOTE.id,
+          label: REMOTE.label,
+          accent: 'violet',
+          detectHosts: false,
+          syncExcluded: true,
+        },
+      ),
+    ).resolves.toEqual({ status: 'updated', connection: updated });
+    expect(store.updateMetadata).toHaveBeenCalledWith(
+      REMOTE.id,
+      expect.objectContaining({ detectHosts: false, syncExcluded: true }),
+    );
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
   it('tests unsaved address values with the saved secret without saving or opening a window', async () => {
     mockCaptureFingerprint.mockResolvedValue({
       ok: true,

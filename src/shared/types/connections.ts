@@ -157,6 +157,13 @@ export interface ConnectionRecord {
    * equivalent to `false` (synced). Never set for the local entry.
    */
   syncExcluded?: boolean;
+  /**
+   * Whether the "detect all backend IPs" option (#1746) is on for this
+   * remote: post-connect `server.pairingInfo` refreshes of `hosts` are
+   * skipped when `false`. Optional so pre-existing fixtures/records remain
+   * valid — absent is equivalent to `true`. Never set for the local entry.
+   */
+  detectHosts?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
   /** Present on list/broadcast payloads; never persisted. */
@@ -308,6 +315,14 @@ export interface UpdateConnectionParams {
   port?: number;
   /** Explicit user confirmation of a newly presented certificate. */
   confirmedFingerprint?: string;
+  /** Flip the "detect all backend IPs" option; omitted = unchanged. */
+  detectHosts?: boolean;
+  /**
+   * Flip the per-backend keychain-sync exclusion; omitted = unchanged.
+   * `true` tombstones the synced copy (the local record stays), `false`
+   * re-publishes the record on the next reconcile.
+   */
+  syncExcluded?: boolean;
 }
 
 /** Machine-readable validation outcomes; renderer copy is localized by status/reason. */

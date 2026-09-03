@@ -263,6 +263,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     daemonVersion: stored.daemonVersion ?? null,
     updateSupported: stored.updateSupported ?? null,
     syncExcluded: stored.syncExcluded === true,
+    detectHosts: stored.detectHosts !== false,
     isLocal: false,
   };
 }
@@ -623,6 +624,23 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
  * Update the user-editable metadata for a saved remote. The bearer token and
  * transport identity fields are deliberately untouched. Local and unknown ids
  * reject so callers cannot edit the synthetic sidecar or silently lose work.
+ *
+ * `detectHosts` flips the per-backend IP-detection option (#1746); turning it
+ * off also drops the detected extras so only the primary host remains.
+ *
+ * `syncExcluded` flips the per-backend keychain-sync exclusion after the fact
+ * (spec Phase 2 only set it at add time):
+ * - `false → true` keeps the local record but writes a NON-excluded tombstone
+ *   for its identity, so the next reconcile pushes the delete to the keychain
+ *   and the user's other machines drop their synced copy. The live record is
+ *   no longer listed to sync, and the excluded-record shields in
+ *   {@link applyRemoteSyncRecord} keep the echoed tombstone from ever deleting
+ *   it locally.
+ * - `true → false` clears that tombstone and stamps the record strictly past
+ *   its clock (ties favor the delete in the reconcile), so the record wins the
+ *   next reconcile and is re-published.
+ * While a record is (and stays) excluded, a matching tombstone is left alone:
+ * it is the pending cloud delete, not a stale entry to supersede.
  */
 export async function updateMetadata(
   id: string,
@@ -632,6 +650,8 @@ export async function updateMetadata(
     host?: string;
     port?: number;
     fingerprint?: string;
+    detectHosts?: boolean;
+    syncExcluded?: boolean;
   },
 ): Promise<ConnectionRecord> {
   if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
@@ -664,14 +684,24 @@ export async function updateMetadata(
     const duplicates = state.connections.filter(
       (candidate) => candidate !== conn && sameBackend(candidate, nextIdentity),
     );
-    const matchingTombstone = state.tombstones.find((tombstone) =>
-      tombstoneMatches(tombstone, nextIdentity),
-    );
+    const previouslyExcluded = conn.syncExcluded === true;
+    const nextExcluded = metadata.syncExcluded ?? previouslyExcluded;
+    const exclusionChanged = nextExcluded !== previouslyExcluded;
+    const nextDetectHosts = metadata.detectHosts ?? conn.detectHosts !== false;
+    const detectHostsChanged = nextDetectHosts !== (conn.detectHosts !== false);
+    // A record that is (and stays) excluded leaves its matching tombstone
+    // alone: that is the pending cloud delete written on exclusion, not a
+    // stale entry for this edit to supersede.
+    const matchingTombstone = nextExcluded
+      ? undefined
+      : state.tombstones.find((tombstone) => tombstoneMatches(tombstone, nextIdentity));
     if (
       conn.label === label &&
       conn.accent === metadata.accent &&
       !addressChanged &&
       !fingerprintChanged &&
+      !exclusionChanged &&
+      !detectHostsChanged &&
       duplicates.length === 0 &&
       !matchingTombstone
     ) {
@@ -701,6 +731,11 @@ export async function updateMetadata(
       conn.hostname = null;
       conn.tcAddress = null;
     }
+    if (detectHostsChanged) {
+      conn.detectHosts = nextDetectHosts;
+      if (!nextDetectHosts) conn.hosts = [];
+    }
+    if (exclusionChanged) conn.syncExcluded = nextExcluded;
     const now = Math.max(
       Date.now(),
       ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
@@ -712,7 +747,16 @@ export async function updateMetadata(
     state.connections = state.connections.filter(
       (candidate) => candidate === conn || !duplicates.includes(candidate),
     );
-    if (addressChanged && fingerprintChanged) {
+    // Tombstone the PREVIOUS identity when it leaves sync: a whole-identity
+    // change (a different machine now lives under the record) or a fresh
+    // exclusion (the record stays, its synced copy must go). The tombstone
+    // is listed to sync unless the record was already local-only — except
+    // when an earlier exclusion left a cloud delete pending for that
+    // identity, which must keep propagating under the new tombstone.
+    if ((addressChanged && fingerprintChanged) || (exclusionChanged && nextExcluded)) {
+      const cloudDeletePending =
+        previouslyExcluded &&
+        state.tombstones.some((t) => t.excluded !== true && tombstoneMatches(t, previous));
       clearTombstone(state, previous);
       state.tombstones.push({
         label: previous.label,
@@ -725,7 +769,7 @@ export async function updateMetadata(
         detectHosts: previous.detectHosts,
         updatedAt: now,
         deletedAt: now,
-        excluded: previous.syncExcluded === true,
+        excluded: previouslyExcluded && !cloudDeletePending,
       });
     }
     await writeState(state);

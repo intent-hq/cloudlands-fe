@@ -2470,6 +2470,9 @@ function registerConnectionsHandlers(): void {
 
   // Update remote metadata without carrying a token. Address changes are
   // validated with the saved main-only secret before any durable mutation.
+  // `detectHosts` / `syncExcluded` flips ride the same call; the store's
+  // mutation notification drives the keychain reconcile that pushes an
+  // exclusion tombstone or re-publishes a re-included record.
   ipcMain.handle(
     CONNECTIONS.UPDATE,
     createValidatedHandler(
@@ -2500,6 +2503,8 @@ function registerConnectionsHandlers(): void {
             host,
             port,
             fingerprint,
+            detectHosts: params.detectHosts,
+            syncExcluded: params.syncExcluded,
           });
           if (addressChanged) await rebuildConnectionClientIfOpen(params.id);
           await broadcastConnectionsChanged();

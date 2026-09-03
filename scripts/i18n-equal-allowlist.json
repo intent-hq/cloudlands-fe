@@ -322,6 +322,5 @@
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
   "workspace_transfer_tableName_label": ["fr"],
-  "settings_section_git": "*",
-  "settings_devices_tunnel_badge": ["fr"]
+  "settings_section_git": "*"
 }
