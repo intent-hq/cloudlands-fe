@@ -116,6 +116,7 @@
       ? isolatedPreview.count
       : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount,
   );
+  const isSingleEvent = $derived(hasEventSubscriptions && totalCount === 1);
 
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
@@ -212,7 +213,7 @@
     data-testid="event-subscriptions-card"
     aria-label={cardAriaLabel}
   >
-    {#if !isAgentOnly && hasEventSubscriptions}
+    {#if !isAgentOnly && hasEventSubscriptions && !isSingleEvent}
       <h2 data-testid="event-subscriptions-outer-header">
         <Button
           variant="plain"
@@ -263,19 +264,19 @@
         </Button>
       </h2>
     {/if}
-    {#if isAgentOnly || !isCollapsed}
+    {#if isSingleEvent || isAgentOnly || !isCollapsed}
       <div
         bind:this={bodyElement}
         id={bodyId}
         data-testid="event-subscriptions-body"
         data-subscription-motion="height-opacity-y"
-        inert={!isAgentOnly && bodyIsClosing}
-        aria-hidden={!isAgentOnly && bodyIsClosing}
+        inert={!isSingleEvent && !isAgentOnly && bodyIsClosing}
+        aria-hidden={!isSingleEvent && !isAgentOnly && bodyIsClosing}
         transition:safeSubscriptionSlide
       >
         {#if isolatedPreview?.mode === 'agents' || isolatedPreview?.mode === 'mixed'}
           <div
-            class={isAgentOnly ? '' : 'border-t border-border'}
+            class={isSingleEvent || isAgentOnly ? '' : 'border-t border-border'}
             data-testid="event-subscriptions-agents"
           >
             <AgentSubscriptions
@@ -283,7 +284,7 @@
               {agentId}
               {compact}
               embedded
-              forceWaitingHeader
+              forceWaitingHeader={!isSingleEvent}
               isolatedPreview={{
                 agents: isolatedPreview.agents ?? [],
                 initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
@@ -297,12 +298,15 @@
             </div>
           {/if}
         {:else if isolatedPreview}
-          <div class="border-t border-border" data-testid="event-subscriptions-preview">
+          <div
+            class={isSingleEvent ? '' : 'border-t border-border'}
+            data-testid="event-subscriptions-preview"
+          >
             {@render previewContent?.()}
           </div>
         {:else}
           <div
-            class={isAgentOnly ? '' : 'border-t border-border'}
+            class={isSingleEvent || isAgentOnly ? '' : 'border-t border-border'}
             class:hidden={!$agentSubscriptionLane$.visible}
             data-testid="event-subscriptions-agents"
           >
@@ -311,7 +315,7 @@
               {agentId}
               {compact}
               embedded
-              forceWaitingHeader
+              forceWaitingHeader={!isSingleEvent}
               visible={$agentSubscriptionLane$.visible}
               count={$agentSubscriptionLane$.count}
               participantAgentIds={$agentSubscriptionLane$.participantAgentIds}
@@ -319,7 +323,7 @@
             />
           </div>
           <div
-            class="border-t border-border"
+            class={isSingleEvent ? '' : 'border-t border-border'}
             class:hidden={!hooksVisible}
             data-testid="event-subscriptions-hooks"
           >
@@ -332,7 +336,7 @@
             />
           </div>
           <div
-            class="border-t border-border"
+            class={isSingleEvent ? '' : 'border-t border-border'}
             class:hidden={!prsVisible}
             data-testid="event-subscriptions-prs"
           >

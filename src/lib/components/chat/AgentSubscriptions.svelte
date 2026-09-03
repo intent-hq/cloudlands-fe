@@ -643,7 +643,10 @@
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
         <Tooltip.Trigger>
-          <div class="min-w-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+          <div
+            class="ml-auto min-w-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
+            data-testid="standalone-woken-up-pill"
+          >
             <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
               <Fa
                 icon={faBolt}
@@ -716,9 +719,10 @@
             <Tooltip.Root delayDuration={0}>
               <Tooltip.Trigger>
                 <span
-                  class="inline-flex min-w-0 items-center gap-1 truncate whitespace-nowrap {isCompleted
+                  class="ml-auto inline-flex min-w-0 items-center gap-1 truncate whitespace-nowrap {isCompleted
                     ? 'rounded-full bg-muted/50 px-1.5 py-0.5'
                     : ''} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  data-testid="status-woken-up-pill"
                   transition:fade={{ duration: 200 }}
                 >
                   {#if isCompleted}

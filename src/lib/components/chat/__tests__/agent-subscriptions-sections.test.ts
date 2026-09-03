@@ -95,7 +95,10 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 import { store as appStore } from '$store/renderer/store';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-import { requestSubscriptionFetch } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import {
+  requestSubscriptionFetch,
+  setWokenUp,
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
@@ -304,6 +307,24 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     ]);
     expect(screen.queryByTestId('one-shot-watches')).toBeNull();
     expect(screen.queryByTestId('agent-subscriptions-card')).toBeNull();
+  });
+
+  it('pushes standalone and slim woken-up pills to the trailing edge', async () => {
+    const wakeInfo = { eventCount: 1, eventTypes: ['agent:idle'], timestamp: Date.now() };
+    const standaloneWorkspaceId = 'ws-woken-standalone';
+    await renderWithSnapshot(standaloneWorkspaceId, snapshot());
+    appStore.dispatch(setWokenUp(standaloneWorkspaceId, PARENT, wakeInfo));
+    expect((await screen.findByTestId('standalone-woken-up-pill')).classList).toContain('ml-auto');
+
+    cleanup();
+
+    const slimWorkspaceId = 'ws-woken-slim';
+    await renderWithSnapshot(
+      slimWorkspaceId,
+      snapshot([oneShotSubscription('watch-woken', slimWorkspaceId, ['agent-a'])]),
+    );
+    appStore.dispatch(setWokenUp(slimWorkspaceId, PARENT, wakeInfo));
+    expect((await screen.findByTestId('status-woken-up-pill')).classList).toContain('ml-auto');
   });
 
   it('renders one agent directly without a waiting disclosure', async () => {

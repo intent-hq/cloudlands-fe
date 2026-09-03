@@ -110,19 +110,21 @@ function rect(top: number, height: number): DOMRect {
 }
 
 describe('EventSubscriptionsCard', () => {
-  it('promotes the agent cohort header and omits the outer header for an agent-only card', async () => {
+  it('renders a lone agent row directly without a header or card chevron', async () => {
     const card = await renderCard('agents');
     expect(card.parentElement?.classList.contains('hidden')).toBe(false);
     expect(screen.getByTestId('mock-agent-event-section')).toBeTruthy();
-    expect(screen.getAllByText('Waiting for 1 agent')).toHaveLength(1);
+    expect(screen.getByTestId('mock-agent-row')).toBeTruthy();
+    expect(screen.queryByTestId('mock-agent-cohort-header')).toBeNull();
     expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
     expect(screen.queryByTestId('event-subscriptions-summary')).toBeNull();
+    expect(screen.queryByTestId('event-subscriptions-chevron')).toBeNull();
   });
 
   it.each([
     ['hooks', 'mock-hook-event-section'],
     ['prs', 'mock-pr-event-section'],
-  ])('shows one bounded card for a %s-only subscription', async (agentId, testId) => {
+  ])('renders a lone %s row directly without a header or card chevron', async (agentId, testId) => {
     const card = await renderCard(agentId);
     expect(card.parentElement?.classList.contains('hidden')).toBe(false);
     expect(card.className).toContain('rounded-lg');
@@ -131,7 +133,9 @@ describe('EventSubscriptionsCard', () => {
     expect(card.className).toContain('bg-card/80');
     expect(card.className).toContain('shadow-sm');
     expect(screen.getByTestId(testId)).toBeTruthy();
-    expect(screen.getByText('Subscribed to 1 event')).toBeTruthy();
+    expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
+    expect(screen.queryByTestId('event-subscriptions-summary')).toBeNull();
+    expect(screen.queryByTestId('event-subscriptions-chevron')).toBeNull();
   });
 
   it('renders a persisted-collapsed agents-only header and avatar stack from store state', async () => {
@@ -177,6 +181,20 @@ describe('EventSubscriptionsCard', () => {
     );
   });
 
+  it('keeps the grouped header for two mixed subscription types', async () => {
+    const agentId = 'hooks-prs-mixed';
+    liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
+    liveSubscriptions.monitors = [{ agentId, state: 'active' }];
+
+    await renderCard(agentId);
+
+    expect(screen.getByRole('button', { name: 'Subscribed to 2 events' })).toBeTruthy();
+    expect(screen.getByTestId('event-subscriptions-outer-header')).toBeTruthy();
+    expect(screen.getByTestId('event-subscriptions-chevron')).toBeTruthy();
+    expect(screen.getByTestId('mock-hook-event-section')).toBeTruthy();
+    expect(screen.getByTestId('mock-pr-event-section')).toBeTruthy();
+  });
+
   it('starts expanded and toggles every category without removing the card', async () => {
     const card = await renderCard('agents-hooks-prs');
     const toggle = screen.getByRole('button', { name: 'Subscribed to 3 events' });
@@ -218,28 +236,36 @@ describe('EventSubscriptionsCard', () => {
     expect(screen.queryByTestId('event-subscriptions-body')).toBeNull();
   });
 
-  it.each([
-    ['hooks', 1],
-    ['prs', 1],
-  ])('renders a persisted-collapsed %s-only header from store state', async (kind, count) => {
-    const agentId = `stored-${kind}`;
-    if (kind === 'hooks') {
-      liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
-    } else {
-      liveSubscriptions.monitors = [{ agentId, state: 'active' }];
-    }
-    setEventSubscriptionsExpanded('workspace-a', agentId, false);
+  it.each(['agents', 'hooks', 'prs'])(
+    'ignores persisted collapse and renders a lone %s row directly',
+    async (kind) => {
+      const agentId = `stored-${kind}`;
+      if (kind === 'agents') {
+        liveSubscriptions.agents[agentId] = ['agent-one'];
+      } else if (kind === 'hooks') {
+        liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
+      } else {
+        liveSubscriptions.monitors = [{ agentId, state: 'active' }];
+      }
+      setEventSubscriptionsExpanded('workspace-a', agentId, false);
 
-    const card = await renderCard(agentId);
+      const card = await renderCard(agentId);
 
-    expect(card.parentElement?.classList.contains('hidden')).toBe(false);
-    expect(
-      screen
-        .getByRole('button', { name: `Subscribed to ${count} event` })
-        .getAttribute('aria-expanded'),
-    ).toBe('false');
-    expect(screen.queryByTestId('event-subscriptions-body')).toBeNull();
-  });
+      expect(card.parentElement?.classList.contains('hidden')).toBe(false);
+      expect(screen.getByTestId('event-subscriptions-body')).toBeTruthy();
+      expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
+      expect(screen.queryByTestId('event-subscriptions-chevron')).toBeNull();
+      expect(
+        screen.getByTestId(
+          kind === 'agents'
+            ? 'mock-agent-row'
+            : kind === 'hooks'
+              ? 'mock-hook-event-section'
+              : 'mock-pr-event-section',
+        ),
+      ).toBeTruthy();
+    },
+  );
 
   it('keeps a persisted-collapsed empty card hidden', async () => {
     setEventSubscriptionsExpanded('workspace-a', 'stored-none', false);
@@ -266,12 +292,16 @@ describe('EventSubscriptionsCard', () => {
   });
 
   it('renders browser tabs parallel to a collapsed events disclosure', async () => {
+    liveSubscriptions.hooks = [
+      { agentId: 'hooks-tabs', state: 'scheduled' },
+      { agentId: 'hooks-tabs', state: 'scheduled' },
+    ];
     await renderCard('hooks-tabs');
     const section = screen.getByTestId('event-subscriptions-browser-tabs');
     expect(section.classList.contains('hidden')).toBe(false);
     expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Subscribed to 1 event' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Subscribed to 2 events' }));
     await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
     expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
   });
