@@ -1316,19 +1316,103 @@ describe('WebSocketApiSettings', () => {
         screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
       ).toBe('true');
 
-      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      // Loopback-only is already persisted: the explicit OFF collapses the
+      // section without another (identical) settings.update round-trip.
+      const writesBefore = mocks.mockSettingsUpdate.mock.calls.length;
       await fireEvent.click(screen.getByRole('switch', { name: LOCAL_NETWORK() }));
-      await waitFor(() => {
-        expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
-          { path: 'server.bindAddress', value: ['127.0.0.1'] },
-          { path: 'server.tunnel.enabled', value: false },
-          { path: 'server.tunnel.only', value: false },
-        ]);
-      });
       await waitFor(() => expect(screen.queryByRole('checkbox')).toBeNull());
       expect(
         screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
       ).toBe('false');
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(writesBefore);
+    });
+
+    it('does not append loopback to an out-of-band IPv6 unspecified bind ("::") on the tunnel toggle', async () => {
+      // The daemon requires "::" to stand alone (like 0.0.0.0); appending
+      // 127.0.0.1 would make the write daemon-rejected in both directions.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['::'], tunnel: { enabled: false, only: false } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() }));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['::'] },
+          { path: 'server.tunnel.enabled', value: true },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+    });
+
+    it('turning the WebSocket API off clears the sticky Listen targets state', async () => {
+      // Sticky-open on loopback-only, then WSS OFF → ON: the enable path
+      // applies the 0.0.0.0 default as usual; when that write fails (bind set
+      // stays loopback-only), the section must not reopen from a stale flag.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: false, only: false } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+        ).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
+      );
+      await fireEvent.click(
+        screen.getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+      );
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).disabled,
+        ).toBe(false),
+      );
+      await waitFor(() =>
+        expect(
+          (
+            screen.getByRole('switch', {
+              name: m.settings_wsApi_enable_label(),
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false),
+      );
+
+      // WSS OFF: the whole API section (and the sticky flag) goes away.
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: false },
+      ]);
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
+      await waitFor(() => expect(screen.queryByRole('checkbox')).toBeNull());
+
+      // WSS ON: the loopback-only default is attempted and fails, so the
+      // persisted bind set stays loopback-only.
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('bind failed'));
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+          { path: 'server.bindAddress', value: ['0.0.0.0'] },
+        ]);
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+        ).toBe('false'),
+      );
+      expect(screen.queryByRole('checkbox')).toBeNull();
     });
 
     it('toggling ON persists bindAddress = [0.0.0.0] and shows Listen targets with All interfaces checked', async () => {

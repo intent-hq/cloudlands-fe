@@ -244,6 +244,9 @@
 
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
+  // The daemon treats the IPv6 unspecified address like 0.0.0.0: it must
+  // stand alone and already covers loopback (out-of-band config only).
+  const UNSPECIFIED = new Set([ALL_INTERFACES, '::']);
 
   // "Enable Local Network Access" is a view over server.bindAddress (no
   // daemon setting of its own): ON whenever a non-loopback target is bound.
@@ -263,11 +266,12 @@
   /**
    * Loopback is always bound: this app and the tailcat sidecar (which forwards
    * tunnel connections to 127.0.0.1:<port>) reach the daemon over it. Force
-   * it into every persisted bind set unless all-interfaces already covers it.
-   * An empty set (tunnel-only restore) therefore becomes loopback-only.
+   * it into every persisted bind set unless an unspecified address already
+   * covers it. An empty set (tunnel-only restore) therefore becomes
+   * loopback-only.
    */
   function withLoopback(ips: string[]): string[] {
-    if (ips.includes(ALL_INTERFACES) || ips.includes(LOOPBACK)) return ips;
+    if (ips.some((ip) => UNSPECIFIED.has(ip)) || ips.includes(LOOPBACK)) return ips;
     return [...ips, LOOPBACK];
   }
 
@@ -286,12 +290,17 @@
    * The "Enable Local Network Access" toggle rewrites the bind set: OFF
    * narrows it to loopback only (the tunnel, when on, still forwards to
    * 127.0.0.1) and collapses the section, ON widens it to all interfaces.
-   * The tunnel state is carried through untouched.
+   * The tunnel state is carried through untouched. When the section is open
+   * only via the sticky flag (loopback-only already persisted), OFF just
+   * collapses it — no round-trip.
    */
   function handleLocalNetworkToggle() {
     if (listenSaving) return;
     const turningOff = localNetworkShown;
-    if (turningOff) localNetworkOpen = false;
+    if (turningOff) {
+      localNetworkOpen = false;
+      if (!localNetworkEnabled) return;
+    }
     void handleListenTargetChange({
       ips: turningOff ? [LOOPBACK] : [ALL_INTERFACES],
       tunnel: tunnelEnabled,

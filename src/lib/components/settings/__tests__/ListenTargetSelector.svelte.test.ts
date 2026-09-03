@@ -103,6 +103,22 @@ describe('ListenTargetSelector', () => {
     expect(onchange).toHaveBeenCalledWith({ ips: ['0.0.0.0'], tunnel: false });
   });
 
+  it('treats an out-of-band IPv6 unspecified bind ("::") like all-interfaces', async () => {
+    // The daemon requires "::" to stand alone, exactly like 0.0.0.0. The
+    // selector has no IPv6 UI, so "::" renders as a plain bound entry, but
+    // it covers the other addresses (locked) and never gets loopback
+    // appended; unchecking it falls back to loopback-only.
+    const { getByRole, onchange } = renderSelector({ selectedIps: ['::'] });
+    const specific = asInput(getByRole('checkbox', { name: '10.0.0.5' }));
+    expect(specific.checked).toBe(true);
+    expect(specific.disabled).toBe(true);
+    const v6 = asInput(getByRole('checkbox', { name: '::' }));
+    expect(v6.checked).toBe(true);
+    expect(v6.disabled).toBe(false);
+    await fireEvent.click(v6);
+    expect(onchange).toHaveBeenCalledWith({ ips: ['127.0.0.1'], tunnel: false });
+  });
+
   it('locks the covered addresses checked while all-interfaces is bound', () => {
     // 0.0.0.0 already covers every address, so the individual entries render
     // checked but disabled until all-interfaces is unchecked.

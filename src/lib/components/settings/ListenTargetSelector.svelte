@@ -46,6 +46,10 @@
 
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
+  // The daemon treats the IPv6 unspecified address like 0.0.0.0 (must stand
+  // alone, covers loopback). The selector has no IPv6 UI, so an out-of-band
+  // "::" only renders as a plain entry — but never gets loopback appended.
+  const UNSPECIFIED = new Set([ALL_INTERFACES, '::']);
 
   // Render the union of available and currently bound IPs so a bound address
   // missing from the live enumeration (e.g. interface down) stays visible and
@@ -61,19 +65,18 @@
 
   const selection = $derived(new Set(selectedIps));
 
-  // While all-interfaces is bound, every other address is already covered by
-  // 0.0.0.0 — render them checked but locked until all-interfaces is
-  // unchecked.
-  const allInterfacesSelected = $derived(selection.has(ALL_INTERFACES));
+  // While an unspecified address is bound, every other address is already
+  // covered by it — render them checked but locked until it is unchecked.
+  const allInterfacesSelected = $derived(selectedIps.some((ip) => UNSPECIFIED.has(ip)));
 
   /**
-   * Loopback is always bound: force it into every emission unless
-   * all-interfaces (which already covers it) is selected. This also means a
-   * selection can never be empty — unchecking the last specific IP (or
-   * all-interfaces) lands on loopback-only.
+   * Loopback is always bound: force it into every emission unless an
+   * unspecified address (which already covers it) is selected. This also
+   * means a selection can never be empty — unchecking the last specific IP
+   * (or all-interfaces) lands on loopback-only.
    */
   function withLoopback(ips: string[]): string[] {
-    if (ips.includes(ALL_INTERFACES) || ips.includes(LOOPBACK)) return ips;
+    if (ips.some((ip) => UNSPECIFIED.has(ip)) || ips.includes(LOOPBACK)) return ips;
     return [...ips, LOOPBACK];
   }
 
@@ -86,7 +89,7 @@
       // Unspecified bind must stand alone.
       ips = [ALL_INTERFACES];
     } else {
-      ips = [...selectedIps.filter((v) => v !== ALL_INTERFACES), ip];
+      ips = [...selectedIps.filter((v) => !UNSPECIFIED.has(v)), ip];
     }
     onchange({ ips: withLoopback(ips), tunnel: tunnelSelected });
   }
@@ -97,7 +100,7 @@
   <p class="text-xs text-subtle mb-1">{m.settings_listenTargets_description()}</p>
   <ul class="flex flex-col gap-0.5">
     {#each ipOptions as ip (ip)}
-      {@const covered = ip !== ALL_INTERFACES && allInterfacesSelected}
+      {@const covered = !UNSPECIFIED.has(ip) && allInterfacesSelected}
       {@const locked = covered || ip === LOOPBACK}
       {@const checked = selection.has(ip) || locked}
       <li>
