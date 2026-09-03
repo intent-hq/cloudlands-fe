@@ -26,7 +26,11 @@ import { loadKnownRepos } from '../../known-repos/known-repos-slice';
 import { initialState as initialConnectionsState } from '../../connections/connections-slice';
 import { initialState as initialPanelLayoutState } from '../../panel-layout/panel-layout-slice';
 import { initialState as initialSidebarNavState } from '../../sidebar-nav/sidebar-nav-slice';
-import { initialState as initialWorkspaceState } from '../../workspace/workspace-slice';
+import {
+  initialState as initialWorkspaceState,
+  setWorkspaceEntity,
+  workspaceReducer,
+} from '../../workspace/workspace-slice';
 import {
   initialState as initialWorkspaceLifecycleState,
   backendReconnected,
@@ -126,17 +130,18 @@ function start(
 ) {
   const channel = stdChannel();
   const actions: ObservedAction[] = [];
-  const reduceLifecycle = (action: ObservedAction) => {
+  const reduceState = (action: ObservedAction) => {
     current.workspaceLifecycle = workspaceLifecycleReducer(
       current.workspaceLifecycle,
       action as never,
     );
+    current.workspace = workspaceReducer(current.workspace, action as never);
   };
   const task = runSaga(
     {
       channel,
       dispatch: (action: ObservedAction) => {
-        reduceLifecycle(action);
+        reduceState(action);
         if (action.type !== workspaceHydrationBranchRequested.type) actions.push(action);
         channel.put(action);
         onDispatch?.(action, channel);
@@ -150,7 +155,7 @@ function start(
     actions,
     task,
     send(action: ObservedAction) {
-      reduceLifecycle(action);
+      reduceState(action);
       channel.put(action);
     },
   };
@@ -382,6 +387,42 @@ describe('lifecycleIpcReadSaga', () => {
     );
     await stop(run.task);
   });
+
+  it.each(['before', 'after'] as const)(
+    'dispatches worktree-dependent hydration exactly once when a real path resolves %s fallback',
+    async (timing) => {
+      const run = start(state([]));
+      run.channel.put(workspaceMounted(WS));
+      await settle();
+      run.actions.length = 0;
+
+      if (timing === 'before') {
+        run.send(setWorkspaceEntity(workspace(WS, '/repo/worktrees/late')));
+      }
+      await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
+      await settle();
+      if (timing === 'after') {
+        expect(
+          run.actions.filter((action) => action.type === 'skills/loadSkillsRequested'),
+        ).toHaveLength(0);
+        expect(
+          run.actions.filter(
+            (action) => action.type === 'fileExplorer/hydrateFileExplorerRequested',
+          ),
+        ).toHaveLength(0);
+        run.send(setWorkspaceEntity(workspace(WS, '/repo/worktrees/late')));
+        await settle();
+      }
+
+      expect(
+        run.actions.filter((action) => action.type === 'skills/loadSkillsRequested'),
+      ).toHaveLength(1);
+      expect(
+        run.actions.filter((action) => action.type === 'fileExplorer/hydrateFileExplorerRequested'),
+      ).toHaveLength(1);
+      await stop(run.task);
+    },
+  );
 
   it('promotes a deferred read when its restored active panel becomes visible', async () => {
     const current = state();
