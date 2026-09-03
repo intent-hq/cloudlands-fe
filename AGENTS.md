@@ -285,10 +285,12 @@ related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
 select a conservative suite instead of silently skipping coverage.
 
-Expensive component and type checks share a host-wide lock. The command waits for at
-most 30 seconds by default and never stops the process that owns the lock. Set
-`VERIFY_CHANGED_LOCK_TIMEOUT_MS` to a bounded value of at most 300000 when a longer
-queue is useful.
+Only checks that genuinely conflict use host-wide locks, held for one check at a time:
+Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
+`vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
+checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
+Vitest. `VERIFY_CHANGED_LOCK_TIMEOUT_MS` overrides either wait but remains capped at
+300000 ms, and the command never stops the process that owns a lock.
 
 After any structural change (moving files, changing imports, extracting modules):
 
