@@ -6,6 +6,9 @@
  */
 
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
+
+export type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
 
 /** Serializable icon descriptor understood by the renderer's icon adapter. */
 interface PanelTabIcon {
@@ -78,12 +81,11 @@ export interface PanelTab {
    * The live agent store, when it has the owner, takes precedence (renames).
    */
   ownerAgentName?: string;
+  /** Persisted browser viewport mode. Absent legacy values default to fit. */
+  viewport?: BrowserTabViewport;
   /**
-   * Emulated viewport of an agent-owned browser tab (monorepo#2857); absent
-   * for unowned (native-sized) tabs. Persisted with the layout alongside
-   * `ownerAgentId` so the tab rehydrates at its actual size after restart,
-   * and kept live by owner-changed/resize notifications from main so the UI
-   * can surface the emulated size.
+   * Last exact/fallback emulated size of an agent-owned browser tab. Fit mode
+   * uses this while hidden, and agent resize/open notifications keep it live.
    */
   emulatedSize?: { width: number; height: number };
   faviconUrl?: string;

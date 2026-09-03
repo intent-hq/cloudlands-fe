@@ -105,6 +105,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  updateTabViewport,
 } from '../panel-layout-slice';
 import { panelLayoutReducer } from '../panel-layout-slice';
 import {
@@ -386,6 +387,7 @@ const persistActionCreators = [
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
+  updateTabViewport,
   updateFileTabPath,
   consumePendingFocus,
   reconcilePanelColumnCount,
@@ -1808,7 +1810,7 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('persists browserRequestedUrl with the tab (round-trip, monorepo#2789)', async () => {
+  it('round-trips browser requested URL and viewport with the persisted tab', async () => {
     const browserTab = {
       id: 'tab-b',
       type: 'browser' as const,
@@ -1816,6 +1818,7 @@ describe('panelLayoutSaga', () => {
       closable: true,
       browserUrl: 'http://127.0.0.1:52345/',
       browserRequestedUrl: 'http://daemon.localhost:3000/',
+      viewport: { mode: 'preset' as const, presetId: 'iphone-se', width: 375, height: 667 },
     };
     const state = storeState();
     state.panelLayout.byWorkspaceId[WS_1] = {
@@ -1836,6 +1839,7 @@ describe('panelLayoutSaga', () => {
     expect(persisted?.panels['panel-1'].tabs[0]).toMatchObject({
       browserUrl: 'http://127.0.0.1:52345/',
       browserRequestedUrl: 'http://daemon.localhost:3000/',
+      viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
     });
     await cancelSaga(task);
   });

@@ -174,8 +174,8 @@ const OpenTabActionSchema = z.object({
   allowDuplicate: z.boolean().optional(),
   // Pin the panel resolved by this open, including an existing reused panel.
   pin: z.boolean().optional(),
-  // Emulated viewport for agent opens (monorepo#2857); omitted width
-  // defaults to the standard desktop viewport (1280×800). Ignored on user
+  // Emulated viewport for agent opens (monorepo#2857); omitting both
+  // dimensions selects fit mode. Ignored on user
   // (agentId-less) opens, which stay native-sized and unowned. Like
   // `position`, also ignored when the per-agent exact-URL dedupe reuses an
   // existing tab — the reused tab keeps its current viewport (use resizeTab
@@ -447,7 +447,6 @@ const ActionSequenceSchema = z.object({
   tabId: z.string().optional(), // Default tabId for all actions
 });
 
-
 // ============================================================================
 // Execution Result Types
 // ============================================================================
@@ -533,8 +532,7 @@ async function fetchAgentDisplayNames(workspaceId: string): Promise<Map<string, 
   try {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     const result = (await getBackendClient().request('agent.list', { workspaceId })) as
-      | { agents?: Array<{ id?: string; name?: string }> }
-      | undefined;
+      { agents?: Array<{ id?: string; name?: string }> } | undefined;
     for (const agent of result?.agents ?? []) {
       if (typeof agent.id === 'string' && typeof agent.name === 'string' && agent.name.length > 0) {
         names.set(agent.id, agent.name);
@@ -658,23 +656,27 @@ async function executeAction(
             : scope === 'unclaimed'
               ? tabs.filter((t) => !t.ownerAgentId)
               : tabs;
-        // Owner display info + sizing per §5.9: ownerAgentId is nullable
-        // (null = unowned), unowned tabs are always native, agent-owned
-        // tabs are always emulated with their current width/height
-        // (viewport invariant). One bulk agent.list resolves every owner's
+        // Owner display info + effective sizing per §5.9: ownerAgentId is
+        // nullable (null = unowned), fit user tabs are native, and fixed or
+        // owned tabs are emulated. One bulk agent.list resolves every owner's
         // display name; best-effort — unresolvable owners keep their id.
         const ownerNames = scoped.some((t) => t.ownerAgentId)
           ? await resolveAgentDisplayNames(workspaceId, ownerNameCache)
           : new Map<string, string>();
-        const result = scoped.map(({ emulatedSize, hidden, ...tab }) => {
+        const result = scoped.map(({ emulatedSize, viewport, hidden, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
           const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
-          const size = emulatedSize ?? DEFAULT_AGENT_VIEWPORT;
+          const effectiveSize = embeddedBrowserCdp.getTabEffectiveViewportSize(tab.tabId);
+          const fixedViewportSize = viewport && viewport.mode !== 'fit' ? viewport : undefined;
+          const fallbackSize = ownerAgentId
+            ? (emulatedSize ?? DEFAULT_AGENT_VIEWPORT)
+            : fixedViewportSize;
+          const size = effectiveSize ?? fallbackSize;
           return {
             ...tab,
             ownerAgentId,
             ...(ownerAgentName !== undefined ? { ownerAgentName } : {}),
-            ...(ownerAgentId
+            ...(size
               ? { mode: 'emulated' as const, width: size.width, height: size.height }
               : { mode: 'native' as const }),
             // Hidden is an agent-owned-tab state only (monorepo#3045):
@@ -1088,17 +1090,18 @@ async function executeAction(
         // one (which could silently hand the agent a user-opened tab).
         // Rewritten opens pass the original requested URL so the renderer
         // persists it with the tab and a restart can re-run the rewrite
-        // (intent-hq/monorepo#2789). Agent opens pass the owner AND the
-        // emulated viewport so the renderer persists both with the tab and
-        // a restart rehydrates ownership at the actual size (monorepo#2857).
+        // (intent-hq/monorepo#2789). Agent opens pass the owner and, when
+        // explicitly requested, a custom viewport so the renderer persists
+        // the mode and a restart rehydrates it (monorepo#2857).
         // The resolved replace target (when any) is bound into the payload
         // so the renderer adopts exactly the checked tab (TOCTOU, #2857).
-        const emulatedSize = agentId
-          ? {
-              width: action.width ?? DEFAULT_AGENT_VIEWPORT.width,
-              height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
-            }
-          : undefined;
+        const emulatedSize =
+          agentId && (action.width !== undefined || action.height !== undefined)
+            ? {
+                width: action.width ?? DEFAULT_AGENT_VIEWPORT.width,
+                height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
+              }
+            : undefined;
         // Agent opens are hidden by default (monorepo#3045): without an
         // explicit visible: true the tab is created straight into the
         // workspace's hidden set (offscreen webview, no panel mount, no
@@ -1111,9 +1114,8 @@ async function executeAction(
         const openOwnerName = agentId
           ? await resolveAgentDisplayName(agentId, workspaceId, ownerNameCache)
           : undefined;
-        // The short call form is for user (agentId-less) opens only — agent
-        // opens always compute a defined emulatedSize above, so they always
-        // take the long form, which carries `visible` through.
+        // The short call form is for user (agentId-less) opens only. Agent
+        // opens take the long form even in fit mode so `visible` rides through.
         const result =
           agentId === undefined && replaceTargetTabId === undefined && emulatedSize === undefined
             ? openTabFn(
@@ -1140,11 +1142,11 @@ async function executeAction(
         // replace, otherwise the pre-generated id of the new tab.
         const effectiveTabId =
           result.success && replaceTargetTabId ? replaceTargetTabId : result.tabId;
-        // Agent opens create OWNED, viewport-emulated tabs (monorepo#2857):
+        // Agent opens create owned, viewport-emulated tabs (monorepo#2857):
         // record ownership right away — a repeat openTab for the same URL
         // then dedupes onto it (intent-hq/monorepo#2541) — with the emulated
-        // size (omitted width defaults to the standard 1280×800 desktop
-        // viewport). Tunneled opens record the original requested URL,
+        // optional custom size (omitting both dimensions selects fit mode).
+        // Tunneled opens record the original requested URL,
         // backing the requested-URL dedupe fallback above; non-tunneled
         // opens clear any stale identity (a replace-position open adopts an
         // existing tab whose record may carry one) (intent-hq/monorepo#2787).
