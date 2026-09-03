@@ -457,37 +457,45 @@
 
 <div class="group flex h-full items-start justify-between gap-2">
   <div class="flex min-w-0 flex-1 flex-col gap-1">
-    {#if isEditingTitle}
-      <input
-        bind:this={titleInputRef}
-        type="text"
-        bind:value={editedTitle}
-        onblur={saveTitle}
-        onkeydown={handleTitleKeydown}
-        class="type-title w-full rounded bg-none py-0.5 text-foreground
-               outline-none leading-normal
-               focus:ring-none! focus:outline-none!
-               transition-all duration-150"
-        placeholder={m.ui_editableName_placeholder()}
-      />
-    {:else}
-      <button
-        class="type-title cursor-pointer rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
-               max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-               transition-all duration-150 leading-normal line-clamp-3
-              focus-visible:outline focus-visible:outline-1
-               focus-visible:outline-ring focus-visible:outline-offset-[-1px]
-               disabled:cursor-default disabled:opacity-50"
-        class:opacity-50={!workspace?.title}
-        onclick={startEditingTitle}
-        title={m.workspace_sidebarHeader_editTitle_tooltip()}
-        disabled={!workspace}
-      >
-        {#if workspace}
-          {workspace.title || m.workspace_links_untitled_label()}
-        {/if}
-      </button>
-    {/if}
+    <div class="relative flex w-full min-w-0 items-center">
+      <span
+        aria-hidden="true"
+        class="pointer-events-none absolute -inset-x-1 -inset-y-0.5 z-0 rounded-(--radius-small) border border-ring/60 bg-muted/50 transition-[opacity,transform] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+          ? 'scale-100 opacity-100'
+          : 'scale-[0.98] opacity-0'}"
+      ></span>
+      {#if isEditingTitle}
+        <input
+          bind:this={titleInputRef}
+          type="text"
+          bind:value={editedTitle}
+          onblur={saveTitle}
+          onkeydown={handleTitleKeydown}
+          class="type-title relative z-10 w-full rounded border-none bg-transparent py-0.5 text-foreground
+                 outline-none leading-normal
+                 focus:ring-none! focus:outline-none!
+                 transition-all duration-150"
+          placeholder={m.ui_editableName_placeholder()}
+        />
+      {:else}
+        <button
+          class="type-title relative z-10 cursor-pointer rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
+                 max-w-full overflow-hidden text-ellipsis whitespace-nowrap
+                 transition-all duration-150 leading-normal line-clamp-3
+                focus-visible:outline focus-visible:outline-1
+                 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
+                 disabled:cursor-default disabled:opacity-50"
+          class:opacity-50={!workspace?.title}
+          onclick={startEditingTitle}
+          title={m.workspace_sidebarHeader_editTitle_tooltip()}
+          disabled={!workspace}
+        >
+          {#if workspace}
+            {workspace.title || m.workspace_links_untitled_label()}
+          {/if}
+        </button>
+      {/if}
+    </div>
 
     <!-- status message -->
     {#if isEditingStatusMessage}
