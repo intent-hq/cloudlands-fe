@@ -1382,7 +1382,9 @@ describe('WebSocketApiSettings', () => {
       expect(
         (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
       ).toBe(true);
-      expect(screen.queryByRole('checkbox', { name: '10.0.0.5' })).toBeNull();
+      // Candidate list == localIps: only All interfaces, loopback and the
+      // single bound IP are rendered — no extra candidates from anywhere.
+      expect(screen.getAllByRole('checkbox')).toHaveLength(3);
     });
 
     it('keeps the QR pairing URI hosts on the bound localIps, not availableIps', async () => {
