@@ -418,6 +418,32 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+### Component tests (Playwright CT) — when and how
+
+Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
+real browser can observe: layout/geometry, focus and keyboard handling, native browser
+APIs, CSS/motion. State, wire, validation, and routing logic belong in Vitest — a CT spec
+is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxed on CI.
+
+- **Matrix cells must map to a named contract.** Loop over a width only when that width
+  is a real breakpoint under test, over both themes only when color/theme is under test,
+  over both zooms only when scaling is under test. A cross-product "for completeness" is
+  not a contract and multiplies CI time.
+- **One `test()` is one retry unit.** A loop of assertions inside a single `test()`
+  callback, or a file under `test.describe.configure({ mode: 'serial' })`, is retried and
+  reported as a block — one bad cell reruns the whole block and hides which cell broke.
+  Generate one `test()` per cell instead, and do not use serial mode unless tests truly
+  share ordered state.
+- **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
+  or, if it needs more time, tag the individual test
+  `{ tag: '@quarantine' }` — never a whole file. The CT job is merge-queue-only, so a
+  pass-on-retry ejects the PR from the queue rather than reddening a PR check.
+  Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
+  shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
+  not a parking lot — remove the tag in the PR that fixes the flake.
+- Motion specs that sample animation progress mid-flight are the historical flake source;
+  prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+
 ### Testing — every feature/fix against a mock BE
 
 Every feature and every bug fix that touches the wire **MUST** ship with tests that:

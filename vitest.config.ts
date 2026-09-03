@@ -69,44 +69,19 @@ export default defineConfig(async () => {
         'tests/integration/**',
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/*.visual.spec.ts', // Exclude Playwright visual harnesses (browser-owned environment)
-        '**/remote-env.test.ts', // Exclude remote env tests - requires real environment
-        '**/remote-git.test.ts', // Exclude remote git tests - requires real environment
+        // Remote-environment suites need a real daemon/host; not part of the unit gate.
+        '**/remote-env.test.ts',
+        '**/remote-git.test.ts',
         // ================================================================================
-        // PRE-EXISTING BUGS: Tests below have code bugs (wrong imports, missing schemas)
-        // that existed before being excluded. They now run but fail due to these bugs.
-        // TODO: Fix these tests and remove exclusions.
+        // Known-broken tests kept excluded until triaged (repair, migrate, or delete).
+        // Only list files that exist; drop the entry when the file is fixed or removed.
         // ================================================================================
-        // Tests with wrong import paths (../notes.service instead of ../main/notes.service)
-        '**/features/notes/__tests__/add-dependency.test.ts',
-        '**/features/notes/__tests__/add-dependency-edge-cases.test.ts',
-        '**/features/notes/__tests__/assign-agent-to-task.test.ts',
-        '**/features/notes/__tests__/create-prerequisite-note.test.ts',
-        '**/features/notes/__tests__/cycle-detection.test.ts',
-        '**/features/notes/__tests__/edit-events.test.ts',
-        '**/features/notes/__tests__/get-children.test.ts',
-        '**/features/notes/__tests__/get-dependencies.test.ts',
-        '**/features/notes/__tests__/get-task-notes.test.ts',
-        '**/features/notes/__tests__/mark-as-task.test.ts',
-        '**/features/notes/__tests__/mark-as-task-edge-cases.test.ts',
-        '**/features/notes/__tests__/notes-service-comment-id-validation.test.ts',
-        '**/features/notes/__tests__/remove-dependency.test.ts',
-        '**/features/notes/__tests__/remove-task-metadata.test.ts',
-        '**/features/notes/__tests__/update-task-status.test.ts',
-        '**/features/notes/__tests__/update-task-status-edge-cases.test.ts',
-        // Tests with missing schema exports (NoteDependencySchema undefined)
+        // Missing schema export (NoteDependencySchema undefined).
         '**/features/notes/__tests__/dependency-types.test.ts',
-        // Tests with file system checks for build artifacts
-        '**/agent-providers/__tests__/acp-provider-mcp-config.test.ts',
-        // Integration tests with various pre-existing issues
-        '**/features/file-tracking/__tests__/file-tracking-integration.test.ts',
-        '**/features/workspace/__tests__/remote-change-detector.test.ts',
-        '**/features/agent/main/__tests__/edge-cases.test.ts',
-        '**/features/agent/main/__tests__/migration.test.ts',
-        '**/features/agent/main/__tests__/streaming.test.ts',
-        '**/features/agent/services/__tests__/chat-session-resume.test.ts',
+        // Pre-existing failures in notes/task helper coverage.
         '**/features/notes/utils/__tests__/task-agent-message-builder.test.ts',
         '**/features/notes/__tests__/notes-primitives-roundtrip.test.ts',
-        '**/features/agent/main/__tests__/persistence-ipc.test.ts',
+        // Legacy top-level unit tests with pre-existing failures.
         '**/tests/unit/edge-cases.test.ts',
         '**/lib/utils/__tests__/markdown-processor.test.ts',
         // Pre-existing test-fixture bug newly surfaced by the `**/test/**` →
