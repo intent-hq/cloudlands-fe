@@ -255,7 +255,7 @@
 {:else}
   <section
     bind:this={rootElement}
-    class="my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)"
+    class="min-w-0 w-full overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)"
     data-proposal-kind={proposal.kind}
     data-apply-tool-call-id={proposal.applyToolCallId}
     title={proposal.applyToolCallId

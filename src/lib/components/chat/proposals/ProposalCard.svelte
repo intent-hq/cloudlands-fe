@@ -209,12 +209,12 @@
   const cardClass = $derived.by(() => {
     if (isWorkspaceCreate) {
       return isWorkspaceCreated && !neutralBorder
-        ? 'my-2 min-w-0 w-full max-w-xl rounded-(--radius-medium) border border-success/40 bg-card p-4 shadow-(--elevation-raised) sm:p-5'
-        : 'my-2 min-w-0 w-full max-w-xl rounded-(--radius-medium) border border-border bg-card p-4 shadow-(--elevation-raised) sm:p-5';
+        ? 'min-w-0 w-full rounded-(--radius-medium) border border-success/40 bg-card p-4 shadow-(--elevation-raised) sm:p-5'
+        : 'min-w-0 w-full rounded-(--radius-medium) border border-border bg-card p-4 shadow-(--elevation-raised) sm:p-5';
     }
     return isApplied && !neutralBorder
-      ? 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-success/40 bg-card shadow-(--elevation-raised)'
-      : 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)';
+      ? 'min-w-0 w-full overflow-hidden rounded-(--radius-medium) border border-success/40 bg-card shadow-(--elevation-raised)'
+      : 'min-w-0 w-full overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)';
   });
 
   // One-shot restored-draft overlays: consumed on the first run of the
