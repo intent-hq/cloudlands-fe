@@ -736,6 +736,15 @@ export async function updateMetadata(
       if (!nextDetectHosts) conn.hosts = [];
     }
     if (exclusionChanged) conn.syncExcluded = nextExcluded;
+    const previousIdentityLeavesSync =
+      (addressChanged && fingerprintChanged) || (exclusionChanged && nextExcluded);
+    // An earlier exclusion may have left a synced cloud delete pending for the
+    // previous identity; the replacement tombstone written below must keep
+    // propagating it, and never with a lower clock.
+    const pendingCloudDelete =
+      previousIdentityLeavesSync && previouslyExcluded
+        ? state.tombstones.find((t) => t.excluded !== true && tombstoneMatches(t, previous))
+        : undefined;
     // Stamp strictly past the record's own clock (as setTcAddress does): a
     // same-millisecond edit must out-clock the state it replaces, or the LWW
     // reconcile treats equal clocks as in-sync and a peer's stale copy —
@@ -746,6 +755,7 @@ export async function updateMetadata(
       (conn.updatedAt ?? 0) + 1,
       ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
       matchingTombstone ? matchingTombstone.updatedAt + 1 : 0,
+      pendingCloudDelete ? pendingCloudDelete.updatedAt + 1 : 0,
     );
     conn.updatedAt = now;
     if (identityChanged || matchingTombstone) clearTombstone(state, nextIdentity);
@@ -759,10 +769,7 @@ export async function updateMetadata(
     // is listed to sync unless the record was already local-only — except
     // when an earlier exclusion left a cloud delete pending for that
     // identity, which must keep propagating under the new tombstone.
-    if ((addressChanged && fingerprintChanged) || (exclusionChanged && nextExcluded)) {
-      const cloudDeletePending =
-        previouslyExcluded &&
-        state.tombstones.some((t) => t.excluded !== true && tombstoneMatches(t, previous));
+    if (previousIdentityLeavesSync) {
       clearTombstone(state, previous);
       state.tombstones.push({
         label: previous.label,
@@ -775,7 +782,7 @@ export async function updateMetadata(
         detectHosts: previous.detectHosts,
         updatedAt: now,
         deletedAt: now,
-        excluded: previouslyExcluded && !cloudDeletePending,
+        excluded: previouslyExcluded && !pendingCloudDelete,
       });
     }
     await writeState(state);

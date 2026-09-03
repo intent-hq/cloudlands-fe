@@ -1930,6 +1930,46 @@ describe('connections-store keychain sync surface', () => {
     expect(records[0].updatedAt).toBe(tombstone.updatedAt);
   });
 
+  it('identity change of an excluded record keeps its pending cloud delete synced and never lowers its clock', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_005_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
+      const [pending] = await store.listSyncRecords();
+      expect(pending.deleted).toBe(true);
+
+      // Wall clock rolled back below the pending delete's stamp.
+      vi.setSystemTime(1_700_000_000_000);
+      await store.updateMetadata(rec.id, {
+        label: 'Studio Mac',
+        accent: null,
+        host: '10.0.0.9',
+        port: 9443,
+        fingerprint: 'ZZ:YY:XX',
+      });
+      await store.__drainWriteChainForTesting();
+
+      const records = await store.listSyncRecords();
+      expect(records).toEqual([
+        expect.objectContaining({
+          deleted: true,
+          host: sampleConn.host,
+          port: sampleConn.port,
+          fingerprint: sampleConn.fingerprint,
+        }),
+      ]);
+      expect(records[0].updatedAt).toBeGreaterThan(pending.updatedAt);
+      expect((await store.list()).find((c) => c.id === rec.id)).toMatchObject({
+        host: '10.0.0.9',
+        syncExcluded: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('updateMetadata syncExcluded false re-publishes the record strictly past its own tombstone', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
