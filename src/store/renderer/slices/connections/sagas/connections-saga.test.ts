@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The update saga lazy-imports svelte-sonner for its outcome toasts.
 const toast = vi.hoisted(() => ({
   success: vi.fn(),
+  info: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
   dismiss: vi.fn(),
@@ -84,6 +85,7 @@ describe('connectionsSaga', () => {
   beforeEach(() => {
     callbacks = {};
     toast.success.mockClear();
+    toast.info.mockClear();
     toast.error.mockClear();
     toast.warning.mockClear();
     toast.dismiss.mockClear();
@@ -643,7 +645,7 @@ describe('connectionsSaga', () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
-      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true, version: '0.10.0' };
       return {};
     });
     const run = start();
@@ -651,7 +653,7 @@ describe('connectionsSaga', () => {
 
     const action = updateBackendRequested('remote-1');
     run.channel.put(action);
-    await expect(action.promise).resolves.toEqual({ ok: true });
+    await expect(action.promise).resolves.toEqual({ ok: true, version: '0.10.0' });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
     expect(toast.success).toHaveBeenCalledTimes(1);
     expect(toast.error).not.toHaveBeenCalled();
@@ -663,15 +665,17 @@ describe('connectionsSaga', () => {
   it('handles concurrent updates to different backends (takeEvery, not takeLeading)', async () => {
     // The first backend's RPC stays pending until we release it; the second
     // action arrives while the first is in flight and must not be dropped.
-    let releaseFirst!: (value: { ok: true }) => void;
-    const firstResult = new Promise<{ ok: true }>((resolve) => {
+    let releaseFirst!: (value: { ok: true; version: '0.10.0' }) => void;
+    const firstResult = new Promise<{ ok: true; version: '0.10.0' }>((resolve) => {
       releaseFirst = resolve;
     });
     invoke.mockImplementation(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) {
-        return (params as { id: string }).id === 'remote-1' ? firstResult : { ok: true };
+        return (params as { id: string }).id === 'remote-1'
+          ? firstResult
+          : { ok: true, version: '0.10.0' };
       }
       return {};
     });
@@ -683,9 +687,9 @@ describe('connectionsSaga', () => {
     run.channel.put(first);
     run.channel.put(second);
     // The second settles while the first is still awaiting its RPC.
-    await expect(second.promise).resolves.toEqual({ ok: true });
-    releaseFirst({ ok: true });
-    await expect(first.promise).resolves.toEqual({ ok: true });
+    await expect(second.promise).resolves.toEqual({ ok: true, version: '0.10.0' });
+    releaseFirst({ ok: true, version: '0.10.0' });
+    await expect(first.promise).resolves.toEqual({ ok: true, version: '0.10.0' });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-2' });
     expect(toast.success).toHaveBeenCalledTimes(2);
@@ -693,6 +697,46 @@ describe('connectionsSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it('shows progress rather than success while main is verifying the restart, and cleans up on cancellation', async () => {
+    invoke.mockImplementation(async (channel: string) =>
+      channel === CONNECTION_CHANNELS.UPDATE_BACKEND
+        ? new Promise(() => {})
+        : { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id },
+    );
+    const run = start();
+    await settle();
+    const action = updateBackendRequested('remote-1');
+    const rejected = expect(action.promise).rejects.toThrow('cancelled');
+    run.channel.put(action);
+    await vi.waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1));
+    expect(toast.success).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+    await rejected;
+    expect(toast.dismiss).toHaveBeenCalledWith('connections-update-remote-1');
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it.each(['invalid-pin', 'invalid-ack', 'timeout', 'busy', 'version-mismatch'])(
+    'never announces completion for %s',
+    async (reason) => {
+      invoke.mockImplementation(async (channel: string) =>
+        channel === CONNECTION_CHANNELS.UPDATE_BACKEND
+          ? { ok: false, reason, version: '0.10.0', actualVersion: '0.11.0' }
+          : { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id },
+      );
+      const run = start();
+      await settle();
+      const action = updateBackendRequested('remote-1');
+      run.channel.put(action);
+      await expect(action.promise).resolves.toMatchObject({ ok: false, reason });
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(toast.success).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('toasts a specific error per structured update failure and resolves the action', async () => {
     const results: Array<{ ok: false; reason: string; message?: string }> = [
@@ -745,7 +789,12 @@ describe('connectionsSaga', () => {
   });
 
   describe('daemon-behind-pin toast on connect', () => {
-    const BEHIND = { ...REMOTE, daemonVersion: '0.9.0', updateSupported: true };
+    const BEHIND = {
+      ...REMOTE,
+      daemonVersion: '0.9.0',
+      updateSupported: true,
+      exactVersionUpdateSupported: true,
+    };
     // The toast is scoped to the window's own backend, so the simulated
     // window is bound to the behind remote unless a test overrides it.
     const changed = (
@@ -762,13 +811,27 @@ describe('connectionsSaga', () => {
         ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
       });
 
+    it('offers manual guidance for a legacy sitter, then enables Update on a live exact capability refresh', async () => {
+      const run = start();
+      await settle();
+      changed([LOCAL, { ...BEHIND, exactVersionUpdateSupported: false }], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      expect(toast.warning.mock.calls[0][1].action).toBeUndefined();
+      expect(toast.warning.mock.calls[0][1].description).toEqual(expect.any(String));
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+      expect(toast.warning.mock.calls[1][1].action.onClick).toEqual(expect.any(Function));
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('toasts once on the transition to connected, not on re-broadcasts', async () => {
       const run = start();
       await settle();
 
       // v-prefixed reported versions must not double the template's own "v".
       const vBehind = { ...BEHIND, daemonVersion: 'v0.9.0' };
-      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
+      changed([LOCAL, vBehind], [BEHIND.id], '0.10.0');
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
       const [message, options] = toast.warning.mock.calls[0]!;
       expect(String(message)).toContain('Studio Mac');
@@ -782,7 +845,7 @@ describe('connectionsSaga', () => {
 
       // Same connected pool re-broadcast: no second toast, and the sticky
       // toast still applies — no dismissal either.
-      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
+      changed([LOCAL, vBehind], [BEHIND.id], '0.10.0');
       await settle();
       expect(toast.warning).toHaveBeenCalledTimes(1);
       expect(toast.dismiss).not.toHaveBeenCalled();
@@ -1055,7 +1118,7 @@ describe('connectionsSaga', () => {
       invoke.mockImplementation(async (channel: string) => {
         if (channel === CONNECTION_CHANNELS.LIST)
           return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
-        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true, version: '0.10.0' };
         return {};
       });
       const run = start();
@@ -1088,7 +1151,12 @@ describe('connectionsSaga', () => {
       expect(toast.warning).not.toHaveBeenCalled();
 
       // The external-daemon capture enriches the local record: toast once.
-      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
+      const localExternal = {
+        ...LOCAL,
+        daemonVersion: '0.9.0',
+        updateSupported: true,
+        exactVersionUpdateSupported: true,
+      };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
       const [message, options] = toast.warning.mock.calls[0]!;
@@ -1118,6 +1186,7 @@ describe('connectionsSaga', () => {
         label: 'persisted-fallback-label',
         daemonVersion: '0.9.0',
         updateSupported: true,
+        exactVersionUpdateSupported: true,
       };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
@@ -1133,13 +1202,18 @@ describe('connectionsSaga', () => {
       invoke.mockImplementation(async (channel: string) => {
         if (channel === CONNECTION_CHANNELS.LIST)
           return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
-        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true, version: '0.10.0' };
         return {};
       });
       const run = start();
       await settle();
 
-      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
+      const localExternal = {
+        ...LOCAL,
+        daemonVersion: '0.9.0',
+        updateSupported: true,
+        exactVersionUpdateSupported: true,
+      };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
       const [, options] = toast.warning.mock.calls[0]!;

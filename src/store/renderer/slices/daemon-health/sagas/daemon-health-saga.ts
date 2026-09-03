@@ -174,7 +174,8 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
  * support keeps the passive warning.
  */
 function ownedByBehindPinToast(transport: BackendTransportInfo): boolean {
-  if (transport.updateSupported !== true) return false;
+  if (transport.updateSupported !== true || transport.exactVersionUpdateSupported !== true)
+    return false;
   if (!transport.daemonVersion || !transport.pinnedVersion) return false;
   return compareToPinnedVersion(transport.daemonVersion, transport.pinnedVersion) === 'older';
 }

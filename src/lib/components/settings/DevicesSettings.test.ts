@@ -138,7 +138,7 @@ describe('DevicesSettings', () => {
     mocks.updateBackend.mockImplementation((id) => ({
       type: 'connections/updateBackendRequested',
       payload: [id],
-      promise: Promise.resolve({ ok: true }),
+      promise: Promise.resolve({ ok: true, version: '0.9.1' }),
     }));
     mocks.setSyncEnabled.mockImplementation((enabled) => ({
       type: 'connections/setKeychainSyncEnabledRequested',
@@ -377,7 +377,13 @@ describe('DevicesSettings', () => {
       mocks.connectedIds = ['remote-1'];
       mocks.connections = [
         local,
-        { ...remote, daemonVersion: '0.9.0', updateSupported: true, status: 'connected' },
+        {
+          ...remote,
+          daemonVersion: '0.9.0',
+          updateSupported: true,
+          exactVersionUpdateSupported: true,
+          status: 'connected',
+        },
       ];
       render(DevicesSettings);
 
@@ -395,7 +401,15 @@ describe('DevicesSettings', () => {
 
     it('hides Update for a behind device without a live connection', async () => {
       mocks.pinnedVersion = '0.9.1';
-      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0', updateSupported: true }];
+      mocks.connections = [
+        local,
+        {
+          ...remote,
+          daemonVersion: '0.9.0',
+          updateSupported: true,
+          exactVersionUpdateSupported: true,
+        },
+      ];
       render(DevicesSettings);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
@@ -404,6 +418,29 @@ describe('DevicesSettings', () => {
       expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
       expect(mocks.updateBackend).not.toHaveBeenCalled();
     });
+
+    it.each([undefined, false])(
+      'hides Update for a legacy sitter without exact support: %s',
+      async (exactVersionUpdateSupported) => {
+        mocks.pinnedVersion = '0.9.1';
+        mocks.connectedIds = ['remote-1'];
+        mocks.connections = [
+          local,
+          {
+            ...remote,
+            daemonVersion: '0.9.0',
+            updateSupported: true,
+            exactVersionUpdateSupported,
+            status: 'connected',
+          },
+        ];
+        render(DevicesSettings);
+        await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+        await screen.findByRole('menuitem', { name: 'Edit' });
+        expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+        expect(mocks.updateBackend).not.toHaveBeenCalled();
+      },
+    );
 
     it('hides Update when the daemon does not support self-update or the flag is unknown', async () => {
       mocks.pinnedVersion = '0.9.1';
@@ -480,7 +517,15 @@ describe('DevicesSettings', () => {
         actual.canRequestDeviceUpdate({ ...conn, isLocal: false }, ids, pinned);
       mocks.pinnedVersion = '0.9.1';
       mocks.connectedIds = ['local'];
-      mocks.connections = [{ ...local, daemonVersion: '0.9.0', updateSupported: true }, remote];
+      mocks.connections = [
+        {
+          ...local,
+          daemonVersion: '0.9.0',
+          updateSupported: true,
+          exactVersionUpdateSupported: true,
+        },
+        remote,
+      ];
       render(DevicesSettings);
 
       expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();

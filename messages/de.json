@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "Öffnen",
   "layout_daemonStatus_update_action": "Aktualisieren",
   "layout_daemonStatus_update_tooltip": "intentd dieses Backends von v{daemonVersion} auf v{pinnedVersion} aktualisieren",
-  "layout_daemonStatus_updateRequested_toast": "Update angefordert — das Backend installiert das neuere intentd und startet neu.",
-  "layout_daemonStatus_updateUnsupported_toast": "Das intentd dieses Backends ist zu alt, um Remote-Update-Anfragen anzunehmen. Aktualisiere es manuell auf seinem Rechner.",
+  "layout_daemonStatus_updateRequested_toast": "Die gebündelte intentd-Version wird angefordert. Neustart und Versionsprüfung werden abgewartet…",
+  "layout_daemonStatus_updateUnsupported_toast": "Dieser Daemon oder sein Supervisor kann keine exakte Version sicher installieren. Aktualisiere beide manuell auf diesem Rechner und verbinde dich erneut.",
   "layout_daemonStatus_updateNotConnected_toast": "Keine Verbindung zu diesem Backend — verbinde dich zuerst, bevor du ein Update anforderst.",
-  "layout_daemonStatus_updateFailed_toast": "Das Backend konnte das Update nicht starten: {message}",
+  "layout_daemonStatus_updateFailed_toast": "Das Update auf die exakte Version konnte nicht abgeschlossen werden: {message}. Prüfe die Daemon-Protokolle; möglicherweise ist ein manuelles Update erforderlich.",
   "layout_daemonStatus_updateRequestError_toast": "Die Update-Anfrage konnte nicht gesendet werden. Bitte versuchen Sie es erneut.",
   "layout_daemonStatus_daemonBehind_toast": "{name} führt intentd v{daemonVersion} aus und liegt hinter v{pinnedVersion} dieser App.",
   "layout_daemonStatus_forget_action": "Vergessen",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "Keine Agenten entsprechen Ihrer Suche.",
   "workspace_contextPanel_noSearchResults_label": "Kein Kontext entspricht Ihrer Suche.",
   "workspace_sidebarSearch_clear_ariaLabel": "Suche löschen",
-  "layout_allCard_archived_label": "Archiviert"
+  "layout_allCard_archived_label": "Archiviert",
+  "layout_daemonStatus_updateCompleted_toast": "Das Backend führt nachweislich intentd {version} aus.",
+  "layout_daemonStatus_updateInvalidPin_toast": "Dieser App fehlt eine gültige gebündelte intentd-Versionsvorgabe. Installiere die App neu, bevor du das Backend aktualisierst.",
+  "layout_daemonStatus_updateBusy_toast": "Für dieses Backend läuft bereits ein Update. Warte, bis es abgeschlossen ist.",
+  "layout_daemonStatus_updateTimeout_toast": "Die angeforderte Version konnte nicht rechtzeitig überprüft werden. Das Remote-Update läuft möglicherweise noch. Prüfe die Verbindung und die Daemon-Protokolle.",
+  "layout_daemonStatus_updateMismatch_toast": "Das Backend wurde mit intentd {actualVersion} statt der angeforderten Version {version} neu gestartet. Prüfe die Daemon-Protokolle und aktualisiere manuell; es wurde keine Ersatzversion angefordert."
 }

@@ -48,6 +48,8 @@ import { JsonRpcError } from './json-rpc-errors';
 import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import { readPinnedVersion } from './intentd-version-pin';
+import { isExactIntentdVersion } from '../../../shared/intentd-version-compare';
+import { updateDaemonToExactVersion } from './exact-daemon-update';
 import {
   getLocalDaemonProtocolVersion,
   getSidecarRunLog,
@@ -63,6 +65,7 @@ import {
   getOrphanedSidecarInfo,
   setDaemonVersionInfo,
   setLocalUpdateSupported,
+  setLocalExactVersionUpdateSupported,
   setOrphanedSidecarInfo,
 } from './connection-mode';
 import { computeDaemonVersionRefresh } from './daemon-version-refresh';
@@ -141,6 +144,8 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
 const connectedDaemonVersions = new Map<string, string>();
+const exactUpdateCapabilities = new Map<string, boolean | null>();
+const backendUpdates = new Map<string, AbortController>();
 
 /**
  * #3649: log the connected daemon's build identity once at INFO so the log
@@ -642,22 +647,7 @@ export function getLocalBackendClient(): JsonRpcClient {
   return instance;
 }
 
-/**
- * Ask one connected backend's daemon to self-update via
- * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
- * installs the newer version and restarts the daemon). Returns a structured
- * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
- * the renderer can toast a specific message:
- *   - local id in sidecar/unknown mode, or over a non-UDS transport →
- *     'unsupported' (the FE's app updater owns the app-managed sidecar; only
- *     an adopted `external` local daemon over UDS is routed like a remote,
- *     over the pooled local client — the same predicate as
- *     {@link captureLocalUpdateSupported});
- *   - no live pooled client → 'not-connected' (saved-but-disconnected remote,
- *     or a disconnected external local daemon);
- *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
- *   - any other daemon/transport error → 'failed' with the error message.
- */
+/** Update only to this app's trusted bundled pin, and verify the running version after restart. */
 async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
   if (id === LOCAL_CONNECTION_ID) {
     // Same predicate as captureLocalUpdateSupported: only an adopted
@@ -676,17 +666,42 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
   if (!target || target.getStatus() !== 'connected') {
     return { ok: false, reason: 'not-connected' };
   }
+  const version = getPinnedVersion();
+  if (!version || !isExactIntentdVersion(version)) return { ok: false, reason: 'invalid-pin' };
+  if (backendUpdates.has(id)) return { ok: false, reason: 'busy' };
+  const controller = new AbortController();
+  backendUpdates.set(id, controller);
   try {
-    await target.request('system.requestUpdate');
-    return { ok: true };
-  } catch (error) {
-    if (error instanceof JsonRpcError && error.rpcCode === -32601) {
-      logger.warn('Daemon does not support system.requestUpdate', { id });
-      return { ok: false, reason: 'unsupported' };
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Daemon update request failed', { id, error: message });
-    return { ok: false, reason: 'failed', message };
+    return await updateDaemonToExactVersion({
+      client: target,
+      version,
+      signal: controller.signal,
+      isCurrent: () => backendClients.get(id) === target,
+      onVersion: async (runningVersion) => {
+        connectedDaemonVersions.set(id, runningVersion);
+        if (id === LOCAL_CONNECTION_ID) {
+          setDaemonVersionInfo({
+            daemonVersion: runningVersion,
+            pinnedVersion: version,
+            versionMismatch: runningVersion !== version,
+          });
+          broadcast(
+            BACKEND.STATUS,
+            {
+              status: target.getStatus(),
+              transport: formatTransportInfo(target.getConfig(), version),
+              reconnectAttempts: target.getReconnectAttempts(),
+            },
+            id,
+          );
+        } else {
+          await connectionsStore.setDaemonVersion(id, runningVersion);
+        }
+        await broadcastConnectionsChanged();
+      },
+    });
+  } finally {
+    if (backendUpdates.get(id) === controller) backendUpdates.delete(id);
   }
 }
 
@@ -733,6 +748,8 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   backendClients.delete(id);
+  backendUpdates.get(id)?.abort();
+  exactUpdateCapabilities.delete(id);
   connectedDaemonVersions.delete(id);
   clearBackendFailureState(id);
   disposeTransferConnectionsForBackend(id);
@@ -844,7 +861,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     backendNotificationForwarder.emit('notification', id, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
-    if (status !== 'connected') connectedDaemonVersions.delete(id);
+    if (status !== 'connected') {
+      connectedDaemonVersions.delete(id);
+      exactUpdateCapabilities.delete(id);
+      if (id === LOCAL_CONNECTION_ID) setLocalExactVersionUpdateSupported(null);
+    }
     broadcast(
       BACKEND.STATUS,
       {
@@ -1240,9 +1261,12 @@ async function captureRemoteHostname(id: string): Promise<void> {
  * `null` when the field is absent or malformed (a daemon too old to report
  * it) so callers persist "unknown" for a conclusive-but-flagless response.
  */
-function extractUpdateSupported(result: unknown): boolean | null {
+function extractUpdateSupported(
+  result: unknown,
+  field: 'updateSupported' | 'exactVersionUpdateSupported' = 'updateSupported',
+): boolean | null {
   if (result && typeof result === 'object') {
-    const value = (result as { updateSupported?: unknown }).updateSupported;
+    const value = (result as Record<string, unknown>)[field];
     if (typeof value === 'boolean') return value;
   }
   return null;
@@ -1313,6 +1337,7 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     const client = getBackendClientForId(id);
     const result = await client.request('system.status');
     const supported = extractUpdateSupported(result);
+    const exactSupported = extractUpdateSupported(result, 'exactVersionUpdateSupported');
     const tcAddress = extractTcAddress(result);
     // Loopback entries are only reachable from the backend itself (the
     // daemon's pairing surfaces filter them the same way); an empty list
@@ -1321,6 +1346,8 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
+      const exactChanged = (exactUpdateCapabilities.get(id) ?? null) !== exactSupported;
+      exactUpdateCapabilities.set(id, exactSupported);
       const changed = await connectionsStore.setUpdateSupported(id, supported);
       const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
       // Re-check after the awaited writes above: a disconnect/replacement
@@ -1331,7 +1358,7 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
         (await connectionsStore.getDetectHosts(id)) &&
         backendClients.get(id) === client &&
         (await connectionsStore.setHosts(id, ips));
-      if (changed || tcChanged || hostsChanged) await broadcastConnectionsChanged();
+      if (changed || tcChanged || hostsChanged || exactChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote updateSupported flag', {
@@ -1369,12 +1396,16 @@ async function captureLocalUpdateSupported(): Promise<void> {
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
     if (getConnectionMode() !== 'external' || client.getConfig().transport !== 'uds') {
+      exactUpdateCapabilities.delete(LOCAL_CONNECTION_ID);
+      setLocalExactVersionUpdateSupported(null);
       if (getLocalUpdateSupported() !== null) {
         setLocalUpdateSupported(null);
         await broadcastConnectionsChanged();
       }
       return;
     }
+    exactUpdateCapabilities.delete(LOCAL_CONNECTION_ID);
+    setLocalExactVersionUpdateSupported(null);
     // Reset before the async capture: the connected daemon's capability is
     // unknown until this hello's own capture answers, and the reset runs
     // synchronously within the hello callback so no broadcast in the capture
@@ -1385,10 +1416,15 @@ async function captureLocalUpdateSupported(): Promise<void> {
     }
     const result = await client.request('system.status');
     const supported = extractUpdateSupported(result);
+    const exactSupported = extractUpdateSupported(result, 'exactVersionUpdateSupported');
     // Drop the result when the local client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(LOCAL_CONNECTION_ID) === client) {
-      if (getLocalUpdateSupported() !== supported) {
+      const exactChanged =
+        (exactUpdateCapabilities.get(LOCAL_CONNECTION_ID) ?? null) !== exactSupported;
+      exactUpdateCapabilities.set(LOCAL_CONNECTION_ID, exactSupported);
+      setLocalExactVersionUpdateSupported(exactSupported);
+      if (getLocalUpdateSupported() !== supported || exactChanged) {
         setLocalUpdateSupported(supported);
         await broadcastConnectionsChanged();
         // The daemon-health saga decides the passive mismatch warning from
@@ -1629,6 +1665,9 @@ async function listConnections(
                   : {}),
                 ...(localUpdateSupported !== null ? { updateSupported: localUpdateSupported } : {}),
               }
+            : {}),
+          ...(exactUpdateCapabilities.has(connection.id)
+            ? { exactVersionUpdateSupported: exactUpdateCapabilities.get(connection.id) }
             : {}),
           status,
           ...(intentdVersion ? { intentdVersion } : {}),
@@ -2674,14 +2713,9 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
-  // Ask one connected remote backend's daemon to self-update: route
-  // `system.requestUpdate` to that backend's pooled client. The daemon signals
-  // its serve-mode sitter (SIGUSR1), which installs the newer version and
-  // gracefully restarts the daemon — the client then reconnects on its own.
-  // The result is structured (never a thrown daemon error) so the renderer can
-  // toast a specific message per failure mode: local/method-unknown daemons →
-  // 'unsupported', no live client → 'not-connected', a structured daemon error
-  // (unsupervised, non-unix) → 'failed' with the daemon's message.
+  // Request the bundled pin through the daemon's exact-version sitter handoff.
+  // The IPC resolves successfully only after verifying the restarted version;
+  // daemon/transport failures remain structured for actionable renderer feedback.
   ipcMain.handle(
     CONNECTIONS.UPDATE_BACKEND,
     createValidatedHandler(

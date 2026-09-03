@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "開く",
   "layout_daemonStatus_update_action": "アップデート",
   "layout_daemonStatus_update_tooltip": "このバックエンドの intentd を v{daemonVersion} から v{pinnedVersion} にアップデートします",
-  "layout_daemonStatus_updateRequested_toast": "アップデートを要求しました — バックエンドは新しい intentd をインストールして再起動します。",
-  "layout_daemonStatus_updateUnsupported_toast": "このバックエンドの intentd は古く、リモートアップデート要求を受け付けられません。そのマシン上で手動でアップデートしてください。",
+  "layout_daemonStatus_updateRequested_toast": "同梱された intentd バージョンを要求しています。再起動とバージョン確認を待っています…",
+  "layout_daemonStatus_updateUnsupported_toast": "このデーモンまたはそのスーパーバイザーは、指定バージョンを安全にインストールできません。そのマシンで両方を手動更新してから再接続してください。",
   "layout_daemonStatus_updateNotConnected_toast": "このバックエンドに接続していません — アップデートを要求する前に接続してください。",
-  "layout_daemonStatus_updateFailed_toast": "バックエンドはアップデートを開始できませんでした: {message}",
+  "layout_daemonStatus_updateFailed_toast": "指定バージョンへの更新を完了できませんでした: {message}。デーモンのログを確認してください。手動更新が必要な場合があります。",
   "layout_daemonStatus_updateRequestError_toast": "アップデートリクエストを送信できませんでした。もう一度お試しください。",
   "layout_daemonStatus_daemonBehind_toast": "{name} は intentd v{daemonVersion} を実行しており、このアプリの v{pinnedVersion} より古いバージョンです。",
   "layout_daemonStatus_forget_action": "削除",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "検索に一致するエージェントはありません。",
   "workspace_contextPanel_noSearchResults_label": "検索に一致するコンテキストはありません。",
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
-  "layout_allCard_archived_label": "アーカイブ済み"
+  "layout_allCard_archived_label": "アーカイブ済み",
+  "layout_daemonStatus_updateCompleted_toast": "バックエンドで intentd {version} が実行されていることを確認しました。",
+  "layout_daemonStatus_updateInvalidPin_toast": "このアプリには有効な同梱 intentd バージョン指定がありません。バックエンドを更新する前にアプリを再インストールしてください。",
+  "layout_daemonStatus_updateBusy_toast": "このバックエンドはすでに更新中です。完了するまでお待ちください。",
+  "layout_daemonStatus_updateTimeout_toast": "要求されたバージョンを時間内に確認できませんでした。リモート更新はまだ実行中の可能性があります。接続とデーモンのログを確認してください。",
+  "layout_daemonStatus_updateMismatch_toast": "バックエンドは要求された {version} ではなく intentd {actualVersion} で再起動しました。デーモンのログを確認して手動更新してください。代替バージョンは要求していません。"
 }

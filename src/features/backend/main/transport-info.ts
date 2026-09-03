@@ -17,6 +17,7 @@ import {
   getConnectionMode,
   getDaemonVersionInfo,
   getLocalUpdateSupported,
+  getLocalExactVersionUpdateSupported,
   getOrphanedSidecarInfo,
 } from './connection-mode';
 
@@ -40,6 +41,7 @@ export interface TransportInfo {
    * the field) and in every non-external-uds mode.
    */
   updateSupported?: boolean;
+  exactVersionUpdateSupported?: boolean;
   /** The bundled intentd.version pin, reported in every transport mode. */
   pinnedVersion?: string;
   /**
@@ -104,6 +106,7 @@ export function formatTransportInfo(
     if (getConnectionMode() === 'external') {
       const versionInfo = getDaemonVersionInfo();
       const updateSupported = getLocalUpdateSupported();
+      const exactVersionUpdateSupported = getLocalExactVersionUpdateSupported();
       return {
         mode: 'external-uds',
         target: config.socketPath,
@@ -117,6 +120,7 @@ export function formatTransportInfo(
             }
           : {}),
         ...(updateSupported !== null ? { updateSupported } : {}),
+        ...(exactVersionUpdateSupported !== null ? { exactVersionUpdateSupported } : {}),
         ...(getOrphanedSidecarInfo() ? { isOrphanedSidecar: true } : {}),
         ...pin,
       };

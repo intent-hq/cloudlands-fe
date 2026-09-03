@@ -10,7 +10,7 @@
  * already-known values (no stores, services, or IPC).
  */
 
-import { compareToPinnedVersion } from '$shared/intentd-version-compare';
+import { compareToPinnedVersion, isExactIntentdVersion } from '$shared/intentd-version-compare';
 
 /** The minimal connection shape the eligibility predicates need. */
 export interface UpdateEligibilityConnection {
@@ -23,6 +23,7 @@ export interface UpdateEligibilityConnection {
    * a daemon too old to report the field).
    */
   updateSupported?: boolean | null;
+  exactVersionUpdateSupported?: boolean | null;
 }
 
 /**
@@ -41,7 +42,7 @@ export function isDaemonBehindPin(
 /**
  * True when the Update action may be offered for `conn`: its daemon is
  * behind the pin ({@link isDaemonBehindPin}), it explicitly reports
- * self-update support (`updateSupported === true` — strict: unknown/absent is
+ * legacy and exact-version support (both flags must be true — unknown/absent is
  * NOT offered, e.g. a daemon too old to report the field or one not
  * sitter-supervised), AND it has a live, currently connected client in main's
  * pool (`connectedIds`).
@@ -51,7 +52,8 @@ export function canRequestDeviceUpdate(
   connectedIds: readonly string[] | undefined,
   pinnedVersion: string | null | undefined,
 ): boolean {
+  if (!pinnedVersion || !isExactIntentdVersion(pinnedVersion)) return false;
   if (!isDaemonBehindPin(conn, pinnedVersion)) return false;
-  if (conn.updateSupported !== true) return false;
+  if (conn.updateSupported !== true || conn.exactVersionUpdateSupported !== true) return false;
   return connectedIds?.includes(conn.id) ?? false;
 }

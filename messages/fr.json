@@ -5758,10 +5758,10 @@
   "layout_daemonStatus_open_action": "Ouvrir",
   "layout_daemonStatus_update_action": "Mettre à jour",
   "layout_daemonStatus_update_tooltip": "Mettre à jour l'intentd de ce backend de v{daemonVersion} vers v{pinnedVersion}",
-  "layout_daemonStatus_updateRequested_toast": "Mise à jour demandée — le backend installera l'intentd plus récent et redémarrera.",
-  "layout_daemonStatus_updateUnsupported_toast": "L'intentd de ce backend est trop ancien pour accepter les demandes de mise à jour à distance. Mettez-le à jour manuellement sur sa machine.",
+  "layout_daemonStatus_updateRequested_toast": "Demande de la version intentd intégrée. En attente du redémarrage et de la vérification de version…",
+  "layout_daemonStatus_updateUnsupported_toast": "Ce démon ou son superviseur ne peut pas installer une version exacte en toute sécurité. Mettez les deux à jour manuellement sur cette machine, puis reconnectez-vous.",
   "layout_daemonStatus_updateNotConnected_toast": "Pas de connexion à ce backend — connectez-vous avant de demander une mise à jour.",
-  "layout_daemonStatus_updateFailed_toast": "Le backend n'a pas pu lancer la mise à jour : {message}",
+  "layout_daemonStatus_updateFailed_toast": "La mise à jour vers la version exacte a échoué : {message}. Consultez les journaux du démon ; une mise à jour manuelle peut être nécessaire.",
   "layout_daemonStatus_updateRequestError_toast": "Impossible d'envoyer la demande de mise à jour. Veuillez réessayer.",
   "layout_daemonStatus_daemonBehind_toast": "{name} exécute intentd v{daemonVersion}, en retard sur la v{pinnedVersion} de cette application.",
   "layout_daemonStatus_forget_action": "Oublier",
@@ -6034,5 +6034,10 @@
   "workspace_agentsList_noSearchResults_label": "Aucun agent ne correspond à votre recherche.",
   "workspace_contextPanel_noSearchResults_label": "Aucun contexte ne correspond à votre recherche.",
   "workspace_sidebarSearch_clear_ariaLabel": "Effacer la recherche",
-  "layout_allCard_archived_label": "Archivés"
+  "layout_allCard_archived_label": "Archivés",
+  "layout_daemonStatus_updateCompleted_toast": "Le backend exécute bien intentd {version}.",
+  "layout_daemonStatus_updateInvalidPin_toast": "Cette application ne contient pas de version intentd intégrée valide. Réinstallez-la avant de mettre à jour le backend.",
+  "layout_daemonStatus_updateBusy_toast": "Une mise à jour de ce backend est déjà en cours. Attendez sa fin.",
+  "layout_daemonStatus_updateTimeout_toast": "La version demandée n’a pas pu être vérifiée à temps. La mise à jour distante peut être encore en cours. Vérifiez la connexion et les journaux du démon.",
+  "layout_daemonStatus_updateMismatch_toast": "Le backend a redémarré avec intentd {actualVersion}, au lieu de la version {version} demandée. Consultez les journaux du démon et mettez-le à jour manuellement ; aucune version de remplacement n’a été demandée."
 }
