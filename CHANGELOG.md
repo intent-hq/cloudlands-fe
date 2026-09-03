@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.129.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.129.0...v2.129.1) (2026-09-03)
+
+
+### 🐛 Bug Fixes
+
+* refresh remote detected addresses from system.status localIps ([#2105](https://github.com/intent-hq/cloudlands-fe/issues/2105)) ([b862467](https://github.com/intent-hq/cloudlands-fe/commit/b862467706070be56cbd2526593bfd7cca0925bd))
+
 ## [2.129.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.128.0...v2.129.0) (2026-09-03)
 
 
