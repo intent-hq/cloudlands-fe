@@ -41,6 +41,7 @@ const BROWSER_INVOKE_CHANNELS = [
   IPC_CHANNELS.BROWSER.REGISTER_TAB,
   IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
   IPC_CHANNELS.BROWSER.SET_TAB_VIEWPORT,
+  IPC_CHANNELS.BROWSER.OPEN_DEVTOOLS_PANEL,
   // Owned-tab destruction (monorepo#2857): daemon-events-bridge and the
   // panel-layout saga invoke this through the routed path on agent deletion /
   // workspace archive; without the forward, main's CDP/ownership
