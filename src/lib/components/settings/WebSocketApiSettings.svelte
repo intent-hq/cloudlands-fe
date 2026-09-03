@@ -252,7 +252,10 @@
 
   // "Enable Local Network Access" is a view over server.bindAddress (no
   // daemon setting of its own): ON whenever a non-loopback target is bound.
-  const localNetworkEnabled = $derived(bindIps.some((ip) => ip !== LOOPBACK));
+  // Tunnel-only has no direct listeners (the persisted bindAddress is kept
+  // only for later restoration), so it reads OFF there; toggling ON from
+  // that posture emits 0.0.0.0 + tunnel.only=false.
+  const localNetworkEnabled = $derived(!tunnelOnly && bindIps.some((ip) => ip !== LOOPBACK));
 
   /**
    * Force loopback into a bind set while the tunnel is on: the tailcat
@@ -302,21 +305,29 @@
    * First-enable default: the daemon binds loopback only out of the box, so
    * turning the WebSocket API on from that state widens the bind set to all
    * interfaces (Local Network Access ON). A bindAddress the user already
-   * customized beyond loopback is left alone and the tunnel is untouched.
+   * customized beyond loopback is left alone, the tunnel is untouched, and a
+   * persisted tunnel-only posture is respected (writing 0.0.0.0 there would
+   * contradict tunnel.only=true). Runs under listenSaving so the LNA/tunnel
+   * toggles cannot issue a concurrent bindAddress write.
    * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
    */
   async function maybeDefaultLocalNetworkAccess() {
-    if (!bindAddressSupported || localNetworkEnabled) return;
+    if (!bindAddressSupported || localNetworkEnabled || tunnelOnly || listenSaving) return;
+    listenSaving = true;
     try {
       await appClient.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
       bindIps = [ALL_INTERFACES];
       refreshSelfEntry();
+      // The bound listeners changed — refresh the pairing info (port/IPs).
+      await loadStatus();
     } catch (error) {
       toast.error(
         m.settings_listenTargets_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
       );
+    } finally {
+      listenSaving = false;
     }
   }
 
@@ -674,7 +685,7 @@
               variant="indicator"
               size="xs"
               class="mb-auto"
-              disabled={listenSaving}
+              disabled={toggleBusy || listenSaving}
               ariaLabel={m.settings_tunnel_enable_label()}
             />
           </div>
@@ -729,7 +740,7 @@
               variant="indicator"
               size="xs"
               class="mb-auto"
-              disabled={listenSaving}
+              disabled={toggleBusy || listenSaving}
               ariaLabel={m.settings_wsApi_localNetworkAccess_label()}
             />
           </div>
