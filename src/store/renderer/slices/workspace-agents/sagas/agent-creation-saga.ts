@@ -14,8 +14,8 @@ import { AgentStatus } from '$shared/types';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { isNoteContentStale } from '$shared/utils/note-content';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import {
   agentSessionLaunchAgentRequested,
@@ -31,6 +31,7 @@ import {
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
   selectExplicitModel,
+  selectExplicitReasoningEffort,
   selectSpecialists,
 } from '../../specialists/specialists-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -120,10 +121,6 @@ function* openCreatedAgent(
   }
 }
 
-function providerForModel(model: string | undefined, fallback: string): string {
-  return model?.includes(':') ? splitCompoundModelId(model).providerId || fallback : fallback;
-}
-
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
   const [wsId, agentType, options] = action.payload;
   const workspace = yield* call(validateWorkspace, wsId);
@@ -140,8 +137,10 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
       name,
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
+      // Store selections are bare model ids paired with the active provider —
+      // the explicit triple rides the request as-is (no model-string parsing).
       model,
-      provider: providerForModel(model, activeProvider),
+      provider: activeProvider,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
     });
@@ -171,10 +170,14 @@ function* createSpecialistAgent(
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
+  // General (no specialist): the store's bare model selection paired with the
+  // active provider. A specialist swaps in its effective coding agent and its
+  // explicit model override (undefined ⇒ the daemon resolves the default in
+  // that provider's context).
   let model: string | undefined = yield* selectSelectedModel.effect();
-  const activeProvider = yield* selectActiveProviderId.effect();
-  let provider = providerForModel(model, activeProvider);
+  let provider: string = yield* selectActiveProviderId.effect();
   let behaviorPrompt: string | undefined;
+  let reasoningEffort: string | undefined;
   let baseName = 'Agent';
   if (specialistId) {
     const specialists = yield* selectSpecialists.effect();
@@ -182,9 +185,15 @@ function* createSpecialistAgent(
     if (specialist) {
       baseName = specialist.name;
       provider = yield* selectEffectiveCodingAgent.effect(specialistId);
-      model = yield* selectExplicitModel.effect(specialistId);
-      provider = providerForModel(model, provider);
+      // Legacy boundary: an explicit frontmatter model may still be a
+      // pre-triple compound id — split so the request carries a bare model,
+      // its prefix winning provider attribution over the coding agent.
+      const explicit = yield* selectExplicitModel.effect(specialistId);
+      const pinned = explicit ? splitLegacyCompoundId(explicit) : undefined;
+      model = pinned?.modelId || undefined;
+      provider = pinned?.providerId || provider;
       behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
+      reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
     }
   }
   const name = generateSpecialistAgentName(
@@ -200,6 +209,7 @@ function* createSpecialistAgent(
       provider,
       agentType: createAgentTypeId('chat'),
       behaviorPrompt,
+      reasoningEffort,
       source: 'specialist-picker',
       metadata: specialistId ? { specialist: specialistId } : undefined,
     });
@@ -250,12 +260,16 @@ function* runAgentForNote(
   const specialistId = configured?.id ?? 'implementor';
   let model = yield* selectExplicitModel.effect(specialistId);
   let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
+  let reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
   if (!behaviorPrompt) {
     const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
     if (specialist) {
       behaviorPrompt = specialist.defaultBehaviorPrompt;
       if (!model) {
         model = specialist.defaultModel ?? '';
+      }
+      if (!reasoningEffort) {
+        reasoningEffort = specialist.reasoningEffort;
       }
     }
   }
@@ -265,14 +279,17 @@ function* runAgentForNote(
   );
   const defaultProvider = yield* selectEffectiveDefaultProviderId.effect();
   const activeProvider = yield* selectActiveProviderId.effect();
+  // Legacy boundary: an explicit frontmatter model may still be a pre-triple
+  // compound id — split so the request carries a bare model, its prefix
+  // winning provider attribution.
+  const pinned = model ? splitLegacyCompoundId(model) : undefined;
   // A specialist explicitly pinned to a coding agent runs on it; otherwise
   // inherit the workspace's initial-agent provider, then the active provider.
-  // Compound explicit models carry their own authoritative provider.
-  const inheritedProvider =
+  const provider =
+    pinned?.providerId ||
     configured?.codingAgent ||
     (initial ? getAgentProvider(initial, defaultProvider) : undefined) ||
     activeProvider;
-  const provider = providerForModel(model, inheritedProvider);
   try {
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
       name: noteTitle || m.agent_creation_taskAgent_name(),
@@ -280,10 +297,11 @@ function* runAgentForNote(
       workspaceId: WorkspaceId(wsId),
       // Resolved-model catalog values are previews only. When the specialist
       // has no explicit model, omit it so the daemon resolves in this provider.
-      model,
+      model: pinned?.modelId || undefined,
       provider,
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt,
+      reasoningEffort,
       source: 'task-metadata-bar-run',
       metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),
@@ -370,15 +388,19 @@ function* launchAgent(
   const [wsId, config, options] = action.payload;
   let settled = false;
   try {
+    // Fill the triple legs the caller left implicit from the store: the bare
+    // selected model and the active provider (they are paired by the model
+    // slice). Provider/model consistency is daemon-validated on `agent.create`
+    // (the mismatch error surfaces through showCreationError's guidance toast).
     const model = config.model ?? (yield* selectSelectedModel.effect());
-    const activeProvider = yield* selectActiveProviderId.effect();
+    const provider = config.provider ?? (yield* selectActiveProviderId.effect());
     const request = createAgentFromConfigRequested(
       wsId,
       {
         ...config,
         workspaceId: WorkspaceId(wsId),
         model,
-        provider: config.provider ?? providerForModel(model, activeProvider),
+        provider,
       },
       options,
     );

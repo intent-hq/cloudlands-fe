@@ -640,6 +640,7 @@ describe('connections-store', () => {
       port: sampleConn.port,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: Date.now() + 60_000,
@@ -1048,6 +1049,191 @@ describe('connections-store', () => {
     }
   });
 
+  it('add captures the pairing tcAddress and it round-trips through disk', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    expect(rec.tcAddress).toBe('tc.example.ts.net');
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.tcAddress).toBe('tc.example.ts.net');
+  });
+
+  it('records default to a null tcAddress until one is captured', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.tcAddress).toBeNull();
+    expect((await store.list())[1].tcAddress).toBeNull();
+  });
+
+  it('re-pair keeps the known tcAddress when the new pairing URI omits tc=', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // Same host:port → same identity; an older QR without tc= must not clear it.
+    const repaired = await store.add({ ...sampleConn, token: 'token-2' });
+    expect(repaired.id).toBe(rec.id);
+    expect(repaired.tcAddress).toBe('tc.example.ts.net');
+
+    // A pairing URI that does carry tc= overwrites.
+    const updated = await store.add({ ...sampleConn, token: 'token-3', tcAddress: 'tc2.ts.net' });
+    expect(updated.tcAddress).toBe('tc2.ts.net');
+  });
+
+  it('setTcAddress refreshes/clears the stored address and reports no-ops as false', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBe('tc.example.ts.net');
+
+    // The routine every-reconnect same-address capture is a no-op.
+    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(false);
+
+    // A successful status without the field conclusively clears the address.
+    await expect(store.setTcAddress(rec.id, null)).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBeNull();
+
+    // Already-cleared (absent or null) is a no-op; unknown id is fail-soft.
+    await expect(store.setTcAddress(rec.id, null)).resolves.toBe(false);
+    await expect(store.setTcAddress('does-not-exist', 'tc.ts.net')).resolves.toBe(false);
+  });
+
+  it('setTcAddress bumps the LWW clock and notifies keychain sync (synced state)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].tcAddress).toBe('tc.example.ts.net');
+      // A tc address change is a syncable edit: the LWW clock advances so the
+      // rotation propagates to the user's other devices.
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_001_000);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // The unchanged every-reconnect case skips the write: no clock bump,
+      // no sync notification.
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsubscribe();
+
+      // The captured address is part of the sync surface.
+      const records = await store.listSyncRecords();
+      const synced = records.find((r) => r.host === sampleConn.host);
+      expect(synced?.tcAddress).toBe('tc.example.ts.net');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setTcAddress out-clocks an add landing in the same millisecond', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      // Same-millisecond capture (the routine post-connect case): the stamp
+      // is forced strictly past the record's clock, or reconcile would treat
+      // equal live clocks as in-sync and never propagate the address.
+      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_001);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sync records carry tcAddress and applyRemoteSyncRecord round-trips it', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    const records = await store.listSyncRecords();
+    const synced = records.find((r) => r.host === sampleConn.host);
+    expect(synced?.tcAddress).toBe('tc.example.ts.net');
+
+    // A newer remote copy updates the stored address in place…
+    await store.applyRemoteSyncRecord({ ...synced!, tcAddress: 'tc2.ts.net', updatedAt: 9e12 });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+
+    // …and a remote copy without one (older app / tunnel down) clears it.
+    await store.applyRemoteSyncRecord({ ...synced!, tcAddress: null, updatedAt: 9e12 + 1 });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('applyRemoteSyncRecord inserts a new record with the synced tcAddress', async () => {
+    const store = await import('../connections-store');
+    await store.applyRemoteSyncRecord({
+      label: 'Studio',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AA:BB',
+      hostname: null,
+      tcAddress: 'tc.example.ts.net',
+      detectHosts: true,
+      token: 'tok',
+      updatedAt: 1_700_000_000_000,
+    });
+    const pulled = (await store.list()).find((c) => c.host === '10.0.0.9');
+    expect(pulled?.tcAddress).toBe('tc.example.ts.net');
+  });
+
+  it('an identity change via updateMetadata clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+
+    // A metadata-only edit keeps the address…
+    await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'blue' });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc.example.ts.net');
+
+    // …but a new endpoint may be a different machine: the old daemon's tunnel
+    // address must not sync fleet-wide under the new identity.
+    await store.updateMetadata(rec.id, {
+      label: 'Renamed',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
+  it('a fingerprint change via updateMetadata or replaceSecret clears the captured tcAddress', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    await store.updateMetadata(rec.id, {
+      label: sampleConn.label,
+      accent: 'blue',
+      fingerprint: 'DD:EE:FF',
+    });
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+
+    await store.setTcAddress(rec.id, 'tc2.ts.net');
+    // A same-fingerprint token rotation keeps the address…
+    await store.replaceSecret(rec.id, 'rotated-token', 'DD:EE:FF');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc2.ts.net');
+    // …a cert change clears it.
+    await store.replaceSecret(rec.id, 'rotated-again', '11:22:33');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBeNull();
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');
@@ -1098,6 +1284,47 @@ describe('connections-store', () => {
     expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5', 'fe80::1']);
     // The primary host stays untouched.
     expect(remote?.host).toBe('192.168.1.10');
+  });
+
+  it('loopback extras from legacy synced records are dropped on read', async () => {
+    // A record published before self-publish filtered loopback out of
+    // localIps may still sync a loopback extra — dialing it would connect
+    // this machine to its OWN local daemon, so reads must drop it.
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHosts(rec.id, [
+      '127.0.0.1',
+      'localhost',
+      '::1',
+      '[::1]',
+      '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '[::ffff:7f00:0001]',
+      '10.0.0.5',
+    ]);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5']);
+  });
+
+  it('a loopback PRIMARY is dropped from candidates but keeps the record identity', async () => {
+    // Legacy synced records can carry a loopback primary — dialing it from
+    // another device races that device's OWN daemon, so reads exclude it
+    // whenever a routable candidate exists. The on-disk host is untouched.
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['192.168.1.10']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['192.168.1.10']);
+  });
+
+  it('an all-loopback record keeps the primary as its sole candidate (stays dialable)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
+    await store.setHosts(rec.id, ['::1']);
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.host).toBe('127.0.0.1');
+    expect(remote?.hosts).toEqual(['127.0.0.1']);
   });
 
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
@@ -1322,6 +1549,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'NEW:FP',
       hostname: 'studio.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'rotated-token',
       updatedAt: 42,
@@ -1351,6 +1579,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9000,
       fingerprint: 'FP',
       hostname: null,
+      tcAddress: null,
       detectHosts: false,
       token: 'laptop-token',
       updatedAt: 7,
@@ -1376,6 +1605,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1408,6 +1638,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9443,
       fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
       hostname: 'studio.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'rotated-token',
       updatedAt: 42,
@@ -1435,6 +1666,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1493,6 +1725,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9000,
       fingerprint: 'FP',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 't',
       updatedAt: 7,
@@ -1675,6 +1908,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: 'twin.local',
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000, // newer than the local record
@@ -1699,6 +1933,7 @@ describe('connections-store keychain sync surface', () => {
       port: 9443,
       fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1726,6 +1961,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: '',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1751,6 +1987,7 @@ describe('connections-store keychain sync surface', () => {
       port: 7443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: '',
       updatedAt: remoteClock,
@@ -1785,6 +2022,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1812,6 +2050,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: '',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1840,6 +2079,7 @@ describe('connections-store keychain sync surface', () => {
       port: 8443,
       fingerprint: 'AA:BB:CC',
       hostname: null,
+      tcAddress: null,
       detectHosts: true,
       token: 'remote-token',
       updatedAt: Date.now() + 60_000,
@@ -1895,6 +2135,7 @@ describe('connections-store keychain sync surface', () => {
         port: 8443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: 'stale-token',
         updatedAt: Date.now() - 60_000,
@@ -1976,6 +2217,7 @@ describe('connections-store keychain sync surface', () => {
         port: 9443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: 'remote-token',
         updatedAt: Date.now() + 60_000,
@@ -2008,6 +2250,7 @@ describe('connections-store keychain sync surface', () => {
         port: 9443,
         fingerprint: 'AA:BB:CC',
         hostname: null,
+        tcAddress: null,
         detectHosts: true,
         token: '',
         updatedAt: tombClock,
@@ -2083,5 +2326,53 @@ describe('connections-store keychain sync surface', () => {
     const remotes = (await store.list()).filter((c) => !c.isLocal);
     expect(remotes).toHaveLength(1);
     expect(remotes[0]).toMatchObject({ port: 6200 });
+  });
+});
+
+describe('findMatching (pairing identity lookup)', () => {
+  it('matches by fingerprint even under a different host:port', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.99'],
+      port: 9999,
+      fingerprint: 'aa:bb:cc', // case-insensitive
+    });
+    expect(found).toMatchObject({ id: rec.id });
+    expect(found).not.toHaveProperty('token');
+    expect(found).not.toHaveProperty('encToken');
+  });
+
+  it('falls back to normalized host:port when fingerprints are unusable', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['  192.168.1.10 '],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('tries every candidate host from the pairing URI', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '' });
+    const found = await store.findMatching({
+      hosts: ['10.9.9.9', '192.168.1.10'],
+      port: 8443,
+      fingerprint: null,
+    });
+    expect(found).toMatchObject({ id: rec.id });
+  });
+
+  it('returns null when nothing matches', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    const found = await store.findMatching({
+      hosts: ['10.0.0.1'],
+      port: 1234,
+      fingerprint: 'DD:EE:FF',
+    });
+    expect(found).toBeNull();
   });
 });

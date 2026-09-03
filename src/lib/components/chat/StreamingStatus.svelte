@@ -19,6 +19,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
     deriveErrorDisplay,
@@ -50,6 +51,15 @@
     sessionCorrupted?: boolean;
     /** ISO timestamp of when the failure occurred - renders a live "failed X ago" */
     failedAt?: string | null;
+    /**
+     * Provider auth-failure login guidance: when the error matches the
+     * provider's auth-error patterns, shows the copyable login command (and
+     * the claude-code desktop-app caveat) instead of just the raw error.
+     */
+    authGuidance?: {
+      loginCommandHint: string;
+      showClaudeDesktopNote: boolean;
+    } | null;
     /** Model unavailable info - when set, shows retry with suggested model */
     modelUnavailable?: {
       failedModel: string;
@@ -91,6 +101,7 @@
     error = null,
     sessionCorrupted = false,
     failedAt = null,
+    authGuidance = null,
     modelUnavailable = null,
     statusEvents = [],
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -332,6 +343,31 @@
                       class="type-caption leading-4 whitespace-pre-wrap break-words text-muted-foreground"
                       data-testid="error-detail">{errorDisplay.detail}</span
                     >
+                  {/if}
+                  {#if authGuidance}
+                    <div
+                      class="mt-1.5 flex flex-col gap-1"
+                      data-testid="error-auth-guidance"
+                    >
+                      <span class="type-caption leading-4 text-muted-foreground"
+                        >{m.settings_providers_runToLogIn_label()}</span
+                      >
+                      <div class="flex items-center gap-1">
+                        <code
+                          class="rounded bg-muted px-1.5 py-0.5 text-ui"
+                          data-testid="error-auth-login-command"
+                          >{authGuidance.loginCommandHint}</code
+                        >
+                        <CopyButton text={authGuidance.loginCommandHint} size="xs" />
+                      </div>
+                      {#if authGuidance.showClaudeDesktopNote}
+                        <span
+                          class="type-caption leading-4 text-muted-foreground"
+                          data-testid="error-auth-claude-desktop-note"
+                          >{m.settings_providers_claudeDesktopNote_label()}</span
+                        >
+                      {/if}
+                    </div>
                   {/if}
                 </div>
               </div>

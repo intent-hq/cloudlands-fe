@@ -16,6 +16,7 @@
  */
 
 import { deleteLocalPref, getLocalPref, setLocalPref } from '../../../main/local-prefs';
+import { isLoopbackHost } from '$shared/loopback-host';
 
 /** local-prefs key persisting this machine's daemon cert fingerprint. */
 const SELF_FINGERPRINT_KEY = 'selfBackendFingerprint';
@@ -31,7 +32,8 @@ const SELF_PUBLISH_SUPPRESSED_KEY = 'selfPublishSuppressed';
 /**
  * Validated `server.pairingInfo` fields the publish flow consumes (PROTOCOL
  * §5 method catalog): bearer token, cert fingerprint, bound WSS port (null
- * when the listener is down), local IPs, and hostname(s) for the label.
+ * when the listener is down), local IPs, hostname(s) for the label, and the
+ * tailcat tunnel's tc address (when the tunnel is up).
  */
 export interface SelfPairingInfo {
   token: string;
@@ -41,6 +43,12 @@ export interface SelfPairingInfo {
   localIps: string[];
   hostname: string | null;
   prettyHostname: string | null;
+  /**
+   * The tailcat tunnel's tc address (PROTOCOL §12.3), or null when the wire
+   * field is absent/empty — the daemon omits it whenever the tunnel sidecar
+   * is not running, so null is a conclusive "no tunnel advertised".
+   */
+  tcAddress: string | null;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -51,7 +59,9 @@ function nonEmptyString(value: unknown): string | null {
  * Parse a `server.pairingInfo` result into the fields the publish flow needs,
  * or `null` when the shape is absent/malformed (missing token/fingerprint).
  * A missing/invalid `port` maps to `null` (WSS listener down), and `localIps`
- * keeps only non-empty strings.
+ * keeps only non-empty, non-loopback strings — a loopback address is only
+ * reachable from this machine, so publishing it to the keychain registry
+ * would hand other devices a candidate that dials THEIR own daemon.
  */
 export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null {
   if (!result || typeof result !== 'object') return null;
@@ -59,10 +69,11 @@ export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null 
   const token = typeof r.token === 'string' && r.token !== '' ? r.token : null;
   const certFingerprint = nonEmptyString(r.certFingerprint);
   if (!token || !certFingerprint) return null;
-  const port =
-    typeof r.port === 'number' && Number.isInteger(r.port) && r.port > 0 ? r.port : null;
+  const port = typeof r.port === 'number' && Number.isInteger(r.port) && r.port > 0 ? r.port : null;
   const localIps = Array.isArray(r.localIps)
-    ? r.localIps.map((ip) => (typeof ip === 'string' ? ip.trim() : '')).filter((ip) => ip !== '')
+    ? r.localIps
+        .map((ip) => (typeof ip === 'string' ? ip.trim() : ''))
+        .filter((ip) => ip !== '' && !isLoopbackHost(ip))
     : [];
   return {
     token,
@@ -71,6 +82,7 @@ export function extractSelfPairingInfo(result: unknown): SelfPairingInfo | null 
     localIps,
     hostname: nonEmptyString(r.hostname),
     prettyHostname: nonEmptyString(r.prettyHostname),
+    tcAddress: nonEmptyString(r.tcAddress),
   };
 }
 

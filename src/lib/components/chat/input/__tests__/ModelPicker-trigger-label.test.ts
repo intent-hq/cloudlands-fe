@@ -163,7 +163,8 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       sessions,
       providerCatalog,
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+      providerSettings: { enabledProviders: {} },
+      model: { defaultProviderId: 'auggie' },
     }),
     dispatch: mockReduxDispatch,
   });

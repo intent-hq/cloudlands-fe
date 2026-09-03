@@ -19,7 +19,7 @@
  * Untouched servers never produce an `update`, so their keychain-held `env` /
  * `headers` secrets (redacted on the wire) are preserved; an *edited* server is
  * replaced wholesale per §5.22 semantics.
- *   - `providers.active` / `providers.enabled`            ↔ provider settings
+ *   - `model.defaultProvider` / `providers.enabled`       ↔ provider settings
  *   - `quickActions.defaultModel` / `.typeOverrides` /
  *     `.providerSettings`                                 ↔ quick actions
  *   - `git.autoCommit`                                    ↔ workspace settings
@@ -38,19 +38,21 @@ import type {
   PersistedProviderSettings,
   SettingDefinitionWithValue,
   SettingsClient,
+  SettingsSnapshot,
+  SettingsUpdateResult,
   SubscriptionHandler,
   Unsubscribe,
   UserRuleState,
-} from "../app-client";
+} from '../app-client';
 import type {
   McpServerConfig,
   McpServerRuntimeStatus,
-} from "$store/renderer/slices/mcp-settings/mcp-settings-types";
-import type { SingleWorkspaceSettings } from "$store/renderer/slices/workspace-settings/workspace-settings-slice";
-import type { BackgroundAgentSettingsState } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
-import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
-import { backendRequest } from "./backend-transport";
-import { runMutation } from "./live-support";
+} from '$store/renderer/slices/mcp-settings/mcp-settings-types';
+import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
+import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
+import type { UserPreferencesState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { backendRequest } from './backend-transport';
+import { runMutation } from './live-support';
 
 type UserPrefsResult = UserPreferencesState | null;
 
@@ -61,7 +63,7 @@ type UserPrefsResult = UserPreferencesState | null;
  * `rules_update` only echoes it back in the returned RuleSet, so a sentinel
  * satisfies the contract without binding the edit to a real workspace.
  */
-const GLOBAL_RULES_WORKSPACE_ID = "global";
+const GLOBAL_RULES_WORKSPACE_ID = 'global';
 
 /** Build a fresh `update` change list, omitting `undefined` values. */
 function changesFrom(patch: Record<string, unknown>): AppSettingChange[] {
@@ -74,13 +76,22 @@ function changesFrom(patch: Record<string, unknown>): AppSettingChange[] {
 
 export class LiveSettingsClient implements SettingsClient {
   async list(): Promise<SettingDefinitionWithValue[]> {
+    return (await this.listSnapshot()).settings;
+  }
+
+  async listSnapshot(): Promise<SettingsSnapshot> {
     try {
-      const result = await backendRequest<{ settings?: unknown[] }>("settings.list");
-      return Array.isArray(result?.settings)
-        ? (result.settings as SettingDefinitionWithValue[])
-        : [];
+      const result = await backendRequest<{ settings?: unknown[]; revision?: unknown }>(
+        'settings.list',
+      );
+      return {
+        settings: Array.isArray(result?.settings)
+          ? (result.settings as SettingDefinitionWithValue[])
+          : [],
+        revision: typeof result?.revision === 'number' ? result.revision : 0,
+      };
     } catch {
-      return [];
+      return { settings: [], revision: 0 };
     }
   }
 
@@ -89,31 +100,44 @@ export class LiveSettingsClient implements SettingsClient {
       const result = await backendRequest<{
         path?: string;
         value?: unknown;
-        definition?: Omit<SettingDefinitionWithValue, "value">;
-      }>("settings.get", { path });
+        definition?: Omit<SettingDefinitionWithValue, 'value'>;
+        origin?: SettingDefinitionWithValue['origin'];
+        revision?: unknown;
+      }>('settings.get', { path });
       if (!result?.definition) return null;
-      return { ...result.definition, value: result.value };
+      return {
+        ...result.definition,
+        value: result.value,
+        ...(result.origin ? { origin: result.origin } : {}),
+        ...(typeof result.revision === 'number' ? { revision: result.revision } : {}),
+      };
     } catch {
       return null;
     }
   }
 
   async update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]> {
-    if (changes.length === 0) return [];
-    const result = await backendRequest<{ applied?: AppliedSettingChange[] }>(
-      "settings.update",
-      { changes },
-    );
-    return Array.isArray(result?.applied) ? result.applied : [];
+    return (await this.updateSnapshot(changes)).applied;
+  }
+
+  async updateSnapshot(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
+    if (changes.length === 0) return { applied: [], revision: 0 };
+    const result = await backendRequest<{
+      applied?: AppliedSettingChange[];
+      revision?: unknown;
+    }>('settings.update', { changes });
+    return {
+      applied: Array.isArray(result?.applied) ? result.applied : [],
+      revision: typeof result?.revision === 'number' ? result.revision : 0,
+    };
   }
 
   async reset(path: string): Promise<AppliedSettingChange | null> {
     try {
-      const result = await backendRequest<{ path?: string; value?: unknown }>(
-        "settings.reset",
-        { path },
-      );
-      if (typeof result?.path !== "string") return null;
+      const result = await backendRequest<{ path?: string; value?: unknown }>('settings.reset', {
+        path,
+      });
+      if (typeof result?.path !== 'string') return null;
       return { path: result.path, value: result.value };
     } catch {
       return null;
@@ -126,12 +150,12 @@ export class LiveSettingsClient implements SettingsClient {
         enabled?: boolean;
         content?: string;
         updatedAt?: number;
-      }>("rules.get", { workspaceId: GLOBAL_RULES_WORKSPACE_ID, ruleType });
-      if (!result || typeof result.content !== "string") return null;
+      }>('rules.get', { workspaceId: GLOBAL_RULES_WORKSPACE_ID, ruleType });
+      if (!result || typeof result.content !== 'string') return null;
       return {
         enabled: result.enabled === true,
         content: result.content,
-        updatedAt: typeof result.updatedAt === "number" ? result.updatedAt : 0,
+        updatedAt: typeof result.updatedAt === 'number' ? result.updatedAt : 0,
       };
     } catch {
       return null;
@@ -143,7 +167,7 @@ export class LiveSettingsClient implements SettingsClient {
     content: string,
     enabled?: boolean,
   ): Promise<MutationResult> {
-    return runMutation("rules.update", {
+    return runMutation('rules.update', {
       workspaceId: GLOBAL_RULES_WORKSPACE_ID,
       ruleType,
       content,
@@ -169,24 +193,23 @@ export class LiveSettingsClient implements SettingsClient {
 
   async getProviderSettings(): Promise<PersistedProviderSettings | null> {
     const settings = await this.list();
-    const activeProviderId = readString(settings, "providers.active");
-    const enabledProviders = readObject(settings, "providers.enabled") as
-      | Record<string, boolean>
-      | null;
+    const activeProviderId = readString(settings, 'model.defaultProvider');
+    const enabledProviders = readObject(settings, 'providers.enabled') as Record<
+      string,
+      boolean
+    > | null;
     if (activeProviderId === null && enabledProviders === null) return null;
     return {
-      activeProviderId: activeProviderId ?? "",
+      activeProviderId: activeProviderId ?? '',
       enabledProviders: enabledProviders ?? {},
     };
   }
 
-  async setProviderSettings(
-    settings: Partial<PersistedProviderSettings>,
-  ): Promise<MutationResult> {
-    return runMutation("settings.update", {
+  async setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult> {
+    return runMutation('settings.update', {
       changes: changesFrom({
-        "providers.active": settings.activeProviderId,
-        "providers.enabled": settings.enabledProviders,
+        'model.defaultProvider': settings.activeProviderId,
+        'providers.enabled': settings.enabledProviders,
       }),
     });
   }
@@ -201,7 +224,7 @@ export class LiveSettingsClient implements SettingsClient {
       serverIds.map(async (serverId): Promise<McpServerRuntimeStatus | null> => {
         try {
           const result = await backendRequest<{ status?: WireMcpServerStatus }>(
-            "mcp.servers.getStatus",
+            'mcp.servers.getStatus',
             { serverId },
           );
           return fromWireMcpStatus(serverId, result?.status);
@@ -219,13 +242,12 @@ export class LiveSettingsClient implements SettingsClient {
     // workspaceId yields all-false, never an error); a transport failure folds
     // to `null` so callers keep their current state instead of clearing it.
     try {
-      const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
-        "mcp.servers.list",
-        { workspaceId },
-      );
+      const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>('mcp.servers.list', {
+        workspaceId,
+      });
       if (!Array.isArray(result?.servers)) return null;
       return result.servers.flatMap((server) =>
-        server.workspaceDisabled === true && typeof server.name === "string" && server.name
+        server.workspaceDisabled === true && typeof server.name === 'string' && server.name
           ? [server.name]
           : [],
       );
@@ -243,11 +265,12 @@ export class LiveSettingsClient implements SettingsClient {
     // returns `{ status, workspaceDisabled }`; unknown serverId/workspaceId is
     // a -32602 `not-found` error, folded to `{ success: false }` here.
     try {
-      const result = await backendRequest<{ workspaceDisabled?: boolean }>(
-        "mcp.servers.toggle",
-        { serverId, enabled, workspaceId },
-      );
-      return typeof result?.workspaceDisabled === "boolean"
+      const result = await backendRequest<{ workspaceDisabled?: boolean }>('mcp.servers.toggle', {
+        serverId,
+        enabled,
+        workspaceId,
+      });
+      return typeof result?.workspaceDisabled === 'boolean'
         ? { success: true, workspaceDisabled: result.workspaceDisabled }
         : { success: true };
     } catch (error) {
@@ -263,7 +286,7 @@ export class LiveSettingsClient implements SettingsClient {
       const existing = await listWireMcpServers();
       const existingByName = new Map<string, WireMcpServerConfig>();
       for (const server of existing) {
-        if (typeof server.name === "string" && server.name) {
+        if (typeof server.name === 'string' && server.name) {
           existingByName.set(server.name, server);
         }
       }
@@ -271,17 +294,17 @@ export class LiveSettingsClient implements SettingsClient {
 
       for (const server of existing) {
         if (server.name && server.id && !desiredNames.has(server.name)) {
-          await backendRequest("mcp.servers.delete", { serverId: server.id });
+          await backendRequest('mcp.servers.delete', { serverId: server.id });
         }
       }
       for (const config of servers) {
         const current = existingByName.get(config.name);
         if (!current?.id) {
-          await backendRequest("mcp.servers.create", { config: toWireMcpConfig(config) });
+          await backendRequest('mcp.servers.create', { config: toWireMcpConfig(config) });
           continue;
         }
         if (!sameMcpConfigBody(current, config)) {
-          await backendRequest("mcp.servers.update", {
+          await backendRequest('mcp.servers.update', {
             serverId: current.id,
             config: toWireMcpConfig(config, current.id),
           });
@@ -289,7 +312,7 @@ export class LiveSettingsClient implements SettingsClient {
         const desiredEnabled = config.disabled !== true;
         const currentEnabled = current.enabled !== false;
         if (currentEnabled !== desiredEnabled) {
-          await backendRequest("mcp.servers.toggle", {
+          await backendRequest('mcp.servers.toggle', {
             serverId: current.id,
             enabled: desiredEnabled,
           });
@@ -311,8 +334,8 @@ export class LiveSettingsClient implements SettingsClient {
     try {
       const result = await backendRequest<{
         autoCommit?: { enabled?: unknown; source?: string };
-      }>("workspace.getAutoCommit", { workspaceId });
-      if (typeof result?.autoCommit?.enabled !== "boolean") return null;
+      }>('workspace.getAutoCommit', { workspaceId });
+      if (typeof result?.autoCommit?.enabled !== 'boolean') return null;
       return { autoCommitEnabled: result.autoCommit.enabled };
     } catch {
       return null;
@@ -324,7 +347,7 @@ export class LiveSettingsClient implements SettingsClient {
     settings: Partial<SingleWorkspaceSettings>,
   ): Promise<MutationResult> {
     if (settings.autoCommitEnabled === undefined) return { success: true };
-    return runMutation("workspace.setAutoCommit", {
+    return runMutation('workspace.setAutoCommit', {
       workspaceId,
       enabled: settings.autoCommitEnabled,
     });
@@ -332,20 +355,24 @@ export class LiveSettingsClient implements SettingsClient {
 
   async getBackgroundAgentSettings(): Promise<BackgroundAgentSettingsState | null> {
     const settings = await this.list();
-    const defaultModel = readString(settings, "quickActions.defaultModel");
-    const typeOverrides = readObject(settings, "quickActions.typeOverrides") as
-      | BackgroundAgentSettingsState["typeOverrides"]
-      | null;
-    const providerSettings = readObject(settings, "quickActions.providerSettings") as
-      | BackgroundAgentSettingsState["providerSettings"]
-      | null;
+    const defaultModel = readString(settings, 'quickActions.defaultModel');
+    const typeOverrides = readObject(settings, 'quickActions.typeOverrides') as
+      BackgroundAgentSettingsState['typeOverrides'] | null;
+    const providerSettings = readObject(settings, 'quickActions.providerSettings') as
+      BackgroundAgentSettingsState['providerSettings'] | null;
     if (defaultModel === null && typeOverrides === null && providerSettings === null) {
       return null;
     }
     return {
-      defaultModel: defaultModel ?? "",
+      defaultModel: defaultModel ?? '',
       typeOverrides:
-        typeOverrides ?? ({ commit: "", pr: "", review: "", fast: "" } as BackgroundAgentSettingsState["typeOverrides"]),
+        typeOverrides ??
+        ({
+          commit: '',
+          pr: '',
+          review: '',
+          fast: '',
+        } as BackgroundAgentSettingsState['typeOverrides']),
       providerSettings: providerSettings ?? {},
     };
   }
@@ -353,11 +380,11 @@ export class LiveSettingsClient implements SettingsClient {
   async setBackgroundAgentSettings(
     settings: Partial<BackgroundAgentSettingsState>,
   ): Promise<MutationResult> {
-    return runMutation("settings.update", {
+    return runMutation('settings.update', {
       changes: changesFrom({
-        "quickActions.defaultModel": settings.defaultModel,
-        "quickActions.typeOverrides": settings.typeOverrides,
-        "quickActions.providerSettings": settings.providerSettings,
+        'quickActions.defaultModel': settings.defaultModel,
+        'quickActions.typeOverrides': settings.typeOverrides,
+        'quickActions.providerSettings': settings.providerSettings,
       }),
     });
   }
@@ -404,28 +431,26 @@ function fromWireMcpStatus(
   serverId: string,
   wire: WireMcpServerStatus | undefined,
 ): McpServerRuntimeStatus | null {
-  if (typeof wire?.serverId === "string" && wire.serverId && wire.serverId !== serverId) {
+  if (typeof wire?.serverId === 'string' && wire.serverId && wire.serverId !== serverId) {
     return null;
   }
   if (
-    wire?.state !== "stopped" &&
-    wire?.state !== "starting" &&
-    wire?.state !== "running" &&
-    wire?.state !== "error"
+    wire?.state !== 'stopped' &&
+    wire?.state !== 'starting' &&
+    wire?.state !== 'running' &&
+    wire?.state !== 'error'
   ) {
     return null;
   }
   const status: McpServerRuntimeStatus = { serverId, state: wire.state };
-  if (typeof wire.lastError === "string" && wire.lastError) status.lastError = wire.lastError;
+  if (typeof wire.lastError === 'string' && wire.lastError) status.lastError = wire.lastError;
   return status;
 }
 
 /** `mcp.servers.list` (§5.22) — sensitive `env`/`headers` values arrive redacted. */
 async function listWireMcpServers(): Promise<WireMcpServerConfig[]> {
   try {
-    const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
-      "mcp.servers.list",
-    );
+    const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>('mcp.servers.list');
     return Array.isArray(result?.servers) ? result.servers : [];
   } catch {
     return [];
@@ -434,18 +459,18 @@ async function listWireMcpServers(): Promise<WireMcpServerConfig[]> {
 
 /** Map a wire config (§5.22) to the FE `McpServerConfig` shape; `null` when nameless. */
 function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
-  if (typeof wire?.name !== "string" || !wire.name) return null;
-  const type = wire.transport === "http" || wire.transport === "sse" ? wire.transport : "stdio";
+  if (typeof wire?.name !== 'string' || !wire.name) return null;
+  const type = wire.transport === 'http' || wire.transport === 'sse' ? wire.transport : 'stdio';
   const config: McpServerConfig = { name: wire.name, type };
   // Carry the daemon-assigned `id` (§5.22) so the events bridge can resolve
   // `mcp.servers:status-changed` payloads back to a server name; opaque to
   // the UI and never authored by callers.
-  if (typeof wire.id === "string" && wire.id) config.id = wire.id;
-  if (typeof wire.command === "string" && wire.command) config.command = wire.command;
+  if (typeof wire.id === 'string' && wire.id) config.id = wire.id;
+  if (typeof wire.command === 'string' && wire.command) config.command = wire.command;
   if (Array.isArray(wire.args)) config.args = wire.args;
-  if (wire.env && typeof wire.env === "object") config.env = wire.env;
-  if (typeof wire.url === "string" && wire.url) config.url = wire.url;
-  if (wire.headers && typeof wire.headers === "object") config.headers = wire.headers;
+  if (wire.env && typeof wire.env === 'object') config.env = wire.env;
+  if (typeof wire.url === 'string' && wire.url) config.url = wire.url;
+  if (wire.headers && typeof wire.headers === 'object') config.headers = wire.headers;
   if (wire.enabled === false) config.disabled = true;
   return config;
 }
@@ -501,12 +526,9 @@ function findEntry(
   return null;
 }
 
-function readString(
-  settings: readonly SettingDefinitionWithValue[],
-  path: string,
-): string | null {
+function readString(settings: readonly SettingDefinitionWithValue[], path: string): string | null {
   const entry = findEntry(settings, path);
-  return entry && typeof entry.value === "string" ? entry.value : null;
+  return entry && typeof entry.value === 'string' ? entry.value : null;
 }
 
 function readObject(
@@ -514,13 +536,11 @@ function readObject(
   path: string,
 ): Record<string, unknown> | null {
   const entry = findEntry(settings, path);
-  if (!entry || entry.value === null || typeof entry.value !== "object") return null;
+  if (!entry || entry.value === null || typeof entry.value !== 'object') return null;
   return entry.value as Record<string, unknown>;
 }
 
 // Tied to AppClient["settings"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["settings"] | undefined = undefined as
-  | LiveSettingsClient
-  | undefined;
+const _interfaceCheck: AppClient['settings'] | undefined = undefined as
+  LiveSettingsClient | undefined;
 void _interfaceCheck;
-

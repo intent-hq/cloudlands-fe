@@ -173,7 +173,7 @@ describe('isCompleted avatar state wiring', () => {
     expect(row.querySelector('[data-agent-row-name]')?.className).toContain('truncate');
     expect(row.querySelector('[data-agent-row-trailing]')).toBeTruthy();
     expect(row.querySelector('[data-agent-background-badge]')).toBeTruthy();
-    expect(row.querySelector('[data-panel-open-count="2"]')).toBeTruthy();
+    expect(row.querySelector('[data-panel-open-count]')).toBeNull();
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
     expect(row.textContent).not.toContain('must not be exposed');
   });

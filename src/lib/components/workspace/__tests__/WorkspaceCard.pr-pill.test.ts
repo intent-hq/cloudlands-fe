@@ -3,7 +3,7 @@
  *
  * WorkspaceCard PR item presentation and interactivity tests.
  *
- * Compact-row PR items route clicks through the unified link handler
+ * Compact-row PR icons route clicks through the unified link handler
  * (`handleLink` with the original event, so GitHub PR URLs get the configured
  * default action / choices menu) without bubbling to the card row, and its
  * hover tooltip's first line is the PR's `owner/repo #N`. Items with no
@@ -317,22 +317,22 @@ describe('WorkspaceCard PR items', () => {
       'acme/widgets#43': 'merged',
     });
     expect(container.querySelector('[data-testid="workspace-card-more-prs"]')).toBeNull();
-    expect(container.querySelectorAll('[data-workspace-card-pr-number]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-workspace-card-pr-number]')).toHaveLength(0);
     expect(items.every((item) => item.querySelector('svg'))).toBe(true);
+    expect(items.every((item) => item.className.includes('size-5'))).toBe(true);
   });
 
-  it('keeps numbers in accessible names while exposing a dedicated skinny-width number hook', () => {
+  it('keeps numbers in accessible names without visible number text', () => {
     const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspaceWithPr() } });
     const item = container.querySelector('[data-workspace-card-pr-item]')!;
-    const number = item.querySelector('[data-workspace-card-pr-number]')!;
 
-    expect(number.textContent).toBe('#42');
-    expect(number.className).toContain('wc-pr-number');
+    expect(item.querySelector('[data-workspace-card-pr-number]')).toBeNull();
+    expect(item.textContent).not.toContain('#42');
+    expect(item.className).toContain('size-5');
     expect(item.getAttribute('aria-label')).toContain('acme/widgets #42');
     expect(item.getAttribute('aria-label')).toContain('Add feature');
     expect(item.getAttribute('aria-label')).toContain('Open');
-    expect(workspaceCardSource).toContain('@container (max-width: 220px)');
-    expect(workspaceCardSource).toContain('.wc-pr-number {\n      display: none;');
+    expect(workspaceCardSource).not.toContain('wc-pr-number');
     expect(workspaceCardSource).not.toContain('wc-pr-list wc-secondary');
   });
 });

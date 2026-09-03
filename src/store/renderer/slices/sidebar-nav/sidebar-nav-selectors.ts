@@ -116,6 +116,14 @@ export const selectShowArchivedWorkspaces = store.createSelector(
   (state) => state.sidebarNav.showArchivedWorkspaces,
 );
 
+export const selectCollapsedStatusGroupIds = store.createSelector(
+  (state) => state.sidebarNav.collapsedStatusGroupIds,
+);
+
+export const selectIsChiefCollapsed = store.createSelector(
+  (state) => state.sidebarNav.isChiefCollapsed,
+);
+
 export const selectPinnedWorkspaceIds = store.createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,
 );

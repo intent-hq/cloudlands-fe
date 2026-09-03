@@ -163,6 +163,8 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: testState.selector(''),
+  selectProviderCatalogLoaded: testState.selector(false),
+  selectProviderAuthFailureGuidance: { select: () => null },
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({

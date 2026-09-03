@@ -133,6 +133,7 @@ const store = vi.hoisted(() => ({
   setHostname: vi.fn(),
   setDaemonVersion: vi.fn(),
   setUpdateSupported: vi.fn(),
+  setTcAddress: vi.fn(),
   setHosts: vi.fn(),
   getDetectHosts: vi.fn(),
 }));
@@ -149,6 +150,7 @@ vi.mock('../connections-store', () => ({
   setHostname: store.setHostname,
   setDaemonVersion: store.setDaemonVersion,
   setUpdateSupported: store.setUpdateSupported,
+  setTcAddress: store.setTcAddress,
   setHosts: store.setHosts,
   getDetectHosts: store.getDetectHosts,
   // Keychain-sync lifecycle wiring (T3); inert in these suites.
@@ -2139,6 +2141,77 @@ describe('self-publish IPC', () => {
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10']);
   });
 
+  it('connections:publish-self filters loopback entries out of the published hosts', async () => {
+    // Loopback is only reachable from THIS machine — publishing it hands
+    // other devices a candidate that dials their own local daemon.
+    installPairingInfo({
+      localIps: ['127.0.0.1', '192.168.1.10', '::1', 'localhost', '10.0.0.5'],
+    });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ host: '192.168.1.10' }));
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
+  });
+
+  it('connections:publish-self rejects when every local IP is loopback and no tunnel exists', async () => {
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'] });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
+      /no routable local IP or tunnel address/,
+    );
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('connections:publish-self publishes in tunnel-only posture (loopback bind + tcAddress)', async () => {
+    // Tunnel-only: the daemon binds loopback only, so localIps filters to
+    // empty — the dialable tc address stands in as the record's host.
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: 'tc7f2a91.tailcat.net' });
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: 'tc7f2a91.tailcat.net' });
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ host: 'tc7f2a91.tailcat.net' }),
+    );
+    // No routable IPs to persist as extras; the tc address rides its own field.
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', []);
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+  });
+
+  it('connections:publish-self persists the pairingInfo tcAddress on the self record', async () => {
+    installPairingInfo({ tcAddress: 'tc7f2a91.tailcat.net' });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+  });
+
+  it('connections:publish-self clears the tcAddress when pairingInfo omits it (tunnel down)', async () => {
+    installPairingInfo();
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    // pairingInfo omits the field whenever the tunnel is not running — a
+    // conclusive clear so a stale address never keeps syncing.
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', null);
+  });
+
   it('connections:publish-self re-publish clears the "do not auto-publish" marker', async () => {
     installPairingInfo();
     store.add.mockResolvedValue(SELF_RECORD);
@@ -2432,6 +2505,24 @@ describe('self-entry refresh IPC', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
+  it('refresh-self propagates a rotated tcAddress (and clears an omitted one)', async () => {
+    installPairingInfo({ tcAddress: 'tc9d0c22.tailcat.net' });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:refresh-self')!({}, undefined);
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc9d0c22.tailcat.net');
+
+    // A later refresh without the field (tunnel disabled) conclusively clears.
+    store.setTcAddress.mockClear();
+    installPairingInfo();
+    await findHandler('connections:refresh-self')!({}, undefined);
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', null);
+  });
+
   it('re-upserts under the new port/host after a WSS port change', async () => {
     installPairingInfo({ port: 6200, localIps: ['192.168.1.99'] });
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
@@ -2446,6 +2537,39 @@ describe('self-entry refresh IPC', () => {
     expect(store.add).toHaveBeenCalledWith(
       expect.objectContaining({ host: '192.168.1.99', port: 6200, fingerprint: '11:22:33:44' }),
     );
+  });
+
+  it('refreshes in tunnel-only posture (loopback bind + tcAddress, no routable IP)', async () => {
+    // Tunnel-only: localIps filters to empty but the tunnel is dialable —
+    // the refresh must keep the entry fresh instead of no-opping, or the
+    // record goes stale on the user's other devices.
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: 'tc7f2a91.tailcat.net' });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: 'tc7f2a91.tailcat.net' });
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: true });
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ host: 'tc7f2a91.tailcat.net' }),
+    );
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+  });
+
+  it('stays a no-op when neither a routable IP nor a tcAddress exists', async () => {
+    installPairingInfo({ localIps: ['127.0.0.1'] });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(store.add).not.toHaveBeenCalled();
   });
 
   it('matches the published entry by the persisted fingerprint after a cert change', async () => {
@@ -2862,6 +2986,36 @@ describe('multi-host candidates (#1746)', () => {
     await vi.waitFor(() =>
       expect(store.setHosts).toHaveBeenCalledWith('remote-1', ['10.0.0.5', '192.168.1.5']),
     );
+  });
+
+  it('refreshes the stored tcAddress from the same pairingInfo response', async () => {
+    installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { localIps: ['10.0.0.5'], tcAddress: 'tc7f2a91.tailcat.net' };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    await mod.openBackendWindow('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setTcAddress).toHaveBeenCalledWith('remote-1', 'tc7f2a91.tailcat.net'),
+    );
+  });
+
+  it('clears the stored tcAddress when a successful pairingInfo omits it', async () => {
+    installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { localIps: ['10.0.0.5'] };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    await mod.openBackendWindow('remote-1');
+
+    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith('remote-1', null));
   });
 
   it('skips the pairingInfo refresh when the record opted out of IP detection', async () => {

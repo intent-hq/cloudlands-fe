@@ -93,6 +93,7 @@ describe('B2 caller metadata regression', () => {
   it('matches current source-derived callers for every field primitive', () => {
     const expected = {
       checkbox: [
+        'src/features/onboarding/OnboardingPage.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
@@ -172,7 +173,7 @@ describe('B2 caller metadata regression', () => {
         { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
         { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 2 },
         { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
       ],
     };

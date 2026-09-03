@@ -94,13 +94,52 @@ describe('getAgentAttentionRequest', () => {
       }),
     ).toEqual({ kind: 'discussion', reason: undefined, timestamp: undefined });
   });
+
+  describe('live-turn gate (mid-turn rehydration defense)', () => {
+    const pending = {
+      attentionRequestKind: 'blocker',
+      attentionRequestReason: 'CI credentials expired',
+    } as const;
+
+    it.each([
+      ['turnInFlight', { turnInFlight: true }],
+      ['liveTurnOpen', { liveTurnOpen: true }],
+      ['isStreaming', { isStreaming: true }],
+      ['isProcessing', { isProcessing: true }],
+      ['isResponding', { isResponding: true }],
+      ['isWaitingOnTool', { isWaitingOnTool: true }],
+      ['running lastToolUse', { lastToolUse: { status: 'running' } }],
+    ])('suppresses a pending request while the turn is live (%s)', (_label, activity) => {
+      expect(getAgentAttentionRequest({ ...pending, ...activity })).toBeNull();
+    });
+
+    it('surfaces the request once the turn ends (flags cleared)', () => {
+      expect(getAgentAttentionRequest({ ...pending, status: 'idle', isResponding: false })).toEqual(
+        { kind: 'blocker', reason: 'CI credentials expired', timestamp: undefined },
+      );
+    });
+
+    it('does not suppress on a bare active status without turn evidence', () => {
+      expect(getAgentAttentionRequest({ ...pending, status: 'active' })).toEqual({
+        kind: 'blocker',
+        reason: 'CI credentials expired',
+        timestamp: undefined,
+      });
+    });
+
+    it('does not suppress on a terminal status with stale activity flags', () => {
+      expect(getAgentAttentionRequest({ ...pending, status: 'error', isResponding: true })).toEqual(
+        { kind: 'blocker', reason: 'CI credentials expired', timestamp: undefined },
+      );
+    });
+  });
 });
 
 describe('getAgentStopReasonTimestamp', () => {
   it('reads the top-level session field', () => {
-    expect(
-      getAgentStopReasonTimestamp({ stopReasonTimestamp: '2026-07-30T10:00:00Z' }),
-    ).toBe('2026-07-30T10:00:00Z');
+    expect(getAgentStopReasonTimestamp({ stopReasonTimestamp: '2026-07-30T10:00:00Z' })).toBe(
+      '2026-07-30T10:00:00Z',
+    );
   });
 
   it('defensively falls back to a metadata-nested field (not part of the documented wire contract)', () => {

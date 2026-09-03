@@ -243,7 +243,13 @@ and embedded tabs — is a target) and attach CDP locally. See
 builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
 `gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
 `build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
-notarization, Windows DigiCert). Output is installers + blockmaps only, uploaded as
+notarization, Windows DigiCert). Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
+ref — full 40-char commit SHA, branch, or tag; `actions/checkout` cannot resolve an
+abbreviated SHA from `git log --oneline`) to build the intentd sidecar from source at
+that ref instead of fetching the pinned release (all legs: macOS, Windows, and both
+Linux arches); the run summary reports the resolved intentd SHA. Empty/omitted
+`intentd_ref` keeps today's pinned-release fetch.
+Output is installers + blockmaps only, uploaded as
 short-lived workflow artifacts (7-day retention), version-suffixed `-manual.<run_number>`.
 Nothing publishes to intent-hq/cloudlands-releases and no auto-updater manifest is
 produced — manual install/testing only.
@@ -373,8 +379,16 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - Tests **MUST** cover observable logic: state transitions, inputs/outputs and wire
   payloads, validation, conditional behavior, routing, error/retry handling, persistence,
   and accessibility interactions/state.
-- Do **not** add tests whose only purpose is exact copy, static source/markup/class
-  strings, source order, or unconditional visual presence.
+- Tests **MUST** establish runtime or behavioral evidence against an independent oracle.
+  Expectations derived from the implementation under test are circular and prohibited.
+- Do **not** assert literal source, class, or markup spelling, source order, exact copy, or
+  unconditional visual presence.
+- Do **not** stub or assign dimensions, values, or state and then assert those same inputs.
+  Exercise production behavior and observe its resulting output or runtime state.
+- Do **not** duplicate production values in a fixture and test only that duplicate. A
+  fixture must drive production code or independently model the external contract.
+- Exact-value assertions are appropriate for intentional stable contracts, including wire
+  payloads, schemas, public identifiers, and accessibility state.
 - Accessible text may locate a control in a behavioral test; assert the resulting
   interaction or state, not the exact wording as the contract.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,

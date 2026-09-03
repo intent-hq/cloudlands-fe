@@ -66,7 +66,8 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+      providerSettings: { enabledProviders: {} },
+      model: { defaultProviderId: 'auggie' },
       // The auggie catalog KNOWS opus4.6 — the restored override is valid.
       providerModels: {
         byProviderId: {

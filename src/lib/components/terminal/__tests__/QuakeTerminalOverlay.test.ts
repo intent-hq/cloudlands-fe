@@ -21,9 +21,24 @@ const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalSt
     toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
   }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { state: {}, dispatch: mockDispatch },
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { get } = await import('svelte/store');
+  const store: any = {
+    state: {},
+    dispatch: mockDispatch,
+    createSelector: (fn: (state: any, ...args: any[]) => any) =>
+      Object.assign(
+        (...args: any[]) => ({
+          subscribe: (listener: (value: any) => void) => {
+            listener(fn(store.state, ...args.map((arg) => (arg?.subscribe ? get(arg) : arg))));
+            return () => {};
+          },
+        }),
+        { select: fn },
+      ),
+  };
+  return { store };
+});
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
   const readable = <T>(read: () => T) => ({
@@ -55,13 +70,19 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
   const workspaceState = (workspaceId: string) =>
     terminalState.byWorkspace[workspaceId] ?? terminalState;
   return {
-    selectIsTerminalOverlayOpenForWorkspace: (workspaceIdStore: any) =>
-      scopedReadable(workspaceIdStore, (workspaceId) => workspaceState(workspaceId).isOpen),
+    selectIsTerminalOverlayOpenForWorkspace: (workspaceId: any) =>
+      typeof workspaceId === 'string'
+        ? readable(() => workspaceState(workspaceId).isOpen)
+        : scopedReadable(workspaceId, (id) => workspaceState(id).isOpen),
     selectTerminalOverlayHeight: () => readable(() => terminalState.height),
-    selectActiveTerminalIdForWorkspace: (workspaceIdStore: any) =>
-      scopedReadable(workspaceIdStore, (workspaceId) => workspaceState(workspaceId).activeId),
-    selectTerminalsForWorkspace: (workspaceIdStore: any) =>
-      scopedReadable(workspaceIdStore, (workspaceId) => workspaceState(workspaceId).terminals),
+    selectActiveTerminalIdForWorkspace: (workspaceId: any) =>
+      typeof workspaceId === 'string'
+        ? readable(() => workspaceState(workspaceId).activeId)
+        : scopedReadable(workspaceId, (id) => workspaceState(id).activeId),
+    selectTerminalsForWorkspace: (workspaceId: any) =>
+      typeof workspaceId === 'string'
+        ? readable(() => workspaceState(workspaceId).terminals)
+        : scopedReadable(workspaceId, (id) => workspaceState(id).terminals),
     selectWorkspaceTerminalState: Object.assign(
       (workspaceIdStore: any) =>
         scopedReadable(workspaceIdStore, () => ({ selectedScriptId: null })),
@@ -157,6 +178,7 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('svelte/transition', () => ({ slide: () => ({}) }));
 
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
+import RootQuakeTerminalOverlay from '../RootQuakeTerminalOverlay.svelte';
 
 const runningScript = {
   id: 'script-1',
@@ -201,7 +223,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     mockUpdate.mockImplementationOnce(() => new Promise((resolve) => (resolveUpdate = resolve)));
     render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
 
-    await fireEvent.dblClick(screen.getByRole('tab', { name: 'dev' }));
+    await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
     const input = screen.getByPlaceholderText('Name');
     await fireEvent.input(input, { target: { value: 'renamed dev' } });
     await fireEvent.blur(input);
@@ -228,7 +250,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       props: { workspaceId: 'ws-a' as any },
     });
 
-    await fireEvent.dblClick(screen.getByRole('tab', { name: 'dev' }));
+    await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
     const input = screen.getByPlaceholderText('Name');
     await fireEvent.input(input, { target: { value: 'renamed in A' } });
     await fireEvent.blur(input);
@@ -325,22 +347,25 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     expect(panel.getAttribute('aria-hidden')).toBe('false');
   });
 
-  it('releases active resize listeners and global body styles when destroyed', async () => {
+  it.each([
+    ['workspace', () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } })],
+    ['root', () => render(RootQuakeTerminalOverlay)],
+  ])('flushes %s resize and releases global state when destroyed', async (_, renderOverlay) => {
     const removeListener = vi.spyOn(document, 'removeEventListener');
     document.body.style.cursor = 'crosshair';
     document.body.style.userSelect = 'text';
-    const { container, unmount } = render(QuakeTerminalOverlay, {
-      props: { workspaceId: 'ws-1' as any },
-    });
+    const { container, unmount } = renderOverlay();
     const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
     expect(resizeHandle).toBeTruthy();
 
     await fireEvent.mouseDown(resizeHandle!);
+    await fireEvent.mouseMove(document, { clientY: 0 });
     expect(document.body.style.cursor).toBe('ns-resize');
     expect(document.body.style.userSelect).toBe('none');
 
     unmount();
 
+    expect(mockDispatch).toHaveBeenCalledWith({ type: 'terminals/setHeight', payload: [90] });
     expect(document.body.style.cursor).toBe('crosshair');
     expect(document.body.style.userSelect).toBe('text');
     expect(removeListener).toHaveBeenCalledWith('mousemove', expect.any(Function));
@@ -350,4 +375,34 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     expect(mockDispatch).not.toHaveBeenCalled();
     removeListener.mockRestore();
   });
+
+  it.each([
+    ['workspace', () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } })],
+    ['root', () => render(RootQuakeTerminalOverlay)],
+  ])(
+    'previews %s resize locally and commits one clamped height on release',
+    async (_, renderOverlay) => {
+      const { container } = renderOverlay();
+      const panel = container.querySelector<HTMLElement>('.terminal-panel');
+      const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
+      expect(panel).toBeTruthy();
+      expect(resizeHandle).toBeTruthy();
+      mockDispatch.mockClear();
+
+      await fireEvent.mouseDown(resizeHandle!);
+      await fireEvent.mouseMove(document, { clientY: window.innerHeight / 2 });
+      await fireEvent.mouseMove(document, { clientY: 0 });
+
+      expect(panel?.style.height).toBe('90vh');
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'terminals/setHeight' }),
+      );
+
+      await fireEvent.mouseUp(document);
+
+      expect(
+        mockDispatch.mock.calls.filter(([action]) => action.type === 'terminals/setHeight'),
+      ).toEqual([[{ type: 'terminals/setHeight', payload: [90] }]]);
+    },
+  );
 });

@@ -165,8 +165,18 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_prevSpace_label();
     },
   },
-  MOVE_SPACE_TAB_LEFT: { key: 'alt+shift+left', label: 'Move Space Tab Left' },
-  MOVE_SPACE_TAB_RIGHT: { key: 'alt+shift+right', label: 'Move Space Tab Right' },
+  MOVE_SPACE_TAB_LEFT: {
+    key: 'mod+alt+shift+left',
+    get label() {
+      return m.ui_shortcuts_moveSpaceTabLeft_label();
+    },
+  },
+  MOVE_SPACE_TAB_RIGHT: {
+    key: 'mod+alt+shift+right',
+    get label() {
+      return m.ui_shortcuts_moveSpaceTabRight_label();
+    },
+  },
   SEARCH: {
     key: 'mod+f',
     get label() {
@@ -202,12 +212,6 @@ export const SHORTCUTS = {
     key: 'shift+enter',
     get label() {
       return m.ui_shortcuts_newLine_label();
-    },
-  },
-  STOP: {
-    key: 'esc',
-    get label() {
-      return m.ui_shortcuts_stopGeneration_label();
     },
   },
   FOCUS_INPUT: {
@@ -552,12 +556,13 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'navigation.close-tab',
     'navigation.close-space-tab',
     'navigation.reopen-tab',
+    'navigation.move-space-tab-left',
+    'navigation.move-space-tab-right',
   ],
   chat: [
     'chat.send',
     'chat.force-send',
     'chat.new-line',
-    'chat.stop',
     'chat.focus-input',
     'chat.mention-context',
   ],
@@ -720,6 +725,8 @@ export const SHORTCUT_CATEGORIES: Record<
         },
         contexts: ['global'],
       },
+      { ...SHORTCUTS.MOVE_SPACE_TAB_LEFT, contexts: ['global'] },
+      { ...SHORTCUTS.MOVE_SPACE_TAB_RIGHT, contexts: ['global'] },
     ],
   },
   chat: {
@@ -745,13 +752,6 @@ export const SHORTCUT_CATEGORIES: Record<
         key: 'shift+enter',
         get label() {
           return m.ui_shortcuts_newLine_label();
-        },
-        contexts: ['chat'],
-      },
-      {
-        key: 'esc',
-        get label() {
-          return m.ui_shortcuts_stopGeneration_label();
         },
         contexts: ['chat'],
       },

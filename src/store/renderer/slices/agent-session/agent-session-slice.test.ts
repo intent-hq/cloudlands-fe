@@ -3353,6 +3353,29 @@ describe('agent-session selectors', () => {
       expect(selectAgentAttentionRequest.select(state, 'a1')).toBeNull();
       expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
     });
+
+    it('gates a pending request while the agent runs a live turn; surfaces it once idle', () => {
+      // Mid-turn rehydration can deliver the persisted fields while the agent
+      // is still streaming — the selector must defer until the turn ends.
+      const live = makeSession('a1', 'ws-1', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'sandbox broken',
+        isResponding: true,
+      });
+      const liveState = storeWith({ byAgentId: { a1: live }, agentIdsByWorkspace: {} });
+      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toBeNull();
+
+      const settled = makeSession('a1', 'ws-1', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'sandbox broken',
+      });
+      const settledState = storeWith({ byAgentId: { a1: settled }, agentIdsByWorkspace: {} });
+      expect(selectAgentAttentionRequest.select(settledState, 'a1')).toEqual({
+        kind: 'blocker',
+        reason: 'sandbox broken',
+        timestamp: undefined,
+      });
+    });
   });
 
   describe('selectAgentIsWaitingForOtherAgents', () => {

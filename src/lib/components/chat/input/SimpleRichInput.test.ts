@@ -188,6 +188,7 @@ const mockReduxState = vi.hoisted(
   (): {
     workspaceAgents: { byWorkspaceId: Record<string, any> };
     providerSettings: { activeProviderId: string };
+    readonly model: { defaultProviderId: string };
     hardwareConsole: { pttRecording: boolean; voiceTranscribing: boolean };
     skills: {
       byWorkspaceId: Record<
@@ -210,8 +211,13 @@ const mockReduxState = vi.hoisted(
     daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
     workspaceAgents: { byWorkspaceId: {} },
-    // Unset active provider — the §5.31 gate treats this as auggie (default)
+    // Unset default provider — the §5.31 gate resolves CLOSED for ''.
+    // Tests mutate providerSettings.activeProviderId; the model slice
+    // (where selectActiveProviderId reads from) mirrors it via this getter.
     providerSettings: { activeProviderId: '' },
+    get model() {
+      return { defaultProviderId: this.providerSettings.activeProviderId };
+    },
     // The composer mic button subscribes to these hardware-console flags
     hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     skills: { byWorkspaceId: {} },
@@ -1194,9 +1200,12 @@ describe('SimpleRichInput Stop-button visibility', () => {
     });
   });
 
-  it('invokes onstop when the Stop button is clicked while responding', async () => {
+  it('ignores Escape while responding and invokes onstop from the Stop button', async () => {
     const onstop = vi.fn();
     render(SimpleRichInput, { props: { ...baseProps(), isResponding: true, onstop } });
+
+    await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Escape' });
+    expect(onstop).not.toHaveBeenCalled();
 
     const btn = stopButton();
     expect(btn).not.toBeNull();
@@ -2509,5 +2518,212 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
       'button[aria-label="Send message"]',
     ) as HTMLButtonElement | null;
     expect(sendButton!.disabled).toBe(true);
+  });
+});
+
+describe('SimpleRichInput folder drop (path references, local daemon only)', () => {
+  const baseProps = () => ({
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  function makeFile(name: string, type: string, size = 16): File {
+    const file = new File(['x'], name, { type });
+    Object.defineProperty(file, 'size', { value: size });
+    return file;
+  }
+
+  /** Drop with a DataTransferItem list carrying folder-detection entries. */
+  function makeItemsDropEvent(entries: Array<{ file: File; isDirectory: boolean }>) {
+    return {
+      dataTransfer: {
+        types: ['Files'],
+        files: entries.map((e) => e.file),
+        items: entries.map((e) => ({
+          kind: 'file',
+          getAsFile: () => e.file,
+          webkitGetAsEntry: () => ({ isDirectory: e.isDirectory }),
+        })),
+      },
+    };
+  }
+
+  function insertMentionCalls(): Array<Record<string, unknown>> {
+    return ((window as any).__tiptapInsertMentionCalls ?? []) as Array<Record<string, unknown>>;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (window as any).__tiptapInsertMentionCalls = [];
+    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    delete (window as any).__tiptapInsertMentionCalls;
+    document.body.innerHTML = '';
+  });
+
+  it('local folder drop inserts a folder mention chip with the absolute host path — no placement', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    const mention = insertMentionCalls()[0];
+    expect(mention.type).toBe('folder');
+    expect(mention.label).toBe('my-folder');
+    expect((mention.meta as any).fullPath).toBe('/home/user/projects/my-folder');
+    // Folders are never placed as attachments.
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    const { toast } = await import('svelte-sonner');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    const image = makeFile('photo.png', 'image/png');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([
+        { file: image, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    // Nothing attaches — not even the file in the same drop.
+    expect(insertMentionCalls()).toHaveLength(0);
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('img', { name: 'photo.png' })).toBeNull();
+  });
+
+  it('mixed local drop: folder becomes a path reference, image attaches as today', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    const image = makeFile('photo.png', 'image/png');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([
+        { file: image, isDirectory: false },
+        { file: folder, isDirectory: true },
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    expect(insertMentionCalls()[0].type).toBe('folder');
+    expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy();
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it('file-only drops behave exactly as before when remote (no folder involved)', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+
+    render(SimpleRichInput, { props: baseProps() });
+    const image = makeFile('photo.png', 'image/png');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([{ file: image, isDirectory: false }]),
+    );
+
+    expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy();
+    const { toast } = await import('svelte-sonner');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('handleDroppedFiles still accepts a plain File[] (legacy external callers)', async () => {
+    const { component } = render(SimpleRichInput, { props: baseProps() });
+    const image = new File(['image-bytes'], 'ext.png', { type: 'image/png' });
+
+    await component.handleDroppedFiles([image]);
+
+    expect(await screen.findByRole('img', { name: 'ext.png' })).toBeTruthy();
+  });
+
+  it('handleDroppedFiles accepts the DropSplit shape from external drop targets', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/ext-folder');
+    const { component } = render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('ext-folder', '');
+
+    await component.handleDroppedFiles({ files: [], folderFiles: [folder] });
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    expect(insertMentionCalls()[0].label).toBe('ext-folder');
+    expect((insertMentionCalls()[0].meta as any).path).toBe('/home/user/ext-folder');
+  });
+
+  it('skips the folder with an error toast when no absolute path is resolvable', async () => {
+    // dev:web / missing bridge: a bare folder name must never ride as a
+    // mention that looks like a workspace-relative path.
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '');
+
+    render(SimpleRichInput, { props: baseProps() });
+    const folder = makeFile('my-folder', '');
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([{ file: folder, isDirectory: true }]),
+    );
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('keys folder mention ids by resolved path so same-basename folders stay distinct', async () => {
+    const folderA = makeFile('src', '');
+    const folderB = makeFile('src', '');
+    // Two distinct File objects share the basename; resolve by identity.
+    (window as any).electronAPI.getPathForFile = vi.fn((f: File) =>
+      f === folderA ? '/home/user/a/src' : '/home/user/b/src',
+    );
+
+    render(SimpleRichInput, { props: baseProps() });
+    await fireEvent.drop(
+      screen.getByTestId('message-input'),
+      makeItemsDropEvent([
+        { file: folderA, isDirectory: true },
+        { file: folderB, isDirectory: true },
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(2);
+    });
+    const ids = insertMentionCalls().map((c) => c.id);
+    expect(ids).toEqual(['folder-/home/user/a/src', 'folder-/home/user/b/src']);
+    expect(new Set(ids).size).toBe(2);
   });
 });

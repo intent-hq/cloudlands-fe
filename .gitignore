@@ -111,6 +111,9 @@ e2e-reports/
 # Sidecar binary staging directory (copy-sidecar.js output)
 resources/sidecar/
 
+# tailcat tunnel client staging directory (fetch-tailcat.cjs output)
+resources/tailcat/
+
 # Speech helper staging directory (build-speech-helper.cjs output)
 resources/speech-helper/
 

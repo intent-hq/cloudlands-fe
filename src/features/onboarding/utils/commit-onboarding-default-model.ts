@@ -18,15 +18,14 @@
  * concrete id to pin. The provider commit still applies.
  */
 import { selectModel } from '$store/renderer/slices/model/model-slice';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   commitOnboardingProviderSelection,
   type CommitOnboardingProviderSelectionAction,
 } from './commit-onboarding-provider-selection';
 
 type CommitOnboardingDefaultModelAction =
-  | CommitOnboardingProviderSelectionAction
-  | ReturnType<typeof selectModel>;
+  CommitOnboardingProviderSelectionAction | ReturnType<typeof selectModel>;
 
 export interface CommitOnboardingDefaultModelInput {
   /** Provider `resolveOnboardingModel` returned for the create ('' ⇒ unresolved). */
@@ -61,15 +60,15 @@ export function commitOnboardingDefaultModel(input: CommitOnboardingDefaultModel
 
   let committedModel: string | undefined;
   if (effectiveDefaultModel) {
-    // Rebuild the compound id so the model-selection saga attributes the pick
-    // to the resolved provider: a bare preview id gets the provider prefix,
-    // an already-compound id keeps its own (an empty `:model` prefix falls
-    // back to the resolved provider too).
-    const { providerId, modelId } = splitCompoundModelId(effectiveDefaultModel);
-    const compoundProvider = providerId || provider;
-    if (compoundProvider && modelId) {
-      committedModel = `${compoundProvider}:${modelId}`;
-      dispatch(selectModel(committedModel));
+    // Dispatch the pick as an explicit triple so the model-selection saga
+    // attributes it to the resolved provider: the preview is normally a bare
+    // id paired with `provider`; a legacy compound preview keeps its own
+    // prefix (an empty `:model` prefix falls back to the resolved provider).
+    const { providerId, modelId } = splitLegacyCompoundId(effectiveDefaultModel);
+    const pickProvider = providerId || provider;
+    if (pickProvider && modelId) {
+      committedModel = modelId;
+      dispatch(selectModel(modelId, pickProvider));
     }
   }
 

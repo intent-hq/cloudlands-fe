@@ -124,10 +124,25 @@ async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer>
       const x = (itemRect.left - nodeRect.left) * selectedScale;
       const y = (itemRect.top - nodeRect.top) * selectedScale;
       if (item.hasAttribute('data-agent-avatar-overflow')) {
+        context.fillStyle = style.backgroundColor;
+        context.beginPath();
+        context.roundRect(
+          x,
+          y,
+          itemRect.width * selectedScale,
+          itemRect.height * selectedScale,
+          (Number.parseFloat(style.borderRadius) || 0) * selectedScale,
+        );
+        context.fill();
         context.fillStyle = style.color;
         context.font = `500 ${12 * selectedScale}px system-ui`;
+        context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillText(item.textContent?.trim() ?? '', x, canvas.height / 2);
+        context.fillText(
+          item.textContent?.trim() ?? '',
+          x + (itemRect.width * selectedScale) / 2,
+          canvas.height / 2,
+        );
         continue;
       }
       const size = itemRect.width * selectedScale;
@@ -429,9 +444,9 @@ test('fits the emphasized panel stack and aligned overflow count in a narrow tab
     };
   });
   expect(overflowStyle).toEqual({
-    background: 'rgba(0, 0, 0, 0)',
+    background: expect.not.stringMatching(/rgba\(0, 0, 0, 0\)|transparent/),
     borderWidth: '0px',
-    borderRadius: '0px',
+    borderRadius: '7px',
     boxShadow: 'none',
     fontSize: '12px',
   });
@@ -445,16 +460,16 @@ test('fits the emphasized panel stack and aligned overflow count in a narrow tab
       avatars.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON())),
       overflow.boundingBox(),
     ]);
-    expect(stackBox?.width).toBeGreaterThan(42 * zoom);
-    expect(stackBox?.width).toBeLessThan(60 * zoom);
+    const avatarTrackWidth = 24 * zoom + (avatarBoxes.length - 1) * 18 * zoom;
+    expect(stackBox?.width).toBeCloseTo(avatarTrackWidth + overflowBox!.width - 6 * zoom, 1);
     expect(stackBox?.height).toBeCloseTo(24 * zoom, 1);
-    expect(overflowBox?.width).toBeGreaterThan(0);
-    expect(overflowBox?.width).toBeLessThan(24 * zoom);
+    expect(overflowBox?.width).toBeGreaterThanOrEqual(24 * zoom);
     expect(overflowBox?.height).toBeCloseTo(24 * zoom, 1);
     for (const box of avatarBoxes) {
       expect(box.width).toBeCloseTo(24 * zoom, 1);
       expect(box.height).toBeCloseTo(24 * zoom, 1);
     }
+    expect(overflowBox!.x - avatarBoxes.at(-1)!.x).toBeCloseTo(18 * zoom, 1);
     const avatarCenter = avatarBoxes.at(-1)!.y + avatarBoxes.at(-1)!.height / 2;
     const overflowCenter = overflowBox!.y + overflowBox!.height / 2;
     expect(
@@ -649,11 +664,13 @@ test('matches the emphasized catalog stack in each theme at 100% and 200%', asyn
   await mountAvatarHost(page);
   const stack = page.locator('[data-agent-avatar-catalog-stack] [data-agent-avatar-stack]');
   for (const theme of ['light', 'dark'] as const) {
-    await page.evaluate((selectedTheme) => {
+    await page.evaluate(async (selectedTheme) => {
       document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
       document.documentElement.classList.toggle('light', selectedTheme === 'light');
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }, theme);
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(250);
     for (const scale of [1, 2] as const) {
       expect(await catalogStackPng(stack, scale)).toMatchSnapshot(
         `agent-avatar-stack-${theme}-${scale === 1 ? '100' : '200'}-percent.png`,

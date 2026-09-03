@@ -233,11 +233,13 @@
 </script>
 
 {#snippet leading()}
-  <Fa
-    icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
-    size={16}
-    class={CHAT_OPERATIONAL_ICON_CLASS}
-  />
+  <span class="flex" data-response-group-disclosure-icon>
+    <Fa
+      icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
+      size={16}
+      class={CHAT_OPERATIONAL_ICON_CLASS}
+    />
+  </span>
 {/snippet}
 
 {#snippet summary()}
@@ -251,7 +253,7 @@
 {/snippet}
 
 {#snippet preview()}
-  <CylinderScroller isActive={isStreaming} constrained={false}>
+  <CylinderScroller isActive={isStreaming} constrained>
     <div class="relative flex flex-col gap-0" data-response-group-content>
       <span
         class="operational-group-guide pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"

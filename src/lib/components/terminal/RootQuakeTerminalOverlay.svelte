@@ -18,6 +18,7 @@
    * - Keyboard shortcuts (Cmd+J / Ctrl+J to toggle)
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
+  import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
@@ -62,6 +63,7 @@
     localizeDaemonTerminalName,
     terminalDisplayName,
   } from '$lib/utils/terminal-display-name';
+  import { createTerminalOverlayResize } from './terminal-overlay-resize';
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);
@@ -76,6 +78,8 @@
 
   // UI state
   let isResizing = $state(false);
+  let resizePreviewHeight = $state<number | null>(null);
+  const renderedHeight = $derived(resizePreviewHeight ?? $height);
   let editingTerminalId = $state<string | null>(null);
   let editingValue = $state('');
   let isEditingHeaderName = $state(false);
@@ -280,29 +284,14 @@
   // Resize Handling
   // ============================================================================
 
-  function startResize(event: MouseEvent) {
-    event.preventDefault();
-    isResizing = true;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', handleResize);
-    document.addEventListener('mouseup', stopResize);
-  }
+  const { start: startResize, stop: stopResize } = createTerminalOverlayResize({
+    getHeight: () => $height,
+    setPreviewHeight: (height) => (resizePreviewHeight = height),
+    setResizing: (resizing) => (isResizing = resizing),
+    commitHeight: (height) => appStore.dispatch(setTerminalOverlayHeight(height)),
+  });
 
-  function handleResize(event: MouseEvent) {
-    if (!isResizing) return;
-    const windowHeight = window.innerHeight;
-    const newHeight = ((windowHeight - event.clientY) / windowHeight) * 100;
-    appStore.dispatch(setTerminalOverlayHeight(newHeight));
-  }
-
-  function stopResize() {
-    isResizing = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', handleResize);
-    document.removeEventListener('mouseup', stopResize);
-  }
+  onDestroy(stopResize);
 
   // ============================================================================
   // Event Listeners
@@ -386,7 +375,7 @@
     <div
       class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
       class:is-resizing={isResizing}
-      style="height: {$height}vh;"
+      style="height: {renderedHeight}vh;"
       transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
     >
       <!-- Resize Handle -->

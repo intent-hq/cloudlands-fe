@@ -117,19 +117,11 @@
   function handleKeyDown(event: KeyboardEvent) {
     if (!enableShortcuts) return;
     const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-    const matches = (id: 'chat.force-send' | 'chat.stop') =>
-      matchesShortcut(event, getEffectiveShortcut(id), isMac);
 
     // Cmd/Ctrl + Enter to send
-    if (matches('chat.force-send')) {
+    if (matchesShortcut(event, getEffectiveShortcut('chat.force-send'), isMac)) {
       event.preventDefault();
       handleSend();
-    }
-
-    // Escape to stop streaming
-    if (matches('chat.stop') && isStreaming) {
-      event.preventDefault();
-      handleStop();
     }
   }
 
@@ -207,7 +199,6 @@
       {#if showStopButton && (isProcessing || isStreaming)}
         <TooltipShortcut
           label={m.chat_agentInputArea_stopGeneration_label()}
-          shortcut="esc"
           side="top"
           delayDuration={200}
         >

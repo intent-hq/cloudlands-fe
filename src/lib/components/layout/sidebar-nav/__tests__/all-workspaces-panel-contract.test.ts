@@ -15,8 +15,8 @@ describe('All Workspaces panel presentation', () => {
   it('keeps Spaces and Chief mounted without root-route special casing', () => {
     expect(panelSource).not.toContain("page.url.pathname === '/'");
     expect(panelSource).toContain('data-combined-panel-spaces');
-    expect(panelSource).not.toContain('combined-panel-spaces-collapsed');
-    expect(panelSource).toContain('style="height: {liveSplit * 100}%;"');
+    expect(panelSource).toContain('data-chief-section-toggle');
+    expect(panelSource).toContain('style:height={$isChiefCollapsed$');
     expect(panelSource).toContain('height var(--motion-slow) var(--ease-emphasized-out)');
     expect(panelSource.match(/<ChiefCard expanded=\{true\}/g)).toHaveLength(1);
     expect(panelSource).toContain('<ChiefCard expanded={true} embedded={true} />');

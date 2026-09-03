@@ -152,6 +152,7 @@
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import { createFileDropTarget } from '$lib/utils/file-drop';
+  import type { DropSplit } from '$lib/utils/drop-split';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
@@ -336,7 +337,11 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
-  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectEffectiveDefaultProviderId,
+    selectProviderAuthFailureGuidance,
+    selectProviderCatalogLoaded,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -1314,7 +1319,7 @@
   let isFileDragOverPanel = $state(false);
   const panelFileDrop = createFileDropTarget({
     onDragChange: (dragging) => (isFileDragOverPanel = dragging),
-    onDrop: (files) => void inputComponent?.handleDroppedFiles?.(files),
+    onDrop: (drop) => void inputComponent?.handleDroppedFiles?.(drop),
     isEnabled: () => !!inputComponent,
   });
 
@@ -1333,7 +1338,7 @@
   $effect(() => {
     if (!panelFileDropContext || !isActive || !inputComponent) return;
     const handler = {
-      onDrop: (files: File[]) => void inputComponent?.handleDroppedFiles?.(files),
+      onDrop: (drop: DropSplit) => void inputComponent?.handleDroppedFiles?.(drop),
       onDragChange: (dragging: boolean) => (isFileDragOverHeader = dragging),
     };
     panelFileDropContext.register(handler);
@@ -1726,6 +1731,39 @@
     ),
   );
 
+  type PendingDraftWrite = { workspaceId: string; agentId: string; draft: string };
+  let pendingDraftWrite: PendingDraftWrite | null = null;
+
+  function flushPendingDraftWrite(): void {
+    const pending = pendingDraftWrite;
+    pendingDraftWrite = null;
+    if (pending) {
+      appStore.dispatch(setChatDraft(pending.workspaceId, pending.agentId, pending.draft));
+    }
+  }
+
+  function commitDraftWrite(draft: string): void {
+    const workspaceId = workspace?.id;
+    if (!workspaceId || !agentId) return;
+    pendingDraftWrite = null;
+    appStore.dispatch(setChatDraft(workspaceId, agentId, draft));
+  }
+
+  function scheduleDraftWrite(draft: string): void {
+    const workspaceId = workspace?.id;
+    if (!workspaceId || !agentId) return;
+    pendingDraftWrite = { workspaceId, agentId, draft };
+  }
+
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastDraftBindingKey = `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  $effect(() => {
+    const bindingKey = `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+    if (bindingKey === lastDraftBindingKey) return;
+    flushPendingDraftWrite();
+    lastDraftBindingKey = bindingKey;
+  });
+
   // Input history for up/down arrow navigation (like terminal)
   // Stores previously sent user prompts
   let inputHistory = $state<string[]>([]);
@@ -1998,6 +2036,7 @@
     const workspaceId = workspace?.id ?? null;
     if (!workspaceId || !isActive) return;
 
+    flushPendingSelectionWrites();
     const panels = availablePanelContexts;
     untrack(() => {
       appStore.dispatch(setMultiPanelWorkspace(workspaceId));
@@ -2008,6 +2047,47 @@
   // Sync selection context from editors to multi-panel context Redux store
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
   // Editors dispatch 'editor:selection-change' custom events which we sync to Redux
+  type PendingSelectionWrite =
+    | {
+        kind: 'set';
+        key: string;
+        selection: Omit<Parameters<typeof setMultiPanelSelection>[0], never>;
+      }
+    | { kind: 'clear'; key: string; panelId: string; tabId: string };
+  let pendingSelectionWrites = new Map<string, PendingSelectionWrite>();
+  let pendingSelectionFrame: number | null = null;
+
+  function flushPendingSelectionWrites(): void {
+    if (pendingSelectionFrame !== null) {
+      cancelAnimationFrame(pendingSelectionFrame);
+      pendingSelectionFrame = null;
+    }
+    const pending = pendingSelectionWrites;
+    pendingSelectionWrites = new Map();
+    for (const update of pending.values()) {
+      if (update.kind === 'set') {
+        appStore.dispatch(setMultiPanelSelection(update.selection));
+      } else {
+        appStore.dispatch(clearMultiPanelSelection(update.panelId, update.tabId));
+      }
+    }
+  }
+
+  function scheduleSelectionWrite(update: PendingSelectionWrite): void {
+    pendingSelectionWrites.set(update.key, update);
+    if (pendingSelectionFrame !== null) return;
+    pendingSelectionFrame = requestAnimationFrame(() => {
+      pendingSelectionFrame = null;
+      flushPendingSelectionWrites();
+    });
+  }
+
+  $effect(() => {
+    if (isActive) return;
+    flushPendingDraftWrite();
+    flushPendingSelectionWrites();
+  });
+
   $effect(() => {
     if (!isActive) return;
     const handleSelectionChange = (
@@ -2018,13 +2098,16 @@
       // doesn't track panel info - this ensures selections show up in the picker
       const panelId = file || 'unknown';
       const tabId = file || 'selection';
+      const key = `${panelId}\u0000${tabId}`;
 
       if (text?.trim()) {
         // Add selection to multi-panel context store
         // Detect if this is from a note (markdown) vs a code file
         const isNote = language === 'markdown' && !file?.includes('/');
-        appStore.dispatch(
-          setMultiPanelSelection({
+        scheduleSelectionWrite({
+          kind: 'set',
+          key,
+          selection: {
             panelId,
             tabId,
             sourceType: isNote ? 'note' : 'file',
@@ -2033,13 +2116,13 @@
             text: text,
             language: language,
             timestamp: Date.now(),
-          }),
-        );
+          },
+        });
       } else {
         // Clear the selection when text is deselected
         // This event is only dispatched when editor.isFocused is true (user clicked within the editor)
         // so it won't clear when user clicks on chat input to send
-        appStore.dispatch(clearMultiPanelSelection(panelId, tabId));
+        scheduleSelectionWrite({ kind: 'clear', key, panelId, tabId });
       }
     };
 
@@ -2125,11 +2208,30 @@
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
   const catalogDefaultProviderId$ = selectEffectiveDefaultProviderId();
+  const providerCatalogLoaded$ = selectProviderCatalogLoaded();
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
     if (!$agentSession$) return undefined;
     return getAgentProvider($agentSession$, $catalogDefaultProviderId$);
+  });
+
+  // Provider auth-failure login guidance: when the chat error matches the
+  // provider's catalog auth-error patterns, StreamingStatus shows the login
+  // command hint (and the claude-code desktop-app caveat) alongside the error.
+  const chatAuthGuidance = $derived.by(() => {
+    if (!effectiveError) return null;
+    // Depend on the loaded flag (false → true on hydration): an error
+    // rendered before `providers.catalog` lands recomputes once it does —
+    // the default-provider-id string alone may not change on hydration.
+    void $providerCatalogLoaded$;
+    void $catalogDefaultProviderId$;
+    return selectProviderAuthFailureGuidance.select(
+      appStore.state,
+      $agentSession$?.provider,
+      $agentSession$?.model,
+      effectiveError,
+    );
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
@@ -4393,6 +4495,8 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
     transferPanelInterestLease(null);
+    flushPendingDraftWrite();
+    flushPendingSelectionWrites();
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
@@ -4657,6 +4761,7 @@
       contextItems = [];
       inputValue = '';
       inputComponent?.clear();
+      commitDraftWrite('');
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
@@ -4708,7 +4813,15 @@
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive) {
+      logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
+        agentId,
+        hasWorkspace: !!workspace,
+        isActive,
+      });
+      return;
+    }
+    flushPendingDraftWrite();
 
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString();
@@ -4901,6 +5014,7 @@
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
     if (!workspace) return;
+    flushPendingDraftWrite();
 
     logger.info('Force submit triggered', { agentId });
 
@@ -5175,15 +5289,6 @@
     ) {
       e.preventDefault();
       focusPrompt();
-      return;
-    }
-    if (
-      isPanelFocused &&
-      $agentSessionIsStreaming$ &&
-      matchesShortcut(e, getEffectiveShortcut('chat.stop'), isMac)
-    ) {
-      e.preventDefault();
-      handleStop();
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
@@ -5543,6 +5648,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -5569,6 +5675,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -5653,6 +5760,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -5679,6 +5787,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -5710,6 +5819,7 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
+                  authGuidance={chatAuthGuidance}
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
@@ -6042,6 +6152,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -6126,6 +6237,7 @@
                                 receivedFirstChunk={$chatReceivedFirstChunk$}
                                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                                 error={effectiveError}
+                                authGuidance={chatAuthGuidance}
                                 sessionCorrupted={effectiveSessionCorrupted}
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
@@ -6204,6 +6316,7 @@
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
                     error={effectiveError}
+                    authGuidance={chatAuthGuidance}
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
@@ -6359,7 +6472,11 @@
         class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
         data-testid="chat-composer-lane"
       >
-        <div class="w-full min-w-0" data-testid="chat-composer-controls-inner">
+        <div
+          class="w-full min-w-0"
+          data-testid="chat-composer-controls-inner"
+          onfocusout={flushPendingDraftWrite}
+        >
           {#if isRetiredSession}
             <div
               class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
@@ -6435,9 +6552,7 @@
                 bind:contextItems
                 bind:value={inputValue}
                 onvaluechange={(value) => {
-                  if (workspace?.id && agentId) {
-                    appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-                  }
+                  scheduleDraftWrite(value);
                 }}
                 onsubmit={handleSend}
                 onforcesubmit={handleForceSubmit}

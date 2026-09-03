@@ -2670,10 +2670,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
  * daemon id resolves via the current server list; an unresolvable id is
  * dropped (the sidebar's mount hydrate converges the state later).
  */
-function handleWorkspaceMcpServerToggled(
-  raw: Record<string, unknown>,
-  workspaceId: string,
-): void {
+function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspaceId: string): void {
   const toggled = raw.mcpServerToggled;
   if (!toggled || typeof toggled !== 'object') return;
   const { serverId, workspaceDisabled } = toggled as Record<string, unknown>;
@@ -2991,7 +2988,7 @@ function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: str
 
 function handleSettingsChangedEvent(
   event: WorkspaceEvent,
-  onSettingsChanges?: (changes: AppliedSettingChange[]) => void,
+  onSettingsChanges?: (changes: AppliedSettingChange[], revision?: number) => void,
 ): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -3006,7 +3003,8 @@ function handleSettingsChangedEvent(
     changes.push({ path, value });
   }
   if (changes.length === 0) return;
-  if (onSettingsChanges) onSettingsChanges(changes);
+  const revision = typeof data.revision === 'number' ? data.revision : undefined;
+  if (onSettingsChanges) onSettingsChanges(changes, revision);
   else applySettingsChanges(changes);
 }
 
@@ -3391,7 +3389,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 }
 
 export interface DaemonEventsRoutingOverrides {
-  onSettingsChanges?: (changes: AppliedSettingChange[]) => void;
+  onSettingsChanges?: (changes: AppliedSettingChange[], revision?: number) => void;
 }
 
 export function routeDaemonEventsNotification(
@@ -4114,8 +4112,7 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
       let survivorIds: Set<string>;
       try {
         const response = (await backendRequest('agent.list', { workspaceId })) as
-          | { agents?: Array<{ id?: unknown }> }
-          | undefined;
+          { agents?: Array<{ id?: unknown }> } | undefined;
         if (!Array.isArray(response?.agents)) {
           logger.warn(
             'agent.list returned no verifiable agents array during failure-registry reconciliation — keeping entries',

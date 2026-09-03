@@ -1036,6 +1036,119 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(userRows[0].appMessageId).toBe('app-msg-opt-2');
   });
 
+  it('keeps the user row above the streaming assistant message when the daemon clock is skewed ahead (idle-send mis-ordering)', () => {
+    // Regression test for the idle-send transient mis-ordering (mixed clock
+    // domains on the ordering sort key). Sequence mirrors production:
+    //   1. Optimistic user row — renderer clock (agent-send.ts), NO seq.
+    //   2. Canonical user-row echo — daemon clock, skewed AHEAD (>1s beyond
+    //      the USER_REPLY_ORDER_WINDOW_MS repair window), carrying the
+    //      authoritative `seq` (§7.1 user-row deltas carry `messageSeq`).
+    //      appMessageId dedup collapses the optimistic row onto it.
+    //   3. First streamed chunk — §7.1 chunk deltas carry NO timestamp and
+    //      NO messageSeq, so the reconciler creates the in-flight assistant
+    //      message with a renderer-clock fallback (live-chat-client.ts
+    //      upsertBlock), BEHIND the user row's daemon timestamp.
+    // orderMessagesForConversation now sorts by daemon `seq` (single clock
+    // domain); the seq-less in-flight message sorts AFTER every seq-bearing
+    // row, so the user row stays above its streaming reply at every store
+    // state regardless of skew.
+    const agentId = 'agent-sub-clock-skew';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const prevAssistant = makeMessage('msg_prev-assistant', 'previous reply', {
+      timestamp: '2026-01-01T00:00:00.000Z',
+      seq: 4,
+    });
+    sub.handler(transcript([prevAssistant]));
+
+    // 1. Optimistic user row (renderer clock at send, no seq yet).
+    const appMessageId = 'app-msg-skew-1';
+    appStore.dispatch(
+      addMessage(agentId, {
+        id: 'renderer-minted-user-skew',
+        appMessageId,
+        role: 'user',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'follow up' }],
+      }),
+    );
+    // The optimistic (seq-less) row renders after the seq-bearing history.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'msg_prev-assistant',
+      'renderer-minted-user-skew',
+    ]);
+
+    // 2. Canonical echo (message_row_delta re-read): daemon clock ~3.5s
+    // ahead of the renderer, authoritative seq.
+    const canonicalUser: AgentMessage = {
+      id: 'user-msg-skew-1111-2222-3333-444455556666',
+      appMessageId,
+      role: 'user',
+      timestamp: '2026-01-01T00:00:05.500Z',
+      seq: 5,
+      contentBlocks: [
+        { type: 'text', id: 'user-msg-skew-1111-2222-3333-444455556666:0', text: 'follow up' },
+      ],
+    };
+    sub.handler(transcript([prevAssistant, canonicalUser]));
+
+    // 3. First chunk delta: no timestamp/messageSeq on the wire →
+    // renderer-clock fallback at chunk arrival (~300ms after send on the
+    // renderer clock), no seq until the terminal frame.
+    const inFlight: AgentMessage = {
+      id: 'msg_streaming-reply',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:02.300Z',
+      isStreaming: true,
+      contentBlocks: [{ type: 'text', id: 'msg_streaming-reply:0', text: 'On it' }],
+    };
+    sub.handler(transcript([prevAssistant, canonicalUser, inFlight], true));
+
+    // The user row stays above its streaming reply.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'msg_prev-assistant',
+      'user-msg-skew-1111-2222-3333-444455556666',
+      'msg_streaming-reply',
+    ]);
+  });
+
+  it('corrects the skewed-clock inversion once the terminal frame stamps the daemon timestamp', () => {
+    // Companion to the skew regression test above: the terminal §7.1 reconcile
+    // stamps the assistant row with the authoritative daemon timestamp
+    // (later than the user row's), so the sort self-corrects — the
+    // "briefly, then corrects itself" half of the symptom.
+    const agentId = 'agent-sub-clock-skew-corrected';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const prevAssistant = makeMessage('msg_prev-assistant-c', 'previous reply', {
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+    const canonicalUser: AgentMessage = {
+      id: 'user-msg-skew-c-1111-2222-3333-444455556666',
+      appMessageId: 'app-msg-skew-2',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:05.500Z',
+      contentBlocks: [
+        { type: 'text', id: 'user-msg-skew-c-1111-2222-3333-444455556666:0', text: 'follow up' },
+      ],
+    };
+    // Terminal frame adopted the persisted daemon timestamp for the reply.
+    const settledReply: AgentMessage = {
+      id: 'msg_streaming-reply-c',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:05.800Z',
+      streamingComplete: true,
+      contentBlocks: [{ type: 'text', id: 'msg_streaming-reply-c:0', text: 'On it' }],
+    };
+    sub.handler(transcript([prevAssistant, canonicalUser, settledReply]));
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'msg_prev-assistant-c',
+      'user-msg-skew-c-1111-2222-3333-444455556666',
+      'msg_streaming-reply-c',
+    ]);
+  });
+
   it('preserves store-only rows the snapshot page does not cover (older paged history)', () => {
     const agentId = 'agent-sub-paged';
     // Infinite scrollback (chat-scrollback saga) landed an older message the

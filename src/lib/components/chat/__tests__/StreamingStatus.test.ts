@@ -421,6 +421,46 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.queryByTestId('error-failed-at')).toBeNull();
     expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
   });
+
+  it('renders login guidance (copyable command + claude desktop caveat) on provider auth failures', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'JSON-RPC error -32000: Authentication required',
+        authGuidance: {
+          loginCommandHint: 'claude /login',
+          showClaudeDesktopNote: true,
+        },
+      },
+    });
+
+    expect(screen.getByTestId('error-auth-guidance')).toBeTruthy();
+    expect(screen.getByTestId('error-auth-login-command').textContent).toBe('claude /login');
+    expect(screen.getByTestId('error-auth-claude-desktop-note')).toBeTruthy();
+    // The raw error message stays visible alongside the guidance.
+    expect(screen.getByTestId('error-message').textContent).toContain('Authentication required');
+  });
+
+  it('hides the desktop caveat for non-claude providers and omits guidance entirely without it', () => {
+    const { rerender, unmount } = render(StreamingStatus, {
+      props: {
+        error: 'JSON-RPC error -32000: Authentication required',
+        authGuidance: {
+          loginCommandHint: 'codex login',
+          showClaudeDesktopNote: false,
+        },
+      },
+    });
+
+    expect(screen.getByTestId('error-auth-login-command').textContent).toBe('codex login');
+    expect(screen.queryByTestId('error-auth-claude-desktop-note')).toBeNull();
+    unmount();
+
+    render(StreamingStatus, {
+      props: { error: 'spawn failed: EPERM' },
+    });
+    expect(screen.queryByTestId('error-auth-guidance')).toBeNull();
+    void rerender;
+  });
 });
 
 describe('StreamingStatus stalled state (monorepo#3402)', () => {
