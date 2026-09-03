@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
 import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
-import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   acceptChangesConsumerMounted,
   acceptChangesConsumerUnmounted,
@@ -135,6 +138,27 @@ describe('acceptChangesStatusSaga', () => {
     await settle();
 
     expect(run.state().git.byWorkspaceId[WS_A]?.acceptChangesStatus).toBeNull();
+    await stop(run.task);
+  });
+
+  it('cancels an unmounted workspace read and its trailing refetch before reusing the key', async () => {
+    const pending = deferred<WorkspaceGitStatus>();
+    mocks.getStatus.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(status('fresh'));
+    const run = harness();
+    run.dispatch(acceptChangesConsumerMounted(WS_A));
+    await settle();
+    run.dispatch(acceptChangesStatusInvalidated(WS_A));
+    run.dispatch(workspaceUnmounted(WS_A));
+    pending.resolve(status('cancelled'));
+    await settle();
+
+    expect(mocks.getStatus).toHaveBeenCalledTimes(1);
+    expect(run.state().git.byWorkspaceId[WS_A]).toBeUndefined();
+
+    run.dispatch(acceptChangesConsumerMounted(WS_A));
+    await settle();
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+    expect(run.state().git.byWorkspaceId[WS_A]?.acceptChangesStatus?.branch).toBe('fresh');
     await stop(run.task);
   });
 

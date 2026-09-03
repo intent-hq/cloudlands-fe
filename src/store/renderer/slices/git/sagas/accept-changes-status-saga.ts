@@ -1,9 +1,9 @@
-import type { Task } from 'redux-saga';
-import { all, call, cancel, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
@@ -23,13 +23,13 @@ import { selectAcceptChangesStatus, selectPostMergeState } from '../git-selector
 
 const logger = createLogger('AcceptChangesStatusSaga');
 
-type Entry = { consumers: number; dirty: boolean; task?: Task };
+type Entry = { consumers: number; dirty: boolean; generation: number };
 type Coordinator = Map<string, Entry>;
 
 function entryFor(coordinator: Coordinator, workspaceId: string): Entry {
   const existing = coordinator.get(workspaceId);
   if (existing) return existing;
-  const entry = { consumers: 0, dirty: false };
+  const entry = { consumers: 0, dirty: false, generation: 0 };
   coordinator.set(workspaceId, entry);
   return entry;
 }
@@ -39,57 +39,68 @@ function* isVisible(entry: Entry, workspaceId: string): SagaGenerator<boolean> {
   return entry.consumers > 0 && activeWorkspaceId === workspaceId;
 }
 
-function* refreshLoop(coordinator: Coordinator, workspaceId: string): SagaGenerator<void> {
+type RefreshAction =
+  ReturnType<typeof refreshAcceptChangesStatus> | ReturnType<typeof workspaceUnmounted>;
+
+function refreshContext(coordinator: Coordinator, action: RefreshAction) {
+  const [workspaceId] = action.payload;
+  if (action.type === workspaceUnmounted.type) {
+    coordinator.delete(workspaceId);
+    return { context: workspaceId, cancel: true as const };
+  }
   const entry = entryFor(coordinator, workspaceId);
+  entry.dirty = true;
+  entry.generation += 1;
+  return workspaceId;
+}
+
+function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGenerator<void> {
+  if (action.type === workspaceUnmounted.type) return;
+  const [workspaceId] = action.payload;
+  const entry = entryFor(coordinator, workspaceId);
+  const generation = entry.generation;
+  entry.dirty = false;
+  yield* put(setAcceptChangesStatusLoading(workspaceId, true));
   try {
-    do {
-      entry.dirty = false;
-      yield* put(setAcceptChangesStatusLoading(workspaceId, true));
-      try {
-        const status = yield* call(
-          [AcceptChangesClient, AcceptChangesClient.getStatus],
-          workspaceId as WorkspaceId,
-        );
-        if ((yield* isVisible(entry, workspaceId)) && !entry.dirty) {
-          const current = yield* selectPostMergeState.effect(workspaceId);
-          yield* put(setAcceptChangesStatus(workspaceId, status));
-          yield* put(
-            setPostMergeState(workspaceId, {
-              ...current,
-              aheadOfTrunk: status.aheadOfTrunk,
-              behindTrunk: status.behindTrunk,
-              hasConflicts: status.hasConflicts,
-              hasRemote: status.hasRemote,
-              isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
-            }),
-          );
-        } else if (!(yield* isVisible(entry, workspaceId))) {
-          entry.dirty = true;
-        }
-      } catch (error) {
-        logger.warn('Failed to fetch accept-changes status', { workspaceId, error });
-      }
-    } while (entry.dirty && (yield* isVisible(entry, workspaceId)));
+    const status = yield* call(
+      [AcceptChangesClient, AcceptChangesClient.getStatus],
+      workspaceId as WorkspaceId,
+    );
+    const visible = yield* isVisible(entry, workspaceId);
+    if (visible && entry.generation === generation && !entry.dirty) {
+      const current = yield* selectPostMergeState.effect(workspaceId);
+      yield* put(setAcceptChangesStatus(workspaceId, status));
+      yield* put(
+        setPostMergeState(workspaceId, {
+          ...current,
+          aheadOfTrunk: status.aheadOfTrunk,
+          behindTrunk: status.behindTrunk,
+          hasConflicts: status.hasConflicts,
+          hasRemote: status.hasRemote,
+          isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
+        }),
+      );
+    } else if (!visible) {
+      entry.dirty = true;
+    }
+  } catch (error) {
+    logger.warn('Failed to fetch accept-changes status', { workspaceId, error });
   } finally {
-    entry.task = undefined;
-    if (coordinator.get(workspaceId) === entry) {
+    if (coordinator.get(workspaceId) === entry && entry.generation === generation) {
       yield* put(setAcceptChangesStatusLoading(workspaceId, false));
     }
   }
 }
 
-function* startRefresh(coordinator: Coordinator, workspaceId: string): SagaGenerator<void> {
-  const entry = entryFor(coordinator, workspaceId);
-  if (entry.task) {
-    entry.dirty = true;
-    return;
-  }
-  entry.task = yield* fork(refreshLoop, coordinator, workspaceId);
+function* queueRefresh(workspaceId: string): SagaGenerator<void> {
+  yield* put(refreshAcceptChangesStatus(workspaceId));
 }
 
 function* refreshIfVisible(coordinator: Coordinator, workspaceId: string): SagaGenerator<void> {
   const entry = entryFor(coordinator, workspaceId);
-  if (yield* isVisible(entry, workspaceId)) yield* startRefresh(coordinator, workspaceId);
+  if (yield* isVisible(entry, workspaceId)) {
+    yield* queueRefresh(workspaceId);
+  }
 }
 
 function* consumerMounted(
@@ -125,20 +136,12 @@ function* invalidated(
   yield* invalidate(coordinator, action.payload[0]);
 }
 
-function* explicitRefresh(
-  coordinator: Coordinator,
-  action: ReturnType<typeof refreshAcceptChangesStatus>,
-) {
-  yield* startRefresh(coordinator, action.payload[0]);
-}
-
 function* activeWorkspaceChanged(coordinator: Coordinator): SagaGenerator<void> {
   const workspaceId = yield* selectCurrentWorkspaceTabId.effect();
   if (!workspaceId) return;
   const entry = entryFor(coordinator, workspaceId);
   const cached = yield* selectAcceptChangesStatus.effect(workspaceId);
-  if (entry.consumers > 0 && (entry.dirty || !cached))
-    yield* startRefresh(coordinator, workspaceId);
+  if (entry.consumers > 0 && (entry.dirty || !cached)) yield* queueRefresh(workspaceId);
 }
 
 function* reconnected(coordinator: Coordinator): SagaGenerator<void> {
@@ -148,25 +151,19 @@ function* reconnected(coordinator: Coordinator): SagaGenerator<void> {
   }
 }
 
-function* clearWorkspace(
-  coordinator: Coordinator,
-  action: ReturnType<typeof workspaceUnmounted>,
-): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
-  const entry = coordinator.get(workspaceId);
-  coordinator.delete(workspaceId);
-  if (entry?.task) yield* cancel(entry.task);
-}
-
 export function* acceptChangesStatusSaga(): SagaGenerator<void> {
   const coordinator: Coordinator = new Map();
   yield* all([
+    takeSingleFlightInContext(
+      [refreshAcceptChangesStatus, workspaceUnmounted],
+      (action) => refreshContext(coordinator, action),
+      refreshStatus,
+      coordinator,
+    ),
     takeEvery(acceptChangesConsumerMounted, consumerMounted, coordinator),
     takeEvery(acceptChangesConsumerUnmounted, consumerUnmounted, coordinator),
     takeEvery(acceptChangesStatusInvalidated, invalidated, coordinator),
-    takeEvery(refreshAcceptChangesStatus, explicitRefresh, coordinator),
     takeEvery(CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, activeWorkspaceChanged, coordinator),
     takeEvery(backendReconnected, reconnected, coordinator),
-    takeEvery(workspaceUnmounted, clearWorkspace, coordinator),
   ]);
 }
