@@ -8,8 +8,13 @@ interface FrameSample {
   responseAnimations: number;
 }
 
+interface MotionStartArm {
+  started: Promise<void>;
+  disarm: () => void;
+}
+
 type MotionStartWindow = typeof window & {
-  __disclosureMotionStarts?: Record<string, Promise<void>>;
+  __disclosureMotionStarts?: Record<string, MotionStartArm>;
 };
 
 function controlledContentSelector(id: string) {
@@ -35,29 +40,37 @@ async function armMotionStart(component: Locator, selector: string) {
   await component.evaluate((root, key) => {
     const state = window as MotionStartWindow;
     state.__disclosureMotionStarts ??= {};
-    state.__disclosureMotionStarts[key] = new Promise<void>((resolve) => {
+    state.__disclosureMotionStarts[key]?.disarm();
+    let disarm = () => {};
+    const started = new Promise<void>((resolve) => {
       const onStart = (event: Event) => {
         if (!(event.target instanceof Element) || !event.target.matches(key)) return;
+        disarm();
+        resolve();
+      };
+      disarm = () => {
         root.removeEventListener('introstart', onStart, true);
         root.removeEventListener('outrostart', onStart, true);
-        resolve();
       };
       root.addEventListener('introstart', onStart, true);
       root.addEventListener('outrostart', onStart, true);
     });
+    state.__disclosureMotionStarts[key] = { started, disarm };
   }, selector);
 }
 
 async function expectMotionStarted(component: Locator, selector: string) {
   await component.evaluate((_root, key) => {
-    const started = (window as MotionStartWindow).__disclosureMotionStarts?.[key];
-    if (!started) throw new Error(`Motion start was not armed for ${key}`);
-    return Promise.race([
-      started,
-      new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error(`Timed out waiting for motion start on ${key}`)), 5000),
-      ),
-    ]);
+    const arm = (window as MotionStartWindow).__disclosureMotionStarts?.[key];
+    if (!arm) throw new Error(`Motion start was not armed for ${key}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Timed out waiting for motion start on ${key}`)),
+        5000,
+      );
+    });
+    return Promise.race([arm.started, timeout]).finally(() => clearTimeout(timer));
   }, selector);
 }
 
