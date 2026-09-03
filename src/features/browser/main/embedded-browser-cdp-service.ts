@@ -1606,8 +1606,21 @@ class EmbeddedBrowserCdpService {
         }),
       ]);
       const size = image.getSize();
+      if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
+        throw new Error(
+          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. Try focusTab/showTab or resizing the tab before capturing again.`,
+        );
+      }
+      const jpeg = image.toJPEG(80);
+      if (jpeg.length === 0) {
+        throw new Error(
+          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. Try focusTab/showTab or resizing the tab before capturing again.`,
+        );
+      }
       return {
-        base64: image.toJPEG(80).toString('base64'),
+        base64: jpeg.toString('base64'),
         width: size.width,
         height: size.height,
       };
@@ -1691,6 +1704,13 @@ class EmbeddedBrowserCdpService {
     const width = visualW && visualW > 0 ? Math.min(layoutW, visualW) : layoutW;
     const height = visualH && visualH > 0 ? Math.min(layoutH, visualH) : layoutH;
 
+    if (width <= 0 || height <= 0) {
+      throw new Error(
+        // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+        `Page.getLayoutMetrics returned an empty viewport (${width}x${height})`,
+      );
+    }
+
     const result = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.captureScreenshot', {
         format: 'jpeg',
@@ -1705,6 +1725,13 @@ class EmbeddedBrowserCdpService {
       }),
       'Page.captureScreenshot',
     )) as { data: string };
+
+    if (!result.data) {
+      throw new Error(
+        // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+        `Page.captureScreenshot returned an empty image (${width}x${height})`,
+      );
+    }
 
     return {
       base64: result.data,

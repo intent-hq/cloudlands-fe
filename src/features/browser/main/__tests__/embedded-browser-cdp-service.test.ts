@@ -801,6 +801,14 @@ describe('embedded browser CDP workspace routing', () => {
   // fails fast with a clear error instead of eating the caller's whole
   // 30s reverse-request budget.
   describe('screenshot capturePage fallback (monorepo#3366)', () => {
+    function capturedImage(width = 1280, height = 800, bytes = 'jpeg-bytes') {
+      return {
+        isEmpty: () => false,
+        getSize: () => ({ width, height }),
+        toJPEG: () => Buffer.from(bytes),
+      };
+    }
+
     function screenshotWebContents(overrides: Record<string, unknown> = {}) {
       const wc = {
         isDestroyed: () => false,
@@ -844,10 +852,7 @@ describe('embedded browser CDP workspace routing', () => {
     });
 
     it('returns the capturePage image when the fallback settles in time', async () => {
-      const image = {
-        getSize: () => ({ width: 1280, height: 800 }),
-        toJPEG: () => Buffer.from('jpeg-bytes'),
-      };
+      const image = capturedImage();
       const wc = screenshotWebContents({ capturePage: vi.fn().mockResolvedValue(image) });
       embeddedBrowserCdp.registerTab('tab-shot-ok', 402);
       vi.useFakeTimers();
@@ -867,6 +872,75 @@ describe('embedded browser CDP workspace routing', () => {
       } finally {
         vi.useRealTimers();
         embeddedBrowserCdp.unregisterTab('tab-shot-ok');
+      }
+    });
+
+    it('falls back when CDP reports a zero-sized layout viewport', async () => {
+      const image = capturedImage(640, 480);
+      const wc = screenshotWebContents({ capturePage: vi.fn().mockResolvedValue(image) });
+      wc.debugger.sendCommand.mockResolvedValue({
+        layoutViewport: { clientWidth: 0, clientHeight: 0 },
+      });
+      embeddedBrowserCdp.registerTab('tab-shot-zero-viewport', 403);
+
+      try {
+        await expect(embeddedBrowserCdp.screenshot('tab-shot-zero-viewport')).resolves.toEqual({
+          base64: Buffer.from('jpeg-bytes').toString('base64'),
+          width: 640,
+          height: 480,
+        });
+        expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+          'Page.captureScreenshot',
+          expect.anything(),
+        );
+        expect(wc.capturePage).toHaveBeenCalledOnce();
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-zero-viewport');
+      }
+    });
+
+    it('falls back when Page.captureScreenshot returns empty data', async () => {
+      const image = capturedImage(800, 600);
+      const wc = screenshotWebContents({ capturePage: vi.fn().mockResolvedValue(image) });
+      wc.debugger.sendCommand.mockImplementation((method: string) => {
+        if (method === 'Page.getLayoutMetrics') {
+          return Promise.resolve({ layoutViewport: { clientWidth: 800, clientHeight: 600 } });
+        }
+        return Promise.resolve({ data: '' });
+      });
+      embeddedBrowserCdp.registerTab('tab-shot-empty-cdp', 404);
+
+      try {
+        await expect(embeddedBrowserCdp.screenshot('tab-shot-empty-cdp')).resolves.toEqual({
+          base64: Buffer.from('jpeg-bytes').toString('base64'),
+          width: 800,
+          height: 600,
+        });
+        expect(wc.capturePage).toHaveBeenCalledOnce();
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-empty-cdp');
+      }
+    });
+
+    it('rejects when the capturePage fallback returns an empty NativeImage', async () => {
+      const image = {
+        isEmpty: () => true,
+        getSize: () => ({ width: 0, height: 0 }),
+        toJPEG: vi.fn(() => Buffer.alloc(0)),
+      };
+      const wc = screenshotWebContents({ capturePage: vi.fn().mockResolvedValue(image) });
+      wc.debugger.sendCommand.mockResolvedValue({
+        layoutViewport: { clientWidth: 0, clientHeight: 0 },
+      });
+      embeddedBrowserCdp.registerTab('tab-shot-empty-fallback', 405);
+
+      try {
+        await expect(embeddedBrowserCdp.screenshot('tab-shot-empty-fallback')).rejects.toThrow(
+          'Electron fallback stage: webContents.capturePage returned an empty image (0x0)',
+        );
+        expect(image.toJPEG).not.toHaveBeenCalled();
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-empty-fallback');
       }
     });
   });
