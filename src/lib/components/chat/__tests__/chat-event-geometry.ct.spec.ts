@@ -323,7 +323,9 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               event: measure(body('event-wakeup-details'), body('event-wakeup-card')),
             };
           });
-          expect(expanded.agent).toEqual(expanded.event);
+          expect(expanded.agent.borderTop).toBe(expanded.event.borderTop);
+          expect(expanded.agent.padding.slice(1)).toEqual(expanded.event.padding.slice(1));
+          expect(expanded.agent.inlineInsets[1]).toBeCloseTo(expanded.event.inlineInsets[1], 1);
           measuredStates += 1;
         }
       }

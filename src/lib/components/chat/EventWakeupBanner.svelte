@@ -31,6 +31,7 @@
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
     EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
@@ -528,7 +529,7 @@
           {#if detailsOpen}
             <div
               id={detailsId}
-              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2"
+              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
               role="region"
               aria-label={m.chat_eventWakeup_subscriptionWakeup_tooltip()}
               data-testid="event-wakeup-details"

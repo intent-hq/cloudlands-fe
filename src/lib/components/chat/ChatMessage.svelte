@@ -64,6 +64,7 @@
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
@@ -1446,7 +1447,7 @@
                   ? automatedWakeBodyId
                   : undefined}
               class={agentAttribution || automatedWakePresentation
-                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2'
+                ? `w-full min-w-0 max-w-full overflow-hidden border-t border-border ${automatedWakePresentation ? SUBSCRIPTION_WAKE_BODY_PADDING_CLASS : 'px-3 py-2'}`
                 : 'contents'}
               data-testid={agentAttribution
                 ? 'agent-message-expanded-body'
