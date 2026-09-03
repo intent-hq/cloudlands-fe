@@ -18,6 +18,7 @@ import type { GithubRepo } from '$features/github-auth/types';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { CHIEF_WORKSPACE_ID, ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { KnownRepo } from '$shared/types/known-repo';
 import { loadWorkspaceDataRequested, setHasLoadedInitialData } from '../../changes/changes-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
@@ -83,6 +84,7 @@ import {
 } from '../../workspace-tasks/workspace-tasks-slice';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
   backendReconnected,
   workspaceHydrationBranchRequested,
@@ -197,6 +199,7 @@ type DeferredHydrationTaskSlot = { generation: number; task?: Task };
 
 interface DeferredHydrationCoordinator {
   tasks: Map<string, DeferredHydrationTaskSlot>;
+  generations: Map<string, number>;
 }
 
 function* cancelDeferredHydrationWorker(
@@ -235,18 +238,78 @@ function* startDeferredHydrationWorker(
   }
 }
 
+type ObservedHydrationAction = { type: string; payload?: unknown };
+
+function workspaceHasResolvedPath(workspace: {
+  worktreePath?: string;
+  repositoryPath?: string;
+  path?: string;
+}): boolean {
+  return [workspace.worktreePath, workspace.repositoryPath, workspace.path].some((path) =>
+    Boolean(path?.trim()),
+  );
+}
+
+function isWorkspaceEntityResolution(
+  action: ObservedHydrationAction,
+  workspaceId: string,
+): boolean {
+  if (action.type !== setWorkspaceEntity.type || !Array.isArray(action.payload)) return false;
+  const workspace = action.payload[0];
+  return (
+    workspace != null &&
+    typeof workspace === 'object' &&
+    'id' in workspace &&
+    workspace.id === workspaceId
+  );
+}
+
+function isHydrationPathWaitInvalidated(
+  action: ObservedHydrationAction,
+  workspaceId: string,
+  branch: WorkspaceHydrationBranch,
+  generation: number,
+): boolean {
+  if (action.type === backendReconnected.type) return true;
+  if (!Array.isArray(action.payload) || action.payload[0] !== workspaceId) return false;
+  if (action.type === workspaceUnmounted.type || action.type === workspaceMounted.type) return true;
+  return (
+    action.type === workspaceHydrationBranchRequested.type &&
+    action.payload[1] === branch &&
+    action.payload[2] !== generation
+  );
+}
+
+function* waitForResolvedWorkspacePath(
+  coordinator: DeferredHydrationCoordinator,
+  workspaceId: string,
+  branch: WorkspaceHydrationBranch,
+  generation: number,
+): SagaGenerator<boolean> {
+  if (workspaceId === CHIEF_WORKSPACE_ID || workspaceId === ROOT_WORKSPACE_ID) return false;
+  while (coordinator.generations.get(workspaceId) === generation) {
+    const workspace = yield* selectWorkspaceById.effect(workspaceId);
+    if (workspace && workspaceHasResolvedPath(workspace)) return true;
+    const action = yield* take(
+      (candidate: ObservedHydrationAction) =>
+        isWorkspaceEntityResolution(candidate, workspaceId) ||
+        isHydrationPathWaitInvalidated(candidate, workspaceId, branch, generation),
+    );
+    if (isHydrationPathWaitInvalidated(action, workspaceId, branch, generation)) return false;
+  }
+  return false;
+}
+
 function* dispatchHydrationBranch(
+  coordinator: DeferredHydrationCoordinator,
   action: ReturnType<typeof workspaceHydrationBranchRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, branch, , force] = action.payload;
-  if (branch === 'skills' || branch === 'fileExplorer') {
-    const workspace = yield* selectWorkspaceById.effect(workspaceId);
-    const hasWorkspacePath = [
-      workspace?.worktreePath,
-      workspace?.repositoryPath,
-      workspace?.path,
-    ].some((path) => path?.trim());
-    if (!hasWorkspacePath) return;
+  const [workspaceId, branch, generation, force] = action.payload;
+  if (
+    (branch === 'skills' || branch === 'fileExplorer') &&
+    !(yield* waitForResolvedWorkspacePath(coordinator, workspaceId, branch, generation))
+  ) {
+    return;
   }
   switch (branch) {
     case 'tasks':
@@ -305,6 +368,7 @@ function* workspaceMountedWorker(
   mountedWorkspaceIds.add(workspaceId);
   const consumers = yield* readHydrationConsumers(workspaceId);
   const started = scheduler.start(workspaceId, consumers);
+  coordinator.generations.set(workspaceId, started.generation);
   yield* putHydrationBranches(workspaceId, started.generation, false, started.branches);
   yield* startDeferredHydrationWorker(scheduler, coordinator, workspaceId, started.generation);
 }
@@ -343,6 +407,7 @@ function* workspaceUnmountedWorker(
   const [workspaceId] = action.payload;
   mountedWorkspaceIds.delete(workspaceId);
   scheduler.cancel(workspaceId);
+  coordinator.generations.delete(workspaceId);
   yield* cancelDeferredHydrationWorker(coordinator, workspaceId);
 }
 
@@ -358,6 +423,7 @@ function* restartMountedHydration(
   for (const workspaceId of mountedWorkspaceIds) {
     const consumers = yield* readHydrationConsumers(workspaceId);
     const started = scheduler.start(workspaceId, consumers, true);
+    coordinator.generations.set(workspaceId, started.generation);
     yield* putHydrationBranches(workspaceId, started.generation, true, started.branches);
     yield* startDeferredHydrationWorker(scheduler, coordinator, workspaceId, started.generation);
   }
@@ -467,7 +533,7 @@ function* backendIdentityChangedWorker(
 export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
   const scheduler = createWorkspaceHydrationTierScheduler();
   const mountedWorkspaceIds = new Set<string>();
-  const coordinator: DeferredHydrationCoordinator = { tasks: new Map() };
+  const coordinator: DeferredHydrationCoordinator = { tasks: new Map(), generations: new Map() };
   const backend = { id: yield* selectActiveBackendId() };
   yield* all([
     takeLeading(loadGithubRepos, refreshGithubRepos),
@@ -488,7 +554,7 @@ export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
       mountedWorkspaceIds,
       coordinator,
     ),
-    takeEvery(workspaceHydrationBranchRequested, dispatchHydrationBranch),
+    takeEvery(workspaceHydrationBranchRequested, dispatchHydrationBranch, coordinator),
     takeEvery(isConsumerVisibilityAction, promoteVisibleConsumers, scheduler),
     takeEvery(isHydrationSettleAction, settleHydrationBranch, scheduler),
     fork(backendReconnectHydrationWatcher, scheduler, mountedWorkspaceIds, coordinator),
