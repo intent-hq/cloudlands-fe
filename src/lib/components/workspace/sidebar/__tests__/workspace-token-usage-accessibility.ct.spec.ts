@@ -17,7 +17,7 @@ function contrastRatio(first: Rgba, second: Rgba): number {
 }
 
 for (const scenario of [
-  { name: 'cross-filter rows and navigators', crossFilter: true, navigators: true, messages: 2 },
+  { name: 'cross-filter rows and navigators', crossFilter: true, navigators: true, messages: 1 },
   { name: 'legacy rows and navigators', crossFilter: false, navigators: true, messages: 0 },
   { name: 'legacy rows without navigators', crossFilter: false, navigators: false, messages: 0 },
 ] as const) {
@@ -227,7 +227,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
     await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
     expect(await compositionValues()).toEqual([
-      { value: '550 tokens', share: '73% of total' },
+      { value: '550', share: '73%' },
       { value: '150', share: '20%' },
       { value: '0', share: '0%' },
       { value: '50', share: '7%' },
@@ -391,13 +391,15 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(agentBeta).toBeFocused();
   await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
   expect(await compositionValues()).toEqual([
-    { value: '50 tokens', share: '33% of total' },
+    { value: '50', share: '33%' },
     { value: '70', share: '47%' },
     { value: '0', share: '0%' },
     { value: '30', share: '20%' },
   ]);
-  await expect(messageRows.nth(0).locator('.animated-number-value')).toHaveText('3 human messages');
-  await expect(messageRows.nth(1).locator('.animated-number-value')).toHaveText('6 agent messages');
+  await expect(messageRows.locator('.animated-number-value')).toHaveText([
+    '3 human messages',
+    '6 agent messages',
+  ]);
   const reducedNumberStyles = await details.locator('.animated-number').evaluateAll((numbers) =>
     numbers.map((number) => ({
       animationName: getComputedStyle(number).animationName,
@@ -418,7 +420,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(finalModel).toBeFocused();
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
   expect(await compositionValues()).toEqual([
-    { value: '30 tokens', share: '60% of total' },
+    { value: '30', share: '60%' },
     { value: '15', share: '30%' },
     { value: '0', share: '0%' },
     { value: '5', share: '10%' },
@@ -489,41 +491,49 @@ for (const localeCase of [
     locale: 'en',
     plural: ['4 human messages', '7 agent messages'],
     singular: ['1 human message', '1 agent message'],
+    suffixes: ['tokens', 'of total'],
   },
   {
     locale: 'de',
     plural: ['4 menschliche Nachrichten', '7 Agentennachrichten'],
     singular: ['1 menschliche Nachricht', '1 Agentennachricht'],
+    suffixes: ['Token', 'der Gesamtmenge'],
   },
   {
     locale: 'es',
     plural: ['4 mensajes humanos', '7 mensajes del agente'],
     singular: ['1 mensaje humano', '1 mensaje del agente'],
+    suffixes: ['tókenes', 'del total'],
   },
   {
     locale: 'fr',
     plural: ['4 messages humains', '7 messages de l’agent'],
     singular: ['1 message humain', '1 message de l’agent'],
+    suffixes: ['jetons', 'du total'],
   },
   {
     locale: 'ja',
     plural: ['人間のメッセージ 4 件', 'エージェントメッセージ 7 件'],
     singular: ['人間のメッセージ 1 件', 'エージェントメッセージ 1 件'],
+    suffixes: ['トークン', '（合計比）'],
   },
   {
     locale: 'ko',
     plural: ['사람 메시지 4개', '에이전트 메시지 7개'],
     singular: ['사람 메시지 1개', '에이전트 메시지 1개'],
+    suffixes: ['토큰', '전체 대비'],
   },
   {
     locale: 'zh-CN',
     plural: ['4 条人工消息', '7 条智能体消息'],
     singular: ['1 条人工消息', '1 条智能体消息'],
+    suffixes: ['个令牌', '占总量'],
   },
   {
     locale: 'zh-TW',
     plural: ['4 則人工訊息', '7 則智慧體訊息'],
     singular: ['1 則人工訊息', '1 則智慧體訊息'],
+    suffixes: ['個 Token', '佔總量'],
   },
 ] as const) {
   test(`localizes singular and plural message summaries in ${localeCase.locale}`, async ({
@@ -536,9 +546,13 @@ for (const localeCase of [
     });
     await component.getByTestId('token-usage-disclosure').click();
 
-    const messageRows = page.getByTestId('token-usage-details').locator('.message-composition-row');
+    const details = page.getByTestId('token-usage-details');
+    const messageRows = details.locator('.message-composition-row');
+    await expect(messageRows).toHaveCount(1);
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.plural);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.plural);
+    await expect(details.locator('.composition-value-suffix')).toHaveText(localeCase.suffixes[0]);
+    await expect(details.locator('.composition-context-suffix')).toHaveText(localeCase.suffixes[1]);
 
     await page
       .getByTestId('token-usage-by-agent')
@@ -612,7 +626,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
 
   await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
-  await expect(finalTargets).toHaveText(['50 tokens', '70', '0', '30']);
+  await expect(finalTargets).toHaveText(['50', '70', '0', '30']);
   expect(
     await animatedValues.evaluateAll((values) =>
       values.every((value) => value.ariaHidden === 'true'),
@@ -633,7 +647,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
-  await expect(finalTargets).toHaveText(['30 tokens', '15', '0', '5']);
+  await expect(finalTargets).toHaveText(['30', '15', '0', '5']);
   await expect(messageTargets).toHaveText(['1 human message', '3 agent messages']);
   expect(
     await finalTargets.evaluateAll((targets) =>
@@ -646,13 +660,13 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   await page.clock.runFor(225);
   await expect(messageValues).toHaveText(['1 human message', '3 agent messages']);
   await page.clock.runFor(125);
-  await expect(animatedValues).toHaveText(['30 tokens', '15', '0', '5']);
+  await expect(animatedValues).toHaveText(['30', '15', '0', '5']);
   expect(await geometry()).toEqual(initialGeometry);
 
   await finalModel.blur();
   await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
   await page.clock.runFor(350);
-  await expect(animatedValues).toHaveText(['550 tokens', '150', '0', '50']);
+  await expect(animatedValues).toHaveText(['550', '150', '0', '50']);
 });
 
 test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
@@ -772,7 +786,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     zIndex: 40,
   });
   await expect(details).toContainText('By agent Agent alpha-01 750 processed');
-  await expect(compositionRows).toHaveCount(6);
+  await expect(compositionRows).toHaveCount(5);
   await expect(compositionStrip).toHaveRole('img');
   await expect(compositionStrip).toHaveAccessibleName(
     /Token composition, Cached context: 550 tokens, 73%.*Model output: 150 tokens, 20%.*Input context: 50 tokens, 7%/,
@@ -782,19 +796,21 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.nth(0)).toContainText('Cached context');
   await expect(
     compositionRows.nth(0).locator('.composition-value .animated-number-value'),
-  ).toHaveText('550 tokens');
+  ).toHaveText('550');
+  await expect(compositionRows.nth(0).locator('.composition-value-suffix')).toHaveText('tokens');
   await expect(
     compositionRows.nth(0).locator('.composition-context .animated-number-value'),
-  ).toHaveText('73% of total');
+  ).toHaveText('73%');
+  await expect(compositionRows.nth(0).locator('.composition-context-suffix')).toHaveText(
+    'of total',
+  );
   await expect(compositionRows.nth(1)).toContainText('Model output');
   await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
   await expect(compositionRows.nth(3)).toContainText('Input context');
-  await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText(
+  await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText([
     '4 human messages',
-  );
-  await expect(compositionRows.nth(5).locator('.animated-number-value')).toHaveText(
     '7 agent messages',
-  );
+  ]);
   await expect(messageCompositionRows.locator('.composition-value')).toHaveCount(0);
   await expect(messageCompositionRows.locator('.composition-context')).toHaveCount(0);
   await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
@@ -861,6 +877,8 @@ test('renders the full reference table as a wide overlay from the real workspace
       rows.map((row) => {
         const box = (selector: string) =>
           row.querySelector(selector)!.getBoundingClientRect().toJSON();
+        const optionalBox = (selector: string) =>
+          row.querySelector(selector)?.getBoundingClientRect().toJSON();
         const metricElement = row.querySelector('.composition-metric')!;
         const markerElement = row.querySelector('.composition-key')!;
         const valueElement = row.querySelector('.composition-value')!;
@@ -875,7 +893,9 @@ test('renders the full reference table as a wide overlay from the real workspace
           metricClientWidth: metricElement.clientWidth,
           metricScrollWidth: metricElement.scrollWidth,
           value: box('.composition-value'),
+          valueSuffix: optionalBox('.composition-value-suffix'),
           context: box('.composition-context'),
+          contextSuffix: optionalBox('.composition-context-suffix'),
           valueAlign: getComputedStyle(valueElement).textAlign,
           contextAlign: getComputedStyle(contextElement).textAlign,
           valueColor: getComputedStyle(valueElement).color,
@@ -959,17 +979,21 @@ test('renders the full reference table as a wide overlay from the real workspace
     }),
     composition.evaluate((section) => {
       const row = section.querySelector('.composition-row')!.getBoundingClientRect();
+      const label = section
+        .querySelector('.composition-metric > span:last-child')!
+        .getBoundingClientRect();
       return {
         rowLeft: row.left,
+        labelLeft: label.left,
       };
     }),
     details.evaluate((element) => {
       return {
         rows: Array.from(element.querySelectorAll('.message-composition-row')).map((row) => {
-          const label = row.querySelector('.message-composition-label')!;
+          const labels = Array.from(row.querySelectorAll('.message-composition-label'));
           return {
-            labelLeft: label.getBoundingClientRect().left,
-            textAlign: getComputedStyle(label).textAlign,
+            labels: labels.map((label) => label.getBoundingClientRect().toJSON()),
+            textAligns: labels.map((label) => getComputedStyle(label).textAlign),
             valueCount: row.querySelectorAll('.composition-value').length,
             contextCount: row.querySelectorAll('.composition-context').length,
           };
@@ -1095,7 +1119,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     gridBorderTopWidth: '1px',
     gridBorderBottomWidth: '0px',
     secondSectionBorderLeftWidth: '1px',
-    rowBorderTopWidths: ['0px', '0px', '0px', '0px', '0px', '0px'],
+    rowBorderTopWidths: ['0px', '0px', '0px', '0px', '0px'],
     lastRowBorderBottomWidth: '0px',
     compositionPaddingBottom: '12px',
   });
@@ -1133,7 +1157,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         percentFontWeight,
       }) =>
         Math.abs(bar.left - selection.left) <= 1 &&
-        bar.top >= selection.top + selection.height + 5 &&
+        Math.abs(bar.top - (selection.top + selection.height) - 12) <= 0.01 &&
         Math.abs(section.bottom - bar.bottom - 16) <= 0.01 &&
         bar.right <= section.right + 1 &&
         Math.abs(percentage.left - title.right - 6) <= 0.01 &&
@@ -1187,7 +1211,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(compositionBar.box.height).toBe(6);
   expect(compositionBar.borderRadius).toBe('2px');
   expect(compositionBar.overflowX).toBe('hidden');
-  expect(compositionBar.summaryGap).toBeCloseTo(8, 2);
+  expect(compositionBar.summaryGap).toBeCloseTo(12, 2);
   expect(compositionBar.rowsGap).toBeCloseTo(20, 2);
   expect(compositionBar.gaps.every((gap) => Math.abs(gap - 1) <= 0.02)).toBe(true);
   expect(compositionBar.segments.map(({ metric }) => metric)).toEqual([
@@ -1313,16 +1337,22 @@ test('renders the full reference table as a wide overlay from the real workspace
   const contextRightEdges = desktopRows.map(({ context }) => context.x + context.width);
   expect(Math.max(...valueRightEdges) - Math.min(...valueRightEdges)).toBeLessThanOrEqual(1);
   expect(Math.max(...contextRightEdges) - Math.min(...contextRightEdges)).toBeLessThanOrEqual(1);
-  expect(messageAlignment.rows).toHaveLength(2);
-  expect(
-    messageAlignment.rows.every(
-      ({ labelLeft, textAlign, valueCount, contextCount }) =>
-        Math.abs(labelLeft - compositionAlignment.rowLeft) <= 0.01 &&
-        textAlign === 'left' &&
-        valueCount === 0 &&
-        contextCount === 0,
-    ),
-  ).toBe(true);
+  expect(desktopRows[0].valueSuffix!.x).toBeGreaterThanOrEqual(valueRightEdges[0]);
+  expect(desktopRows[0].contextSuffix!.x).toBeGreaterThanOrEqual(contextRightEdges[0]);
+  expect(desktopRows.slice(1).every(({ valueSuffix }) => valueSuffix === undefined)).toBe(true);
+  expect(desktopRows.slice(1).every(({ contextSuffix }) => contextSuffix === undefined)).toBe(true);
+  expect(messageAlignment.rows).toHaveLength(1);
+  expect(messageAlignment.rows[0].labels).toHaveLength(2);
+  expect(messageAlignment.rows[0].labels[0].x).toBeCloseTo(compositionAlignment.labelLeft, 2);
+  expect(messageAlignment.rows[0].labels[1].x).toBeGreaterThan(
+    messageAlignment.rows[0].labels[0].x + messageAlignment.rows[0].labels[0].width,
+  );
+  expect(messageAlignment.rows[0].labels[1].y).toBeCloseTo(messageAlignment.rows[0].labels[0].y, 2);
+  expect(messageAlignment.rows[0]).toMatchObject({
+    textAligns: ['left', 'left'],
+    valueCount: 0,
+    contextCount: 0,
+  });
   const intrinsicNavigatorGeometry = await modelSection
     .locator('.navigator-selection')
     .evaluate((selection) => {
