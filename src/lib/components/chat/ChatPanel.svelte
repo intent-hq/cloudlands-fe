@@ -275,7 +275,12 @@
     createLazyTurnHeightCache,
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
-  import { createMessageHydrationPolicy, type HydrationMessage } from './message-hydration-policy';
+  import {
+    CHAT_HYDRATION_FRAME_BUDGET_MS,
+    CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
+    createMessageHydrationPolicy,
+    type HydrationMessage,
+  } from './message-hydration-policy';
   import {
     CHIEF_LAZY_MESSAGE_THRESHOLD,
     INITIAL_LAZY_MODE_TRACKER,
@@ -748,6 +753,8 @@
   // one per transitioned row (a mass transition would otherwise be O(n²)).
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
     onHydrationChange: syncHydratedMessageIds,
+    frameBudgetMs: CHAT_HYDRATION_FRAME_BUDGET_MS,
+    maxRowsPerFrame: CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
   });
 
   $effect(() => {
@@ -4059,6 +4066,9 @@
   // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
     const messages = hydrationMessages;
+    messageHydrationPolicy.setScope(
+      `${String(workspace?.id ?? '')}:${agentId}:${$agentSession$?.backendSessionId ?? $agentSession$?.acpSessionId ?? ''}`,
+    );
     messageHydrationPolicy.setActive(isActive);
     if (!isActive) return;
     messageHydrationPolicy.updateMessages(messages);
