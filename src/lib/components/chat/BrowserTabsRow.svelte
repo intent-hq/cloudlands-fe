@@ -20,7 +20,6 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
     selectHiddenTabs,
     selectPanels,
@@ -44,6 +43,7 @@
     SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
   import { getBrowserTabsExpanded, setBrowserTabsExpanded } from './agent-subscriptions-view-state';
+  import { getBrowserTabEntries, type BrowserTabEntry } from './browser-tab-entries';
 
   interface Props {
     workspaceId: string;
@@ -61,14 +61,6 @@
     count = $bindable(0),
   }: Props = $props();
 
-  interface BrowserTabEntry {
-    tab: PanelTab;
-    /** Panel hosting the tab; undefined for hidden (user-closed) tabs. */
-    panelId?: string;
-    active: boolean;
-    hidden: boolean;
-  }
-
   // Writable stores mirror the props so the Redux selectors re-evaluate when
   // they change (selector readables are init-time only).
   // svelte-ignore state_referenced_locally -- intentional initial snapshot for store construction.
@@ -82,21 +74,7 @@
 
   // Visible tabs keep their panel/tab-list order; hidden tabs follow them
   // (same ordering as the sidebar browser list, monorepo#2857).
-  const entries = $derived<BrowserTabEntry[]>([
-    ...Object.values($panels$).flatMap((panel) =>
-      panel.tabs
-        .filter((tab) => tab.type === 'browser' && tab.ownerAgentId === agentId)
-        .map((tab) => ({
-          tab,
-          panelId: panel.id,
-          active: panel.activeTabId === tab.id,
-          hidden: false,
-        })),
-    ),
-    ...$hiddenTabs$
-      .filter((tab) => tab.type === 'browser' && tab.ownerAgentId === agentId)
-      .map((tab) => ({ tab, active: false, hidden: true })),
-  ]);
+  const entries = $derived(getBrowserTabEntries($panels$, $hiddenTabs$, agentId));
 
   $effect(() => {
     visible = entries.length > 0;
