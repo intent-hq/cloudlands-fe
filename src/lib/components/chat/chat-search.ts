@@ -93,7 +93,13 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
           );
           return;
         }
-        addText(getContentBlockText(child), chatSearchBlockPath(blockIndex, childIndex), []);
+        if (child.type === 'text') {
+          addText(
+            child.text || child.content || '',
+            chatSearchBlockPath(blockIndex, childIndex),
+            [],
+          );
+        }
       });
       return;
     }

@@ -72,7 +72,7 @@ describe('chat search utilities', () => {
     ]);
   });
 
-  it('indexes every adjacent child rendered by both live renderers', () => {
+  it('indexes live adjacent text while excluding reasoning history', () => {
     const message = assistant(
       'assistant-adjacent-preview',
       [
@@ -89,16 +89,7 @@ describe('chat search utilities', () => {
     );
 
     expect(findChatSearchMatches([message], 'adjacent description', new Map())).toHaveLength(1);
-    expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([
-      {
-        messageId: 'assistant-adjacent-preview',
-        matchIndexInMessage: 0,
-        occurrenceInBlock: 0,
-        turnKey: 'assistant-adjacent-preview',
-        blockPath: 'b:0:c:1',
-        disclosurePath: [],
-      },
-    ]);
+    expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([]);
   });
 
   it('excludes the alternate reasoning description and history while collapsed', () => {
