@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "Certaines modifications n'ont pas pu être écrites dans le trousseau lors de la dernière synchronisation.",
   "settings_backendSync_status_unavailable": "Le trousseau iCloud n'est pas disponible.",
   "settings_openInApps_empty": "Aucune application « Ouvrir dans » installée détectée.",
+  "settings_openInApps_reorder_ariaLabel": "Réorganiser {name}. Utilisez les flèches haut et bas.",
+  "settings_openInApps_reorderAnnouncement": "{name} déplacé à la position {position}",
   "settings_githubLinks_section_title": "Liens GitHub",
   "settings_githubLinks_defaultAction_label": "Action par défaut",
   "settings_githubLinks_defaultAction_description": "Choisissez ce qui se passe lorsque vous cliquez sur un lien d’issue ou de pull request GitHub.",

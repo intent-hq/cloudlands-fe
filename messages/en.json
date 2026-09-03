@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "Some changes could not be written to the keychain on the last sync.",
   "settings_backendSync_status_unavailable": "iCloud Keychain is unavailable.",
   "settings_openInApps_empty": "No installed Open In apps detected.",
+  "settings_openInApps_reorder_ariaLabel": "Reorder {name}. Use the Up and Down arrow keys.",
+  "settings_openInApps_reorderAnnouncement": "Moved {name} to position {position}",
   "settings_githubLinks_section_title": "GitHub Links",
   "settings_githubLinks_defaultAction_label": "Default action",
   "settings_githubLinks_defaultAction_description": "Choose what happens when you click a GitHub issue or pull request link.",

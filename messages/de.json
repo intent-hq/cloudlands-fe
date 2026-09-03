@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "Einige Änderungen konnten bei der letzten Synchronisierung nicht in den Schlüsselbund geschrieben werden.",
   "settings_backendSync_status_unavailable": "iCloud-Schlüsselbund ist nicht verfügbar.",
   "settings_openInApps_empty": "Keine installierten „Öffnen in“-Apps erkannt.",
+  "settings_openInApps_reorder_ariaLabel": "{name} neu anordnen. Verwenden Sie die Pfeiltasten nach oben und unten.",
+  "settings_openInApps_reorderAnnouncement": "{name} an Position {position} verschoben",
   "settings_githubLinks_section_title": "GitHub-Links",
   "settings_githubLinks_defaultAction_label": "Standardaktion",
   "settings_githubLinks_defaultAction_description": "Lege fest, was beim Klicken auf einen GitHub-Issue- oder Pull-Request-Link passiert.",

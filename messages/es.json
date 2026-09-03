@@ -122,6 +122,8 @@
   "settings_backendSync_status_degraded": "Algunos cambios no se pudieron escribir en el llavero durante la última sincronización.",
   "settings_backendSync_status_unavailable": "El llavero de iCloud no está disponible.",
   "settings_openInApps_empty": "No se detectaron aplicaciones de «Abrir en» instaladas.",
+  "settings_openInApps_reorder_ariaLabel": "Reordenar {name}. Usa las teclas de flecha arriba y abajo.",
+  "settings_openInApps_reorderAnnouncement": "Se movió {name} a la posición {position}",
   "settings_githubLinks_section_title": "Enlaces de GitHub",
   "settings_githubLinks_defaultAction_label": "Acción predeterminada",
   "settings_githubLinks_defaultAction_description": "Elige qué ocurre al hacer clic en un enlace de issue o pull request de GitHub.",
