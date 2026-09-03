@@ -2139,6 +2139,8 @@ export interface DraftAttachment {
   type: string;
   label: string;
   description?: string;
+  /** Opaque text carried by content-backed context items such as selections. */
+  content?: string;
   path?: string;
   imageData?: string;
   imageMimeType?: string;
