@@ -436,9 +436,11 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. Quarantined tests still run on every PR
-  as an advisory (non-blocking) step on shard 1 and must carry a tracking issue and an
-  owner; quarantine is temporary, not a parking lot.
+  `{ tag: '@quarantine' }` — never a whole file. The CT job is merge-queue-only, so a
+  pass-on-retry ejects the PR from the queue rather than reddening a PR check.
+  Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
+  shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
+  not a parking lot — remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
 
