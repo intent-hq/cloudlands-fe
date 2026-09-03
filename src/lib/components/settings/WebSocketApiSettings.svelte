@@ -255,6 +255,9 @@
   // Tunnel-only has no direct listeners (the persisted bindAddress is kept
   // only for later restoration), so it reads OFF there; toggling ON from
   // that posture emits 0.0.0.0 + tunnel.only=false.
+  // Because this is pure derivation, the Listen targets section (gated on
+  // it) also hides as soon as a selector change lands loopback-only — that
+  // state IS "Local Network Access OFF", so the collapse is intended.
   const localNetworkEnabled = $derived(!tunnelOnly && bindIps.some((ip) => ip !== LOOPBACK));
 
   /**
@@ -302,13 +305,16 @@
   }
 
   /**
-   * First-enable default: the daemon binds loopback only out of the box, so
-   * turning the WebSocket API on from that state widens the bind set to all
-   * interfaces (Local Network Access ON). A bindAddress the user already
-   * customized beyond loopback is left alone, the tunnel is untouched, and a
-   * persisted tunnel-only posture is respected (writing 0.0.0.0 there would
-   * contradict tunnel.only=true). Runs under listenSaving so the LNA/tunnel
-   * toggles cannot issue a concurrent bindAddress write.
+   * Loopback-only enable default: the daemon binds loopback only out of the
+   * box, so turning the WebSocket API on from that state widens the bind set
+   * to all interfaces (Local Network Access ON). This applies on EVERY enable
+   * from loopback-only, not just the first — an explicit Local Network Access
+   * OFF followed by disable/enable re-applies the default by design.
+   * A bindAddress the user already customized beyond loopback is left alone,
+   * the tunnel is untouched, and a persisted tunnel-only posture is respected
+   * (writing 0.0.0.0 there would contradict tunnel.only=true). Runs under
+   * listenSaving so the LNA/tunnel toggles cannot issue a concurrent
+   * bindAddress write.
    * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
    */
   async function maybeDefaultLocalNetworkAccess() {
