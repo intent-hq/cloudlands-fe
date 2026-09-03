@@ -177,15 +177,36 @@ export const liveCardFixtures: LiveCardFixture[] = [
   ...livePairs('pr-draft', 'Draft PR', {
     prs: [pr('draft', 2104, { lastSnapshot: snapshot({ isDraft: true, mergeable: false }) })],
   }),
-  ...livePairs('pr-changes', 'PR with changes pending', {
+  ...livePairs('pr-changes', 'PR details with checks, approvals, threads, and changes', {
     prs: [
       pr('changes', 2105, {
         hasPendingChanges: true,
-        pendingChanges: ['checks'],
+        pendingChanges: ['checks', 'review'],
         pendingSince: '2026-09-01T09:03:00.000Z',
+        lastChangeAt: '2026-09-01T09:02:00.000Z',
+        lastSnapshot: snapshot({
+          mergeable: false,
+          checks: {
+            total: 4,
+            passed: 2,
+            failed: 0,
+            pending: 2,
+            failingRequired: 0,
+            pendingRequired: 2,
+            requiredKnown: true,
+          },
+          approvals: { decision: 'review_required', have: 0, needed: 1, changesRequested: 0 },
+          threads: { unresolved: 2, resolutionRequired: true },
+        }),
       }),
     ],
   }),
+  {
+    id: 'tab-one-inline',
+    label: 'Single browser tab inline',
+    state: 'collapsed',
+    tabs: [tab('inline', 'Inline docs', 'https://example.test/inline')],
+  },
   ...livePairs('tab-active', '1 active browser tab', {
     tabs: [tab('active', 'Active docs', 'https://example.test/docs')],
   }),
