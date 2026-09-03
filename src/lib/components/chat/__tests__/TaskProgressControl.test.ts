@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 describe('TaskProgressControl', () => {
-  it('shows compact progress and reveals one flat task list from keyboard focus', async () => {
+  it('shows compact progress and reveals one flat task list only after activation', async () => {
     render(TaskProgressControl, { props: { tasks } });
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.textContent?.trim()).toBe('');
@@ -80,19 +80,12 @@ describe('TaskProgressControl', () => {
 
     const closest = vi.spyOn(trigger, 'closest');
     trigger.focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     expect(closest).toHaveBeenCalledWith('[data-panel-id]');
     expect(document.activeElement).toBe(trigger);
     expect(dialog).toBeTruthy();
-    expect(dialog.className).toContain('type-caption');
-    expect(dialog.className).not.toContain('type-body');
-    expect(dialog.className).toContain('w-72');
-    expect(dialog.className).toContain('rounded-md');
-    expect(dialog.className).toContain('border-border');
-    expect(dialog.className).toContain('bg-popover');
-    expect(dialog.className).toContain('shadow-(--elevation-overlay)');
-    expect(dialog.className).not.toContain('w-80');
-    expect(dialog.className).not.toContain('rounded-(--radius-medium)');
     expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
       'pending',
       'running',
@@ -143,6 +136,8 @@ describe('TaskProgressControl', () => {
       expect(trigger.querySelector('[data-testid="task-progress-overflow-indicator"]')).toBeNull();
 
       trigger.focus();
+      expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+      await fireEvent.click(trigger);
       const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
       await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
       expect(screen.getAllByTestId('task-progress-row')).toHaveLength(items.length);
@@ -225,7 +220,7 @@ describe('TaskProgressControl', () => {
 
   it('reuses the compact status indicators in every flat row', async () => {
     render(TaskProgressControl, { props: { tasks: allStatusTasks } });
-    screen.getByTestId('task-progress-trigger').focus();
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
     await screen.findByRole('dialog', { name: 'Agent tasks' });
 
     const rowIcons = screen.getAllByTestId('task-progress-row-status-icon');
@@ -249,7 +244,7 @@ describe('TaskProgressControl', () => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.classList.toggle('light', theme === 'light');
       render(TaskProgressControl, { props: { tasks: allStatusTasks } });
-      screen.getByTestId('task-progress-trigger').focus();
+      await fireEvent.click(screen.getByTestId('task-progress-trigger'));
       await screen.findByRole('dialog', { name: 'Agent tasks' });
 
       const indicators = [
@@ -308,7 +303,7 @@ describe('TaskProgressControl', () => {
         ],
       },
     });
-    screen.getByTestId('task-progress-trigger').focus();
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
     await screen.findByRole('dialog', { name: 'Agent tasks' });
 
     const pendingTitle = screen.getByText(longPendingTitle);
@@ -338,14 +333,81 @@ describe('TaskProgressControl', () => {
     expect(icons[0].className).not.toContain('shadow');
   });
 
-  it('opens the task list directly on hover without a separate tooltip', async () => {
+  it.each(['status-stack', 'checklist'] as const)(
+    'shows progress help on hover without opening the %s task list',
+    async (presentation) => {
+      render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+
+      await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+
+      expect(
+        await screen.findByRole('tooltip', {
+          name: 'Task progress: 2 of 5 completed',
+          hidden: true,
+        }),
+      ).toBeTruthy();
+      expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    },
+  );
+
+  it.each(['status-stack', 'checklist'] as const)(
+    'opens the %s task list from click, Enter, and Space and closes predictably',
+    async (presentation) => {
+      render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      const outside = document.createElement('button');
+      document.body.append(outside);
+
+      trigger.focus();
+      expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+
+      await fireEvent.click(trigger);
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+      await fireEvent.click(trigger);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+
+      await fireEvent.keyDown(trigger, { key: ' ' });
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await fireEvent.keyDown(trigger, { key: ' ' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+      await fireEvent.keyDown(trigger, { key: ' ' });
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      outside.focus();
+      await fireEvent.focusIn(outside);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+      expect(document.activeElement).toBe(outside);
+      outside.remove();
+    },
+  );
+
+  it('closes the trigger tooltip while the task list is open and restores it after close', async () => {
     render(TaskProgressControl, { props: { tasks } });
     const trigger = screen.getByTestId('task-progress-trigger');
 
-    await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+    await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+    await screen.findByRole('tooltip', { hidden: true });
+    await fireEvent.click(trigger);
+    await screen.findByRole('dialog', { name: 'Agent tasks' });
+    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
 
-    expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
+    await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+    await fireEvent.click(trigger);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+    await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+    expect(await screen.findByRole('tooltip', { hidden: true })).toBeTruthy();
   });
 
   it('uses one atomic status node and coalesces task update bursts without an initial announcement', async () => {
@@ -358,7 +420,7 @@ describe('TaskProgressControl', () => {
     expect(announcement.getAttribute('aria-atomic')).toBe('true');
     expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
 
-    screen.getByTestId('task-progress-trigger').focus();
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
     await tick();
     expect(screen.getByTestId('task-progress-scroll-region').hasAttribute('aria-live')).toBe(false);
 
@@ -386,7 +448,7 @@ describe('TaskProgressControl', () => {
       render(TaskProgressControl, { props: { tasks, presentation } });
       const trigger = screen.getByTestId('task-progress-trigger');
 
-      expect(trigger.className).toContain('transition-[border-color,box-shadow,scale]');
+      expect(trigger.className).toContain('transition-[border-color,box-shadow,opacity,scale]');
       expect(trigger.className).toContain('duration-(--motion-fast)');
       expect(trigger.className).toContain('motion-safe:active:scale-[0.97]');
       expect(trigger.className).toContain('motion-reduce:scale-100');
@@ -404,7 +466,7 @@ describe('TaskProgressControl', () => {
 
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 2 of 12 completed');
-    trigger.focus();
+    await fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     const scrollRegion = screen.getByTestId('task-progress-scroll-region');
 
@@ -424,6 +486,7 @@ describe('TaskProgressControl', () => {
     const view = render(TaskProgressControl, { props: { tasks } });
     const trigger = screen.getByTestId('task-progress-trigger');
     trigger.focus();
+    await fireEvent.click(trigger);
     await screen.findByRole('dialog', { name: 'Agent tasks' });
 
     await view.rerender({

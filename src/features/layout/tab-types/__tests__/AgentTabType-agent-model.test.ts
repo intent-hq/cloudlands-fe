@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -258,6 +258,8 @@ describe('AgentTabType agent model reactivity', () => {
     expect(header.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
 
     screen.getByTestId('task-progress-trigger').focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     expect(dialog.querySelectorAll('[data-testid="task-progress-row"]')).toHaveLength(2);
     expect(dialog.querySelectorAll('[data-testid="task-progress-row-status-icon"]')).toHaveLength(

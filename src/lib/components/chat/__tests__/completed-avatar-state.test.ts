@@ -60,6 +60,7 @@ vi.mock('$lib/components/ui/tooltip', async () => {
     Root: SlotOnly,
     Trigger: SlotOnly,
     Content: SlotOnly,
+    TooltipShortcut: SlotOnly,
   };
 });
 

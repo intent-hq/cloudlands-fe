@@ -14,6 +14,8 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
+  import { DROPDOWN_SURFACE_CLASS } from '$lib/components/ui/dropdown-surface';
+  import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { TaskProgressItem, TaskProgressStatus } from './workspace-task-fallback';
@@ -27,10 +29,9 @@
   let { tasks, presentation = 'status-stack' }: Props = $props();
   let open = $state(false);
   let triggerElement: HTMLButtonElement | null = $state(null);
-  let pointerFocusing = false;
-  let suppressRestoredFocus = false;
-  let focusSuppressionTimer: ReturnType<typeof setTimeout> | undefined;
+  let contentElement: HTMLElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
+  let preserveOutsideFocusOnClose = $state(false);
   let announcement = $state('');
   let announcementTimer: ReturnType<typeof setTimeout> | undefined;
   let previousTaskStates: Map<string, string> | undefined;
@@ -89,7 +90,6 @@
 
   onDestroy(() => {
     clearTimeout(announcementTimer);
-    clearTimeout(focusSuppressionTimer);
   });
 
   function statusLabel(status: TaskProgressStatus): string {
@@ -114,19 +114,33 @@
 
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
-    if (!nextOpen) {
-      suppressRestoredFocus = true;
-      clearTimeout(focusSuppressionTimer);
-      focusSuppressionTimer = setTimeout(() => (suppressRestoredFocus = false));
-      return;
-    }
+    if (!nextOpen) return;
     const panel = triggerElement?.closest('[data-panel-id]');
     collisionBoundary = panel ? [panel] : [];
   }
 
-  function handleTriggerFocus() {
-    if (pointerFocusing || suppressRestoredFocus) return;
-    handleOpenChange(true);
+  function handleTriggerKeydown(event: KeyboardEvent) {
+    if (event.key === 'Tab' && open) {
+      preserveOutsideFocusOnClose = true;
+      handleOpenChange(false);
+      return;
+    }
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    handleOpenChange(!open);
+  }
+
+  function handleFocusOutside(event: FocusEvent) {
+    if (!open || !(event.target instanceof Node)) return;
+    if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
+    preserveOutsideFocusOnClose = true;
+    handleOpenChange(false);
+  }
+
+  function handleCloseAutoFocus(event: Event) {
+    if (!preserveOutsideFocusOnClose) return;
+    event.preventDefault();
+    preserveOutsideFocusOnClose = false;
   }
 </script>
 
@@ -172,91 +186,87 @@
 
 {#if tasks.length > 0}
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
-    <Popover.Trigger openOnHover openDelay={120} closeDelay={180}>
-      {#snippet child({ props })}
-        <button
-          {...props}
-          bind:this={triggerElement}
-          type="button"
-          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow,scale] duration-(--motion-fast) motion-safe:active:scale-[0.97] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scale-100 motion-reduce:transition-none"
-          aria-label={progressLabel}
-          aria-expanded={open}
-          onpointerdowncapture={() => (pointerFocusing = true)}
-          onpointerupcapture={() => (pointerFocusing = false)}
-          onpointercancelcapture={() => (pointerFocusing = false)}
-          onfocus={handleTriggerFocus}
-          data-testid="task-progress-trigger"
-        >
-          {#if presentation === 'checklist'}
-            <span
-              class="inline-flex size-3.5 items-center justify-center"
-              aria-hidden="true"
-              data-testid="task-progress-checklist-icon"
-            >
-              <Fa icon={faListCheck} size={14} class="size-3.5!" />
-            </span>
-          {:else}
-            <span
-              class="isolate flex items-center"
-              aria-hidden="true"
-              data-testid="task-progress-icon-stack"
-            >
-              {#if completedTasks.length > 0}
+    <TooltipShortcut label={progressLabel} side="bottom" delayDuration={300} disabled={open}>
+      <Popover.Trigger
+        bind:ref={triggerElement}
+        type="button"
+        class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow,opacity,scale] duration-(--motion-fast) motion-safe:active:scale-[0.97] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scale-100 motion-reduce:transition-none"
+        aria-label={progressLabel}
+        aria-expanded={open}
+        onkeydown={handleTriggerKeydown}
+        data-row-task-action
+        data-testid="task-progress-trigger"
+      >
+        {#if presentation === 'checklist'}
+          <span
+            class="inline-flex size-3.5 items-center justify-center"
+            aria-hidden="true"
+            data-testid="task-progress-checklist-icon"
+          >
+            <Fa icon={faListCheck} size={14} class="size-3.5!" />
+          </span>
+        {:else}
+          <span
+            class="isolate flex items-center"
+            aria-hidden="true"
+            data-testid="task-progress-icon-stack"
+          >
+            {#if completedTasks.length > 0}
+              <span
+                class="relative z-0 inline-flex shrink-0"
+                data-testid="task-progress-stack-item"
+                data-task-status="completed"
+              >
+                {@render statusIndicator(
+                  'completed',
+                  'task-progress-status-icon',
+                  completedTasks.length,
+                )}
+              </span>
+            {/if}
+            {#each stackedActiveTasks as task, index (task.id)}
+              <span
+                class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
+                  ? '-ml-1.75'
+                  : ''}"
+                style:z-index={task.status === 'running' ? MAX_STACK_SLOTS + 1 : index + 1}
+                data-testid="task-progress-stack-item"
+                data-task-id={task.id}
+              >
+                {@render statusIndicator(task.status, 'task-progress-status-icon')}
+              </span>
+            {/each}
+            {#if hasStackOverflow}
+              <span
+                class="relative -ml-1.75 inline-flex shrink-0"
+                style:z-index={MAX_STACK_SLOTS}
+                data-testid="task-progress-stack-item"
+                data-task-status="overflow"
+              >
                 <span
-                  class="relative z-0 inline-flex shrink-0"
-                  data-testid="task-progress-stack-item"
-                  data-task-status="completed"
+                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-background text-foreground leading-none"
+                  aria-hidden="true"
+                  data-testid="task-progress-overflow-indicator"
+                  data-overflow-count={overflowCount}
                 >
-                  {@render statusIndicator(
-                    'completed',
-                    'task-progress-status-icon',
-                    completedTasks.length,
-                  )}
+                  <Fa icon={faEllipsis} size={8} class="size-2!" />
                 </span>
-              {/if}
-              {#each stackedActiveTasks as task, index (task.id)}
-                <span
-                  class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
-                    ? '-ml-1.75'
-                    : ''}"
-                  style:z-index={task.status === 'running' ? MAX_STACK_SLOTS + 1 : index + 1}
-                  data-testid="task-progress-stack-item"
-                  data-task-id={task.id}
-                >
-                  {@render statusIndicator(task.status, 'task-progress-status-icon')}
-                </span>
-              {/each}
-              {#if hasStackOverflow}
-                <span
-                  class="relative -ml-1.75 inline-flex shrink-0"
-                  style:z-index={MAX_STACK_SLOTS}
-                  data-testid="task-progress-stack-item"
-                  data-task-status="overflow"
-                >
-                  <span
-                    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-background text-foreground leading-none"
-                    aria-hidden="true"
-                    data-testid="task-progress-overflow-indicator"
-                    data-overflow-count={overflowCount}
-                  >
-                    <Fa icon={faEllipsis} size={8} class="size-2!" />
-                  </span>
-                </span>
-              {/if}
-            </span>
-          {/if}
-        </button>
-        <span
-          class="sr-only"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          data-testid="task-progress-announcement">{announcement}</span
-        >
-      {/snippet}
-    </Popover.Trigger>
+              </span>
+            {/if}
+          </span>
+        {/if}
+      </Popover.Trigger>
+    </TooltipShortcut>
+    <span
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="task-progress-announcement">{announcement}</span
+    >
     <Popover.Portal>
       <Popover.Content
+        bind:ref={contentElement}
         role="dialog"
         aria-label={m.chat_taskProgress_list_ariaLabel()}
         align="end"
@@ -266,7 +276,9 @@
         collisionPadding={8}
         trapFocus={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        class="task-progress-popover type-caption z-(--layer-popover) flex max-h-(--bits-popover-content-available-height) w-72 flex-col overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        onCloseAutoFocus={handleCloseAutoFocus}
+        onFocusOutside={handleFocusOutside}
+        class="{DROPDOWN_SURFACE_CLASS} type-caption w-72"
         data-testid="task-progress-popover"
       >
         <div
@@ -296,12 +308,3 @@
     </Popover.Portal>
   </Popover.Root>
 {/if}
-
-<style>
-  :global(.task-progress-popover) {
-    max-width: min(
-      calc(100vw - var(--space-4)),
-      calc(var(--bits-popover-content-available-width) - var(--space-2))
-    );
-  }
-</style>

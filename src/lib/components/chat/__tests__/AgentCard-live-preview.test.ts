@@ -13,7 +13,7 @@
  *      re-derive previews (monorepo#2843).
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -156,6 +156,8 @@ describe('AgentCard live preview precedence', () => {
     expect(screen.getByTestId('agent-card-preview').className).toContain('truncate');
 
     trigger.focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(trigger);
     expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
     expect(document.activeElement).toBe(trigger);
   });

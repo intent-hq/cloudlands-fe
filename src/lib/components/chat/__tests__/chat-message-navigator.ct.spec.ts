@@ -14,6 +14,57 @@ async function expectUniqueVisible(locator: Locator) {
   await expect(locator).toBeVisible();
 }
 
+async function expectSharedDropdownSurface(surface: Locator) {
+  const contract = await surface.evaluate((node) => {
+    const probe = document.createElement('span');
+    probe.style.cssText = [
+      'background-color:hsl(var(--popover))',
+      'color:hsl(var(--popover-foreground))',
+      'border-color:hsl(var(--border))',
+      'border-radius:var(--radius-medium)',
+      'padding:var(--space-1)',
+      'z-index:var(--layer-popover)',
+    ].join(';');
+    document.body.append(probe);
+    const style = getComputedStyle(node);
+    const tokens = getComputedStyle(probe);
+    const result = {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      borderColor: style.borderTopColor,
+      borderWidths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth],
+      borderRadius: style.borderTopLeftRadius,
+      padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+      zIndex: style.zIndex,
+      boxShadow: style.boxShadow,
+      outlineStyle: style.outlineStyle,
+      transitionProperty: style.transitionProperty,
+      tokens: {
+        backgroundColor: tokens.backgroundColor,
+        color: tokens.color,
+        borderColor: tokens.borderTopColor,
+        borderRadius: tokens.borderTopLeftRadius,
+        padding: tokens.paddingTop,
+        zIndex: tokens.zIndex,
+      },
+    };
+    probe.remove();
+    return result;
+  });
+  expect(contract).toMatchObject({
+    backgroundColor: contract.tokens.backgroundColor,
+    color: contract.tokens.color,
+    borderColor: contract.tokens.borderColor,
+    borderWidths: ['1px', '1px', '1px'],
+    borderRadius: contract.tokens.borderRadius,
+    padding: Array(4).fill(contract.tokens.padding),
+    zIndex: contract.tokens.zIndex,
+    outlineStyle: 'none',
+  });
+  expect(contract.boxShadow).not.toBe('none');
+  expect(contract.transitionProperty).toBe('none');
+}
+
 function splitShadowLayers(value: string) {
   const layers: string[] = [];
   let start = 0;
@@ -226,6 +277,7 @@ test.describe('chat message navigator production path', () => {
       await listButton.click();
       const dialog = await pickerForTrigger(page, listButton);
       await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
+      await expectSharedDropdownSurface(dialog);
       const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
       const options = dialog.getByRole('option');
       await expectUniqueVisible(search);
@@ -517,19 +569,37 @@ test.describe('chat message navigator production path', () => {
     let dialog = await pickerForTrigger(page, trigger);
     await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await trigger.focus();
+    await trigger.press('Space');
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.press('Space');
+    dialog = await pickerForTrigger(page, trigger);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
 
     await trigger.press('Enter');
     dialog = await pickerForTrigger(page, trigger);
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await trigger.focus();
+    await trigger.press('Enter');
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.press('Enter');
+    dialog = await pickerForTrigger(page, trigger);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
 
     await page.mouse.move(0, 0);
+    await trigger.hover();
+    const triggerTooltip = page.getByRole('tooltip', { name: 'Browse user messages' });
+    await expect(triggerTooltip).toBeVisible();
     await trigger.click();
     dialog = await pickerForTrigger(page, trigger);
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await expect(triggerTooltip).toHaveCount(0);
+    await page.waitForTimeout(350);
+    await expect(triggerTooltip).toHaveCount(0);
     await title.click();
     await expect(dialog).toHaveCount(0);
 

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse } from 'svelte/compiler';
@@ -85,6 +85,34 @@ describe('Button', () => {
     await fireEvent.keyDown(button, { key: 'Enter' });
     expect(document.activeElement).toBe(button);
     expect(onkeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
+  });
+
+  it('disables an open tooltip reactively without remounting its button', async () => {
+    const view = render(Button, {
+      props: { tooltip: 'Stable action help', tooltipDelayDuration: 0 },
+    });
+    const button = screen.getByRole('button', { name: 'Stable action help' });
+    button.focus();
+    await fireEvent.focus(button);
+    await screen.findByRole('tooltip', { name: 'Stable action help', hidden: true });
+
+    await view.rerender({
+      tooltip: 'Stable action help',
+      tooltipDelayDuration: 0,
+      tooltipDisabled: true,
+    });
+    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
+    expect(screen.getByRole('button', { name: 'Stable action help' })).toBe(button);
+
+    await view.rerender({
+      tooltip: 'Stable action help',
+      tooltipDelayDuration: 0,
+      tooltipDisabled: false,
+    });
+    button.blur();
+    button.focus();
+    await fireEvent.focus(button);
+    await screen.findByRole('tooltip', { name: 'Stable action help', hidden: true });
   });
 
   it.each(['icon', 'icon-sm', 'icon-xs', 'icon-lg'] as const)(

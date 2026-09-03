@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
 
@@ -12,6 +12,57 @@ const tasks = [
   { id: 'review', title: 'Review the result', status: 'review_required' },
 ] as const;
 
+async function expectSharedDropdownSurface(surface: Locator, reducedMotion: boolean) {
+  const contract = await surface.evaluate((node) => {
+    const probe = document.createElement('span');
+    probe.style.cssText = [
+      'background-color:hsl(var(--popover))',
+      'color:hsl(var(--popover-foreground))',
+      'border-color:hsl(var(--border))',
+      'border-radius:var(--radius-medium)',
+      'padding:var(--space-1)',
+      'z-index:var(--layer-popover)',
+    ].join(';');
+    document.body.append(probe);
+    const style = getComputedStyle(node);
+    const tokens = getComputedStyle(probe);
+    const result = {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      borderColor: style.borderTopColor,
+      borderWidths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth],
+      borderRadius: style.borderTopLeftRadius,
+      padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+      zIndex: style.zIndex,
+      boxShadow: style.boxShadow,
+      outlineStyle: style.outlineStyle,
+      transitionProperty: style.transitionProperty,
+      tokens: {
+        backgroundColor: tokens.backgroundColor,
+        color: tokens.color,
+        borderColor: tokens.borderTopColor,
+        borderRadius: tokens.borderTopLeftRadius,
+        padding: tokens.paddingTop,
+        zIndex: tokens.zIndex,
+      },
+    };
+    probe.remove();
+    return result;
+  });
+  expect(contract).toMatchObject({
+    backgroundColor: contract.tokens.backgroundColor,
+    color: contract.tokens.color,
+    borderColor: contract.tokens.borderColor,
+    borderWidths: ['1px', '1px', '1px'],
+    borderRadius: contract.tokens.borderRadius,
+    padding: Array(4).fill(contract.tokens.padding),
+    zIndex: contract.tokens.zIndex,
+    outlineStyle: 'none',
+  });
+  expect(contract.boxShadow).not.toBe('none');
+  expect(contract.transitionProperty === 'none').toBe(reducedMotion);
+}
+
 for (const theme of ['light', 'dark'] as const) {
   test(`keeps every task disk borderless with an opaque background in ${theme} mode`, async ({
     mount,
@@ -24,7 +75,12 @@ for (const theme of ['light', 'dark'] as const) {
     await mount(TaskProgressControl, { props: { tasks: [...tasks] } });
     const trigger = page.getByTestId('task-progress-trigger');
     await trigger.focus();
-    await expect(page.getByTestId('task-progress-popover')).toBeVisible();
+    await expect(page.getByTestId('task-progress-popover')).toBeHidden();
+    await trigger.click();
+    const popover = page.getByTestId('task-progress-popover');
+    await expect(popover).toBeVisible();
+    await expectSharedDropdownSurface(popover, false);
+    await expect.poll(() => popover.evaluate((node) => getComputedStyle(node).scale)).toBe('none');
 
     const indicators = page.locator(
       '[data-testid="task-progress-status-icon"], [data-testid="task-progress-row-status-icon"], [data-testid="task-progress-overflow-indicator"]',
@@ -80,10 +136,6 @@ for (const theme of ['light', 'dark'] as const) {
       ),
     ).toBe(true);
 
-    const popoverBorder = await page
-      .getByTestId('task-progress-popover')
-      .evaluate((node) => getComputedStyle(node).borderTopWidth);
-    expect(popoverBorder).toBe('1px');
     await expect(page.getByTestId('task-progress-stack-item')).toHaveCount(5);
     await expect(trigger).toHaveCSS('height', '28px');
   });
@@ -110,6 +162,8 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId('task-progress-overflow-indicator')).toHaveCount(0);
 
     await trigger.focus();
+    await expect(page.getByTestId('task-progress-popover')).toBeHidden();
+    await trigger.click();
     await expect(page.getByTestId('task-progress-popover')).toBeVisible();
     await expect(page.getByTestId('task-progress-row')).toHaveCount(tasks.length);
   });
@@ -120,7 +174,7 @@ test('exposes one atomic live status and keeps the full task list non-live in th
   page,
 }) => {
   const component = await mount(TaskProgressControlHost, { props: { tasks: [...tasks] } });
-  await component.getByTestId('task-progress-trigger').focus();
+  await component.getByTestId('task-progress-trigger').click();
   await expect(page.getByTestId('task-progress-popover')).toBeVisible();
   const client = await page.context().newCDPSession(page);
 
@@ -156,63 +210,63 @@ test('exposes one atomic live status and keeps the full task list non-live in th
   expect(await readLiveNodes()).toHaveLength(1);
 });
 
-test('supports keyboard activation, dismissal, tab traversal, focus return, click, and outside dismissal', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(TaskProgressControlHost, { props: { tasks: [...tasks] } });
-  const trigger = component.getByTestId('task-progress-trigger');
-  const popover = page.getByTestId('task-progress-popover');
+for (const presentation of ['status-stack', 'checklist'] as const) {
+  test(`keeps the ${presentation} task list click-only with stable tooltip and focus behavior`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(TaskProgressControlHost, {
+      props: { tasks: [...tasks], presentation },
+    });
+    const trigger = component.getByTestId('task-progress-trigger');
+    const popover = page.getByTestId('task-progress-popover');
+    const tooltip = page.getByRole('tooltip', { name: 'Task progress: 1 of 7 completed' });
 
-  await trigger.focus();
-  await expect(popover).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(popover).toBeHidden();
-  await expect(trigger).toBeFocused();
+    await trigger.focus();
+    await expect(popover).toBeHidden();
+    await trigger.hover();
+    await expect(tooltip).toBeVisible();
+    await expect(popover).toBeHidden();
 
-  await trigger.press('Enter');
-  await expect(popover).toBeVisible();
-  await page.keyboard.press('Escape');
-  await trigger.press(' ');
-  await expect(popover).toBeVisible();
-  await page.keyboard.press('Escape');
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await expect(tooltip).toHaveCount(0);
+    await page.waitForTimeout(350);
+    await expect(tooltip).toHaveCount(0);
+    await trigger.click();
+    await expect(popover).toBeHidden();
 
-  await component.getByTestId('before-trigger').focus();
-  await trigger.click();
-  await expect(popover).toBeVisible();
-  await page.waitForTimeout(20);
-  const viewport = page.viewportSize();
-  if (!viewport) throw new Error('Task progress test requires a viewport');
-  await page.mouse.click(viewport.width - 4, viewport.height - 4);
-  await expect(popover).toBeHidden();
+    await trigger.press('Enter');
+    await expect(popover).toBeVisible();
+    await trigger.press('Enter');
+    await expect(popover).toBeHidden();
+    await trigger.press('Enter');
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+    await expect(trigger).toBeFocused();
 
-  await component.getByTestId('before-trigger').focus();
-  await trigger.focus();
-  await expect(popover).toBeVisible();
-  await page.keyboard.press('Tab');
-  await expect(component.getByTestId('after-trigger')).toBeFocused();
-});
+    await trigger.press('Space');
+    await expect(popover).toBeVisible();
+    await trigger.press('Space');
+    await expect(popover).toBeHidden();
+    await trigger.press('Space');
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('Tab');
+    await expect(popover).toBeHidden();
+    await expect(component.getByTestId('after-trigger')).toBeFocused();
 
-test('keeps hover open over content, closes outside, and ignores touch hover', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(TaskProgressControlHost, { props: { tasks: [...tasks] } });
-  const trigger = component.getByTestId('task-progress-trigger');
-  const popover = page.getByTestId('task-progress-popover');
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await component.getByTestId('before-trigger').focus();
+    await expect(popover).toBeHidden();
+    await expect(component.getByTestId('before-trigger')).toBeFocused();
 
-  await trigger.dispatchEvent('pointerenter', { pointerType: 'touch' });
-  await page.waitForTimeout(150);
-  await expect(popover).toBeHidden();
-
-  await trigger.hover();
-  await expect(popover).toBeVisible();
-  await popover.hover();
-  await page.waitForTimeout(220);
-  await expect(popover).toBeVisible();
-  await page.mouse.move(1, 1);
-  await expect(popover).toBeHidden();
-});
+    await page.mouse.move(1, 1);
+    await trigger.hover();
+    await expect(tooltip).toBeVisible();
+  });
+}
 
 for (const presentation of ['status-stack', 'checklist'] as const) {
   test(`gives the ${presentation} trigger immediate layout-safe press feedback`, async ({
@@ -257,7 +311,7 @@ test('settles rapid reorder reversal and keeps the latest keyed task order', asy
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(TaskProgressControlHost, { props: { tasks: [...tasks] } });
   const trigger = component.getByTestId('task-progress-trigger');
-  await trigger.focus();
+  await trigger.click();
   await expect(page.getByTestId('task-progress-popover')).toBeVisible();
 
   await component.update({ props: { tasks: [...tasks].reverse() } });
@@ -304,6 +358,7 @@ test('contains mixed-direction long lists at narrow collision boundaries across 
   const component = await mount(TaskProgressControlHost, {
     props: { tasks: mixedTasks, width: 180, direction: 'rtl' },
   });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
@@ -311,9 +366,10 @@ test('contains mixed-direction long lists at narrow collision boundaries across 
         props: { tasks: mixedTasks, width: 180, zoom, direction: 'rtl', theme },
       });
       await component.getByTestId('before-trigger').focus();
-      await component.getByTestId('task-progress-trigger').focus();
+      await component.getByTestId('task-progress-trigger').click();
       const popover = page.getByTestId('task-progress-popover');
       await expect(popover).toBeVisible();
+      await expectSharedDropdownSurface(popover, true);
       await expect(page.getByTestId('task-progress-row')).toHaveCount(mixedTasks.length);
 
       const geometry = await page.evaluate(() => {
