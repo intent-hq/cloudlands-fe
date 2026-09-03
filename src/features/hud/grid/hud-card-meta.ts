@@ -47,6 +47,8 @@ export function cardStateLabel(stateKey: HudCardStateKey): string {
       return m.hud_card_stateNotStarted_label();
     case 'pr_ready':
       return m.hud_card_statePrReady_label();
+    case 'pr_queued':
+      return m.hud_card_statePrQueued_label();
     case 'pr_open':
       return m.hud_card_statePrOpen_label();
     case 'pr_merged':
@@ -79,6 +81,7 @@ export function cardStateColor(stateKey: HudCardStateKey): string {
     case 'complete':
       return HUD_STATE_COLORS.done;
     case 'pr_ready':
+    case 'pr_queued':
     case 'pr_open':
       return HUD_STATE_COLORS.pr;
     case 'pr_merged':

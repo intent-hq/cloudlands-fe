@@ -346,6 +346,8 @@ describe('selectHudWorkspaceStateBars', () => {
       // BE-sent idle and absent displayStatus both bucket as IDLE.
       withStatus('ws-8', 'idle'),
       withStatus('ws-9'),
+      // pr_queued (in the merge queue) buckets with the PR-stage counter.
+      withStatus('ws-10', 'pr_queued'),
     ]);
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
       idle: 3,
@@ -353,11 +355,11 @@ describe('selectHudWorkspaceStateBars', () => {
       progress: 2,
       attention: 0,
       waiting: 0,
-      prOpen: 2,
+      prOpen: 3,
       prMerged: 1,
       failed: 0,
       completed: 1,
-      total: 9,
+      total: 10,
     });
   });
 
@@ -2714,6 +2716,7 @@ describe('selectHudWorkspaceCards', () => {
     ['in_progress', 'in_progress'],
     ['complete', 'complete'],
     ['pr_ready', 'pr_ready'],
+    ['pr_queued', 'pr_queued'],
     ['pr_open', 'pr_open'],
     ['pr_merged', 'pr_merged'],
     ['idle', 'idle'],
