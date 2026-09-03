@@ -1,5 +1,6 @@
 import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
+import { WORKSPACE_TAB_FLARE_RADIUS_PX } from './titlebar-geometry';
 
 async function expectVisibleThroughAncestorClipping(target: Locator) {
   const result = await target.evaluate((element) => {
@@ -60,8 +61,46 @@ async function expectMaskAttachedToActiveTab(component: Locator) {
   const maskBox = await component.locator('[data-active-tab-border-mask]').boundingBox();
   expect(activeBox).toBeTruthy();
   expect(maskBox).toBeTruthy();
-  expect(Math.abs((maskBox?.x ?? 0) + 12 - (activeBox?.x ?? 0))).toBeLessThanOrEqual(1);
-  expect(Math.abs((maskBox?.width ?? 0) - 24 - (activeBox?.width ?? 0))).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs((maskBox?.x ?? 0) + WORKSPACE_TAB_FLARE_RADIUS_PX - (activeBox?.x ?? 0)),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs((maskBox?.width ?? 0) - 2 * WORKSPACE_TAB_FLARE_RADIUS_PX - (activeBox?.width ?? 0)),
+  ).toBeLessThanOrEqual(1);
+}
+
+async function getFlareEndpointGeometry(component: Locator) {
+  return component.evaluate((root) => {
+    const tab = root.querySelector<HTMLElement>('[data-workspace-tab][data-active="true"]');
+    const mask = root.querySelector<HTMLElement>('[data-active-tab-border-mask]');
+    const leading = root.querySelector<SVGPathElement>(
+      '[data-workspace-tab][data-active="true"] [data-workspace-tab-leading-flare] path.stroke-border',
+    );
+    const trailing = root.querySelector<SVGPathElement>(
+      '[data-workspace-tab][data-active="true"] [data-workspace-tab-trailing-flare] path.stroke-border',
+    );
+    if (!tab || !mask || !leading || !trailing) throw new Error('Missing flare geometry');
+    const screenPoint = (path: SVGPathElement, end: boolean) => {
+      const point = path.getPointAtLength(end ? path.getTotalLength() : 0);
+      const matrix = path.getScreenCTM();
+      if (!matrix) throw new Error('Missing flare transform');
+      return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+    };
+    const tabRect = tab.getBoundingClientRect();
+    const maskRect = mask.getBoundingClientRect();
+    const scale = root.getBoundingClientRect().width / (root as HTMLElement).offsetWidth;
+    return {
+      tabLeftBorderCenter:
+        tabRect.left + (parseFloat(getComputedStyle(tab).borderLeftWidth) * scale) / 2,
+      tabRightBorderCenter:
+        tabRect.right - (parseFloat(getComputedStyle(tab).borderRightWidth) * scale) / 2,
+      titlebarBorderCenter: maskRect.top + maskRect.height / 2,
+      leadingStart: screenPoint(leading, false),
+      leadingEnd: screenPoint(leading, true),
+      trailingStart: screenPoint(trailing, false),
+      trailingEnd: screenPoint(trailing, true),
+    };
+  });
 }
 
 async function getLogoToLeadingFlareGap(component: Locator) {
@@ -75,34 +114,47 @@ async function getLogoToLeadingFlareGap(component: Locator) {
 }
 
 async function captureTabMotion(control: Locator, workspaceId: string) {
-  return control.evaluate(async (button, id) => {
-    const frames: Array<{
-      width: number | null;
-      activeId: string | null;
-      maskLeftDelta: number | null;
-      maskWidthDelta: number | null;
-    }> = [];
-    (button as HTMLButtonElement).click();
-    for (let index = 0; index < 40; index += 1) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const motion = document.querySelector<HTMLElement>(`[data-workspace-tab-motion="${id}"]`);
-      const active = document.querySelector<HTMLElement>(
-        '[data-workspace-tab][data-active="true"]',
-      );
-      const mask = document.querySelector<HTMLElement>('[data-active-tab-border-mask]');
-      const activeRect = active?.getBoundingClientRect();
-      const maskRect = mask?.getBoundingClientRect();
-      frames.push({
-        width: motion?.getBoundingClientRect().width ?? null,
-        activeId: active?.dataset.workspaceTab ?? null,
-        maskLeftDelta:
-          activeRect && maskRect ? Math.abs(maskRect.left + 12 - activeRect.left) : null,
-        maskWidthDelta:
-          activeRect && maskRect ? Math.abs(maskRect.width - 24 - activeRect.width) : null,
-      });
-    }
-    return frames;
-  }, workspaceId);
+  return control.evaluate(
+    async (button, { id, radius }) => {
+      const frames: Array<{
+        width: number | null;
+        activeId: string | null;
+        maskLeftDelta: number | null;
+        maskWidthDelta: number | null;
+      }> = [];
+      (button as HTMLButtonElement).click();
+      for (let index = 0; index < 40; index += 1) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const motion = document.querySelector<HTMLElement>(`[data-workspace-tab-motion="${id}"]`);
+        const active = document.querySelector<HTMLElement>(
+          '[data-workspace-tab][data-active="true"]',
+        );
+        const mask = document.querySelector<HTMLElement>('[data-active-tab-border-mask]');
+        const strip = document.querySelector<HTMLElement>('[data-workspace-tab-strip]');
+        const activeRect = active?.getBoundingClientRect();
+        const maskRect = mask?.getBoundingClientRect();
+        const stripRect = strip?.getBoundingClientRect();
+        const expectedMaskLeft =
+          activeRect && stripRect ? Math.max(activeRect.left - radius, stripRect.left) : null;
+        const expectedMaskRight =
+          activeRect && stripRect ? Math.min(activeRect.right + radius, stripRect.right) : null;
+        frames.push({
+          width: motion?.getBoundingClientRect().width ?? null,
+          activeId: active?.dataset.workspaceTab ?? null,
+          maskLeftDelta:
+            maskRect && expectedMaskLeft !== null
+              ? Math.abs(maskRect.left - expectedMaskLeft)
+              : null,
+          maskWidthDelta:
+            maskRect && expectedMaskLeft !== null && expectedMaskRight !== null
+              ? Math.abs(maskRect.width - (expectedMaskRight - expectedMaskLeft))
+              : null,
+        });
+      }
+      return frames;
+    },
+    { id: workspaceId, radius: WORKSPACE_TAB_FLARE_RADIUS_PX },
+  );
 }
 
 test('keeps flares mounted and synchronizes visibility through activation and clipping', async ({
@@ -144,6 +196,61 @@ test('keeps flares mounted and synchronizes visibility through activation and cl
   await component.update({ props: { activeWorkspaceId: 'geometry-beta' } });
   for (const flare of await firstFlares.all()) await expect(flare).toHaveCSS('opacity', '0');
   for (const flare of await middleFlares.all()) await expect(flare).toHaveCSS('opacity', '1');
+});
+
+test('clips the mask during user scroll and restores it without transition lag', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { activeWorkspaceId: 'geometry-alpha' },
+  });
+  const strip = component.locator('[data-workspace-tab-strip]');
+  const mask = component.locator('[data-active-tab-border-mask]');
+  await page.waitForTimeout(250);
+  await strip.evaluate((element) => (element.scrollLeft = 100));
+  await expect(mask).toHaveCSS('transition', 'none');
+  await expect
+    .poll(async () => {
+      const [stripBox, maskBox] = await Promise.all([strip.boundingBox(), mask.boundingBox()]);
+      if (!stripBox || !maskBox) return false;
+      return maskBox.x >= stripBox.x && maskBox.x + maskBox.width <= stripBox.x + stripBox.width;
+    })
+    .toBe(true);
+  await strip.evaluate((element) => (element.scrollLeft = element.scrollWidth));
+  await expect(mask).toHaveCount(0);
+  await strip.evaluate((element) => (element.scrollLeft = 0));
+  await expectMaskAttachedToActiveTab(component);
+
+  await component.update({ props: { activeWorkspaceId: 'geometry-gamma' } });
+  await page.waitForTimeout(250);
+  await strip.evaluate((element) => (element.scrollLeft = 0));
+  await expect(mask).toHaveCount(0);
+});
+
+test('joins both flare strokes to the tab and titlebar borders at 1x and 2x', async ({ mount }) => {
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { activeWorkspaceId: 'geometry-beta' },
+  });
+  for (const zoom of [1, 2]) {
+    await component.evaluate((root, value) => {
+      (root as HTMLElement).style.transform = `scale(${value})`;
+      (root as HTMLElement).style.transformOrigin = 'top left';
+    }, zoom);
+    const geometry = await getFlareEndpointGeometry(component);
+    expect(Math.abs(geometry.leadingStart.x - geometry.tabLeftBorderCenter)).toBeLessThanOrEqual(
+      0.5,
+    );
+    expect(Math.abs(geometry.trailingStart.x - geometry.tabRightBorderCenter)).toBeLessThanOrEqual(
+      0.5,
+    );
+    expect(Math.abs(geometry.leadingEnd.y - geometry.titlebarBorderCenter)).toBeLessThanOrEqual(
+      0.5,
+    );
+    expect(Math.abs(geometry.trailingEnd.y - geometry.titlebarBorderCenter)).toBeLessThanOrEqual(
+      0.5,
+    );
+  }
 });
 
 test('grows and removes a tab while the active mask follows the shared motion', async ({

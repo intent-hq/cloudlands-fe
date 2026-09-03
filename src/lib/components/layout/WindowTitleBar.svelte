@@ -41,7 +41,6 @@
     getWorkspaceTabLeadingInsetPx,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
-    WORKSPACE_TAB_FLARE_RADIUS_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
   } from './titlebar-geometry';
@@ -366,8 +365,8 @@
     {#if activeTabBounds}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left - WORKSPACE_TAB_FLARE_RADIUS_PX}px`}
-        style:width={`${Math.max(0, activeTabBounds.width + 2 * WORKSPACE_TAB_FLARE_RADIUS_PX)}px`}
+        style:left={`${activeTabBounds.left}px`}
+        style:width={`${activeTabBounds.width}px`}
         style:transition={activeTabTracking
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}

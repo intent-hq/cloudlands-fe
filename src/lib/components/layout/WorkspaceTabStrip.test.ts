@@ -717,7 +717,11 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
     });
     container.classList.add('window-title-bar');
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
     const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    strip.getBoundingClientRect = () => makeRect(0, 20, 500);
     activeTab.getBoundingClientRect = () => makeRect(100);
     onActiveTabBoundsChange.mockClear();
 
@@ -727,7 +731,7 @@ describe('WorkspaceTabStrip', () => {
       horizontalPositionTrackingKey: 288,
     });
 
-    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 100, width: 160 });
+    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 94, width: 172 });
   });
 
   it('changes the observable leading inset while preserving flare clearance', async () => {
@@ -743,7 +747,7 @@ describe('WorkspaceTabStrip', () => {
     expect(getComputedStyle(tablist).paddingLeft).toBe('28px');
 
     await rerender({ leadingInsetPx: 4 });
-    expect(getComputedStyle(tablist).paddingLeft).toBe('12px');
+    expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
   });
 
   it('keeps the close control outside the hover trigger and isolated from navigation', async () => {
@@ -900,7 +904,7 @@ describe('WorkspaceTabStrip', () => {
     await fireEvent.scroll(strip);
 
     expect(strip.scrollLeft).toBe(120);
-    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 20, width: 70 });
+    expect(onActiveTabBoundsChange).toHaveBeenCalledWith(null);
   });
 
   it('uses arrow keys to activate adjacent tabs and Delete to close the focused tab', async () => {

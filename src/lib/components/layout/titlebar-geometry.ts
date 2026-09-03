@@ -2,12 +2,13 @@ export const WINDOW_TITLEBAR_HEIGHT_PX = 35;
 export const TITLEBAR_LEFT_DRAG_SURFACE_CLASS =
   'titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-visible';
 
-export const WORKSPACE_TAB_FLARE_RADIUS_PX = 12;
+export const WORKSPACE_TAB_CORNER_RADIUS_PX = 6;
+export const WORKSPACE_TAB_FLARE_RADIUS_PX = WORKSPACE_TAB_CORNER_RADIUS_PX;
 export const WORKSPACE_TAB_BORDER_WIDTH_PX = 1;
 export const WORKSPACE_TAB_FLARE_DROP_PX = 2;
 export const WORKSPACE_TAB_FLARE_SIZE_PX =
   WORKSPACE_TAB_FLARE_RADIUS_PX + WORKSPACE_TAB_BORDER_WIDTH_PX;
-export const WORKSPACE_TAB_FLARE_OFFSET_PX = WORKSPACE_TAB_FLARE_RADIUS_PX;
+export const WORKSPACE_TAB_FLARE_OFFSET_PX = WORKSPACE_TAB_FLARE_SIZE_PX;
 export const WORKSPACE_TAB_FLARE_BOTTOM_PX = -(
   WORKSPACE_TAB_FLARE_DROP_PX - WORKSPACE_TAB_BORDER_WIDTH_PX
 );
@@ -21,6 +22,22 @@ export const WORKSPACE_TAB_MOTION_EASING = 'cubic-bezier(0.215, 0.61, 0.355, 1)'
 export function getWorkspaceTabLeadingInsetPx(sidebarPanelOpen: boolean): number {
   const flareGap = sidebarPanelOpen ? 16 : 4 - WORKSPACE_TAB_BORDER_WIDTH_PX;
   return WORKSPACE_TAB_FLARE_RADIUS_PX + flareGap;
+}
+
+interface HorizontalRect {
+  left: number;
+  right: number;
+}
+
+export function getClippedWorkspaceTabBorderMaskBounds(
+  tabRect: HorizontalRect,
+  scrollerRect: HorizontalRect,
+  titlebarLeft: number,
+): { left: number; width: number } | null {
+  const left = Math.max(tabRect.left - WORKSPACE_TAB_FLARE_RADIUS_PX, scrollerRect.left);
+  const right = Math.min(tabRect.right + WORKSPACE_TAB_FLARE_RADIUS_PX, scrollerRect.right);
+  if (right <= left) return null;
+  return { left: left - titlebarLeft, width: right - left };
 }
 
 function cubicCoordinate(progress: number, first: number, second: number): number {

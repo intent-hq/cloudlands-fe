@@ -55,6 +55,7 @@
   import { resize } from './size-transition';
   import {
     WORKSPACE_TAB_BORDER_WIDTH_PX,
+    WORKSPACE_TAB_CORNER_RADIUS_PX,
     WORKSPACE_TAB_FLARE_BOTTOM_PX,
     WORKSPACE_TAB_FLARE_INNER_PX,
     WORKSPACE_TAB_FLARE_OFFSET_PX,
@@ -63,6 +64,7 @@
     WORKSPACE_TAB_FLARE_SIZE_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
+    getClippedWorkspaceTabBorderMaskBounds,
     workspaceTabMotionEasing,
   } from './titlebar-geometry';
 
@@ -153,6 +155,7 @@
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
   let dragTracking = false;
+  let scrollTracking = false;
   let tabContextMenu = $state<{ workspaceId: string; x: number; y: number } | null>(null);
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
@@ -185,7 +188,7 @@
   });
 
   function reportActiveTabTracking() {
-    onActiveTabTrackingChange?.(layoutTracking || dragTracking);
+    onActiveTabTrackingChange?.(layoutTracking || dragTracking || scrollTracking);
   }
 
   onMount(() => {
@@ -321,6 +324,7 @@
     let writePending = false;
     let cancelRead: (() => void) | null = null;
     let cancelWrite: (() => void) | null = null;
+    let scrollTrackingTimeout: ReturnType<typeof setTimeout> | null = null;
     const strip = node.closest('[data-workspace-tab-strip]');
 
     // Batched read phase: measure everything against one clean layout,
@@ -334,10 +338,10 @@
 
       const tabRect = node.getBoundingClientRect();
       const titlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect() ?? null;
+      const stripRect = strip?.getBoundingClientRect() ?? null;
       let scrollDelta = 0;
       let scrollTarget: number | null = null;
-      if (shouldClamp && strip && !draggedWorkspaceId) {
-        const stripRect = strip.getBoundingClientRect();
+      if (shouldClamp && strip && stripRect && !draggedWorkspaceId) {
         if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
           scrollDelta = tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
         } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
@@ -345,7 +349,7 @@
         }
         if (scrollDelta !== 0) scrollTarget = strip.scrollLeft + scrollDelta;
       }
-      if (scrollTarget === null && !titlebarRect) return;
+      if (scrollTarget === null && (!titlebarRect || !stripRect)) return;
 
       if (writePending) cancelWrite?.();
       writePending = true;
@@ -353,13 +357,11 @@
         writePending = false;
         if (!active) return;
         if (scrollTarget !== null && strip) strip.scrollLeft = scrollTarget;
-        if (!titlebarRect) return;
+        if (!titlebarRect || !stripRect) return;
         if (scrollTarget === null) {
-          // Common path: report straight from the read-phase measurement.
-          onActiveTabBoundsChange?.({
-            left: tabRect.left - titlebarRect.left,
-            width: tabRect.width,
-          });
+          onActiveTabBoundsChange?.(
+            getClippedWorkspaceTabBorderMaskBounds(tabRect, stripRect, titlebarRect.left),
+          );
           return;
         }
         // A clamp moved the strip, so the read-phase rects are stale and
@@ -368,11 +370,15 @@
         // tab was actually scrolled into view (at most once per switch).
         const movedTabRect = node.getBoundingClientRect();
         const movedTitlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect();
-        if (!movedTitlebarRect) return;
-        onActiveTabBoundsChange?.({
-          left: movedTabRect.left - movedTitlebarRect.left,
-          width: movedTabRect.width,
-        });
+        const movedStripRect = strip?.getBoundingClientRect();
+        if (!movedTitlebarRect || !movedStripRect) return;
+        onActiveTabBoundsChange?.(
+          getClippedWorkspaceTabBorderMaskBounds(
+            movedTabRect,
+            movedStripRect,
+            movedTitlebarRect.left,
+          ),
+        );
       });
     };
 
@@ -392,7 +398,18 @@
 
     // User scrolling must not be fought by the active-tab clamp: scroll only
     // refreshes the reported bounds so the titlebar mask keeps tracking.
-    const scheduleBoundsReport = () => schedule();
+    const scheduleBoundsReport = () => {
+      if (!active) return;
+      scrollTracking = true;
+      reportActiveTabTracking();
+      if (scrollTrackingTimeout !== null) clearTimeout(scrollTrackingTimeout);
+      scrollTrackingTimeout = setTimeout(() => {
+        scrollTrackingTimeout = null;
+        scrollTracking = false;
+        reportActiveTabTracking();
+      }, 80);
+      schedule();
+    };
 
     const resizeObserver = new ResizeObserver(scheduleClampAndReport);
     resizeObserver.observe(node);
@@ -409,6 +426,11 @@
         else if (wasActive) onActiveTabBoundsChange?.(null);
       },
       destroy() {
+        if (scrollTrackingTimeout !== null) clearTimeout(scrollTrackingTimeout);
+        if (active && scrollTracking) {
+          scrollTracking = false;
+          reportActiveTabTracking();
+        }
         cancelRead?.();
         cancelWrite?.();
         activeTabBoundsPollers.delete(scheduleClampAndReport);
@@ -769,9 +791,9 @@
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- The leading inset keeps the active tab's 12px corner-flare SVG inside
-       the padding box. It is 15px with the sidebar closed (4px before the
-       flare) and 28px with it open (the existing 24px net clearance after
+  <!-- The leading inset keeps the active tab's 6px corner-flare SVG inside
+       the padding box. It is 9px with the sidebar closed (4px before the
+       flare) and 22px with it open (the existing 24px net clearance after
        the -ml-1 strip offset).
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
@@ -862,6 +884,9 @@
             style:top={isDragged && dragSession ? `${dragSession.origin.top - 2}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
             style:height={isDragged && dragSession ? `${dragSession.origin.height}px` : undefined}
+            style:border-radius={isCurrent
+              ? `${WORKSPACE_TAB_CORNER_RADIUS_PX}px ${WORKSPACE_TAB_CORNER_RADIUS_PX}px 0 0`
+              : `${WORKSPACE_TAB_CORNER_RADIUS_PX}px`}
             style:transition-duration={isDragged ? '0ms' : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
             style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
             use:reportActiveTabBounds={isCurrent}
@@ -872,7 +897,7 @@
             onmouseleave={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
-            <!-- The 13px canvas contains the 12px radius plus both half-stroke edges.
+            <!-- The canvas contains the shared corner radius plus both half-stroke edges.
                  Its arc starts on the tab border centre and ends on the title-bar border centre. -->
             <svg
               class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
@@ -997,6 +1022,9 @@
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
+            style:border-radius={isCurrent
+              ? `${WORKSPACE_TAB_CORNER_RADIUS_PX}px ${WORKSPACE_TAB_CORNER_RADIUS_PX}px 0 0`
+              : `${WORKSPACE_TAB_CORNER_RADIUS_PX}px`}
             style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
             style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
             use:reportActiveTabBounds={isCurrent}
