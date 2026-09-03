@@ -172,14 +172,11 @@ process on that port before retrying if it is occupied. The full workflow is in
 
 ## Dogfooding a dev FE against a daemon
 
-The monorepo ships a source-only dev shim — `scripts/uds-ws-bridge.mjs`, run as
-`make uds-to-unauthed-wss-bridge` from a monorepo checkout (not shipped in any package) —
-that exposes the installed production intentd's UDS socket as an **UNAUTHENTICATED**
-plain `ws://` endpoint on `127.0.0.1:51337/ws` (`BRIDGE_PORT` / `INTENTD_SOCKET`
-override the defaults). It lets a dev FE debug against the real daemon without touching
-the daemon's auth posture (UDS + authed WSS for iOS stay as-is). Loopback-only is by
-design — the bridge refuses non-loopback binds, and while it runs the full
-unauthenticated daemon API is on that port — never expose it beyond localhost.
+The Vite dev server embeds a same-origin daemon bridge for `dev:web` and the app and
+stack sandboxes. While they run, the renderer reaches the daemon at `/intentd/ws` on
+the Vite origin, using `INTENTD_SOCKET` or the platform default socket. No separate
+bridge process or second tunnel is needed. The bridged daemon API is unauthenticated
+and loopback-only by design; never expose it beyond the Intent client's tunnel.
 
 ### Loop A — web build in an embedded tab (primary; renderer/UI work)
 
