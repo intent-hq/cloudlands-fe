@@ -82,7 +82,7 @@ test('measures the production finished-card turn gap across all required states'
                 };
               });
               expect(measurement.finishedInset).toEqual(measurement.sentInset);
-              expect(measurement.finishedHeight).toBeCloseTo(40 * zoom, 1);
+              expect(measurement.finishedHeight).toBeCloseTo(36 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
               const topGap = measurement.cardTop - measurement.predecessorBottom;
               const bottomGap = measurement.nextRowTop - measurement.cardBottom;
@@ -167,7 +167,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const agentName = element('agent-message-actor-name');
             const agentActor = element('agent-message-attribution');
             const agentAction = element('agent-message-disclosure-toggle');
-            const eventIcon = eventRow.querySelector('svg')!;
+            const eventIcon = element('event-wakeup-leading-column');
             const eventSummary = element('event-wakeup-summary');
             const eventName = element('event-wakeup-agent-name');
             const eventStatus = element('event-wakeup-status');
@@ -212,7 +212,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
-          expect(collapsed.agentRowGap).toBe('4px');
+          expect(collapsed.agentRowGap).toBe('8px');
           expect(collapsed.eventRowGap).toBe('8px');
           expect(collapsed.agentRow['justify-content']).toBe('flex-start');
           expect(collapsed.agentNameRect.left - collapsed.agentIconRect.right).toBeCloseTo(
@@ -220,7 +220,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentActionRect.left - collapsed.agentActorRect.right).toBeCloseTo(
-            4 * zoom,
+            8 * zoom,
             1,
           );
           expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
@@ -236,7 +236,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
-            40 * zoom,
+            36 * zoom,
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(

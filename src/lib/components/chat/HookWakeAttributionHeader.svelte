@@ -11,6 +11,11 @@
   import { faBolt } from '@fortawesome/free-solid-svg-icons';
   import type { HookWakeAttribution } from '$lib/utils/hook-wake-attribution';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+  } from './subscription-disclosure';
 
   interface Props {
     attribution: HookWakeAttribution;
@@ -39,15 +44,19 @@
 </script>
 
 <div
-  class="type-caption flex items-center gap-1 rounded-md {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} rounded-md {className}"
   data-testid="hook-wake-attribution"
 >
-  <Fa icon={faBolt} class="mr-0.5 h-3 w-3 text-ghost" />
-  <span
-    class="text-foreground min-w-0 truncate font-medium"
-    title={attribution.rawName || attribution.displayName}
-  >
-    {attribution.displayName}
+  <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+    <Fa icon={faBolt} size={14} class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
   </span>
-  <span class="font-normal text-muted-foreground">{stateLabel}</span>
+  <span class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap">
+    <span
+      class="min-w-0 truncate font-normal text-muted-foreground"
+      title={attribution.rawName || attribution.displayName}
+    >
+      {attribution.displayName}
+    </span>
+    <span class="shrink-0 font-normal text-muted-foreground">{stateLabel}</span>
+  </span>
 </div>

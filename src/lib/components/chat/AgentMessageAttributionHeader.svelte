@@ -125,7 +125,7 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} gap-1! font-normal text-muted-foreground {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {className}"
   data-testid="agent-message-disclosure-header"
 >
   {#if attribution.kind === 'chief' && attribution.sourceUrl}
