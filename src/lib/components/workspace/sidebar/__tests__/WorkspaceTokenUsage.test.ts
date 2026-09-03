@@ -759,7 +759,7 @@ describe('WorkspaceTokenUsage', () => {
       name: 'By agent, Alpha: 160 tokens, 14%',
     });
 
-    expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 7']);
+    expect(messageCounts()).toEqual(['6 human messages', '7 agent messages']);
     expect(composition.classList).toContain('pb-3');
     const messageRows = Array.from(details.querySelectorAll('.message-composition-row'));
     expect(
@@ -768,26 +768,22 @@ describe('WorkspaceTokenUsage', () => {
       ),
     ).toBe(true);
     expect(messageRows.every((row) => row.querySelector('.message-composition-label'))).toBe(true);
-    expect(
-      messageRows.every((row) =>
-        row.querySelector('.composition-value')?.classList.contains('font-normal'),
-      ),
-    ).toBe(true);
-    expect(
-      messageRows.every((row) => visibleText(row.querySelector('.composition-context')!) === ''),
-    ).toBe(true);
+    expect(messageRows.every((row) => row.querySelector('.composition-value') === null)).toBe(true);
+    expect(messageRows.every((row) => row.querySelector('.composition-context') === null)).toBe(
+      true,
+    );
     expect(screen.queryByTestId('token-usage-message-counts')).toBeNull();
     expect(
       Array.from(details.querySelectorAll('.composition-row')).map((row) =>
-        row.querySelector('.composition-metric')?.textContent?.trim(),
+        visibleText(row.querySelector('.composition-metric')!),
       ),
     ).toEqual([
       'Cached context',
       'Model output',
       'Reasoning tokens',
-      'Human messages',
-      'Agent messages',
       'Input context',
+      '6 human messages',
+      '7 agent messages',
     ]);
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
     expect(
@@ -802,7 +798,7 @@ describe('WorkspaceTokenUsage', () => {
 
     await fireEvent.pointerEnter(alphaControl, { pointerType: 'mouse' });
     expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
-    expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 4']);
+    expect(messageCounts()).toEqual(['3 human messages', '4 agent messages']);
     expect(values()).toEqual([
       { value: '70 tokens', share: '44% of total' },
       { value: '25', share: '16%' },
@@ -822,13 +818,13 @@ describe('WorkspaceTokenUsage', () => {
     });
     await fireEvent.focus(modelA);
     expect(visibleText(status)).toBe('Active scope By model Model A 350 processed');
-    expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 5']);
+    expect(messageCounts()).toEqual(['6 human messages', '5 agent messages']);
     expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
     await fireEvent.blur(modelA);
 
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
-    expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 4']);
+    expect(messageCounts()).toEqual(['3 human messages', '4 agent messages']);
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
 
@@ -837,7 +833,7 @@ describe('WorkspaceTokenUsage', () => {
     });
     await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By model Model B 810 processed');
-    expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 6']);
+    expect(messageCounts()).toEqual(['3 human messages', '6 agent messages']);
     await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
   });

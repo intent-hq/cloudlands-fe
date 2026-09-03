@@ -123,6 +123,20 @@
     return m.workspace_tokenUsage_tokenValue_label({ tokens: compactWholeNumber(value) });
   }
 
+  function humanMessageCountLabel(value: number): string {
+    const roundedValue = Math.round(value);
+    return roundedValue === 1
+      ? m.workspace_tokenUsage_humanMessages_one()
+      : m.workspace_tokenUsage_humanMessages_many({ count: formatInteger(roundedValue) });
+  }
+
+  function agentMessageCountLabel(value: number): string {
+    const roundedValue = Math.round(value);
+    return roundedValue === 1
+      ? m.workspace_tokenUsage_agentMessages_one()
+      : m.workspace_tokenUsage_agentMessages_many({ count: formatInteger(roundedValue) });
+  }
+
   function shareOfTotalLabel(value: number): string {
     return m.workspace_tokenUsage_shareOfTotal_label({ share: shareLabel(value) });
   }
@@ -594,48 +608,6 @@
           {/if}
           <dl>
             {#each compositionRows as row (row.id)}
-              {#if row.id === 'input' && crossFilterAvailable}
-                <div class="composition-row message-composition-row min-w-0 py-1">
-                  <dt
-                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
-                  >
-                    <span class="message-composition-label min-w-0 truncate">
-                      {m.workspace_tokenUsage_humanMessages_label()}
-                    </span>
-                  </dt>
-                  <dd
-                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
-                  >
-                    <AnimatedNumber
-                      value={previewHumanMessages ?? 0}
-                      format={formatInteger}
-                      pulse={false}
-                      class="block w-full text-right"
-                    />
-                  </dd>
-                  <dd class="composition-context" aria-hidden="true"></dd>
-                </div>
-                <div class="composition-row message-composition-row min-w-0 py-1">
-                  <dt
-                    class="composition-metric message-composition-metric flex min-w-0 text-sm font-normal text-foreground"
-                  >
-                    <span class="message-composition-label min-w-0 truncate">
-                      {m.workspace_tokenUsage_agentMessages_label()}
-                    </span>
-                  </dt>
-                  <dd
-                    class="composition-value text-right text-sm font-normal tabular-nums text-foreground"
-                  >
-                    <AnimatedNumber
-                      value={previewAgentMessages ?? 0}
-                      format={formatInteger}
-                      pulse={false}
-                      class="block w-full text-right"
-                    />
-                  </dd>
-                  <dd class="composition-context" aria-hidden="true"></dd>
-                </div>
-              {/if}
               <div
                 class="composition-row token-composition-row min-w-0 py-1"
                 data-zero={row.tokens === 0 ? 'true' : undefined}
@@ -679,6 +651,32 @@
                 </dd>
               </div>
             {/each}
+            {#if crossFilterAvailable}
+              <div class="composition-row message-composition-row min-w-0 py-1">
+                <dt
+                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-foreground"
+                >
+                  <AnimatedNumber
+                    value={previewHumanMessages ?? 0}
+                    format={humanMessageCountLabel}
+                    pulse={false}
+                    class="message-composition-label block w-full min-w-0 truncate text-left"
+                  />
+                </dt>
+              </div>
+              <div class="composition-row message-composition-row min-w-0 py-1">
+                <dt
+                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-foreground"
+                >
+                  <AnimatedNumber
+                    value={previewAgentMessages ?? 0}
+                    format={agentMessageCountLabel}
+                    pulse={false}
+                    class="message-composition-label block w-full min-w-0 truncate text-left"
+                  />
+                </dt>
+              </div>
+            {/if}
           </dl>
         </section>
 
@@ -871,7 +869,7 @@
   }
 
   .message-composition-metric {
-    padding-inline-start: calc(0.375rem + 0.5rem);
+    grid-column: 1 / -1;
   }
 
   .breakdown-stack-item {
