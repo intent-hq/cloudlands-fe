@@ -822,11 +822,10 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
-  // Catalog row values are shape-dependent — bare for the FE's default
-  // provider, `provider:model` otherwise (prefixModelsForProvider) — while a
-  // session id may be daemon-pinned bare or stored compound, so ids are
-  // compared via normalizeModelIdForMatch (like selectedCatalogOption), not
-  // exact string equality.
+  // Catalog rows now carry bare ids for every provider, while a session id
+  // may be daemon-pinned bare or stored legacy-compound, so ids are compared
+  // via normalizeModelIdForMatch (like selectedCatalogOption), not exact
+  // string equality.
   // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
   // rows (the daemon collapses them to one base row + effortLevels), so on an
   // exact-id miss the base model's label is rendered with the effort suffix
@@ -1195,9 +1194,11 @@
   });
 
   // Provider the explicitly selected model belongs to ('' when inheriting).
+  // Catalog rows are bare for every provider, so ownership is resolved from
+  // the loaded groups (legacy compound prefix wins) — not by parsing the id.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
+      ? normalizeProviderId(resolvePickedTriple(localModel).providerId)
       : '',
   );
 

@@ -2654,6 +2654,55 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
   });
 
+  it('bare pick from a non-default provider group resolves the owning provider (catalog ownership)', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    // Catalog rows are bare for every provider — the codex group owns the
+    // bare 'gpt-5-codex' row, so a pick of it must attribute to codex, not
+    // blanket-attribute to the default provider (auggie).
+    enabledProviderIds$.set(['auggie', 'codex']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'codex'
+          ? [{ value: 'gpt-5-codex', label: 'GPT-5 Codex', description: 'Codex model' }]
+          : [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }));
+
+    render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Codex/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onModelChange).toHaveBeenCalledWith('gpt-5-codex', {
+      providerId: 'codex',
+      modelId: 'gpt-5-codex',
+    });
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'gpt-5-codex',
+        'ws-1',
+        'codex',
+      );
+    });
+  });
+
+  // Legacy boundary: compound `provider:model` ids no longer exist as catalog
+  // rows, but persisted selections can still carry them — the prefix must win
+  // provider attribution outright.
   it('compound model pick sends the compound prefix as the explicit providerId', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
