@@ -10021,6 +10021,23 @@ describe('daemonEventsBridge (changes refresh — git/changes events → refresh
     });
   }
 
+  it('invalidates accept status immediately for the named event families only', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(notification('git:commit', { sha: 'abc123' }));
+    handler(notification('changes:git-status', { status: { files: [] } }));
+    handler(notification('changes:tracked', { changes: [] }));
+
+    expect(
+      dispatchCalls.filter((action) => action.type === 'git/acceptChangesStatusInvalidated'),
+    ).toEqual([
+      { type: 'git/acceptChangesStatusInvalidated', payload: [WS] },
+      { type: 'git/acceptChangesStatusInvalidated', payload: [WS] },
+    ]);
+  });
+
   it('git:commit event triggers debounced refreshRequested with the right workspaceId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

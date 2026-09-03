@@ -153,6 +153,7 @@ import {
 import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
 import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
 import type { AppliedSettingChange } from '$lib/client/app-client';
+import { isAcceptChangesStatusEvent } from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
@@ -195,6 +196,7 @@ import {
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { acceptChangesStatusInvalidated } from '$store/renderer/slices/git/git-slice';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
 import { toLockRecord } from '$features/file-tracking/file-tracking.client';
 import {
@@ -3506,6 +3508,14 @@ export function routeDaemonEventsNotification(
 
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
+
+  // Accept-status invalidation is deliberately narrow: repository mutations
+  // (`git:*`), linked-PR changes (`pr:*`), and the daemon's authoritative
+  // accept-status snapshot edge (`changes:git-status`). The owning saga gates
+  // the follow-up read on active consumer visibility and coalesces bursts.
+  if (isAcceptChangesStatusEvent(type)) {
+    appStore.dispatch(acceptChangesStatusInvalidated(workspaceId));
+  }
 
   // Workspace lifecycle: purge every Redux trace of the deleted workspace so a
   // recreated same-slug workspace does not surface ghost agents (§7).

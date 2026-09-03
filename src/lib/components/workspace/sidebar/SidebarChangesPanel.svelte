@@ -28,6 +28,8 @@
   import { gitCache } from '$features/git/git-cache';
   import {
     loadGitStatus,
+    acceptChangesConsumerMounted,
+    acceptChangesConsumerUnmounted,
     setPostMergeState,
     setGitOperationFlag,
   } from '$store/renderer/slices/git/git-slice';
@@ -283,6 +285,12 @@
 
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
 
+  $effect(() => {
+    const visibleWorkspaceId = workspaceId;
+    appStore.dispatch(acceptChangesConsumerMounted(visibleWorkspaceId));
+    return () => appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
+  });
+
   // Git operation loading flag — used by the refresh button spinner
   const isRefreshingGitStatus = $derived($gitOps$.isRefreshingGitStatus);
 
@@ -459,8 +467,7 @@
     }
   }
 
-  // Accept-changes status (aheadOfTrunk, hasRemote, etc.) is now fetched by
-  // acceptChangesStatusSaga on workspaceMounted and refreshAcceptChangesStatus actions.
+  // Accept-changes status is owned by the visibility/event-driven Redux saga.
 
   // Track the last pushed commit count we triggered discovery for.
   // When pushed commits increase (e.g., agent pushes), we re-trigger discovery.

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   listRepos: vi.fn(),
   detectInstalled: vi.fn(),
-  getStatus: vi.fn(),
   invoke: vi.fn(),
 }));
 
@@ -15,15 +14,11 @@ vi.mock('$features/github-auth/renderer/github-auth.client', () => ({
 vi.mock('$features/external-editors/external-editors.client', () => ({
   externalEditorsClient: { detectInstalled: mocks.detectInstalled },
 }));
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { getStatus: mocks.getStatus },
-}));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
 
-import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
 import { CACHE_TTL_MS, fetchEditors } from '../../external-editors/external-editors-slice';
 import { loadGithubRepos } from '../../github-repos/github-repos-slice';
 import { loadKnownRepos } from '../../known-repos/known-repos-slice';
@@ -40,16 +35,6 @@ import { lifecycleIpcReadSaga } from './lifecycle-ipc-read-saga';
 
 const WS = 'ws-ipc-lifecycle';
 const NOW = new Date('2026-07-31T00:00:00.000Z');
-const defaultPostMergeState = {
-  aheadOfTrunk: null,
-  behindTrunk: 0,
-  hasConflicts: false,
-  isContentMergedToTrunk: false,
-  hasRemote: true,
-  isMergedToTrunk: false,
-  mergeHeadSha: null,
-  hasResetToTrunk: false,
-};
 type ObservedAction = { type: string; payload?: unknown[] };
 
 const settle = async () => {
@@ -75,7 +60,6 @@ function workspaceMountFanOut(workspaceId: string): ObservedAction[] {
   return [
     { type: 'workspaceTasks/ensureWorkspaceTasksLoaded', payload: [workspaceId] },
     { type: 'workspaceEvents/loadEventsRequested', payload: [workspaceId] },
-    { type: 'changes/refreshAcceptChangesStatus', payload: [workspaceId] },
     { type: 'scripts/refreshScripts', payload: [workspaceId] },
     { type: 'skills/loadSkillsRequested', payload: [workspaceId] },
     { type: 'prStatus/refreshRequested', payload: [workspaceId, false, false] },
@@ -143,13 +127,6 @@ describe('lifecycleIpcReadSaga', () => {
     vi.setSystemTime(NOW);
     mocks.listRepos.mockResolvedValue([]);
     mocks.detectInstalled.mockResolvedValue([]);
-    mocks.getStatus.mockResolvedValue({
-      aheadOfTrunk: 0,
-      behindTrunk: 0,
-      hasConflicts: false,
-      hasRemote: true,
-      isContentMergedToTrunk: false,
-    });
     mocks.invoke.mockResolvedValue({ success: true, data: [] });
   });
 
@@ -313,63 +290,6 @@ describe('lifecycleIpcReadSaga', () => {
       ['workspace:get-recent-repositories', {}],
     ]);
     expect(run.actions).toEqual([{ type: 'knownRepos/setRepos', payload: [[repo]] }]);
-    await stop(run.task);
-  });
-
-  it('merges accept-changes success and resets only trunk fields on failure', async () => {
-    const current = state();
-    const preserved = {
-      ...defaultPostMergeState,
-      isMergedToTrunk: true,
-      mergeHeadSha: 'abc123',
-      hasResetToTrunk: true,
-    };
-    current.git.byWorkspaceId[WS] = { postMergeState: preserved };
-    mocks.getStatus.mockResolvedValueOnce({
-      aheadOfTrunk: 5,
-      behindTrunk: 2,
-      hasConflicts: true,
-      hasRemote: false,
-      isContentMergedToTrunk: true,
-      snake_case_wire_only: 'drop',
-    });
-    const run = start(current);
-    run.channel.put(refreshAcceptChangesStatus(WS));
-    await settle();
-    mocks.getStatus.mockRejectedValueOnce(new Error('status failed'));
-    run.channel.put(refreshAcceptChangesStatus(WS));
-    await settle();
-
-    expect(mocks.getStatus.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([
-      {
-        type: 'git/setPostMergeState',
-        payload: [
-          WS,
-          {
-            ...preserved,
-            aheadOfTrunk: 5,
-            behindTrunk: 2,
-            hasConflicts: true,
-            hasRemote: false,
-            isContentMergedToTrunk: true,
-          },
-        ],
-      },
-      {
-        type: 'git/setPostMergeState',
-        payload: [
-          WS,
-          {
-            ...preserved,
-            aheadOfTrunk: null,
-            behindTrunk: 0,
-            hasConflicts: false,
-            isContentMergedToTrunk: false,
-          },
-        ],
-      },
-    ]);
     await stop(run.task);
   });
 
