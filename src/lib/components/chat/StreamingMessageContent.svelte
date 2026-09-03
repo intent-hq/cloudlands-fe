@@ -1,10 +1,6 @@
 <script lang="ts">
-  import type { ContentBlock, ToolUseBlock, Proposal, MessageRole } from '$shared/types';
-  import {
-    dedupeAgentVideoContentBlocks,
-    isProposal,
-    normalizeAgentVideoContentBlocks,
-  } from '$shared/types';
+  import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
     findToolResult,
@@ -16,7 +12,7 @@
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
-  import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
@@ -373,21 +369,6 @@
       (candidate.kind === 'nav-link' || candidate.type === 'nav-link') &&
       typeof candidate.target === 'string'
     );
-  }
-
-  function getProposalFromBlock(block: ContentBlock): Proposal | null {
-    if (isProposal(block.proposal)) return block.proposal;
-    const candidate = {
-      kind: block.kind,
-      payload: block.payload ?? {},
-      preview: block.preview,
-      applyToolCallId: block.applyToolCallId,
-    };
-    if (isProposal(candidate)) return candidate;
-    // Standalone proposal-resource block (PROTOCOL §7.1): the daemon lifts a
-    // proposal-MIME resource item out of a completed tool's output into a
-    // top-level `{ type: "resource", resource: {…} }` block.
-    return getProposalFromResourceBlock(block);
   }
 
   function addBulkProposalWorkspaceIds(block: ContentBlock, ids: Set<string>) {

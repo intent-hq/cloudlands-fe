@@ -50,7 +50,7 @@ function makeProposal(id: string): Proposal {
 }
 
 const content: ContentBlock[] = [
-  { type: 'text', text: 'Here are proposals for you.' },
+  { type: 'text', text: 'Here are proposals for you.\n<group:Proposal work>' },
   ...lifecycleStates.flatMap((state) => {
     const resourceProposal = makeProposal(`resource-${state}`);
     const inlineProposal = makeProposal(`inline-${state}`);
@@ -62,6 +62,7 @@ const content: ContentBlock[] = [
       { type: 'proposal', proposal: inlineProposal } as unknown as ContentBlock,
     ];
   }),
+  { type: 'text', text: '</group:Proposal work>' },
 ];
 
 function expectInlineProposalCards(container: HTMLElement) {
@@ -72,6 +73,9 @@ function expectInlineProposalCards(container: HTMLElement) {
   expect(cards).toHaveLength(lifecycleStates.length * 2);
   expect(prose).toBeTruthy();
   expect(prose!.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(
+    container.querySelector('[data-testid="response-group"] [data-testid="event-agent-avatar"]'),
+  ).toBeNull();
 }
 
 describe.each([
