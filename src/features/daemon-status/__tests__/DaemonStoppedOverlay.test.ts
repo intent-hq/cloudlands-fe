@@ -730,6 +730,15 @@ describe('DaemonStoppedOverlay', () => {
       expect(hostInput.value).toBe('10.0.0.6');
       expect((screen.getByLabelText(/port/i) as HTMLInputElement).value).toBe('8443');
       expect((screen.getByLabelText(/name/i) as HTMLInputElement).value).toBe('Other Mac');
+
+      // Closing the re-pair modal retires the notice: the outcome it reported
+      // is stale once a re-add ran (or the user backed out to retry Open).
+      await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      await vi.waitFor(() =>
+        expect(screen.queryByTestId('daemon-stopped-open-secret-unavailable')).toBeNull(),
+      );
+      expect(screen.queryByTestId('daemon-stopped-reenter-token')).toBeNull();
+      expect(overlay()).toBeTruthy();
       dispatchSpy.mockRestore();
     });
 

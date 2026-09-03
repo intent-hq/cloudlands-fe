@@ -191,6 +191,18 @@
     repairModalOpen = true;
   }
 
+  // Once the re-pair modal closes the secret-unavailable notice is stale: a
+  // successful re-add + open has replaced the token (and this window's overlay
+  // may stay up while the other backend's window opens), and a cancel leaves
+  // the user free to retry Open, which re-derives the outcome.
+  let wasRepairModalOpen = false;
+  $effect(() => {
+    if (wasRepairModalOpen && !repairModalOpen) {
+      secretUnavailableConnection = null;
+    }
+    wasRepairModalOpen = repairModalOpen;
+  });
+
   /** Display label for a remote connection: `hostname (host:port)`, or its raw label. */
   function connectionLabel(conn: ConnectionRecord): string {
     const hostname = conn.hostname?.trim();
@@ -516,7 +528,8 @@
               </p>
               <button
                 type="button"
-                class="mt-2 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                class="mt-2 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={$isConnecting$}
                 onclick={() => (repairModalOpen = true)}
                 data-testid="daemon-stopped-reenter-token"
               >
