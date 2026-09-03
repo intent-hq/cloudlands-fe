@@ -2483,6 +2483,8 @@ function registerConnectionsHandlers(): void {
           const host = params.host ?? saved.host;
           const port = params.port ?? saved.port;
           const addressChanged = host !== saved.host || port !== saved.port;
+          const detectHostsChanged =
+            params.detectHosts !== undefined && params.detectHosts !== (saved.detectHosts ?? true);
           let fingerprint = saved.fingerprint;
           if (addressChanged) {
             const secret = await loadSavedConnectionSecret(params.id);
@@ -2506,7 +2508,12 @@ function registerConnectionsHandlers(): void {
             detectHosts: params.detectHosts,
             syncExcluded: params.syncExcluded,
           });
-          if (addressChanged) await rebuildConnectionClientIfOpen(params.id);
+          // An open pooled client froze its dial candidates at build time, so a
+          // detectHosts flip (which clears the detected extras) must rebuild it
+          // too — otherwise reconnects keep racing the IPs the user just disabled.
+          if (addressChanged || detectHostsChanged) {
+            await rebuildConnectionClientIfOpen(params.id);
+          }
           await broadcastConnectionsChanged();
           return { status: 'updated', connection } satisfies UpdateConnectionResult;
         }),

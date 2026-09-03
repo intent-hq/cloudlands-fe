@@ -1532,6 +1532,40 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection(other.id)).toBe(otherBefore);
   });
 
+  it('rebuilds an open pooled client when detectHosts flips off so it stops dialing the cleared extras', async () => {
+    const withExtras = { ...REMOTE, hosts: ['10.0.0.5', '192.168.1.5'] };
+    store.list.mockResolvedValue([LOCAL, withExtras]);
+    store.updateMetadata.mockImplementation(async () => {
+      const cleared = { ...REMOTE, detectHosts: false, hosts: [] };
+      store.list.mockResolvedValue([LOCAL, cleared]);
+      return cleared;
+    });
+    const { mod } = await loadModule();
+    const before = await mod.connectBackendClient(REMOTE.id);
+    expect((before.getConfig() as { hosts?: string[] }).hosts).toEqual(['10.0.0.5', '192.168.1.5']);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await handler!({}, { id: REMOTE.id, label: REMOTE.label, accent: 'blue', detectHosts: false });
+
+    const after = mod.getBackendClientForConnection(REMOTE.id);
+    expect(after).not.toBe(before);
+    expect((after!.getConfig() as { hosts?: string[] }).hosts).toEqual(['10.0.0.5']);
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+  });
+
+  it('does not rebuild an open pooled client for a metadata edit that leaves detectHosts as-is', async () => {
+    store.updateMetadata.mockResolvedValue({ ...REMOTE, label: 'Renamed' });
+    const { mod } = await loadModule();
+    const before = await mod.connectBackendClient(REMOTE.id);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await handler!({}, { id: REMOTE.id, label: 'Renamed', accent: 'blue', detectHosts: true });
+
+    expect(mod.getBackendClientForConnection(REMOTE.id)).toBe(before);
+  });
+
   it('serializes connection tests so each uses a stable saved-secret snapshot', async () => {
     // Each test now performs a two-phase capture (unauthenticated probe, then
     // authenticated verify — monorepo#3782), so gate every capture call.
