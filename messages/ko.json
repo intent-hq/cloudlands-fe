@@ -2537,6 +2537,7 @@
   "layout_daemonStatus_status_label": "상태",
   "layout_daemonStatus_notRunning_label": "실행되지 않음",
   "layout_daemonStatus_notConnected_description": "데몬이 연결되지 않았습니다",
+  "layout_daemonStatus_connectionViaTailcat_label": "{target} (tailcat 경유)",
   "layout_daemonStatus_healthyState_label": "정상",
   "layout_daemonStatus_degradedState_label": "저하됨",
   "layout_daemonStatus_agentSlots_label": "에이전트 슬롯",

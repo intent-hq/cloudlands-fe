@@ -2537,6 +2537,7 @@
   "layout_daemonStatus_status_label": "状态",
   "layout_daemonStatus_notRunning_label": "未运行",
   "layout_daemonStatus_notConnected_description": "守护进程未连接",
+  "layout_daemonStatus_connectionViaTailcat_label": "{target}（通过 tailcat）",
   "layout_daemonStatus_healthyState_label": "健康",
   "layout_daemonStatus_degradedState_label": "降级",
   "layout_daemonStatus_agentSlots_label": "智能体槽位",

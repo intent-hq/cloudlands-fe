@@ -2538,6 +2538,7 @@
   "layout_daemonStatus_status_label": "Status",
   "layout_daemonStatus_notRunning_label": "Not running",
   "layout_daemonStatus_notConnected_description": "Daemon is not connected",
+  "layout_daemonStatus_connectionViaTailcat_label": "{target} via tailcat",
   "layout_daemonStatus_healthyState_label": "Healthy",
   "layout_daemonStatus_degradedState_label": "Degraded",
   "layout_daemonStatus_agentSlots_label": "Agent slots",

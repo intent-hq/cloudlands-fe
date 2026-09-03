@@ -2537,6 +2537,7 @@
   "layout_daemonStatus_status_label": "ステータス",
   "layout_daemonStatus_notRunning_label": "停止中",
   "layout_daemonStatus_notConnected_description": "デーモンが接続されていません",
+  "layout_daemonStatus_connectionViaTailcat_label": "{target}（tailcat 経由）",
   "layout_daemonStatus_healthyState_label": "正常",
   "layout_daemonStatus_degradedState_label": "低下",
   "layout_daemonStatus_agentSlots_label": "エージェントスロット",

@@ -2537,6 +2537,7 @@
   "layout_daemonStatus_status_label": "Statut",
   "layout_daemonStatus_notRunning_label": "Arrêté",
   "layout_daemonStatus_notConnected_description": "Le démon n'est pas connecté",
+  "layout_daemonStatus_connectionViaTailcat_label": "{target} via tailcat",
   "layout_daemonStatus_healthyState_label": "Opérationnel",
   "layout_daemonStatus_degradedState_label": "Dégradé",
   "layout_daemonStatus_agentSlots_label": "Emplacements d'agents",

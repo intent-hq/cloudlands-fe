@@ -820,7 +820,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
             BACKEND.STATUS,
             {
               status: instance.getStatus(),
-              transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+              transport: formatTransportInfo(
+                instance.getConfig(),
+                getPinnedVersion(),
+                instance.getConnectedVia(),
+              ),
               reconnectAttempts: instance.getReconnectAttempts(),
             },
             id,
@@ -844,7 +848,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       BACKEND.STATUS,
       {
         status,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       id,
@@ -858,7 +866,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       {
         status: 'connected',
         reconnected: true,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       id,
@@ -1367,7 +1379,11 @@ async function captureLocalUpdateSupported(): Promise<void> {
           BACKEND.STATUS,
           {
             status: client.getStatus(),
-            transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+            transport: formatTransportInfo(
+              client.getConfig(),
+              getPinnedVersion(),
+              client.getConnectedVia(),
+            ),
             reconnectAttempts: client.getReconnectAttempts(),
           },
           LOCAL_CONNECTION_ID,
@@ -1881,7 +1897,11 @@ async function performSpawnSidecar(): Promise<{
         BACKEND.STATUS,
         {
           status: client.getStatus(),
-          transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+          transport: formatTransportInfo(
+            client.getConfig(),
+            getPinnedVersion(),
+            client.getConnectedVia(),
+          ),
           reconnectAttempts: client.getReconnectAttempts(),
         },
         LOCAL_CONNECTION_ID,
@@ -1959,7 +1979,11 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
       const client = getLocalBackendClient();
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
-        transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          client.getConfig(),
+          getPinnedVersion(),
+          client.getConnectedVia(),
+        ),
         reconnectAttempts: client.getReconnectAttempts(),
       });
     }
@@ -2145,7 +2169,11 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);
-    const transport = formatTransportInfo(client.getConfig(), getPinnedVersion());
+    const transport = formatTransportInfo(
+      client.getConfig(),
+      getPinnedVersion(),
+      client.getConnectedVia(),
+    );
     // Boot-time startup failures fire before this module registers its
     // `onSidecarStartupFailed` listener and before any window exists, so the
     // broadcast alone is lossy. Expose the latched failure here so the
@@ -2194,7 +2222,11 @@ export function registerBackendHandlers(): void {
         status: instance.getStatus(),
         sidecarStartupFailed: true,
         reason,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       LOCAL_CONNECTION_ID,
@@ -2217,7 +2249,11 @@ export function registerBackendHandlers(): void {
         status: instance.getStatus(),
         sidecarGaveUp: true,
         reason,
-        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
         reconnectAttempts: instance.getReconnectAttempts(),
       },
       LOCAL_CONNECTION_ID,
@@ -2451,7 +2487,11 @@ function registerConnectionsHandlers(): void {
               {
                 status: 'connected',
                 reconnected: true,
-                transport: formatTransportInfo(rebuilt.getConfig(), getPinnedVersion()),
+                transport: formatTransportInfo(
+                  rebuilt.getConfig(),
+                  getPinnedVersion(),
+                  rebuilt.getConnectedVia(),
+                ),
                 reconnectAttempts: rebuilt.getReconnectAttempts(),
               },
               connection.id,
