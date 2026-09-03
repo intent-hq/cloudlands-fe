@@ -396,8 +396,8 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '0', share: '0%' },
     { value: '30', share: '20%' },
   ]);
-  await expect(messageRows.nth(0)).toHaveText(/Human messages\s+3/);
-  await expect(messageRows.nth(1)).toHaveText(/Agent messages\s+6/);
+  await expect(messageRows.nth(0).locator('.animated-number-value')).toHaveText('3 human messages');
+  await expect(messageRows.nth(1).locator('.animated-number-value')).toHaveText('6 agent messages');
   const reducedNumberStyles = await details.locator('.animated-number').evaluateAll((numbers) =>
     numbers.map((number) => ({
       animationName: getComputedStyle(number).animationName,
@@ -484,6 +484,72 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'true');
 });
 
+for (const localeCase of [
+  {
+    locale: 'en',
+    plural: ['4 human messages', '7 agent messages'],
+    singular: ['1 human message', '1 agent message'],
+  },
+  {
+    locale: 'de',
+    plural: ['4 menschliche Nachrichten', '7 Agentennachrichten'],
+    singular: ['1 menschliche Nachricht', '1 Agentennachricht'],
+  },
+  {
+    locale: 'es',
+    plural: ['4 mensajes humanos', '7 mensajes del agente'],
+    singular: ['1 mensaje humano', '1 mensaje del agente'],
+  },
+  {
+    locale: 'fr',
+    plural: ['4 messages humains', '7 messages de l’agent'],
+    singular: ['1 message humain', '1 message de l’agent'],
+  },
+  {
+    locale: 'ja',
+    plural: ['人間のメッセージ 4 件', 'エージェントメッセージ 7 件'],
+    singular: ['人間のメッセージ 1 件', 'エージェントメッセージ 1 件'],
+  },
+  {
+    locale: 'ko',
+    plural: ['사람 메시지 4개', '에이전트 메시지 7개'],
+    singular: ['사람 메시지 1개', '에이전트 메시지 1개'],
+  },
+  {
+    locale: 'zh-CN',
+    plural: ['4 条人工消息', '7 条智能体消息'],
+    singular: ['1 条人工消息', '1 条智能体消息'],
+  },
+  {
+    locale: 'zh-TW',
+    plural: ['4 則人工訊息', '7 則智慧體訊息'],
+    singular: ['1 則人工訊息', '1 則智慧體訊息'],
+  },
+] as const) {
+  test(`localizes singular and plural message summaries in ${localeCase.locale}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: { locale: localeCase.locale },
+    });
+    await component.getByTestId('token-usage-disclosure').click();
+
+    const messageRows = page.getByTestId('token-usage-details').locator('.message-composition-row');
+    await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.plural);
+    await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.plural);
+
+    await page
+      .getByTestId('token-usage-by-agent')
+      .locator('.breakdown-item-control')
+      .last()
+      .focus();
+    await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.singular);
+    await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.singular);
+  });
+}
+
 test('retargets animated values smoothly with final-only accessibility and stable geometry', async ({
   mount,
   page,
@@ -501,6 +567,8 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   const rows = details.locator('.token-composition-row');
   const animatedValues = rows.locator('.composition-value .animated-number-value');
   const finalTargets = rows.locator('.composition-value .animated-number-target');
+  const messageValues = details.locator('.message-composition-row .animated-number-value');
+  const messageTargets = details.locator('.message-composition-row .animated-number-target');
   const animatedNumbers = details.locator('.animated-number');
   const agentBeta = page
     .getByTestId('token-usage-by-agent')
@@ -566,6 +634,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
   await expect(finalTargets).toHaveText(['30 tokens', '15', '0', '5']);
+  await expect(messageTargets).toHaveText(['1 human message', '3 agent messages']);
   expect(
     await finalTargets.evaluateAll((targets) =>
       targets.every((target) => target.ariaAtomic === 'true'),
@@ -574,7 +643,9 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   const midpointGeometry = await geometry();
   expect(midpointGeometry).toEqual(initialGeometry);
 
-  await page.clock.runFor(350);
+  await page.clock.runFor(225);
+  await expect(messageValues).toHaveText(['1 human message', '3 agent messages']);
+  await page.clock.runFor(125);
   await expect(animatedValues).toHaveText(['30 tokens', '15', '0', '5']);
   expect(await geometry()).toEqual(initialGeometry);
 
@@ -717,11 +788,15 @@ test('renders the full reference table as a wide overlay from the real workspace
   ).toHaveText('73% of total');
   await expect(compositionRows.nth(1)).toContainText('Model output');
   await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
-  await expect(compositionRows.nth(3)).toContainText('Human messages');
-  await expect(compositionRows.nth(4)).toContainText('Agent messages');
-  await expect(compositionRows.nth(5)).toContainText('Input context');
-  await expect(messageCompositionRows.nth(0)).toHaveText(/Human messages\s+4/);
-  await expect(messageCompositionRows.nth(1)).toHaveText(/Agent messages\s+7/);
+  await expect(compositionRows.nth(3)).toContainText('Input context');
+  await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText(
+    '4 human messages',
+  );
+  await expect(compositionRows.nth(5).locator('.animated-number-value')).toHaveText(
+    '7 agent messages',
+  );
+  await expect(messageCompositionRows.locator('.composition-value')).toHaveCount(0);
+  await expect(messageCompositionRows.locator('.composition-context')).toHaveCount(0);
   await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
   await expect(messageCompositionRows.locator('.composition-key')).toHaveCount(0);
   await expect(composition.locator('.composition-description')).toHaveCount(0);
@@ -889,20 +964,14 @@ test('renders the full reference table as a wide overlay from the real workspace
       };
     }),
     details.evaluate((element) => {
-      const inputKey = element.querySelector('.composition-key[data-metric="input"]')!;
-      const inputRow = inputKey.closest('.token-composition-row')!;
-      const inputLabel = inputRow.querySelector('.composition-metric > span:last-child')!;
       return {
-        inputLabelLeft: inputLabel.getBoundingClientRect().left,
         rows: Array.from(element.querySelectorAll('.message-composition-row')).map((row) => {
           const label = row.querySelector('.message-composition-label')!;
-          const value = row.querySelector('.composition-value')!;
-          const context = row.querySelector('.composition-context')!;
           return {
             labelLeft: label.getBoundingClientRect().left,
-            value: value.getBoundingClientRect().toJSON(),
-            valueFontWeight: getComputedStyle(value).fontWeight,
-            contextText: context.textContent?.trim(),
+            textAlign: getComputedStyle(label).textAlign,
+            valueCount: row.querySelectorAll('.composition-value').length,
+            contextCount: row.querySelectorAll('.composition-context').length,
           };
         }),
       };
@@ -1247,15 +1316,11 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(messageAlignment.rows).toHaveLength(2);
   expect(
     messageAlignment.rows.every(
-      ({ labelLeft, valueFontWeight, contextText }) =>
-        Math.abs(labelLeft - messageAlignment.inputLabelLeft) <= 0.01 &&
-        valueFontWeight === '400' &&
-        contextText === '',
-    ),
-  ).toBe(true);
-  expect(
-    messageAlignment.rows.every(
-      ({ value }) => Math.abs(value.right - desktopRows[0].value.right) <= 0.01,
+      ({ labelLeft, textAlign, valueCount, contextCount }) =>
+        Math.abs(labelLeft - compositionAlignment.rowLeft) <= 0.01 &&
+        textAlign === 'left' &&
+        valueCount === 0 &&
+        contextCount === 0,
     ),
   ).toBe(true);
   const intrinsicNavigatorGeometry = await modelSection
