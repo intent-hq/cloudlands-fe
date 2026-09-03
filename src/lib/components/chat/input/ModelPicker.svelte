@@ -968,7 +968,9 @@
 
   const triggerProviderId = $derived.by(() => {
     if (localModel && hasExplicitModel) {
-      return parseCompoundModelId(localModel).providerId;
+      // Catalog-ownership attribution so a bare cross-provider selection
+      // shows its own provider's icon, not the default provider's.
+      return resolvePickedTriple(localModel).providerId;
     }
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
