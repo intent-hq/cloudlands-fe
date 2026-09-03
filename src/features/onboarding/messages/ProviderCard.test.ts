@@ -166,6 +166,41 @@ describe('ProviderCard needsLogin derivation', () => {
   });
 });
 
+describe('ProviderCard identity line', () => {
+  it('renders the daemon-supplied identity next to the connected state for a ready card', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authDetails: 'dev@example.com · Example Org' },
+        selected: false,
+      },
+    });
+    expect(container.textContent).toContain('dev@example.com · Example Org');
+  });
+
+  it('renders no identity line when the daemon sent none', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authDetails: undefined },
+        selected: false,
+      },
+    });
+    expect(container.textContent).not.toContain('@');
+  });
+
+  it('does not render the identity line while the card needs login', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authenticated: false, authDetails: 'dev@example.com' },
+        selected: false,
+      },
+    });
+    expect(container.textContent).not.toContain('dev@example.com');
+  });
+});
+
 describe('ProviderCard login guidance', () => {
   const loginHint = (root: HTMLElement) =>
     root.querySelector('[data-testid="provider-card-login-hint"]');

@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROVIDERS_CHANNELS } from '../../../../shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../../shared/constants/claude-code';
 
@@ -59,17 +53,15 @@ const EMPTY_DISCOVERY = {
     'droid',
     'grok',
     'unsloth',
-  ].map(
-    (id) => ({
-      id,
-      displayName: id,
-      command: id,
-      installed: false,
-      resolvedPath: null,
-      gatedOff: null,
-      hasNpxFallback: false,
-    }),
-  ),
+  ].map((id) => ({
+    id,
+    displayName: id,
+    command: id,
+    installed: false,
+    resolvedPath: null,
+    gatedOff: null,
+    hasNpxFallback: false,
+  })),
   npx: { resolvedPath: null, version: null, versionOk: false },
 };
 
@@ -392,6 +384,41 @@ describe('provider availability service', () => {
     expect(result.providers.grok.authenticated).toBeUndefined();
   });
 
+  it('attaches the protocol-9.4 identity line only to the provider that sent one', async () => {
+    routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: EMPTY_DISCOVERY.providers.map((p) =>
+          ['pi', 'droid'].includes(p.id)
+            ? { ...p, installed: true, resolvedPath: `/usr/local/bin/${p.id}` }
+            : p,
+        ),
+      },
+      'host.providerAuthStatus': {
+        providers: [
+          {
+            id: 'pi',
+            authenticated: true,
+            identity: { email: 'dev@example.com', orgName: 'Example Org', subscriptionType: 'max' },
+          },
+          { id: 'droid', authenticated: true },
+        ],
+      },
+    });
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+    const result = await getProviderAvailability();
+
+    expect(result.providers.pi).toMatchObject({
+      available: true,
+      authenticated: true,
+      authDetails: 'dev@example.com · Example Org',
+    });
+    // No identity on the wire → no authDetails key at all (pre-9.4 shape).
+    expect(result.providers.droid.authenticated).toBe(true);
+    expect(result.providers.droid).not.toHaveProperty('authDetails');
+  });
+
   it('does not attach auth verdicts to unavailable providers', async () => {
     routeBackend({
       'host.providerDiscovery': EMPTY_DISCOVERY,
@@ -401,9 +428,7 @@ describe('provider availability service', () => {
     const { getProviderAvailability } = await import('../provider-availability.service');
     const result = await getProviderAvailability();
 
-    expect(result.providers.codex).toEqual(
-      expect.objectContaining({ available: false }),
-    );
+    expect(result.providers.codex).toEqual(expect.objectContaining({ available: false }));
     expect(result.providers.codex.authenticated).toBeUndefined();
   });
 
@@ -644,10 +669,7 @@ describe('provider availability service', () => {
 
   describe('hiddenProviders gating verdict', () => {
     /** Schema-valid `providers.catalog` row (PROTOCOL §5.38). */
-    const catalogEntry = (
-      id: string,
-      overrides: Record<string, unknown> = {},
-    ) => ({
+    const catalogEntry = (id: string, overrides: Record<string, unknown> = {}) => ({
       id,
       displayName: id,
       shortName: id,
