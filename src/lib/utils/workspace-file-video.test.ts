@@ -35,6 +35,20 @@ describe('splitWorkspaceVideoMarkdown', () => {
     );
   });
 
+  it('resolves a direct workspace-file video owned by the current workspace', () => {
+    expect(splitWorkspaceVideoMarkdown(`![demo](workspace-file://${WS}/demo.webm)`, WS)).toEqual([
+      {
+        type: 'video',
+        name: 'demo',
+        source: {
+          kind: 'workspace',
+          url: `workspace-file://${WS}/demo.webm`,
+          mimeType: 'video/webm',
+        },
+      },
+    ]);
+  });
+
   it('leaves workspace PNG image markdown unchanged', () => {
     const markdown = '![diagram](intent://local/file/diagram.png)';
     expect(splitWorkspaceVideoMarkdown(markdown, WS)).toEqual([
@@ -59,6 +73,13 @@ describe('splitWorkspaceVideoMarkdown', () => {
         type: 'markdown',
         content: '[private](intent://local/other-workspace/file/private.webm)',
       },
+    ]);
+  });
+
+  it('does not load a direct workspace-file video owned by another workspace', () => {
+    const markdown = '![private](workspace-file://other-workspace/private.webm)';
+    expect(splitWorkspaceVideoMarkdown(markdown, WS)).toEqual([
+      { type: 'markdown', content: '[private](workspace-file://other-workspace/private.webm)' },
     ]);
   });
 

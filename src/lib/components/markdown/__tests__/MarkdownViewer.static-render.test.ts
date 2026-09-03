@@ -60,7 +60,7 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('pre code')?.textContent).toContain('const x = 1;');
   });
 
-  it('leaves workspace video clicks to the native controls in chat mode', async () => {
+  it('renders a workspace video once with the accessible snapshot and modal player', async () => {
     const { container } = render(MarkdownViewer, {
       props: {
         content: '![demo](intent://local/file/out/demo.mp4)',
@@ -69,17 +69,15 @@ describe('MarkdownViewer static rendering', () => {
       },
     });
 
-    const video = await waitFor(() => {
-      const element = container.querySelector<HTMLVideoElement>('video.markdown-video');
-      expect(element).toBeTruthy();
-      return element!;
-    });
-    expect(video.controls).toBe(true);
-    expect(video.getAttribute('src')).toBe('workspace-file://ws-abc/out/demo.mp4');
+    const snapshot = await screen.findByRole('button', { name: /play demo/i });
+    expect(container.querySelectorAll('[data-chat-video]')).toHaveLength(1);
+    expect(container.querySelector('video')?.getAttribute('src')).toBe(
+      'workspace-file://ws-abc/out/demo.mp4',
+    );
 
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-    expect(video.dispatchEvent(click)).toBe(true);
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await fireEvent.click(snapshot);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByTestId('chat-video-player')).toBeTruthy();
   });
 
   it.each(['Enter', ' '])('opens workspace image lightbox with %s', async (key) => {
@@ -140,20 +138,6 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing image.png'));
   });
 
-  it('replaces unsupported workspace media with an unsupported placeholder', async () => {
-    render(MarkdownViewer, {
-      props: {
-        content: '![logo](intent://local/file/assets/logo.svg)',
-        workspaceId: 'ws-abc',
-      },
-    });
-
-    const status = await screen.findByRole('status');
-    expect(status.textContent).toContain('logo');
-    expect(status.textContent).toContain('not supported');
-    expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
-  });
-
   it('replaces a missing workspace video with its file placeholder', async () => {
     const { container } = render(MarkdownViewer, {
       props: {
@@ -195,17 +179,6 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(container.querySelector('code.language-diff')).toBeTruthy());
     expect(container.querySelector('code.language-diff')?.textContent).toContain('-old\n+new');
     expect(container.querySelector('[data-type="diff-block"]')).toBeNull();
-  });
-
-  it('mounts a video component for standalone workspace video markdown', async () => {
-    const { container } = render(MarkdownViewer, {
-      props: {
-        content: '![demo](intent://local/file/.demo-artifacts/demo.webm)',
-        workspaceId: 'workspace-1',
-      },
-    });
-
-    await waitFor(() => expect(container.querySelector('[data-chat-video]')).toBeTruthy());
   });
 
   it('renders unsupported workspace media as a link instead of an image', async () => {
