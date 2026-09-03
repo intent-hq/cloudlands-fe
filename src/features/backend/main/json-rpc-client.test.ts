@@ -419,6 +419,38 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     client.dispose();
   });
 
+  it('records the race winner per connection and re-derives it on reconnect', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const seen: Array<ReturnType<JsonRpcClient['getConnectedVia']>> = [];
+    client.on('status', (status: string) => {
+      if (status === 'connected') seen.push(client.getConnectedVia());
+    });
+    client.start();
+
+    // Single-host dial: bare `connect` → the winner is unknown.
+    expect(client.getConnectedVia()).toBeNull();
+    sockets[0].emit('connect');
+    expect(client.getConnectedVia()).toBeNull();
+
+    // Reconnect through the tunnel: the race facade names its winner.
+    sockets[0].emit('close');
+    expect(client.getConnectedVia()).toBeNull();
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].emit('connect', { host: 'tailcat-tunnel' });
+    expect(client.getConnectedVia()).toBe('tunnel');
+
+    // Reconnect again through a direct host: the marker flips back.
+    sockets[1].emit('close');
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[2].emit('secureConnect', { host: '10.0.0.5' });
+    expect(client.getConnectedVia()).toBe('direct');
+
+    // The `status → connected` broadcast already observes the fresh value.
+    expect(seen).toEqual([null, 'tunnel', 'direct']);
+    client.dispose();
+  });
+
   // #439: a stopped daemon must be re-probed at least every 5s while
   // disconnected, indefinitely — the daemon-loss modal relies on the main
   // process noticing a returning daemon promptly and never giving up.

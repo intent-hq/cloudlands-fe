@@ -400,6 +400,15 @@ export interface RaceAttempt {
   create: () => Duplex;
 }
 
+/**
+ * Payload of the race facade's `'connect'` event: the candidate host that won
+ * ({@link TUNNEL_RACE_HOST} when the tunnel candidate won). Single-host sockets
+ * emit a bare `'connect'`, so consumers must treat the payload as optional.
+ */
+export interface RaceConnectInfo {
+  host: string;
+}
+
 /** Overall bound on the multi-host race; matches the capture timeout. */
 const RACE_TIMEOUT_MS = 10_000;
 
@@ -462,6 +471,9 @@ export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt 
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
  *   set cannot hang the client's connect (the reconnect loop retries).
+ * - The facade's `'connect'` event carries a {@link RaceConnectInfo} naming
+ *   the winning candidate host, so the connection layer can tell a tunnel win
+ *   from a direct one.
  */
 export function raceDuplexSockets(
   attempts: RaceAttempt[],
@@ -601,7 +613,8 @@ export function raceDuplexSockets(
       if (!facade.destroyed) facade.destroy(error);
     });
     candidate.on('close', () => facade.push(null));
-    facade.emit('connect');
+    const info: RaceConnectInfo = { host: candidateHosts.get(candidate) ?? '' };
+    facade.emit('connect', info);
   };
 
   for (const attempt of attempts) {

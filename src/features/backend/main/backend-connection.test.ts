@@ -37,7 +37,7 @@ import {
   tunnelRaceAttempt,
   WebSocketDuplex,
 } from './backend-connection';
-import type { HostCertMismatch } from './backend-connection';
+import type { HostCertMismatch, RaceConnectInfo } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
@@ -1200,6 +1200,38 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     );
     b.push('pong\n');
     expect(await received).toBe('pong\n');
+    facade.destroy();
+  });
+
+  it("the facade's connect event names the winning direct host", async () => {
+    const direct = new FakeCandidate();
+    const tunnel = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: '10.0.0.5', create: () => direct },
+      { host: TUNNEL_RACE_HOST, create: () => tunnel },
+    ]);
+    const winner = new Promise<RaceConnectInfo>((res) =>
+      facade.once('connect', (info: RaceConnectInfo) => res(info)),
+    );
+    direct.emit('connect');
+    expect(await winner).toEqual({ host: '10.0.0.5' });
+    expect(tunnel.destroyedByRace).toBe(true);
+    facade.destroy();
+  });
+
+  it("the facade's connect event names the tunnel pseudo-host when the tunnel wins", async () => {
+    const direct = new FakeCandidate();
+    const tunnel = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: '10.0.0.5', create: () => direct },
+      { host: TUNNEL_RACE_HOST, create: () => tunnel },
+    ]);
+    const winner = new Promise<RaceConnectInfo>((res) =>
+      facade.once('connect', (info: RaceConnectInfo) => res(info)),
+    );
+    tunnel.emit('secureConnect');
+    expect(await winner).toEqual({ host: TUNNEL_RACE_HOST });
+    expect(direct.destroyedByRace).toBe(true);
     facade.destroy();
   });
 
