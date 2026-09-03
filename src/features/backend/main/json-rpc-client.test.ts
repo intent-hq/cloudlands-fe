@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
 
@@ -437,7 +438,7 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     sockets[0].emit('close');
     expect(client.getConnectedVia()).toBeNull();
     await vi.advanceTimersByTimeAsync(100);
-    sockets[1].emit('connect', { host: 'tailcat-tunnel' });
+    sockets[1].emit('connect', { host: TUNNEL_RACE_HOST });
     expect(client.getConnectedVia()).toBe('tunnel');
 
     // Reconnect again through a direct host: the marker flips back.
