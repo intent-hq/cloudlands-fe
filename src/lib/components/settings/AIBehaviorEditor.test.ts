@@ -964,6 +964,16 @@ describe('AIBehaviorEditor specialist model reasoning', () => {
     expect(lastSave()).toMatchObject({ model: NO_EFFORT_MODEL, reasoningEffort: undefined });
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
   });
+
+  it('attributes a bare cross-provider pick to the provider resolved by the picker', async () => {
+    renderSpecialist();
+
+    // MockModelPicker emits a bare model id plus the resolved pick triple —
+    // the provider must come from the pick, not the default-provider fallback.
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
+
+    expect(lastSave()).toMatchObject({ codingAgent: 'codex', model: 'bare-picked-model' });
+  });
 });
 
 describe('AIBehaviorEditor create-specialist model reasoning', () => {
@@ -995,5 +1005,25 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(onDiscard).toHaveBeenCalledOnce();
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+  });
+
+  it('attributes a bare cross-provider pick to the provider resolved by the picker', async () => {
+    render(AIBehaviorEditor, {
+      activeView: { type: 'create-specialist' },
+    });
+
+    await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+    await fireEvent.input(screen.getByPlaceholderText('e.g., Code Reviewer'), {
+      target: { value: 'Reviewer' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
+
+    const save = mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
+      ?.payload[0] as Record<string, unknown>;
+    expect(save).toMatchObject({
+      name: 'Reviewer',
+      codingAgent: 'codex',
+      model: 'bare-picked-model',
+    });
   });
 });
