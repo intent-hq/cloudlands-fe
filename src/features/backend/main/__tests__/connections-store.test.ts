@@ -1356,11 +1356,11 @@ describe('connections-store', () => {
 
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
     const store = await import('../connections-store');
-    await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBeUndefined();
+    await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBe(false);
 
     const optedOut = await store.add({ ...sampleConn, detectHosts: false });
     expect(await store.getDetectHosts(optedOut.id)).toBe(false);
-    await store.setHosts(optedOut.id, ['10.0.0.5']);
+    await expect(store.setHosts(optedOut.id, ['10.0.0.5'])).resolves.toBe(false);
     const remote = (await store.list()).find((c) => c.id === optedOut.id);
     expect(remote?.hosts).toEqual(['192.168.1.10']);
   });
@@ -1408,7 +1408,7 @@ describe('connections-store keychain sync surface', () => {
       const store = await import('../connections-store');
       const rec = await store.add(sampleConn);
       await store.setHostname(rec.id, 'studio.local');
-      await store.setHosts(rec.id, ['10.0.0.5']);
+      await expect(store.setHosts(rec.id, ['10.0.0.5'])).resolves.toBe(true);
       await store.__drainWriteChainForTesting();
 
       const listener = vi.fn();
@@ -1419,12 +1419,15 @@ describe('connections-store keychain sync surface', () => {
       // newer remote edit in keychain sync.
       vi.setSystemTime(1_700_000_005_000);
       await store.setHostname(rec.id, 'studio.local');
-      await store.setHosts(rec.id, [' 10.0.0.5 ']); // dedupes to the same list
+      // Dedupes to the same list: reports "unchanged" so callers skip their broadcast.
+      await expect(store.setHosts(rec.id, [' 10.0.0.5 '])).resolves.toBe(false);
       await store.__drainWriteChainForTesting();
 
+      // Clock stays where the initial same-tick add → setHostname → setHosts
+      // chain left it (each capture stamped strictly past the previous).
       const file = path.join(tmpDir, 'backend-connections.json');
       const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
-      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_002);
       expect(listener).not.toHaveBeenCalled();
       unsubscribe();
     } finally {
@@ -1471,6 +1474,41 @@ describe('connections-store keychain sync surface', () => {
       expect(parsed.connections[0].updatedAt).toBe(1_700_000_002_000);
       expect(listener).toHaveBeenCalledTimes(1);
       unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setHosts stamps strictly past the record clock so a same-tick refresh never moves it backwards', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      // setTcAddress forced the clock one past add's stamp; a setHosts in the
+      // SAME millisecond (the every-connect system.status capture writes
+      // both back to back) must land strictly after it, not at Date.now().
+      await store.setTcAddress(rec.id, 'tc7f2a91.tailcat.net');
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      await store.__drainWriteChainForTesting();
+      const file = path.join(tmpDir, 'backend-connections.json');
+      let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_002);
+
+      // A record carrying a future clock (synced from a clock-ahead device)
+      // keeps winning: the refresh stamps past it rather than behind it.
+      const futureClock = 1_700_000_500_000;
+      await store.applyRemoteSyncRecord({
+        ...(await store.listSyncRecords())[0],
+        hosts: ['10.0.0.5'],
+        updatedAt: futureClock,
+      });
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setHosts(rec.id, ['10.0.0.5', '192.168.1.5']);
+      await store.__drainWriteChainForTesting();
+      parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].hosts).toEqual(['10.0.0.5', '192.168.1.5']);
+      expect(parsed.connections[0].updatedAt).toBe(futureClock + 1);
     } finally {
       vi.useRealTimers();
     }
