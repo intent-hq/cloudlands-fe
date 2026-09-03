@@ -419,11 +419,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    // The raw waiting selector is true for an unresolved tool_use on the
-    // in-flight turn; the shared precedence must still resolve to running.
+    // Only the session drives the avatar state: an unresolved tool_use on the
+    // in-flight turn must resolve to running under the shared precedence.
     agentSelectorHarness.set({
-      responding: true,
-      waiting: true,
       session: { status: 'active', isResponding: true, isWaitingOnTool: true },
     });
     await Promise.resolve();
