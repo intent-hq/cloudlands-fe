@@ -45,6 +45,7 @@ export type BrowserElementCaptureInput = {
   ownerAgentId?: string;
   pageUrl: string;
   title: string;
+  viewport?: { width: number; height: number };
   image: { data: string; mimeType: 'image/png' };
   element?: BrowserElement;
 };

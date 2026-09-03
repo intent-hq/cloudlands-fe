@@ -848,7 +848,7 @@
   }
 
   function dispatchBrowserCapture(imageData: string, element?: BrowserElement) {
-    if (!tabId) return;
+    if (!tabId || !webviewRef) return;
     const pageUrl = element?.pageUrl || currentLoadedUrl();
     appStore.dispatch(
       browserElementCaptured(_workspaceId, {
@@ -856,6 +856,10 @@
         ownerAgentId,
         pageUrl,
         title: pageTitle || getHostname(pageUrl) || pageUrl,
+        viewport:
+          viewport.mode === 'fit'
+            ? { width: webviewRef.clientWidth, height: webviewRef.clientHeight }
+            : { width: viewport.width, height: viewport.height },
         image: { data: imageData, mimeType: 'image/png' },
         ...(element ? { element } : {}),
       }),

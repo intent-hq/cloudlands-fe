@@ -472,6 +472,7 @@ describe('EmbeddedBrowser', () => {
           ownerAgentId: 'agent-1',
           pageUrl: 'https://picked.test/settings',
           title: 'picked.test',
+          viewport: { width: 1280, height: 800 },
           image: { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' },
           element,
         },
@@ -555,6 +556,7 @@ describe('EmbeddedBrowser', () => {
         tabId: 'tab-1',
         pageUrl: 'https://loaded.test/page',
         title: 'loaded.test',
+        viewport: { width: 640, height: 400 },
         image: { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' },
       });
       expect(capture).not.toHaveProperty('element');
