@@ -119,10 +119,6 @@
     return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
   }
 
-  function tokenValueLabel(value: number): string {
-    return m.workspace_tokenUsage_tokenValue_label({ tokens: compactWholeNumber(value) });
-  }
-
   function humanMessageCountLabel(value: number): string {
     const roundedValue = Math.round(value);
     return roundedValue === 1
@@ -135,10 +131,6 @@
     return roundedValue === 1
       ? m.workspace_tokenUsage_agentMessages_one()
       : m.workspace_tokenUsage_agentMessages_many({ count: formatInteger(roundedValue) });
-  }
-
-  function shareOfTotalLabel(value: number): string {
-    return m.workspace_tokenUsage_shareOfTotal_label({ share: shareLabel(value) });
   }
 
   function compactWholeNumber(value: number): string {
@@ -578,7 +570,7 @@
             </span>
           </span>
           <div
-            class="token-summary mb-2 flex min-w-0 items-center justify-between gap-3 text-xs font-normal tracking-normal text-muted-foreground"
+            class="token-summary mb-3 flex min-w-0 items-center justify-between gap-3 text-xs font-normal tracking-normal text-muted-foreground"
           >
             <span>{m.workspace_tokenUsage_title()}</span>
             <span class="shrink-0 text-right text-sm font-normal tabular-nums text-foreground">
@@ -606,7 +598,7 @@
               {/each}
             </div>
           {/if}
-          <dl>
+          <dl class="composition-list">
             {#each compositionRows as row (row.id)}
               <div
                 class="composition-row token-composition-row min-w-0 py-1"
@@ -634,45 +626,53 @@
                 >
                   <AnimatedNumber
                     value={row.tokens}
-                    format={row.id === 'cached' ? tokenValueLabel : compactWholeNumber}
+                    format={compactWholeNumber}
                     pulse={false}
                     class="block w-full text-right"
                   />
                 </dd>
+                {#if row.id === 'cached'}
+                  <dd
+                    class="composition-value-suffix text-sm font-normal {row.tokens === 0
+                      ? 'text-muted-foreground'
+                      : 'text-foreground'}"
+                  >
+                    {m.workspace_tokenUsage_tokenSuffix_label()}
+                  </dd>
+                {/if}
                 <dd
                   class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
                 >
                   <AnimatedNumber
                     value={row.share}
-                    format={row.id === 'cached' ? shareOfTotalLabel : shareLabel}
+                    format={shareLabel}
                     pulse={false}
                     class="block w-full text-right"
                   />
                 </dd>
+                {#if row.id === 'cached'}
+                  <dd class="composition-context-suffix text-xs font-normal text-muted-foreground">
+                    {m.workspace_tokenUsage_shareSuffix_label()}
+                  </dd>
+                {/if}
               </div>
             {/each}
             {#if crossFilterAvailable}
               <div class="composition-row message-composition-row min-w-0 py-1">
                 <dt
-                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-foreground"
+                  class="composition-metric message-composition-metric flex min-w-0 flex-wrap gap-x-3 text-left text-sm font-normal tabular-nums text-foreground"
                 >
                   <AnimatedNumber
                     value={previewHumanMessages ?? 0}
                     format={humanMessageCountLabel}
                     pulse={false}
-                    class="message-composition-label block w-full min-w-0 truncate text-left"
+                    class="message-composition-label min-w-0 text-left"
                   />
-                </dt>
-              </div>
-              <div class="composition-row message-composition-row min-w-0 py-1">
-                <dt
-                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-foreground"
-                >
                   <AnimatedNumber
                     value={previewAgentMessages ?? 0}
                     format={agentMessageCountLabel}
                     pulse={false}
-                    class="message-composition-label block w-full min-w-0 truncate text-left"
+                    class="message-composition-label min-w-0 text-left"
                   />
                 </dt>
               </div>
@@ -692,7 +692,7 @@
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
                 {#if selectedAgentRow && agentSegmentRows.length > 0}
-                  <div class="navigator-row flex min-w-0 flex-col gap-1.5">
+                  <div class="navigator-row flex min-w-0 flex-col gap-3">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
@@ -767,7 +767,7 @@
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
                 {#if selectedModelRow && modelSegmentRows.length > 0}
-                  <div class="navigator-row flex min-w-0 flex-col gap-1.5">
+                  <div class="navigator-row flex min-w-0 flex-col gap-3">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
@@ -844,12 +844,17 @@
     z-index: var(--layer-popover);
   }
 
+  .composition-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4rem minmax(0, max-content) 3rem minmax(0, max-content);
+    column-gap: 0.25rem;
+  }
+
   .composition-row {
     display: grid;
-    grid-template-areas: 'metric value context';
-    grid-template-columns: minmax(0, 1fr) 5rem 6rem;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: center;
-    column-gap: 0.5rem;
   }
 
   .navigator-selection {
@@ -857,19 +862,28 @@
   }
 
   .composition-metric {
-    grid-area: metric;
+    grid-column: 1;
   }
 
   .composition-value {
-    grid-area: value;
+    grid-column: 2;
+  }
+
+  .composition-value-suffix {
+    grid-column: 3;
   }
 
   .composition-context {
-    grid-area: context;
+    grid-column: 4;
+  }
+
+  .composition-context-suffix {
+    grid-column: 5;
   }
 
   .message-composition-metric {
     grid-column: 1 / -1;
+    padding-inline-start: 0.875rem;
   }
 
   .breakdown-stack-item {

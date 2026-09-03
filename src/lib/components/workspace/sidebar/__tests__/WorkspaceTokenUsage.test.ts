@@ -305,13 +305,41 @@ describe('WorkspaceTokenUsage', () => {
     const compositionValues = compositionRows.map((compositionRow) => ({
       label: compositionRow.querySelector('.composition-metric')?.textContent?.trim(),
       value: visibleText(compositionRow.querySelector('.composition-value')!),
+      valueSuffix: compositionRow.querySelector('.composition-value-suffix')?.textContent?.trim(),
       context: visibleText(compositionRow.querySelector('.composition-context')!),
+      contextSuffix: compositionRow
+        .querySelector('.composition-context-suffix')
+        ?.textContent?.trim(),
     }));
     expect(compositionValues).toEqual([
-      { label: 'Cached context', value: '9M tokens', context: '99% of total' },
-      { label: 'Model output', value: '98K', context: '1%' },
-      { label: 'Reasoning tokens', value: '0', context: '0%' },
-      { label: 'Input context', value: '1K', context: '0%' },
+      {
+        label: 'Cached context',
+        value: '9M',
+        valueSuffix: 'tokens',
+        context: '99%',
+        contextSuffix: 'of total',
+      },
+      {
+        label: 'Model output',
+        value: '98K',
+        valueSuffix: undefined,
+        context: '1%',
+        contextSuffix: undefined,
+      },
+      {
+        label: 'Reasoning tokens',
+        value: '0',
+        valueSuffix: undefined,
+        context: '0%',
+        contextSuffix: undefined,
+      },
+      {
+        label: 'Input context',
+        value: '1K',
+        valueSuffix: undefined,
+        context: '0%',
+        contextSuffix: undefined,
+      },
     ]);
     const zeroCompositionRows = compositionRows.filter(
       (compositionRow) => compositionRow.getAttribute('data-zero') === 'true',
@@ -547,7 +575,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
     expect(alpha.getAttribute('aria-checked')).toBe('true');
     expect(values()).toEqual([
-      { value: '70 tokens', share: '47% of total' },
+      { value: '70', share: '47%' },
       { value: '20', share: '13%' },
       { value: '50', share: '33%' },
       { value: '10', share: '7%' },
@@ -562,7 +590,7 @@ describe('WorkspaceTokenUsage', () => {
     await fireEvent.pointerEnter(zeroCache, { pointerType: 'mouse' });
     expect(visibleText(previewStatus)).toBe('Active scope By model Model Zero Cache 100 processed');
     expect(values()).toEqual([
-      { value: '0 tokens', share: '0% of total' },
+      { value: '0', share: '0%' },
       { value: '20', share: '20%' },
       { value: '0', share: '0%' },
       { value: '80', share: '80%' },
@@ -578,7 +606,7 @@ describe('WorkspaceTokenUsage', () => {
     await fireEvent.focus(beta);
     expect(visibleText(previewStatus)).toBe('Active scope By agent Beta 1K processed');
     expect(values()).toEqual([
-      { value: '300 tokens', share: '30% of total' },
+      { value: '300', share: '30%' },
       { value: '300', share: '30%' },
       { value: '0', share: '0%' },
       { value: '400', share: '40%' },
@@ -593,7 +621,7 @@ describe('WorkspaceTokenUsage', () => {
     await fireEvent.focus(reasoning);
     expect(visibleText(previewStatus)).toBe('Active scope By model Model Reasoning 50 processed');
     expect(values()).toEqual([
-      { value: '0 tokens', share: '0% of total' },
+      { value: '0', share: '0%' },
       { value: '0', share: '0%' },
       { value: '50', share: '100%' },
       { value: '0', share: '0%' },
@@ -745,8 +773,8 @@ describe('WorkspaceTokenUsage', () => {
       .getByRole('heading', { name: 'Token composition' })
       .closest('section')!;
     const messageCounts = () =>
-      Array.from(details.querySelectorAll('.message-composition-row')).map((row) =>
-        visibleText(row),
+      Array.from(details.querySelectorAll('.message-composition-label')).map((label) =>
+        visibleText(label),
       );
     const values = () =>
       Array.from(details.querySelectorAll('.token-composition-row')).map((row) => ({
@@ -762,12 +790,13 @@ describe('WorkspaceTokenUsage', () => {
     expect(messageCounts()).toEqual(['6 human messages', '7 agent messages']);
     expect(composition.classList).toContain('pb-3');
     const messageRows = Array.from(details.querySelectorAll('.message-composition-row'));
+    expect(messageRows).toHaveLength(1);
     expect(
       messageRows.every((row) =>
         row.querySelector('.composition-metric')?.classList.contains('message-composition-metric'),
       ),
     ).toBe(true);
-    expect(messageRows.every((row) => row.querySelector('.message-composition-label'))).toBe(true);
+    expect(messageRows[0].querySelectorAll('.message-composition-label')).toHaveLength(2);
     expect(messageRows.every((row) => row.querySelector('.composition-value') === null)).toBe(true);
     expect(messageRows.every((row) => row.querySelector('.composition-context') === null)).toBe(
       true,
@@ -782,8 +811,7 @@ describe('WorkspaceTokenUsage', () => {
       'Model output',
       'Reasoning tokens',
       'Input context',
-      '6 human messages',
-      '7 agent messages',
+      '6 human messages 7 agent messages',
     ]);
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
     expect(
@@ -800,7 +828,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
     expect(messageCounts()).toEqual(['3 human messages', '4 agent messages']);
     expect(values()).toEqual([
-      { value: '70 tokens', share: '44% of total' },
+      { value: '70', share: '44%' },
       { value: '25', share: '16%' },
       { value: '50', share: '31%' },
       { value: '15', share: '9%' },
