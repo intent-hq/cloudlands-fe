@@ -51,6 +51,17 @@ export interface ResolvedModelConfig {
   specialistId: string;
 }
 
+/** An explicit prompt-step picker pick: bare model id + its provider leg. */
+export interface OnboardingUserModelPick {
+  model: string;
+  /** Provider the pick belongs to; absent for legacy persisted picks without one. */
+  provider?: string;
+}
+
+/**
+ * Legacy boundary: attribute a persisted pre-triple compound id (specialist
+ * override / old persisted pick) to its prefix, else the fallback provider.
+ */
 function getProviderForModel(model: string, fallbackProvider: string): string {
   return splitLegacyCompoundId(model).providerId || fallbackProvider;
 }
@@ -155,14 +166,16 @@ function resolveUsableProvider(
  * Returns a provider that is guaranteed to be available + authenticated on
  * the user's machine.
  *
- * `userSelectedModel` is an explicit pick from the onboarding prompt-step
- * model picker: it wins outright (provider follows the compound id, bare ids
- * belong to the default provider) under the same user-explicit gate as a
- * provider-card click — relaxed auth, never silently switched away from.
+ * `userPick` is an explicit pick from the onboarding prompt-step model
+ * picker: it wins outright under the same user-explicit gate as a
+ * provider-card click — relaxed auth, never silently switched away from. The
+ * pick carries its own provider leg (bare model id + provider from the
+ * picker); a legacy persisted pick without one attributes to its compound
+ * prefix, else the default provider.
  */
 export async function resolveOnboardingModel(
   state: StoreState,
-  userSelectedModel?: string,
+  userPick?: OnboardingUserModelPick,
 ): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
@@ -172,8 +185,13 @@ export async function resolveOnboardingModel(
 
   const availability = await getProviderAvailability();
 
-  if (userSelectedModel) {
-    const pickedProvider = getProviderForModel(userSelectedModel, defaultProviderId);
+  if (userPick?.model) {
+    // Normalize a legacy compound pick at this boundary: the bare model leg
+    // is what the create request submits; the provider leg comes from the
+    // pick, else the compound prefix, else the default provider.
+    const pickedModel = splitLegacyCompoundId(userPick.model).modelId || userPick.model;
+    const pickedProvider =
+      userPick.provider || getProviderForModel(userPick.model, defaultProviderId);
     const pickedStatus = getProviderStatus(availability, pickedProvider);
     if (!isProviderUserExplicitUsable(pickedStatus, pickedProvider)) {
       throw new Error(
@@ -181,13 +199,13 @@ export async function resolveOnboardingModel(
       );
     }
     logger.info('Using user-selected onboarding model', {
-      model: userSelectedModel,
+      model: pickedModel,
       provider: pickedProvider,
       authenticated: pickedStatus?.authenticated,
     });
     return {
       provider: pickedProvider,
-      model: userSelectedModel,
+      model: pickedModel,
       behaviorPrompt,
       specialistId,
     };
@@ -246,12 +264,13 @@ export async function resolveOnboardingModel(
   }
 
   // Model resolution is daemon-owned: only an explicit specialist user
-  // override that matches the resolved provider is submitted. Everything else
-  // (frontmatter model/tier, settings chain, provider CLI default) is
+  // override that matches the resolved provider is submitted (as its bare
+  // model leg — the override may be a persisted legacy compound). Everything
+  // else (frontmatter model/tier, settings chain, provider CLI default) is
   // resolved by the daemon at creation time.
   let resolvedModel: string | undefined;
   if (specialistOverride && overrideProvider === provider) {
-    resolvedModel = specialistOverride;
+    resolvedModel = splitLegacyCompoundId(specialistOverride).modelId || specialistOverride;
     logger.info('Using specialist model override', { specialistId, override: specialistOverride });
   }
 

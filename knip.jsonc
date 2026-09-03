@@ -27,8 +27,6 @@
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
     // is not followed by knip); playwright/index.ts is a CT plugin default entry already
     "playwright/app-stubs/*.ts",
-    // Wired as a vite alias replacement in test/titlebar-workspace-controls.spec.ts
-    "test/fixtures/titlebar-control-store.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte

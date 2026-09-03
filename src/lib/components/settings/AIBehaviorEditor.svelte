@@ -193,15 +193,19 @@
   // Sync specialist model value when specialist changes or file specialists
   // change. The picker's selected value is the EXPLICIT frontmatter model
   // only — undefined when inheriting (the daemon resolvedModel preview is
-  // shown via the picker's default-option plumbing instead).
+  // shown via the picker's default-option plumbing instead). The stored
+  // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
+  // compound ids, so the effective codingAgent is recombined for display.
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
-      specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      const codingAgent = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
+      _specialistCodingAgentValue = codingAgent;
+      const explicitModel = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      specialistModelValue =
+        explicitModel && codingAgent && !explicitModel.includes(':')
+          ? `${codingAgent}:${explicitModel}`
+          : explicitModel;
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
@@ -272,7 +276,9 @@
       return;
     }
 
-    const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
+    // Writes emit the bare model id only (PROTOCOL §5.11) — the provider
+    // rides the `codingAgent:` key, never a compound `model:` id.
+    const { providerId: newProvider, modelId: bareModelId } = parseCompoundModelId(compoundModelId);
     _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
     // Reset the effort to Default when the newly picked model does not
@@ -291,7 +297,7 @@
             name: fileSpec.name,
             description: fileSpec.description,
             codingAgent: newProvider,
-            model: compoundModelId,
+            model: bareModelId,
             roleReminder: fileSpec.roleReminder,
             modelOptions: fileSpec.modelOptions,
             reasoningEffort: nextEffort,
@@ -313,7 +319,7 @@
           name: currentSpecialist.name,
           description: currentSpecialist.description,
           codingAgent: newProvider,
-          model: compoundModelId,
+          model: bareModelId,
           roleReminder: currentSpecialist.roleReminder,
           modelOptions: currentSpecialist.modelOptions,
           reasoningEffort: nextEffort,
@@ -609,13 +615,16 @@
       newName.trim(),
       selectSpecialists.select(appStore.state).map((specialist) => specialist.id),
     );
+    // `newModel` carries the picker's compound id for display; writes emit
+    // the bare model id only (PROTOCOL §5.11), the provider on codingAgent.
+    const bareNewModel = newModel ? parseCompoundModelId(newModel).modelId : undefined;
     appStore.dispatch(
       saveFileSpecialist({
         id: createdId,
         name: newName.trim(),
         description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
         codingAgent: newCodingAgent,
-        model: newModel,
+        model: bareNewModel,
         reasoningEffort: newEffort,
         behaviorPrompt: newPrompt,
         scope: 'user',

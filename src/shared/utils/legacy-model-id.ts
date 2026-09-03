@@ -13,7 +13,8 @@
  * empty prefix (`:model`) yields an empty-string providerId, matching the
  * legacy parse. Callers falling back to another provider should use
  * `|| fallback` (not `??`) so the empty string never propagates as a "real"
- * provider id.
+ * provider id. Both halves are trimmed, matching the daemon's split (so
+ * `"opencode: kimi-k3"` never persists a leading-space model id).
  */
 export function splitLegacyCompoundId(legacyModelId: string): {
   providerId?: string;
@@ -21,7 +22,7 @@ export function splitLegacyCompoundId(legacyModelId: string): {
 } {
   if (legacyModelId.includes(':')) {
     const [providerId, ...modelParts] = legacyModelId.split(':');
-    return { providerId, modelId: modelParts.join(':') };
+    return { providerId: providerId.trim(), modelId: modelParts.join(':').trim() };
   }
   return { modelId: legacyModelId };
 }

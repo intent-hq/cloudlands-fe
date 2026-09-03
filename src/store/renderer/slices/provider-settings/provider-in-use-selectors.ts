@@ -11,11 +11,12 @@ import { m } from '$shared/paraglide/messages.js';
  * and therefore cannot be disabled.
  *
  * A provider counts as in use when it is explicitly pinned by:
- * - the global default model (the active selection in `model.providerModels`;
- *   compound ids pin their prefix provider, bare ids pin the default provider), or
+ * - the global default model (the active selection in `model.providerModels`,
+ *   pinning the default provider — the map key carries provenance), or
  * - a specialist's explicit `codingAgent`, or
- * - a specialist's explicit model id (compound ids pin their prefix provider;
- *   bare ids pin the default provider unless an explicit coding agent covers them).
+ * - a specialist's explicit model id (legacy compound ids pin their prefix
+ *   provider; bare ids pin the default provider unless an explicit coding
+ *   agent covers them).
  */
 export const selectProviderInUseReasons = store.createSelector((state): Record<string, string> => {
   const reasons: Record<string, string> = {};
@@ -25,18 +26,19 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
 
   // Only an explicitly selected global model counts as a pin. The
   // catalog-derived default fallback used by selectSelectedModel is implicit
-  // and must not permanently block the default provider.
-  // Note: providerModels values are normalized on write (bare iff the
-  // provider is the default, prefixed otherwise), so this branch only ever
-  // pins the active provider itself. ProviderSelector already hides Disable
-  // for the active provider; the pin is defense in depth for callers that
-  // bypass that UI (e.g. toggles or agent-driven settings proposals).
+  // and must not permanently block the default provider. providerModels
+  // values are bare ids keyed by provider, so the pinned provider is the
+  // default provider itself. ProviderSelector already hides Disable for the
+  // default provider; the pin is defense in depth for callers that bypass
+  // that UI (e.g. toggles or agent-driven settings proposals).
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
   const activeProviderId = selectActiveProviderId.select(state);
   const globalModel = selectProviderModels.select(state)[activeProviderId];
-  if (globalModel) {
-    const providerId = splitLegacyCompoundId(globalModel).providerId ?? defaultProviderId;
-    addReason(providerId, m.settings_providers_inUseDefaultModel_label({ model: globalModel }));
+  if (globalModel && activeProviderId) {
+    addReason(
+      activeProviderId,
+      m.settings_providers_inUseDefaultModel_label({ model: globalModel }),
+    );
   }
 
   for (const specialist of selectSpecialists.select(state)) {

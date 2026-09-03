@@ -339,7 +339,6 @@ import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/set
 import {
   setupSystemIPC,
   isFocusedWindowInWorkspace,
-  isFocusedWindowBrowserActive,
   getFocusedWindowWorkspaceId,
   getAllOpenWorkspaceIds,
   installIntentCli,
@@ -359,6 +358,7 @@ import { m } from '../shared/paraglide/messages.js';
 import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspace-command';
 import { openNewWindowFromMenu } from './menu-new-window';
 import { toggleWindowDevTools } from './menu-devtools-toggle';
+import { handleMenuZoom } from './menu-zoom';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
@@ -1398,46 +1398,17 @@ app.whenReady().then(async () => {
           {
             label: m.menu_actual_size(),
             accelerator: 'CmdOrCtrl+0',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (!focusedWindow || focusedWindow.isDestroyed()) return;
-              // Route zoom to main app or webview based on renderer-tracked panel focus
-              if (isFocusedWindowBrowserActive()) {
-                sendWorkspaceCommand('menu:reset-zoom');
-              } else {
-                focusedWindow.webContents.setZoomLevel(0);
-              }
-            },
+            click: () => handleMenuZoom('menu:reset-zoom', sendWorkspaceCommand),
           },
           {
             label: m.menu_zoom_in(),
             accelerator: 'CmdOrCtrl+=',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (!focusedWindow || focusedWindow.isDestroyed()) return;
-              if (isFocusedWindowBrowserActive()) {
-                sendWorkspaceCommand('menu:zoom-in');
-              } else {
-                focusedWindow.webContents.setZoomLevel(
-                  focusedWindow.webContents.getZoomLevel() + 0.5,
-                );
-              }
-            },
+            click: () => handleMenuZoom('menu:zoom-in', sendWorkspaceCommand),
           },
           {
             label: m.menu_zoom_out(),
             accelerator: 'CmdOrCtrl+-',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (!focusedWindow || focusedWindow.isDestroyed()) return;
-              if (isFocusedWindowBrowserActive()) {
-                sendWorkspaceCommand('menu:zoom-out');
-              } else {
-                focusedWindow.webContents.setZoomLevel(
-                  focusedWindow.webContents.getZoomLevel() - 0.5,
-                );
-              }
-            },
+            click: () => handleMenuZoom('menu:zoom-out', sendWorkspaceCommand),
           },
           { type: 'separator' },
           { role: 'togglefullscreen', label: m.menu_toggle_fullscreen() },

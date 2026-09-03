@@ -1634,11 +1634,13 @@
         updateGlobalStore
         showReasoning
         reasoningDisabled={disabled}
-        onModelChange={(newModel) => {
+        onModelChange={(newModel, pick) => {
           if (!newModel) return;
 
-          // Check if the model is from a different provider
-          const rawProvider = parseCompoundModelId(newModel).providerId;
+          // Check if the model is from a different provider. The picker
+          // resolves the pick's owning provider (catalog rows are bare for
+          // every provider); parsing the id is only a legacy fallback.
+          const rawProvider = pick?.providerId ?? parseCompoundModelId(newModel).providerId;
           const newProvider = normalizeProviderId(rawProvider);
           if (agentId && newProvider !== selectedProviderId) {
             // Provider is changing — run the full provider switch flow

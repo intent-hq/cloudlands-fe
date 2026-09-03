@@ -4,12 +4,17 @@
  * Covers controlled reasoning in the model-options editor: a picked level
  * is committed as `modelOptions[i].reasoningEffort` (PROTOCOL §5.11), draft
  * rows stay uncommitted until they gain a model, and a model switch to a
- * model lacking the current level resets the row to Default.
+ * model lacking the current level resets the row to Default. Rows carry the
+ * triple shape `{ provider?, model, hint, reasoningEffort? }` — the picker
+ * boundary speaks compound ids (a pick splits into provider + bare model)
+ * and each row renders a textual effort label ("Default" when inheriting).
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const EFFORT_MODEL = 'codex:gpt-5.3-codex';
+const EFFORT_PROVIDER = 'codex';
+const EFFORT_BARE_MODEL = 'gpt-5.3-codex';
+const EFFORT_MODEL = `${EFFORT_PROVIDER}:${EFFORT_BARE_MODEL}`;
 const PICKED_MODEL = 'user-picked-model';
 
 const mocks = vi.hoisted(() => ({
@@ -53,21 +58,26 @@ describe('SpecialistModelOptions reasoning', () => {
     mocks.effortLevels.value = {};
   });
 
-  it('enables controlled reasoning and commits a picked level', async () => {
+  it('enables controlled reasoning and commits a picked level on the triple', async () => {
     mocks.effortLevels.value = { [EFFORT_MODEL]: ['low', 'high'] };
     const onCommit = vi.fn();
     render(SpecialistModelOptions, {
-      savedOptions: [{ model: EFFORT_MODEL, hint: 'deep' }],
+      savedOptions: [{ provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: 'deep' }],
       onCommit,
     });
 
     expect(screen.getByTestId('picker-show-reasoning').textContent).toBe('true');
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+    // The picker boundary receives the recombined compound id.
+    expect(screen.getByTestId('picker-selected').textContent).toBe(EFFORT_MODEL);
+    // Unset effort reads as the model default, never blank.
+    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: Default');
     await fireEvent.click(screen.getByTestId('pick-reasoning'));
 
     expect(onCommit).toHaveBeenCalledWith([
-      { model: EFFORT_MODEL, hint: 'deep', reasoningEffort: 'high' },
+      { provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: 'deep', reasoningEffort: 'high' },
     ]);
+    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: High');
   });
 
   it('does not commit an effort change on a draft row until it gains a model', async () => {
@@ -89,28 +99,49 @@ describe('SpecialistModelOptions reasoning', () => {
     mocks.effortLevels.value = { [EFFORT_MODEL]: ['low', 'high'] };
     const onCommit = vi.fn();
     render(SpecialistModelOptions, {
-      savedOptions: [{ model: EFFORT_MODEL, hint: '', reasoningEffort: 'high' }],
+      savedOptions: [
+        { provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: '', reasoningEffort: 'high' },
+      ],
       onCommit,
     });
 
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: High');
 
     // MockModelPicker picks PICKED_MODEL, which has no effortLevels.
     await fireEvent.click(screen.getByTestId('pick-model'));
 
     expect(onCommit).toHaveBeenCalledWith([{ model: PICKED_MODEL, hint: '' }]);
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+    expect(screen.getByTestId('effort-label').textContent?.trim()).toBe('Effort: Default');
+  });
+
+  it('splits a compound pick into provider + bare model on the committed triple', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, { savedOptions: [], onCommit });
+
+    await fireEvent.click(screen.getByText('Add model option'));
+    // MockModelPicker's cross-provider button emits a compound id.
+    await fireEvent.click(screen.getByTestId('pick-cross-provider-model'));
+
+    expect(onCommit).toHaveBeenCalledWith([
+      { provider: 'codex', model: 'cross-provider-model', hint: '' },
+    ]);
   });
 
   it('clears a committed row effort back to inherit', async () => {
     const onCommit = vi.fn();
     render(SpecialistModelOptions, {
-      savedOptions: [{ model: EFFORT_MODEL, hint: '', reasoningEffort: 'high' }],
+      savedOptions: [
+        { provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: '', reasoningEffort: 'high' },
+      ],
       onCommit,
     });
 
     await fireEvent.click(screen.getByTestId('clear-reasoning'));
 
-    expect(onCommit).toHaveBeenCalledWith([{ model: EFFORT_MODEL, hint: '' }]);
+    expect(onCommit).toHaveBeenCalledWith([
+      { provider: EFFORT_PROVIDER, model: EFFORT_BARE_MODEL, hint: '' },
+    ]);
   });
 });

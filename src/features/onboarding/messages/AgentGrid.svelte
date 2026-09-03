@@ -47,6 +47,11 @@
     onProviderSelected?: (providerId: string) => void;
     /** Called when the availability of any provider changes */
     onAvailabilityChange?: (hasAny: boolean) => void;
+    /** Called whenever the card rendered as selected changes (including on
+     *  first resolution and when nothing is ready → undefined). Lets the
+     *  parent gate selection-dependent UI (e.g. the test-prompt checkbox)
+     *  without re-deriving the resolver. */
+    onSelectionChange?: (providerId: string | undefined) => void;
     /**
      * Layout mode.
      *  - `false` (default): wrapping flex grid where cards stretch via `flex-1`
@@ -59,8 +64,13 @@
     horizontal?: boolean;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Svelte prop used by parent
-  let { onProviderSelected, onAvailabilityChange, horizontal = false }: Props = $props();
+  let {
+    onProviderSelected,
+    onAvailabilityChange,
+    onSelectionChange,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Svelte prop used by parent
+    horizontal = false,
+  }: Props = $props();
 
   // Reactive Redux selectors — init at component top level
   const providerStatusMap$ = selectProviderStatusMap();
@@ -256,6 +266,10 @@
 
   $effect(() => {
     onAvailabilityChange?.(hasAnyProvider);
+  });
+
+  $effect(() => {
+    onSelectionChange?.(selectedProviderId);
   });
 
   async function handleSelectProvider(providerId: string) {
