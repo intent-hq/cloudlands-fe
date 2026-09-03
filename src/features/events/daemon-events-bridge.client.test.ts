@@ -22,6 +22,7 @@ const {
   backendRequestSpy,
   applyNoteFromEventSpy,
   applyCommentFromEventSpy,
+  workspaceServiceListSpy,
   capturedHandlers,
   capturedReconnectHandlers,
 } = vi.hoisted(() => ({
@@ -29,6 +30,7 @@ const {
   backendRequestSpy: vi.fn(),
   applyNoteFromEventSpy: vi.fn(),
   applyCommentFromEventSpy: vi.fn(),
+  workspaceServiceListSpy: vi.fn(() => Promise.resolve({ ok: true, data: [] })),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
   // RESUB-1: capture reconnect listeners so a test can simulate a daemon
   // restart by invoking each captured handler.
@@ -55,6 +57,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     // Use the spy's return value if configured, otherwise default
     return result || Promise.resolve({ subscriptionId: 'sub-1' });
   },
+}));
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: { list: workspaceServiceListSpy },
 }));
 // Mock the notes-read-service so the bridge's note:* routing is observable
 // without touching the real appClient.notes.list seam.
@@ -6001,20 +6006,16 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     await primeBridge();
     const handler = capturedHandlers[0]!;
     backendRequestSpy.mockClear();
-    backendRequestSpy.mockImplementation((method: string) => {
-      if (method === 'workspace.list') {
-        return Promise.resolve({
-          workspaces: [
-            {
-              id: REMOTE_WS,
-              title: 'Created elsewhere',
-              branch: 'main',
-              status: 'Active',
-            },
-          ],
-        });
-      }
-      return undefined;
+    workspaceServiceListSpy.mockResolvedValueOnce({
+      ok: true,
+      data: [
+        {
+          id: REMOTE_WS,
+          title: 'Created elsewhere',
+          branch: 'main',
+          status: 'Active',
+        },
+      ],
     });
 
     handler({
@@ -6034,7 +6035,7 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // (live client → mocked backendRequest); let the async refetch settle.
     await flush();
 
-    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', { includeArchived: true });
+    expect(workspaceServiceListSpy).toHaveBeenCalledWith({ lite: true });
     const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
     expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
   });

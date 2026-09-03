@@ -8,6 +8,7 @@ import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
+import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -137,12 +138,13 @@ function scriptsReadContext(action: { type: string; payload: [string, ...unknown
 }
 
 function* refreshWorkspaces(): SagaGenerator<void> {
-  const workspaces: Awaited<ReturnType<typeof appClient.workspaces.list>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.list],
-    { includeArchived: true },
+  const result: Awaited<ReturnType<typeof workspaceClient.list>> = yield* call(
+    [workspaceClient, workspaceClient.list],
+    { lite: true },
   );
+  if (!result.ok) throw new Error(result.error);
   const backendId = yield* selectActiveBackendId();
-  yield* put(replaceWorkspaceList(workspaces));
+  yield* put(replaceWorkspaceList(result.data));
   yield* put(setWorkspaceHasLoaded(true, backendId));
   const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
     appClient.workspaces,

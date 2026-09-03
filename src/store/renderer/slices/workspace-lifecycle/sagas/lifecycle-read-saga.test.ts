@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   workspaces: { list: vi.fn(), recentViews: vi.fn(), getTokenUsage: vi.fn(), getContext: vi.fn() },
+  workspaceServiceList: vi.fn(),
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
   events: { list: vi.fn() },
   skills: { list: vi.fn() },
@@ -31,6 +32,9 @@ vi.mock('$lib/client', () => ({
     agents: mocks.agents,
     terminals: mocks.terminals,
   },
+}));
+vi.mock('../../workspace/utils/workspace.client', () => ({
+  workspaceClient: { list: mocks.workspaceServiceList },
 }));
 vi.mock('$features/line-changes/line-changes.client', () => ({
   getAgentLineStats: mocks.getAgentLineStats,
@@ -133,7 +137,7 @@ describe('lifecycleReadSaga', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
-    mocks.workspaces.list.mockResolvedValue([]);
+    mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [] });
     mocks.workspaces.recentViews.mockResolvedValue({});
     mocks.workspaces.getTokenUsage.mockResolvedValue(null);
     mocks.workspaces.getContext.mockResolvedValue([]);
@@ -172,13 +176,13 @@ describe('lifecycleReadSaga', () => {
 
   it('loads the workspace list and recency in middleware order', async () => {
     const workspace = { id: WS, branch: 'main', wire_only: 'drop' };
-    mocks.workspaces.list.mockResolvedValue([workspace]);
+    mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [workspace] });
     mocks.workspaces.recentViews.mockResolvedValue({ [WS]: 42 });
     const run = start();
     run.channel.put(loadWorkspacesRequested());
     await settle();
 
-    expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
       { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
@@ -203,17 +207,17 @@ describe('lifecycleReadSaga', () => {
   });
 
   it('coalesces workspace-list loads arriving mid-fetch into one trailing refetch', async () => {
-    const resolvers: ((value: unknown[]) => void)[] = [];
-    mocks.workspaces.list.mockImplementation(
+    const resolvers: ((value: { ok: true; data: unknown[] }) => void)[] = [];
+    mocks.workspaceServiceList.mockImplementation(
       () =>
-        new Promise<unknown[]>((done) => {
+        new Promise<{ ok: true; data: unknown[] }>((done) => {
           resolvers.push(done);
         }),
     );
     const run = start();
     run.channel.put(loadWorkspacesRequested());
     await settle();
-    expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
 
     // A burst of triggers while the first fetch is in flight (e.g. remote
     // workspace:created events) must collapse into exactly one trailing
@@ -222,15 +226,15 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(loadWorkspacesRequested());
     run.channel.put(loadWorkspacesRequested());
     await settle();
-    expect(mocks.workspaces.list.mock.calls).toHaveLength(1);
+    expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
 
-    resolvers[0]!([]);
+    resolvers[0]!({ ok: true, data: [] });
     await settle();
-    expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+    expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
 
-    resolvers[1]!([]);
+    resolvers[1]!({ ok: true, data: [] });
     await settle();
-    expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+    expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
     await stop(run.task);
   });
 
@@ -271,41 +275,41 @@ describe('lifecycleReadSaga', () => {
       run.dispatch(replaceWorkspaceList([wireWorkspace('unread')]));
       expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
 
-      mocks.workspaces.list.mockResolvedValue([wireWorkspace('none')]);
+      mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [wireWorkspace('none')] });
       window.dispatchEvent(new Event('focus'));
       await settle();
       await settle();
 
-      expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
       expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('none');
       await stop(run.task);
     });
 
     it('coalesces a focus burst into one in-flight fetch plus one trailing refetch', async () => {
-      const resolvers: ((value: unknown[]) => void)[] = [];
-      mocks.workspaces.list.mockImplementation(
+      const resolvers: ((value: { ok: true; data: unknown[] }) => void)[] = [];
+      mocks.workspaceServiceList.mockImplementation(
         () =>
-          new Promise<unknown[]>((done) => {
+          new Promise<{ ok: true; data: unknown[] }>((done) => {
             resolvers.push(done);
           }),
       );
       const run = startWithLoopback();
       window.dispatchEvent(new Event('focus'));
       await settle();
-      expect(mocks.workspaces.list.mock.calls).toHaveLength(1);
+      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
 
       window.dispatchEvent(new Event('focus'));
       window.dispatchEvent(new Event('focus'));
       await settle();
-      expect(mocks.workspaces.list.mock.calls).toHaveLength(1);
+      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
 
-      resolvers[0]!([]);
+      resolvers[0]!({ ok: true, data: [] });
       await settle();
-      expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
 
-      resolvers[1]!([]);
+      resolvers[1]!({ ok: true, data: [] });
       await settle();
-      expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
       await stop(run.task);
     });
 
@@ -313,12 +317,12 @@ describe('lifecycleReadSaga', () => {
       const run = startWithLoopback();
       run.dispatch(replaceWorkspaceList([wireWorkspace('none')]));
 
-      mocks.workspaces.list.mockResolvedValue([wireWorkspace('unread')]);
+      mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [wireWorkspace('unread')] });
       run.channel.put(consoleOwnerChanged(true));
       await settle();
       await settle();
 
-      expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
       expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
       await stop(run.task);
     });
@@ -328,7 +332,7 @@ describe('lifecycleReadSaga', () => {
       run.channel.put(consoleOwnerChanged(false));
       await settle();
       await settle();
-      expect(mocks.workspaces.list.mock.calls).toEqual([]);
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([]);
       await stop(run.task);
     });
   });

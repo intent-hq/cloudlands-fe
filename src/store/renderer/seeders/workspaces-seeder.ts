@@ -25,6 +25,7 @@
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { appClient } from '$lib/client';
+import { workspaceClient } from '../slices/workspace/utils/workspace.client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { KnownRepo } from '$shared/types/known-repo';
 import { isDaemonManagedCheckoutPath } from '$shared/utils/daemon-managed-checkout';
@@ -254,7 +255,9 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
   // keep the UI functional with an empty list. Let unexpected in-process bugs
   // (reducer errors, bad data shapes) throw so they fail fast in tests/dev.
   try {
-    workspaces = await client.workspaces.list({ includeArchived: true });
+    const result = await workspaceClient.list({ lite: true });
+    if (!result.ok) throw new Error(result.error);
+    workspaces = result.data;
   } catch (error) {
     console.error('Workspaces seeder: client.workspaces.list() failed:', error);
     // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
