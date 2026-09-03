@@ -221,10 +221,7 @@
           wrapperId={contentId}
           portal
           dropUp={!embedded}
-          class={cn(
-            'max-h-[min(15rem,var(--bits-select-content-available-height))]!',
-            embedded && 'z-[101]!',
-          )}
+          class={cn('effort-picker-content', embedded && 'z-[101]!')}
         >
           {#each options as option (option.value)}
             <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>
@@ -234,3 +231,9 @@
     </div>
   </div>
 {/if}
+
+<style>
+  :global(.effort-picker-content) {
+    max-height: min(15rem, var(--bits-select-content-available-height)) !important;
+  }
+</style>

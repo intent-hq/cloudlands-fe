@@ -30,6 +30,25 @@ describe('design token audit', () => {
     expect(audit('undefined')).toBe('');
   });
 
+  it('recognizes the Bits UI Select height without exempting other custom properties', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'product.svelte'),
+        '<div style="max-height: var(--bits-select-content-available-height); width: var(--bits-select-content-available-width); height: var(--bits-select-content-available-heigth)" />',
+      );
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).not.toContain('--bits-select-content-available-height');
+      expect(output).toContain('--bits-select-content-available-width');
+      expect(output).toContain('--bits-select-content-available-heigth');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('rejects an allowlisted adapter token outside its owned files', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {
