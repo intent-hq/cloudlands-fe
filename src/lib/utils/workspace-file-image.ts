@@ -19,7 +19,7 @@
 const IMAGE_EXTENSION_RE = /\.(?:png|jpe?g|gif|webp)$/i;
 const VIDEO_EXTENSION_RE = /\.(?:mp4|webm)$/i;
 
-export type WorkspaceFileMediaKind = 'image' | 'video';
+type WorkspaceFileMediaKind = 'image' | 'video';
 
 export interface WorkspaceFileMedia {
   url: string;

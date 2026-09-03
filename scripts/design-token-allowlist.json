@@ -1,7 +1,7 @@
 {
   "ratchets": {
     "palette": 902,
-    "arbitrary": 414
+    "arbitrary": 421
   },
   "controlHeightExceptions": [
     {
@@ -33,6 +33,7 @@
     },
     "src/lib/components/ui/Header.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/ImageLightbox.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/MediaLightbox.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/NavigationButtons.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/PanelWrapper.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/scroll-area/scroll-area.svelte": { "palette": 0, "arbitrary": 1 },
@@ -51,7 +52,8 @@
     "src/lib/components/ui/toggle-group/toggle-group.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/toggle/toggle.svelte": { "palette": 0, "arbitrary": 5 },
     "src/lib/components/ui/tooltip/tooltip-content.svelte": { "palette": 0, "arbitrary": 1 },
-    "src/lib/components/ui/tooltip/TooltipRich.svelte": { "palette": 0, "arbitrary": 0 }
+    "src/lib/components/ui/tooltip/TooltipRich.svelte": { "palette": 0, "arbitrary": 0 },
+    "src/lib/components/ui/VideoLightbox.svelte": { "palette": 0, "arbitrary": 4 }
   },
   "physicalPaletteBoundaries": [
     {
