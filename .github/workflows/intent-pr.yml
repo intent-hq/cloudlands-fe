@@ -637,6 +637,13 @@ jobs:
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        # The integration vitest config has no paraglideVitePlugin (unlike
+        # vitest.config.ts, whose plugin writes src/shared/paraglide as a
+        # side effect); the pre-split job got the compiled messages from
+        # the unit step running first in the same checkout. Standalone,
+        # the job must compile them explicitly.
+        run: pnpm run generate:i18n
       - name: Integration tests
         run: pnpm run test:integration
 
