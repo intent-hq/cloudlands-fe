@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import BrowserTabsRow from './BrowserTabsRow.svelte';
@@ -27,6 +28,8 @@
     setEventSubscriptionsExpanded,
   } from './agent-subscriptions-view-state';
   import { safeSubscriptionSlide } from './subscription-disclosure';
+  import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
+  import { selectAgentPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
   interface Props {
     workspaceId: string;
@@ -68,18 +71,39 @@
   let bodyElement: HTMLElement | undefined = $state();
   const componentId = $props.id();
   const bodyId = `event-subscriptions-body-${componentId}`;
+  const workspaceIdStore = writable('');
+  const agentIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+    agentIdStore.set(agentId);
+  });
+  const hooks$ = selectBackgroundHooks(workspaceIdStore);
+  const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
+  const storedHookCount = $derived(
+    $hooks$.filter(
+      (hook) =>
+        hook.agentId === agentId && (hook.state === 'scheduled' || hook.state === 'running'),
+    ).length,
+  );
+  const storedPrCount = $derived($monitors$.filter((monitor) => monitor.state === 'active').length);
+  const hasHooks = $derived(storedHookCount > 0 || (!isCollapsed && hooksVisible));
+  const hasPrs = $derived(storedPrCount > 0 || (!isCollapsed && prsVisible));
+  const effectiveHookCount = $derived(
+    storedHookCount > 0 ? storedHookCount : isCollapsed ? 0 : hookCount,
+  );
+  const effectivePrCount = $derived(storedPrCount > 0 ? storedPrCount : isCollapsed ? 0 : prCount);
   const hasEventSubscriptions = $derived(
-    isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hooksVisible || prsVisible,
+    isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hasHooks || hasPrs,
   );
   const hasSubscriptions = $derived(hasEventSubscriptions || browserTabsVisible);
   const totalCount = $derived(
-    isolatedPreview ? isolatedPreview.count : agentCount + hookCount + prCount,
+    isolatedPreview ? isolatedPreview.count : agentCount + effectiveHookCount + effectivePrCount,
   );
 
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
     isolatedPreview?.mode === 'agents' ||
-      (!isolatedPreview && agentsVisible && !hooksVisible && !prsVisible),
+      (!isolatedPreview && agentsVisible && !hasHooks && !hasPrs),
   );
   const agentOnlyCount = $derived(
     isolatedPreview?.mode === 'agents' ? (isolatedPreview.agents?.length ?? 0) : agentCount,

@@ -1,7 +1,17 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  resetAgentSubscriptionsViewStateForTests,
+  setEventSubscriptionsExpanded,
+} from '../agent-subscriptions-view-state';
+
+const { liveSubscriptions } = vi.hoisted(() => ({
+  liveSubscriptions: {
+    hooks: [] as Array<{ agentId: string; state: string }>,
+    monitors: [] as Array<{ agentId: string; state: string }>,
+  },
+}));
 
 vi.mock('../AgentSubscriptions.svelte', async () => ({
   default: (await import('./mocks/MockAgentEventSection.svelte')).default,
@@ -15,8 +25,35 @@ vi.mock('../MonitoredPrsRow.svelte', async () => ({
 vi.mock('../BrowserTabsRow.svelte', async () => ({
   default: (await import('./mocks/MockBrowserTabsSection.svelte')).default,
 }));
+vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return { selectBackgroundHooks: () => readable(liveSubscriptions.hooks) };
+});
+vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async () => {
+  const { derived } = await import('svelte/store');
+  return {
+    selectAgentPrMonitors: (
+      _workspaceId: unknown,
+      agentId: import('svelte/store').Readable<string>,
+    ) =>
+      derived(agentId, ($agentId) =>
+        liveSubscriptions.monitors.filter((monitor) => monitor.agentId === $agentId),
+      ),
+  };
+});
 
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
+
+beforeEach(() => {
+  liveSubscriptions.hooks = ['hooks', 'agents-hooks-prs', 'hooks-tabs'].map((agentId) => ({
+    agentId,
+    state: 'scheduled',
+  }));
+  liveSubscriptions.monitors = ['prs', 'agents-hooks-prs'].map((agentId) => ({
+    agentId,
+    state: 'active',
+  }));
+});
 
 afterEach(() => {
   cleanup();
@@ -121,6 +158,38 @@ describe('EventSubscriptionsCard', () => {
       screen.getByRole('button', { name: 'Subscribed to 3 events' }).getAttribute('aria-expanded'),
     ).toBe('false');
     expect(screen.queryByTestId('event-subscriptions-body')).toBeNull();
+  });
+
+  it.each([
+    ['hooks', 1],
+    ['prs', 1],
+  ])('renders a persisted-collapsed %s-only header from store state', async (kind, count) => {
+    const agentId = `stored-${kind}`;
+    if (kind === 'hooks') {
+      liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
+    } else {
+      liveSubscriptions.monitors = [{ agentId, state: 'active' }];
+    }
+    setEventSubscriptionsExpanded('workspace-a', agentId, false);
+
+    const card = await renderCard(agentId);
+
+    expect(card.parentElement?.classList.contains('hidden')).toBe(false);
+    expect(
+      screen
+        .getByRole('button', { name: `Subscribed to ${count} event` })
+        .getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.queryByTestId('event-subscriptions-body')).toBeNull();
+  });
+
+  it('keeps a persisted-collapsed empty card hidden', async () => {
+    setEventSubscriptionsExpanded('workspace-a', 'stored-none', false);
+
+    const card = await renderCard('stored-none');
+
+    expect(card.parentElement?.classList.contains('hidden')).toBe(true);
+    expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
   });
 
   it('hides the entire bounded surface when every category is empty', async () => {
