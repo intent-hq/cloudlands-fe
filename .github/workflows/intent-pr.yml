@@ -899,7 +899,13 @@ jobs:
           ) &
           SAMPLER_PID=$!
           trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --reporter=list,html
+          # Required lane: everything NOT tagged @quarantine. Retries stay
+          # on (retries: 2 in playwright-ct.config.ts, trace on first retry)
+          # so a real flake still leaves a trace behind, but
+          # --fail-on-flaky-tests turns a pass-on-retry into a red shard
+          # instead of silent 3x runtime: a flaky test must be fixed or
+          # explicitly parked under the @quarantine tag below.
+          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert @quarantine --fail-on-flaky-tests --reporter=list,html
       - name: Upload playwright report
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (monorepo#2887).
@@ -910,6 +916,31 @@ jobs:
           path: |
             playwright-report/
             test-results/
+          retention-days: 7
+      - name: Quarantined component tests (advisory)
+        # Advisory lane for tests tagged @quarantine (a known-flaky test
+        # that has an owner and a tracking issue — see AGENTS.md → Component
+        # tests). Runs unsharded on shard 1 only, after the required lane,
+        # reusing the CT bundle that is already built and cached in this
+        # job — no fifth setup/build leg. continue-on-error keeps the job
+        # (and the CI Gate) green while the failure stays visible in the
+        # step log and the artifact below. Separate output directories so
+        # a quarantine failure cannot overwrite the required lane's report.
+        if: matrix.shard == 1
+        id: quarantine
+        continue-on-error: true
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
+        run: pnpm run test:ct --grep @quarantine --pass-with-no-tests --reporter=list,html --output=test-results-quarantine
+      - name: Upload quarantine report
+        if: matrix.shard == 1 && steps.quarantine.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-report-quarantine
+          path: |
+            playwright-report-quarantine/
+            test-results-quarantine/
           retention-days: 7
 
   # Single required status check for branch protection: fans in pr-title,
