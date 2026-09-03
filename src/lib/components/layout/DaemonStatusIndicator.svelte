@@ -435,10 +435,10 @@
       {#if currentRemoteName}
         <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
       {/if}
-      <span class="flex size-2 shrink-0 items-center justify-center" aria-hidden="true">
+      <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
         <DeviceIcon
           record={$currentConnection$ ?? { os: $stats$?.os }}
-          size={8}
+          size={16}
           class={iconColorClass}
         />
       </span>

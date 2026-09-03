@@ -121,6 +121,20 @@ describe('DaemonStatusIndicator', () => {
       expect(module.default).toBeDefined();
       expect(module.default).toBe(DaemonStatusIndicatorPreloaded);
     });
+
+    it('renders a legible 16px header icon with the current health tint', () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+      };
+      render(DaemonStatusIndicatorPreloaded);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      const icon = trigger.querySelector('svg');
+      expect(icon?.getAttribute('width')).toBe('16');
+      expect(icon?.getAttribute('height')).toBe('16');
+      expect(icon?.classList.contains('text-green-500')).toBe(true);
+      expect(trigger.classList.contains('h-6')).toBe(true);
+    });
   });
 
   describe('state selectors', () => {
