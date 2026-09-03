@@ -3,16 +3,8 @@
  */
 import { Editor } from '@tiptap/core';
 import { createEditorConfig } from '../editor-config';
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
-import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '../markdown-processor';
+import { describe, it, expect, vi } from 'vitest';
+import { processMarkdownToHTML, processHTMLToMarkdown } from '../markdown-processor';
 import { renderTaskBlocksAsReadableMarkdown } from '../tiptap-task-block-extension';
 
 vi.mock('../tiptap-task-block-extension', async (importOriginal) => {
@@ -299,14 +291,32 @@ Some additional notes here.
     });
 
     it('should preserve intent:// links in markdown', async () => {
-      const markdown =
-        '[Sea Otter Joke](intent://local/note/b0c3bfa5-9ba4-4986-b67e-78494def4687)';
+      const markdown = '[Sea Otter Joke](intent://local/note/b0c3bfa5-9ba4-4986-b67e-78494def4687)';
       const html = await processMarkdownToHTML(markdown);
 
       // Check that the link is preserved in HTML
       expect(html).toContain('<a');
       expect(html).toContain('href="intent://local/note/b0c3bfa5-9ba4-4986-b67e-78494def4687"');
       expect(html).toContain('Sea Otter Joke');
+    });
+
+    it('should resolve short and long workspace image links for the active workspace', async () => {
+      const markdown = [
+        '![short](intent://local/file/docs/short.png)',
+        '![long](intent://local/workspace-1/file/docs/long.png)',
+      ].join('\n\n');
+      const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
+
+      expect(html).toContain('src="workspace-file://workspace-1/docs/short.png"');
+      expect(html).toContain('src="workspace-file://workspace-1/docs/long.png"');
+    });
+
+    it('should preserve workspace asset image sources', async () => {
+      const html = await processMarkdownToHTML('![asset](workspace-asset://asset-1)', {
+        workspaceId: 'workspace-1',
+      });
+
+      expect(html).toContain('src="workspace-asset://asset-1"');
     });
 
     it('should preserve intent:// links with surrounding text', async () => {
@@ -620,7 +630,8 @@ Some additional notes here.
     });
 
     it('should handle nested code blocks with XML tags', async () => {
-      const markdown = 'Here are some XML tags in inline code:\n\n- Use `<div>` for a container element\n- The `<span>` tag is for inline content\n- Self-closing tags like `<br/>` and `<img src="..." />`';
+      const markdown =
+        'Here are some XML tags in inline code:\n\n- Use `<div>` for a container element\n- The `<span>` tag is for inline content\n- Self-closing tags like `<br/>` and `<img src="..." />`';
       const html = await processMarkdownToHTML(markdown);
 
       // All inline code should preserve the tags
@@ -752,8 +763,7 @@ Some additional notes here.
     });
 
     it('should cache the sanitized fallback, not the raw input', async () => {
-      const payload =
-        '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-cache-test';
+      const payload = '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-cache-test';
       const mock = vi.mocked(renderTaskBlocksAsReadableMarkdown);
       mock.mockImplementationOnce(() => {
         throw new Error('forced processing failure');

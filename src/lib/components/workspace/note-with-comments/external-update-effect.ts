@@ -95,6 +95,7 @@ export type ProcessMarkdownToHTMLLike = (
   markdown: string,
   opts: {
     preserveAnchors: boolean;
+    workspaceId?: string;
   },
 ) => Promise<string>;
 
@@ -149,10 +150,7 @@ function scheduleDeferredRecheckWhenSaveSettles(
     pendingSaveRecheckByNote.delete(key);
     if (isDestroyed?.()) return;
     if (getHasPendingNoteContent()) {
-      pendingSaveRecheckByNote.set(
-        key,
-        setTimeout(poll, PENDING_SAVE_RECHECK_INTERVAL_MS),
-      );
+      pendingSaveRecheckByNote.set(key, setTimeout(poll, PENDING_SAVE_RECHECK_INTERVAL_MS));
       return;
     }
     onPendingSaveSettled();
@@ -358,8 +356,10 @@ export function runExternalContentUpdateEffect({
     const freshLastKnown = getLastKnownContent();
     if (freshContent === freshLastKnown) return;
 
-    return processMarkdownToHTML(freshContent, { preserveAnchors: true }).then(
-    async (newHtmlContent) => {
+    return processMarkdownToHTML(freshContent, {
+      preserveAnchors: true,
+      workspaceId: getWorkspaceId(),
+    }).then(async (newHtmlContent) => {
       // CRITICAL: Check destruction flag FIRST, before accessing ANY reactive state.
       // This prevents "N is not a function" errors when Svelte's reactive system
       // tries to call nullified internal functions after component destruction.
@@ -456,7 +456,11 @@ export function runExternalContentUpdateEffect({
                   updateVersion,
                 },
               );
-              restoreTaskAgentAssociations(editor as any, getTaskAgentAssociations?.() ?? [], logger);
+              restoreTaskAgentAssociations(
+                editor as any,
+                getTaskAgentAssociations?.() ?? [],
+                logger,
+              );
             }
 
             await reapplyCommentAnchorsAfterExternalUpdate({
@@ -476,7 +480,6 @@ export function runExternalContentUpdateEffect({
         setLastKnownContent(freshContent);
         setHasUserEditedSinceLastSave(false);
       }
-    },
-    );
+    });
   });
 }

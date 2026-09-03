@@ -28,6 +28,7 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/GrokLogo.svelte': 1,
     'relative:src/lib/components/ui/CollapsiblePanel.svelte': 1,
     'relative:src/lib/components/ui/Header.svelte': 4,
+    'relative:src/lib/components/ui/MediaLightbox.svelte': 1,
     'relative:src/lib/components/ui/Portal.svelte': 3,
     'relative:src/lib/components/ui/VSCodePanel.svelte': 1,
     'relative:src/lib/components/ui/VSCodeScrollablePanel.svelte': 2,
