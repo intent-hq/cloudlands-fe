@@ -1140,14 +1140,12 @@
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >
             {#if isSecure}
-              <Fa icon={faLock} class="shrink-0 text-emerald-500" size="xs" />
+              <Fa icon={faLock} class="shrink-0 text-muted-foreground" size="sm" />
             {/if}
             <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
               >{identityTitle}</span
             >
             {#if pageTitle && pageHostname && pageHostname !== pageTitle}
-              <!-- i18n-ignore (punctuation-only separator) -->
-              <span class="shrink-0 text-muted-foreground" aria-hidden="true">·</span>
               <span class="browser-toolbar-hostname truncate text-xs text-muted-foreground"
                 >{pageHostname}</span
               >
