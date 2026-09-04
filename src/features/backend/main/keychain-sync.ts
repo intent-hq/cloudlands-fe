@@ -37,7 +37,7 @@ import {
   DEFAULT_CONNECTION_ACCENT,
   isConnectionAccent,
   isDetectedDeviceKind,
-  isDeviceKind,
+  isDeviceIconChoice,
   type ConnectionAccent,
   type DetectedDeviceKind,
   type DeviceIconChoice,
@@ -177,7 +177,7 @@ export function parsePayload(payload: string): ParsedPayload {
     detectedDeviceKind: isDetectedDeviceKind(obj.detectedDeviceKind)
       ? obj.detectedDeviceKind
       : null,
-    deviceIcon: obj.deviceIcon === 'auto' || isDeviceKind(obj.deviceIcon) ? obj.deviceIcon : 'auto',
+    deviceIcon: isDeviceIconChoice(obj.deviceIcon) ? obj.deviceIcon : 'auto',
     host: obj.host,
     hosts:
       Array.isArray(obj.hosts) && obj.hosts.every((h) => typeof h === 'string')

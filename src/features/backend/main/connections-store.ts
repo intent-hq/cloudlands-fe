@@ -672,9 +672,9 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
 }
 
 /**
- * Update the user-editable metadata for a saved remote. The bearer token and
- * transport identity fields are deliberately untouched. Local and unknown ids
- * reject so callers cannot edit the synthetic sidecar or silently lose work.
+ * Update the user-editable metadata for a saved connection. For
+ * {@link LOCAL_CONNECTION_ID}, only `deviceIcon` is applied; other fields are
+ * ignored.
  *
  * `detectHosts` flips the per-backend IP-detection option (#1746); turning it
  * off also drops the detected extras so only the primary host remains.
@@ -714,7 +714,9 @@ export async function updateMetadata(
     throw new Error('Invalid detected device kind');
   }
   if (id === LOCAL_CONNECTION_ID) {
-    if (metadata.deviceIcon === undefined) throw new Error('Cannot update the local connection');
+    if (metadata.deviceIcon === undefined) {
+      throw new Error('Only deviceIcon can be updated on the local connection');
+    }
     return mutate(async (state) => {
       if (metadata.deviceIcon !== undefined && state.localDeviceIcon !== metadata.deviceIcon) {
         state.localDeviceIcon = metadata.deviceIcon;
@@ -758,10 +760,11 @@ export async function updateMetadata(
     const nextDetectHosts = metadata.detectHosts ?? conn.detectHosts !== false;
     const detectHostsChanged = nextDetectHosts !== (conn.detectHosts !== false);
     const nextDeviceIcon = metadata.deviceIcon ?? conn.deviceIcon ?? 'auto';
-    const nextDetectedDeviceKind = identityChanged
-      ? null
-      : metadata.detectedDeviceKind === undefined
-        ? (conn.detectedDeviceKind ?? null)
+    const nextDetectedDeviceKind =
+      metadata.detectedDeviceKind === undefined
+        ? identityChanged
+          ? null
+          : (conn.detectedDeviceKind ?? null)
         : metadata.detectedDeviceKind;
     const deviceIconChanged = nextDeviceIcon !== (conn.deviceIcon ?? 'auto');
     const detectedDeviceKindChanged = nextDetectedDeviceKind !== (conn.detectedDeviceKind ?? null);
@@ -810,7 +813,6 @@ export async function updateMetadata(
     if (addressChanged || fingerprintChanged) {
       conn.hostname = null;
       conn.tcAddress = null;
-      conn.detectedDeviceKind = null;
     }
     if (detectHostsChanged) {
       conn.detectHosts = nextDetectHosts;

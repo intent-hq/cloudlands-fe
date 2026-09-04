@@ -1197,7 +1197,13 @@ describe('connections:* IPC handlers', () => {
   });
 
   it('connections:update changes remote presentation metadata without revalidating its saved address', async () => {
-    const updated = { ...REMOTE, label: 'Editing Mac', accent: 'violet' as const };
+    const updated = {
+      ...REMOTE,
+      label: 'Editing Mac',
+      accent: 'violet' as const,
+      detectedDeviceKind: 'macStudio' as const,
+      deviceIcon: 'cat' as const,
+    };
     store.getDecryptedToken.mockRejectedValue(new Error('undecryptable secret material'));
     store.updateMetadata.mockResolvedValue(updated);
     const send = installWindow();
@@ -1206,17 +1212,42 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:update');
 
     await expect(
-      handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'violet' }),
+      handler!({}, {
+        id: REMOTE.id,
+        label: 'Editing Mac',
+        accent: 'violet',
+        detectedDeviceKind: 'macStudio',
+        deviceIcon: 'cat',
+      }),
     ).resolves.toEqual({ status: 'updated', connection: updated });
-    expect(store.updateMetadata).toHaveBeenCalledWith(REMOTE.id, {
-      label: 'Editing Mac',
-      accent: 'violet',
-      host: REMOTE.host,
-      port: REMOTE.port,
-      fingerprint: REMOTE.fingerprint,
-    });
+    expect(store.updateMetadata).toHaveBeenCalledWith(
+      REMOTE.id,
+      expect.objectContaining({
+        label: 'Editing Mac',
+        accent: 'violet',
+        host: REMOTE.host,
+        port: REMOTE.port,
+        fingerprint: REMOTE.fingerprint,
+        detectedDeviceKind: 'macStudio',
+        deviceIcon: 'cat',
+      }),
+    );
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
     expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
+  it('connections:update forwards a local device icon to the store', async () => {
+    const updated = { ...LOCAL, deviceIcon: 'cat' as const };
+    store.updateMetadata.mockResolvedValue(updated);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    const params = { id: 'local', label: LOCAL.label, accent: null, deviceIcon: 'cat' };
+    await expect(handler!({}, params)).resolves.toEqual({ status: 'updated', connection: updated });
+    expect(store.updateMetadata).toHaveBeenCalledWith('local', params);
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 

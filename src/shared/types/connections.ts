@@ -113,7 +113,7 @@ export function isConnectionAccent(value: unknown): value is ConnectionAccent {
   );
 }
 
-export function isDeviceKind(value: unknown): value is DeviceKind {
+function isDeviceKind(value: unknown): value is DeviceKind {
   return typeof value === 'string' && (DEVICE_KINDS as readonly string[]).includes(value);
 }
 
