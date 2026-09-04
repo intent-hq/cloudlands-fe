@@ -281,6 +281,7 @@ import {
   streamTurnCorrelation,
 } from '$lib/utils/stream-lifecycle-telemetry';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
+import { resolveHashToTarget } from '$shared/app-ui-targets';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -3272,6 +3273,16 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
 }
 
 /**
+ * Daemon-sent highlight ids may be legacy hash aliases (e.g.
+ * `quickActions.defaultModel`); resolve them to the registry target id the
+ * DOM carries as `data-highlight-id`, like NavLink does, falling back to the
+ * raw id when unresolved.
+ */
+function resolveHighlightId(highlightId: string): string {
+  return resolveHashToTarget(highlightId)?.id ?? highlightId;
+}
+
+/**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
  * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
@@ -3286,7 +3297,8 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
   const route = rawRoute.trim();
   if (route.length === 0) return;
 
-  const highlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const rawHighlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const highlightId = rawHighlightId ? resolveHighlightId(rawHighlightId) : '';
   const durationMs =
     typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
       ? data.durationMs
@@ -3322,7 +3334,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
   const id = data.id;
   if (typeof id !== 'string' || id.trim().length === 0) return;
 
-  const highlightId = id.trim();
+  const highlightId = resolveHighlightId(id.trim());
   const durationMs =
     typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
       ? data.durationMs

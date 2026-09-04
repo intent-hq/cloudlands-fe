@@ -11070,11 +11070,13 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await primeBridge();
       const handler = capturedHandlers[0]!;
 
-      handler(appUiNavigateNotification('/settings?tab=agents#specialists', 'specialists', 750));
+      handler(
+        appUiNavigateNotification('/settings?tab=connections#mcp-servers', 'mcp-servers', 750),
+      );
       await flush();
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=agents#specialists');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=connections#mcp-servers');
       // Check that requestUiHighlight was dispatched
       const state = appStore.state as {
         uiHighlight?: {
@@ -11082,8 +11084,33 @@ describe('DaemonEventsBridge — app-UI events', () => {
           durationMsById: Record<string, number>;
         };
       };
-      expect(state.uiHighlight?.activeById['specialists']).toBeGreaterThan(0);
-      expect(state.uiHighlight?.durationMsById['specialists']).toBe(750);
+      expect(state.uiHighlight?.activeById['mcp-servers']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['mcp-servers']).toBe(750);
+    });
+
+    it('resolves a legacy highlight alias to the registry target id', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        appUiNavigateNotification(
+          '/settings?tab=agents#default-model',
+          'quickActions.defaultModel',
+          500,
+        ),
+      );
+      await flush();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      const state = appStore.state as {
+        uiHighlight?: {
+          activeById: Record<string, number>;
+          durationMsById: Record<string, number>;
+        };
+      };
+      expect(state.uiHighlight?.activeById['utility-default-model']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['utility-default-model']).toBe(500);
+      expect(state.uiHighlight?.activeById['quickActions.defaultModel']).toBeUndefined();
     });
 
     it('ignores blank routes', async () => {
@@ -11114,6 +11141,24 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await primeBridge();
       const handler = capturedHandlers[0]!;
 
+      handler(appUiHighlightNotification('notifications'));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: {
+          activeById: Record<string, number>;
+          durationMsById: Record<string, number>;
+        };
+      };
+      expect(state.uiHighlight?.activeById['notifications']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['notifications']).toBeUndefined();
+    });
+
+    it('resolves legacy highlight aliases to the registry target id', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('quickActions.defaultModel', 900));
       handler(appUiHighlightNotification('theme'));
       await flush();
 
@@ -11123,8 +11168,24 @@ describe('DaemonEventsBridge — app-UI events', () => {
           durationMsById: Record<string, number>;
         };
       };
-      expect(state.uiHighlight?.activeById['theme']).toBeGreaterThan(0);
-      expect(state.uiHighlight?.durationMsById['theme']).toBeUndefined();
+      expect(state.uiHighlight?.activeById['utility-default-model']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['utility-default-model']).toBe(900);
+      expect(state.uiHighlight?.activeById['quickActions.defaultModel']).toBeUndefined();
+      expect(state.uiHighlight?.activeById['appearance']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.activeById['theme']).toBeUndefined();
+    });
+
+    it('falls back to the raw id when no registry target matches', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('not-a-registered-target'));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['not-a-registered-target']).toBeGreaterThan(0);
     });
 
     it('dispatches highlight action with custom duration', async () => {
