@@ -26,6 +26,23 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
   {
+    slug: 'agent-activity-graph',
+    name: 'Agent Activity Graph',
+    description: 'Live task constellations with agents, resources, and activity edges.',
+    category: 'product',
+    source: 'src/lib/components/agent-overview',
+    fixtures: [
+      {
+        id: 'agent-activity-graph',
+        title: 'Agent activity graph',
+        states: ['constellation', 'busy', 'empty', 'single-agent'],
+        themes: ['light', 'dark'],
+        viewport: 'desktop',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
+  {
     slug: 'chat-polish',
     name: m.sandbox_chatPolish_title(),
     description: m.sandbox_chatPolish_description(),
