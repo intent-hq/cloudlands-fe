@@ -18,10 +18,8 @@ import type {
   ComputedGroup,
   NodeStyleConfig,
 } from './types';
-import {
-  GRAMMAR_CONFIGS,
-  DEFAULT_NODE_STYLE,
-} from './types';
+import { GRAMMAR_CONFIGS, DEFAULT_NODE_STYLE } from './types';
+import { semanticLabelTokens, semanticLabelUnits } from './diagram-label-wrap';
 
 /**
  * Compute layout for a diagram
@@ -33,6 +31,147 @@ const MAX_DIAGRAM_WIDTH = 900;
 // Spacing limits to prevent unusable layouts
 const MIN_SPACING = 30;
 const MAX_SPACING = 300;
+const ORTHOGONAL_CORNER_RADIUS = 6;
+const EDGE_LABEL_MAX_WIDTH = 112;
+const EDGE_LABEL_MIN_WIDTH = 32;
+const EDGE_LABEL_CHAR_WIDTH = 7.2;
+const EDGE_LABEL_PADDING_X = 8;
+const EDGE_LABEL_PADDING_Y = 2;
+const EDGE_LABEL_FRAME_WIDTH = 0;
+const EDGE_LABEL_LINE_HEIGHT = 18;
+const NODE_ICON_WIDTH = 14;
+const NODE_ICON_GAP = 8;
+
+export function compactEdgeLabelMaxWidth(label: string) {
+  return label.length >= 48 ? 100 : 60;
+}
+
+let measurementContext: CanvasRenderingContext2D | null | undefined;
+
+function rootToken(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+function rootPixelSize(name: string, fallback: number): number {
+  const value = rootToken(name, `${fallback}px`);
+  const amount = Number.parseFloat(value);
+  if (!Number.isFinite(amount)) return fallback;
+  if (value.endsWith('rem')) {
+    const rootSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    return amount * rootSize;
+  }
+  return amount;
+}
+
+export function measureDiagramTextWidth(
+  text: string,
+  fontSize: number,
+  weight: string,
+  fallbackCharWidth: number,
+  letterSpacing = 0,
+  fontFamily = rootToken('--font-ui', 'Inter, system-ui, sans-serif'),
+): number {
+  if (measurementContext === undefined) {
+    measurementContext =
+      typeof document !== 'undefined' && typeof CanvasRenderingContext2D !== 'undefined'
+        ? document.createElement('canvas').getContext('2d')
+        : null;
+  }
+  if (!measurementContext) return text.length * fallbackCharWidth;
+
+  measurementContext.font = `${weight} ${fontSize}px ${fontFamily}`;
+  return measurementContext.measureText(text).width + Math.max(0, text.length - 1) * letterSpacing;
+}
+
+export function measureEdgeLabel(
+  label: string,
+  maxWidth = EDGE_LABEL_MAX_WIDTH,
+): { width: number; height: number; lines: number } {
+  const fontSize = rootPixelSize('--text-caption-size', 13);
+  const weight = rootToken('--text-body-weight', '400');
+  const measure = (text: string) =>
+    measureDiagramTextWidth(text, fontSize, weight, EDGE_LABEL_CHAR_WIDTH);
+  const explicitLines = label.split('\n');
+  const naturalWidth =
+    Math.max(...explicitLines.map(measure)) + EDGE_LABEL_PADDING_X + EDGE_LABEL_FRAME_WIDTH;
+  const minimumWordWidth =
+    Math.max(...label.split(/\s+/).map(measure), EDGE_LABEL_MIN_WIDTH - EDGE_LABEL_PADDING_X) +
+    EDGE_LABEL_PADDING_X +
+    EDGE_LABEL_FRAME_WIDTH;
+  const wrappingLimit = Math.max(maxWidth, minimumWordWidth);
+  const width = Math.max(EDGE_LABEL_MIN_WIDTH, Math.min(naturalWidth, wrappingLimit));
+  const contentWidth = width - EDGE_LABEL_PADDING_X - EDGE_LABEL_FRAME_WIDTH;
+  const lines = explicitLines.reduce((total, line) => {
+    const words = line.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return total + 1;
+    let count = 1;
+    let current = '';
+    for (const word of words) {
+      const wordWidth = measure(word);
+      if (wordWidth > contentWidth + 0.5) {
+        if (current) count += 1;
+        count += Math.max(1, Math.ceil((wordWidth - 0.5) / contentWidth)) - 1;
+        current = '';
+        continue;
+      }
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && measure(candidate) > contentWidth + 0.5) {
+        count += 1;
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    return total + count;
+  }, 0);
+  return { width, height: lines * EDGE_LABEL_LINE_HEIGHT + EDGE_LABEL_PADDING_Y, lines };
+}
+
+type RoutePoint = { x: number; y: number };
+
+function estimateEdgeLabelWidth(label: string): number {
+  return measureEdgeLabel(label).width;
+}
+
+/** Build a point-preserving polyline with small, clamped quadratic corners. */
+export function buildRoundedOrthogonalPath(
+  points: RoutePoint[],
+  radius = ORTHOGONAL_CORNER_RADIUS,
+): string {
+  if (points.length === 0) return '';
+
+  const path = [`M ${points[0].x} ${points[0].y}`];
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const corner = points[index];
+    const next = points[index + 1];
+    const incomingLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const outgoingLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const cross =
+      (corner.x - previous.x) * (next.y - corner.y) - (corner.y - previous.y) * (next.x - corner.x);
+    const cornerRadius = Math.min(radius, incomingLength / 2, outgoingLength / 2);
+
+    if (cornerRadius <= 0 || Math.abs(cross) < 0.001) {
+      path.push(`L ${corner.x} ${corner.y}`);
+      continue;
+    }
+
+    const before = {
+      x: corner.x - ((corner.x - previous.x) / incomingLength) * cornerRadius,
+      y: corner.y - ((corner.y - previous.y) / incomingLength) * cornerRadius,
+    };
+    const after = {
+      x: corner.x + ((next.x - corner.x) / outgoingLength) * cornerRadius,
+      y: corner.y + ((next.y - corner.y) / outgoingLength) * cornerRadius,
+    };
+    path.push(`L ${before.x} ${before.y}`, `Q ${corner.x} ${corner.y} ${after.x} ${after.y}`);
+  }
+
+  const endpoint = points[points.length - 1];
+  path.push(`L ${endpoint.x} ${endpoint.y}`);
+  return path.join(' ');
+}
 
 /** Clamp spacing to usable range */
 function clampSpacing(spacing: number | undefined, defaultValue: number = 80): number {
@@ -45,12 +184,18 @@ export function computeLayout(
   baseView: DiagramBaseView,
   grammar: string,
   styleConfig: NodeStyleConfig = DEFAULT_NODE_STYLE,
+  maxDiagramWidth = MAX_DIAGRAM_WIDTH,
 ): ComputedLayout {
+  const nodeIds = new Set(model.nodes.map((node) => node.id));
+  const validModel = {
+    ...model,
+    edges: model.edges.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to)),
+  };
   const config = GRAMMAR_CONFIGS[grammar as keyof typeof GRAMMAR_CONFIGS];
   const nodeDefaults = config?.nodeDefaults || { width: 100, height: 60 };
 
   // First, compute node sizes based on text content
-  const nodesWithSizes = model.nodes.map((node) => ({
+  const nodesWithSizes = validModel.nodes.map((node) => ({
     ...node,
     size: node.size || computeNodeSize(node, nodeDefaults, styleConfig),
   }));
@@ -65,35 +210,45 @@ export function computeLayout(
       baseView.layout.edgeRouting || baseView.edgeRouting || config?.defaultLayout?.edgeRouting,
   };
 
-  let result = computeLayoutWithDirection(nodesWithSizes, model, layout, nodeDefaults);
+  let result = computeLayoutWithDirection(nodesWithSizes, validModel, layout, nodeDefaults);
+  if (maxDiagramWidth < 500) {
+    return applyWrapping(result, maxDiagramWidth, clampSpacing(layout.spacing, 80), layout);
+  }
 
   // Check if diagram is too wide and needs adjustment
   const isHorizontalLayout = layout.direction === 'LR' || layout.direction === 'RL';
 
+  const preservesGroupedDirection = Boolean(validModel.groups?.length);
   if (
-    result.bounds.width > MAX_DIAGRAM_WIDTH ||
-    (result.bounds.height > 0 && result.bounds.width / result.bounds.height > MAX_ASPECT_RATIO)
+    !preservesGroupedDirection &&
+    (result.bounds.width > maxDiagramWidth ||
+      (result.bounds.height > 0 && result.bounds.width / result.bounds.height > MAX_ASPECT_RATIO))
   ) {
     if (isHorizontalLayout) {
       // Try vertical layout first for horizontal diagrams that are too wide
       const verticalLayout = { ...layout, direction: 'TB' as const };
       const verticalResult = computeLayoutWithDirection(
         nodesWithSizes,
-        model,
+        validModel,
         verticalLayout,
         nodeDefaults,
       );
 
       // Use vertical if it's better (not too wide)
-      if (verticalResult.bounds.width <= MAX_DIAGRAM_WIDTH) {
+      if (verticalResult.bounds.width <= maxDiagramWidth) {
         result = verticalResult;
       } else {
         // Still too wide - apply wrapping to vertical layout
-        result = applyWrapping(verticalResult, MAX_DIAGRAM_WIDTH, clampSpacing(layout.spacing, 80));
+        result = applyWrapping(
+          verticalResult,
+          maxDiagramWidth,
+          clampSpacing(layout.spacing, 80),
+          verticalLayout,
+        );
       }
     } else {
       // TB/BT layout that's too wide - apply wrapping
-      result = applyWrapping(result, MAX_DIAGRAM_WIDTH, clampSpacing(layout.spacing, 80));
+      result = applyWrapping(result, maxDiagramWidth, clampSpacing(layout.spacing, 80), layout);
     }
   }
 
@@ -104,7 +259,47 @@ export function computeLayout(
  * Apply wrapping to a layout that exceeds max width
  * Shifts nodes that exceed the width down to create wrapped rows
  */
-function applyWrapping(layout: ComputedLayout, maxWidth: number, spacing: number): ComputedLayout {
+function applyWrapping(
+  layout: ComputedLayout,
+  maxWidth: number,
+  spacing: number,
+  routeLayout: DiagramBaseView['layout'],
+): ComputedLayout {
+  const needsCompactSemantics =
+    layout.edges.some((edge) => Boolean(edge.label)) ||
+    layout.nodes.some((node) => node.width > maxWidth);
+  const isOverflowingManualLayout = routeLayout.type === 'manual' && layout.bounds.width > maxWidth;
+  if ((maxWidth < 500 && needsCompactSemantics) || isOverflowingManualLayout) {
+    const compactNodeWidth = Math.max(150, Math.min(260, maxWidth));
+    const compactNodes = layout.nodes.map((node) => {
+      const width = Math.min(node.width, compactNodeWidth);
+      const extraLines = Math.max(0, Math.ceil(node.width / width) - 1);
+      return { ...node, width, height: node.height + 32 + extraLines * 17 };
+    });
+    const columnWidth = Math.max(...compactNodes.map((node) => node.width));
+    const outgoingRows = new Map<string, number>();
+    for (const edge of layout.edges) {
+      if (edge.label) outgoingRows.set(edge.from, (outgoingRows.get(edge.from) ?? 0) + 1);
+    }
+    let y = 0;
+    const narrowNodes = compactNodes.map((node) => {
+      const positioned = { ...node, x: (columnWidth - node.width) / 2, y };
+      const labelRows = outgoingRows.get(node.id) ?? 0;
+      y += node.height + Math.max(140, labelRows * 62 + 60, spacing * 0.65);
+      return positioned;
+    });
+    const narrowGroups = layout.groups
+      ? computeGroupBoundsFromNodes(layout.groups, narrowNodes)
+      : undefined;
+    const narrowEdges = computeCompactColumnEdgePaths(layout.edges, narrowNodes);
+    return {
+      nodes: narrowNodes,
+      groups: narrowGroups,
+      edges: narrowEdges,
+      bounds: computeBoundsFromNodes(narrowNodes, narrowGroups, narrowEdges),
+    };
+  }
+
   if (layout.bounds.width <= maxWidth) {
     return layout;
   }
@@ -149,79 +344,12 @@ function applyWrapping(layout: ComputedLayout, maxWidth: number, spacing: number
     ? computeGroupBoundsFromNodes(layout.groups, wrappedNodes)
     : undefined;
 
-  // Recompute edge paths with updated node positions (using proper edge connections)
-  const nodeMap = new Map(wrappedNodes.map((n) => [n.id, n]));
-  const wrappedEdges = layout.edges.map((edge) => {
-    const fromNode = nodeMap.get(edge.from);
-    const toNode = nodeMap.get(edge.to);
-
-    if (!fromNode || !toNode) {
-      return edge;
-    }
-
-    // Calculate center points
-    const fromCenterX = fromNode.x + fromNode.width / 2;
-    const fromCenterY = fromNode.y + fromNode.height / 2;
-    const toCenterX = toNode.x + toNode.width / 2;
-    const toCenterY = toNode.y + toNode.height / 2;
-
-    // Determine which edge to connect from based on relative position
-    const dx = toCenterX - fromCenterX;
-    const dy = toCenterY - fromCenterY;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-
-    let fromPoint: { x: number; y: number };
-    let toPoint: { x: number; y: number };
-
-    if (absDy > absDx) {
-      // Primarily vertical
-      if (dy > 0) {
-        fromPoint = { x: fromCenterX, y: fromNode.y + fromNode.height };
-        toPoint = { x: toCenterX, y: toNode.y };
-      } else {
-        fromPoint = { x: fromCenterX, y: fromNode.y };
-        toPoint = { x: toCenterX, y: toNode.y + toNode.height };
-      }
-    } else {
-      // Primarily horizontal
-      if (dx > 0) {
-        fromPoint = { x: fromNode.x + fromNode.width, y: fromCenterY };
-        toPoint = { x: toNode.x, y: toCenterY };
-      } else {
-        fromPoint = { x: fromNode.x, y: fromCenterY };
-        toPoint = { x: toNode.x + toNode.width, y: toCenterY };
-      }
-    }
-
-    // Add small gap from node boundaries
-    const gap = 4;
-    const edgeDx = toPoint.x - fromPoint.x;
-    const edgeDy = toPoint.y - fromPoint.y;
-    const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
-    if (length > gap * 2) {
-      const dirX = edgeDx / length;
-      const dirY = edgeDy / length;
-      fromPoint.x += dirX * gap;
-      fromPoint.y += dirY * gap;
-      toPoint.x -= dirX * gap;
-      toPoint.y -= dirY * gap;
-    }
-
-    const path = `M ${fromPoint.x} ${fromPoint.y} L ${toPoint.x} ${toPoint.y}`;
-    const points = [
-      fromPoint,
-      { x: (fromPoint.x + toPoint.x) / 2, y: (fromPoint.y + toPoint.y) / 2 },
-      toPoint,
-    ];
-
-    return {
-      ...edge,
-      path,
-      points,
-    };
-  });
+  const wrappedEdges = computeOrthogonalEdgePaths(
+    layout.edges,
+    wrappedNodes,
+    routeLayout,
+    wrappedGroups,
+  );
 
   // Recompute bounds (including edge points for routing tracks)
   const bounds = computeBoundsFromNodes(wrappedNodes, wrappedGroups, wrappedEdges);
@@ -255,12 +383,13 @@ function computeGroupBoundsFromNodes(
       return group;
     }
 
-    const padding = 30;
-    const headerPadding = 40; // Account for group label/header
-    const minX = Math.min(...groupNodes.map((n) => n.x)) - padding;
-    const minY = Math.min(...groupNodes.map((n) => n.y)) - padding - headerPadding;
-    const maxX = Math.max(...groupNodes.map((n) => n.x + n.width)) + padding;
-    const maxY = Math.max(...groupNodes.map((n) => n.y + n.height)) + padding;
+    const paddingX = 30;
+    const paddingTop = 52;
+    const paddingBottom = 30;
+    const minX = Math.min(...groupNodes.map((n) => n.x)) - paddingX;
+    const minY = Math.min(...groupNodes.map((n) => n.y)) - paddingTop;
+    const maxX = Math.max(...groupNodes.map((n) => n.x + n.width)) + paddingX;
+    const maxY = Math.max(...groupNodes.map((n) => n.y + n.height)) + paddingBottom;
 
     return {
       ...group,
@@ -275,7 +404,11 @@ function computeGroupBoundsFromNodes(
 /**
  * Helper to compute bounds from nodes (also includes edges for routing tracks)
  */
-function computeBoundsFromNodes(nodes: ComputedNode[], groups?: ComputedGroup[], edges?: ComputedEdge[]) {
+function computeBoundsFromNodes(
+  nodes: ComputedNode[],
+  groups?: ComputedGroup[],
+  edges?: ComputedEdge[],
+) {
   if (nodes.length === 0) {
     return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
   }
@@ -335,7 +468,7 @@ function computeLayoutWithDirection(
   );
 
   // Compute edge paths
-  const computedEdges = computeEdgePaths(model.edges, computedNodes, layout);
+  const computedEdges = computeEdgePaths(model.edges, computedNodes, layout, model.groups);
 
   // Deduplicate edge IDs to prevent Svelte {#each} key collisions
   const edgeIdCounts = new Map<string, number>();
@@ -371,31 +504,84 @@ function computeNodeSize(
   defaults: { width: number; height: number },
   style: NodeStyleConfig,
 ): { width: number; height: number } {
-  // Use style config for all measurements
-  const LABEL_CHAR_WIDTH = style.labelFontSize * style.labelCharWidthRatio;
-  const KIND_CHAR_WIDTH = style.kindFontSize * style.kindCharWidthRatio;
+  const usesDefaultStyle = style === DEFAULT_NODE_STYLE;
+  const paddingX = usesDefaultStyle ? 10 : style.paddingX;
+  const paddingY = usesDefaultStyle ? 7 : style.paddingY;
+  const contentGap = usesDefaultStyle ? 2 : style.gap;
+  const kindFontSize = usesDefaultStyle ? 11 : style.kindFontSize;
+  const iconColumnWidth = NODE_ICON_WIDTH + NODE_ICON_GAP;
+  const frameBorderWidth = usesDefaultStyle ? 2 : 0;
+  const labelWrapSafety = /[^\x00-\x7f]/.test(node.label) ? 10 : 8;
+  // Keep a small wrap safety margin for the application UI font stack.
+  const defaultCharWidthRatio = 0.6;
 
-  // Measure label - account for word wrapping
-  // For short labels (1-2 words), don't wrap
-  const words = node.label.split(/\s+/);
+  // Use the same metrics as DiagramNodeHTML for all measurements.
+  const LABEL_CHAR_WIDTH =
+    style.labelFontSize * (usesDefaultStyle ? defaultCharWidthRatio : style.labelCharWidthRatio);
+  const KIND_CHAR_WIDTH =
+    kindFontSize * (usesDefaultStyle ? defaultCharWidthRatio : style.kindCharWidthRatio);
+
+  // Measure label - account for hard line breaks and word wrapping
+  const hardLines = node.label.split(/\r\n?|\n/);
+  const words = semanticLabelTokens(node.label);
   const isShortLabel = words.length <= 2 && node.label.length <= 20;
+  const labelWeight = '600';
+  // i18n-ignore (CSS font-family fallback, not user-facing text)
+  const labelFontFamily = rootToken('--font-editorial', 'Georgia, Times New Roman, serif');
+  const measureLabel = (text: string) =>
+    measureDiagramTextWidth(
+      text,
+      style.labelFontSize,
+      labelWeight,
+      LABEL_CHAR_WIDTH,
+      -0.01 * style.labelFontSize,
+      labelFontFamily,
+    );
+  const measureKind = (text: string) =>
+    measureDiagramTextWidth(text, kindFontSize, '500', KIND_CHAR_WIDTH, 0.015 * kindFontSize);
+  const estimatedLineWidths = hardLines.map(measureLabel);
+  const longestLineWidth = Math.max(...estimatedLineWidths);
+  const longestWordWidth = Math.max(...semanticLabelUnits(node.label).map(measureLabel), 0);
 
   let labelWidth: number;
   let labelLines = 1;
 
   if (isShortLabel) {
-    // Single line for short labels
-    labelWidth = node.label.length * LABEL_CHAR_WIDTH;
+    labelWidth = longestLineWidth;
+    labelLines = hardLines.length;
   } else {
     // For longer labels, estimate wrapping at a reasonable width
     // Allow wider nodes for long labels, but cap at maxWidth
-    const estimatedWidth = node.label.length * LABEL_CHAR_WIDTH;
-    const maxLineWidth = Math.min(estimatedWidth, style.maxWidth - style.paddingX * 2);
-    labelWidth = maxLineWidth;
-    labelLines = Math.min(
-      Math.ceil((node.label.length * LABEL_CHAR_WIDTH) / maxLineWidth),
-      style.maxLines,
+    const maxLineWidth = Math.min(
+      longestLineWidth,
+      style.maxWidth - paddingX * 2 - iconColumnWidth - frameBorderWidth,
     );
+    const wrappedLineWidth = Math.max(maxLineWidth, longestWordWidth);
+    labelWidth = wrappedLineWidth;
+    const visibleLineCount = hardLines.reduce((total, line) => {
+      const lineWords = semanticLabelTokens(line);
+      if (!lineWords.length) return total + 1;
+      let count = 1;
+      let current = '';
+      for (const word of lineWords) {
+        const wordWidth = measureLabel(word);
+        if (wordWidth + labelWrapSafety > wrappedLineWidth + 0.5) {
+          if (current) count += 1;
+          count += Math.max(1, Math.ceil((wordWidth - 0.5) / wrappedLineWidth)) - 1;
+          current = '';
+          continue;
+        }
+        const candidate = current ? `${current} ${word}` : word;
+        if (current && measureLabel(candidate) + labelWrapSafety > wrappedLineWidth + 0.5) {
+          count += 1;
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      return total + count;
+    }, 0);
+    labelLines = visibleLineCount;
   }
 
   const labelHeight = style.labelFontSize * style.labelLineHeight * labelLines;
@@ -404,18 +590,26 @@ function computeNodeSize(
   let kindWidth = 0;
   let kindHeight = 0;
   if (node.kind) {
-    kindWidth = node.kind.length * KIND_CHAR_WIDTH;
-    kindHeight = style.kindFontSize * style.kindLineHeight;
+    const kindLines = node.kind.split('\n');
+    kindWidth = Math.max(...kindLines.map(measureKind));
+    kindHeight = kindFontSize * style.kindLineHeight * kindLines.length;
   }
 
   // Calculate total size
-  const contentWidth = Math.max(labelWidth, kindWidth);
-  const contentHeight = labelHeight + (node.kind ? style.gap + kindHeight : 0);
+  const contentWidth = Math.max(labelWidth + labelWrapSafety, kindWidth) + iconColumnWidth;
+  const contentHeight = labelHeight + (node.kind ? contentGap + kindHeight : 0);
 
   // Ensure minimum size but allow nodes to be smaller for short labels
-  const minWidth = isShortLabel ? 80 : defaults.width * 0.6;
-  const width = Math.min(Math.max(contentWidth + style.paddingX * 2, minWidth), style.maxWidth);
-  const height = Math.max(contentHeight + style.paddingY * 2, defaults.height * 0.6);
+  const minWidth = isShortLabel ? 72 : defaults.width * 0.6;
+  const chromeWidth = iconColumnWidth + paddingX * 2 + frameBorderWidth;
+  const width = Math.max(
+    Math.min(Math.max(contentWidth + paddingX * 2 + frameBorderWidth, minWidth), style.maxWidth),
+    longestWordWidth + chromeWidth + labelWrapSafety,
+  );
+  const height = Math.max(
+    contentHeight + paddingY * 2 + frameBorderWidth + 2,
+    defaults.height * 0.6,
+  );
 
   return { width, height };
 }
@@ -473,10 +667,12 @@ function computeNodePositions(
           const candidateY = row * (height + spacing);
 
           const overlaps = manualNodes.some((mn) => {
-            return !(candidateX + width + spacing * 0.3 < mn.x ||
-                     candidateX > mn.x + mn.width + spacing * 0.3 ||
-                     candidateY + height + spacing * 0.3 < mn.y ||
-                     candidateY > mn.y + mn.height + spacing * 0.3);
+            return !(
+              candidateX + width + spacing * 0.3 < mn.x ||
+              candidateX > mn.x + mn.width + spacing * 0.3 ||
+              candidateY + height + spacing * 0.3 < mn.y ||
+              candidateY > mn.y + mn.height + spacing * 0.3
+            );
           });
 
           if (!overlaps) {
@@ -491,6 +687,22 @@ function computeNodePositions(
       manualNodes.push({ x: bestX, y: bestY, width, height });
     }
 
+    const positionedColumns = new Map<number, ComputedNode[]>();
+    for (const node of result) {
+      const authored = nodes.find(({ id }) => id === node.id)?.position;
+      if (!authored) continue;
+      const columnKey = [...positionedColumns.keys()].find((x) => Math.abs(x - authored.x) <= 8);
+      const column = positionedColumns.get(columnKey ?? authored.x) ?? [];
+      column.push(node);
+      positionedColumns.set(columnKey ?? authored.x, column);
+    }
+    for (const [authoredX, column] of positionedColumns) {
+      if (column.length < 2) continue;
+      const width = Math.max(...column.map((node) => node.width));
+      for (const node of column) node.x = authoredX + (width - node.width) / 2;
+    }
+    const minimumX = Math.min(...result.map((node) => node.x));
+    for (const node of result) node.x = minimumX + (node.x - minimumX) * 0.89;
     return result;
   }
 
@@ -564,14 +776,20 @@ function computeLayeredLayout(
   // If we have groups, use hierarchical group-based layout
   if (groups && groups.length > 0) {
     return computeHierarchicalGroupLayout(
-      nodes, edges, groups, nodeSizes, nodeToGroup, outgoing, incoming, spacing, isHorizontal,
+      nodes,
+      edges,
+      groups,
+      nodeSizes,
+      nodeToGroup,
+      outgoing,
+      incoming,
+      spacing,
+      isHorizontal,
     );
   }
 
   // No groups - use standard hierarchical layout
-  return computeStandardHierarchicalLayout(
-    nodes, edges, nodeSizes, outgoing, incoming, spacing, isHorizontal,
-  );
+  return computeStandardHierarchicalLayout(nodes, edges, nodeSizes, spacing, isHorizontal);
 }
 
 /**
@@ -590,9 +808,9 @@ function computeHierarchicalGroupLayout(
   isHorizontal: boolean,
 ): ComputedNode[] {
   const UNGROUPED = '__ungrouped__';
-  const GROUP_PADDING = 40; // Padding around group contents
-  const GROUP_SPACING = spacing * 1.2; // Space between groups
-  const NODE_SPACING = spacing * 0.4; // Space between nodes in same group
+  const GROUP_PADDING = 32; // Padding around group contents and title
+  const GROUP_SPACING = Math.max(48, spacing * 0.75); // Space between groups
+  const NODE_SPACING = Math.max(20, spacing * 0.32); // Space between nodes in same group
 
   // Step 1: Assign nodes to groups
   const groupNodes = new Map<string, string[]>();
@@ -612,7 +830,7 @@ function computeHierarchicalGroupLayout(
   // Step 2: Build group dependency graph
   const groupOutgoing = new Map<string, Set<string>>();
   const groupIncoming = new Map<string, Set<string>>();
-  const allGroupIds = [...groups.map(g => g.id), UNGROUPED];
+  const allGroupIds = [...groups.map((g) => g.id), UNGROUPED];
   allGroupIds.forEach((gid) => {
     groupOutgoing.set(gid, new Set());
     groupIncoming.set(gid, new Set());
@@ -637,7 +855,11 @@ function computeHierarchicalGroupLayout(
     if (visited.has(gid)) return 0; // Cycle detected
     visited.add(gid);
 
-    const deps = groupIncoming.get(gid) || new Set();
+    const groupIndex = allGroupIds.indexOf(gid);
+    const deps = [...(groupIncoming.get(gid) || new Set())].filter((dependencyId) => {
+      const isReciprocal = groupOutgoing.get(gid)?.has(dependencyId) ?? false;
+      return !isReciprocal || allGroupIds.indexOf(dependencyId) < groupIndex;
+    });
     let maxDepLayer = -1;
     deps.forEach((depGid) => {
       maxDepLayer = Math.max(maxDepLayer, assignGroupLayer(depGid));
@@ -666,7 +888,10 @@ function computeHierarchicalGroupLayout(
 
   // Step 5: Compute intra-group layered layout for each group
   // For each group, build a sub-graph and run mini Sugiyama-style layout
-  const groupInternalLayouts = new Map<string, { layers: string[][]; nodeLayer: Map<string, number> }>();
+  const groupInternalLayouts = new Map<
+    string,
+    { layers: string[][]; nodeLayer: Map<string, number>; layerSpacing: number[] }
+  >();
   const groupDimensions = new Map<string, { width: number; height: number }>();
 
   // Build intra-group edge maps
@@ -689,7 +914,7 @@ function computeHierarchicalGroupLayout(
     const nodeIds = groupNodes.get(gid) || [];
     if (nodeIds.length === 0) {
       groupDimensions.set(gid, { width: 0, height: 0 });
-      groupInternalLayouts.set(gid, { layers: [], nodeLayer: new Map() });
+      groupInternalLayouts.set(gid, { layers: [], nodeLayer: new Map(), layerSpacing: [] });
       return;
     }
 
@@ -761,10 +986,26 @@ function computeHierarchicalGroupLayout(
       }
     }
 
-    groupInternalLayouts.set(gid, { layers, nodeLayer });
+    const layerSpacing = layers.slice(0, -1).map((_, layerIndex) => {
+      const labelClearance = edges.reduce((clearance, edge) => {
+        if (
+          !edge.label ||
+          nodeToGroup.get(edge.from) !== gid ||
+          nodeToGroup.get(edge.to) !== gid ||
+          nodeLayer.get(edge.from) !== layerIndex ||
+          nodeLayer.get(edge.to) !== layerIndex + 1
+        ) {
+          return clearance;
+        }
+        const label = measureEdgeLabel(edge.label);
+        return Math.max(clearance, (isHorizontal ? label.width : label.height) + 24);
+      }, 0);
+      return Math.max(spacing * 0.5, labelClearance);
+    });
+
+    groupInternalLayouts.set(gid, { layers, nodeLayer, layerSpacing });
 
     // Calculate group dimensions based on multi-layer layout
-    const INTRA_LAYER_SPACING = spacing * 0.7; // spacing between layers within group
     let totalPrimary = 0;
     let maxSecondary = 0;
 
@@ -787,11 +1028,15 @@ function computeHierarchicalGroupLayout(
       layerSecondary -= NODE_SPACING; // Remove last spacing
       maxSecondary = Math.max(maxSecondary, layerSecondary);
       totalPrimary += layerPrimary;
-      if (layerIdx > 0) totalPrimary += INTRA_LAYER_SPACING;
+      if (layerIdx > 0) totalPrimary += layerSpacing[layerIdx - 1] ?? spacing * 0.5;
     });
 
-    const width = isHorizontal ? totalPrimary + GROUP_PADDING * 2 : maxSecondary + GROUP_PADDING * 2;
-    const height = isHorizontal ? maxSecondary + GROUP_PADDING * 2 : totalPrimary + GROUP_PADDING * 2;
+    const width = isHorizontal
+      ? totalPrimary + GROUP_PADDING * 2
+      : maxSecondary + GROUP_PADDING * 2;
+    const height = isHorizontal
+      ? maxSecondary + GROUP_PADDING * 2
+      : totalPrimary + GROUP_PADDING * 2;
 
     groupDimensions.set(gid, { width, height });
   });
@@ -861,18 +1106,16 @@ function computeHierarchicalGroupLayout(
 
   // Step 8: Position nodes within groups using intra-group layers
   const positioned: ComputedNode[] = [];
-  const INTRA_LAYER_SPACING = spacing * 0.7;
-
   allGroupIds.forEach((gid) => {
     const nodeIds = groupNodes.get(gid) || [];
     const groupPos = groupPositions.get(gid);
     const internalLayout = groupInternalLayouts.get(gid);
     if (!groupPos || nodeIds.length === 0 || !internalLayout) return;
 
-    const { layers } = internalLayout;
+    const { layers, layerSpacing } = internalLayout;
     let layerPrimaryOffset = GROUP_PADDING;
 
-    layers.forEach((layer) => {
+    layers.forEach((layer, layerIndex) => {
       // Calculate total secondary size for centering within the group
       let totalSecondary = 0;
       layer.forEach((nodeId) => {
@@ -886,7 +1129,8 @@ function computeHierarchicalGroupLayout(
       const groupDim = groupDimensions.get(gid);
       if (!groupDim) return;
       const groupSecondarySize = isHorizontal ? groupDim.height : groupDim.width;
-      let nodeSecondaryOffset = GROUP_PADDING + (groupSecondarySize - GROUP_PADDING * 2 - totalSecondary) / 2;
+      let nodeSecondaryOffset =
+        GROUP_PADDING + (groupSecondarySize - GROUP_PADDING * 2 - totalSecondary) / 2;
 
       let maxLayerPrimary = 0;
 
@@ -911,7 +1155,7 @@ function computeHierarchicalGroupLayout(
         positioned.push({ ...node, x, y, width: size.width, height: size.height });
       });
 
-      layerPrimaryOffset += maxLayerPrimary + INTRA_LAYER_SPACING;
+      layerPrimaryOffset += maxLayerPrimary + (layerSpacing[layerIndex] ?? spacing * 0.5);
     });
   });
 
@@ -925,11 +1169,47 @@ function computeStandardHierarchicalLayout(
   nodes: DiagramNode[],
   edges: DiagramEdge[],
   nodeSizes: Map<string, { width: number; height: number }>,
-  outgoing: Map<string, string[]>,
-  incoming: Map<string, string[]>,
   spacing: number,
   isHorizontal: boolean,
 ): ComputedNode[] {
+  const nodeOrder = new Map(nodes.map((node, index) => [node.id, index]));
+  const feedbackEdgeIds = new Set<string>();
+  const adjacency = new Map<string, DiagramEdge[]>();
+  for (const edge of edges) {
+    const list = adjacency.get(edge.from) ?? [];
+    list.push(edge);
+    adjacency.set(edge.from, list);
+  }
+  const reaches = (start: string, target: string, excludedId: string): boolean => {
+    const pending = [start];
+    const seen = new Set<string>();
+    while (pending.length) {
+      const nodeId = pending.pop();
+      if (!nodeId) continue;
+      if (nodeId === target) return true;
+      if (seen.has(nodeId)) continue;
+      seen.add(nodeId);
+      for (const edge of adjacency.get(nodeId) ?? []) {
+        if (edge.id !== excludedId) pending.push(edge.to);
+      }
+    }
+    return false;
+  };
+  for (const edge of edges) {
+    const fromIndex = nodeOrder.get(edge.from) ?? 0;
+    const toIndex = nodeOrder.get(edge.to) ?? 0;
+    if (fromIndex > toIndex && reaches(edge.to, edge.from, edge.id)) {
+      feedbackEdgeIds.add(edge.id);
+    }
+  }
+  const rankIncoming = new Map<string, string[]>();
+  const rankOutgoing = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (feedbackEdgeIds.has(edge.id)) continue;
+    rankIncoming.set(edge.to, [...(rankIncoming.get(edge.to) ?? []), edge.from]);
+    rankOutgoing.set(edge.from, [...(rankOutgoing.get(edge.from) ?? []), edge.to]);
+  }
+
   // Assign nodes to layers using longest path algorithm
   const nodeLayer = new Map<string, number>();
   const visited = new Set<string>();
@@ -940,7 +1220,7 @@ function computeStandardHierarchicalLayout(
     if (visited.has(nodeId)) return 0;
     visited.add(nodeId);
 
-    const deps = incoming.get(nodeId) || [];
+    const deps = rankIncoming.get(nodeId) || [];
     let maxDepLayer = -1;
     deps.forEach((depId) => {
       maxDepLayer = Math.max(maxDepLayer, assignLayer(depId));
@@ -970,10 +1250,8 @@ function computeStandardHierarchicalLayout(
 
       const barycenters = new Map<string, number>();
       layer.forEach((nodeId) => {
-        const inNodes = incoming.get(nodeId) || [];
-        const positions = inNodes
-          .map((id) => prevLayer.indexOf(id))
-          .filter((pos) => pos !== -1);
+        const inNodes = rankIncoming.get(nodeId) || [];
+        const positions = inNodes.map((id) => prevLayer.indexOf(id)).filter((pos) => pos !== -1);
 
         if (positions.length > 0) {
           barycenters.set(nodeId, positions.reduce((a, b) => a + b, 0) / positions.length);
@@ -992,10 +1270,8 @@ function computeStandardHierarchicalLayout(
 
       const barycenters = new Map<string, number>();
       layer.forEach((nodeId) => {
-        const outNodes = outgoing.get(nodeId) || [];
-        const positions = outNodes
-          .map((id) => nextLayer.indexOf(id))
-          .filter((pos) => pos !== -1);
+        const outNodes = rankOutgoing.get(nodeId) || [];
+        const positions = outNodes.map((id) => nextLayer.indexOf(id)).filter((pos) => pos !== -1);
 
         if (positions.length > 0) {
           barycenters.set(nodeId, positions.reduce((a, b) => a + b, 0) / positions.length);
@@ -1010,12 +1286,29 @@ function computeStandardHierarchicalLayout(
 
   // Position nodes
   const positioned: ComputedNode[] = [];
-  const LAYER_SPACING = spacing * 0.8;
   const NODE_SPACING = spacing * 0.4;
+
+  const layerSpacing = layers.slice(0, -1).map((_, layerIndex) => {
+    const labelClearance = edges.reduce((clearance, edge) => {
+      const fromLayer = nodeLayer.get(edge.from);
+      const toLayer = nodeLayer.get(edge.to);
+      if (
+        !edge.label ||
+        feedbackEdgeIds.has(edge.id) ||
+        fromLayer !== layerIndex ||
+        toLayer !== layerIndex + 1
+      ) {
+        return clearance;
+      }
+      const label = measureEdgeLabel(edge.label);
+      return Math.max(clearance, (isHorizontal ? label.width : label.height) + 36);
+    }, 0);
+    return Math.max(spacing * 0.65, labelClearance);
+  });
 
   let primaryOffset = 0;
 
-  layers.forEach((layer) => {
+  layers.forEach((layer, layerIndex) => {
     let maxPrimarySize = 0;
     let secondaryOffset = 0;
 
@@ -1049,7 +1342,7 @@ function computeStandardHierarchicalLayout(
       positioned.push({ ...node, x, y, width: size.width, height: size.height });
     });
 
-    primaryOffset += maxPrimarySize + LAYER_SPACING;
+    primaryOffset += maxPrimarySize + (layerSpacing[layerIndex] ?? spacing * 0.8);
   });
 
   return positioned;
@@ -1587,7 +1880,10 @@ function computeForceLayout(
 
   if (componentCount > 1) {
     // Compute bounding box for each component
-    const compBounds = new Map<number, { minX: number; minY: number; maxX: number; maxY: number }>();
+    const compBounds = new Map<
+      number,
+      { minX: number; minY: number; maxX: number; maxY: number }
+    >();
     positions.forEach((p) => {
       const cid = componentOf.get(p.node.id);
       if (cid === undefined) return;
@@ -1788,6 +2084,7 @@ function computeEdgePaths(
   edges: DiagramEdge[],
   nodes: ComputedNode[],
   layout: DiagramBaseView['layout'],
+  groups?: DiagramGroup[],
 ): ComputedEdge[] {
   const edgeRouting = layout.edgeRouting || 'polyline';
 
@@ -1797,15 +2094,8 @@ function computeEdgePaths(
     return computeStraightEdgePaths(edges, nodes);
   }
 
-  // Dense graphs (high edge-to-node ratio) look terrible with orthogonal routing
-  // because every right-angle path consumes channel space. Auto-downgrade to curved.
-  const edgeDensity = nodes.length > 0 ? edges.length / nodes.length : 0;
-  const effectiveRouting = (edgeRouting === 'orthogonal' && edgeDensity > 3) ? 'curved' : edgeRouting;
-
-  if (effectiveRouting === 'orthogonal') {
-    return computeOrthogonalEdgePaths(edges, nodes, layout);
-  } else if (effectiveRouting === 'curved') {
-    return computeCurvedEdgePaths(edges, nodes);
+  if (edgeRouting === 'orthogonal' || edgeRouting === 'curved') {
+    return computeOrthogonalEdgePaths(edges, nodes, layout, groups);
   }
 
   // Default: simple straight lines
@@ -1817,7 +2107,7 @@ function computeEdgePaths(
  * When two edges connect the same pair of nodes in opposite directions,
  * they get offset ±BIDIRECTIONAL_OFFSET perpendicular to the line between nodes.
  */
-const BIDIRECTIONAL_OFFSET = 12;
+const BIDIRECTIONAL_OFFSET = 32;
 
 function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> {
   const offsets = new Map<string, number>();
@@ -1847,17 +2137,15 @@ function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> 
 
     // Both directions exist - apply offsets
     processed.add(sortedPairKey);
-    const [nodeA] = sortedPairKey.split('::');
-
     const forwardEdges = directedMap.get(key);
     const reverseEdges = directedMap.get(reverseKey);
     if (!forwardEdges || !reverseEdges) continue;
 
     for (const edgeId of forwardEdges) {
-      offsets.set(edgeId, from === nodeA ? BIDIRECTIONAL_OFFSET : -BIDIRECTIONAL_OFFSET);
+      offsets.set(edgeId, BIDIRECTIONAL_OFFSET);
     }
     for (const edgeId of reverseEdges) {
-      offsets.set(edgeId, to === nodeA ? BIDIRECTIONAL_OFFSET : -BIDIRECTIONAL_OFFSET);
+      offsets.set(edgeId, BIDIRECTIONAL_OFFSET);
     }
   }
 
@@ -1883,101 +2171,10 @@ function applyPerpendicularOffset(
   return { x: point.x + perpX * offset, y: point.y + perpY * offset };
 }
 
-
-/**
- * Compute edge paths with curved bezier lines
- */
-function computeCurvedEdgePaths(
-  edges: DiagramEdge[],
-  nodes: ComputedNode[],
-): ComputedEdge[] {
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-  const biOffsets = buildBidirectionalOffsetMap(edges);
-  const selfLoopCounts = new Map<string, number>();
-
-  return edges.map((edge) => {
-    const fromNode = nodeMap.get(edge.from);
-    const toNode = nodeMap.get(edge.to);
-
-    if (!fromNode || !toNode) {
-      return { ...edge, path: '', points: [] };
-    }
-
-    // Self-loop: edge from a node to itself
-    if (edge.from === edge.to) {
-      const loopIdx = selfLoopCounts.get(edge.from) ?? 0;
-      selfLoopCounts.set(edge.from, loopIdx + 1);
-      const { path, points } = computeSelfLoopPath(fromNode, loopIdx);
-      return { ...edge, path, points };
-    }
-
-    // Calculate centers
-    const fromCenterX = fromNode.x + fromNode.width / 2;
-    const fromCenterY = fromNode.y + fromNode.height / 2;
-    const toCenterX = toNode.x + toNode.width / 2;
-    const toCenterY = toNode.y + toNode.height / 2;
-
-    // Determine direction for connection points
-    const dx = toCenterX - fromCenterX;
-    const dy = toCenterY - fromCenterY;
-    const angle = Math.atan2(dy, dx);
-    const absAngle = Math.abs(angle);
-
-    let fromPoint: { x: number; y: number };
-    let toPoint: { x: number; y: number };
-
-    if (absAngle < Math.PI / 4) {
-      fromPoint = { x: fromNode.x + fromNode.width, y: fromCenterY };
-      toPoint = { x: toNode.x, y: toCenterY };
-    } else if (absAngle > (3 * Math.PI) / 4) {
-      fromPoint = { x: fromNode.x, y: fromCenterY };
-      toPoint = { x: toNode.x + toNode.width, y: toCenterY };
-    } else if (angle > 0) {
-      fromPoint = { x: fromCenterX, y: fromNode.y + fromNode.height };
-      toPoint = { x: toCenterX, y: toNode.y };
-    } else {
-      fromPoint = { x: fromCenterX, y: fromNode.y };
-      toPoint = { x: toCenterX, y: toNode.y + toNode.height };
-    }
-
-    // Add small gap from node edge
-    const gap = 2;
-    const edgeDx = toPoint.x - fromPoint.x;
-    const edgeDy = toPoint.y - fromPoint.y;
-    const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
-    if (length > gap * 2) {
-      const dirX = edgeDx / length;
-      const dirY = edgeDy / length;
-      fromPoint = { x: fromPoint.x + dirX * gap, y: fromPoint.y + dirY * gap };
-      toPoint = { x: toPoint.x - dirX * gap, y: toPoint.y - dirY * gap };
-    }
-
-    // Apply bidirectional offset if needed
-    const biOffset = biOffsets.get(edge.id);
-    if (biOffset) {
-      const fromCenter = { x: fromCenterX, y: fromCenterY };
-      const toCenter = { x: toCenterX, y: toCenterY };
-      fromPoint = applyPerpendicularOffset(fromPoint, fromCenter, toCenter, biOffset);
-      toPoint = applyPerpendicularOffset(toPoint, fromCenter, toCenter, biOffset);
-    }
-
-    const path = computeCurvedPath(fromPoint.x, fromPoint.y, toPoint.x, toPoint.y);
-    const midX = (fromPoint.x + toPoint.x) / 2;
-    const midY = (fromPoint.y + toPoint.y) / 2;
-    const points = [fromPoint, { x: midX, y: midY }, toPoint];
-
-    return { ...edge, path, points };
-  });
-}
-
 /**
  * Compute edge paths with simple straight lines
  */
-function computeStraightEdgePaths(
-  edges: DiagramEdge[],
-  nodes: ComputedNode[],
-): ComputedEdge[] {
+function computeStraightEdgePaths(edges: DiagramEdge[], nodes: ComputedNode[]): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const biOffsets = buildBidirectionalOffsetMap(edges);
   const selfLoopCounts = new Map<string, number>();
@@ -1991,7 +2188,7 @@ function computeStraightEdgePaths(
     }
 
     // Self-loop: edge from a node to itself
-    if (edge.from === edge.to) {
+    if (fromNode.id === toNode.id) {
       const loopIdx = selfLoopCounts.get(edge.from) ?? 0;
       selfLoopCounts.set(edge.from, loopIdx + 1);
       const { path, points } = computeSelfLoopPath(fromNode, loopIdx);
@@ -2073,21 +2270,25 @@ function computeOrthogonalEdgePaths(
   edges: DiagramEdge[],
   nodes: ComputedNode[],
   layout: DiagramBaseView['layout'],
+  groups?: DiagramGroup[],
 ): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const nodeGroup = new Map(nodes.flatMap((node) => (node.group ? [[node.id, node.group]] : [])));
+  groups?.forEach((group) => group.nodeIds?.forEach((nodeId) => nodeGroup.set(nodeId, group.id)));
   const biOffsets = buildBidirectionalOffsetMap(edges);
   const direction = layout.direction || 'TB';
   const isVerticalLayout = direction === 'TB' || direction === 'BT';
 
   const TRACK_SPACING = 16; // Space between parallel routing tracks
   const NODE_CLEARANCE = 24; // Minimum clearance from node edge for routing
-  const NODE_GAP = 12; // Gap when turning toward a node
+  const NODE_GAP = 32; // Keep a clear lead between a node and the first turn
 
   // Find the bounding box of all nodes
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const node of nodes) {
     minX = Math.min(minX, node.x);
-    minY = Math.min(minY, node.y);
     maxX = Math.max(maxX, node.x + node.width);
     maxY = Math.max(maxY, node.y + node.height);
   }
@@ -2112,7 +2313,7 @@ function computeOrthogonalEdgePaths(
     if (!fromNode || !toNode) continue;
 
     // Self-loop: edge from a node to itself
-    if (edge.from === edge.to) {
+    if (fromNode.id === toNode.id) {
       const loopIdx = selfLoopCounts.get(edge.from) ?? 0;
       selfLoopCounts.set(edge.from, loopIdx + 1);
       const { path, points } = computeSelfLoopPath(fromNode, loopIdx);
@@ -2122,9 +2323,12 @@ function computeOrthogonalEdgePaths(
 
     const { fromSide, toSide } = determineConnectionSides(fromNode, toNode, isVerticalLayout);
 
-    const goesBackward = isVerticalLayout
-      ? (fromNode.y + fromNode.height / 2) > (toNode.y + toNode.height / 2)
-      : (fromNode.x + fromNode.width / 2) > (toNode.x + toNode.width / 2);
+    const usesDirectedLayers = layout.type === 'layered' || layout.type === 'tree';
+    const goesBackward =
+      usesDirectedLayers &&
+      (isVerticalLayout
+        ? fromNode.y + fromNode.height / 2 > toNode.y + toNode.height / 2
+        : fromNode.x + fromNode.width / 2 > toNode.x + toNode.width / 2);
 
     edgeInfos.push({ edge, fromNode, toNode, fromSide, toSide, goesBackward });
   }
@@ -2136,12 +2340,15 @@ function computeOrthogonalEdgePaths(
   // Channel allocation: group edges that share horizontal/vertical segments
 
   // Pre-compute which channel each edge needs
-  const edgeChannelInfo = new Map<string, {
-    needsHorizontalChannel: boolean;
-    needsVerticalChannel: boolean;
-    horizontalY: number;
-    verticalX: number;
-  }>();
+  const edgeChannelInfo = new Map<
+    string,
+    {
+      needsHorizontalChannel: boolean;
+      needsVerticalChannel: boolean;
+      horizontalY: number;
+      verticalX: number;
+    }
+  >();
 
   edgeInfos.forEach((info) => {
     const { fromNode, toNode, fromSide, toSide } = info;
@@ -2209,11 +2416,11 @@ function computeOrthogonalEdgePaths(
 
   // Allocate channels to avoid overlapping
   // Sort edges by their channel position to assign unique tracks
-  const edgesNeedingHorizontal = edgeInfos.filter((e) =>
-    edgeChannelInfo.get(e.edge.id)?.needsHorizontalChannel,
+  const edgesNeedingHorizontal = edgeInfos.filter(
+    (e) => edgeChannelInfo.get(e.edge.id)?.needsHorizontalChannel,
   );
-  const edgesNeedingVertical = edgeInfos.filter((e) =>
-    edgeChannelInfo.get(e.edge.id)?.needsVerticalChannel,
+  const edgesNeedingVertical = edgeInfos.filter(
+    (e) => edgeChannelInfo.get(e.edge.id)?.needsVerticalChannel,
   );
 
   // Sort by natural channel position
@@ -2239,7 +2446,14 @@ function computeOrthogonalEdgePaths(
   // Use a more aggressive separation algorithm
   const assignHorizontalChannels = () => {
     // Group edges by their approximate Y position (within tolerance)
-    const assignedChannels: { minX: number; maxX: number; y: number; edgeId: string }[] = [];
+    const assignedChannels: {
+      minX: number;
+      maxX: number;
+      y: number;
+      edgeId: string;
+      sourceId: string;
+      targetId: string;
+    }[] = [];
 
     edgesNeedingHorizontal.forEach((info) => {
       const { fromNode, toNode } = info;
@@ -2253,7 +2467,9 @@ function computeOrthogonalEdgePaths(
       // Find all channels this edge would overlap with
       const overlappingChannels = assignedChannels.filter((channel) => {
         const overlapsX = !(edgeMaxX < channel.minX - 10 || edgeMinX > channel.maxX + 10);
-        return overlapsX;
+        return (
+          overlapsX && (channel.sourceId !== info.edge.from || channel.targetId === info.edge.to)
+        );
       });
 
       // Find a Y position that doesn't conflict with overlapping channels
@@ -2282,11 +2498,18 @@ function computeOrthogonalEdgePaths(
           }
         }
         if (!foundSlot) {
-          assignedY = baseY + (overlappingChannels.length) * TRACK_SPACING;
+          assignedY = baseY + overlappingChannels.length * TRACK_SPACING;
         }
       }
 
-      assignedChannels.push({ minX: edgeMinX, maxX: edgeMaxX, y: assignedY, edgeId: info.edge.id });
+      assignedChannels.push({
+        minX: edgeMinX,
+        maxX: edgeMaxX,
+        y: assignedY,
+        edgeId: info.edge.id,
+        sourceId: info.edge.from,
+        targetId: info.edge.to,
+      });
       horizontalChannelY.set(info.edge.id, assignedY);
     });
   };
@@ -2330,7 +2553,7 @@ function computeOrthogonalEdgePaths(
           }
         }
         if (!foundSlot) {
-          assignedX = baseX + (overlappingChannels.length) * TRACK_SPACING;
+          assignedX = baseX + overlappingChannels.length * TRACK_SPACING;
         }
       }
 
@@ -2342,49 +2565,8 @@ function computeOrthogonalEdgePaths(
   assignHorizontalChannels();
   assignVerticalChannels();
 
-  // Group edges by source/target for port spreading
-  const sourceGroups = new Map<string, EdgeInfo[]>();
-  const targetGroups = new Map<string, EdgeInfo[]>();
-
-  for (const info of edgeInfos) {
-    const sourceKey = `${info.edge.from}:${info.fromSide}`;
-    let sourceGroup = sourceGroups.get(sourceKey);
-    if (!sourceGroup) {
-      sourceGroup = [];
-      sourceGroups.set(sourceKey, sourceGroup);
-    }
-    sourceGroup.push(info);
-
-    const targetKey = `${info.edge.to}:${info.toSide}`;
-    let targetGroup = targetGroups.get(targetKey);
-    if (!targetGroup) {
-      targetGroup = [];
-      targetGroups.set(targetKey, targetGroup);
-    }
-    targetGroup.push(info);
-  }
-
-  // Assign port indices
-  const portIndex = new Map<string, { srcIdx: number; srcCount: number; tgtIdx: number; tgtCount: number }>();
-
-  sourceGroups.forEach((group) => {
-    group.sort((a, b) => (a.toNode.x + a.toNode.width/2) - (b.toNode.x + b.toNode.width/2));
-    group.forEach((info, i) => {
-      const existing = portIndex.get(info.edge.id) || { srcIdx: 0, srcCount: 1, tgtIdx: 0, tgtCount: 1 };
-      portIndex.set(info.edge.id, { ...existing, srcIdx: i, srcCount: group.length });
-    });
-  });
-
-  targetGroups.forEach((group) => {
-    group.sort((a, b) => (a.fromNode.x + a.fromNode.width/2) - (b.fromNode.x + b.fromNode.width/2));
-    group.forEach((info, i) => {
-      const existing = portIndex.get(info.edge.id) || { srcIdx: 0, srcCount: 1, tgtIdx: 0, tgtCount: 1 };
-      portIndex.set(info.edge.id, { ...existing, tgtIdx: i, tgtCount: group.length });
-    });
-  });
-
   // Backward edge track allocation
-  const backwardEdges = edgeInfos.filter(e => e.goesBackward);
+  const backwardEdges = edgeInfos.filter((e) => e.goesBackward);
   backwardEdges.sort((a, b) => {
     const aDistance = isVerticalLayout
       ? Math.abs(a.fromNode.y - a.toNode.y)
@@ -2400,59 +2582,106 @@ function computeOrthogonalEdgePaths(
     backwardTrackMap.set(info.edge.id, i);
   });
 
+  const directedParallelMap = new Map<string, { index: number; count: number }>();
+  const directedParallelGroups = new Map<string, EdgeInfo[]>();
+  for (const info of edgeInfos) {
+    const key = `${info.edge.from}->${info.edge.to}`;
+    const group = directedParallelGroups.get(key) ?? [];
+    group.push(info);
+    directedParallelGroups.set(key, group);
+  }
+  for (const group of directedParallelGroups.values()) {
+    group.forEach((info, index) =>
+      directedParallelMap.set(info.edge.id, { index, count: group.length }),
+    );
+  }
+
+  const verticalCorridorIsBlocked = (info: EdgeInfo) => {
+    const routeX =
+      (info.fromNode.x + info.fromNode.width / 2 + info.toNode.x + info.toNode.width / 2) / 2;
+    const startY = Math.min(
+      info.fromNode.y + info.fromNode.height,
+      info.toNode.y + info.toNode.height,
+    );
+    const endY = Math.max(info.fromNode.y, info.toNode.y);
+    if (endY <= startY) return false;
+
+    return nodes.some(
+      (node) =>
+        node.id !== info.fromNode.id &&
+        node.id !== info.toNode.id &&
+        routeX >= node.x - NODE_GAP &&
+        routeX <= node.x + node.width + NODE_GAP &&
+        node.y < endY &&
+        node.y + node.height > startY,
+    );
+  };
+
   // Generate paths
   const computedEdges: ComputedEdge[] = edgeInfos.map((info) => {
     const { edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
 
-    // Calculate port positions with spreading
-    let srcT = 0.5, tgtT = 0.5;
-    const ports = portIndex.get(edge.id);
-    if (ports) {
-      srcT = ports.srcCount === 1 ? 0.5 : 0.2 + (0.6 * ports.srcIdx) / Math.max(ports.srcCount - 1, 1);
-      tgtT = ports.tgtCount === 1 ? 0.5 : 0.2 + (0.6 * ports.tgtIdx) / Math.max(ports.tgtCount - 1, 1);
-    }
-
-    const getPortPosition = (node: ComputedNode, side: Side, t: number) => {
+    const getPortPosition = (node: ComputedNode, side: Side) => {
       switch (side) {
-        case 'top': return { x: node.x + node.width * t, y: node.y };
-        case 'bottom': return { x: node.x + node.width * t, y: node.y + node.height };
-        case 'left': return { x: node.x, y: node.y + node.height * t };
-        case 'right': return { x: node.x + node.width, y: node.y + node.height * t };
+        case 'top':
+          return { x: node.x + node.width / 2, y: node.y };
+        case 'bottom':
+          return { x: node.x + node.width / 2, y: node.y + node.height };
+        case 'left':
+          return { x: node.x, y: node.y + node.height / 2 };
+        case 'right':
+          return { x: node.x + node.width, y: node.y + node.height / 2 };
       }
     };
 
-    let fromPos = getPortPosition(fromNode, fromSide, srcT);
-    let toPos = getPortPosition(toNode, toSide, tgtT);
-
-    // Apply bidirectional offset if needed
+    const fromPos = getPortPosition(fromNode, fromSide);
+    let toPos = getPortPosition(toNode, toSide);
     const biOffset = biOffsets.get(edge.id);
-    if (biOffset) {
-      const fromCenter = { x: fromNode.x + fromNode.width / 2, y: fromNode.y + fromNode.height / 2 };
-      const toCenter = { x: toNode.x + toNode.width / 2, y: toNode.y + toNode.height / 2 };
-      fromPos = applyPerpendicularOffset(fromPos, fromCenter, toCenter, biOffset);
-      toPos = applyPerpendicularOffset(toPos, fromCenter, toCenter, biOffset);
-    }
 
     const points: Array<{ x: number; y: number }> = [fromPos];
 
     const isFromVertical = fromSide === 'top' || fromSide === 'bottom';
     const isToVertical = toSide === 'top' || toSide === 'bottom';
 
-    if (goesBackward) {
+    if (fromNode.id === toNode.id) {
+      const source = { x: fromNode.x + fromNode.width, y: fromNode.y + fromNode.height / 2 };
+      const target = { x: fromNode.x + fromNode.width / 2, y: fromNode.y + fromNode.height };
+      const trackX = source.x + NODE_CLEARANCE + TRACK_SPACING + 80;
+      const trackY = target.y + NODE_CLEARANCE + TRACK_SPACING;
+      points[0] = source;
+      points.push({ x: trackX, y: source.y }, { x: trackX, y: trackY }, { x: target.x, y: trackY });
+      toPos = target;
+    } else if (
+      nodes.length <= 6 &&
+      edge.dashed &&
+      edges.some(
+        (candidate) =>
+          candidate.id !== edge.id && candidate.from === edge.from && candidate.to === edge.to,
+      )
+    ) {
+      const source = { x: fromNode.x + fromNode.width, y: fromNode.y + fromNode.height / 2 };
+      const target = { x: toNode.x + toNode.width, y: toNode.y + toNode.height / 2 };
+      const trackX = Math.max(source.x, target.x) + NODE_CLEARANCE + TRACK_SPACING;
+      points[0] = source;
+      points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
+      toPos = target;
+    } else if (goesBackward) {
       // Backward edge: route around the outside
       const trackNum = backwardTrackMap.get(edge.id) ?? 0;
 
       if (isVerticalLayout) {
-        const trackX = minX - NODE_CLEARANCE - (trackNum + 1) * TRACK_SPACING;
-        // Step away from source node first
-        const stepAwayY = fromSide === 'bottom' ? fromPos.y + NODE_GAP : fromPos.y - NODE_GAP;
-        const stepToY = toSide === 'top' ? toPos.y - NODE_GAP : toPos.y + NODE_GAP;
-        points.push({ x: fromPos.x, y: stepAwayY });
-        points.push({ x: trackX, y: stepAwayY });
-        points.push({ x: trackX, y: stepToY });
-        points.push({ x: toPos.x, y: stepToY });
+        const labelClearance = Math.max(
+          groups?.length ? 0 : 32,
+          edge.label ? estimateEdgeLabelWidth(edge.label) / 2 + 4 : 0,
+        );
+        const trackX = minX - NODE_CLEARANCE - labelClearance - (trackNum + 1) * TRACK_SPACING;
+        const source = { x: fromNode.x, y: fromNode.y + fromNode.height / 2 };
+        const target = { x: toNode.x, y: toNode.y + toNode.height / 2 };
+        points[0] = source;
+        points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
+        toPos = target;
       } else {
-        const trackY = minY - NODE_CLEARANCE - (trackNum + 1) * TRACK_SPACING;
+        const trackY = maxY + NODE_CLEARANCE + (trackNum + 1) * TRACK_SPACING;
         const stepAwayX = fromSide === 'right' ? fromPos.x + NODE_GAP : fromPos.x - NODE_GAP;
         const stepToX = toSide === 'left' ? toPos.x - NODE_GAP : toPos.x + NODE_GAP;
         points.push({ x: stepAwayX, y: fromPos.y });
@@ -2460,12 +2689,63 @@ function computeOrthogonalEdgePaths(
         points.push({ x: stepToX, y: trackY });
         points.push({ x: stepToX, y: toPos.y });
       }
+    } else if (
+      isVerticalLayout &&
+      isFromVertical &&
+      isToVertical &&
+      nodeGroup.has(fromNode.id) &&
+      nodeGroup.has(toNode.id) &&
+      nodeGroup.get(fromNode.id) !== nodeGroup.get(toNode.id)
+    ) {
+      // Enter a lower group from the side so the route does not cross its heading.
+      const source = {
+        x: fromNode.x + fromNode.width,
+        y: fromNode.y + fromNode.height / 2,
+      };
+      const target = {
+        x: toNode.x + toNode.width,
+        y: toNode.y + toNode.height / 2,
+      };
+      const trackX = Math.max(
+        maxX + NODE_CLEARANCE + NODE_GAP,
+        source.x + NODE_GAP,
+        target.x + NODE_GAP,
+      );
+      points[0] = source;
+      points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
+      toPos = target;
+    } else if (
+      isVerticalLayout &&
+      isFromVertical &&
+      isToVertical &&
+      verticalCorridorIsBlocked(info)
+    ) {
+      // A rank-spanning edge must not pass through intermediate nodes. Give it one
+      // outside lane with a horizontal segment sized for its label.
+      const labelWidth = edge.label ? estimateEdgeLabelWidth(edge.label) : 0;
+      const source = {
+        x: fromNode.x + fromNode.width,
+        y: fromNode.y + fromNode.height / 2,
+      };
+      const target = {
+        x: toNode.x + toNode.width,
+        y: toNode.y + toNode.height / 2,
+      };
+      const trackX = Math.max(
+        maxX + NODE_CLEARANCE + labelWidth / 2 + TRACK_SPACING,
+        source.x + Math.max(labelWidth + EDGE_LABEL_PADDING_X, NODE_GAP),
+        target.x + Math.max(labelWidth + EDGE_LABEL_PADDING_X, NODE_GAP),
+      );
+      points[0] = source;
+      points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
+      toPos = target;
     } else if (isFromVertical && isToVertical) {
       // Vertical to vertical - use allocated horizontal channel
       // Check if the node centers are aligned (not just port positions, which may be spread)
       const fromNodeCenterX = fromNode.x + fromNode.width / 2;
       const toNodeCenterX = toNode.x + toNode.width / 2;
-      if (Math.abs(fromNodeCenterX - toNodeCenterX) < 5 && !biOffset) {
+      const portsAreAligned = Math.abs(fromPos.x - toPos.x) < 1;
+      if (Math.abs(fromNodeCenterX - toNodeCenterX) < 5 && !biOffset && portsAreAligned) {
         // Nodes are vertically aligned - use a single straight line down the center
         // Skip this optimization when bidirectional offset is applied, as it would
         // override the offset and cause overlapping edges
@@ -2473,15 +2753,26 @@ function computeOrthogonalEdgePaths(
         points[0] = { x: centerX, y: fromPos.y };
         // toPos will be pushed with centerX below
         toPos = { x: centerX, y: toPos.y };
+      } else if (Math.abs(fromNodeCenterX - toNodeCenterX) < 5 && !biOffset) {
+        const centerX = (fromNodeCenterX + toNodeCenterX) / 2;
+        points[0] = { x: centerX, y: fromPos.y };
+        toPos = { x: centerX, y: toPos.y };
+      } else if (Math.abs(fromNodeCenterX - toNodeCenterX) < 5) {
+        const direction = fromPos.y <= toPos.y ? 1 : -1;
+        const centerX = (fromNodeCenterX + toNodeCenterX) / 2 + direction * 32;
+        points[0] = { x: centerX, y: fromPos.y };
+        toPos = { x: centerX, y: toPos.y };
       } else {
         const channelY = horizontalChannelY.get(edge.id) ?? (fromPos.y + toPos.y) / 2;
         // Add step-out segments for cleaner routing
-        const stepOutY = fromSide === 'bottom'
-          ? Math.max(fromPos.y + NODE_GAP, channelY)
-          : Math.min(fromPos.y - NODE_GAP, channelY);
-        const stepInY = toSide === 'top'
-          ? Math.min(toPos.y - NODE_GAP, channelY)
-          : Math.max(toPos.y + NODE_GAP, channelY);
+        const stepOutY =
+          fromSide === 'bottom'
+            ? Math.max(fromPos.y + NODE_GAP, channelY)
+            : Math.min(fromPos.y - NODE_GAP, channelY);
+        const stepInY =
+          toSide === 'top'
+            ? Math.min(toPos.y - NODE_GAP, channelY)
+            : Math.max(toPos.y + NODE_GAP, channelY);
 
         // Only add intermediate points if the channel is significantly different
         if (Math.abs(stepOutY - channelY) > 2) {
@@ -2493,15 +2784,36 @@ function computeOrthogonalEdgePaths(
           points.push({ x: toPos.x, y: stepInY });
         }
       }
+    } else if (!isFromVertical && !isToVertical && biOffset) {
+      const sourceLeadX = fromSide === 'right' ? fromPos.x + NODE_GAP : fromPos.x - NODE_GAP;
+      const targetLeadX = toSide === 'left' ? toPos.x - NODE_GAP : toPos.x + NODE_GAP;
+      const routeBelow = fromPos.x < toPos.x;
+      const laneY = routeBelow
+        ? Math.max(fromNode.y + fromNode.height, toNode.y + toNode.height) +
+          NODE_CLEARANCE +
+          Math.abs(biOffset) / 2 +
+          (edge.dashed ? 28 : 0)
+        : Math.min(fromNode.y, toNode.y) -
+          NODE_CLEARANCE -
+          Math.abs(biOffset) / 2 -
+          (edge.dashed ? 28 : 0);
+      points.push(
+        { x: sourceLeadX, y: fromPos.y },
+        { x: sourceLeadX, y: laneY },
+        { x: targetLeadX, y: laneY },
+        { x: targetLeadX, y: toPos.y },
+      );
     } else if (!isFromVertical && !isToVertical) {
       // Horizontal to horizontal - use allocated vertical channel
       const channelX = verticalChannelX.get(edge.id) ?? (fromPos.x + toPos.x) / 2;
-      const stepOutX = fromSide === 'right'
-        ? Math.max(fromPos.x + NODE_GAP, channelX)
-        : Math.min(fromPos.x - NODE_GAP, channelX);
-      const stepInX = toSide === 'left'
-        ? Math.min(toPos.x - NODE_GAP, channelX)
-        : Math.max(toPos.x + NODE_GAP, channelX);
+      const stepOutX =
+        fromSide === 'right'
+          ? Math.max(fromPos.x + NODE_GAP, channelX)
+          : Math.min(fromPos.x - NODE_GAP, channelX);
+      const stepInX =
+        toSide === 'left'
+          ? Math.min(toPos.x - NODE_GAP, channelX)
+          : Math.max(toPos.x + NODE_GAP, channelX);
 
       if (Math.abs(stepOutX - channelX) > 2) {
         points.push({ x: stepOutX, y: fromPos.y });
@@ -2534,21 +2846,159 @@ function computeOrthogonalEdgePaths(
     }
 
     points.push(toPos);
-
-    // Generate SVG path
-    const pathParts = [`M ${points[0].x} ${points[0].y}`];
-    for (let i = 1; i < points.length; i++) {
-      pathParts.push(`L ${points[i].x} ${points[i].y}`);
-    }
+    const simplifiedPoints = simplifyOrthogonalPoints(points);
 
     return {
       ...edge,
-      path: pathParts.join(' '),
-      points,
+      path: buildRoundedOrthogonalPath(simplifiedPoints),
+      points: simplifiedPoints,
     };
   });
 
   return [...selfLoopEdges, ...computedEdges];
+}
+
+function computeCompactColumnEdgePaths(
+  edges: DiagramEdge[],
+  nodes: ComputedNode[],
+): ComputedEdge[] {
+  const nodeMap = new Map(nodes.map((node, index) => [node.id, { node, index }]));
+  const sourceRows = new Map<string, number>();
+  const columnWidth = Math.max(...nodes.map((node) => node.x + node.width));
+
+  return edges.flatMap((edge) => {
+    const sourceEntry = nodeMap.get(edge.from);
+    const targetEntry = nodeMap.get(edge.to);
+    if (!sourceEntry || !targetEntry) return [];
+    const { node: source, index: sourceIndex } = sourceEntry;
+    const { node: target, index: targetIndex } = targetEntry;
+    const row = sourceRows.get(edge.from) ?? 0;
+    sourceRows.set(edge.from, row + 1);
+    const compactLabel = edge.label
+      ? measureEdgeLabel(edge.label, compactEdgeLabelMaxWidth(edge.label))
+      : null;
+    const needsAdjacentLabelLane =
+      targetIndex === sourceIndex + 1 &&
+      Boolean(compactLabel && compactLabel.height + 16 > target.y - (source.y + source.height));
+    let points: Array<{ x: number; y: number }>;
+
+    if (edge.from === edge.to) {
+      const laneClearance = edge.label ? 64 : 44;
+      const start = { x: source.x + source.width / 2, y: source.y };
+      const end = { x: source.x + source.width, y: source.y + source.height / 2 };
+      const laneX = columnWidth + laneClearance;
+      const loopY = source.y - 32 - row * 26;
+      points = [
+        start,
+        { x: start.x, y: loopY },
+        { x: laneX, y: loopY },
+        { x: laneX, y: end.y },
+        end,
+      ];
+    } else if (targetIndex === sourceIndex + 1 && !needsAdjacentLabelLane) {
+      points = [
+        { x: source.x + source.width / 2, y: source.y + source.height },
+        { x: target.x + target.width / 2, y: target.y },
+      ];
+    } else {
+      const downward = targetIndex > sourceIndex;
+      const start = {
+        x: downward ? source.x + source.width : source.x,
+        y: source.y + source.height / 2,
+      };
+      const end = {
+        x: downward ? target.x + target.width : target.x,
+        y: target.y + target.height / 2,
+      };
+      const terminalLead = 32;
+      const laneClearance = needsAdjacentLabelLane
+        ? Math.max(terminalLead, compactLabel!.width / 2 + 8)
+        : terminalLead;
+      const laneX = downward ? columnWidth + laneClearance + row * 8 : -laneClearance - row * 8;
+      points = [
+        start,
+        { x: start.x + (downward ? terminalLead : -terminalLead), y: start.y },
+        { x: laneX, y: start.y },
+        { x: laneX, y: end.y },
+        { x: end.x + (downward ? terminalLead : -terminalLead), y: end.y },
+        end,
+      ];
+    }
+
+    const simplifiedPoints = simplifyOrthogonalPoints(points);
+    return [
+      {
+        ...edge,
+        path: buildCompactOrthogonalPath(simplifiedPoints),
+        points: simplifiedPoints,
+      },
+    ];
+  });
+}
+
+function buildCompactOrthogonalPath(
+  points: RoutePoint[],
+  radius = ORTHOGONAL_CORNER_RADIUS,
+): string {
+  if (points.length === 0) return '';
+  const commands = [`M ${points[0].x} ${points[0].y}`];
+  let current = points[0];
+  let hasInitialLine = false;
+  const lineTo = (point: RoutePoint) => {
+    if (!hasInitialLine) {
+      commands.push(`L ${point.x} ${point.y}`);
+      hasInitialLine = true;
+    } else if (Math.abs(point.y - current.y) < 0.001) commands.push(`H ${point.x}`);
+    else commands.push(`V ${point.y}`);
+    current = point;
+  };
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const corner = points[index];
+    const next = points[index + 1];
+    const incomingLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const outgoingLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const cornerRadius = Math.min(radius, incomingLength / 2, outgoingLength / 2);
+    const before = {
+      x: corner.x - ((corner.x - previous.x) / incomingLength) * cornerRadius,
+      y: corner.y - ((corner.y - previous.y) / incomingLength) * cornerRadius,
+    };
+    const after = {
+      x: corner.x + ((next.x - corner.x) / outgoingLength) * cornerRadius,
+      y: corner.y + ((next.y - corner.y) / outgoingLength) * cornerRadius,
+    };
+    lineTo(before);
+    commands.push(`Q ${corner.x} ${corner.y} ${after.x} ${after.y}`);
+    current = after;
+  }
+  lineTo(points.at(-1)!);
+  return commands.join(' ');
+}
+
+function simplifyOrthogonalPoints(
+  points: Array<{ x: number; y: number }>,
+): Array<{ x: number; y: number }> {
+  const simplified: Array<{ x: number; y: number }> = [];
+  const equal = (a: number, b: number) => Math.abs(a - b) < 0.001;
+
+  for (const point of points) {
+    const last = simplified[simplified.length - 1];
+    if (last && equal(last.x, point.x) && equal(last.y, point.y)) continue;
+
+    while (simplified.length >= 2) {
+      const previous = simplified[simplified.length - 2];
+      const current = simplified[simplified.length - 1];
+      const isCollinear =
+        (equal(previous.x, current.x) && equal(current.x, point.x)) ||
+        (equal(previous.y, current.y) && equal(current.y, point.y));
+      if (!isCollinear) break;
+      simplified.pop();
+    }
+    simplified.push(point);
+  }
+
+  return simplified;
 }
 
 /**
@@ -2571,94 +3021,46 @@ function determineConnectionSides(
   if (isVerticalLayout) {
     if (Math.abs(dy) > 10) {
       // Significant vertical difference
-      return dy > 0
-        ? { fromSide: 'bottom', toSide: 'top' }
-        : { fromSide: 'top', toSide: 'bottom' };
+      return dy > 0 ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' };
     }
     // Nearly same level - use horizontal
-    return dx > 0
-      ? { fromSide: 'right', toSide: 'left' }
-      : { fromSide: 'left', toSide: 'right' };
+    return dx > 0 ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' };
   }
 
   // For horizontal layouts (LR/RL), prefer left/right connections
   if (Math.abs(dx) > 10) {
     // Significant horizontal difference
-    return dx > 0
-      ? { fromSide: 'right', toSide: 'left' }
-      : { fromSide: 'left', toSide: 'right' };
+    return dx > 0 ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' };
   }
   // Nearly same level - use vertical
-  return dy > 0
-    ? { fromSide: 'bottom', toSide: 'top' }
-    : { fromSide: 'top', toSide: 'bottom' };
+  return dy > 0 ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' };
 }
 
 /**
  * Compute a self-loop path for edges where from === to.
- * Exits from the top-right of the node, arcs up and right, returns to the right-top.
+ * Uses a compact outside lane from the top-center port to the right-center port.
  */
-function computeSelfLoopPath(node: ComputedNode, loopIndex: number = 0): { path: string; points: Array<{ x: number; y: number }> } {
+function computeSelfLoopPath(
+  node: ComputedNode,
+  loopIndex: number = 0,
+): { path: string; points: Array<{ x: number; y: number }> } {
   const topY = node.y;
-  const rightX = node.x + node.width;
-  const cx = node.x + node.width / 2;
-
-  // Base radius for the loop, grows with each additional self-loop
   const baseRadius = Math.max(Math.min(node.width, node.height) * 0.4, 28);
   const indexOffset = loopIndex * 12;
-  const radius = baseRadius + indexOffset;
+  const laneY = topY - baseRadius - indexOffset;
+  const laneX = node.x + node.width + baseRadius + indexOffset;
+  const start = { x: node.x + node.width / 2, y: topY };
+  const end = { x: node.x + node.width, y: node.y + node.height / 2 };
 
-  // Start: top-center of the node
-  const startX = cx;
-  const startY = topY;
-
-  // End: right side of the node, near the top
-  const endX = rightX;
-  const endY = node.y + node.height * 0.25;
-
-  // Control points form a round arc going up and to the right
-  const cp1x = cx;
-  const cp1y = topY - radius;
-  const cp2x = rightX + radius;
-  const cp2y = endY;
-
-  const path = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
-  const midX = (cp1x + cp2x) / 2;
-  const midY = (cp1y + cp2y) / 2;
   const points = [
-    { x: startX, y: startY },
-    { x: cp1x, y: cp1y },
-    { x: cp2x, y: cp2y },
-    { x: midX, y: midY },
-    { x: endX, y: endY },
+    start,
+    { x: start.x, y: laneY },
+    { x: laneX, y: laneY },
+    { x: laneX, y: end.y },
+    end,
   ];
 
-  return { path, points };
-}
-
-/**
- * Compute curved path (bezier)
- */
-function computeCurvedPath(x1: number, y1: number, x2: number, y2: number): string {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-
-  // Calculate distance and use it to determine control point offset
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  const offset = distance * 0.4;
-
-  // Normalize direction vector
-  const dirX = dx / distance;
-  const dirY = dy / distance;
-
-  // Control points offset along the direction from start to end
-  // This ensures the curve exits toward the end and enters from the start direction
-  const cx1 = x1 + dirX * offset;
-  const cy1 = y1 + dirY * offset;
-  const cx2 = x2 - dirX * offset;
-  const cy2 = y2 - dirY * offset;
-
-  return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+  return { path: buildRoundedOrthogonalPath(points), points };
 }
 
 /**
@@ -2688,7 +3090,7 @@ function computeGroupBounds(groups: DiagramGroup[], nodes: ComputedNode[]): Comp
     const maxY = Math.max(...groupNodes.map((n) => n.y + n.height));
 
     const paddingX = 30;
-    const paddingTop = 44; // More space for header/label
+    const paddingTop = 52;
     const paddingBottom = 30;
 
     return {

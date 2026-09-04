@@ -42,15 +42,21 @@
 
   // Hover state for each segment
   let hoveredIndex = $state<number | null>(null);
+  let navigationElement = $state<HTMLDivElement | null>(null);
 
-  // Navigation (with cycling)
+  function motionDuration(duration: number): number {
+    if (typeof document === 'undefined') return duration;
+    return document.documentElement.classList.contains('catalog-reduced-motion') ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 0
+      : duration;
+  }
+
+  // Navigation stops at the first and last step so progression stays predictable.
   function goToPrevState() {
     previousIndex = currentIndex;
     if (currentIndex > 0) {
       onStateChange(states[currentIndex - 1].id);
-    } else if (currentIndex === 0) {
-      // Cycle to last state
-      onStateChange(states[states.length - 1].id);
     }
   }
 
@@ -58,9 +64,6 @@
     previousIndex = currentIndex;
     if (currentIndex < states.length - 1) {
       onStateChange(states[currentIndex + 1].id);
-    } else if (currentIndex === states.length - 1) {
-      // Cycle to first state
-      onStateChange(states[0].id);
     }
   }
 
@@ -69,46 +72,58 @@
     onStateChange(states[index].id);
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    // Only handle arrow keys when there are multiple states to navigate between;
-    // for single-state diagrams, let the browser handle normal scrolling
+  function focusStep(index: number) {
+    requestAnimationFrame(() => {
+      navigationElement
+        ?.querySelector<HTMLButtonElement>(`[data-diagram-step-index="${index}"]`)
+        ?.focus();
+    });
+  }
+
+  function handleStepKeydown(e: KeyboardEvent, index: number) {
     if (states.length <= 1) return;
 
+    let nextIndex = index;
     if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      goToPrevState();
+      nextIndex = Math.max(0, index - 1);
     } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      goToNextState();
-    }
+      nextIndex = Math.min(states.length - 1, index + 1);
+    } else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = states.length - 1;
+    else return;
+
+    e.preventDefault();
+    if (nextIndex === index) return;
+    goToState(nextIndex);
+    focusStep(nextIndex);
   }
 </script>
 
-<div class="diagram-controls bg-background border-t border-border">
-  <div class="flex items-center justify-between gap-3 px-3 py-2">
+<div class="diagram-controls">
+  <div class="controls-inner">
     <!-- Active state narrative -->
-    <div class="flex-1 min-w-0 grid">
+    <div class="narrative-region" aria-live="polite" aria-atomic="true">
       {#if currentState?.narrative}
         {@const narrative = getNarrative(currentState.narrative)}
         {#key currentIndex}
           <div
-            class="text-left overflow-hidden col-span-full row-span-full"
+            class="narrative"
             in:fly={{
-              x: slideDirection === 'left' ? 100 : -100,
-              duration: 300,
+              x: slideDirection === 'left' ? 8 : -8,
+              duration: motionDuration(150),
               easing: cubicOut,
             }}
             out:fly={{
-              x: slideDirection === 'left' ? -100 : 100,
-              duration: 300,
+              x: slideDirection === 'left' ? -8 : 8,
+              duration: motionDuration(150),
               easing: cubicOut,
             }}
           >
             {#if narrative?.title}
-              <div class="text-sm font-medium">{narrative.title}</div>
+              <div class="narrative-title">{narrative.title}</div>
             {/if}
             {#if narrative?.text}
-              <div class="text-xs text-subtle">{narrative.text}</div>
+              <div class="narrative-text">{narrative.text}</div>
             {/if}
           </div>
         {/key}
@@ -116,25 +131,28 @@
     </div>
 
     <!-- Stepper and navigation -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
-      class="flex items-center gap-1.5 flex-none"
-      role="tablist"
-      tabindex="0"
-      onkeydown={handleKeydown}
+      class="state-navigation"
+      role="group"
+      aria-label={m.diagram_controls_walkthrough_ariaLabel()}
+      bind:this={navigationElement}
     >
       <!-- Stepper dots -->
-      <div class="flex items-center gap-1.5">
+      <div class="stepper">
         {#each states as state, index (state.id)}
           {@const stateNarrative = getNarrative(state.narrative)}
           <button
             class="stepper-dot"
             class:active={index === currentIndex}
             class:completed={index < currentIndex}
+            data-diagram-step-index={index}
             style:anchor-name="--segment-{index}"
             onclick={() => goToState(index)}
+            onkeydown={(event) => handleStepKeydown(event, index)}
             onmouseenter={() => (hoveredIndex = index)}
             onmouseleave={() => (hoveredIndex = null)}
+            aria-current={index === currentIndex ? 'step' : undefined}
+            tabindex={index === currentIndex ? 0 : -1}
             aria-label={m.diagram_controls_state_ariaLabel({
               number: index + 1,
               title:
@@ -162,27 +180,35 @@
       </div>
 
       <!-- Step counter -->
-      <span class="text-ui text-subtle tabular-nums flex-none"
-        >{currentIndex + 1}/{states.length}</span
+      <span
+        class="step-counter"
+        aria-label={m.diagram_controls_stepCounter_ariaLabel({
+          current: currentIndex + 1,
+          total: states.length,
+        })}>{currentIndex + 1}/{states.length}</span
       >
 
       <!-- Navigation buttons (hidden for single state) -->
       {#if states.length > 1}
-        <div class="flex items-center gap-0.5 sticky left-0">
+        <div class="navigation-buttons">
           <Button
             variant="ghost"
-            size="sm"
-            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            size="icon-xs"
+            iconOnly
+            class="diagram-nav-button"
             onclick={goToPrevState}
+            disabled={currentIndex <= 0}
             aria-label={m.diagram_controls_previousStep_ariaLabel()}
           >
             <Fa icon={faChevronLeft} class="text-ui" />
           </Button>
           <Button
             variant="ghost"
-            size="sm"
-            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            size="icon-xs"
+            iconOnly
+            class="diagram-nav-button"
             onclick={goToNextState}
+            disabled={currentIndex >= states.length - 1}
             aria-label={m.diagram_controls_nextStep_ariaLabel()}
           >
             <Fa icon={faChevronRight} class="text-ui" />
@@ -196,41 +222,139 @@
 <style>
   .diagram-controls {
     pointer-events: auto;
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    font-family: var(--font-ui);
+  }
+
+  .controls-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .narrative-region {
+    display: grid;
+    flex: 1 1 13rem;
+    min-width: 0;
+  }
+
+  .narrative {
+    grid-column: 1;
+    grid-row: 1;
+    overflow: hidden;
+    text-align: left;
+  }
+
+  .narrative-title {
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
+  }
+
+  .narrative-text {
+    color: hsl(var(--muted-foreground));
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
+  }
+
+  .state-navigation,
+  .stepper,
+  .navigation-buttons {
+    display: flex;
+    align-items: center;
+  }
+
+  .state-navigation {
+    flex: none;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+
+  .stepper {
+    gap: 2px;
+  }
+
+  .navigation-buttons {
+    gap: 2px;
+  }
+
+  .step-counter {
+    flex: none;
+    color: hsl(var(--muted-foreground));
+    font-size: var(--text-caption-size);
+    font-variant-numeric: tabular-nums;
   }
 
   .stepper-dot {
-    width: 6px;
-    height: 6px;
-    background: hsl(var(--border) / 0.6);
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    box-sizing: border-box;
+    background: transparent;
     border: none;
-    border-radius: 3px;
+    border-radius: var(--radius-full);
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background var(--motion-fast) var(--ease-standard);
     position: relative;
-    padding: 6px;
-    background-clip: content-box;
+    padding: 0;
     flex-shrink: 0;
   }
 
+  .stepper-dot::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: hsl(var(--border));
+    transition:
+      width var(--motion-standard) var(--ease-standard),
+      background var(--motion-standard) var(--ease-standard);
+  }
+
   .stepper-dot:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
-    background-clip: content-box;
-    transform: scale(1.2);
+    background: hsl(var(--muted) / 0.55);
   }
 
-  .stepper-dot.completed {
-    background: hsl(var(--primary) / 0.6);
-    background-clip: content-box;
+  .stepper-dot:focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.55);
+    outline-offset: 1px;
+    background: hsl(var(--muted) / 0.55);
   }
 
-  .stepper-dot.active {
-    width: 24px;
+  .stepper-dot.completed::after {
+    background: hsl(var(--primary) / 0.58);
+  }
+
+  .stepper-dot.active::after {
+    width: 14px;
     background: hsl(var(--primary));
-    background-clip: content-box;
-    border-radius: 12px;
   }
 
-  .stepper-dot.active:hover {
-    transform: scale(1.05);
+  :global(.diagram-nav-button) {
+    color: hsl(var(--muted-foreground));
+  }
+
+  :global(.diagram-nav-button:hover) {
+    color: hsl(var(--foreground));
+  }
+
+  :global(.catalog-reduced-motion) .stepper-dot,
+  :global(.catalog-reduced-motion) .stepper-dot::after {
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stepper-dot,
+    .stepper-dot::after {
+      transition: none;
+    }
   }
 </style>

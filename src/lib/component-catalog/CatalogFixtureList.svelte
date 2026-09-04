@@ -4,6 +4,7 @@
   import ProposalCatalogPreview from './renderers/ProposalCatalogPreview.svelte';
   import ChatPolishCatalogPreview from './renderers/ChatPolishCatalogPreview.svelte';
   import ChatPolishGeometryControls from './ChatPolishGeometryControls.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     defaultChatPolishGeometry,
     type ChatPolishGeometry,
@@ -69,6 +70,14 @@
               compact={chatPolishGeometry.compact}
               stickySimulation={chatPolishGeometry.stickySimulation}
             />
+          {:else if entry.slug === 'diagram-workbench'}
+            <a
+              class="diagram-workbench-link"
+              href={`/sandbox/diagram-workbench?state=${fixture.states[0]}`}
+            >
+              <span>{m.sandbox_diagramWorkbench_open_label()}</span>
+              <small>{fixture.states.length} {m.sandbox_diagramWorkbench_states_label()}</small>
+            </a>
           {:else if renderer}
             {@const Preview = renderer.component}
             <Preview componentId={renderer.id} {fixture} />
@@ -158,6 +167,26 @@
 </section>
 
 <style>
+  .diagram-workbench-link {
+    display: grid;
+    min-height: 8rem;
+    place-content: center;
+    gap: 0.25rem;
+    color: hsl(var(--primary));
+    text-align: center;
+  }
+
+  .diagram-workbench-link span {
+    font-weight: 600;
+  }
+  .diagram-workbench-link small {
+    color: hsl(var(--muted-foreground));
+  }
+  .diagram-workbench-link:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+
   .catalog-detail {
     display: grid;
     gap: calc(var(--control-height-medium) / 2);

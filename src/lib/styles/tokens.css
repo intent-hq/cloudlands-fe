@@ -63,7 +63,7 @@
   --theme-light-destructive-foreground: 0 63% 31%;
   --theme-light-border: 20 4.7619047619% 87.6470588235%;
   --theme-light-input: 0 0% 0%;
-  --theme-light-ring: 260 58% 46%;
+  --theme-light-ring: var(--theme-light-primary);
   --theme-light-info: 260 58% 46%;
   --theme-light-info-foreground: 0 0% 100%;
   --theme-light-success: 145 67% 28%;
@@ -104,7 +104,7 @@
   --theme-dark-destructive-foreground: 0 70% 88%;
   --theme-dark-border: 60 0.826446281% 23.7254901961%;
   --theme-dark-input: 20 4.7619047619% 87.6470588235%;
-  --theme-dark-ring: 260 80% 72%;
+  --theme-dark-ring: var(--theme-dark-primary);
   --theme-dark-info: 260 80% 72%;
   --theme-dark-info-foreground: 154 25% 9%;
   --theme-dark-success: 145 58% 55%;
@@ -246,6 +246,20 @@
 
   --font-ui: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-code: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --font-editorial:
+    'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --diagram-canvas: hsl(var(--background));
+  --diagram-node-surface: color-mix(in srgb, hsl(var(--muted)) 58%, hsl(var(--card)));
+  --diagram-node-outline: hsl(var(--border) / 0.42);
+  --diagram-node-title: hsl(var(--foreground));
+  --diagram-metadata: hsl(var(--muted-foreground));
+  --diagram-group-outline: hsl(var(--border) / 0.58);
+  --diagram-connector: color-mix(in srgb, hsl(var(--foreground)) 86%, hsl(var(--border)));
+  --diagram-accent: hsl(var(--agent-avatar-surface-active));
+  --diagram-accent-foreground: hsl(var(--agent-avatar-foreground));
+  --diagram-node-radius: 16px;
+  --diagram-group-radius: 32px;
+  --diagram-connector-width: 1.125px;
   /* Five canonical text styles: caption, body, title, display, and code. */
   --text-caption-size: 0.8125rem;
   --text-caption-line-height: 1.125rem;

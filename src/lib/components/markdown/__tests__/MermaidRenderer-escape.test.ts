@@ -3,20 +3,8 @@
  * stack. Migrated from a manual `document` keydown listener; the layer is
  * only registered while the fullscreen overlay is open.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 vi.mock('mermaid', () => ({
   default: {
@@ -28,16 +16,23 @@ vi.mock('mermaid', () => ({
 
 vi.mock('@mermaid-js/layout-elk', () => ({ default: [] }));
 
-vi.mock('$store/renderer/slices/theme/theme-selectors', async () => {
-  const { createAppStoreMock } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  const store = createAppStoreMock({ state: {} });
-  return { selectIsDarkTheme: store.createSelector(() => false) };
-});
-
 import MermaidRenderer from '../MermaidRenderer.svelte';
 
 const FULLSCREEN_LABEL = 'Fullscreen diagram view';
+const themeTokens = {
+  '--background': '0 0% 100%',
+  '--foreground': '0 0% 0%',
+  '--card': '0 0% 100%',
+  '--card-foreground': '0 0% 0%',
+  '--muted': '0 0% 92%',
+  '--muted-foreground': '0 0% 36%',
+  '--border': '0 0% 82%',
+  '--accent': '0 0% 92%',
+  '--accent-foreground': '0 0% 0%',
+  '--font-ui': 'Inter, sans-serif',
+  '--text-caption-size': '0.8125rem',
+  '--radius-small': '5px',
+};
 
 async function renderAndOpenFullscreen() {
   render(MermaidRenderer, { props: { code: 'graph TD; A-->B' } });
@@ -53,8 +48,17 @@ async function renderAndOpenFullscreen() {
 }
 
 describe('MermaidRenderer fullscreen Escape handling (escape-layer stack)', () => {
+  beforeEach(() => {
+    for (const [name, value] of Object.entries(themeTokens)) {
+      document.documentElement.style.setProperty(name, value);
+    }
+  });
+
   afterEach(() => {
     cleanup();
+    for (const name of Object.keys(themeTokens)) {
+      document.documentElement.style.removeProperty(name);
+    }
   });
 
   it('Escape closes the fullscreen overlay', async () => {

@@ -11,6 +11,7 @@
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -30,7 +31,7 @@
   const workspaceId = getWorkspaceRouteContext()?.workspaceId;
 
   // TipTap NodeViewProps
-  let { node, updateAttributes }: NodeViewProps = $props();
+  let { node, selected, updateAttributes }: NodeViewProps = $props();
 
   // Extract primitive data
   let primitive = $derived<DiagramPrimitive | null>(node.attrs.data);
@@ -413,101 +414,102 @@
 <NodeViewWrapper>
   {#if primitive}
     {@const linkedAgentId = primitive.createdByAgentId}
-    <div class="mt-6 pb-16">
-      <!-- Header row -->
-      <div class="flex items-center gap-2 mb-2">
-        {#if linkedAgentId}
-          <!-- Show agent avatar that opens the agent panel -->
+    <DiagramPresentation kind="custom" selected={Boolean(selected)}>
+      {#snippet header()}
+        <div class="flex min-w-0 items-center gap-2">
+          {#if linkedAgentId}
+            <!-- Show agent avatar that opens the agent panel -->
+            <button
+              type="button"
+              class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
+              onclick={(event) => {
+                const agentWsId = workspaceId;
+                if (agentWsId) {
+                  appStore.dispatch(
+                    openAgentTabRequested(agentWsId, {
+                      agentId: linkedAgentId,
+                      ...getNavigationContext(event),
+                    }),
+                  );
+                }
+              }}
+              title={m.notes_diagramBlock_viewAgent_tooltip()}
+            >
+              <AgentAvatar agentId={linkedAgentId} variant="compact" />
+            </button>
+          {/if}
           <button
             type="button"
-            class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-            onclick={(event) => {
-              const agentWsId = workspaceId;
-              if (agentWsId) {
-                appStore.dispatch(
-                  openAgentTabRequested(agentWsId, {
-                    agentId: linkedAgentId,
-                    ...getNavigationContext(event),
-                  }),
-                );
-              }
-            }}
-            title={m.notes_diagramBlock_viewAgent_tooltip()}
+            class="flex items-center gap-1.5 text-subtle transition-colors flex-1 min-w-0 cursor-pointer"
+            onclick={toggleExpanded}
           >
-            <AgentAvatar agentId={linkedAgentId} variant="compact" />
+            <Fa
+              icon={faChevronDown}
+              size="sm"
+              class="flex-none text-ghost transition-transform {expanded ? '' : 'rotate-90'}"
+            />
+            <span class="text-sm truncate">{displayName}</span>
+            {#if primitive.states && primitive.states.length > 0}
+              <span class="text-xs text-subtle">
+                {m.notes_diagramBlock_stateCount_label({ count: primitive.states.length })}
+              </span>
+            {/if}
           </button>
-        {/if}
-        <button
-          type="button"
-          class="flex items-center gap-1.5 text-subtle transition-colors flex-1 min-w-0 cursor-pointer"
-          onclick={toggleExpanded}
-        >
-          <Fa
-            icon={faChevronDown}
-            size="sm"
-            class="flex-none text-ghost transition-transform {expanded ? '' : 'rotate-90'}"
-          />
-          <span class="text-sm truncate">{displayName}</span>
-          {#if primitive.states && primitive.states.length > 0}
-            <span class="text-xs text-subtle">
-              {m.notes_diagramBlock_stateCount_label({ count: primitive.states.length })}
-            </span>
-          {/if}
-        </button>
 
-        <!-- Copy dropdown -->
-        <DropdownMenu align="end">
-          {#snippet trigger({ props })}
-            <Tooltip
-              content={m.notes_diagramBlock_copyDiagram_tooltip()}
-              side="top"
-              delayDuration={300}
-            >
-              <button
-                {...props}
-                type="button"
-                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
-                }}
+          <!-- Copy dropdown -->
+          <DropdownMenu align="end">
+            {#snippet trigger({ props })}
+              <Tooltip
+                content={m.notes_diagramBlock_copyDiagram_tooltip()}
+                side="top"
+                delayDuration={300}
               >
-                {#if copiedSvg || copiedPng}
-                  <Fa icon={faCheck} size="sm" class="text-green-500" />
-                {:else}
-                  <Fa icon={faCopy} size="sm" />
-                {/if}
-              </button>
-            </Tooltip>
-          {/snippet}
-          {#snippet content({ close }: { close: () => void })}
-            <div class="min-w-36">
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
-                onclick={() => {
-                  handleCopyAsSvg();
-                  close();
-                }}
-              >
-                <Fa icon={faCode} size="xs" class="text-ghost" />
-                {m.notes_diagramBlock_copyAsSvg_label()}
-              </button>
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
-                onclick={() => {
-                  handleCopyAsPng();
-                  close();
-                }}
-              >
-                <Fa icon={faImage} size="xs" class="text-ghost" />
-                {m.notes_diagramBlock_copyAsPng_label()}
-              </button>
-            </div>
-          {/snippet}
-        </DropdownMenu>
-      </div>
+                <button
+                  {...props}
+                  type="button"
+                  class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
+                  }}
+                >
+                  {#if copiedSvg || copiedPng}
+                    <Fa icon={faCheck} size="sm" class="text-green-500" />
+                  {:else}
+                    <Fa icon={faCopy} size="sm" />
+                  {/if}
+                </button>
+              </Tooltip>
+            {/snippet}
+            {#snippet content({ close }: { close: () => void })}
+              <div class="min-w-36">
+                <button
+                  type="button"
+                  class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
+                  onclick={() => {
+                    handleCopyAsSvg();
+                    close();
+                  }}
+                >
+                  <Fa icon={faCode} size="xs" class="text-ghost" />
+                  {m.notes_diagramBlock_copyAsSvg_label()}
+                </button>
+                <button
+                  type="button"
+                  class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
+                  onclick={() => {
+                    handleCopyAsPng();
+                    close();
+                  }}
+                >
+                  <Fa icon={faImage} size="xs" class="text-ghost" />
+                  {m.notes_diagramBlock_copyAsPng_label()}
+                </button>
+              </div>
+            {/snippet}
+          </DropdownMenu>
+        </div>
+      {/snippet}
 
       <!-- Expanded content -->
       {#if expanded}
@@ -520,8 +522,10 @@
           />
         </div>
       {/if}
-    </div>
+    </DiagramPresentation>
   {:else}
-    <div class="my-2 text-sm text-subtle">{m.notes_diagramBlock_invalid_error()}</div>
+    <DiagramPresentation kind="custom" selected={Boolean(selected)}>
+      <div class="text-sm text-subtle">{m.notes_diagramBlock_invalid_error()}</div>
+    </DiagramPresentation>
   {/if}
 </NodeViewWrapper>

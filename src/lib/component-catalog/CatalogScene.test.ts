@@ -78,6 +78,29 @@ describe('CatalogScene', () => {
     expect(screen.getByRole('button', { name: 'Unavailable' })).not.toBeNull();
   });
 
+  it('gives the diagram workbench a simple full-width frame without catalog navigation', async () => {
+    mocks.loadPreview.mockResolvedValueOnce({
+      component: Button,
+      definition: {
+        ...buttonPreview,
+        id: 'diagram-workbench',
+      },
+    });
+    render(CatalogScene, {
+      props: { slug: 'diagram-workbench', requestedState: 'loading', requestedWidth: 420 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.queryByRole('navigation', { name: 'Preview states' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Preview widths' })).toBeNull();
+    expect(screen.queryByText('Named preview')).toBeNull();
+    expect(screen.getByTestId('catalog-scene').classList).toContain('workbench-scene');
+    expect(screen.getByTestId('catalog-scene-focus').classList).toContain('workbench-focus');
+    expect(screen.getByTestId('catalog-scene-focus').style.width).toBe('min(100%, 420px)');
+  });
+
   it('renders every state in declaration order and publishes all-states readiness', async () => {
     const setupDefault = vi.fn();
     const setupLoading = vi.fn();

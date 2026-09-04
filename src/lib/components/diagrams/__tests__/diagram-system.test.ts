@@ -8,11 +8,7 @@
  * - Type safety
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   createArchitectureDiagram,
   createSequenceDiagram,
@@ -24,7 +20,19 @@ import {
   createTimelineDiagram,
 } from '../diagram-templates';
 import { validateDiagram } from '../diagram-validator';
-import { computeLayout } from '../layout-engine';
+import {
+  buildRoundedOrthogonalPath,
+  compactEdgeLabelMaxWidth,
+  computeLayout,
+  measureEdgeLabel,
+} from '../layout-engine';
+import { DEFAULT_NODE_STYLE } from '../types';
+import {
+  semanticFilenameUnits,
+  semanticLabelTokens,
+  semanticLabelUnits,
+  splitSemanticLabel,
+} from '../diagram-label-wrap';
 import { DiagramPrimitiveSchema } from '$shared/types/notes-primitives';
 
 describe('Diagram Templates', () => {
@@ -232,6 +240,114 @@ describe('Diagram Validation', () => {
 });
 
 describe('Layout Engine', () => {
+  it('expands route-label height for every measured line', () => {
+    expect(measureEdgeLabel('send message').lines).toBe(1);
+    expect(measureEdgeLabel('asks for\ninput')).toMatchObject({ lines: 2, height: 38 });
+    expect(measureEdgeLabel('one two three four five six seven eight').lines).toBeGreaterThan(1);
+    expect(measureEdgeLabel('stream state events')).toMatchObject({ width: 112, lines: 2 });
+    expect(measureEdgeLabel('x'.repeat(40))).toMatchObject({ lines: 1 });
+    expect(measureEdgeLabel('x'.repeat(40)).width).toBeGreaterThan(192);
+    const narrowLaneLabel = 'a route label with many small words for the narrow lane';
+    const compactLabel = measureEdgeLabel(
+      narrowLaneLabel,
+      compactEdgeLabelMaxWidth(narrowLaneLabel),
+    );
+    const crampedLabel = measureEdgeLabel(narrowLaneLabel, 60);
+    expect(compactEdgeLabelMaxWidth('primary request')).toBe(60);
+    expect(compactEdgeLabelMaxWidth(narrowLaneLabel)).toBe(100);
+    expect(compactLabel.width).toBe(100);
+    expect(compactLabel.height).toBeLessThan(crampedLabel.height);
+  });
+
+  it('expands node height for every requested visible line', () => {
+    const layout = computeLayout(
+      {
+        nodes: [
+          { id: 'single', label: 'alpha beta' },
+          { id: 'multiline', label: 'alpha\nbeta' },
+          { id: 'clamped', label: 'alpha\nbeta\ngamma\ndelta' },
+        ],
+        edges: [],
+      },
+      { layout: { type: 'manual' } },
+      'architecture',
+      {
+        ...DEFAULT_NODE_STYLE,
+        labelFontSize: 10,
+        labelCharWidthRatio: 1,
+        labelLineHeight: 1,
+        paddingY: 10,
+        maxLines: 3,
+        maxWidth: 100,
+      },
+    );
+
+    expect(layout.nodes.map(({ height }) => height)).toEqual([32, 42, 62]);
+  });
+
+  it('keeps capped mixed-script editorial labels inside the node', () => {
+    const layout = computeLayout(
+      {
+        nodes: [
+          {
+            id: 'mixed-script',
+            label: '東京のプレビュー • مرحبًا • résumé',
+            kind: 'ui_component',
+          },
+        ],
+        edges: [],
+      },
+      { layout: { type: 'manual' } },
+      'data_flow',
+    );
+
+    expect(layout.nodes[0].width).toBe(250);
+    expect(layout.nodes[0].height).toBeGreaterThan(47.38);
+  });
+
+  it('reserves the rendered semibold width for short editorial labels', () => {
+    const layout = computeLayout(
+      { nodes: [{ id: 'evidence', label: 'Evidence recorded', kind: 'milestone' }], edges: [] },
+      { layout: { type: 'manual' } },
+      'timeline',
+    );
+
+    expect(layout.nodes[0].width).toBeGreaterThan(163);
+    expect(layout.nodes[0].height).toBeCloseTo(47.38);
+  });
+
+  it('reflows an overflowing manual layout without combining manual and row offsets', () => {
+    const layout = computeLayout(
+      {
+        nodes: [
+          { id: 'top-left', label: 'A long semantic boundary', position: { x: 0, y: 0 } },
+          { id: 'top-right', label: 'A mixed-script 東京 label', position: { x: 640, y: 0 } },
+          {
+            id: 'bottom-right',
+            label: 'A measured\nmultiline label',
+            position: { x: 640, y: 300 },
+          },
+          { id: 'bottom-left', label: 'A disconnected observer', position: { x: 0, y: 300 } },
+        ],
+        edges: [
+          { id: 'horizontal', from: 'top-left', to: 'top-right', label: 'owned route label' },
+          { id: 'vertical', from: 'top-right', to: 'bottom-right', label: 'wrapped route label' },
+        ],
+      },
+      { layout: { type: 'manual', direction: 'TB', edgeRouting: 'orthogonal' } },
+      'data_flow',
+      DEFAULT_NODE_STYLE,
+      520,
+    );
+
+    for (let index = 1; index < layout.nodes.length; index += 1) {
+      expect(layout.nodes[index].y).toBeGreaterThan(
+        layout.nodes[index - 1].y + layout.nodes[index - 1].height,
+      );
+    }
+    expect(new Set(layout.nodes.map((node) => node.x + node.width / 2)).size).toBe(1);
+  });
+
   it('should compute layout for architecture diagram', () => {
     const diagram = createArchitectureDiagram(
       [
@@ -473,6 +589,323 @@ describe('Hierarchical Group Layout', () => {
 });
 
 describe('Edge Routing', () => {
+  it('suppresses edges whose semantic endpoints are absent', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'source', label: 'Source' },
+        { id: 'target', label: 'Target' },
+      ],
+      [
+        { id: 'valid', from: 'source', to: 'target' },
+        { id: 'invalid', from: 'source', to: 'missing' },
+      ],
+    );
+
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    expect(layout.edges.map(({ from, to }) => [from, to])).toEqual([['source', 'target']]);
+    expect(layout.edges[0].path.startsWith('M')).toBe(true);
+  });
+
+  it('keeps near-aligned vertical ports on a local continuous route', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'user', label: 'You', position: { x: 380, y: 0 } },
+        { id: 'state', label: 'Redux state', position: { x: 380, y: 95 } },
+      ],
+      [{ id: 'message', from: 'user', to: 'state', label: 'send message' }],
+    );
+    diagram.baseView.layout.type = 'manual';
+    diagram.baseView.layout.edgeRouting = 'orthogonal';
+
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    const nodeRight = Math.max(...layout.nodes.map((node) => node.x + node.width));
+    expect(layout.edges[0].points!.length).toBeGreaterThanOrEqual(2);
+    expect(layout.edges[0].points!.length).toBeLessThanOrEqual(4);
+    expect(Math.max(...layout.edges[0].points!.map(({ x }) => x))).toBeLessThanOrEqual(nodeRight);
+  });
+
+  it('keeps compact rank-spanning routes attached with 32px terminal leads', () => {
+    const diagram = createDataFlowDiagram(
+      [
+        { id: 'source', label: 'Source' },
+        { id: 'middle', label: 'Middle' },
+        { id: 'target', label: 'Target' },
+      ],
+      [
+        { id: 'step', from: 'source', to: 'middle' },
+        { id: 'feedback', from: 'source', to: 'target', label: 'regression feedback' },
+      ],
+    );
+
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar, undefined, 260);
+    const source = layout.nodes.find((node) => node.id === 'source')!;
+    const target = layout.nodes.find((node) => node.id === 'target')!;
+    const route = layout.edges.find((edge) => edge.label === 'regression feedback')!;
+    const points = route.points!;
+
+    expect(points[0]).toEqual({ x: source.x + source.width, y: source.y + source.height / 2 });
+    expect(points.at(-1)).toEqual({ x: target.x + target.width, y: target.y + target.height / 2 });
+    expect(Math.abs(points[1].x - points[0].x)).toBeGreaterThanOrEqual(32);
+    expect(Math.abs(points.at(-2)!.x - points.at(-1)!.x)).toBeGreaterThanOrEqual(32);
+    expect(route.path).toContain(' Q ');
+  });
+
+  it('rounds orthogonal corners and clamps the radius to short segments', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 4, y: 20 },
+    ];
+
+    expect(buildRoundedOrthogonalPath(points, 6)).toBe('M 0 0 L 2 0 Q 4 0 4 2 L 4 20');
+    expect(points).toEqual([
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 4, y: 20 },
+    ]);
+  });
+
+  it('preserves route endpoints while adding quadratic corner commands', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'source', label: 'Source' },
+        { id: 'target', label: 'Target' },
+      ],
+      [{ id: 'route', from: 'source', to: 'target' }],
+    );
+    diagram.model.nodes[1].position = { x: 180, y: 100 };
+    diagram.baseView.layout.type = 'manual';
+    diagram.baseView.layout.edgeRouting = 'orthogonal';
+
+    const edge = computeLayout(diagram.model, diagram.baseView, diagram.grammar).edges[0];
+    const first = edge.points![0];
+    const last = edge.points![edge.points!.length - 1];
+
+    expect(edge.path).toContain(' Q ');
+    expect(edge.path.startsWith(`M ${first.x} ${first.y}`)).toBe(true);
+    expect(edge.path.endsWith(`L ${last.x} ${last.y}`)).toBe(true);
+  });
+
+  it('keeps a clear lead between node ports and orthogonal turns', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'source', label: 'Source', position: { x: 0, y: 0 } },
+        { id: 'target', label: 'Target', position: { x: 260, y: 140 } },
+      ],
+      [{ id: 'route', from: 'source', to: 'target' }],
+    );
+    diagram.baseView.layout.type = 'manual';
+    diagram.baseView.layout.edgeRouting = 'orthogonal';
+
+    const points = computeLayout(diagram.model, diagram.baseView, diagram.grammar).edges[0].points!;
+    const firstLead = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+    const last = points.length - 1;
+    const finalLead = Math.hypot(
+      points[last].x - points[last - 1].x,
+      points[last].y - points[last - 1].y,
+    );
+
+    expect(firstLead).toBeGreaterThanOrEqual(32);
+    expect(finalLead).toBeGreaterThanOrEqual(32);
+  });
+
+  it('keeps forward and return routes on separate lanes', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'left', label: 'Left', position: { x: 0, y: 0 } },
+        { id: 'right', label: 'Right', position: { x: 320, y: 0 } },
+      ],
+      [
+        { id: 'forward', from: 'left', to: 'right' },
+        { id: 'return', from: 'right', to: 'left' },
+      ],
+    );
+    diagram.baseView.layout.type = 'manual';
+    diagram.baseView.layout.edgeRouting = 'orthogonal';
+
+    const [forward, returnEdge] = computeLayout(
+      diagram.model,
+      diagram.baseView,
+      diagram.grammar,
+    ).edges;
+    expect(forward.points?.[2].y).not.toBe(returnEdge.points?.[2].y);
+    expect(forward.path).not.toBe(returnEdge.path);
+  });
+
+  it('routes vertical backward edges from side ports outside forward branches', () => {
+    const diagram = createStateMachineDiagram(
+      [
+        { id: 'idle', label: 'Idle', isStart: true },
+        { id: 'loading', label: 'Loading' },
+        { id: 'ready', label: 'Ready', isEnd: true },
+        { id: 'error', label: 'Invalid source', isEnd: true },
+      ],
+      [
+        { from: 'idle', to: 'loading', label: 'select state' },
+        { from: 'loading', to: 'ready', label: 'render succeeds' },
+        { from: 'loading', to: 'error', label: 'parse fails' },
+        { from: 'error', to: 'idle', label: 'choose another case' },
+      ],
+    );
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    const source = layout.nodes.find(({ id }) => id === 'error')!;
+    const target = layout.nodes.find(({ id }) => id === 'idle')!;
+    const route = layout.edges.find(({ from, to }) => from === 'error' && to === 'idle')!;
+
+    expect(route.points![0]).toEqual({ x: source.x, y: source.y + source.height / 2 });
+    expect(route.points!.at(-1)).toEqual({ x: target.x, y: target.y + target.height / 2 });
+    expect(route.points![1].x).toBeLessThan(Math.min(...layout.nodes.map(({ x }) => x)));
+  });
+
+  it('gives an oversized compact adjacent label a clear outside lane', () => {
+    const label = 'a deliberately long horizontal route label that must remain owned';
+    const diagram = createDataFlowDiagram(
+      [
+        { id: 'source', label: 'Source', kind: 'external' },
+        { id: 'target', label: 'Target', kind: 'process' },
+      ],
+      [{ id: 'route', from: 'source', to: 'target', label }],
+    );
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar, undefined, 260);
+    const route = layout.edges[0];
+    const nodeRight = Math.max(...layout.nodes.map((node) => node.x + node.width));
+
+    expect(route.points).toHaveLength(4);
+    expect(route.points![1].x).toBeGreaterThanOrEqual(
+      nodeRight + measureEdgeLabel(label, compactEdgeLabelMaxWidth(label)).width / 2 + 8,
+    );
+  });
+
+  it('keeps self-route ports centered with perpendicular outside tangents', () => {
+    const diagram = createArchitectureDiagram(
+      [{ id: 'node', label: 'Node', position: { x: 100, y: 100 } }],
+      [{ id: 'self', from: 'node', to: 'node' }],
+    );
+    diagram.baseView.layout.type = 'manual';
+    diagram.baseView.layout.edgeRouting = 'orthogonal';
+
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    const node = layout.nodes[0];
+    const points = layout.edges[0].points!;
+    const source = points[0];
+    const sourceTangent = points[1];
+    const terminal = points.at(-1)!;
+    const tangent = points.at(-2)!;
+
+    expect(source.x).toBe(node.x + node.width / 2);
+    expect(source.y).toBe(node.y);
+    expect(sourceTangent.x).toBe(source.x);
+    expect(sourceTangent.y).toBeLessThan(node.y);
+    expect(terminal.x).toBe(node.x + node.width);
+    expect(terminal.y).toBe(node.y + node.height / 2);
+    expect(tangent.x).toBeGreaterThan(terminal.x);
+    expect(tangent.y).toBe(terminal.y);
+    expect(points.slice(1, -1).every((point) => point.y < node.y || point.x > terminal.x)).toBe(
+      true,
+    );
+    expect(layout.edges[0].path.match(/(?:^|\s)M\s/g)).toHaveLength(1);
+  });
+
+  it('renders requested curved layouts with restrained orthogonal corners', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'source', label: 'Source' },
+        { id: 'target', label: 'Target' },
+      ],
+      [{ id: 'route', from: 'source', to: 'target' }],
+    );
+    diagram.model.nodes[0].position = { x: 0, y: 0 };
+    diagram.model.nodes[1].position = { x: 180, y: 100 };
+    diagram.baseView.layout.type = 'manual';
+    diagram.baseView.layout.edgeRouting = 'curved';
+
+    const edge = computeLayout(diagram.model, diagram.baseView, diagram.grammar).edges[0];
+    expect(edge.path).toContain(' Q ');
+    expect(edge.path).not.toContain(' C ');
+  });
+
+  it('keeps grouped routes compact and clear of group headings', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'user', label: 'Workspace user', group: 'client' },
+        { id: 'renderer', label: 'Diagram renderer', group: 'client' },
+        { id: 'daemon', label: 'Intent daemon', group: 'runtime' },
+        { id: 'notes', label: 'Persistent notes', group: 'runtime' },
+        { id: 'events', label: 'Workspace events', group: 'runtime' },
+      ],
+      [
+        { id: 'a1', from: 'user', to: 'renderer', label: 'explores' },
+        { id: 'a2', from: 'renderer', to: 'daemon', label: 'requests state' },
+        { id: 'a3', from: 'daemon', to: 'notes', label: 'reads and writes' },
+        { id: 'a4', from: 'notes', to: 'events', label: 'publishes change' },
+        { id: 'a5', from: 'events', to: 'renderer', label: 'refreshes view' },
+      ],
+    );
+    diagram.model.groups = [
+      { id: 'client', label: 'Browser-only preview', nodeIds: ['user', 'renderer'] },
+      { id: 'runtime', label: 'Production boundary', nodeIds: ['daemon', 'notes', 'events'] },
+    ];
+    diagram.baseView.layout.direction = 'TB';
+
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    const renderer = layout.nodes.find((node) => node.id === 'renderer')!;
+    const daemon = layout.nodes.find((node) => node.id === 'daemon')!;
+    const requestRoute = layout.edges.find((edge) => edge.label === 'requests state')!;
+    const requestLength = requestRoute.points!.slice(0, -1).reduce((total, point, index) => {
+      const next = requestRoute.points![index + 1];
+      return total + Math.hypot(next.x - point.x, next.y - point.y);
+    }, 0);
+    const crossesHeading = layout.edges.some((edge) =>
+      edge.points!.slice(0, -1).some((point, index) => {
+        const next = edge.points![index + 1];
+        return layout.groups!.some((group) => {
+          for (let step = 0; step <= 100; step += 1) {
+            const x = point.x + ((next.x - point.x) * step) / 100;
+            const y = point.y + ((next.y - point.y) * step) / 100;
+            if (x >= group.x && x <= group.x + group.width && y >= group.y && y <= group.y + 30) {
+              return true;
+            }
+          }
+          return false;
+        });
+      }),
+    );
+
+    expect(layout.bounds.height).toBeGreaterThan(layout.bounds.width);
+    expect(layout.bounds.width).toBeLessThan(340);
+    expect(layout.bounds.height).toBeLessThan(900);
+    expect(renderer.y).toBeLessThan(daemon.y);
+    expect(requestLength).toBeLessThan(300);
+    expect(crossesHeading).toBe(false);
+  });
+
+  it('gives a rank-spanning labeled route its own outside lane', () => {
+    const diagram = createFlowchartDiagram(
+      [
+        { id: 'source', label: 'Source', kind: 'process' },
+        { id: 'middle', label: 'Middle', kind: 'process' },
+        { id: 'target', label: 'Target', kind: 'process' },
+      ],
+      [
+        { id: 'step-1', from: 'source', to: 'middle' },
+        { id: 'step-2', from: 'middle', to: 'target' },
+        { id: 'direct', from: 'source', to: 'target', label: 'fan out to direct capture' },
+      ],
+    );
+
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    const route = layout.edges.find(({ label }) => label === 'fan out to direct capture')!;
+    const nodeMaxX = Math.max(...layout.nodes.map((node) => node.x + node.width));
+    const horizontalCapacity = route.points!.slice(0, -1).reduce((longest, point, index) => {
+      const next = route.points![index + 1];
+      return Math.max(longest, Math.abs(next.y - point.y) < 0.001 ? Math.abs(next.x - point.x) : 0);
+    }, 0);
+
+    expect(route.points).toHaveLength(4);
+    expect(Math.max(...route.points!.map(({ x }) => x))).toBeGreaterThan(nodeMaxX);
+    expect(horizontalCapacity).toBeGreaterThanOrEqual(measureEdgeLabel(route.label!).width + 8);
+  });
+
   it('should create non-overlapping edge paths', () => {
     const diagram = createArchitectureDiagram(
       [
@@ -485,7 +918,6 @@ describe('Edge Routing', () => {
         { from: 'a', to: 'c' },
       ],
     );
-
     const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
 
     expect(layout.edges).toHaveLength(2);
@@ -541,9 +973,17 @@ describe('Edge Routing', () => {
       ],
       [
         { from: 'a', to: 'b', label: 'forward' },
-        { from: 'b', to: 'a', label: 'backward' },
+        { from: 'b', to: 'a', label: 'source text and metadata' },
       ],
     );
+    diagram.baseView.layout = {
+      ...diagram.baseView.layout,
+      type: 'layered',
+      direction: 'TB',
+      edgeRouting: 'orthogonal',
+    };
+    diagram.model.nodes[0].position = { x: 0, y: 0 };
+    diagram.model.nodes[1].position = { x: 0, y: 160 };
 
     const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
 
@@ -562,6 +1002,9 @@ describe('Edge Routing', () => {
 
     // Backward edge typically needs more points for routing around
     expect(backwardEdge.points!.length).toBeGreaterThanOrEqual(2);
+    const minNodeX = Math.min(...layout.nodes.map((node) => node.x));
+    const outsideTrackX = Math.min(...backwardEdge.points!.map((point) => point.x));
+    expect(minNodeX - outsideTrackX).toBeGreaterThanOrEqual(96);
   });
 
   it('should not overlap horizontal line segments', () => {
@@ -627,6 +1070,48 @@ describe('Edge Routing', () => {
         }
       }
     }
+  });
+});
+
+describe('Semantic label wrapping', () => {
+  it('preserves explicit line breaks as hard breaks', () => {
+    expect(splitSemanticLabel('Named preview\ndirect URL')).toEqual([
+      { text: 'Named ', breakAfter: true, hardBreak: false },
+      { text: 'preview', breakAfter: true, hardBreak: true },
+      { text: 'direct ', breakAfter: true, hardBreak: false },
+      { text: 'URL', breakAfter: false, hardBreak: false },
+    ]);
+  });
+
+  it('creates wrap opportunities only at delimiters and camel boundaries', () => {
+    expect(
+      semanticLabelTokens('CatalogScene.svelte diagram-workbench.preview-fixtures.ts'),
+    ).toEqual([
+      'Catalog',
+      'Scene.',
+      'svelte',
+      'diagram-',
+      'workbench.',
+      'preview-',
+      'fixtures.',
+      'ts',
+    ]);
+    expect(
+      semanticLabelTokens('SupercalifragilisticexpialidociousDeterministicSnapshotBoundary'),
+    ).toEqual(['Supercalifragilisticexpialidocious', 'Deterministic', 'Snapshot', 'Boundary']);
+  });
+
+  it('keeps measured filename components intact while retaining semantic break points', () => {
+    expect(semanticLabelUnits('CatalogScene.svelte diagram-workbench.preview-fixtures.ts')).toEqual(
+      ['CatalogScene.', 'svelte', 'diagram-workbench.', 'preview-fixtures.', 'ts'],
+    );
+    expect(semanticFilenameUnits('CatalogScene.svelte')).toEqual(['CatalogScene.svelte']);
+    expect(semanticFilenameUnits('preview-definition.ts')).toEqual(['preview-definition.ts']);
+    expect(semanticFilenameUnits('MermaidRenderer.svelte')).toEqual(['MermaidRenderer', '.svelte']);
+    expect(semanticFilenameUnits('diagram-workbench.preview-fixtures.ts')).toEqual([
+      'diagram-workbench.',
+      'preview-fixtures.ts',
+    ]);
   });
 });
 

@@ -23,7 +23,12 @@ describe('preview discovery', () => {
   it('finds colocated previews without a shared registry entry', () => {
     const ids = listPreviewIds();
     expect(ids).toEqual(
-      expect.arrayContaining(['button', 'mention-agent-avatar', 'workspace-hover-card']),
+      expect.arrayContaining([
+        'button',
+        'diagram-workbench',
+        'mention-agent-avatar',
+        'workspace-hover-card',
+      ]),
     );
     expect(ids).toEqual([...ids].sort());
   });

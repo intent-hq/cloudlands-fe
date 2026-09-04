@@ -34,6 +34,7 @@
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import { PatchBlockContent } from '$features/file-tracking/components/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
@@ -656,17 +657,17 @@
       </div>
     </div>
   {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-    <div class="diagram-block my-2">
+    <DiagramPresentation kind="custom">
       <DiagramRenderer
         diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
         editable={false}
         onBindingClick={handleDiagramBindingClick}
       />
-    </div>
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'mermaid'}
-    <div class="mermaid-block my-8">
+    <DiagramPresentation kind="mermaid">
       <MermaidRenderer code={parsedBlock.content || ''} />
-    </div>
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
     {@const patchData = parsedBlock.metadata.patchData}
     <PatchBlockContent

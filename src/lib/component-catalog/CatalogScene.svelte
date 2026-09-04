@@ -28,6 +28,7 @@
   let stabilityError = $state('');
   let captureMotion = $state<'full' | 'reduced'>('full');
   const width = $derived(Math.min(1600, Math.max(240, Math.round(requestedWidth))));
+  const isDiagramWorkbench = $derived(slug === 'diagram-workbench');
 
   function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -175,6 +176,7 @@
 
 <section
   class="catalog-scene mx-auto grid max-w-full gap-4 p-4 sm:p-6 lg:p-10"
+  class:workbench-scene={isDiagramWorkbench}
   data-testid="catalog-scene"
   data-preview-slug={slug}
   data-preview-state={stateName}
@@ -186,35 +188,37 @@
   data-preview-capture-motion={captureMotion}
   bind:this={sceneElement}
 >
-  <header class="rounded-lg border border-border bg-card p-4">
-    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
-    <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
-    {#if availableStates.length > 0}
-      <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
-        <a
-          class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
-          aria-current={stateName === 'all' ? 'page' : undefined}
-          href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
-        >
-        {#each availableStates as name (name)}
+  {#if !isDiagramWorkbench}
+    <header class="rounded-lg border border-border bg-card p-4">
+      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
+      <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
+      {#if availableStates.length > 0}
+        <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
           <a
             class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
-            aria-current={name === stateName ? 'page' : undefined}
-            href={previewUrl(name)}>{name}</a
+            aria-current={stateName === 'all' ? 'page' : undefined}
+            href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
           >
-        {/each}
-      </nav>
-      <nav class="mt-2 flex flex-wrap gap-2" aria-label="Preview widths">
-        {#each [320, 420, 960] as preset (preset)}
-          <a
-            class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-            aria-current={preset === width ? 'page' : undefined}
-            href={previewUrl(stateName, preset)}>{preset}px</a
-          >
-        {/each}
-      </nav>
-    {/if}
-  </header>
+          {#each availableStates as name (name)}
+            <a
+              class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
+              aria-current={name === stateName ? 'page' : undefined}
+              href={previewUrl(name)}>{name}</a
+            >
+          {/each}
+        </nav>
+        <nav class="mt-2 flex flex-wrap gap-2" aria-label="Preview widths">
+          {#each [320, 420, 960] as preset (preset)}
+            <a
+              class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+              aria-current={preset === width ? 'page' : undefined}
+              href={previewUrl(stateName, preset)}>{preset}px</a
+            >
+          {/each}
+        </nav>
+      {/if}
+    </header>
+  {/if}
 
   {#if status === 'error'}
     <div class="rounded-lg border border-destructive bg-card p-4" role="alert">
@@ -242,10 +246,12 @@
             {/if}
             <div
               class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
+              class:workbench-frame={isDiagramWorkbench}
             >
               <div
                 class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
-                style:width={`${width}px`}
+                class:workbench-focus={isDiagramWorkbench}
+                style:width={isDiagramWorkbench ? `min(100%, ${width}px)` : `${width}px`}
                 data-testid="catalog-scene-focus"
               >
                 <Preview {...rendered.state.props} />
@@ -261,5 +267,21 @@
 <style>
   .catalog-scene {
     width: min(100%, 100rem);
+  }
+  .catalog-scene.workbench-scene {
+    gap: 0;
+  }
+  .preview-frame.workbench-frame {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+  }
+  .preview-focus.workbench-focus {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
   }
 </style>

@@ -36,64 +36,88 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <g
   class={groupClass}
-  transform="translate({group.x}, {group.y})"
+  data-group-id={group.id}
   onmouseenter={handleMouseEnter}
   onmouseleave={handleMouseLeave}
 >
   <!-- Group background -->
-  <rect width={group.width} height={group.height} rx="6" class="group-bg" />
+  <rect x={group.x} y={group.y} width={group.width} height={group.height} class="group-bg" />
 
   <!-- Group label -->
-  <text x="12" y="20" class="group-label">
+  <text x={group.x + 14} y={group.y + 26} class="group-label">
     {group.label}
   </text>
 </g>
 
 <style>
   :global(.diagram-group) {
-    /* cursor: pointer; */
-    transition: all 0.2s ease;
+    transition: opacity var(--motion-standard) var(--ease-standard);
   }
 
   :global(.group-bg) {
-    fill: hsl(var(--muted) / 0.08);
-    stroke: hsl(var(--border) / 1);
-    stroke-width: 0.5px;
-    stroke-dasharray: 9 3;
+    fill: var(--diagram-canvas);
+    stroke: var(--diagram-group-outline);
+    stroke-width: 1px;
+    rx: var(--diagram-group-radius);
+    ry: var(--diagram-group-radius);
     vector-effect: non-scaling-stroke;
-    transition: all 0.2s ease;
+    transition:
+      width 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      height 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      x 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      y 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      fill var(--motion-standard) var(--ease-standard),
+      stroke var(--motion-standard) var(--ease-standard),
+      opacity var(--motion-standard) var(--ease-standard);
   }
 
   :global(.diagram-group:hover .group-bg) {
-    fill: hsl(var(--muted) / 0.12);
-    stroke: hsl(var(--border) / 1);
+    fill: var(--diagram-canvas);
+    stroke: hsl(var(--muted-foreground) / 0.48);
   }
 
   :global(.group-highlighted .group-bg) {
-    fill: hsl(var(--accent) / 0.05);
-    stroke: hsl(var(--accent) / 0.6);
+    fill: var(--diagram-canvas);
+    stroke: color-mix(in srgb, var(--diagram-accent) 62%, var(--diagram-group-outline));
   }
 
   :global(.group-muted .group-bg) {
-    opacity: 0.4;
+    opacity: 0.55;
   }
 
   :global(.group-dimmed .group-bg) {
-    opacity: 0.2;
-    transition: opacity 0.2s ease;
+    opacity: 0.5;
   }
 
   :global(.group-dimmed .group-label) {
-    opacity: 0.3;
-    transition: opacity 0.2s ease;
+    opacity: 0.68;
+    transition: opacity var(--motion-standard) var(--ease-standard);
   }
 
   :global(.group-label) {
-    fill: hsl(var(--muted-foreground) / 0.8);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    fill: var(--diagram-metadata);
+    font-family: var(--font-ui);
+    font-size: var(--text-body-size);
+    font-weight: 500;
+    letter-spacing: var(--text-caption-tracking);
     pointer-events: none;
+    transition:
+      x 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      y 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity var(--motion-standard) var(--ease-standard);
+  }
+
+  :global(.catalog-reduced-motion .diagram-group),
+  :global(.catalog-reduced-motion .group-bg),
+  :global(.catalog-reduced-motion .group-label) {
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.diagram-group),
+    :global(.group-bg),
+    :global(.group-label) {
+      transition: none;
+    }
   }
 </style>

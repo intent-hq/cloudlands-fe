@@ -1,0 +1,230 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildRoundedOrthogonalPath,
+  buildFlowchartDecisionBranchPoints,
+  buildFlowchartDecisionReturnPoints,
+  buildFlowchartFeedbackLanePoints,
+  buildGroupedReturnLanePoints,
+  chooseLabelSegment,
+  measuredClusterHeaderHeight,
+  replacePathTerminal,
+  simplifyOrthogonalPoints,
+  snapOrthogonalTerminals,
+} from '../mermaid-path-geometry';
+
+describe('Mermaid path terminal geometry', () => {
+  it('preserves rounded corners while replacing the final endpoint', () => {
+    const path = 'M 4 6 L 20 6 Q 26 6 26 12 L 26 30';
+
+    expect(replacePathTerminal(path, { x: 26, y: 31 })).toBe('M 4 6 L 20 6 Q 26 6 26 12 L 26 31');
+  });
+
+  it('preserves comma-separated route coordinates', () => {
+    expect(replacePathTerminal('M1,2L8,9', { x: 10.5, y: -3 })).toBe('M1,2L10.5,-3');
+  });
+
+  it('removes a terminal line that collapses onto a rounded corner endpoint', () => {
+    expect(replacePathTerminal('M 4 6 Q 20 6 26 12 L 25 11', { x: 26, y: 12 })).toBe(
+      'M 4 6 Q 20 6 26 12',
+    );
+  });
+
+  it('does not rewrite a closed path without a terminal coordinate pair', () => {
+    expect(replacePathTerminal('M 1 2 L 3 4 Z', { x: 5, y: 6 })).toBeNull();
+  });
+
+  it('removes duplicate points and collinear jogs before rounding', () => {
+    expect(
+      simplifyOrthogonalPoints([
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 20, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 30 },
+      ]),
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: 30 },
+    ]);
+    expect(
+      buildRoundedOrthogonalPath([
+        { x: 0, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 30 },
+      ]),
+    ).toBe('M 0 0 L 34 0 Q 40 0 40 6 L 40 30');
+  });
+
+  it('keeps snapped cardinal ports connected by orthogonal segments', () => {
+    const points = snapOrthogonalTerminals(
+      [
+        { x: 0, y: 20 },
+        { x: 0, y: 80 },
+      ],
+      { x: 40, y: 30 },
+      { x: 10, y: 110 },
+      true,
+    );
+
+    expect(points[0]).toEqual({ x: 40, y: 30 });
+    expect(points.at(-1)).toEqual({ x: 10, y: 110 });
+    expect(
+      points.slice(1).every((point, index) => {
+        const previous = points[index];
+        return point.x === previous.x || point.y === previous.y;
+      }),
+    ).toBe(true);
+  });
+
+  it('chooses one label segment with enough measured capacity', () => {
+    const route = [
+      { x: 0, y: 0 },
+      { x: 0, y: 40 },
+      { x: 120, y: 40 },
+      { x: 120, y: 80 },
+    ];
+
+    expect(chooseLabelSegment(route, { width: 80, height: 20 })).toMatchObject({
+      index: 1,
+      horizontal: true,
+      capacity: 120,
+    });
+    expect(
+      chooseLabelSegment(route, { width: 80, height: 20 }, [
+        { start: { x: 0, y: 40 }, end: { x: 120, y: 40 } },
+      ]),
+    ).toMatchObject({ index: 0, horizontal: false, capacity: 40 });
+  });
+
+  it('reserves the measured cluster title plus a stable content gap', () => {
+    expect(measuredClusterHeaderHeight(36.2)).toBe(85);
+    expect(measuredClusterHeaderHeight(12)).toBe(66);
+  });
+
+  it('builds independent upper and lower decision branch lanes', () => {
+    const source = { x: 0, y: 0, width: 100, height: 100 };
+    const occupied = [source, { x: 200, y: 0, width: 80, height: 160 }];
+
+    expect(
+      buildFlowchartDecisionBranchPoints(
+        source,
+        { x: 200, y: 0, width: 80, height: 40 },
+        'upper',
+        occupied,
+      ),
+    ).toEqual([
+      { x: 75, y: 25 },
+      { x: 128, y: 25 },
+      { x: 128, y: 20 },
+      { x: 200, y: 20 },
+    ]);
+    expect(
+      buildFlowchartDecisionBranchPoints(
+        source,
+        { x: 200, y: 120, width: 80, height: 40 },
+        'lower',
+        occupied,
+      ),
+    ).toEqual([
+      { x: 75, y: 75 },
+      { x: 140, y: 75 },
+      { x: 140, y: 140 },
+      { x: 200, y: 140 },
+    ]);
+  });
+
+  it('keeps decision returns on a separate outer lane', () => {
+    expect(
+      buildFlowchartDecisionReturnPoints(
+        { x: 200, y: 120, width: 80, height: 40 },
+        { x: 0, y: 0, width: 100, height: 100 },
+        [
+          { x: 0, y: 0, width: 100, height: 100 },
+          { x: 200, y: 120, width: 80, height: 40 },
+        ],
+      ),
+    ).toEqual([
+      { x: 240, y: 160 },
+      { x: 240, y: 192 },
+      { x: 50, y: 192 },
+      { x: 50, y: 100 },
+    ]);
+    expect(
+      buildFlowchartDecisionReturnPoints(
+        { x: 10, y: 200, width: 80, height: 40 },
+        { x: 10, y: 0, width: 80, height: 40 },
+        [
+          { x: 10, y: 0, width: 80, height: 40 },
+          { x: 10, y: 200, width: 80, height: 40 },
+        ],
+      ),
+    ).toEqual([
+      { x: 50, y: 240 },
+      { x: 50, y: 258 },
+      { x: -54, y: 258 },
+      { x: -54, y: 20 },
+      { x: 10, y: 20 },
+    ]);
+  });
+
+  it('separates compact decision branches onto opposite outer lanes', () => {
+    const source = { x: 0, y: 0, width: 100, height: 100 };
+    const target = { x: 10, y: 200, width: 80, height: 40 };
+    const occupied = [source, target];
+
+    expect(buildFlowchartDecisionBranchPoints(source, target, 'upper', occupied)).toEqual([
+      { x: 75, y: 25 },
+      { x: 132, y: 25 },
+      { x: 132, y: 220 },
+      { x: 90, y: 220 },
+    ]);
+    expect(buildFlowchartDecisionBranchPoints(source, target, 'lower', occupied)).toEqual([
+      { x: 75, y: 75 },
+      { x: 148, y: 75 },
+      { x: 148, y: 118 },
+      { x: -32, y: 118 },
+      { x: -32, y: 220 },
+      { x: 10, y: 220 },
+    ]);
+  });
+
+  it('builds a bounded feedback lane with centered perpendicular terminals', () => {
+    const points = buildFlowchartFeedbackLanePoints(
+      { x: -43, y: 734, width: 86, height: 42 },
+      { x: -58, y: 0, width: 116, height: 42 },
+      [
+        { x: -78, y: 0, width: 156, height: 776 },
+        { x: 0, y: 42, width: 126, height: 526 },
+      ],
+    );
+
+    expect(points).toEqual([
+      { x: 43, y: 755 },
+      { x: 154, y: 755 },
+      { x: 154, y: 804 },
+      { x: -106, y: 804 },
+      { x: -106, y: 54 },
+      { x: 0, y: 54 },
+      { x: 0, y: 42.25 },
+    ]);
+  });
+
+  it('builds grouped return routes on an external lane with side-center ports', () => {
+    expect(
+      buildGroupedReturnLanePoints(
+        { x: 20, y: 400, width: 60, height: 40 },
+        { x: 10, y: 20, width: 80, height: 40 },
+        [
+          { x: 0, y: 0, width: 120, height: 460 },
+          { x: 10, y: 20, width: 80, height: 40 },
+        ],
+      ),
+    ).toEqual([
+      { x: 80, y: 420 },
+      { x: 148, y: 420 },
+      { x: 148, y: 40 },
+      { x: 90, y: 40 },
+    ]);
+  });
+});

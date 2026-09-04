@@ -4,6 +4,9 @@
    */
   import type { ComputedNode, NodeStyleConfig } from './types';
   import { DEFAULT_NODE_STYLE } from './types';
+  import { getDiagramNodeIcon } from './diagram-node-icons';
+  import { semanticFilenameUnits, splitSemanticLabel } from './diagram-label-wrap';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     node: ComputedNode;
@@ -30,7 +33,7 @@
   let isDragging = $state(false);
   let dragOffsetX = $state(0);
   let dragOffsetY = $state(0);
-  let nodeEl: HTMLDivElement | undefined = $state();
+  let nodeEl: HTMLButtonElement | HTMLDivElement | undefined = $state();
 
   // Convert client (screen) coordinates to SVG coordinate space
   function clientToSVG(clientX: number, clientY: number): { x: number; y: number } {
@@ -83,6 +86,19 @@
   }
 
   let hasBinding = $derived(!!getBinding());
+  let usesDefaultStyle = $derived(styleConfig === DEFAULT_NODE_STYLE);
+  let nodeIcon = $derived(getDiagramNodeIcon(node.kind));
+  let NodeIcon = $derived(nodeIcon.component);
+  let nodePaddingX = $derived(usesDefaultStyle ? 10 : styleConfig.paddingX);
+  let nodePaddingY = $derived(usesDefaultStyle ? 7 : styleConfig.paddingY);
+  let nodeContentGap = $derived(usesDefaultStyle ? 2 : styleConfig.gap);
+  let nodeKindFontSize = $derived(usesDefaultStyle ? 11 : styleConfig.kindFontSize);
+  let filenameUnits = $derived(semanticFilenameUnits(node.label));
+  let bindingLabel = $derived.by(() => {
+    const binding = getBinding();
+    if (!binding) return undefined;
+    return m.diagram_node_openBinding_ariaLabel({ label: node.label, type: binding.type });
+  });
 
   // Handle binding click
   function handleClick(e: MouseEvent) {
@@ -119,46 +135,81 @@
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<div
+<svelte:element
+  this={hasBinding ? 'button' : 'div'}
   bind:this={nodeEl}
+  type={hasBinding ? 'button' : undefined}
+  role={hasBinding ? 'button' : undefined}
   class={nodeClass}
+  data-semantic-style={node.semanticStyle ?? 'default'}
+  data-default-style={usesDefaultStyle}
+  aria-label={bindingLabel}
   style="
     --label-font-size: {styleConfig.labelFontSize}px;
     --label-line-height: {styleConfig.labelLineHeight};
-    --kind-font-size: {styleConfig.kindFontSize}px;
+    --kind-font-size: {nodeKindFontSize}px;
     --kind-line-height: {styleConfig.kindLineHeight};
-    --padding-x: {styleConfig.paddingX}px;
-    --padding-y: {styleConfig.paddingY}px;
-    --gap: {styleConfig.gap}px;
-    --max-lines: {styleConfig.maxLines};
+    --padding-x: {nodePaddingX}px;
+    --padding-y: {nodePaddingY}px;
+    --gap: {nodeContentGap}px;
   "
   onmousedown={handleMouseDown}
   onclick={handleClick}
   onmouseenter={() => onHover?.(node.id)}
   onmouseleave={() => onHover?.(null)}
-  title={node.label.length > 50 ? node.label : ''}
+  onfocus={() => onHover?.(node.id)}
+  onblur={() => onHover?.(null)}
+  title={node.label.length > 50 ? node.label : undefined}
 >
   <div class="node-content">
-    <div class="node-label">{node.label}</div>
-    {#if node.kind}
-      <div class="node-kind-label">{node.kind}</div>
-    {/if}
+    <span class="node-icon" data-node-icon aria-hidden="true">
+      <NodeIcon
+        size={14}
+        weight="regular"
+        data-icon={nodeIcon.name}
+        data-weight="regular"
+        aria-hidden="true"
+      />
+    </span>
+    <div class="node-copy">
+      <div class="node-label">
+        {#if filenameUnits}
+          {#each filenameUnits as unit, index}
+            <span class="semantic-filename-unit">{unit}</span
+            ><!-- i18n-ignore: Svelte control flow, not user-facing text -->{#if index < filenameUnits.length - 1}<wbr
+              />{/if}
+          {/each}
+        {:else}
+          {#each splitSemanticLabel(node.label) as part}
+            {part.text}{#if part.hardBreak}<br />{:else if part.breakAfter}<wbr />{/if}
+          {/each}
+        {/if}
+      </div>
+      {#if node.kind}
+        <div class="node-kind-label">{node.kind}</div>
+      {/if}
+    </div>
   </div>
-</div>
+</svelte:element>
 
 <style>
   .diagram-node-html {
     width: 100%;
     height: 100%;
-    border: 1px solid hsl(var(--border));
-    /* border-radius: 3px; */
-    background: hsl(var(--card));
-    transition: all 0.2s ease;
+    border: 1px solid var(--diagram-node-outline);
+    border-radius: var(--diagram-node-radius);
+    background: var(--diagram-node-surface);
+    color: var(--diagram-node-title);
+    font-family: var(--font-ui);
+    text-align: left;
+    transition:
+      border-color var(--motion-standard) var(--ease-standard),
+      background var(--motion-standard) var(--ease-standard),
+      opacity var(--motion-standard) var(--ease-standard);
     cursor: default;
+    appearance: none;
+    padding: 0;
     box-sizing: border-box;
-    /* Ensure crisp 1px borders */
     transform: translateZ(0);
     -webkit-font-smoothing: antialiased;
   }
@@ -171,104 +222,191 @@
     cursor: pointer;
   }
 
-  /* Hover effect intentionally removed for cleaner appearance */
-
-  .node-dimmed {
-    opacity: 0.3;
-    transition: opacity 0.2s ease;
+  .diagram-node-html.node-clickable:hover {
+    border-color: hsl(var(--muted-foreground) / 0.65);
   }
 
-  /* State-level highlighting (from DiagramState.highlightedNodes) */
-  .node-state-highlighted {
-    box-shadow: 0 0 0 2px hsl(var(--accent) / 0.6);
-    border-color: hsl(var(--accent));
+  .diagram-node-html.node-clickable:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  .node-dimmed {
+    opacity: 0.72;
   }
 
   /* Semantic styles */
-  .node-highlighted {
-    border-color: hsl(var(--accent));
-    background: hsl(var(--accent));
-    border-width: 1px;
-    color: var(--color-white);
-  }
-
-  .node-muted {
-    background: hsl(var(--muted));
-    color: var(--color-text-muted);
-    /* opacity: 0.5; */
+  .node-highlighted,
+  .node-active {
+    --node-semantic: var(--agent-avatar-surface-active);
   }
 
   .node-danger {
-    background: hsl(0 72% 51%);
-    color: var(--color-white);
-    border-color: hsl(0 72% 51%);
+    --node-semantic: var(--destructive);
   }
 
   .node-success {
-    /* background: hsl(142 76% 36% / 0.05); */
-    background: hsl(162 76% 36% / 1);
-    color: var(--color-white);
-    border-color: hsl(162 76% 36% / 1);
+    --node-semantic: var(--success);
   }
 
   .node-warning {
-    /* background: hsl(38 92% 50% / 0.05); */
-    background: hsl(31.8deg, 100%, 60.7%, 1);
-    color: var(--color-white);
-    border-color: hsl(31.8deg, 100%, 60.7%, 1);
+    --node-semantic: var(--warning);
+  }
+
+  .node-highlighted,
+  .node-active {
+    border-color: color-mix(in srgb, var(--diagram-accent) 70%, hsl(var(--border)));
+    background: var(--diagram-accent);
+    color: var(--diagram-accent-foreground);
+  }
+
+  .node-danger,
+  .node-success,
+  .node-warning {
+    border-color: color-mix(in srgb, hsl(var(--node-semantic)) 42%, var(--diagram-node-outline));
+    background: color-mix(in srgb, hsl(var(--node-semantic)) 7%, var(--diagram-node-surface));
+    color: var(--diagram-node-title);
+  }
+
+  .node-danger {
+    color: hsl(var(--error-foreground));
+  }
+
+  .node-muted {
+    background: color-mix(in srgb, hsl(var(--muted)) 68%, hsl(var(--card)));
+    color: hsl(var(--muted-foreground));
   }
 
   .node-inactive {
-    /* background: hsl(var(--muted)); */
-    background: hsl(var(--muted-foreground) / 1);
-    color: var(--color-white);
-    border-color: hsl(var(--muted-foreground) / 1);
-    opacity: 0.5;
+    background: color-mix(in srgb, hsl(var(--muted)) 48%, hsl(var(--card)));
+    color: hsl(var(--muted-foreground));
+    border-color: hsl(var(--border));
+  }
+
+  .diagram-node-html:is(
+    .node-highlighted,
+    .node-active,
+    .node-danger,
+    .node-success,
+    .node-warning,
+    .node-muted,
+    .node-inactive
+  ) {
+    border-width: 0;
+  }
+
+  /* State-level highlighting (from DiagramState.highlightedNodes) */
+  .diagram-node-html.node-state-highlighted {
+    border: 1px solid color-mix(in srgb, var(--diagram-accent) 76%, hsl(var(--border)));
+    background: color-mix(in srgb, var(--diagram-accent) 12%, var(--diagram-node-surface));
+    color: var(--diagram-node-title);
+    outline: none;
+    box-shadow: none;
+  }
+
+  .diagram-node-html.node-state-highlighted.node-clickable:hover {
+    border-color: color-mix(in srgb, var(--diagram-accent) 76%, hsl(var(--border)));
+  }
+
+  .diagram-node-html.node-state-highlighted.node-clickable:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 
   /* Node content */
   .node-content {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: flex-start;
     width: 100%;
     height: 100%;
     padding: var(--padding-y) var(--padding-x);
     box-sizing: border-box;
+    gap: 8px;
+  }
+
+  .node-icon {
+    display: inline-flex;
+    flex: 0 0 14px;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: calc(var(--label-font-size) * var(--label-line-height));
+    color: color-mix(in srgb, currentColor 76%, hsl(var(--muted-foreground)));
+  }
+
+  .node-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
     gap: var(--gap);
   }
 
   .node-label {
-    flex: 1;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: var(--max-lines);
-    line-clamp: var(--max-lines);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: center;
+    flex: 0 1 auto;
+    display: block;
+    overflow: visible;
+    text-align: left;
     width: 100%;
     white-space: pre-line;
-    /* color: hsl(var(--foreground)); */
-    font-family:
-      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    overflow-wrap: normal;
+    font-family: var(--font-editorial);
     font-size: var(--label-font-size);
-    font-weight: 500;
+    font-weight: 600;
     line-height: var(--label-line-height);
     letter-spacing: -0.01em;
-    word-break: break-word;
+    word-break: normal;
+  }
+
+  .semantic-filename-unit {
+    white-space: nowrap;
   }
 
   .node-kind-label {
-    /* color: hsl(var(--muted-foreground) / 0.6); */
-    opacity: 0.5;
-    font-family:
-      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    color: var(--diagram-metadata);
+    opacity: 0.86;
+    font-family: var(--font-ui);
     font-size: var(--kind-font-size);
     font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0.015em;
     line-height: var(--kind-line-height);
+    white-space: pre-line;
+  }
+
+  .node-highlighted .node-icon,
+  .node-active .node-icon,
+  .node-danger .node-icon,
+  .node-success .node-icon,
+  .node-warning .node-icon {
+    color: color-mix(in srgb, currentColor 68%, hsl(var(--node-semantic)));
+  }
+
+  .node-danger .node-icon {
+    color: hsl(var(--error-foreground));
+  }
+
+  .node-danger .node-kind-label {
+    color: currentColor;
+  }
+
+  .node-highlighted .node-kind-label,
+  .node-active .node-kind-label {
+    color: currentColor;
+    opacity: 0.84;
+  }
+
+  :global(.catalog-reduced-motion) .diagram-node-html {
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .diagram-node-html {
+      transition: none;
+    }
   }
 </style>

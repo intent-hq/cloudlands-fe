@@ -49,7 +49,7 @@ export const DEFAULT_NODE_STYLE: NodeStyleConfig = {
   labelFontSize: 13,
   labelCharWidthRatio: 0.6,
   labelLineHeight: 1.26,
-  kindFontSize: 8,
+  kindFontSize: 11,
   kindCharWidthRatio: 0.88,
   kindLineHeight: 1.0,
   paddingX: 16,
