@@ -16,7 +16,7 @@ export interface ConstellationLayoutConfig {
   seed?: number;
 }
 
-export interface ConstellationBounds {
+interface ConstellationBounds {
   minX: number;
   minY: number;
   maxX: number;

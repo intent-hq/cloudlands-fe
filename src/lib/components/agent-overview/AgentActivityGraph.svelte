@@ -25,9 +25,20 @@
     onNoteClick: (noteId: string, event: MouseEvent) => void;
     onFileClick: (path: string, event: MouseEvent) => void;
     layers: GraphLayers;
+    fitRequest?: number;
+    showFitControl?: boolean;
   }
 
-  let { graph, onAgentClick, onTaskClick, onNoteClick, onFileClick, layers }: Props = $props();
+  let {
+    graph,
+    onAgentClick,
+    onTaskClick,
+    onNoteClick,
+    onFileClick,
+    layers,
+    fitRequest = 0,
+    showFitControl = true,
+  }: Props = $props();
   let container: HTMLDivElement;
   let scene = $state<HTMLDivElement>();
   let layout: ConstellationLayout | null = null;
@@ -289,6 +300,10 @@
     updateLayout();
   });
 
+  $effect(() => {
+    if (fitRequest > 0 && layout) requestAnimationFrame(fitToView);
+  });
+
   onMount(() => {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
@@ -388,15 +403,17 @@
       {/each}
     </div>
 
-    <button
-      type="button"
-      class="absolute bottom-4 right-4 flex size-9 items-center justify-center rounded-lg border border-border bg-card text-subtle shadow-sm hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      title={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
-      aria-label={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
-      onclick={fitToView}
-      data-graph-controls
-    >
-      <Fa icon={faExpand} size="sm" />
-    </button>
+    {#if showFitControl}
+      <button
+        type="button"
+        class="absolute bottom-4 right-4 flex size-9 items-center justify-center rounded-lg border border-border bg-card text-subtle shadow-sm hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        title={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
+        aria-label={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
+        onclick={fitToView}
+        data-graph-controls
+      >
+        <Fa icon={faExpand} size="sm" />
+      </button>
+    {/if}
   {/if}
 </div>

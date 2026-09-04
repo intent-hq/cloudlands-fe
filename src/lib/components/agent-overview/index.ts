@@ -6,7 +6,6 @@
 
 // Components
 export { default as AgentOverviewPanel } from './AgentOverviewPanel.svelte';
-export { default as AgentActivityGraph } from './AgentActivityGraph.svelte';
 
 // Types and configuration
 export * from './types';

@@ -1,9 +1,8 @@
 {
-  "agentOverview_hierarchyCard_agent_fallback": ["de", "fr"],
-  "agentOverview_hierarchyCard_note_label": ["fr"],
-  "agentOverview_hierarchyGraph_background_badge": ["ja", "ko", "de"],
-  "agentOverview_hierarchyGraph_reviewCorral_label": ["de"],
   "agentOverview_timeScrubber_live_label": ["de"],
+  "agentOverview_toolbar_agents_label": ["fr"],
+  "agentOverview_toolbar_messages_label": ["fr"],
+  "agentOverview_toolbar_notes_label": ["fr"],
   "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "browser_viewport_dimensions_label": "*",
   "chat_agentCard_background_badge": ["ja", "ko", "de"],
