@@ -15,6 +15,8 @@
     children?: Snippet;
     onmouseenter?: (event: MouseEvent) => void;
     onmouseleave?: (event: MouseEvent) => void;
+    onfocusin?: (event: FocusEvent) => void;
+    onfocusout?: (event: FocusEvent) => void;
   }
   let {
     id,
@@ -26,6 +28,8 @@
     children,
     onmouseenter,
     onmouseleave,
+    onfocusin,
+    onfocusout,
   }: Props = $props();
 
   const COLLISION_PADDING = 8;
@@ -235,6 +239,8 @@
     role="tooltip"
     {onmouseenter}
     {onmouseleave}
+    {onfocusin}
+    {onfocusout}
   >
     {@render children?.()}
   </div>
@@ -251,6 +257,8 @@
       role="tooltip"
       {onmouseenter}
       {onmouseleave}
+      {onfocusin}
+      {onfocusout}
     >
       {@render children?.()}
     </div>

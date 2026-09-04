@@ -201,6 +201,7 @@
   let pointerWithinRow = false;
   let pointerWithinCard = false;
   let focusWithinRow = false;
+  let focusWithinCard = false;
   let hoverCardOpenedFromPointer = false;
 
   function clearHoverCardOpenTimer() {
@@ -227,6 +228,7 @@
   function closeHoverCard() {
     clearHoverCardCloseTimer();
     pointerWithinCard = false;
+    focusWithinCard = false;
     hoverCardVisible = false;
     if (!hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = false;
@@ -238,7 +240,8 @@
     if (!hoverCardVisible) return;
     hoverCardCloseTimer = setTimeout(() => {
       hoverCardCloseTimer = null;
-      if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow) closeHoverCard();
+      if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow && !focusWithinCard)
+        closeHoverCard();
     }, WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
   }
 
@@ -329,7 +332,30 @@
   function handleFocusOut(event: FocusEvent) {
     if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
     focusWithinRow = false;
+    const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
+    if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) {
+      focusWithinCard = true;
+      clearHoverCardCloseTimer();
+      return;
+    }
     if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+  }
+
+  function handleHoverCardFocusIn() {
+    focusWithinCard = true;
+    clearHoverCardCloseTimer();
+  }
+
+  function handleHoverCardFocusOut(event: FocusEvent) {
+    const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
+    if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) return;
+    focusWithinCard = false;
+    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) {
+      focusWithinRow = true;
+      clearHoverCardCloseTimer();
+      return;
+    }
+    if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow) scheduleHoverCardClose();
   }
 
   $effect(() => {
@@ -768,6 +794,8 @@
       class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
       onmouseenter={handleHoverCardMouseEnter}
       onmouseleave={handleHoverCardMouseLeave}
+      onfocusin={handleHoverCardFocusIn}
+      onfocusout={handleHoverCardFocusOut}
     >
       <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
     </HoverCard>

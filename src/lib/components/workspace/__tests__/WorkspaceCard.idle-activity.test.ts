@@ -581,6 +581,36 @@ describe('WorkspaceCard hover-intent delay', () => {
     expect(hoverCard()).toBeNull();
   });
 
+  it('keeps the portaled card open while keyboard focus moves through a card button', async () => {
+    vi.useFakeTimers();
+    const outsideButton = document.createElement('button');
+    document.body.append(outsideButton);
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
+
+      trigger.focus();
+      await tick();
+      const card = hoverCard() as HTMLElement;
+      const cardButton = document.createElement('button');
+      card.append(cardButton);
+
+      await fireEvent.keyDown(trigger, { key: 'Tab' });
+      cardButton.focus();
+      await tick();
+      expect(document.activeElement).toBe(cardButton);
+      expect(hoverCard()).toBe(card);
+
+      outsideButton.focus();
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      outsideButton.remove();
+      vi.useRealTimers();
+    }
+  });
+
   it('clears a pending hover open when the row is destroyed', async () => {
     vi.useFakeTimers();
     try {

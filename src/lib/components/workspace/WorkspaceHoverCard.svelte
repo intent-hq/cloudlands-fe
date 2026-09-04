@@ -4,6 +4,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Button } from '$lib/components/ui/button';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -420,11 +421,11 @@
             data-workspace-hover-card-activity
             data-workspace-hover-card-agent-table
           >
-            <div class="grid gap-2" role="list">
+            <div class="-mx-2 grid gap-2" role="list">
               {#each visibleRows as row (row.id)}<div role="listitem">
-                  <button
-                    type="button"
-                    class="agent-row -mx-2 grid w-[calc(100%+1rem)] min-w-0 cursor-pointer grid-cols-[1.5rem_minmax(0,1fr)_auto] gap-x-2.5 rounded-sm px-2 py-0.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  <Button
+                    variant="plain"
+                    class="grid h-auto! min-h-8 w-full min-w-0 cursor-pointer grid-cols-[1.5rem_minmax(0,1fr)_auto] gap-x-2.5 rounded-sm border-0! px-2! py-0.5! text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     aria-label={rowAccessibleLabel(row)}
                     data-workspace-hover-card-agent-row
                     data-agent-group-row={row.group}
@@ -463,7 +464,7 @@
                           ><span aria-hidden="true">{row.questionMeta.compact}</span></span
                         >{/if}</span
                     >
-                  </button>
+                  </Button>
                 </div>{/each}
             </div>
             {#if hiddenCount}<div
@@ -484,28 +485,14 @@
             data-workspace-hover-card-pr-column
           >
             <div
-              class="grid min-w-0 gap-2"
+              class="-mx-2 grid min-w-0 gap-2"
               aria-label={m.workspace_hoverCard_pullRequests_label()}
               role="list"
               data-workspace-hover-card-pr-list
             >
               {#each visiblePrRows as pr (pr.identity)}
                 <div role="listitem" aria-label={pr.url ? undefined : getWorkspacePrLabel(pr)}>
-                  <svelte:element
-                    this={pr.url ? 'button' : 'div'}
-                    type={pr.url ? 'button' : undefined}
-                    role={pr.url ? 'button' : undefined}
-                    class="-mx-2 grid w-[calc(100%+1rem)] min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 rounded-sm px-2 py-1 text-left {pr.url
-                      ? 'cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-                      : ''}"
-                    aria-label={pr.url ? getWorkspacePrLabel(pr) : undefined}
-                    data-workspace-hover-card-pr-row
-                    data-pr-identity={pr.identity}
-                    data-pr-status={pr.status}
-                    onclick={pr.url
-                      ? (event: MouseEvent) => openPullRequestRow(event, pr)
-                      : undefined}
-                  >
+                  {#snippet prRowContent()}
                     <Fa
                       icon={pr.statusIcon}
                       size={18}
@@ -527,7 +514,29 @@
                       class="type-caption shrink-0 text-muted-foreground"
                       data-workspace-hover-card-pr-number>#{pr.number}</span
                     >
-                  </svelte:element>
+                  {/snippet}
+                  {#if pr.url}
+                    <Button
+                      variant="plain"
+                      class="grid h-auto! w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 rounded-sm border-0! px-2! py-1! text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label={getWorkspacePrLabel(pr)}
+                      data-workspace-hover-card-pr-row
+                      data-pr-identity={pr.identity}
+                      data-pr-status={pr.status}
+                      onclick={(event: MouseEvent) => openPullRequestRow(event, pr)}
+                    >
+                      {@render prRowContent()}
+                    </Button>
+                  {:else}
+                    <div
+                      class="grid w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 rounded-sm px-2 py-1 text-left"
+                      data-workspace-hover-card-pr-row
+                      data-pr-identity={pr.identity}
+                      data-pr-status={pr.status}
+                    >
+                      {@render prRowContent()}
+                    </div>
+                  {/if}
                 </div>
               {/each}
             </div>
@@ -551,9 +560,6 @@
   .workspace-hover-card {
     width: 35rem;
     max-width: min(100%, calc(100vw - 3.625rem));
-  }
-  .agent-row {
-    min-height: 32px;
   }
   .agent-detail {
     grid-column: 2 / -1;

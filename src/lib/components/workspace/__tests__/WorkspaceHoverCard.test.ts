@@ -397,7 +397,9 @@ describe('WorkspaceHoverCard', () => {
     const event = new MouseEvent('click', { bubbles: true });
     const stopPropagation = vi.spyOn(event, 'stopPropagation');
 
-    screen.getByRole('button', { name: /Noah/i }).dispatchEvent(event);
+    const row = screen.getByRole('button', { name: /Noah/i });
+    expect(row).toBeInstanceOf(HTMLButtonElement);
+    row.dispatchEvent(event);
 
     expect(stopPropagation).toHaveBeenCalledOnce();
     expect(mocks.dispatch).toHaveBeenCalledWith({
@@ -425,7 +427,9 @@ describe('WorkspaceHoverCard', () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: /augment\/intent #42/i }));
+    const row = screen.getByRole('button', { name: /augment\/intent #42/i });
+    expect(row).toBeInstanceOf(HTMLButtonElement);
+    await fireEvent.click(row);
 
     await waitFor(() =>
       expect(mocks.handleLink).toHaveBeenCalledWith(url, {
