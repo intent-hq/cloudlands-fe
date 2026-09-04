@@ -36,6 +36,7 @@ export const initialState: DaemonHealthState = {
   hasEverConnected: false,
   sidecarSpawnPending: false,
   sidecarSpawnError: null,
+  daemonUpdateDisconnectedAt: null,
   sidecarRunLog: null,
   sidecarRunLogPending: false,
   sidecarRunLogError: null,
@@ -60,6 +61,11 @@ export interface ConnectionStatusExtras {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
+  /**
+   * True while main has a user-requested `system.requestUpdate` outstanding
+   * for this window's backend — the disconnect is the daemon restarting.
+   */
+  daemonUpdatePending?: boolean;
 }
 
 /**
@@ -228,6 +234,7 @@ daemonHealthReducer.with(
         hasEverConnected: true,
         sidecarSpawnPending: false,
         sidecarSpawnError: null,
+        daemonUpdateDisconnectedAt: null,
         // The dialog dismisses on reconnect — drop the fetched run log with
         // it; it is stale by the next show.
         sidecarRunLog: null,
@@ -258,6 +265,13 @@ daemonHealthReducer.with(
         // "Starting sidecar…".
         sidecarSpawnPending:
           extras?.sidecarGaveUp || extras?.sidecarStartupFailed ? false : state.sidecarSpawnPending,
+        // Latch the FIRST update-caused drop: later disconnected/connecting
+        // pushes for the same restart keep the original time so the
+        // updating-overlay countdown does not restart on every push.
+        daemonUpdateDisconnectedAt:
+          extras?.daemonUpdatePending === true && state.daemonUpdateDisconnectedAt === null
+            ? Date.now()
+            : state.daemonUpdateDisconnectedAt,
       };
     }
     return state;

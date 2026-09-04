@@ -452,6 +452,26 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('forwards daemonUpdatePending from the status payload into the action extras', async () => {
+    const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({ status: 'disconnected', transport, daemonUpdatePending: true });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [string, unknown, { daemonUpdatePending?: boolean } | undefined];
+    }>;
+    const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
+    expect(disconnected).toBeDefined();
+    expect(disconnected!.payload[2]?.daemonUpdatePending).toBe(true);
+    // The boot snapshot carried no marker: nothing is invented for it.
+    const connected = actions.find(({ payload: [status] }) => status === 'connected');
+    expect(connected!.payload[2]?.daemonUpdatePending).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('backs off repeated disconnected churn with exponential timing', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     invoke.mockImplementation((channel: string) => {
