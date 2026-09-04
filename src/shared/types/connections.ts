@@ -84,7 +84,7 @@ export const DETECTED_DEVICE_KINDS = [
 export type DetectedDeviceKind = (typeof DETECTED_DEVICE_KINDS)[number];
 
 /** Playful icon identifiers available only as user overrides. */
-export const WILD_CARD_DEVICE_KINDS = [
+const WILD_CARD_DEVICE_KINDS = [
   'robot',
   'rocket',
   'flyingSaucer',
