@@ -1114,7 +1114,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                         />
                         <span
                           aria-hidden="true"
-                          class="pointer-events-none absolute z-0 -inset-x-2 -inset-y-1.5 rounded-(--radius-small) border border-ring/60 bg-sidebar transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none"
+                          class="pointer-events-none absolute z-0 -inset-x-2 -inset-y-1.5 rounded-(--radius-small) border border-ring/60 bg-sidebar transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) starting:-inset-x-1 starting:-inset-y-0.5 starting:border-transparent starting:bg-transparent motion-reduce:transition-none"
                         ></span>
                       </div>
                     {/if}
