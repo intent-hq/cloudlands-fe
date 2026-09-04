@@ -2603,6 +2603,42 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     );
   });
 
+  it.each([
+    ['unknown kind', { kind: 'system' }],
+    ['non-string agentId', { kind: 'agent', agentId: 42, name: 'Child' }],
+    ['non-string name', { kind: 'agent', agentId: 'agent-child', name: { first: 'Child' } }],
+    ['non-object value', 'agent-child'],
+  ])(
+    'malformed interruptedBy (%s) is dropped whole — interruptReason still lands, no partial attribution',
+    async (_label, interruptedBy) => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      streamPartialTurn(handler);
+      handler(
+        notification('agent:stream:end', {
+          agentId: AGENT,
+          streamId: STREAM_ID,
+          stopReason: 'interrupted',
+          interruptReason: 'preempted_by_message',
+          interruptedBy,
+          messageId: MESSAGE_ID,
+        }),
+      );
+
+      const assistantMessages = readAssistantMessages();
+      expect(assistantMessages).toHaveLength(1);
+      expect(assistantMessages[0].metadata).toEqual({
+        interrupted: true,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+      });
+      expect(
+        shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+      ).toBe(true);
+    },
+  );
+
   it('thinking-only turn stopped: interrupted metadata lands and the Stopped indicator shows despite no visible content', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -3193,13 +3229,15 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
     // …but the terminal stream:end targets a DIFFERENT turn B with an
-    // interrupt stopReason. Turn A must finalize clean; turn B's placeholder
-    // carries the interrupted metadata.
+    // interrupt stopReason + §7.2 attribution. Turn A must finalize clean;
+    // turn B's placeholder carries the full interrupted metadata.
     handler(
       notification('agent:stream:end', {
         agentId: AGENT,
         streamId: 'stream_2',
         stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
         messageId: OTHER_MESSAGE_ID,
       }),
     );
@@ -3208,8 +3246,15 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     expect(assistantMessages.map((m) => m.id)).toEqual([MESSAGE_ID, OTHER_MESSAGE_ID]);
     const [turnA, turnB] = assistantMessages;
     expect(turnA.metadata?.interrupted).toBeUndefined();
+    expect(turnA.metadata?.interruptReason).toBeUndefined();
+    expect(turnA.metadata?.interruptedBy).toBeUndefined();
     expect(shouldShowStoppedIndicator({ message: turnA, isStreaming: false })).toBe(false);
-    expect(turnB.metadata).toMatchObject({ interrupted: true, stopReason: 'interrupted' });
+    expect(turnB.metadata).toEqual({
+      interrupted: true,
+      stopReason: 'interrupted',
+      interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+    });
     expect(shouldShowStoppedIndicator({ message: turnB, isStreaming: false })).toBe(true);
   });
 

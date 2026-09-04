@@ -742,9 +742,22 @@ interface StreamEndMetadata {
  * Read the §7.2 `interruptedBy` sender attribution off an `agent:stream:end`
  * payload: `{ kind: "user" }` or `{ kind: "agent", agentId?, name? }`. A value
  * that diverges from the documented shape is rejected whole rather than
- * partially absorbed.
+ * partially absorbed — and logged, so a daemon/FE contract drift is visible
+ * instead of silent (same posture as bare `trailingBlocks`).
  */
-function readInterruptedBy(value: unknown): MessageMetadata['interruptedBy'] | undefined {
+function readInterruptedBy(
+  value: unknown,
+  agentId: string,
+): MessageMetadata['interruptedBy'] | undefined {
+  if (value === undefined) return undefined;
+  const parsed = parseInterruptedBy(value);
+  if (parsed === undefined) {
+    logger.debug('Dropping malformed agent:stream:end interruptedBy', { agentId, value });
+  }
+  return parsed;
+}
+
+function parseInterruptedBy(value: unknown): MessageMetadata['interruptedBy'] | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const { kind, agentId, name } = value as Record<string, unknown>;
   if (kind === 'user') return { kind: 'user' };
@@ -1329,7 +1342,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // generic "Stopped" until the transcript reloads.
   const interruptReason =
     typeof data?.interruptReason === 'string' ? data.interruptReason : undefined;
-  const interruptedBy = readInterruptedBy(data?.interruptedBy);
+  const interruptedBy = readInterruptedBy(data?.interruptedBy, agentId);
   const endMetadata: StreamEndMetadata = {
     stopReason,
     finishReason,
