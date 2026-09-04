@@ -715,6 +715,36 @@ ${verticalSource}`;
     svg.style.setProperty('--mermaid-readable-width', `${readableWidth.toFixed(3)}px`);
   }
 
+  function measureFinalFlowchartBounds(svg: SVGSVGElement): SvgBounds {
+    const measured = svg.getBBox();
+    const coordinateReference = svg.querySelector<SVGGraphicsElement>('.edgePaths path, g.node');
+    const inverse = coordinateReference?.getScreenCTM()?.inverse();
+    if (!inverse) return measured;
+    const labelBounds = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].flatMap(
+      (label) => {
+        if (!label.textContent?.trim()) return [];
+        const box = label.getBoundingClientRect();
+        const corners = [
+          new DOMPoint(box.left, box.top),
+          new DOMPoint(box.right, box.top),
+          new DOMPoint(box.right, box.bottom),
+          new DOMPoint(box.left, box.bottom),
+        ].map((point) => point.matrixTransform(inverse));
+        const left = Math.min(...corners.map((point) => point.x));
+        const top = Math.min(...corners.map((point) => point.y));
+        const right = Math.max(...corners.map((point) => point.x));
+        const bottom = Math.max(...corners.map((point) => point.y));
+        return [{ x: left, y: top, width: right - left, height: bottom - top }];
+      },
+    );
+    const allBounds = [measured, ...labelBounds];
+    const left = Math.min(...allBounds.map((bounds) => bounds.x));
+    const top = Math.min(...allBounds.map((bounds) => bounds.y));
+    const right = Math.max(...allBounds.map((bounds) => bounds.x + bounds.width));
+    const bottom = Math.max(...allBounds.map((bounds) => bounds.y + bounds.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }
+
   async function fitRenderedSvg(generation: number) {
     const fit = ++fitGeneration;
     await tick();
@@ -835,7 +865,7 @@ ${verticalSource}`;
     if (!compactLayout && svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       routeFlowchartFeedbackLane(svg, true);
       alignFlowchartMarkerTips(svg);
-      const finalBounds = svg.getBBox();
+      const finalBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(finalBounds.width + padding * 2);
       height = Math.ceil(finalBounds.height + padding * 2);
       svg.setAttribute(
@@ -861,7 +891,11 @@ ${verticalSource}`;
       positionCompactGroupedEdgeLabels(svg);
     }
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
-      const finalBounds = svg.getBBox();
+      snapFlowchartPorts(svg);
+      snapFlowchartFeedbackPorts(svg);
+      roundOrthogonalBends(svg);
+      alignFlowchartMarkerTips(svg);
+      const finalBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(finalBounds.width + padding * 2);
       height = Math.ceil(finalBounds.height + padding * 2);
       svg.setAttribute(
@@ -871,10 +905,6 @@ ${verticalSource}`;
       svg.setAttribute('width', String(width));
       svg.setAttribute('height', String(height));
       setReadableMermaidWidth(svg, width);
-      snapFlowchartPorts(svg);
-      snapFlowchartFeedbackPorts(svg);
-      roundOrthogonalBends(svg);
-      alignFlowchartMarkerTips(svg);
     }
     if (normalizedState || groupedFlowchart) {
       svg.style.setProperty('--mermaid-readable-width', '0px');
@@ -883,6 +913,20 @@ ${verticalSource}`;
     if (normalizedState) attachStateTerminalArrowheads(svg);
     await new Promise<void>((resolve) => setTimeout(resolve, 120));
     if (generation !== renderGeneration || fit !== fitGeneration) return;
+    if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
+      const settledBounds = measureFinalFlowchartBounds(svg);
+      width = Math.ceil(settledBounds.width + padding * 2);
+      height = Math.ceil(settledBounds.height + padding * 2);
+      svg.setAttribute(
+        'viewBox',
+        `${settledBounds.x - padding} ${settledBounds.y - padding} ${width} ${height}`,
+      );
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      setReadableMermaidWidth(svg, width);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (generation !== renderGeneration || fit !== fitGeneration) return;
+    }
     svg.dataset.layoutSettled = 'true';
   }
 

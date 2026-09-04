@@ -577,8 +577,16 @@ for (const appearance of appearances) {
           const labels = [...svg.querySelectorAll<SVGGElement>('g.edgeLabel')].filter((label) =>
             label.textContent?.trim(),
           );
+          const frame = svg.getBoundingClientRect();
           for (let left = 0; left < labels.length; left += 1) {
             const a = labels[left].getBoundingClientRect();
+            if (
+              a.left < frame.left + 5 ||
+              a.right > frame.right - 5 ||
+              a.top < frame.top + 5 ||
+              a.bottom > frame.bottom - 5
+            )
+              violations.push(`${labels[left].textContent?.trim()} leaves frame`);
             for (let right = left + 1; right < labels.length; right += 1) {
               const b = labels[right].getBoundingClientRect();
               const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
@@ -591,6 +599,22 @@ for (const appearance of appearances) {
             .filter((path) => /-L_(?:A_B|B_A)_/.test(path.id))
             .map((path) => path.dataset.parallelLane)
             .filter(Boolean);
+          if (
+            paths.some((path) => {
+              const matrix = path.getScreenCTM()!;
+              return Array.from({ length: 121 }, (_, index) => {
+                const point = path.getPointAtLength((path.getTotalLength() * index) / 120);
+                return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+              }).some(
+                (point) =>
+                  point.x < frame.left + 5 ||
+                  point.x > frame.right - 5 ||
+                  point.y < frame.top + 5 ||
+                  point.y > frame.bottom - 5,
+              );
+            })
+          )
+            violations.push('route leaves frame');
           return {
             violations,
             feedback: [feedback?.dataset.feedbackSource, feedback?.dataset.feedbackTarget],
@@ -773,13 +797,73 @@ for (const appearance of appearances) {
         'mermaid-groups',
         'mermaid-nested-groups',
       ]) {
-        await page.locator(`#${fixture}`).screenshot({
+        const capture =
+          fixture === 'mermaid-state'
+            ? page.locator(`#${fixture} .mermaid-presentation`)
+            : page.locator(`#${fixture}`);
+        await capture.screenshot({
           path: testInfo.outputPath(`${fixture}-${appearance.name}-${width}.png`),
         });
       }
     });
   }
 }
+
+test('keeps topology routes cardinal across live theme changes', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openDiagram(page, 'mermaid-topology-stress', 960, appearances[0]);
+
+  const assertSettledCardinalRoutes = async (previousId?: string) => {
+    const svg = page.locator('#mermaid-topology-stress svg[data-layout-settled="true"]');
+    if (previousId) await expect(svg).not.toHaveAttribute('id', previousId, { timeout: 90_000 });
+    await expect
+      .poll(
+        () =>
+          svg.evaluate((root) =>
+            [...root.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap((path) => {
+              const commands =
+                path
+                  .getAttribute('d')!
+                  .match(/[MLQ][^MLQ]*/g)
+                  ?.map((command) => ({
+                    type: command[0],
+                    values: command.slice(1).trim().split(/[ ,]+/).map(Number),
+                  })) ?? [];
+              let current = { x: 0, y: 0 };
+              return commands.flatMap(({ type, values }) => {
+                if (type === 'M') {
+                  current = { x: values[0], y: values[1] };
+                  return [];
+                }
+                const control = { x: values[0], y: values[1] };
+                const end =
+                  type === 'Q' ? { x: values[2], y: values[3] } : { x: values[0], y: values[1] };
+                const cardinal =
+                  (Math.abs(current.x - control.x) < 0.01 ||
+                    Math.abs(current.y - control.y) < 0.01) &&
+                  (type !== 'Q' ||
+                    Math.abs(control.x - end.x) < 0.01 ||
+                    Math.abs(control.y - end.y) < 0.01);
+                current = end;
+                return cardinal ? [] : [path.id];
+              });
+            }),
+          ),
+        { timeout: 90_000 },
+      )
+      .toEqual([]);
+    return (await svg.getAttribute('id'))!;
+  };
+
+  let svgId = await assertSettledCardinalRoutes();
+  await page.getByTestId('catalog-theme-control').getByText('Dark', { exact: true }).click();
+  svgId = await assertSettledCardinalRoutes(svgId);
+  await page.getByTestId('catalog-theme-control').getByText('Light', { exact: true }).click();
+  svgId = await assertSettledCardinalRoutes(svgId);
+  await page.getByTestId('catalog-color-theme-control').click();
+  await page.getByRole('option', { name: 'Nord', exact: true }).click();
+  await assertSettledCardinalRoutes(svgId);
+});
 
 for (const appearance of appearances) {
   for (const width of [960, 320] as const) {
