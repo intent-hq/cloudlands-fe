@@ -393,7 +393,7 @@
           >
         </div>
         <div
-          class="type-caption mt-1 min-w-0 truncate text-muted-foreground"
+          class="type-caption mt-0.5 min-w-0 truncate text-muted-foreground"
           data-workspace-hover-card-repo
         >
           {repo}
