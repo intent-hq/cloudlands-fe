@@ -165,64 +165,62 @@
 <!-- Branch display/edit with trunk branch picker -->
 <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-subtle text-xs mb-3 -ml-0.5">
   <!-- Working branch -->
-  <div class="flex items-center shrink-0">
+  <div class="flex shrink-0 items-center">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
-    {#if branchRename.active}
-      <input
-        bind:this={branchRename.inputRef}
-        type="text"
-        bind:value={branchRename.value}
-        onblur={saveBranch}
-        onkeydown={handleBranchKeydown}
-        disabled={branchRename.saving}
-        class="text-ui text-foreground bg-none
-               px-1 py-0.5 rounded
-               outline-none min-w-[60px] max-w-[150px] leading-normal
-               focus:ring-none! focus:outline-none!
-               transition-all duration-150 disabled:opacity-50"
-        placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
-        style="width: {Math.max(60, Math.min(150, (branchRename.value || '').length * 6 + 20))}px"
-      />
-    {:else}
-      <Tooltip side="top" disableCloseOnTriggerClick bind:open={branchCopy.workingTooltip}>
-        {#snippet content()}<span
-            >{m.workspace_branchDisplay_workingOn_tooltip({
-              branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
-            })}</span
-          ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
-          >{#if branchCopy.copiedWorking}<span
-              class="text-green-500 ml-1.5 inline-flex items-center gap-1"
-              ><Fa icon={faCheck} size="xs" /></span
-            >{/if}{/snippet}
-        <button
-          class="text-ui text-subtle bg-transparent
-                 border-none px-1 py-0.5 rounded cursor-pointer text-left
-                 max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-150 leading-normal
-                 hover:text-foreground hover:opacity-80
-                 focus-visible:outline-none!
-                 disabled:cursor-default disabled:opacity-50"
-          onclick={(e) => {
-            if (e.shiftKey && $workspace?.branch) {
-              navigator.clipboard.writeText($workspace.branch);
-              branchCopy.copiedWorking = true;
-              branchCopy.workingTooltip = true;
-              setTimeout(() => {
-                branchCopy.copiedWorking = false;
-                branchCopy.workingTooltip = false;
-              }, 1500);
-            } else {
-              startEditingBranch();
-            }
-          }}
-          disabled={!$workspace || branchRename.saving}
-        >
-          {#if $workspace}
-            {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
-          {/if}
-        </button>
-      </Tooltip>
-    {/if}
+    <div class="relative inline-flex min-w-0 items-center">
+      {#if branchRename.active}
+        <input
+          bind:this={branchRename.inputRef}
+          type="text"
+          bind:value={branchRename.value}
+          onblur={saveBranch}
+          onkeydown={handleBranchKeydown}
+          disabled={branchRename.saving}
+          class="inline-edit-input relative z-10 min-w-[60px] max-w-[150px] rounded border-none bg-transparent px-1 py-0.5 text-ui leading-normal text-foreground outline-none transition-all duration-150 focus:outline-none! focus:ring-none! disabled:opacity-50"
+          placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
+          style="width: {Math.max(60, Math.min(150, (branchRename.value || '').length * 6 + 20))}px"
+        />
+      {:else}
+        <Tooltip side="top" disableCloseOnTriggerClick bind:open={branchCopy.workingTooltip}>
+          {#snippet content()}<span
+              >{m.workspace_branchDisplay_workingOn_tooltip({
+                branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
+              })}</span
+            ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
+            >{#if branchCopy.copiedWorking}<span
+                class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                ><Fa icon={faCheck} size="xs" /></span
+              >{/if}{/snippet}
+          <button
+            class="relative z-10 max-w-full cursor-text overflow-hidden text-ellipsis whitespace-nowrap rounded border-none bg-transparent px-1 py-0.5 text-left text-ui leading-normal text-subtle transition-all duration-150 hover:text-foreground hover:opacity-80 focus-visible:outline-none! disabled:cursor-default disabled:opacity-50"
+            onclick={(e) => {
+              if (e.shiftKey && $workspace?.branch) {
+                navigator.clipboard.writeText($workspace.branch);
+                branchCopy.copiedWorking = true;
+                branchCopy.workingTooltip = true;
+                setTimeout(() => {
+                  branchCopy.copiedWorking = false;
+                  branchCopy.workingTooltip = false;
+                }, 1500);
+              } else {
+                startEditingBranch();
+              }
+            }}
+            disabled={!$workspace || branchRename.saving}
+          >
+            {#if $workspace}
+              {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
+            {/if}
+          </button>
+        </Tooltip>
+      {/if}
+      <span
+        aria-hidden="true"
+        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {branchRename.active
+          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+      ></span>
+    </div>
   </div>
 
   <!-- <span class="text-ghost mx-auto">→</span> -->
@@ -295,3 +293,9 @@
     </Tooltip>
   </div>
 </div>
+
+<style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

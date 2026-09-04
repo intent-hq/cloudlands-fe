@@ -1000,48 +1000,68 @@
               }}
             >
               <!-- Script name (editable) -->
-              {#if isEditingScriptName}
-                <input
-                  type="text"
-                  data-edit-script-header-name
-                  bind:value={editedScriptName}
-                  onblur={finishEditingScriptName}
-                  onkeydown={handleScriptNameKeydown}
-                  class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-foreground/80 a11y-ignore"
-                  placeholder={m.terminal_quakeOverlay_scriptName_placeholder()}
-                />
-              {:else}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="relative inline-flex min-w-0 items-center">
+                {#if isEditingScriptName}
+                  <input
+                    type="text"
+                    data-edit-script-header-name
+                    bind:value={editedScriptName}
+                    onblur={finishEditingScriptName}
+                    onkeydown={handleScriptNameKeydown}
+                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
+                    placeholder={m.terminal_quakeOverlay_scriptName_placeholder()}
+                  />
+                {:else}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <span
+                    class="relative z-10 cursor-text whitespace-nowrap text-sm font-medium text-foreground/80 transition-colors hover:text-foreground"
+                    onclick={startEditingScriptName}
+                    title={m.terminal_quakeOverlay_renameScript_tooltip()}
+                  >
+                    {selectedScript.name}
+                  </span>
+                {/if}
                 <span
-                  class="text-sm font-medium text-foreground/80 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
-                  onclick={startEditingScriptName}
-                  title={m.terminal_quakeOverlay_renameScript_tooltip()}
-                >
-                  {selectedScript.name}
-                </span>
-              {/if}
+                  aria-hidden="true"
+                  class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingScriptName
+                    ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                    : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ></span>
+              </div>
 
               <!-- Command (inline-editable) -->
-              {#if showScriptEditPanel}
-                <span class="text-green-500 font-semibold text-xs flex-shrink-0">$</span>
-                <input
-                  bind:this={editScriptCommandTextarea}
-                  bind:value={editedScriptCommand}
-                  class="text-xs font-mono bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 text-muted-foreground flex-1 min-w-0"
-                  placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
-                  spellcheck="false"
-                />
-              {:else}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="relative flex min-w-0 flex-1 items-center gap-1">
+                {#if showScriptEditPanel}
+                  <span class="relative z-10 flex-shrink-0 text-xs font-semibold text-green-500"
+                    >$</span
+                  >
+                  <input
+                    bind:this={editScriptCommandTextarea}
+                    bind:value={editedScriptCommand}
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
+                    placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
+                    spellcheck="false"
+                  />
+                {:else}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <span
+                    class="relative z-10 flex min-w-0 cursor-text items-center gap-1 rounded px-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50"
+                    onclick={startEditingScriptCommand}
+                    title={m.terminal_quakeOverlay_editCommand_tooltip()}
+                  >
+                    <span class="flex-shrink-0 font-semibold text-green-500">$</span>
+                    <span class="truncate">{selectedScript.command}</span>
+                  </span>
+                {/if}
                 <span
-                  class="text-xs font-mono text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-1 transition-colors flex items-center gap-1 min-w-0"
-                  onclick={startEditingScriptCommand}
-                  title={m.terminal_quakeOverlay_editCommand_tooltip()}
-                >
-                  <span class="text-green-500 font-semibold flex-shrink-0">$</span>
-                  <span class="truncate">{selectedScript.command}</span>
-                </span>
-              {/if}
+                  aria-hidden="true"
+                  class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {showScriptEditPanel
+                    ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                    : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ></span>
+              </div>
 
               <!-- Status badge -->
               <span
@@ -1148,27 +1168,36 @@
             <!-- Terminal Header Content (original) -->
             <div class="flex items-center gap-2">
               <Fa icon={faTerminal} class="w-3.5 h-3.5 text-muted-foreground/75" />
-              {#if isEditingHeaderName}
-                <input
-                  type="text"
-                  data-edit-header-terminal
-                  bind:value={headerEditValue}
-                  onblur={finishEditingHeaderName}
-                  onkeydown={handleHeaderEditKeydown}
-                  class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-foreground/80 a11y-ignore"
-                  placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
-                />
-              {:else}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="relative inline-flex min-w-0 items-center">
+                {#if isEditingHeaderName}
+                  <input
+                    type="text"
+                    data-edit-header-terminal
+                    bind:value={headerEditValue}
+                    onblur={finishEditingHeaderName}
+                    onkeydown={handleHeaderEditKeydown}
+                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
+                    placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
+                  />
+                {:else}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <span
+                    class="relative z-10 cursor-text text-sm font-medium text-foreground/80 transition-colors hover:text-foreground"
+                    onclick={startEditingHeaderName}
+                    ondblclick={startEditingHeaderName}
+                    title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
+                  >
+                    {terminalDisplayName($terminals.find((t) => t.id === $activeTerminalId) ?? {})}
+                  </span>
+                {/if}
                 <span
-                  class="text-sm font-medium text-foreground/80 cursor-pointer hover:text-foreground transition-colors"
-                  onclick={startEditingHeaderName}
-                  ondblclick={startEditingHeaderName}
-                  title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
-                >
-                  {terminalDisplayName($terminals.find((t) => t.id === $activeTerminalId) ?? {})}
-                </span>
-              {/if}
+                  aria-hidden="true"
+                  class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingHeaderName
+                    ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                    : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ></span>
+              </div>
             </div>
 
             <!-- Clear and Collapse Buttons -->
@@ -1310,22 +1339,32 @@
               aria-selected={isActive}
             >
               <!-- Tab Label (editable) -->
-              {#if editingTerminalId === term.id}
-                <input
-                  type="text"
-                  data-edit-terminal={term.id}
-                  bind:value={editingValue}
-                  onblur={finishEditing}
-                  onkeydown={handleEditKeydown}
-                  onclick={(e) => e.stopPropagation()}
-                  placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                  class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
-                />
-              {:else}
-                <span class="overflow-hidden text-ellipsis whitespace-nowrap"
-                  >{getTabDisplayName(term)}</span
-                >
-              {/if}
+              <div class="relative inline-flex min-w-0 items-center">
+                {#if editingTerminalId === term.id}
+                  <input
+                    type="text"
+                    data-edit-terminal={term.id}
+                    bind:value={editingValue}
+                    onblur={finishEditing}
+                    onkeydown={handleEditKeydown}
+                    onclick={(e) => e.stopPropagation()}
+                    placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                  />
+                {:else}
+                  <span
+                    class="relative z-10 cursor-text overflow-hidden text-ellipsis whitespace-nowrap"
+                    >{getTabDisplayName(term)}</span
+                  >
+                {/if}
+                <span
+                  aria-hidden="true"
+                  class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingTerminalId ===
+                  term.id
+                    ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+                    : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ></span>
+              </div>
 
               <!-- Close Button - appears on hover -->
               <Button
@@ -1349,6 +1388,7 @@
               script.runtime.previouslyRunning === true &&
               !isLiveScriptStatus(script.runtime.status)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class={cn(
                 'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
@@ -1380,49 +1420,61 @@
                 aria-label={scriptStatusInfo.label}
                 title={scriptStatusInfo.label}
               ></div>
-              {#if editingScriptTabId === script.id}
-                <input
-                  type="text"
-                  data-edit-script-tab={script.id}
-                  bind:value={editingScriptTabValue}
-                  onblur={finishEditingScriptTab}
-                  onkeydown={handleEditScriptTabKeydown}
-                  onclick={(e) => e.stopPropagation()}
-                  placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                  class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
-                />
-              {:else}
-                <span class="overflow-hidden text-ellipsis whitespace-nowrap">{script.name}</span>
-                {#if script.runtime.detectedUrl}
-                  <Button
-                    variant="plain"
-                    size="icon-xs"
-                    iconOnly
-                    class="ml-auto p-1 text-muted-foreground/50 hover:text-foreground cursor-pointer transition-colors shrink-0"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      const url = script.runtime.detectedUrl;
-                      if (url) openScriptUrl(url);
-                    }}
-                    title={m.terminal_quakeOverlay_openUrl_tooltip()}
-                    aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
+              <div class="relative inline-flex min-w-0 items-center">
+                {#if editingScriptTabId === script.id}
+                  <input
+                    type="text"
+                    data-edit-script-tab={script.id}
+                    bind:value={editingScriptTabValue}
+                    onblur={finishEditingScriptTab}
+                    onkeydown={handleEditScriptTabKeydown}
+                    onclick={(e) => e.stopPropagation()}
+                    placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                  />
+                {:else}
+                  <span
+                    class="relative z-10 cursor-text overflow-hidden text-ellipsis whitespace-nowrap"
+                    >{script.name}</span
                   >
-                    <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                  </Button>
                 {/if}
-                {#if isPreviouslyRunningOnly}
-                  <Button
-                    variant="plain"
-                    size="icon-xs"
-                    iconOnly
-                    class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
-                    data-dismiss-script-tab={script.id}
-                    onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
-                    aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
-                  >
-                    <Fa icon={faXmark} size="xs" />
-                  </Button>
-                {/if}
+                <span
+                  aria-hidden="true"
+                  class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptTabId ===
+                  script.id
+                    ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+                    : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ></span>
+              </div>
+              {#if editingScriptTabId !== script.id && script.runtime.detectedUrl}
+                <Button
+                  variant="plain"
+                  size="icon-xs"
+                  iconOnly
+                  class="ml-auto p-1 text-muted-foreground/50 hover:text-foreground cursor-pointer transition-colors shrink-0"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    const url = script.runtime.detectedUrl;
+                    if (url) openScriptUrl(url);
+                  }}
+                  title={m.terminal_quakeOverlay_openUrl_tooltip()}
+                  aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
+                >
+                  <Fa icon={faArrowUpRightFromSquare} size="xs" />
+                </Button>
+              {/if}
+              {#if isPreviouslyRunningOnly}
+                <Button
+                  variant="plain"
+                  size="icon-xs"
+                  iconOnly
+                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                  data-dismiss-script-tab={script.id}
+                  onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
+                  aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
+                >
+                  <Fa icon={faXmark} size="xs" />
+                </Button>
               {/if}
             </div>
           {/each}
@@ -1576,6 +1628,10 @@
 {/if}
 
 <style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
   .terminal-overlay {
     position: relative;
   }

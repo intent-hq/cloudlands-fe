@@ -780,35 +780,44 @@
             {:else}
               <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             {/if}
-            {#if commitEdit.hash === commit.hash}
-              <!-- Inline edit mode for commit message -->
-              <input
-                bind:this={commitEdit.inputRef}
-                type="text"
-                bind:value={commitEdit.value}
-                onblur={saveCommitEdit}
-                onkeydown={handleCommitEditKeydown}
-                class="flex-1 text-ui text-subtle bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
-                onclick={(e) => e.stopPropagation()}
-              />
-            {:else}
-              <button
-                type="button"
-                class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer {commit.isPushed &&
-                !commit.agentId
-                  ? 'pr-5'
-                  : ''}"
-                onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
-                ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
-              >
-                <span
-                  class="text-ui text-subtle truncate flex-1 {canAmendCommit(index) ? '' : ''}"
-                  title={commit.message}
+            <div class="relative flex min-w-0 flex-1 items-center">
+              {#if commitEdit.hash === commit.hash}
+                <!-- Inline edit mode for commit message -->
+                <input
+                  bind:this={commitEdit.inputRef}
+                  type="text"
+                  bind:value={commitEdit.value}
+                  onblur={saveCommitEdit}
+                  onkeydown={handleCommitEditKeydown}
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  onclick={(e) => e.stopPropagation()}
+                />
+              {:else}
+                <button
+                  type="button"
+                  class="relative z-10 flex min-w-0 flex-1 cursor-text items-center gap-2 text-left {commit.isPushed &&
+                  !commit.agentId
+                    ? 'pr-5'
+                    : ''}"
+                  onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
+                  ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                 >
-                  {commit.message}
-                </span>
-              </button>
-            {/if}
+                  <span
+                    class="flex-1 truncate text-ui text-subtle {canAmendCommit(index) ? '' : ''}"
+                    title={commit.message}
+                  >
+                    {commit.message}
+                  </span>
+                </button>
+              {/if}
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {commitEdit.hash ===
+                commit.hash
+                  ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+                  : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+              ></span>
+            </div>
 
             <!-- Right side: Cloud icon for pushed commits (fades on hover, only when remote exists) -->
             {#if hasRemote && commit.isPushed && !commit.agentId}
@@ -1059,3 +1068,9 @@
     onClickOutside={closeCommitContextMenu}
   />
 {/if}
+
+<style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>
