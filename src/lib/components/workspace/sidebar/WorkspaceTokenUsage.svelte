@@ -195,13 +195,15 @@
     return `${target.kind}:${target.id}`;
   }
 
-  function filterRowsForTarget(
+  function filterRowsForSelection(
     rows: TokenUsageCrossFilterRow[],
-    target: ScopeTarget | null,
+    agent: BreakdownRow | undefined,
+    model: BreakdownRow | undefined,
   ): TokenUsageCrossFilterRow[] {
-    if (!target) return rows;
-    return rows.filter((row) =>
-      target.kind === 'agent' ? row.agentId === target.id : row.model === target.id,
+    return rows.filter(
+      (row) =>
+        (agent === undefined || row.agentId === agent.id) &&
+        (model === undefined || row.model === model.id),
     );
   }
 
@@ -259,18 +261,25 @@
   const activeTarget: ScopeTarget | null = $derived(
     hoveredTarget ?? focusedTarget ?? touchTarget ?? defaultTarget,
   );
-  const scopedCrossFilterRows = $derived(filterRowsForTarget(crossFilterRows, activeTarget));
-  const crossFilterSummary = $derived(summarizeCrossFilterRows(scopedCrossFilterRows));
+  function targetForKind(kind: BreakdownKind): ScopeTarget | null {
+    return (
+      [hoveredTarget, focusedTarget, touchTarget, defaultTarget].find(
+        (target) => target?.kind === kind,
+      ) ?? null
+    );
+  }
+  const selectedAgentTarget = $derived(targetForKind('agent'));
+  const selectedModelTarget = $derived(targetForKind('model'));
   const selectedAgentRow = $derived(
-    (activeTarget?.kind === 'agent'
-      ? agentRows.find((row) => row.id === activeTarget.id)
-      : undefined) ?? firstNonzeroRow(agentRows),
+    agentRows.find((row) => row.id === selectedAgentTarget?.id) ?? firstNonzeroRow(agentRows),
   );
   const selectedModelRow = $derived(
-    (activeTarget?.kind === 'model'
-      ? modelRows.find((row) => row.id === activeTarget.id)
-      : undefined) ?? firstNonzeroRow(modelRows),
+    modelRows.find((row) => row.id === selectedModelTarget?.id) ?? firstNonzeroRow(modelRows),
   );
+  const scopedCrossFilterRows = $derived(
+    filterRowsForSelection(crossFilterRows, selectedAgentRow, selectedModelRow),
+  );
+  const crossFilterSummary = $derived(summarizeCrossFilterRows(scopedCrossFilterRows));
   const legacyPreviewRow = $derived(
     [...legacyAgentRows, ...legacyModelRows].find(
       (row) => rowKey(rowTarget(row)) === rowKey(activeTarget),

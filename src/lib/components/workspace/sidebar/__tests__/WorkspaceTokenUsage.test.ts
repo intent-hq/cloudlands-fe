@@ -655,7 +655,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(document.activeElement).toBe(alpha);
   });
 
-  it('selects exact matrix totals from either navigator with pointer, focus, and touch', async () => {
+  it('intersects simultaneous navigator selections and restores their parent scope', async () => {
     const matrix = [
       {
         agentId: 'agent-alpha',
@@ -785,7 +785,7 @@ describe('WorkspaceTokenUsage', () => {
       name: 'By agent, Alpha: 160 tokens, 14%',
     });
 
-    expect(messageCounts()).toBe('4 human and 7 agent messages');
+    expect(messageCounts()).toBe('2 human and 5 agent messages');
     expect(composition.classList).toContain('pb-3');
     const messageRows = Array.from(details.querySelectorAll('.message-composition-row'));
     expect(messageRows).toHaveLength(1);
@@ -812,9 +812,9 @@ describe('WorkspaceTokenUsage', () => {
       'Model output',
       'Reasoning tokens',
       'Input context',
-      '4 human and 7 agent messages',
+      '2 human and 5 agent messages',
     ]);
-    expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
+    expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
     expect(
       screen
         .getByRole('heading', { name: 'Token composition' })
@@ -824,47 +824,58 @@ describe('WorkspaceTokenUsage', () => {
     expect(modelSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
     expect(within(agentSection).queryByRole('radio', { name: /Zero token agent/ })).toBeNull();
     expect(within(modelSection).queryByRole('radio', { name: /model-zero/ })).toBeNull();
+    expect(alphaControl.getAttribute('aria-checked')).toBe('false');
+    expect(
+      within(modelSection)
+        .getByRole('radio', { name: 'By model, Model B: 810 tokens, 70%' })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
 
     await fireEvent.pointerEnter(alphaControl, { pointerType: 'mouse' });
-    expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
-    expect(messageCounts()).toBe('3 human and 4 agent messages');
+    expect(visibleText(status)).toBe('Active scope By agent Alpha 10 processed');
+    expect(messageCounts()).toBe('1 human message and 1 agent message');
     expect(values()).toEqual([
-      { value: '70', share: '44%' },
-      { value: '25', share: '16%' },
-      { value: '50', share: '31%' },
-      { value: '15', share: '9%' },
+      { value: '0', share: '0%' },
+      { value: '5', share: '50%' },
+      { value: '0', share: '0%' },
+      { value: '5', share: '50%' },
     ]);
     expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
     expect(modelSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
     expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
     expect(visibleText(details)).not.toMatch(/cost|\$/i);
 
-    await fireEvent.pointerLeave(alphaControl, { pointerType: 'mouse' });
-    expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
-
     const modelA = within(modelSection).getByRole('radio', {
       name: 'By model, Model A: 350 tokens, 30%',
     });
     await fireEvent.focus(modelA);
-    expect(visibleText(status)).toBe('Active scope By model Model A 350 processed');
-    expect(messageCounts()).toBe('4 human and 5 agent messages');
+    expect(visibleText(status)).toBe('Active scope By agent Alpha 150 processed');
+    expect(messageCounts()).toBe('2 human and 3 agent messages');
+    expect(alphaControl.getAttribute('aria-checked')).toBe('true');
+    expect(modelA.getAttribute('aria-checked')).toBe('true');
     expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
+    await fireEvent.blur(modelA);
+    expect(visibleText(status)).toBe('Active scope By agent Alpha 10 processed');
+
+    await fireEvent.pointerLeave(alphaControl, { pointerType: 'mouse' });
+    expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
+
+    await fireEvent.focus(modelA);
+    expect(visibleText(status)).toBe('Active scope By model Model A 200 processed');
+    expect(messageCounts()).toBe('2 human and 2 agent messages');
     await fireEvent.blur(modelA);
 
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
-    expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
-    expect(messageCounts()).toBe('3 human and 4 agent messages');
+    expect(visibleText(status)).toBe('Active scope By agent Alpha 10 processed');
+    expect(messageCounts()).toBe('1 human message and 1 agent message');
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
-    expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
+    expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
 
-    const modelB = within(modelSection).getByRole('radio', {
-      name: 'By model, Model B: 810 tokens, 70%',
-    });
-    await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
-    expect(visibleText(status)).toBe('Active scope By model Model B 810 processed');
-    expect(messageCounts()).toBe('3 human and 6 agent messages');
-    await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
-    expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
+    await fireEvent.pointerDown(modelA, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope By model Model A 200 processed');
+    expect(messageCounts()).toBe('2 human and 2 agent messages');
+    await fireEvent.pointerDown(modelA, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
   });
 
   it('shows the unknown model bucket in the by-model section', async () => {

@@ -16,7 +16,6 @@ export const {
   formatNumber,
   formatInteger,
   formatCompactNumber,
-  formatCurrency,
   formatBytesBinary,
   formatRelativeTime,
   formatCompactRelativeTime,
@@ -32,8 +31,4 @@ export const {
   formatDatePattern,
 } = createFormatters(getActiveLocale);
 
-export type {
-  CompactNumberOptions,
-  CurrencyFormatOptions,
-  DateInput,
-} from '$shared/i18n/formatters';
+export type { DateInput } from '$shared/i18n/formatters';
