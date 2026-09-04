@@ -83,23 +83,26 @@ async function finishRecorder(testInfo: TestInfo): Promise<void> {
   const recorder = recorders.get(testInfo);
   if (!recorder) return;
   recorders.delete(testInfo);
-  if (testInfo.status !== testInfo.expectedStatus) {
-    await testInfo.attach('cdp-lifecycle.json', {
-      contentType: 'application/json',
-      body: JSON.stringify(
-        {
-          test: testInfo.titlePath,
-          status: testInfo.status,
-          retry: testInfo.retry,
-          workerIndex: testInfo.workerIndex,
-          events: recorder.events,
-        },
-        null,
-        2,
-      ),
-    });
+  try {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await testInfo.attach('cdp-lifecycle.json', {
+        contentType: 'application/json',
+        body: JSON.stringify(
+          {
+            test: testInfo.titlePath,
+            status: testInfo.status,
+            retry: testInfo.retry,
+            workerIndex: testInfo.workerIndex,
+            events: recorder.events,
+          },
+          null,
+          2,
+        ),
+      });
+    }
+  } finally {
+    await recorder.session.detach().catch(() => undefined);
   }
-  await recorder.session.detach().catch(() => undefined);
 }
 
 interface HookableTest {
