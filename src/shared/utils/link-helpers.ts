@@ -68,6 +68,31 @@ export function isGitHubUrl(url: string): boolean {
   }
 }
 
+/** Parse a canonical GitHub repository URL or unambiguous owner/name shorthand. */
+export function parseGitHubUrl(value: string): { owner: string; repo: string } | null {
+  const trimmed = value.trim();
+  const shorthand = /^([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/.exec(trimmed);
+  if (shorthand) return { owner: shorthand[1], repo: shorthand[2] };
+
+  const ssh = /^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/.exec(trimmed);
+  if (ssh) return { owner: ssh[1], repo: ssh[2] };
+
+  const withScheme = /^github\.com\//i.test(trimmed) ? `https://${trimmed}` : trimmed;
+  try {
+    const parsed = new URL(withScheme);
+    if (!['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase())) return null;
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length !== 2) return null;
+    const [owner, rawRepo] = segments;
+    const repo = rawRepo.replace(/\.git$/i, '');
+    if (!/^[a-zA-Z0-9_-]+$/.test(owner) || !/^[a-zA-Z0-9_.-]+$/.test(repo)) return null;
+    return { owner, repo };
+  } catch {
+    return null;
+  }
+}
+
 /** Kind of a parsed GitHub issue/PR reference. */
 type GitHubIssueOrPrKind = 'issue' | 'pr';
 

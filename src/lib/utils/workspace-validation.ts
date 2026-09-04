@@ -5,6 +5,9 @@
 import { createLogger } from './client-logger';
 import { invoke } from '$shared/generated/ipc-client';
 import { m } from '$shared/paraglide/messages.js';
+import { parseGitHubUrl } from '$shared/utils/link-helpers';
+
+export { parseGitHubUrl } from '$shared/utils/link-helpers';
 
 const logger = createLogger('WorkspaceValidation');
 
@@ -63,45 +66,7 @@ export async function validateRepoPath(
  * Check if a string looks like a GitHub URL
  */
 function isGitHubUrl(url: string): boolean {
-  const patterns = [
-    /^https?:\/\/github\.com\//i,
-    /^git@github\.com:/i,
-    /^github\.com\//i,
-    /^([a-zA-Z0-9\-_]+)\/([a-zA-Z0-9\-_\.]+)$/, // owner/repo format
-  ];
-
-  return patterns.some((pattern) => pattern.test(url.trim()));
-}
-
-/**
- * Parse GitHub URL into owner and repo
- */
-export function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
-  const trimmed = url.trim();
-
-  // Handle various GitHub URL formats
-  const patterns = [
-    /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)$/i,
-    /^git@github\.com:([^\/]+)\/([^\/]+)$/i,
-    /^github\.com\/([^\/]+)\/([^\/]+)$/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern);
-    if (match) {
-      const repo = match[2].replace(/\.git$/, '');
-      return repo ? { owner: match[1], repo } : null;
-    }
-  }
-
-  // Check for simple owner/repo format
-  const simpleMatch = trimmed.match(/^([a-zA-Z0-9\-_]+)\/([a-zA-Z0-9\-_\.]+)$/);
-  if (simpleMatch && !trimmed.includes('\\') && !trimmed.includes(':')) {
-    const repo = simpleMatch[2].replace(/\.git$/, '');
-    return repo ? { owner: simpleMatch[1], repo } : null;
-  }
-
-  return null;
+  return parseGitHubUrl(url) !== null;
 }
 
 /**
