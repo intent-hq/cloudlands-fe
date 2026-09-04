@@ -77,6 +77,21 @@ export const DELEGATION_TOOLS = new Set(['delegate_task', 'create_sub_agent', 'c
 /** Duration in milliseconds for an edge to be considered "active" */
 export const ACTIVE_EDGE_WINDOW_MS = 5000;
 
+/** Maximum resource satellites shown for an agent before they collapse. */
+export const MAX_VISIBLE_RESOURCES_PER_AGENT = 6;
+
+/** Task anchor ring colors, expressed only through theme tokens. */
+export const TASK_STATUS_RING_CLASSES = {
+  not_started: 'border-border text-subtle',
+  waiting: 'border-muted-foreground/50 text-muted-foreground',
+  discussion_needed: 'border-warning text-warning',
+  blocked: 'border-destructive text-destructive',
+  in_progress: 'border-info text-info',
+  review_required: 'border-primary text-primary',
+  complete: 'border-success text-success',
+  cancelled: 'border-muted-foreground/40 text-muted-foreground',
+} as const;
+
 // ============================================================================
 // Edge Animation Configuration
 // ============================================================================
