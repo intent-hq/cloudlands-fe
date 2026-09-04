@@ -387,6 +387,60 @@ export function buildBusyGraph(now = Date.now()): GraphState {
   return graph([...coordinators, ...workers, ...tasks, ...files, ...notes], edges, now);
 }
 
+export function buildLargeGraph(now = Date.now()): GraphState {
+  const coordinator = agent('large-coordinator', 'Large workspace coordinator', 'responding', now, {
+    isCoordinator: true,
+    activeToolName: 'workspace_api',
+  });
+  const workers = Array.from({ length: 12 }, (_, index) =>
+    agent(
+      `large-worker-${index + 1}`,
+      `Workspace specialist ${index + 1}`,
+      index < 3 ? 'responding' : index < 6 ? 'waiting' : 'completed',
+      now,
+      {
+        specialist: 'implementor',
+        parentAgentId: 'large-coordinator',
+        taskNoteId: `large-task-${index + 1}`,
+        activeToolName: index < 3 ? 'apply_patch' : undefined,
+      },
+    ),
+  );
+  const tasks = Array.from({ length: 66 }, (_, index) =>
+    task(
+      `large-task-${index + 1}`,
+      `Large workspace task ${index + 1}`,
+      index < 3 ? 'in_progress' : index < 12 ? 'complete' : 'not_started',
+    ),
+  );
+  const files = Array.from({ length: 24 }, (_, index) =>
+    file(
+      `src/features/large-workspace/resource-${index + 1}.ts`,
+      index % 3 === 0 ? 'write' : 'read',
+      now,
+      (index % 8) * 500,
+    ),
+  );
+  const edges: GraphEdge[] = [
+    ...workers.map((_, index) =>
+      assignment(`large-worker-${index + 1}`, `large-task-${index + 1}`, now),
+    ),
+    ...workers.map((worker) => delegation('large-coordinator', worker.agentId, now)),
+    ...files.map((target, index) =>
+      fileInteraction(
+        `large-worker-${(index % workers.length) + 1}`,
+        target,
+        index % 3 === 0 ? 'write' : 'read',
+        now,
+        index,
+      ),
+    ),
+    message('large-coordinator', 'large-worker-1', now, 6),
+    waiting('large-worker-4', 'large-worker-1', now),
+  ];
+  return graph([coordinator, ...workers, ...tasks, ...files], edges, now);
+}
+
 export function buildEmptyGraph(now = Date.now()): GraphState {
   return graph([], [], now);
 }

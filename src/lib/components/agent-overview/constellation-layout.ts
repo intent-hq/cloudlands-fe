@@ -59,6 +59,10 @@ const RESOURCE_DISTANCE = NODE_RADII.agent + NODE_RADII.file + GRAPH_NODE_GAPS.a
 const AGENT_DISTANCE = NODE_RADII.agent * 2 + GRAPH_NODE_GAPS.taskAgent + 16;
 const AGENT_FAN_STEP = 1;
 const RESOURCE_FAN_STEP = 0.95;
+const SINGLE_RING_TASK_LIMIT = 8;
+const TASK_RING_START_RATIO = 1.5;
+const TASK_RING_STEP_RATIO = 0.92;
+const TASK_ANCHOR_SPACING_RATIO = 0.9;
 
 function edgeType(edge: GraphEdge): string {
   return String(edge.type);
@@ -152,7 +156,34 @@ export function createConstellationLayout({
     })
     .stop();
 
-  function computeTaskAnchors(nodes: GraphNode[]): Map<string, Point> {
+  function ringCapacity(radius: number, minimumSpacing: number): number {
+    return Math.max(1, Math.floor(Math.PI / Math.asin(Math.min(1, minimumSpacing / (2 * radius)))));
+  }
+
+  function balancedSlotOrder(capacity: number): number[] {
+    const slots = [0];
+    while (slots.length < capacity) {
+      let bestSlot = 0;
+      let bestDistance = -1;
+      for (let candidate = 1; candidate < capacity; candidate += 1) {
+        if (slots.includes(candidate)) continue;
+        const distance = Math.min(
+          ...slots.map((slot) => {
+            const gap = Math.abs(candidate - slot);
+            return Math.min(gap, capacity - gap);
+          }),
+        );
+        if (distance > bestDistance) {
+          bestSlot = candidate;
+          bestDistance = distance;
+        }
+      }
+      slots.push(bestSlot);
+    }
+    return slots;
+  }
+
+  function computeTaskAnchors(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const tasks = nodes.filter((node) => node.type === 'task');
     const topLevelCount = nodes.filter(isTopLevelAgent).length;
     const centerOrbit =
@@ -166,13 +197,56 @@ export function createConstellationLayout({
       tasks.length > 1 ? clusterSpacing / (2 * Math.sin(Math.PI / tasks.length)) : 0;
     const ringRadius = Math.max(Math.min(width, height) * 0.32, centerClearance, taskSpacingRadius);
     const anchors = new Map<string, Point>();
-    tasks.forEach((task, index) => {
-      const angle = -Math.PI / 2 + (index / Math.max(1, tasks.length)) * Math.PI * 2;
-      anchors.set(task.id, {
-        x: center.x + Math.cos(angle) * ringRadius,
-        y: center.y + Math.sin(angle) * ringRadius,
+    if (tasks.length <= SINGLE_RING_TASK_LIMIT) {
+      tasks.forEach((task, index) => {
+        const angle = -Math.PI / 2 + (index / Math.max(1, tasks.length)) * Math.PI * 2;
+        anchors.set(task.id, {
+          x: center.x + Math.cos(angle) * ringRadius,
+          y: center.y + Math.sin(angle) * ringRadius,
+        });
       });
-    });
+      return anchors;
+    }
+
+    const resourceOwnerIds = new Set(
+      edges
+        .filter((edge) => edgeType(edge).startsWith('file-') || edgeType(edge).startsWith('note-'))
+        .map((edge) => edge.sourceId),
+    );
+    const taskPriority = new Map<string, number>();
+    for (const edge of edges.filter((edge) => edgeType(edge) === 'task-assignment')) {
+      taskPriority.set(
+        edge.targetId,
+        Math.max(taskPriority.get(edge.targetId) ?? 0, resourceOwnerIds.has(edge.sourceId) ? 2 : 1),
+      );
+    }
+    // Source order is stable within each attachment tier; new bare tasks therefore append without
+    // moving existing anchors, while task clusters with agents/resources occupy inner rings first.
+    const orderedTasks = tasks
+      .map((task, index) => ({ task, index, priority: taskPriority.get(task.id) ?? 0 }))
+      .sort((left, right) => right.priority - left.priority || left.index - right.index)
+      .map(({ task }) => task);
+    const minimumSpacing = clusterSpacing * TASK_ANCHOR_SPACING_RATIO;
+    const firstRingRadius = Math.max(
+      Math.min(width, height) * 0.32,
+      centerClearance,
+      clusterSpacing * TASK_RING_START_RATIO,
+    );
+    const ringStep = clusterSpacing * TASK_RING_STEP_RATIO;
+    let taskIndex = 0;
+    for (let ringIndex = 0; taskIndex < orderedTasks.length; ringIndex += 1) {
+      const radius = firstRingRadius + ringIndex * ringStep;
+      const capacity = ringCapacity(radius, minimumSpacing);
+      const slotOrder = balancedSlotOrder(capacity);
+      for (let index = 0; index < capacity && taskIndex < orderedTasks.length; index += 1) {
+        const task = orderedTasks[taskIndex++];
+        const angle = -Math.PI / 2 + (slotOrder[index] / capacity) * Math.PI * 2;
+        anchors.set(task.id, {
+          x: center.x + Math.cos(angle) * radius,
+          y: center.y + Math.sin(angle) * radius,
+        });
+      }
+    }
     return anchors;
   }
 
@@ -388,7 +462,7 @@ export function createConstellationLayout({
 
     const previousNodes = nodeById;
     const incomingById = new Map(nodes.map((node) => [node.id, node]));
-    taskAnchors = computeTaskAnchors(nodes);
+    taskAnchors = computeTaskAnchors(nodes, edges);
     const nextNodes = nodes.map((incoming) => {
       const existing = previousNodes.get(incoming.id);
       if (!existing) return { ...incoming };

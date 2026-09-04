@@ -3,6 +3,7 @@ import {
   buildBusyGraph,
   buildConstellationGraph,
   buildEmptyGraph,
+  buildLargeGraph,
   buildReplayGraph,
   buildSingleAgentGraph,
 } from './agent-activity-graph.fixtures';
@@ -51,6 +52,15 @@ describe('agent activity graph preview fixtures', () => {
     expect(countNodes(graph, 'file') + countNodes(graph, 'note')).toBe(25);
     expect(statuses).toEqual(new Set(['responding', 'waiting', 'idle', 'completed', 'failed']));
     expect(graph.edges.filter(({ isActive }) => isActive).length).toBeGreaterThan(5);
+  });
+
+  it('builds a large workspace state with populated task clusters', () => {
+    const graph = buildLargeGraph(now);
+
+    expect(countNodes(graph, 'task')).toBe(66);
+    expect(countNodes(graph, 'agent')).toBe(13);
+    expect(countNodes(graph, 'file')).toBe(24);
+    expect(graph.edges.filter(({ type }) => type === 'task-assignment')).toHaveLength(12);
   });
 
   it('builds empty and single-agent edge cases without tasks', () => {

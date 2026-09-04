@@ -4,6 +4,7 @@
     buildBusyGraph,
     buildConstellationGraph,
     buildEmptyGraph,
+    buildLargeGraph,
     buildReplayGraph as buildReplayFixture,
     buildSingleAgentGraph,
   } from './__fixtures__/agent-activity-graph.fixtures';
@@ -19,6 +20,7 @@
       constellation: { props: { graph: buildConstellationGraph() } },
       busy: { props: { graph: buildBusyGraph() } },
       empty: { props: { graph: buildEmptyGraph() } },
+      large: { props: { graph: buildLargeGraph() } },
       replay: { props: { graph: buildReplayFixture(replayEnd), replayEnd } },
       'single-agent': { props: { graph: buildSingleAgentGraph() } },
     },

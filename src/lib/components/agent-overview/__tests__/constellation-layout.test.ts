@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GRAPH_NODE_DIMENSIONS, GRAPH_NODE_GAPS } from '../constants';
+import {
+  GRAPH_FIT_PADDING,
+  GRAPH_NODE_DIMENSIONS,
+  GRAPH_NODE_GAPS,
+  GRAPH_ZOOM_EXTENT,
+} from '../constants';
 import { createConstellationLayout } from '../constellation-layout';
 import {
   buildBusyGraph,
   buildConstellationGraph,
+  buildLargeGraph,
 } from '../__fixtures__/agent-activity-graph.fixtures';
 import type { AgentNode, GraphEdge, GraphNode, TaskNode } from '../types';
 
@@ -257,6 +263,75 @@ describe('constellation layout', () => {
     expect(radius('first')).toBeCloseTo(192, -1);
     expect(radius('third')).toBeCloseTo(192, -1);
     expect(radius('second')).toBeCloseTo(radius('first'), 5);
+  });
+
+  it('preserves the single-ring layout through eight tasks', () => {
+    const layout = createConstellationLayout({ width: 800, height: 600 });
+    const tasks = Array.from({ length: 8 }, (_, index) => task(`task-${index + 1}`));
+    layout.update(tasks, []);
+    layout.stop();
+    const nodes = snapshot(layout);
+    const clusterSpacing = nodeRadius('task') * 2 + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent;
+    const expectedRadius = clusterSpacing / (2 * Math.sin(Math.PI / tasks.length));
+
+    nodes.forEach((node, index) => {
+      const angle = -Math.PI / 2 + (index / tasks.length) * Math.PI * 2;
+      expect(node.x).toBeCloseTo(400 + Math.cos(angle) * expectedRadius, 8);
+      expect(node.y).toBeCloseTo(300 + Math.sin(angle) * expectedRadius, 8);
+    });
+  });
+
+  it('bounds and separates 66 task anchors', () => {
+    const layout = createConstellationLayout({ width: 1280, height: 800 });
+    const tasks = Array.from({ length: 66 }, (_, index) => task(`task-${index + 1}`));
+    layout.update(tasks, []);
+    layout.stop();
+    const nodes = snapshot(layout);
+    const center = { x: 640, y: 400 };
+    const clusterSpacing = nodeRadius('task') * 2 + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent;
+    const currentSingleRingRadius = clusterSpacing / (2 * Math.sin(Math.PI / tasks.length));
+    const outerRadius = Math.max(
+      ...nodes.map((node) => Math.hypot(node.x - center.x, node.y - center.y)),
+    );
+
+    expect(outerRadius).toBeLessThanOrEqual(currentSingleRingRadius * 0.45);
+    for (let left = 0; left < nodes.length; left += 1) {
+      for (let right = left + 1; right < nodes.length; right += 1) {
+        expect(
+          Math.hypot(nodes[left].x - nodes[right].x, nodes[left].y - nodes[right].y),
+        ).toBeGreaterThanOrEqual(clusterSpacing * 0.9);
+      }
+    }
+  });
+
+  it('keeps existing ring slots stable when one bare task is added', () => {
+    const firstLayout = createConstellationLayout({ width: 1280, height: 800 });
+    const nextLayout = createConstellationLayout({ width: 1280, height: 800 });
+    const tasks = Array.from({ length: 66 }, (_, index) => task(`task-${index + 1}`));
+    firstLayout.update(tasks, []);
+    nextLayout.update([...tasks, task('task-67')], []);
+    firstLayout.stop();
+    nextLayout.stop();
+    const nextById = new Map(snapshot(nextLayout).map((node) => [node.id, node]));
+
+    for (const node of snapshot(firstLayout)) {
+      expect(nextById.get(node.id)?.x).toBeCloseTo(node.x, 8);
+      expect(nextById.get(node.id)?.y).toBeCloseTo(node.y, 8);
+    }
+  });
+
+  it('fits the populated 66-task fixture at or above the minimum zoom', () => {
+    const graph = buildLargeGraph(Date.parse('2026-09-04T00:00:00.000Z'));
+    const layout = createConstellationLayout({ width: 1280, height: 800, seed: 7 });
+    layout.update(graph.nodes, graph.edges);
+    layout.settle();
+    const bounds = layout.fitBounds();
+    const scale = Math.min(
+      1280 / (bounds.width + GRAPH_FIT_PADDING * 2),
+      800 / (bounds.height + GRAPH_FIT_PADDING * 2),
+    );
+
+    expect(scale).toBeGreaterThanOrEqual(GRAPH_ZOOM_EXTENT[0]);
   });
 
   for (const [name, buildGraph] of [
