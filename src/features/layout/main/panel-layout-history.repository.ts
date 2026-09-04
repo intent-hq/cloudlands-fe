@@ -102,7 +102,10 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
         logger.error(`Invalid JSON in panel layout history for workspace: ${workspaceId}`, error);
         return null;
       }
-      logger.error(`Failed to load panel layout history for workspace: ${workspaceId}`, error as Error);
+      logger.error(
+        `Failed to load panel layout history for workspace: ${workspaceId}`,
+        error as Error,
+      );
       throw new FileReadError(historyFilePath(workspaceId, backendId), error as Error);
     }
   }
@@ -139,7 +142,10 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
         historyIndex: adjustedIndex,
       });
     } catch (error) {
-      logger.error(`Failed to save panel layout history for workspace: ${workspaceId}`, error as Error);
+      logger.error(
+        `Failed to save panel layout history for workspace: ${workspaceId}`,
+        error as Error,
+      );
       if (error instanceof Error) {
         throw new FileWriteError(historyFilePath(workspaceId, backendId), error);
       }

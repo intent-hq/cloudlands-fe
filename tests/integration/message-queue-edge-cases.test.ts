@@ -43,7 +43,6 @@ describe('Message Queue Edge Cases', () => {
       streamStartTimes: new Map(),
       streamWorkspaceIds: new Map(),
 
-       
       async processNextQueuedMessage(agentId: string, _workspaceId: string) {
         // Check if agent was intentionally interrupted
         // NOTE: Do NOT delete the flag here — it's cleared in handleSendMessage

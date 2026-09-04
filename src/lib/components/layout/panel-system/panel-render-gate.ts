@@ -1,4 +1,4 @@
-import type { PanelLayoutRestoreStatus } from "$store/renderer/slices/panel-layout/panel-layout-types";
+import type { PanelLayoutRestoreStatus } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 /**
  * Milliseconds the empty-layout loading window waits before it gives up on the
@@ -26,8 +26,8 @@ export type PanelRenderGateInputs = {
  */
 export function shouldRenderPanelContainer(inputs: PanelRenderGateInputs): boolean {
   const { restoreStatus, totalTabs, hasSettled } = inputs;
-  if (restoreStatus === "restored" || restoreStatus === "invalid") return true;
-  if (restoreStatus === "empty" || restoreStatus === "idle") {
+  if (restoreStatus === 'restored' || restoreStatus === 'invalid') return true;
+  if (restoreStatus === 'empty' || restoreStatus === 'idle') {
     return totalTabs > 0 || hasSettled;
   }
   return false;
@@ -42,7 +42,7 @@ export function isLayoutSettledNow(
   restoreStatus: PanelLayoutRestoreStatus,
   totalTabs: number,
 ): boolean {
-  if (restoreStatus === "restored" || restoreStatus === "invalid") return true;
-  if (restoreStatus === "pending") return false;
+  if (restoreStatus === 'restored' || restoreStatus === 'invalid') return true;
+  if (restoreStatus === 'pending') return false;
   return totalTabs > 0;
 }

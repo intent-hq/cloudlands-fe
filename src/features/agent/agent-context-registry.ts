@@ -189,7 +189,7 @@ class AgentContextRegistry {
       sessionId: string;
       ageMs: number;
     }>;
-    } {
+  } {
     const now = Date.now();
     const contexts = Array.from(this.contexts.entries()).map(([agentId, ctx]) => ({
       agentId,

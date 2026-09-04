@@ -17,9 +17,7 @@ function visibleKeys(container: HTMLElement): string[] {
 }
 
 function overflowText(container: HTMLElement): string | null {
-  return (
-    container.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim() ?? null
-  );
+  return container.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim() ?? null;
 }
 
 afterEach(cleanup);

@@ -14,13 +14,7 @@
  * `models.list { providerId: 'opencode' }` daemon call, PROTOCOL §6.7.)
  */
 
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OPENCODE_CHANNELS } from '../../../../shared/ipc/channels';
 
 const { mockBackendRequest, mockResolveOpenCodeCommand } = vi.hoisted(() => ({
@@ -84,7 +78,7 @@ describe('opencode IPC - cwd parameter regression', () => {
     // Get the registered handler for CHECK_AVAILABILITY
     const { ipcMain } = await import('electron');
     const handleCall = (ipcMain.handle as any).mock.calls.find(
-      (call: any) => call[0] === OPENCODE_CHANNELS.CHECK_AVAILABILITY
+      (call: any) => call[0] === OPENCODE_CHANNELS.CHECK_AVAILABILITY,
     );
     expect(handleCall).toBeDefined();
 

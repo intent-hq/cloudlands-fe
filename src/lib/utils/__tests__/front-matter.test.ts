@@ -1,15 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  extractFrontMatter,
-  processMarkdownToHTML,
-} from '../markdown-processor';
+import { describe, it, expect } from 'vitest';
+import { extractFrontMatter, processMarkdownToHTML } from '../markdown-processor';
 
 describe('extractFrontMatter', () => {
   it('should extract YAML front matter from a document', () => {
@@ -91,4 +84,3 @@ describe('YAML Front Matter - Markdown Processing', () => {
     expect(html).toContain('More content');
   });
 });
-

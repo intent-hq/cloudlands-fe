@@ -4,15 +4,8 @@
  * Tests for fluent builder patterns.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  AgentBuilder,
-  MessageBuilder,
-} from '../builders';
+import { describe, it, expect } from 'vitest';
+import { AgentBuilder, MessageBuilder } from '../builders';
 import { AgentStatus } from '$shared/types';
 
 describe('AgentBuilder', () => {

@@ -5,13 +5,7 @@
  * PROTOCOL.md §5.1); the daemon RPCs are mocked with an in-memory store.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { ProtocolAdapter } from '../main/protocol-adapter';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
@@ -33,16 +27,18 @@ describe('ProtocolAdapter getCurrentContext', () => {
   const createMockedService = async (): Promise<WorkspaceService> => {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     vi.mocked(getBackendClient).mockReturnValue({
-      request: vi.fn(async (method: string, params?: { workspaceId?: string; uiContext?: unknown }) => {
-        if (method === 'workspace.updateUiContext') {
-          uiContextStore.set(params!.workspaceId!, params!.uiContext);
-          return {};
-        }
-        if (method === 'workspace.getUiContext') {
-          return { uiContext: uiContextStore.get(params!.workspaceId!) };
-        }
-        throw new Error(`Unexpected RPC: ${method}`);
-      }),
+      request: vi.fn(
+        async (method: string, params?: { workspaceId?: string; uiContext?: unknown }) => {
+          if (method === 'workspace.updateUiContext') {
+            uiContextStore.set(params!.workspaceId!, params!.uiContext);
+            return {};
+          }
+          if (method === 'workspace.getUiContext') {
+            return { uiContext: uiContextStore.get(params!.workspaceId!) };
+          }
+          throw new Error(`Unexpected RPC: ${method}`);
+        },
+      ),
     } as any);
     return new WorkspaceService();
   };

@@ -53,7 +53,11 @@ describe('hostRequirementsSaga', () => {
     await settle();
 
     expect(mocks.invoke.mock.calls.map(([name]) => name).sort()).toEqual(
-      [IPC_CHANNELS.SYSTEM.CHECK_GIT, IPC_CHANNELS.SYSTEM.CHECK_GH, IPC_CHANNELS.SYSTEM.CHECK_NODE].sort(),
+      [
+        IPC_CHANNELS.SYSTEM.CHECK_GIT,
+        IPC_CHANNELS.SYSTEM.CHECK_GH,
+        IPC_CHANNELS.SYSTEM.CHECK_NODE,
+      ].sort(),
     );
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       checkHostRequirementsStarted(),

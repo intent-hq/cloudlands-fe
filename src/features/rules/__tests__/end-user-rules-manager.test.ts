@@ -4,18 +4,8 @@
  * Tests the CRUD interface for user-defined rules stored in electron-store.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
-import {
-  EndUserRulesManager,
-  type EndUserRulesConfig,
-} from '../user-rules.service';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { EndUserRulesManager, type EndUserRulesConfig } from '../user-rules.service';
 import type { ConfigManager } from '../../../shared/services/config-manager';
 
 // Mock ConfigManager

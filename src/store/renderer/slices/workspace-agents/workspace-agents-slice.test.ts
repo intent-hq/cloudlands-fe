@@ -369,9 +369,9 @@ describe('workspace-agents selectors', () => {
     expect(
       selectWorkspaceHasUnreadForegroundAgents.select(stateFor([unreadBackground]), WS_1),
     ).toBe(false);
-    expect(
-      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readForeground]), WS_1),
-    ).toBe(false);
+    expect(selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readForeground]), WS_1)).toBe(
+      false,
+    );
   });
 
   it('resolves the primary agent with the newest valid user-message timestamp', () => {

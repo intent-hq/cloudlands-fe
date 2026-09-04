@@ -21,4 +21,3 @@ export async function openWorkspaceInNewWindow(workspaceId: string): Promise<voi
     goto(route);
   }
 }
-

@@ -110,7 +110,9 @@ describe('OffscreenWebviewHost', () => {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
-    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
       getWebContentsId?: () => number;
     };
     webview.getWebContentsId = () => 77;
@@ -132,7 +134,9 @@ describe('OffscreenWebviewHost', () => {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
-    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
       getWebContentsId?: () => number;
     };
     const registerCalls = () =>
@@ -164,7 +168,9 @@ describe('OffscreenWebviewHost', () => {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
-    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
       getWebContentsId?: () => number;
     };
     const registerCalls = () =>
@@ -219,9 +225,7 @@ describe('OffscreenWebviewHost', () => {
     const { container, rerender } = render(OffscreenWebviewHost, {
       props: { excludedWorkspaceIds: new Set() },
     });
-    await waitFor(() =>
-      expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']),
-    );
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
 
     // ws-a becomes the displayed workspace.
     await rerender({ excludedWorkspaceIds: new Set(['ws-a']) });

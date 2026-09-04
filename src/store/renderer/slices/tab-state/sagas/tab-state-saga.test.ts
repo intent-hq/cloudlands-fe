@@ -131,7 +131,13 @@ describe('tabStateSaga', () => {
       dispatch.mockClear();
 
       current = remoteState;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -153,7 +159,10 @@ describe('tabStateSaga', () => {
         {
           channel,
           dispatch,
-          getState: () => ({ ...state, connections: { activeId: backendId, windowBackendId: backendId } }),
+          getState: () => ({
+            ...state,
+            connections: { activeId: backendId, windowBackendId: backendId },
+          }),
         },
         tabStateSaga,
       );
@@ -171,7 +180,13 @@ describe('tabStateSaga', () => {
 
       backendId = 'remote-backend';
       dispatch.mockClear();
-      channel.put(connectionsListReceived({ connections: [], activeId: 'remote-backend', windowBackendId: 'remote-backend' }));
+      channel.put(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-backend',
+          windowBackendId: 'remote-backend',
+        }),
+      );
       await new Promise(setImmediate);
 
       const loadActions = dispatch.mock.calls.filter(

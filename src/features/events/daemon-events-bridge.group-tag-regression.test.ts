@@ -178,9 +178,7 @@ describe('group-tag flip regression (monorepo#2814)', () => {
     // the next chat.subscribe emit restores it (the visible flip).
     const leadingText = blocks[0];
     expect(leadingText?.type).toBe('text');
-    expect(
-      (leadingText as { text?: string })?.text?.startsWith('<group:Researching>'),
-    ).toBe(true);
+    expect((leadingText as { text?: string })?.text?.startsWith('<group:Researching>')).toBe(true);
 
     // The rendering consequence: with the group tag intact the tool_use nests
     // inside the content_group; without it the tool card pops to top level.

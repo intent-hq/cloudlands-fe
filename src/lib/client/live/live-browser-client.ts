@@ -16,24 +16,17 @@
  * `addRecentUrl`/`updateUrlMetadata`/`removeRecentUrl`/`clearRecentUrls` reducer
  * updates and writes back to localStorage after the reducer runs.
  */
-import type {
-  AppClient,
-  BrowserClient,
-  SubscriptionHandler,
-  Unsubscribe,
-} from "../app-client";
-import { MAX_RECENT_URLS } from "$store/renderer/slices/browser/browser-types";
-import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
-import { storageKey, isRecentUrl } from "$store/renderer/slices/browser/browser-storage-utils";
-import { safeLocalStorage } from "$lib/utils/safe-storage";
+import type { AppClient, BrowserClient, SubscriptionHandler, Unsubscribe } from '../app-client';
+import { MAX_RECENT_URLS } from '$store/renderer/slices/browser/browser-types';
+import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
+import { storageKey, isRecentUrl } from '$store/renderer/slices/browser/browser-storage-utils';
+import { safeLocalStorage } from '$lib/utils/safe-storage';
 
 /** Load recent URLs from localStorage, capped at MAX_RECENT_URLS. */
 function loadRecentUrls(workspaceId: string): RecentUrl[] {
   const stored = safeLocalStorage.getJSON<unknown>(storageKey(workspaceId));
   if (!Array.isArray(stored)) return [];
-  return stored
-    .filter((item): item is RecentUrl => isRecentUrl(item))
-    .slice(0, MAX_RECENT_URLS);
+  return stored.filter((item): item is RecentUrl => isRecentUrl(item)).slice(0, MAX_RECENT_URLS);
 }
 
 export class LiveBrowserClient implements BrowserClient {
@@ -52,7 +45,6 @@ export class LiveBrowserClient implements BrowserClient {
 }
 
 // Tied to AppClient["browser"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["browser"] | undefined = undefined as
-  | LiveBrowserClient
-  | undefined;
+const _interfaceCheck: AppClient['browser'] | undefined = undefined as
+  LiveBrowserClient | undefined;
 void _interfaceCheck;

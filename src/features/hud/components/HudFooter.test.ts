@@ -110,7 +110,9 @@ function failCounter(): HTMLElement {
 
 beforeEach(() => {
   appStore.dispatch(resetWorkspaceState());
-  for (const [workspaceId, agentIds] of Object.entries(appStore.state.agentSessions.agentIdsByWorkspace)) {
+  for (const [workspaceId, agentIds] of Object.entries(
+    appStore.state.agentSessions.agentIdsByWorkspace,
+  )) {
     appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
   }
   appStore.dispatch(connectionStatusChanged('disconnected'));

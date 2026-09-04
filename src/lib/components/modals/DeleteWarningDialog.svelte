@@ -132,7 +132,8 @@
                       class="min-w-0 truncate text-primary hover:underline"
                       onclick={(event) => handlePrLinkClick(event, pr.url)}
                     >
-                      #{pr.number} {pr.title}
+                      #{pr.number}
+                      {pr.title}
                     </a>
                   {:else}
                     <span class="min-w-0 truncate">#{pr.number} {pr.title}</span>

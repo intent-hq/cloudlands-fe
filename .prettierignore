@@ -16,7 +16,11 @@ logs/
 *.min.js
 *.min.css
 messages/en-XA.json
-.agents/skills/themis/
+CHANGELOG.md
+
+# Agent prompt assets (model-visible content, not code)
+resources/specialists/
+.agents/skills/
 
 # Message render corpus fixtures/goldens (verbatim harvested payloads + vitest file snapshots)
 src/lib/utils/__tests__/message-render-corpus/harvested/

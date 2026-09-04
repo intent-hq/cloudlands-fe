@@ -84,4 +84,3 @@ export async function createDebugBundle(workspaceId?: string): Promise<string> {
     }
   }
 }
-

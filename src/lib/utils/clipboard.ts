@@ -1,7 +1,4 @@
-import {
-  invoke,
-  isElectron,
-} from '$lib/electron-bridge';
+import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('Clipboard');
@@ -38,5 +35,7 @@ export async function writeTextToClipboard(text: string): Promise<void> {
   }
 
   logger.error('No clipboard write API is available', undefined, { electronError });
-  throw electronError instanceof Error ? electronError : new Error('Clipboard write API unavailable');
+  throw electronError instanceof Error
+    ? electronError
+    : new Error('Clipboard write API unavailable');
 }

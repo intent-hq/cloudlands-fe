@@ -140,7 +140,6 @@ describe('detectDividerSessionBoundary', () => {
       nextWorkspaceId: 'ws-2',
     });
   });
-
 });
 
 describe('unreadTrackingSaga', () => {

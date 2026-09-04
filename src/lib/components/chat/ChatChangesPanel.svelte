@@ -1881,7 +1881,12 @@
     const wsId = routeWorkspaceId;
     if (!wsId) return;
     appStore.dispatch(
-      openWorkspaceCommitChangeset(wsId, commitHash, undefined, gitRootId ? { gitRootId } : undefined)
+      openWorkspaceCommitChangeset(
+        wsId,
+        commitHash,
+        undefined,
+        gitRootId ? { gitRootId } : undefined,
+      ),
     );
   }
 

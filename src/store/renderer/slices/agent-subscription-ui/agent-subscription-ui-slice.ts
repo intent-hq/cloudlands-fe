@@ -259,73 +259,76 @@ agentSubscriptionUIReducer.with(
     };
   },
 );
-agentSubscriptionUIReducer.with(removeWatchedAgent, (state, { payload: [workspaceId, watchedAgentId] }) => {
-  const prefix = `${workspaceId}:`;
-  let changed = false;
-  const entries = { ...state.entries };
+agentSubscriptionUIReducer.with(
+  removeWatchedAgent,
+  (state, { payload: [workspaceId, watchedAgentId] }) => {
+    const prefix = `${workspaceId}:`;
+    let changed = false;
+    const entries = { ...state.entries };
 
-  for (const [key, entry] of Object.entries(state.entries)) {
-    if (!key.startsWith(prefix)) continue;
+    for (const [key, entry] of Object.entries(state.entries)) {
+      if (!key.startsWith(prefix)) continue;
 
-    let subsChanged = false;
-    const subscriptions: Subscription[] = [];
-    for (const sub of entry.subscriptions) {
-      if (!sub.actorIds.includes(watchedAgentId)) {
-        subscriptions.push(sub);
-        continue;
+      let subsChanged = false;
+      const subscriptions: Subscription[] = [];
+      for (const sub of entry.subscriptions) {
+        if (!sub.actorIds.includes(watchedAgentId)) {
+          subscriptions.push(sub);
+          continue;
+        }
+        subsChanged = true;
+        const actorIds = sub.actorIds.filter((id) => id !== watchedAgentId);
+        if (actorIds.length > 0) subscriptions.push({ ...sub, actorIds });
       }
-      subsChanged = true;
-      const actorIds = sub.actorIds.filter((id) => id !== watchedAgentId);
-      if (actorIds.length > 0) subscriptions.push({ ...sub, actorIds });
-    }
 
-    let groupsChanged = false;
-    const delegationGroups: DelegationGroupStatus[] = [];
-    for (const group of entry.delegationGroups) {
-      const touchesGroup =
-        group.expectedAgentIds.includes(watchedAgentId) ||
-        group.completedAgentIds.includes(watchedAgentId) ||
-        group.deletedAgentIds.includes(watchedAgentId) ||
-        watchedAgentId in group.agentStatuses;
-      if (!touchesGroup) {
-        delegationGroups.push(group);
-        continue;
+      let groupsChanged = false;
+      const delegationGroups: DelegationGroupStatus[] = [];
+      for (const group of entry.delegationGroups) {
+        const touchesGroup =
+          group.expectedAgentIds.includes(watchedAgentId) ||
+          group.completedAgentIds.includes(watchedAgentId) ||
+          group.deletedAgentIds.includes(watchedAgentId) ||
+          watchedAgentId in group.agentStatuses;
+        if (!touchesGroup) {
+          delegationGroups.push(group);
+          continue;
+        }
+        groupsChanged = true;
+        const expectedAgentIds = group.expectedAgentIds.filter((id) => id !== watchedAgentId);
+        if (expectedAgentIds.length === 0) continue;
+        const { [watchedAgentId]: _droppedGroupStatus, ...agentStatuses } = group.agentStatuses;
+        delegationGroups.push({
+          ...group,
+          expectedAgentIds,
+          completedAgentIds: group.completedAgentIds.filter((id) => id !== watchedAgentId),
+          deletedAgentIds: group.deletedAgentIds.filter((id) => id !== watchedAgentId),
+          agentStatuses,
+        });
       }
-      groupsChanged = true;
-      const expectedAgentIds = group.expectedAgentIds.filter((id) => id !== watchedAgentId);
-      if (expectedAgentIds.length === 0) continue;
-      const { [watchedAgentId]: _droppedGroupStatus, ...agentStatuses } = group.agentStatuses;
-      delegationGroups.push({
-        ...group,
-        expectedAgentIds,
-        completedAgentIds: group.completedAgentIds.filter((id) => id !== watchedAgentId),
-        deletedAgentIds: group.deletedAgentIds.filter((id) => id !== watchedAgentId),
+
+      const statusChanged = watchedAgentId in entry.agentStatuses;
+      if (!subsChanged && !groupsChanged && !statusChanged) continue;
+
+      const agentStatuses = statusChanged
+        ? Object.fromEntries(
+            Object.entries(entry.agentStatuses).filter(([agentId]) => agentId !== watchedAgentId),
+          )
+        : entry.agentStatuses;
+      const finalSubs = subsChanged ? subscriptions : entry.subscriptions;
+      const finalGroups = groupsChanged ? delegationGroups : entry.delegationGroups;
+      changed = true;
+      entries[key] = {
+        ...entry,
+        subscriptions: finalSubs,
+        delegationGroups: finalGroups,
         agentStatuses,
-      });
+        waitingState:
+          entry.waitingState === 'waiting' && finalSubs.length === 0 && finalGroups.length === 0
+            ? 'idle'
+            : entry.waitingState,
+      };
     }
 
-    const statusChanged = watchedAgentId in entry.agentStatuses;
-    if (!subsChanged && !groupsChanged && !statusChanged) continue;
-
-    const agentStatuses = statusChanged
-      ? Object.fromEntries(
-          Object.entries(entry.agentStatuses).filter(([agentId]) => agentId !== watchedAgentId),
-        )
-      : entry.agentStatuses;
-    const finalSubs = subsChanged ? subscriptions : entry.subscriptions;
-    const finalGroups = groupsChanged ? delegationGroups : entry.delegationGroups;
-    changed = true;
-    entries[key] = {
-      ...entry,
-      subscriptions: finalSubs,
-      delegationGroups: finalGroups,
-      agentStatuses,
-      waitingState:
-        entry.waitingState === 'waiting' && finalSubs.length === 0 && finalGroups.length === 0
-          ? 'idle'
-          : entry.waitingState,
-    };
-  }
-
-  return changed ? { ...state, entries } : state;
-});
+    return changed ? { ...state, entries } : state;
+  },
+);

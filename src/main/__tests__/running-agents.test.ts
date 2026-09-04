@@ -40,7 +40,7 @@ function mockClient(
   const requests: { method: string; params?: unknown }[] = [];
   const client: RunningAgentsRpc = {
     getStatus: () => status,
-    request: vi.fn(async <T,>(method: string, params?: unknown): Promise<T> => {
+    request: vi.fn(async <T>(method: string, params?: unknown): Promise<T> => {
       requests.push({ method, params });
       const handler = handlers[method];
       if (!handler) throw new Error(`unexpected method: ${method}`);

@@ -8,20 +8,20 @@
    */
 
   import {
-  BACKGROUND_AGENT_TYPE_INFO,
-  setDefaultModel,
-  setTypeOverride,
-  type BackgroundAgentType,
-} from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
+    BACKGROUND_AGENT_TYPE_INFO,
+    setDefaultModel,
+    setTypeOverride,
+    type BackgroundAgentType,
+  } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
   import {
-  selectBgDefaultModel,
-  selectBgTypeOverrides,
-  selectHasOverride,
-} from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
+    selectBgDefaultModel,
+    selectBgTypeOverrides,
+    selectHasOverride,
+  } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import {
-  selectEffectiveDefaultProviderId,
-  selectProviderCatalogLoaded,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectEffectiveDefaultProviderId,
+    selectProviderCatalogLoaded,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
@@ -43,7 +43,9 @@
   // effective provider resolves; once hydrated, shown iff genuinely
   // unavailable.
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure predicate (string equality), not a data fetch; rule misfires on the '/client/' import source
-  const fastEnhanceUnavailable = $derived($catalogLoaded$ && !isEnhancePromptAvailable($effectiveProviderId$));
+  const fastEnhanceUnavailable = $derived(
+    $catalogLoaded$ && !isEnhancePromptAvailable($effectiveProviderId$),
+  );
 
   // ModelPicker reports "use default" as '' — stored verbatim as a cleared override.
   function handleOverrideChange(type: BackgroundAgentType, model: string) {
@@ -54,7 +56,9 @@
 <!-- Default Model -->
 <div class="flex items-center justify-between gap-4 mb-6">
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-semibold text-foreground">{m.settings_backgroundAgent_defaultModel_label()}</p>
+    <p class="text-sm font-semibold text-foreground">
+      {m.settings_backgroundAgent_defaultModel_label()}
+    </p>
   </div>
   <div class="shrink-0 w-72">
     <!-- Empty defaultModel means "provider default": the daemon/CLI default is
@@ -74,7 +78,9 @@
 
 <!-- Per-type Overrides -->
 <div>
-  <p class="text-sm font-semibold text-foreground mb-3">{m.settings_backgroundAgent_overrides_title()}</p>
+  <p class="text-sm font-semibold text-foreground mb-3">
+    {m.settings_backgroundAgent_overrides_title()}
+  </p>
 
   <div class="space-y-4">
     <!-- Commit message -->

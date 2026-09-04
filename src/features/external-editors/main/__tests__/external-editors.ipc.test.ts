@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for external-editors.ipc.ts.
@@ -130,7 +123,12 @@ describe('getInstalledFlatpakApps (host.listInstalledEditors wire contract)', ()
   it('sends `host.listInstalledEditors` with no params and harvests flatpakIds from installed flatpak entries', async () => {
     mockRequest.mockResolvedValue({
       editors: [
-        { id: 'vscode', installed: true, path: '/Applications/Visual Studio Code.app', source: 'macAppBundle' },
+        {
+          id: 'vscode',
+          installed: true,
+          path: '/Applications/Visual Studio Code.app',
+          source: 'macAppBundle',
+        },
         { id: 'cursor', installed: false },
         { id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' },
         { id: 'sublime', installed: true, flatpakId: 'com.sublimetext.three', source: 'flatpak' },
@@ -165,7 +163,13 @@ describe('getInstalledFlatpakApps (host.listInstalledEditors wire contract)', ()
   it('ignores non-flatpak sources even when a flatpakId field is present', async () => {
     mockRequest.mockResolvedValue({
       editors: [
-        { id: 'vscode', installed: true, path: '/usr/bin/code', source: 'binary', flatpakId: 'com.visualstudio.code' },
+        {
+          id: 'vscode',
+          installed: true,
+          path: '/usr/bin/code',
+          source: 'binary',
+          flatpakId: 'com.visualstudio.code',
+        },
       ],
     });
 
@@ -187,9 +191,7 @@ describe('getInstalledFlatpakApps (host.listInstalledEditors wire contract)', ()
 
   it('caches the editors response within the TTL so a second call is wire-free', async () => {
     mockRequest.mockResolvedValue({
-      editors: [
-        { id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' },
-      ],
+      editors: [{ id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' }],
     });
 
     const { getInstalledFlatpakApps } = await loadFreshModule();

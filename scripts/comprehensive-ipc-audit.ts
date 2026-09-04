@@ -68,7 +68,7 @@ function findHandlers(): Map<string, string> {
         if (!currentBlock) {
           blockStartLine = index;
         }
-        currentBlock += ` ${  line}`;
+        currentBlock += ` ${line}`;
 
         // Check if we have a complete statement
         if (line.includes(');') || (line.includes(',') && currentBlock.includes('('))) {
@@ -92,7 +92,11 @@ function findHandlers(): Map<string, string> {
               if (channel.includes('CHANNELS')) {
                 // This is a simplified resolution - in reality we'd need to parse imports
                 // For now, just track that a handler exists
-                channel = channel.toLowerCase().replace(/_channels\./g, ':').replace(/\./g, ':').replace(/_/g, '-');
+                channel = channel
+                  .toLowerCase()
+                  .replace(/_channels\./g, ':')
+                  .replace(/\./g, ':')
+                  .replace(/_/g, '-');
               }
 
               const relPath = path.relative(srcDir, file);
@@ -206,7 +210,7 @@ function performAudit(): IPCAuditResult {
 const result = performAudit();
 
 console.log('📊 IPC Audit Results');
-console.log('=' .repeat(60));
+console.log('='.repeat(60));
 console.log(`Total Registered Channels: ${result.totalChannels}`);
 console.log(`Total Handlers: ${result.totalHandlers}`);
 console.log(`Total Invoke Calls: ${result.totalInvokes}`);
@@ -214,7 +218,7 @@ console.log();
 
 if (result.missingHandlers.length > 0) {
   console.log('❌ Missing Handlers:');
-  result.missingHandlers.forEach(channel => {
+  result.missingHandlers.forEach((channel) => {
     console.log(`  - ${channel}`);
   });
   console.log();
@@ -222,7 +226,7 @@ if (result.missingHandlers.length > 0) {
 
 if (result.schemaIssues.length > 0) {
   console.log('⚠️  Schema Issues:');
-  result.schemaIssues.forEach(issue => {
+  result.schemaIssues.forEach((issue) => {
     console.log(`  ${issue.file}:${issue.line}`);
     console.log(`    Channel: ${issue.channel}`);
     console.log(`    Issue: ${issue.issue}`);
@@ -232,7 +236,7 @@ if (result.schemaIssues.length > 0) {
 
 if (result.unusedChannels.length > 0) {
   console.log('📦 Potentially Unused Channels (have handlers but no invokes):');
-  result.unusedChannels.slice(0, 10).forEach(channel => {
+  result.unusedChannels.slice(0, 10).forEach((channel) => {
     console.log(`  - ${channel}`);
   });
   if (result.unusedChannels.length > 10) {

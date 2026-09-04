@@ -772,7 +772,6 @@ describe('selectWorkspaceProgressActions', () => {
   });
 });
 
-
 describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
   function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
     return {

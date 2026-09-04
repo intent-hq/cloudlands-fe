@@ -64,7 +64,4 @@ export class ClientLogger {
 }
 
 // Re-export types so `import type { LogLevel }` resolves without hitting the real module.
-export type { LogLevel,
-  LoggerOptions,
-} from '$lib/utils/client-logger';
-
+export type { LogLevel, LoggerOptions } from '$lib/utils/client-logger';

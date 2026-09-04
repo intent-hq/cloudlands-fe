@@ -36,10 +36,7 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
-  import {
-    isAgentRunningState,
-    toAgentRuntimeStateInput,
-  } from '$shared/utils/agent-runtime-state';
+  import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import type { AgentSession } from '$shared/types';
 
   import {

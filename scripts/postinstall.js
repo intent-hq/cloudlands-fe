@@ -142,13 +142,12 @@ async function verifyModules() {
     } catch (error) {
       log.warn(`node-pty verification failed: ${error.message}`);
     }
-
   } catch (error) {
     log.warn(`Module verification failed: ${error.message}`);
   }
 }
 
 // Run verification
-verifyModules().catch(error => {
+verifyModules().catch((error) => {
   log.warn(`Module verification error: ${error.message}`);
 });

@@ -80,4 +80,3 @@ export interface IMetadataFS {
   /** Rename / move a file or directory. */
   rename(oldPath: string, newPath: string): Promise<void>;
 }
-

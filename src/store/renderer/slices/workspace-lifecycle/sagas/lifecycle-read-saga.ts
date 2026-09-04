@@ -311,9 +311,13 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // and no longer ride every hydration frame; the sidebar's Retired bin
   // renders its collapsed toggle from `retiredCount` (v8.2, served on every
   // read) and loads the rows on demand via the retired-only read.
-  const { agents: defaultRows, retiredCount }: Awaited<
-    ReturnType<typeof appClient.agents.listWithMeta>
-  > = yield* call([appClient.agents, appClient.agents.listWithMeta], workspaceId);
+  const {
+    agents: defaultRows,
+    retiredCount,
+  }: Awaited<ReturnType<typeof appClient.agents.listWithMeta>> = yield* call(
+    [appClient.agents, appClient.agents.listWithMeta],
+    workspaceId,
+  );
   let listed = defaultRows;
   // `setAgents` replaces the workspace snapshot, so once the retired rows have
   // been lazily loaded a rehydrate must re-read them too — otherwise the
@@ -524,7 +528,9 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
     );
     yield* put(setSkills(workspaceId, skills));
   } catch (error) {
-    yield* put(loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)));
+    yield* put(
+      loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
     throw error;
   }
 }
