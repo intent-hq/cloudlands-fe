@@ -30,6 +30,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/settings/McpServersSettings.svelte',
     'src/lib/components/terminal/TerminalSidebar.svelte',
     'src/lib/components/ui/sidebar/sidebar-menu-skeleton.svelte',
+    'src/lib/components/ui/tooltip/GitHubLinkCard.svelte',
     'src/lib/components/workspace/CheckoutModePill.svelte',
     'src/lib/components/workspace/ContentSkeleton.svelte',
     'src/lib/components/workspace/NoteWithComments.svelte',
