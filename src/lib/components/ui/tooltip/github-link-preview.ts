@@ -10,9 +10,12 @@
  * fallback. `createPreviewRequest` is the stale-response guard for the
  * singleton tooltip: a late response for a previous hover must never
  * overwrite the current one.
+ *
+ * `$lib/client` is imported lazily on the first fetch: this module is reached
+ * from the tooltip barrel, and a static import would make every barrel
+ * consumer eagerly load the live client and its transitive dependencies.
  */
 import type { GitHubIssueDetails, GitHubPullRequestDetails, IntegrationsClient } from '$lib/client';
-import { appClient } from '$lib/client';
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
 
@@ -47,8 +50,9 @@ function cacheKey(ref: GitHubIssueOrPrRef): string {
 
 async function fetchPreview(
   ref: GitHubIssueOrPrRef,
-  client: GitHubLinkPreviewClient,
+  injected: GitHubLinkPreviewClient | undefined,
 ): Promise<GitHubLinkPreview> {
+  const client = injected ?? (await import('$lib/client')).appClient.integrations;
   if (ref.kind === 'pr') {
     const details = await client.githubPullRequest(ref.owner, ref.repo, ref.number);
     return { kind: 'pr', ...details };
@@ -97,8 +101,7 @@ export async function loadGitHubLinkPreview(
 
   let pending = inFlight.get(key);
   if (!pending) {
-    const client = options.client ?? appClient.integrations;
-    pending = fetchPreview(ref, client)
+    pending = fetchPreview(ref, options.client)
       .then((value) => {
         cache.set(key, { value, expiresAt: Date.now() + GITHUB_LINK_PREVIEW_TTL_MS });
         return value;

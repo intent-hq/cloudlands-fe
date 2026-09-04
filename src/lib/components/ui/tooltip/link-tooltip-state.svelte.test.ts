@@ -63,13 +63,15 @@ function anchorFor(url: string, rect: Partial<DOMRect> = {}): HTMLAnchorElement 
   return anchor;
 }
 
-function hover(url: string): void {
-  showLinkTooltip(anchorFor(url), url);
-  vi.advanceTimersByTime(SHOW_DELAY_MS);
-}
-
 async function flush(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
+}
+
+/** Hover past the show delay and let the loader reach the client (it imports it lazily). */
+async function hover(url: string): Promise<void> {
+  showLinkTooltip(anchorFor(url), url);
+  vi.advanceTimersByTime(SHOW_DELAY_MS);
+  await flush();
 }
 
 describe('link tooltip GitHub preview state', () => {
@@ -99,6 +101,7 @@ describe('link tooltip GitHub preview state', () => {
     expect(state.url).toBe(pr(42).url);
     expect(state.anchorBottom).toBe(216);
     expect(state.preview.status).toBe('loading');
+    await flush();
     expect(integrations.githubPullRequest).toHaveBeenCalledWith('octo', 'intent', 42);
 
     request.resolve(pr(42));
@@ -108,7 +111,7 @@ describe('link tooltip GitHub preview state', () => {
 
   it('loads issue details through the issue endpoint', async () => {
     integrations.githubIssue.mockResolvedValue(ISSUE);
-    hover(ISSUE.url);
+    await hover(ISSUE.url);
     await flush();
     expect(integrations.githubIssue).toHaveBeenCalledWith('octo', 'intent', 17);
     expect(state.preview).toEqual({ status: 'ready', data: { kind: 'issue', ...ISSUE } });
@@ -116,7 +119,8 @@ describe('link tooltip GitHub preview state', () => {
 
   it('falls back to the URL-only tooltip when the daemon call fails', async () => {
     integrations.githubPullRequest.mockRejectedValue(new Error('GitHub is not configured.'));
-    hover(pr(42).url);
+    showLinkTooltip(anchorFor(pr(42).url), pr(42).url);
+    vi.advanceTimersByTime(SHOW_DELAY_MS);
     expect(state.preview.status).toBe('loading');
     await flush();
     expect(state.visible).toBe(true);
@@ -124,7 +128,7 @@ describe('link tooltip GitHub preview state', () => {
   });
 
   it('leaves non-GitHub links on the plain tooltip without calling the daemon', async () => {
-    hover('https://example.com/docs');
+    await hover('https://example.com/docs');
     await flush();
     expect(state.visible).toBe(true);
     expect(state.preview).toEqual({ status: 'idle' });
@@ -134,7 +138,7 @@ describe('link tooltip GitHub preview state', () => {
 
   it('resets the preview when the tooltip hides', async () => {
     integrations.githubPullRequest.mockResolvedValue(pr(42));
-    hover(pr(42).url);
+    await hover(pr(42).url);
     await flush();
     expect(state.preview.status).toBe('ready');
 
@@ -150,9 +154,9 @@ describe('link tooltip GitHub preview state', () => {
       n === 1 ? slow.promise : fast.promise,
     );
 
-    hover(pr(1).url);
+    await hover(pr(1).url);
     hideLinkTooltip();
-    hover(pr(2).url);
+    await hover(pr(2).url);
     expect(state.url).toBe(pr(2).url);
     expect(state.preview.status).toBe('loading');
 
@@ -169,7 +173,7 @@ describe('link tooltip GitHub preview state', () => {
     const request = deferred<GitHubPullRequestDetails>();
     integrations.githubPullRequest.mockReturnValue(request.promise);
 
-    hover(pr(42).url);
+    await hover(pr(42).url);
     hideLinkTooltip();
     request.resolve(pr(42));
     await flush();
@@ -183,9 +187,9 @@ describe('link tooltip GitHub preview state', () => {
       n === 1 ? failing.promise : Promise.resolve(pr(2)),
     );
 
-    hover(pr(1).url);
+    await hover(pr(1).url);
     hideLinkTooltip();
-    hover(pr(2).url);
+    await hover(pr(2).url);
     await flush();
     expect(state.preview.status).toBe('ready');
 
