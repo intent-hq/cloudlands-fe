@@ -455,9 +455,11 @@ test('contains mixed-direction long lists at narrow collision boundaries across 
         ) as HTMLElement;
         const panelBox = panel.getBoundingClientRect();
         const popoverBox = popover.getBoundingClientRect();
+        const popoverStyle = getComputedStyle(popover);
         return {
           panel: { left: panelBox.left, right: panelBox.right },
           popover: { left: popoverBox.left, right: popoverBox.right },
+          computedMaxWidth: popoverStyle.maxWidth,
           overflowX: scroll.scrollWidth - scroll.clientWidth,
           overflowY: scroll.scrollHeight - scroll.clientHeight,
           titleDirections: Array.from(
@@ -467,6 +469,7 @@ test('contains mixed-direction long lists at narrow collision boundaries across 
       });
       expect(geometry.popover.left).toBeGreaterThanOrEqual(geometry.panel.left - 1);
       expect(geometry.popover.right).toBeLessThanOrEqual(geometry.panel.right + 1);
+      expect(geometry.computedMaxWidth).not.toBe('none');
       expect(geometry.overflowX).toBeLessThanOrEqual(0);
       expect(geometry.overflowY).toBeGreaterThan(0);
       expect(geometry.titleDirections).toContain('ltr');

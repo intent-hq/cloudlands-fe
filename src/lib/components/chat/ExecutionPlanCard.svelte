@@ -12,9 +12,11 @@
 
   let { entries }: { entries: PlanEntry[] } = $props();
 
-  const completedCount = $derived(entries.filter((entry) => entry.status === 'completed').length);
   const currentIndex = $derived(entries.findIndex((entry) => entry.status === 'in_progress'));
-  const currentStep = $derived(currentIndex >= 0 ? currentIndex + 1 : completedCount);
+  const pendingIndex = $derived(entries.findIndex((entry) => entry.status === 'pending'));
+  const currentStep = $derived(
+    currentIndex >= 0 ? currentIndex + 1 : pendingIndex >= 0 ? pendingIndex + 1 : entries.length,
+  );
 
   function statusLabel(status: PlanEntryStatus): string {
     if (status === 'completed') return m.chat_executionPlan_completed_label();

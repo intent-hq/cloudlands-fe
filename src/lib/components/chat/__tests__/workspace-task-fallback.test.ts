@@ -13,6 +13,12 @@ const tasks: WorkspaceTask[] = [
   { id: 'cancelled', title: 'Cancelled root task', status: 'cancelled', specLinked: true },
 ];
 
+const legacyTasks: WorkspaceTask[] = [
+  { id: 'legacy-root', title: 'Legacy root task', status: 'not_started' },
+  { id: 'legacy-running', title: 'Legacy running task', status: 'in_progress' },
+  { id: 'legacy-cancelled', title: 'Legacy cancelled task', status: 'cancelled' },
+];
+
 function session(taskNoteId?: string): AgentSession {
   return {
     id: 'agent-1',
@@ -152,6 +158,40 @@ describe('workspace task fallback routing', () => {
     expect(
       deriveWorkspaceTaskFallback({ initialized: true, tasks, session: session(), messages: [] }),
     ).toEqual([tasks[0], tasks[2]]);
+  });
+
+  it('preserves the legacy non-cancelled fallback when every task omits specLinked', () => {
+    expect(
+      deriveWorkspaceTaskFallback({
+        initialized: true,
+        tasks: legacyTasks,
+        session: session(),
+        messages: [],
+      }),
+    ).toEqual([legacyTasks[0], legacyTasks[1]]);
+  });
+
+  it('treats a mixed payload as modern and selects only explicitly spec-linked tasks', () => {
+    const mixedTasks: WorkspaceTask[] = [
+      legacyTasks[0],
+      { id: 'modern-linked', title: 'Modern linked task', status: 'waiting', specLinked: true },
+      {
+        id: 'modern-unlinked',
+        title: 'Modern unlinked task',
+        status: 'in_progress',
+        specLinked: false,
+      },
+      legacyTasks[2],
+    ];
+
+    expect(
+      deriveWorkspaceTaskFallback({
+        initialized: true,
+        tasks: mixedTasks,
+        session: session(),
+        messages: [],
+      }),
+    ).toEqual([mixedTasks[1]]);
   });
 
   it('shows only the linked task for a delegated agent', () => {

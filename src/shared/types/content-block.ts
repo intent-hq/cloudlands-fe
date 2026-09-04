@@ -4,6 +4,7 @@ import type { MessageRole } from './agent-message';
 
 export const PLAN_ENTRY_PRIORITIES = ['high', 'medium', 'low'] as const;
 export const PLAN_ENTRY_STATUSES = ['pending', 'in_progress', 'completed'] as const;
+export const PLAN_ENTRIES_MAX = 256;
 
 export type PlanEntryPriority = (typeof PLAN_ENTRY_PRIORITIES)[number];
 export type PlanEntryStatus = (typeof PLAN_ENTRY_STATUSES)[number];
@@ -181,6 +182,7 @@ export function isPlanContentBlock(
     isRecord(value) &&
     value.type === 'plan' &&
     Array.isArray(value.entries) &&
+    value.entries.length <= PLAN_ENTRIES_MAX &&
     value.entries.every(isPlanEntry)
   );
 }

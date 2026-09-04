@@ -390,8 +390,12 @@ test.describe('chat message navigator production path', () => {
 
       const dialogBox = await dialog.boundingBox();
       if (!dialogBox) throw new Error('Expected the message picker dialog');
+      const computedMaxWidth = await dialog.evaluate(
+        (element) => getComputedStyle(element).maxWidth,
+      );
       const panelBox = await component.locator('[data-panel-id="chat-panel"]').boundingBox();
       if (!panelBox) throw new Error('Expected the production panel boundary');
+      expect(computedMaxWidth).not.toBe('none');
       expect(dialogBox.width).toBeLessThanOrEqual(Math.min(448, viewport.width - 16) + 0.5);
       expect(dialogBox.x).toBeGreaterThanOrEqual(Math.max(7.5, panelBox.x + 7.5));
       expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(

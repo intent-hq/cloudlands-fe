@@ -69,6 +69,7 @@ import { isProposal, isProposalKind, PROPOSAL_KINDS } from './types/proposal';
 import {
   isContentBlock,
   isPlanContentBlock,
+  PLAN_ENTRIES_MAX,
   dedupeAgentVideoContentBlocks,
   normalizeAgentVideoContentBlocks,
   normalizeContentBlock,
@@ -106,6 +107,7 @@ import type {
   ToolCall,
   ToolResult,
 } from './types/agent-message';
+import { MESSAGE_ROLES } from './types/agent-message';
 import {
   extractAllContent,
   extractContentFromBlocks,
@@ -150,6 +152,7 @@ export {
   isCodeBlock,
   isContentBlock,
   isPlanContentBlock,
+  PLAN_ENTRIES_MAX,
   dedupeAgentVideoContentBlocks,
   isErrorBlock,
   isFileBlock,
@@ -195,6 +198,7 @@ export {
   mergeMessages,
   normalizeAgentMessage,
   toProviderMessage,
+  MESSAGE_ROLES,
 };
 export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolCall, ToolResult };
 

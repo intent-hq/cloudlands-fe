@@ -74,6 +74,9 @@ describe('ContentBlock Type', () => {
         }),
       ).toBe(false);
       expect(isContentBlock({ type: 'plan' })).toBe(false);
+      const entry = { content: 'Run tests', priority: 'high', status: 'pending' };
+      expect(isPlanContentBlock({ type: 'plan', entries: Array(256).fill(entry) })).toBe(true);
+      expect(isPlanContentBlock({ type: 'plan', entries: Array(257).fill(entry) })).toBe(false);
     });
 
     it('should reject invalid blocks', () => {

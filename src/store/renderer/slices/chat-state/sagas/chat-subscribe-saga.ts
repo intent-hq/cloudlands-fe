@@ -260,15 +260,12 @@ interface SubscriptionCoordinator {
    */
   leaseReleases: Channel<string>;
   /**
-   * Agents spared from a sweep — the viewed-agent swap's, an applied
-   * clear's close-all, or a scoped clear's own-slot close — because a live
-   * consumer held a chat interest lease at sweep time (a mounted ChatPanel
-   * instance, an in-flight chat-read hydration; monorepo#3295, replacing
-   * the heuristic loading/acquiring/panel-tab spares of the
-   * #2864/#2917/#3073/#3185 family). Revisited when the agent's LAST lease
-   * releases (watchLeaseReleases): with nothing depending on it and no
-   * re-view, the deferred close runs then instead of leaking the
-   * subscription. The spare defers the close, it never cancels it.
+   * Agents whose close was deferred because a live consumer held a chat
+   * interest lease. The close can come from a viewed-agent sweep, an applied
+   * or scoped clear, or the final retained-transcript owner release. Revisited
+   * when the agent's LAST lease releases (watchLeaseReleases): with no other
+   * retention and no re-view, the deferred close runs then instead of leaking
+   * the subscription.
    */
   pendingSweepCloses: Set<string>;
   retainedTranscriptOwners: Map<string, { wsId: string; agentIds: Set<string> }>;
@@ -963,7 +960,10 @@ function* releaseRetainedTranscriptIfUnused(
 ): SagaGenerator<void> {
   if (isTranscriptRetained(coordinator, agentId)) return;
   if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
-  if (yield* call(hasChatInterestLease, agentId)) return;
+  if (yield* call(hasChatInterestLease, agentId)) {
+    coordinator.pendingSweepCloses.add(agentId);
+    return;
+  }
   enqueueClose(coordinator, agentId);
 }
 
@@ -1220,8 +1220,8 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 }
 
 /**
- * Revisit an agent spared from a sweep because a lease was held, now that
- * its LAST lease has released (every panel instance destroyed, every
+ * Revisit an agent whose close was deferred because a lease was held, now
+ * that its LAST lease has released (every panel instance destroyed, every
  * hydration settled/failed/cancelled). A re-viewed agent stays: the view is
  * an authoritative keep the swap will retire on the next switch. A tab
  * persisted in a panel layout without a live lease holds nothing open — an

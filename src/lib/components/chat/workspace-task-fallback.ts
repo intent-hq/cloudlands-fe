@@ -54,7 +54,10 @@ function workspaceTaskFallback({
     return linkedTask ? [linkedTask] : [];
   }
 
-  return tasks.filter((task) => task.specLinked === true && task.status !== 'cancelled');
+  const hasSpecLinkedMetadata = tasks.some((task) => task.specLinked !== undefined);
+  return tasks.filter(
+    (task) => task.status !== 'cancelled' && (!hasSpecLinkedMetadata || task.specLinked === true),
+  );
 }
 
 /** Select the zero-token task fallback without changing canonical task order. */

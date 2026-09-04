@@ -31,6 +31,7 @@
  */
 import {
   isPlanContentBlock,
+  MESSAGE_ROLES,
   migrateFromLegacy,
   type AgentMessage,
   type ContentBlock,
@@ -111,7 +112,7 @@ const MAX_RETRY_DELAY_MS = 30_000;
  */
 const MAX_BUFFERED_PUSHES = 32;
 
-const SNAPSHOT_MESSAGE_ROLES = new Set(['user', 'assistant', 'tool', 'system', 'error']);
+const SNAPSHOT_MESSAGE_ROLES = new Set<string>(MESSAGE_ROLES);
 
 const STRICT_SNAPSHOT_BLOCK_TYPES = new Set([
   'text',

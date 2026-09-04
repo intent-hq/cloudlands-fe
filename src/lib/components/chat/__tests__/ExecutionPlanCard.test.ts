@@ -43,14 +43,29 @@ describe('ExecutionPlanCard', () => {
     expect(rows[1].getAttribute('aria-current')).toBe('step');
   });
 
-  it('shows the current ordered step and completed terminal progress', async () => {
-    const view = await renderCard();
-    expect(screen.getByTestId('execution-plan-card').textContent).toContain('Step 2 / 3');
-
-    await view.rerender({
-      entries: entries.map((entry) => ({ ...entry, status: 'completed' as const })),
-    });
-    expect(screen.getByTestId('execution-plan-card').textContent).toContain('Step 3 / 3');
+  it.each([
+    {
+      state: 'pending',
+      planEntries: entries.map((entry) => ({ ...entry, status: 'pending' as const })),
+      expectedProgress: 'Step 1 / 3',
+    },
+    { state: 'active', planEntries: entries, expectedProgress: 'Step 2 / 3' },
+    {
+      state: 'partial',
+      planEntries: entries.map((entry, index) => ({
+        ...entry,
+        status: index === 0 ? ('completed' as const) : ('pending' as const),
+      })),
+      expectedProgress: 'Step 2 / 3',
+    },
+    {
+      state: 'complete',
+      planEntries: entries.map((entry) => ({ ...entry, status: 'completed' as const })),
+      expectedProgress: 'Step 3 / 3',
+    },
+  ])('shows ordered progress for a $state plan', async ({ planEntries, expectedProgress }) => {
+    await renderCard(planEntries);
+    expect(screen.getByTestId('execution-plan-card').textContent).toContain(expectedProgress);
   });
 
   it('wraps long content without widening a narrow chat panel', async () => {
