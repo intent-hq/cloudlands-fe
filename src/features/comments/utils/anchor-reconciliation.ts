@@ -20,10 +20,7 @@ import type { CommentAnchor } from '../comment-types-v2';
  * anchoring"), so this fallback only fires for legacy replies that still
  * hold a non-authoritative clone of the parent's anchor.
  */
-export function getAnchorOwnerCommentId(comment: {
-  id: string;
-  anchor?: CommentAnchor;
-}): string {
+export function getAnchorOwnerCommentId(comment: { id: string; anchor?: CommentAnchor }): string {
   const anchorId = comment.anchor?.pointId ?? comment.anchor?.startId ?? comment.anchor?.endId;
   if (!anchorId) return comment.id;
   const sep = anchorId.lastIndexOf(':');

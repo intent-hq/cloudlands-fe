@@ -60,9 +60,9 @@ export class WorkspaceConfigConstants {
    */
   static generateWorktreeFolderName(
     repoName?: string,
-     
+
     _workspaceName?: string,
-     
+
     _workspaceId?: string,
   ): string {
     // Just use the repo name - the workspace ID is already in the parent folder

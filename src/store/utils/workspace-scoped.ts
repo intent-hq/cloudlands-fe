@@ -1,4 +1,4 @@
-import { shallowEqual } from "fast-equals";
+import { shallowEqual } from 'fast-equals';
 
 type WorkspaceScopedState<T> = {
   byWorkspaceId: Record<string, T>;

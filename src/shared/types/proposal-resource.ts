@@ -43,7 +43,6 @@ export function getProposalFromResourceBlock(block: unknown): Proposal | null {
     return null;
   }
 }
-
 /** Extract either a canonical proposal resource or a legacy inline proposal block. */
 export function getProposalFromBlock(block: unknown): Proposal | null {
   if (!block || typeof block !== 'object') return null;

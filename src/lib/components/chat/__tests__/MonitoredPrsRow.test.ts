@@ -99,7 +99,7 @@ function readMenuContentRule() {
   const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
   if (!width || !viewportInset) {
     throw new Error(
-      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width'
+      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width',
     );
   }
   return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };

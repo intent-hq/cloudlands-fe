@@ -8,9 +8,7 @@ import type { SetupEvaluation } from './setup-prompt-types';
 import { hasReadyProvider } from './setup-prompt-utils';
 
 /** Latest completed evaluation, or null until the first one resolves. */
-export const selectSetupEvaluation = store.createSelector(
-  (state) => state.setupPrompt.evaluation,
-);
+export const selectSetupEvaluation = store.createSelector((state) => state.setupPrompt.evaluation);
 
 /** True once this page load's boot-route gate decision has been made. */
 export const selectBootRouteGateResolved = store.createSelector(
@@ -24,14 +22,12 @@ export const selectBootRouteGateResolved = store.createSelector(
  * switch, and a window opened on a non-active backend still sees its own
  * first-run result.
  */
-export const selectActiveSetupEvaluation = store.createSelector(
-  (state): SetupEvaluation | null => {
-    const { evaluation } = state.setupPrompt;
-    return evaluation && evaluation.connectionId === state.connections.windowBackendId
-      ? evaluation
-      : null;
-  },
-);
+export const selectActiveSetupEvaluation = store.createSelector((state): SetupEvaluation | null => {
+  const { evaluation } = state.setupPrompt;
+  return evaluation && evaluation.connectionId === state.connections.windowBackendId
+    ? evaluation
+    : null;
+});
 
 /**
  * True when the remote-backend "Go through setup?" prompt should show: the

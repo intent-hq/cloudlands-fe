@@ -16,9 +16,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
-    '$store/renderer/slices/comments/comments-slice'
-  );
+  const { commentsReducer, initialState } = await vi.importActual<
+    typeof import('$store/renderer/slices/comments/comments-slice')
+  >('$store/renderer/slices/comments/comments-slice');
   let state = { comments: initialState };
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
@@ -34,15 +34,15 @@ vi.mock('$store/renderer/store', async () => {
     get state() {
       return state;
     },
-    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
-      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
-      {
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) =>
+      Object.assign((...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)), {
         select: selectorFunc,
         effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
-        withStore: (storeSource: { state?: unknown }) =>
-          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
-      },
-    ),
+        withStore:
+          (storeSource: { state?: unknown }) =>
+          (...args: any[]) =>
+            readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+      }),
   };
   return createStoreMockModule(mockStore);
 });
@@ -116,10 +116,12 @@ describe('monorepo#710 — markdown anchorText false orphaning', () => {
 
   it('scanAnchorHealth treats a reply as healthy via shared thread anchors', async () => {
     await setMarkdownContent(editor, markedUpDoc);
-    appStore.dispatch(loadCommentsAction([
-      makeComment({ id: ROOT_ID }),
-      makeComment({ id: REPLY_ID, parentId: ROOT_ID }),
-    ]));
+    appStore.dispatch(
+      loadCommentsAction([
+        makeComment({ id: ROOT_ID }),
+        makeComment({ id: REPLY_ID, parentId: ROOT_ID }),
+      ]),
+    );
 
     await manager.scanAnchorHealth();
 

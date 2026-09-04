@@ -359,7 +359,10 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    notificationListeners[0](LOCAL_ID, buildEventsEventNotification({ workspaceId: 'workspace-2' }));
+    notificationListeners[0](
+      LOCAL_ID,
+      buildEventsEventNotification({ workspaceId: 'workspace-2' }),
+    );
     await flush();
 
     // Per-event routing: agent.list targets the EVENT's workspace.
@@ -573,7 +576,10 @@ describe('NotificationService daemon agent:idle subscription', () => {
     expect((service as any).backendStates.get(LOCAL_ID)?.retryArmed).toBe(false);
 
     // Idle events now produce notifications end-to-end.
-    notificationListeners[0](LOCAL_ID, buildEventsEventNotification({ subscriptionId: 'ws-sub-1' }));
+    notificationListeners[0](
+      LOCAL_ID,
+      buildEventsEventNotification({ subscriptionId: 'ws-sub-1' }),
+    );
     await flush();
     expect(mockNotificationInstances.length).toBe(1);
 

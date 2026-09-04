@@ -98,7 +98,11 @@ describe('Active Streams Bridge Seeder', () => {
 
   it('returns { success: false, data: [] } when the compatibility fallback also fails', async () => {
     backend.onRequest('agent.listActive', () => {
-      throw new BackendError({ code: 'METHOD_NOT_FOUND', message: 'method not found', rpcCode: -32601 });
+      throw new BackendError({
+        code: 'METHOD_NOT_FOUND',
+        message: 'method not found',
+        rpcCode: -32601,
+      });
     });
     backend.onRequest('workspace.list', () => {
       throw new Error('Daemon connection failed');
@@ -116,7 +120,11 @@ describe('Active Streams Bridge Seeder', () => {
 
   it('falls back to the legacy fan-out when agent.listActive is unavailable', async () => {
     backend.onRequest('agent.listActive', () => {
-      throw new BackendError({ code: 'METHOD_NOT_FOUND', message: 'method not found', rpcCode: -32601 });
+      throw new BackendError({
+        code: 'METHOD_NOT_FOUND',
+        message: 'method not found',
+        rpcCode: -32601,
+      });
     });
     backend.onRequest('workspace.list', () => ({
       workspaces: [{ id: 'ws1' }],

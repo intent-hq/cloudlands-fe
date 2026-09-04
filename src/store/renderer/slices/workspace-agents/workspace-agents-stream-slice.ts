@@ -35,7 +35,6 @@ export interface AgentStreamUpdatePayload {
 export const agentStreamUpdateReceived = createAction<
   [payload: AgentStreamUpdatePayload],
   [payload: AgentStreamUpdatePayload & { timestamp: number }]
->(
-  'workspaceAgents/agentStreamUpdateReceived',
-  (payload) => [{ ...payload, timestamp: payload.timestamp ?? Date.now() }],
-);
+>('workspaceAgents/agentStreamUpdateReceived', (payload) => [
+  { ...payload, timestamp: payload.timestamp ?? Date.now() },
+]);

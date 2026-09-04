@@ -7,6 +7,7 @@ import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
 import {
   getPRStatusTooltip,
+  isPRQueued,
   mapWorkspacePRs,
   mergeMonitoredPRs,
   prRepoFromUrl,
@@ -29,6 +30,10 @@ export interface WorkspacePRPresentationRow {
   repo: string | undefined;
   repoContext: string | undefined;
   status: PRInfo['status'];
+  /** Open PR reported by its monitor snapshot as sitting in the merge queue.
+   * The `status` stays `open` (ordering and `data-pr-status` are unchanged);
+   * only `accessibleStateLabel` / `details` say "Queued". */
+  queued: boolean;
   statusIcon: IconDefinition;
   foregroundClass: string;
   backgroundClass: string;
@@ -71,6 +76,7 @@ function compareMissingLast(a: string | undefined, b: string | undefined): numbe
 
 function getPRStatusPresentation(
   status: PRInfo['status'],
+  queued: boolean,
 ): Pick<
   WorkspacePRPresentationRow,
   'statusIcon' | 'foregroundClass' | 'backgroundClass' | 'accessibleStateLabel'
@@ -103,7 +109,9 @@ function getPRStatusPresentation(
     statusIcon: faCodePullRequest,
     foregroundClass: 'text-success',
     backgroundClass: 'bg-success/10',
-    accessibleStateLabel: m.workspace_prSection_statusOpen_label(),
+    accessibleStateLabel: queued
+      ? m.workspace_prSection_statusQueued_label()
+      : m.workspace_prSection_statusOpen_label(),
   };
 }
 
@@ -175,6 +183,7 @@ export function buildWorkspacePRPresentationModel({
       const repo = pr.crossRepo ?? workspaceRepo;
       const source = sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
       const status = statusOf(pr);
+      const queued = isPRQueued({ status, monitorSnapshot: pr.monitorSnapshot });
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
       return {
         identity: prIdentity(repo, pr.number),
@@ -184,7 +193,8 @@ export function buildWorkspacePRPresentationModel({
         repo,
         repoContext: pr.crossRepo ? (pr.crossRepoDisplay ?? pr.crossRepo) : undefined,
         status,
-        ...getPRStatusPresentation(status),
+        queued,
+        ...getPRStatusPresentation(status, queued),
         details: [getPRStatusTooltip({ ...pr, status }), sourceDetails].filter(Boolean).join('\n'),
         monitorAgentId: pr.monitorAgentId,
         monitorOnly: pr.monitorOnly === true,

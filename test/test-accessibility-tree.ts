@@ -112,7 +112,7 @@ class AccessibilityTreeTestHarness {
     await this.runTest('Get partial accessibility tree for specific element', async () => {
       // First, find a button element
       const result = await this.client.Runtime.evaluate({
-        expression: 'document.querySelector(\'button\')',
+        expression: "document.querySelector('button')",
         returnByValue: false,
       });
 
@@ -149,7 +149,7 @@ class AccessibilityTreeTestHarness {
     await this.runTest('Get partial accessibility tree with relatives', async () => {
       // Find a button element
       const result = await this.client.Runtime.evaluate({
-        expression: 'document.querySelector(\'button\')',
+        expression: "document.querySelector('button')",
         returnByValue: false,
       });
 
@@ -233,7 +233,7 @@ class AccessibilityTreeTestHarness {
   }
 
   printSummary() {
-    console.log(`\n${  '='.repeat(60)}`);
+    console.log(`\n${'='.repeat(60)}`);
     console.log('📊 TEST SUMMARY');
     console.log('='.repeat(60));
 

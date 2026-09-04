@@ -8,13 +8,7 @@
  * renderer-side listenSync handlers, exercising the real extractEventData
  * logic and both reducers.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   agentSubscriptionUIReducer,
   initialState as rendererInitialState,
@@ -41,9 +35,8 @@ import {
 
 // Contract coverage must exercise the production helper, not the global
 // electron-bridge test mock used by most renderer tests.
-const { extractEventData } = await vi.importActual<typeof import('$lib/electron-bridge')>(
-  '$lib/electron-bridge',
-);
+const { extractEventData } =
+  await vi.importActual<typeof import('$lib/electron-bridge')>('$lib/electron-bridge');
 
 const WS = 'ws-contract-test';
 const OTHER_WS = 'ws-other';
@@ -52,16 +45,26 @@ const AGENT_NAME = 'Contract Agent';
 
 /** Renderer's expected IPC event names (from agent-subscription-ui-saga.ts) */
 const RENDERER_SUBSCRIPTION_EVENT_NAMES = [
-  'agent:subscribed', 'agent:unsubscribed', 'agent:subscriptions-changed',
-  'agent:idle', 'agent:stopped', 'agent:status-changed', 'agent:created',
-  'agent:woken-by-subscription', 'agent:event-delivery-failed',
-  'agent:event-delivery-timeout', 'agent:subscriptions-restored',
+  'agent:subscribed',
+  'agent:unsubscribed',
+  'agent:subscriptions-changed',
+  'agent:idle',
+  'agent:stopped',
+  'agent:status-changed',
+  'agent:created',
+  'agent:woken-by-subscription',
+  'agent:event-delivery-failed',
+  'agent:event-delivery-timeout',
+  'agent:subscriptions-restored',
 ] as const;
 
 /** Subscription events emitted by main-process sagas */
 const MAIN_EMITTED_EVENTS = [
-  'agent:subscriptions-changed', 'agent:subscribed', 'agent:woken-by-subscription',
-  'agent:event-delivery-failed', 'agent:event-delivery-timeout',
+  'agent:subscriptions-changed',
+  'agent:subscribed',
+  'agent:woken-by-subscription',
+  'agent:event-delivery-failed',
+  'agent:event-delivery-timeout',
   'agent:subscriptions-restored',
 ] as const;
 
@@ -76,7 +79,10 @@ class FakeIPCBus {
     const arr = this.listeners.get(eventName) ?? [];
     arr.push(handler);
     this.listeners.set(eventName, arr);
-    return () => { const idx = arr.indexOf(handler); if (idx >= 0) arr.splice(idx, 1); };
+    return () => {
+      const idx = arr.indexOf(handler);
+      if (idx >= 0) arr.splice(idx, 1);
+    };
   }
   broadcast(event: WorkspaceEvent): void {
     for (const handler of this.listeners.get(event.type) ?? []) handler({ payload: event });
@@ -86,14 +92,22 @@ class FakeIPCBus {
 // --- Helpers ---
 function makeSubRecord(overrides: Partial<AgentSubscriptionRecord> = {}): AgentSubscriptionRecord {
   return {
-    id: 'sub-1', agentId: AGENT, agentName: AGENT_NAME, workspaceId: WS,
+    id: 'sub-1',
+    agentId: AGENT,
+    agentName: AGENT_NAME,
+    workspaceId: WS,
     filter: { eventTypes: ['file:changed'], batchWindow: 500 },
-    createdAt: new Date().toISOString(), ...overrides,
+    createdAt: new Date().toISOString(),
+    ...overrides,
   };
 }
 function makeWsEvent(type: string, data: Record<string, unknown> = {}): WorkspaceEvent {
-  return createWorkspaceEvent(type as any, WS,
-    { type: 'agent', id: AGENT, name: AGENT_NAME }, { agentId: AGENT, ...data });
+  return createWorkspaceEvent(
+    type as any,
+    WS,
+    { type: 'agent', id: AGENT, name: AGENT_NAME },
+    { agentId: AGENT, ...data },
+  );
 }
 
 // --- Tests ---
@@ -111,7 +125,8 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
   // 1. woken-by-subscription produces correct UI state
   it('woken-by-subscription produces correct renderer UI state', () => {
     const wokeEvent = makeWsEvent('agent:woken-by-subscription', {
-      eventCount: 3, eventTypes: ['file:changed', 'agent:idle'],
+      eventCount: 3,
+      eventTypes: ['file:changed', 'agent:idle'],
     });
     const eventData = extractEventData({ payload: wokeEvent });
     expect(eventData.agentId).toBe(AGENT);
@@ -119,7 +134,9 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
     expect(eventData.eventTypes).toEqual(['file:changed', 'agent:idle']);
 
     const info: WokenUpInfo = {
-      eventCount: eventData.eventCount, eventTypes: eventData.eventTypes, timestamp: Date.now(),
+      eventCount: eventData.eventCount,
+      eventTypes: eventData.eventTypes,
+      timestamp: Date.now(),
     };
     rendererState = agentSubscriptionUIReducer(rendererState, setWokenUp(WS, AGENT, info));
     const key = makeKey(WS, AGENT);
@@ -130,9 +147,12 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
   it('subscriptionVersion appears in subscriptions-changed event payload', () => {
     mainState = agentSubscriptionsReducer(mainState, addSubscription(WS, makeSubRecord()));
 
-    const event = createWorkspaceEvent('agent:subscriptions-changed' as any, WS,
+    const event = createWorkspaceEvent(
+      'agent:subscriptions-changed' as any,
+      WS,
       { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
-      { subscriptionVersion: 1, reason: 'subscriptions-updated' });
+      { subscriptionVersion: 1, reason: 'subscriptions-updated' },
+    );
     const data = extractEventData({ payload: event });
     expect(data.subscriptionVersion).toBe(1);
     expect(data.reason).toBe('subscriptions-updated');
@@ -158,13 +178,21 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
 
   // 3. late delivery-confirmed doesn't duplicate wake state
   it('clearWokenUp then late setWokenUp replaces cleanly without duplication', () => {
-    const info: WokenUpInfo = { eventCount: 1, eventTypes: ['file:changed'], timestamp: Date.now() };
+    const info: WokenUpInfo = {
+      eventCount: 1,
+      eventTypes: ['file:changed'],
+      timestamp: Date.now(),
+    };
     rendererState = agentSubscriptionUIReducer(rendererState, setWokenUp(WS, AGENT, info));
     const key = makeKey(WS, AGENT);
     expect(rendererState.entries[key].wokenUpInfo).toEqual(info);
     rendererState = agentSubscriptionUIReducer(rendererState, clearWokenUp(WS, AGENT));
     expect(rendererState.entries[key].wokenUpInfo).toBeNull();
-    const lateInfo: WokenUpInfo = { eventCount: 2, eventTypes: ['agent:idle'], timestamp: Date.now() + 1000 };
+    const lateInfo: WokenUpInfo = {
+      eventCount: 2,
+      eventTypes: ['agent:idle'],
+      timestamp: Date.now() + 1000,
+    };
     rendererState = agentSubscriptionUIReducer(rendererState, setWokenUp(WS, AGENT, lateInfo));
     expect(rendererState.entries[key].wokenUpInfo).toEqual(lateInfo);
     expect(rendererState.entries[key].wokenUpInfo).not.toEqual(info);
@@ -172,14 +200,24 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
 
   // 4. deleted agent can't resurrect UI state
   it('resetSubscriptionUI clears entry so deleted agent cannot resurrect', () => {
-    rendererState = agentSubscriptionUIReducer(rendererState,
+    rendererState = agentSubscriptionUIReducer(
+      rendererState,
       setSubscriptionSnapshot(WS, AGENT, {
-        subscriptions: [{
-          id: 'sub-1', agentId: AGENT, eventTypes: ['file:changed'],
-          actorIds: [], createdAt: '', description: 'test',
-        }],
-        delegationGroups: [], agentStatuses: {}, waitingState: 'waiting',
-      }));
+        subscriptions: [
+          {
+            id: 'sub-1',
+            agentId: AGENT,
+            eventTypes: ['file:changed'],
+            actorIds: [],
+            createdAt: '',
+            description: 'test',
+          },
+        ],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
     const key = makeKey(WS, AGENT);
     expect(rendererState.entries[key].waitingState).toBe('waiting');
     expect(rendererState.entries[key].subscriptions).toHaveLength(1);
@@ -211,11 +249,36 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
     expect(vi.isMockFunction(extractEventData)).toBe(false);
 
     const testCases = [
-      { type: 'agent:subscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', eventTypes: ['file:changed'], filterDescription: 'types: file:changed' } },
-      { type: 'agent:subscriptions-changed', data: { subscriptionVersion: 5, reason: 'subscriptions-updated' } },
-      { type: 'agent:woken-by-subscription', data: { agentId: AGENT, eventCount: 2, eventTypes: ['file:changed'] } },
-      { type: 'agent:event-delivery-failed', data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], error: 'boom' } },
-      { type: 'agent:event-delivery-timeout', data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], timeoutMs: 30000 } },
+      {
+        type: 'agent:subscribed',
+        data: {
+          agentId: AGENT,
+          subscriptionId: 'sub-1',
+          eventTypes: ['file:changed'],
+          filterDescription: 'types: file:changed',
+        },
+      },
+      {
+        type: 'agent:subscriptions-changed',
+        data: { subscriptionVersion: 5, reason: 'subscriptions-updated' },
+      },
+      {
+        type: 'agent:woken-by-subscription',
+        data: { agentId: AGENT, eventCount: 2, eventTypes: ['file:changed'] },
+      },
+      {
+        type: 'agent:event-delivery-failed',
+        data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], error: 'boom' },
+      },
+      {
+        type: 'agent:event-delivery-timeout',
+        data: {
+          targetAgentId: AGENT,
+          eventCount: 1,
+          eventTypes: ['file:changed'],
+          timeoutMs: 30000,
+        },
+      },
       { type: 'agent:subscriptions-restored', data: { count: 1, agentIds: [AGENT] } },
       {
         type: 'agent:status-changed',
@@ -231,12 +294,19 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
           stopReason: null,
         },
       },
-      { type: 'agent:unsubscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', reason: 'manual-unsubscribe' } },
+      {
+        type: 'agent:unsubscribed',
+        data: { agentId: AGENT, subscriptionId: 'sub-1', reason: 'manual-unsubscribe' },
+      },
     ];
 
     for (const { type, data } of testCases) {
-      const event = createWorkspaceEvent(type as any, WS,
-        { type: 'agent', id: AGENT, name: AGENT_NAME }, data);
+      const event = createWorkspaceEvent(
+        type as any,
+        WS,
+        { type: 'agent', id: AGENT, name: AGENT_NAME },
+        data,
+      );
       const extracted = extractEventData({ payload: event });
       expect(extracted).toEqual(data);
 
@@ -264,13 +334,23 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
       if (wsId === WS) received.push(evt.payload);
     });
 
-    bus.broadcast(createWorkspaceEvent('agent:subscribed' as any, WS,
-      { type: 'agent', id: AGENT, name: AGENT_NAME },
-      { agentId: AGENT, subscriptionId: 'sub-1', eventTypes: ['file:changed'] }));
+    bus.broadcast(
+      createWorkspaceEvent(
+        'agent:subscribed' as any,
+        WS,
+        { type: 'agent', id: AGENT, name: AGENT_NAME },
+        { agentId: AGENT, subscriptionId: 'sub-1', eventTypes: ['file:changed'] },
+      ),
+    );
 
-    bus.broadcast(createWorkspaceEvent('agent:subscribed' as any, OTHER_WS,
-      { type: 'agent', id: 'other-agent', name: 'Other' },
-      { agentId: 'other-agent', subscriptionId: 'sub-2', eventTypes: ['file:changed'] }));
+    bus.broadcast(
+      createWorkspaceEvent(
+        'agent:subscribed' as any,
+        OTHER_WS,
+        { type: 'agent', id: 'other-agent', name: 'Other' },
+        { agentId: 'other-agent', subscriptionId: 'sub-2', eventTypes: ['file:changed'] },
+      ),
+    );
 
     expect(received).toHaveLength(1);
     expect(received[0].workspaceId).toBe(WS);

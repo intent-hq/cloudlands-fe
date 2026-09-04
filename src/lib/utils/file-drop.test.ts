@@ -4,9 +4,7 @@ import { createFileDropTarget } from './file-drop';
 function makeDragEvent(types: string[] | undefined, files: File[] = []): DragEvent {
   return {
     preventDefault: vi.fn(),
-    dataTransfer: types
-      ? ({ types, files } as unknown as DataTransfer)
-      : null,
+    dataTransfer: types ? ({ types, files } as unknown as DataTransfer) : null,
   } as unknown as DragEvent;
 }
 
@@ -96,7 +94,10 @@ describe('createFileDropTarget (ChatPanel full-panel drop zone)', () => {
     const folder = new File([], 'my-folder', { type: '' });
 
     target.handleDrop(
-      makeItemsDropEvent([makeItem(file, { isDirectory: false }), makeItem(folder, { isDirectory: true })]),
+      makeItemsDropEvent([
+        makeItem(file, { isDirectory: false }),
+        makeItem(folder, { isDirectory: true }),
+      ]),
     );
 
     expect(onDrop).toHaveBeenCalledWith({ files: [file], folderFiles: [folder] });

@@ -15,10 +15,7 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 import { AgentError } from '../../errors/agent-errors';
-import {
-  errorBoundary,
-  withErrorBoundary,
-} from '../error-boundary.service';
+import { errorBoundary, withErrorBoundary } from '../error-boundary.service';
 
 describe('ErrorBoundary (AUDIT-P0-2)', () => {
   it('wrap throws AgentError after retries are exhausted (no fallback path)', async () => {
@@ -46,20 +43,17 @@ describe('ErrorBoundary (AUDIT-P0-2)', () => {
       return Promise.resolve('finally');
     });
 
-    await expect(
-      errorBoundary.wrap(op, 'test-op', { retries: 2, retryDelay: 1 }),
-    ).resolves.toBe('finally');
+    await expect(errorBoundary.wrap(op, 'test-op', { retries: 2, retryDelay: 1 })).resolves.toBe(
+      'finally',
+    );
     expect(calls).toBe(3);
   });
 
   it('wrapSync throws AgentError on failure (no fallback path)', () => {
     expect(() =>
-      errorBoundary.wrapSync(
-        () => {
-          throw new Error('sync boom');
-        },
-        'sync-op',
-      ),
+      errorBoundary.wrapSync(() => {
+        throw new Error('sync boom');
+      }, 'sync-op'),
     ).toThrow(AgentError);
   });
 
@@ -69,11 +63,7 @@ describe('ErrorBoundary (AUDIT-P0-2)', () => {
 
   it('withErrorBoundary surfaces the wrapped failure to its caller', async () => {
     await expect(
-      withErrorBoundary(
-        () => Promise.reject(new Error('nope')),
-        'wrap-test',
-        { retries: 0 },
-      ),
+      withErrorBoundary(() => Promise.reject(new Error('nope')), 'wrap-test', { retries: 0 }),
     ).rejects.toBeInstanceOf(AgentError);
   });
 });

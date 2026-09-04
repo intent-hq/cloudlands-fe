@@ -1,12 +1,12 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-  faSearch,
-  faXmark,
-  faFilter,
-  faChevronUp,
-  faChevronDown,
-} from '@fortawesome/free-solid-svg-icons';
+    faSearch,
+    faXmark,
+    faFilter,
+    faChevronUp,
+    faChevronDown,
+  } from '@fortawesome/free-solid-svg-icons';
   import { safeSlide } from '$lib/utils/animations';
   import { cubicOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';

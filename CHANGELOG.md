@@ -4,6 +4,28 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.132.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.131.0...v2.132.0) (2026-09-04)
+
+
+### 🚀 Features
+
+* **daemon-status:** show an Updating intentd countdown overlay before the stopped overlay after a requested daemon update ([#2151](https://github.com/intent-hq/cloudlands-fe/issues/2151)) ([1f15ee7](https://github.com/intent-hq/cloudlands-fe/commit/1f15ee7a591b93c68b7eed52bb26fde034593113))
+* **sidebar:** show Queued state label for merge-queued PR rows ([#2141](https://github.com/intent-hq/cloudlands-fe/issues/2141)) ([10436b1](https://github.com/intent-hq/cloudlands-fe/commit/10436b1192e3af2ae72401f04eaf2f496cfca668))
+
+
+### 🐛 Bug Fixes
+
+* align chat spacing to panel width ([#2132](https://github.com/intent-hq/cloudlands-fe/issues/2132)) ([8fd2691](https://github.com/intent-hq/cloudlands-fe/commit/8fd2691cdee2915f2aecf1c23245eee8caca7860))
+* **browser:** single-line address identity in toolbar ([#2112](https://github.com/intent-hq/cloudlands-fe/issues/2112)) ([6829826](https://github.com/intent-hq/cloudlands-fe/commit/68298265eeebf4f900f3a8ced72971710ce39ab0))
+* bump intentd sidecar to v0.9.16 ([#2148](https://github.com/intent-hq/cloudlands-fe/issues/2148)) ([7d24705](https://github.com/intent-hq/cloudlands-fe/commit/7d247056a7d5ed45012251e248cb5003321f1785))
+* bump intentd sidecar to v0.9.17 ([#2157](https://github.com/intent-hq/cloudlands-fe/issues/2157)) ([80db373](https://github.com/intent-hq/cloudlands-fe/commit/80db373373039ba6124d2222fb7d59134603d9e7))
+* **ci:** revalidate intentd pin against live main before publishing the rolling PR ([#2139](https://github.com/intent-hq/cloudlands-fe/issues/2139)) ([dca3058](https://github.com/intent-hq/cloudlands-fe/commit/dca30582736ae6f524d6a3a920d5b48232a0d254))
+* fail browser screenshot instead of returning an empty image ([#2131](https://github.com/intent-hq/cloudlands-fe/issues/2131)) ([5bbf41b](https://github.com/intent-hq/cloudlands-fe/commit/5bbf41b92e1ed9a8785509ee41ad129b8eb32a7a))
+* keep the Q&A wizard visible across later turns ([#2136](https://github.com/intent-hq/cloudlands-fe/issues/2136)) ([5fb0ed4](https://github.com/intent-hq/cloudlands-fe/commit/5fb0ed433d0dd1545f3307da1a4a70b62249b32a))
+* prevent nested reasoning picker overflow ([#2067](https://github.com/intent-hq/cloudlands-fe/issues/2067)) ([786eaa0](https://github.com/intent-hq/cloudlands-fe/commit/786eaa029463aadb168969682056e10ba035d60a))
+* rename "Queued to merge" status label to "PR Queued" ([#2140](https://github.com/intent-hq/cloudlands-fe/issues/2140)) ([998d775](https://github.com/intent-hq/cloudlands-fe/commit/998d77579f1190915396619c640f0174eb2a6238))
+* **workspace:** refine hover card density ([#2126](https://github.com/intent-hq/cloudlands-fe/issues/2126)) ([911453a](https://github.com/intent-hq/cloudlands-fe/commit/911453a2f12611c280c509cd9421a16a1f7dc7da))
+
 ## [2.131.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.130.1...v2.131.0) (2026-09-04)
 
 

@@ -119,7 +119,9 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
 
   it('shows the reveal item when the agent has a sandboxPath and the daemon is local', async () => {
     seedLocality('local');
-    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
+    );
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -141,7 +143,9 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
 
   it('hides the reveal item when the daemon is remote', async () => {
     seedLocality('remote');
-    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
+    );
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -153,7 +157,9 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
   it('hides the reveal item for a remote (SSH) workspace even when the daemon is local (monorepo#2171)', async () => {
     seedLocality('local');
     seedRemoteWorkspace();
-    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
+    );
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -164,7 +170,9 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
 
   it('invokes shell:showItemInFolder with the sandbox path on click', async () => {
     seedLocality('local');
-    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
+    );
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -181,7 +189,9 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
 
   it('surfaces a reveal failure as an error toast (no silent no-op)', async () => {
     seedLocality('local');
-    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
+    );
     mockedInvoke.mockRejectedValueOnce(new Error('open exited with code 1'));
     const { toast } = await import('svelte-sonner');
     const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => '' as never);

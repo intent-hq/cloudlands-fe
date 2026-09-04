@@ -2,11 +2,7 @@
  * Tests for git-tracking types and Zod schemas
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   GitFileStatus,
   ChangeLocation,

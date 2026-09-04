@@ -29,30 +29,27 @@
  *
  * Handlers are registered at import time (host-bridge-seeder idiom).
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import {
-  FEATURE_CODES_CHANNELS,
-  SETTINGS_CHANNELS,
-} from "$shared/ipc/channels";
-import { backendRequest } from "$lib/client/live/backend-transport";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { FEATURE_CODES_CHANNELS, SETTINGS_CHANNELS } from '$shared/ipc/channels';
+import { backendRequest } from '$lib/client/live/backend-transport';
 
 /** Legacy electron-store key → daemon settings-catalog path (settings.rs). */
 const DAEMON_SETTING_PATHS: Record<string, string> = {
-  auggiePath: "context.auggiePath",
-  branchPrefix: "workspace.branchPrefix",
-  worktreesLocation: "workspace.worktreesLocation",
-  sshKeyPath: "workspace.sshKeyPath",
-  defaultShell: "workspace.defaultShell",
-  autoCommit: "git.autoCommit",
-  enableUserMcpServers: "mcp.enableUserServers",
-  disabledMcpServers: "mcp.disabledServers",
-  rtkEnabled: "rtk.enabled",
+  auggiePath: 'context.auggiePath',
+  branchPrefix: 'workspace.branchPrefix',
+  worktreesLocation: 'workspace.worktreesLocation',
+  sshKeyPath: 'workspace.sshKeyPath',
+  defaultShell: 'workspace.defaultShell',
+  autoCommit: 'git.autoCommit',
+  enableUserMcpServers: 'mcp.enableUserServers',
+  disabledMcpServers: 'mcp.disabledServers',
+  rtkEnabled: 'rtk.enabled',
 };
 
 /** Legacy per-provider path keys → sub-key of the daemon `providers.paths` object. */
 const PROVIDER_PATH_KEYS: Record<string, string> = {
-  "claude-codePath": "claude-code",
-  codexPath: "codex",
+  'claude-codePath': 'claude-code',
+  codexPath: 'codex',
 };
 
 /**
@@ -65,7 +62,7 @@ const PROVIDER_PATH_KEYS: Record<string, string> = {
  * and is no longer localStorage-backed. `rtkEnabled` was migrated to daemon
  * settings catalog (rtk.enabled) and is no longer FE-local.
  */
-const LOCAL_STORAGE_PREFIX = "legacy-settings:";
+const LOCAL_STORAGE_PREFIX = 'legacy-settings:';
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -90,13 +87,13 @@ function writeLocalValue(key: string, value: unknown): void {
 
 /** Daemon `settings.get` — unwraps `{ path, value, definition }` to the value. */
 async function daemonGet(path: string): Promise<unknown> {
-  const result = await backendRequest<{ value?: unknown }>("settings.get", { path });
+  const result = await backendRequest<{ value?: unknown }>('settings.get', { path });
   return result?.value;
 }
 
 /** Daemon `settings.update` — single-change batch (validated + atomic BE-side). */
 async function daemonUpdate(path: string, value: unknown): Promise<void> {
-  await backendRequest("settings.update", { changes: [{ path, value }] });
+  await backendRequest('settings.update', { changes: [{ path, value }] });
 }
 
 async function getSetting(key: string): Promise<unknown> {
@@ -104,8 +101,8 @@ async function getSetting(key: string): Promise<unknown> {
   if (daemonPath) return await daemonGet(daemonPath);
   const providerKey = PROVIDER_PATH_KEYS[key];
   if (providerKey) {
-    const paths = await daemonGet("providers.paths");
-    return paths && typeof paths === "object"
+    const paths = await daemonGet('providers.paths');
+    return paths && typeof paths === 'object'
       ? (paths as Record<string, unknown>)[providerKey]
       : undefined;
   }
@@ -120,12 +117,12 @@ async function setSetting(key: string, value: unknown): Promise<void> {
   }
   const providerKey = PROVIDER_PATH_KEYS[key];
   if (providerKey) {
-    const current = await daemonGet("providers.paths");
+    const current = await daemonGet('providers.paths');
     const merged = {
-      ...(current && typeof current === "object" ? (current as Record<string, unknown>) : {}),
+      ...(current && typeof current === 'object' ? (current as Record<string, unknown>) : {}),
       [providerKey]: value,
     };
-    await daemonUpdate("providers.paths", merged);
+    await daemonUpdate('providers.paths', merged);
     return;
   }
   writeLocalValue(key, value);
@@ -133,8 +130,8 @@ async function setSetting(key: string, value: unknown): Promise<void> {
 
 registerMockIpcHandler(SETTINGS_CHANNELS.GET, async (arg) => {
   const key = (arg as { key?: unknown } | undefined)?.key;
-  if (typeof key !== "string" || !key) {
-    return { success: false, error: "settings:get requires a key" };
+  if (typeof key !== 'string' || !key) {
+    return { success: false, error: 'settings:get requires a key' };
   }
   try {
     return { success: true, data: await getSetting(key) };
@@ -145,8 +142,8 @@ registerMockIpcHandler(SETTINGS_CHANNELS.GET, async (arg) => {
 
 registerMockIpcHandler(SETTINGS_CHANNELS.SET, async (arg) => {
   const { key, value } = (arg ?? {}) as { key?: unknown; value?: unknown };
-  if (typeof key !== "string" || !key) {
-    return { success: false, error: "settings:set requires a key" };
+  if (typeof key !== 'string' || !key) {
+    return { success: false, error: 'settings:set requires a key' };
   }
   try {
     await setSetting(key, value);
@@ -158,8 +155,8 @@ registerMockIpcHandler(SETTINGS_CHANNELS.SET, async (arg) => {
 
 registerMockIpcHandler(SETTINGS_CHANNELS.UPDATE, async (arg) => {
   const settings = (arg as { settings?: unknown } | undefined)?.settings;
-  if (!settings || typeof settings !== "object") {
-    return { success: false, error: "settings:update requires a settings object" };
+  if (!settings || typeof settings !== 'object') {
+    return { success: false, error: 'settings:update requires a settings object' };
   }
   try {
     for (const [key, value] of Object.entries(settings as Record<string, unknown>)) {
@@ -182,15 +179,15 @@ registerMockIpcHandler(FEATURE_CODES_CHANNELS.GET_ACTIVE, () => {
 });
 
 registerMockIpcHandler(FEATURE_CODES_CHANNELS.ACTIVATE, () => {
-  throw new Error("Feature codes are not supported in this build");
+  throw new Error('Feature codes are not supported in this build');
 });
 
 registerMockIpcHandler(FEATURE_CODES_CHANNELS.DEACTIVATE, () => {
-  throw new Error("Feature codes are not supported in this build");
+  throw new Error('Feature codes are not supported in this build');
 });
 
 registerMockIpcHandler(FEATURE_CODES_CHANNELS.RESTART_APP, () => {
-  throw new Error("App restart is not available in this build");
+  throw new Error('App restart is not available in this build');
 });
 
 // Legacy agent-persistence store (persistence:*) was retired with the

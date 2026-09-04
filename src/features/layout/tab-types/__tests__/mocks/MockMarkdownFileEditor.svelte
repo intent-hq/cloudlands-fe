@@ -6,5 +6,4 @@
   data-testid="markdown-file-editor"
   aria-label="Mock markdown editor"
   data-external-content-version={externalContentVersion}
-  bind:value
-></textarea>
+  bind:value></textarea>

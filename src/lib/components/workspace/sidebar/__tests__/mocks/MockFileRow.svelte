@@ -1,6 +1,21 @@
 <script lang="ts">
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let { file, onFileClick, onStage, onUnstage, onRevert, onOpenFile, onSelectClick, showStageAction, showRevertAction, active, selected, focused, locked }: any = $props();
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  let {
+    file,
+    onFileClick,
+    onStage,
+    onUnstage,
+    onRevert,
+    onOpenFile,
+    onSelectClick,
+    showStageAction,
+    showRevertAction,
+    active,
+    selected,
+    focused,
+    locked,
+  }: any = $props();
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -30,4 +45,3 @@
   {/if}
   <button data-testid="file-click" onclick={() => onFileClick?.(file?.path)}>Open</button>
 </div>
-

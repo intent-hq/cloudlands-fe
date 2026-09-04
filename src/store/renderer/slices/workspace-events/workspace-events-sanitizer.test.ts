@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { sanitizeWorkspaceEvent } from './workspace-events-sanitizer';
 
 describe('workspace event sanitizer', () => {

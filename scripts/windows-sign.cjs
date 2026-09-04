@@ -24,7 +24,9 @@ exports.default = async function sign(configuration) {
 
   if (!enabled) {
     if (!loggedSkip) {
-      console.log('[windows-sign] Skipping — INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING is not set to true.');
+      console.log(
+        '[windows-sign] Skipping — INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING is not set to true.',
+      );
       loggedSkip = true;
     }
     return;
@@ -32,7 +34,9 @@ exports.default = async function sign(configuration) {
 
   const keypairAlias = process.env.INTENT_WINDOWS_SM_KEYPAIR_ALIAS;
   if (!keypairAlias) {
-    throw new Error('[windows-sign] INTENT_WINDOWS_SM_KEYPAIR_ALIAS is required for signing but is not set.');
+    throw new Error(
+      '[windows-sign] INTENT_WINDOWS_SM_KEYPAIR_ALIAS is required for signing but is not set.',
+    );
   }
 
   const filePath = path.resolve(configuration.path);
@@ -45,7 +49,8 @@ exports.default = async function sign(configuration) {
   // Heuristic: sign if the file is directly in win-unpacked (main app) or
   // contains "Setup" in the name (NSIS installer). Everything else is a
   // helper/dependency nested deeper in the tree.
-  const isMainApp = filePath.includes('win-unpacked') && path.dirname(filePath).endsWith('win-unpacked');
+  const isMainApp =
+    filePath.includes('win-unpacked') && path.dirname(filePath).endsWith('win-unpacked');
   const isInstaller = fileName.includes('Setup');
 
   if (!isMainApp && !isInstaller) {
@@ -60,17 +65,23 @@ exports.default = async function sign(configuration) {
     //   --simple            use simplified signing mode (required for simple-signing-mode setup)
     //   --exit-non-zero-on-fail  actually return non-zero on failure (smctl defaults to exit 0!)
     //   --failfast          stop on first error
-    const output = execFileSync('smctl', [
-      'sign',
-      '--simple',
-      '--keypair-alias', keypairAlias,
-      '--exit-non-zero-on-fail',
-      '--failfast',
-      '--input', filePath,
-    ], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const output = execFileSync(
+      'smctl',
+      [
+        'sign',
+        '--simple',
+        '--keypair-alias',
+        keypairAlias,
+        '--exit-non-zero-on-fail',
+        '--failfast',
+        '--input',
+        filePath,
+      ],
+      {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
     const combined = (output || '').toString();
     console.log(`[windows-sign] smctl output: ${combined.trim()}`);
     console.log(`[windows-sign] ✅ Signed: ${path.basename(filePath)}`);

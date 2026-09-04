@@ -2,11 +2,7 @@
  * Tests for event types and type guards
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   isFileChangedEvent,
   isAgentToolCallEvent,
@@ -57,7 +53,10 @@ describe('event types', () => {
     } satisfies AgentStatusPayload;
 
     // @ts-expect-error agent:status payloads must include all canonical status fields.
-    const missingCanonicalFields = { agentId: 'agent-1', status: 'responding' } satisfies AgentStatusPayload;
+    const missingCanonicalFields = {
+      agentId: 'agent-1',
+      status: 'responding',
+    } satisfies AgentStatusPayload;
 
     expect(payload).toMatchObject({
       agentId: 'agent-1',

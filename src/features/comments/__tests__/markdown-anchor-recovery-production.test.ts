@@ -5,11 +5,7 @@
  * Ported from the spike to ensure the production code works correctly.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   findAnchorsInMarkdown,
   removeAnchors,

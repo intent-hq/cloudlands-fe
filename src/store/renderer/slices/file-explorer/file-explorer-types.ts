@@ -1,5 +1,5 @@
-import type { FileNode, FileGitStatus } from "$shared/types";
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+import type { FileNode, FileGitStatus } from '$shared/types';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 // ---------------------------------------------------------------------------
 // Flattened node for virtualized rendering
@@ -28,7 +28,7 @@ export interface FlattenedFileNode {
 // Per-workspace state
 // ---------------------------------------------------------------------------
 
-export type FileExplorerTreeNode = Omit<FileNode, "children"> & {
+export type FileExplorerTreeNode = Omit<FileNode, 'children'> & {
   /** Child node paths in display order */
   children: string[];
 };
@@ -38,7 +38,7 @@ export type FileExplorerDisplayNode = FileExplorerTreeNode;
 export interface FileExplorerWorkspaceState {
   workspacePath: string;
   rootPath: string | null;
-  nodes: Collection<FileExplorerTreeNode, "path">;
+  nodes: Collection<FileExplorerTreeNode, 'path'>;
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -68,4 +68,3 @@ export interface FileExplorerWorkspaceState {
 export interface FileExplorerState {
   byWorkspaceId: Record<string, FileExplorerWorkspaceState>;
 }
-

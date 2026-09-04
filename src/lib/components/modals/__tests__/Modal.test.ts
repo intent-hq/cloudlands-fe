@@ -12,12 +12,7 @@
  *
  * This test should FAIL before the fix and PASS after.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Modal from '../Modal.svelte';
@@ -61,13 +56,14 @@ describe('Modal - aria-hidden regression', () => {
 
     // Look for any element with aria-hidden="true" that also has role="presentation"
     // This is the outer positioning div (line 56-60 in Modal.svelte)
-    const presentationDiv = container.querySelector('[role="presentation"]')
-      ?? document.body.querySelector('[role="presentation"]');
+    const presentationDiv =
+      container.querySelector('[role="presentation"]') ??
+      document.body.querySelector('[role="presentation"]');
 
     // Also search in the full document body since Portal may teleport content
     const allAriaHidden = document.querySelectorAll('[aria-hidden="true"]');
     const ariaHiddenWithPresentation = Array.from(allAriaHidden).filter(
-      (el) => el.getAttribute('role') === 'presentation'
+      (el) => el.getAttribute('role') === 'presentation',
     );
 
     // The positioning wrapper with role="presentation" should NOT have aria-hidden="true"
@@ -80,19 +76,18 @@ describe('Modal - aria-hidden regression', () => {
     expect(ariaHiddenWithPresentation.length).toBe(0);
 
     // Additionally, verify that no ancestor of role="dialog" has aria-hidden="true"
-    const dialogEl = container.querySelector('[role="dialog"]')
-      ?? document.body.querySelector('[role="dialog"]');
+    const dialogEl =
+      container.querySelector('[role="dialog"]') ?? document.body.querySelector('[role="dialog"]');
 
     if (dialogEl) {
       let parent = dialogEl.parentElement;
       while (parent) {
         expect(
           parent.getAttribute('aria-hidden'),
-          `Parent element of dialog should not have aria-hidden="true": ${parent.outerHTML.substring(0, 100)}`
+          `Parent element of dialog should not have aria-hidden="true": ${parent.outerHTML.substring(0, 100)}`,
         ).not.toBe('true');
         parent = parent.parentElement;
       }
     }
   });
 });
-

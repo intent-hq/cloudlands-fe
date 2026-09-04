@@ -99,7 +99,7 @@ class IPCCleanupManager {
     for (const channel of this.allHandlers) {
       try {
         ipcMain.removeHandler(channel);
-      } catch  {
+      } catch {
         logger.debug(`Handler already removed or not found: ${channel}`);
       }
     }
