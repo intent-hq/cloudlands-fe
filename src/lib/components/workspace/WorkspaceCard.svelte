@@ -197,6 +197,7 @@
   let pointerWithinRow = false;
   let focusWithinRow = false;
   let hoverCardOpenedFromPointer = false;
+  let hoverCardDismissalActive = $state(false);
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -206,6 +207,7 @@
   }
 
   function openHoverCardFromPointer() {
+    hoverCardDismissalActive = true;
     hoverCardVisible = true;
     if (hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = true;
@@ -213,11 +215,27 @@
   }
 
   function closeHoverCard() {
+    hoverCardDismissalActive = false;
     hoverCardVisible = false;
     if (!hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = false;
     workspaceHoverCardIntentSession.notifyClosed();
   }
+
+  function dismissHoverCardFromInteraction() {
+    clearHoverCardOpenTimer();
+    closeHoverCard();
+  }
+
+  $effect(() => {
+    if (!hoverCardDismissalActive) return;
+    window.addEventListener('pointerdown', dismissHoverCardFromInteraction, true);
+    window.addEventListener('scroll', dismissHoverCardFromInteraction, true);
+    return () => {
+      window.removeEventListener('pointerdown', dismissHoverCardFromInteraction, true);
+      window.removeEventListener('scroll', dismissHoverCardFromInteraction, true);
+    };
+  });
 
   const activePullRequest = $derived.by(() => {
     if (!workspace) return null;
@@ -272,6 +290,7 @@
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
+      hoverCardDismissalActive = true;
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
         openHoverCardFromPointer();
@@ -288,7 +307,10 @@
   function handleFocusIn() {
     focusWithinRow = true;
     clearHoverCardOpenTimer();
-    if (workspace && !suppressHover) hoverCardVisible = true;
+    if (workspace && !suppressHover) {
+      hoverCardDismissalActive = true;
+      hoverCardVisible = true;
+    }
   }
 
   function handleFocusOut(event: FocusEvent) {
