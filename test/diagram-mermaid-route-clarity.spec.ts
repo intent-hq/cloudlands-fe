@@ -36,11 +36,14 @@ for (const appearance of appearances) {
       test.setTimeout(120_000);
       await openDiagram(page, 'mermaid-long-labels', width, appearance);
       await Promise.all(
-        ['mermaid-flow', 'mermaid-state', 'mermaid-groups', 'mermaid-nested-groups'].map(
-          (fixture) =>
-            page
-              .locator(`#${fixture} svg[data-layout-settled="true"]`)
-              .waitFor({ timeout: 90_000 }),
+        [
+          'mermaid-flow',
+          'mermaid-state',
+          'mermaid-groups',
+          'mermaid-nested-groups',
+          'mermaid-topology-stress',
+        ].map((fixture) =>
+          page.locator(`#${fixture} svg[data-layout-settled="true"]`).waitFor({ timeout: 90_000 }),
         ),
       );
       await expect(
@@ -297,7 +300,7 @@ for (const appearance of appearances) {
               .filter((label) => label.textContent?.trim())
               .map((label) => {
                 const surface = label.querySelector<SVGGraphicsElement>(
-                  'foreignObject.edge-label-surface, rect.background[data-label-padded]',
+                  'rect.edge-label-knockout, foreignObject.edge-label-surface, rect.background[data-label-padded]',
                 )!;
                 const text = label.querySelector<SVGGraphicsElement>('text');
                 const htmlText = label.querySelector<HTMLElement>('span.edgeLabel');
@@ -314,6 +317,8 @@ for (const appearance of appearances) {
                   surface instanceof SVGRectElement ? style.fill : style.backgroundColor;
                 const color = textStyle.fill === 'none' ? textStyle.color : textStyle.fill;
                 const alpha = Number(background.match(/[\d.]+/g)?.[3] ?? 1);
+                const edgePaths = label.closest('svg')!.querySelector('.edgePaths')!;
+                const edgeLabels = label.closest('.edgeLabels')!;
                 return {
                   text: label.textContent!.trim(),
                   horizontal:
@@ -334,6 +339,15 @@ for (const appearance of appearances) {
                   border: style.stroke === 'none' || style.borderStyle === 'none',
                   shadow: style.filter === 'none' && style.boxShadow === 'none',
                   contrast: contrast(color, background),
+                  paintOrder:
+                    !!(
+                      edgePaths.compareDocumentPosition(edgeLabels) &
+                      Node.DOCUMENT_POSITION_FOLLOWING
+                    ) &&
+                    !!(
+                      surface.compareDocumentPosition((text ?? htmlText)!) &
+                      Node.DOCUMENT_POSITION_FOLLOWING
+                    ),
                 };
               }),
           );
@@ -348,9 +362,41 @@ for (const appearance of appearances) {
             surface.radius > 3 ||
             !surface.border ||
             !surface.shadow ||
+            !surface.paintOrder ||
             surface.contrast < 4.5,
         ),
       ).toEqual([]);
+
+      const sharedStyles = await page.locator('#mermaid-flow').evaluate((root) => {
+        const canvas = getComputedStyle(
+          root.querySelector<HTMLElement>('.mermaid-presentation')!,
+        ).backgroundColor;
+        const node = root.querySelector<SVGGraphicsElement>('g.node > .label-container')!;
+        const nodeStyle = getComputedStyle(node);
+        const edge = root.querySelector<SVGPathElement>('.edgePaths path')!;
+        const edgeStyle = getComputedStyle(edge);
+        const label = root.querySelector<SVGGraphicsElement>('.edgeLabel text, .edgeLabel span')!;
+        const labelStyle = getComputedStyle(label);
+        const markerId = edge.getAttribute('marker-end')?.match(/#([^)]*)/)?.[1];
+        const marker = markerId
+          ? root.querySelector<SVGPathElement>(`marker[id="${markerId}"] path`)
+          : null;
+        return {
+          canvas,
+          nodeFill: nodeStyle.fill,
+          nodeStroke: nodeStyle.stroke,
+          edgeStroke: edgeStyle.stroke,
+          labelColor: labelStyle.fill === 'none' ? labelStyle.color : labelStyle.fill,
+          markerFill: marker ? getComputedStyle(marker).fill : null,
+          markerStroke: marker ? getComputedStyle(marker).stroke : null,
+        };
+      });
+      expect(sharedStyles.nodeStroke).toBe('none');
+      expect(sharedStyles.nodeFill).not.toBe(sharedStyles.canvas);
+      expect(sharedStyles.edgeStroke).not.toBe(sharedStyles.labelColor);
+      expect([sharedStyles.markerFill, sharedStyles.markerStroke]).toContain(
+        sharedStyles.edgeStroke,
+      );
 
       const groupGeometry = await page
         .locator('#mermaid-groups, #mermaid-nested-groups')
@@ -484,6 +530,79 @@ for (const appearance of appearances) {
       if (width === 320) {
         expect(nestedViewportInsets.labelRight).toBeGreaterThanOrEqual(23);
         expect(nestedViewportInsets.routeRight).toBeGreaterThanOrEqual(23);
+      }
+
+      const topology = await page
+        .locator('#mermaid-topology-stress svg[aria-roledescription="flowchart-v2"]')
+        .evaluate((svg) => {
+          const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
+          const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')].map((node) => ({
+            id: node.id.match(/flowchart-(.+?)-\d+$/)?.[1],
+            bounds: node.getBoundingClientRect(),
+          }));
+          const violations: string[] = [];
+          for (const path of paths) {
+            const identity = path.id.match(/-L_([^_]+)_([^_]+)_\d+$/);
+            const points = path.dataset.manhattanPoints!.split(' ').map((value) => {
+              const [x, y] = value.split(',').map(Number);
+              return { x, y };
+            });
+            points.slice(1).forEach((point, index) => {
+              const previous = points[index];
+              if (Math.abs(point.x - previous.x) >= 0.01 && Math.abs(point.y - previous.y) >= 0.01)
+                violations.push(`${path.id} diagonal`);
+            });
+            const matrix = path.getScreenCTM()!;
+            const samples = Array.from({ length: 121 }, (_, index) => {
+              const point = path.getPointAtLength((path.getTotalLength() * index) / 120);
+              return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+            });
+            if (
+              samples
+                .slice(2, -2)
+                .some((point) =>
+                  nodes.some(
+                    (node) =>
+                      node.id !== identity?.[1] &&
+                      node.id !== identity?.[2] &&
+                      point.x > node.bounds.left + 1 &&
+                      point.x < node.bounds.right - 1 &&
+                      point.y > node.bounds.top + 1 &&
+                      point.y < node.bounds.bottom - 1,
+                  ),
+                )
+            )
+              violations.push(`${path.id} crosses node`);
+          }
+          const labels = [...svg.querySelectorAll<SVGGElement>('g.edgeLabel')].filter((label) =>
+            label.textContent?.trim(),
+          );
+          for (let left = 0; left < labels.length; left += 1) {
+            const a = labels[left].getBoundingClientRect();
+            for (let right = left + 1; right < labels.length; right += 1) {
+              const b = labels[right].getBoundingClientRect();
+              const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+              const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+              if (overlapX > 0.5 && overlapY > 0.5) violations.push('overlapping labels');
+            }
+          }
+          const feedback = svg.querySelector<SVGPathElement>('path[data-feedback-lane="outer"]');
+          const parallel = paths
+            .filter((path) => /-L_(?:A_B|B_A)_/.test(path.id))
+            .map((path) => path.dataset.parallelLane)
+            .filter(Boolean);
+          return {
+            violations,
+            feedback: [feedback?.dataset.feedbackSource, feedback?.dataset.feedbackTarget],
+            parallel,
+            selfLoop: svg.querySelector('path[data-self-loop="right"]') !== null,
+          };
+        });
+      expect(topology.violations).toEqual([]);
+      expect(topology.feedback).toEqual(['E', 'B']);
+      if (width === 960) {
+        expect(topology.parallel).toEqual(['before', 'center', 'after']);
+        expect(topology.selfLoop).toBe(true);
       }
 
       await page
@@ -720,6 +839,55 @@ for (const appearance of appearances) {
       });
       expect(highlight.borderWidth).toBeGreaterThanOrEqual(0.9);
       expect(highlight.borderWidth).toBeLessThanOrEqual(1.2);
+      const defaults = await root.locator('.diagram-renderer').evaluate((renderer) => {
+        const node = renderer.querySelector<HTMLElement>(
+          '.diagram-node-html:not(.node-state-highlighted)',
+        )!;
+        const label = renderer.querySelector<HTMLElement>('.edge-label-html')!;
+        const labelRange = document.createRange();
+        labelRange.selectNodeContents(label);
+        const labelBounds = label.getBoundingClientRect();
+        const textBounds = labelRange.getBoundingClientRect();
+        const edge = renderer.querySelector<SVGPathElement>('.edge-path')!;
+        const markerId = edge.getAttribute('marker-end')?.match(/#([^)]*)/)?.[1];
+        const marker = markerId
+          ? renderer.querySelector<SVGPathElement>(`marker[id="${markerId}"] path`)
+          : null;
+        const nodeStyle = getComputedStyle(node);
+        const labelStyle = getComputedStyle(label);
+        return {
+          nodeBorder: Number.parseFloat(nodeStyle.borderWidth),
+          nodeBackground: nodeStyle.backgroundColor,
+          nodeColor: nodeStyle.color,
+          labelBackground: labelStyle.backgroundColor,
+          horizontal: Math.min(
+            textBounds.left - labelBounds.left,
+            labelBounds.right - textBounds.right,
+          ),
+          vertical: Math.min(
+            textBounds.top - labelBounds.top,
+            labelBounds.bottom - textBounds.bottom,
+          ),
+          paintOrder: !!(
+            edge.compareDocumentPosition(label.closest('foreignObject')!) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+          edgeStroke: getComputedStyle(edge).stroke,
+          markerFill: marker?.getAttribute('fill'),
+          markerStroke: marker?.getAttribute('stroke'),
+        };
+      });
+      expect(defaults).toMatchObject({
+        nodeBorder: 0,
+        paintOrder: true,
+        markerFill: 'context-stroke',
+        markerStroke: 'context-stroke',
+      });
+      expect(defaults.nodeBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+      expect(defaults.edgeStroke).not.toBe(defaults.nodeColor);
+      expect(defaults.labelBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+      expect(defaults.horizontal).toBeGreaterThanOrEqual(5.9);
+      expect(defaults.vertical).toBeGreaterThanOrEqual(3.9);
       await page.locator('.catalog-topbar').evaluate((toolbar) => {
         toolbar.style.visibility = 'hidden';
       });

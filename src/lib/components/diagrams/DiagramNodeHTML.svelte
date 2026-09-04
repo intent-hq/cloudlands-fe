@@ -196,14 +196,13 @@
   .diagram-node-html {
     width: 100%;
     height: 100%;
-    border: 1px solid var(--diagram-node-outline);
+    border: 0;
     border-radius: var(--diagram-node-radius);
     background: var(--diagram-node-surface);
     color: var(--diagram-node-title);
     font-family: var(--font-ui);
     text-align: left;
     transition:
-      border-color var(--motion-standard) var(--ease-standard),
       background var(--motion-standard) var(--ease-standard),
       opacity var(--motion-standard) var(--ease-standard);
     cursor: default;
@@ -223,7 +222,7 @@
   }
 
   .diagram-node-html.node-clickable:hover {
-    border-color: hsl(var(--muted-foreground) / 0.65);
+    background: var(--diagram-node-hover-surface);
   }
 
   .diagram-node-html.node-clickable:focus-visible {
@@ -264,8 +263,7 @@
   .node-danger,
   .node-success,
   .node-warning {
-    border-color: color-mix(in srgb, hsl(var(--node-semantic)) 42%, var(--diagram-node-outline));
-    background: color-mix(in srgb, hsl(var(--node-semantic)) 7%, var(--diagram-node-surface));
+    background: color-mix(in srgb, hsl(var(--node-semantic)) 9%, var(--diagram-node-surface));
     color: var(--diagram-node-title);
   }
 
@@ -281,7 +279,6 @@
   .node-inactive {
     background: color-mix(in srgb, hsl(var(--muted)) 48%, hsl(var(--card)));
     color: hsl(var(--muted-foreground));
-    border-color: hsl(var(--border));
   }
 
   .diagram-node-html:is(

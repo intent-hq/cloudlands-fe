@@ -24,6 +24,9 @@ const tokens = {
   '--border': '210 10% 82%',
   '--accent': '145 30% 90%',
   '--accent-foreground': '145 50% 20%',
+  '--diagram-canvas': 'hsl(0 0% 100%)',
+  '--diagram-node-surface': 'hsl(0 0% 96%)',
+  '--diagram-connector': 'rgb(118 124 132)',
   '--font-ui': 'Inter, system-ui, sans-serif',
   '--text-caption-size': '0.8125rem',
   '--radius-small': '5px',
@@ -49,7 +52,7 @@ describe('MermaidRenderer theme updates', () => {
     render(MermaidRenderer, { code: 'sequenceDiagram\nA->>B: Ready' });
     await waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledOnce());
 
-    document.documentElement.style.setProperty('--card', '260 20% 18%');
+    document.documentElement.style.setProperty('--diagram-node-surface', '260 20% 18%');
 
     await waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledTimes(2));
     const latestConfig = mermaidMocks.initialize.mock.calls.at(-1)?.[0];

@@ -134,15 +134,11 @@ describe('custom diagram visual contract', () => {
     expect(
       [...container.querySelectorAll('.edge-label-html')].map((node) => node.textContent),
     ).toEqual(['select state', 'render succeeds', 'parse fails', 'choose another case']);
-    expect(container.querySelector('[id^="arrowhead-success-"] path')?.getAttribute('stroke')).toBe(
-      'hsl(var(--success) / 0.72)',
-    );
-    expect(container.querySelector('[id^="arrowhead-danger-"] path')?.getAttribute('stroke')).toBe(
-      'hsl(var(--error-foreground))',
-    );
     expect(
       [...container.querySelectorAll('marker path')].every(
-        (marker) => marker.getAttribute('stroke-width') === '1',
+        (marker) =>
+          marker.getAttribute('stroke-width') === '1' &&
+          marker.getAttribute('stroke') === 'context-stroke',
       ),
     ).toBe(true);
     expect(container.querySelectorAll('.edge-label-leader')).toHaveLength(0);

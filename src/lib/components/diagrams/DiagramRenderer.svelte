@@ -891,7 +891,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--muted-foreground) / 0.62)"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -911,7 +911,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--error-foreground))"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -930,7 +930,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--success) / 0.72)"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -949,7 +949,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--warning) / 0.78)"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -968,7 +968,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--muted-foreground) / 0.45)"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -987,7 +987,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--muted-foreground) / 0.35)"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -1006,7 +1006,7 @@
               <path
                 d="M 1 1 L 7 4 L 1 7 z"
                 fill="context-stroke"
-                stroke="hsl(var(--accent))"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -1025,7 +1025,7 @@
               <path
                 d="M 2 1 L 7 4 L 2 7"
                 fill="none"
-                stroke="hsl(var(--accent))"
+                stroke="context-stroke"
                 stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -1318,8 +1318,8 @@
     line-height: var(--text-caption-line-height);
     letter-spacing: var(--text-caption-tracking);
     color: hsl(var(--muted-foreground));
-    background: hsl(var(--background));
-    padding: 1px 4px;
+    background: var(--diagram-label-surface);
+    padding: 4px 6px;
     white-space: pre-line;
     overflow: hidden;
     overflow-wrap: normal;

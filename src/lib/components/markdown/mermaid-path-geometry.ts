@@ -403,6 +403,14 @@ function flowchartEdgeIdentity(path: SVGPathElement) {
   return match ? { source: match[1], target: match[2] } : null;
 }
 
+function flowchartLabelForPath(svg: SVGSVGElement, path: SVGPathElement) {
+  const edgeId = path.id.match(/-(L_.+)$/)?.[1];
+  if (!edgeId) return;
+  return [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].find(
+    (label) => label.querySelector(':scope > .label')?.getAttribute('data-id') === edgeId,
+  );
+}
+
 function flowchartNode(svg: SVGSVGElement, id: string) {
   return [...svg.querySelectorAll<SVGGElement>('g.node')].find(
     (node) => flowchartNodeId(node) === id,
@@ -504,12 +512,16 @@ export function routeFlowchartFeedbackLane(svg: SVGSVGElement, force = false) {
   });
   const inDegree = new Map<string, number>();
   const outDegree = new Map<string, number>();
-  for (const edge of edges) {
+  for (const edge of edges.filter(({ source, target }) => source !== target)) {
     inDegree.set(edge.target, (inDegree.get(edge.target) ?? 0) + 1);
     outDegree.set(edge.source, (outDegree.get(edge.source) ?? 0) + 1);
   }
   const feedback = edges.find(
-    (edge) => (inDegree.get(edge.source) ?? 0) >= 3 && (outDegree.get(edge.target) ?? 0) >= 3,
+    (edge) =>
+      edge.source !== edge.target &&
+      (inDegree.get(edge.source) ?? 0) >= 2 &&
+      (outDegree.get(edge.source) ?? 0) === 1 &&
+      (outDegree.get(edge.target) ?? 0) >= 2,
   );
   if (!feedback) return;
   if (!force && feedback.path.dataset.feedbackLane === 'outer') return feedback.path.getBBox();
@@ -633,6 +645,7 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     'd',
     points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
   );
+  placeFlowchartLabelOnRoute(flowchartLabelForPath(svg, path), path, points);
 }
 
 export function snapOrthogonalTerminals(
@@ -643,6 +656,17 @@ export function snapOrthogonalTerminals(
 ): Point[] {
   if (points.length < 2) return points;
   if (points.length === 2) {
+    if (vertical && Math.abs(start.x - end.x) >= 0.001) {
+      const middleY = (start.y + end.y) / 2;
+      return [start, { x: start.x, y: middleY }, { x: end.x, y: middleY }, end];
+    }
+    if (!vertical && Math.abs(start.y - end.y) >= 0.001) {
+      const middleX = (start.x + end.x) / 2;
+      return [start, { x: middleX, y: start.y }, { x: middleX, y: end.y }, end];
+    }
+    return [start, end];
+  }
+  if (points.length === 3) {
     if (vertical && Math.abs(start.x - end.x) >= 0.001) {
       const middleY = (start.y + end.y) / 2;
       return [start, { x: start.x, y: middleY }, { x: end.x, y: middleY }, end];
@@ -664,12 +688,105 @@ export function snapOrthogonalTerminals(
     snapped[1].y = start.y;
     snapped[snapped.length - 2].y = end.y;
   }
+  const hasDiagonal = snapped.slice(1).some((point, index) => {
+    const previous = snapped[index];
+    return Math.abs(point.x - previous.x) >= 0.001 && Math.abs(point.y - previous.y) >= 0.001;
+  });
+  if (hasDiagonal) return snapOrthogonalTerminals([start, end], start, end, vertical);
   return snapped;
+}
+
+function placeFlowchartLabelOnRoute(
+  label: SVGGElement | undefined,
+  path: SVGPathElement,
+  points: Point[],
+) {
+  if (!label?.textContent?.trim() || points.length < 2) return;
+  const pathMatrix = path.getScreenCTM();
+  const labelParentMatrix = (label.parentElement as SVGGraphicsElement | null)?.getScreenCTM();
+  if (!pathMatrix || !labelParentMatrix) return;
+  const current = label.getBoundingClientRect();
+  const currentCenter = new DOMPoint(
+    current.left + current.width / 2,
+    current.top + current.height / 2,
+  ).matrixTransform(pathMatrix.inverse());
+  const previousTransform = label.getAttribute('transform');
+  label.removeAttribute('transform');
+  const local = label.getBBox();
+  if (previousTransform) label.setAttribute('transform', previousTransform);
+  const otherLabels = [
+    ...(path.ownerSVGElement?.querySelectorAll<SVGGElement>('g.edgeLabel') ?? []),
+  ]
+    .filter((other) => other !== label && other.textContent?.trim())
+    .map((other) => other.getBoundingClientRect());
+  const nodes = [...(path.ownerSVGElement?.querySelectorAll<SVGGElement>('g.node') ?? [])].map(
+    (node) => node.getBoundingClientRect(),
+  );
+  const overlaps = (left: DOMRect, right: DOMRect) =>
+    left.left < right.right + 4 &&
+    left.right + 4 > right.left &&
+    left.top < right.bottom + 4 &&
+    left.bottom + 4 > right.top;
+  const candidates = points.slice(1).flatMap((end, index) => {
+    const start = points[index];
+    const horizontal = Math.abs(start.y - end.y) < 0.001;
+    const capacity = Math.hypot(end.x - start.x, end.y - start.y);
+    const required = (horizontal ? local.width : local.height) + 12;
+    if (capacity < required) return [];
+    return [0.5, 0.35, 0.65, 0.2, 0.8].flatMap((fraction) => {
+      if (capacity * Math.min(fraction, 1 - fraction) < required / 2) return [];
+      const center = {
+        x: start.x + (end.x - start.x) * fraction,
+        y: start.y + (end.y - start.y) * fraction,
+      };
+      const screenCenter = new DOMPoint(center.x, center.y).matrixTransform(pathMatrix);
+      const bounds = DOMRect.fromRect({
+        x: screenCenter.x - current.width / 2,
+        y: screenCenter.y - current.height / 2,
+        width: current.width,
+        height: current.height,
+      });
+      const collisions =
+        otherLabels.filter((other) => overlaps(bounds, other)).length +
+        nodes.filter((node) => overlaps(bounds, node)).length;
+      return [
+        {
+          start,
+          end,
+          center,
+          collisions,
+          distance: Math.hypot(center.x - currentCenter.x, center.y - currentCenter.y),
+        },
+      ];
+    });
+  });
+  const placement = candidates.toSorted(
+    (left, right) => left.collisions - right.collisions || left.distance - right.distance,
+  )[0];
+  if (!placement) return;
+  const center = new DOMPoint(placement.center.x, placement.center.y)
+    .matrixTransform(pathMatrix)
+    .matrixTransform(labelParentMatrix.inverse());
+  label.setAttribute(
+    'transform',
+    `translate(${center.x - local.x - local.width / 2}, ${center.y - local.y - local.height / 2})`,
+  );
+  label.dataset.routePathId = path.id;
+  label.dataset.finalPathCenter = `${placement.center.x},${placement.center.y}`;
+  path.dataset.labelSegment = `${placement.start.x},${placement.start.y} ${placement.end.x},${placement.end.y}`;
 }
 
 export function snapFlowchartPorts(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
-  for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path')) {
+  const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
+  const pairGroups = new Map<string, SVGPathElement[]>();
+  for (const path of paths) {
+    const identity = flowchartEdgeIdentity(path);
+    if (!identity || identity.source === identity.target) continue;
+    const key = [identity.source, identity.target].toSorted().join('\u0000');
+    pairGroups.set(key, [...(pairGroups.get(key) ?? []), path]);
+  }
+  for (const path of paths) {
     if (
       path.dataset.feedbackLane ||
       path.dataset.fanoutSource ||
@@ -697,38 +814,116 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
     const target = targetShape.getBoundingClientRect();
     const sourceCenter = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
     const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+    const verticallySeparated = target.top >= source.bottom || source.top >= target.bottom;
+    const horizontallySeparated = target.left >= source.right || source.left >= target.right;
     const vertical =
-      Math.abs(targetCenter.y - sourceCenter.y) >= Math.abs(targetCenter.x - sourceCenter.x);
+      verticallySeparated ||
+      (!horizontallySeparated &&
+        Math.abs(targetCenter.y - sourceCenter.y) >= Math.abs(targetCenter.x - sourceCenter.x));
     const downward = targetCenter.y >= sourceCenter.y;
     const rightward = targetCenter.x >= sourceCenter.x;
+    const sharedLeft = Math.max(source.left, target.left);
+    const sharedRight = Math.min(source.right, target.right);
+    const sharedTop = Math.max(source.top, target.top);
+    const sharedBottom = Math.min(source.bottom, target.bottom);
+    const verticalPortX =
+      sharedLeft <= sharedRight ? (sharedLeft + sharedRight) / 2 : sourceCenter.x;
+    const verticalTargetX = sharedLeft <= sharedRight ? verticalPortX : targetCenter.x;
+    const horizontalPortY =
+      sharedTop <= sharedBottom ? (sharedTop + sharedBottom) / 2 : sourceCenter.y;
+    const horizontalTargetY = sharedTop <= sharedBottom ? horizontalPortY : targetCenter.y;
     const sourcePort = vertical
-      ? { x: sourceCenter.x, y: downward ? source.bottom : source.top }
-      : { x: rightward ? source.right : source.left, y: sourceCenter.y };
+      ? { x: verticalPortX, y: downward ? source.bottom : source.top }
+      : { x: rightward ? source.right : source.left, y: horizontalPortY };
     const targetPort = vertical
-      ? { x: targetCenter.x, y: downward ? target.top : target.bottom }
-      : { x: rightward ? target.left : target.right, y: targetCenter.y };
+      ? { x: verticalTargetX, y: downward ? target.top : target.bottom }
+      : { x: rightward ? target.left : target.right, y: horizontalTargetY };
     const inverse = matrix.inverse();
-    const start = new DOMPoint(sourcePort.x, sourcePort.y).matrixTransform(inverse);
-    const end = new DOMPoint(targetPort.x, targetPort.y).matrixTransform(inverse);
-    const routedPoints =
-      points.length >= 2
-        ? points
-        : [
-            { x: start.x, y: start.y },
-            { x: end.x, y: end.y },
+    const localPoint = (x: number, y: number) => {
+      const point = new DOMPoint(x, y).matrixTransform(inverse);
+      return { x: point.x, y: point.y };
+    };
+    let start = localPoint(sourcePort.x, sourcePort.y);
+    let end = localPoint(targetPort.x, targetPort.y);
+    let specialPoints: Point[] | null = null;
+    if (!path.dataset.compactFlowchart && identity?.source === identity?.target) {
+      const laneX = source.right + 32;
+      specialPoints = [
+        localPoint(source.right, source.top + source.height * 0.3),
+        localPoint(laneX, source.top + source.height * 0.3),
+        localPoint(laneX, source.top + source.height * 0.7),
+        localPoint(source.right, source.top + source.height * 0.7),
+      ];
+      path.dataset.selfLoop = 'right';
+    } else if (!path.dataset.compactFlowchart && identity) {
+      const key = [identity.source, identity.target].toSorted().join('\u0000');
+      const group = pairGroups.get(key) ?? [];
+      const lane = group.indexOf(path) - (group.length - 1) / 2;
+      if (group.length > 1) {
+        if (lane === 0 && vertical) {
+          const laneX = (sourceCenter.x + targetCenter.x) / 2;
+          specialPoints = [
+            localPoint(laneX, downward ? source.bottom : source.top),
+            localPoint(laneX, downward ? target.top : target.bottom),
           ];
-    const snapped = snapOrthogonalTerminals(
-      routedPoints,
-      { x: start.x, y: start.y },
-      { x: end.x, y: end.y },
-      vertical,
-    );
+        } else if (lane === 0) {
+          const laneY = (sourceCenter.y + targetCenter.y) / 2;
+          specialPoints = [
+            localPoint(rightward ? source.right : source.left, laneY),
+            localPoint(rightward ? target.left : target.right, laneY),
+          ];
+        } else if (vertical) {
+          const distance = 24 + (Math.ceil(Math.abs(lane)) - 1) * 16;
+          const left = lane < 0;
+          const laneX = left
+            ? Math.min(source.left, target.left) - distance
+            : Math.max(source.right, target.right) + distance;
+          const sourceX = left ? source.left : source.right;
+          const targetX = left ? target.left : target.right;
+          specialPoints = [
+            localPoint(sourceX, sourceCenter.y),
+            localPoint(laneX, sourceCenter.y),
+            localPoint(laneX, targetCenter.y),
+            localPoint(targetX, targetCenter.y),
+          ];
+        } else {
+          const distance = 24 + (Math.ceil(Math.abs(lane)) - 1) * 16;
+          const above = lane < 0;
+          const laneY = above
+            ? Math.min(source.top, target.top) - distance
+            : Math.max(source.bottom, target.bottom) + distance;
+          const sourceY = above ? source.top : source.bottom;
+          const targetY = above ? target.top : target.bottom;
+          specialPoints = [
+            localPoint(sourceCenter.x, sourceY),
+            localPoint(sourceCenter.x, laneY),
+            localPoint(targetCenter.x, laneY),
+            localPoint(targetCenter.x, targetY),
+          ];
+        }
+        path.dataset.parallelLane = lane < 0 ? 'before' : lane > 0 ? 'after' : 'center';
+      }
+    }
+    if (specialPoints) {
+      start = specialPoints[0];
+      end = specialPoints[specialPoints.length - 1];
+    }
+    const routedPoints = specialPoints ?? (points.length >= 2 ? points : [start, end]);
+    const hadDiagonal = routedPoints.slice(1).some((point, index) => {
+      const previous = routedPoints[index];
+      return Math.abs(point.x - previous.x) >= 0.001 && Math.abs(point.y - previous.y) >= 0.001;
+    });
+    const snapped = specialPoints ?? snapOrthogonalTerminals(routedPoints, start, end, vertical);
     const simplified = simplifyOrthogonalPoints(snapped);
+    if (hadDiagonal) path.dataset.cardinalRepaired = 'true';
     path.dataset.manhattanPoints = simplified.map(({ x, y }) => `${x},${y}`).join(' ');
     path.setAttribute(
       'd',
       simplified.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
     );
+    if (!path.dataset.compactFlowchart) {
+      placeFlowchartLabelOnRoute(flowchartLabelForPath(svg, path), path, simplified);
+    }
   }
 }
 

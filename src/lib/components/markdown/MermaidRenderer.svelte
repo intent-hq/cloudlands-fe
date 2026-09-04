@@ -303,6 +303,43 @@ ${verticalSource}`;
     }
   }
 
+  function insertLabelKnockout(
+    parent: Element,
+    before: Element,
+    bounds: { x: number; y: number; width: number; height: number },
+  ) {
+    const knockout = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    knockout.classList.add('edge-label-knockout');
+    knockout.setAttribute('x', String(bounds.x - 6));
+    knockout.setAttribute('y', String(bounds.y - 4));
+    knockout.setAttribute('width', String(bounds.width + 12));
+    knockout.setAttribute('height', String(bounds.height + 8));
+    knockout.setAttribute('rx', '2');
+    knockout.dataset.labelPaddingX = '6';
+    knockout.dataset.labelPaddingY = '4';
+    parent.insertBefore(knockout, before);
+  }
+
+  function addMermaidLabelKnockouts(svg: SVGSVGElement) {
+    for (const label of svg.querySelectorAll<SVGGElement>('g.edgeLabel')) {
+      if (label.querySelector('.edge-label-knockout, rect.background, foreignObject')) continue;
+      const content = label.querySelector<SVGGraphicsElement>('text');
+      if (content) {
+        insertLabelKnockout(label, label.firstElementChild!, content.getBBox());
+      }
+    }
+
+    for (const text of svg.querySelectorAll<SVGGraphicsElement>(
+      'text.messageText, text.loopText',
+    )) {
+      if (text.dataset.labelKnockout === 'true' || !text.textContent?.trim()) continue;
+      const parent = text.parentElement;
+      if (!parent) continue;
+      insertLabelKnockout(parent, text, text.getBBox());
+      text.dataset.labelKnockout = 'true';
+    }
+  }
+
   function balanceMermaidEdgeLabelGlyphs(svg: SVGSVGElement) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
@@ -688,6 +725,7 @@ ${verticalSource}`;
     delete svg.dataset.layoutSettled;
     replaceSequenceActorFigures(svg);
     if (svg.getAttribute('aria-roledescription') === 'sequence') {
+      addMermaidLabelKnockouts(svg);
       setReadableMermaidWidth(svg, svg.viewBox.baseVal.width);
       svg.dataset.layoutSettled = 'true';
       return;
@@ -697,6 +735,7 @@ ${verticalSource}`;
     centerFlowchartLabels(svg);
     balanceMermaidEdgeLabelGlyphs(svg);
     padMermaidEdgeLabels(svg);
+    addMermaidLabelKnockouts(svg);
     reserveFlowchartClusterHeaderBands(svg);
     repairFlowchartNodeOutlines(svg);
     if (compactLayout) {
@@ -1213,7 +1252,7 @@ ${verticalSource}`;
   .mermaid-presentation :global(rect.labelBox),
   .mermaid-presentation :global(rect.entityBox) {
     fill: var(--diagram-node-surface) !important;
-    stroke: var(--diagram-node-outline) !important;
+    stroke: none !important;
   }
 
   .mermaid-presentation :global(.node rect),
@@ -1230,15 +1269,15 @@ ${verticalSource}`;
 
   .mermaid-presentation :global(.node > .flowchart-node-outline) {
     fill: none !important;
-    stroke: hsl(var(--border)) !important;
-    stroke-width: 1px !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
     pointer-events: none;
   }
 
   .mermaid-presentation :global(.classDiagram .class-box-outline) {
     fill: var(--diagram-node-surface) !important;
-    stroke: var(--diagram-node-outline) !important;
-    stroke-width: var(--line-hairline) !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
     rx: var(--diagram-node-radius);
     ry: var(--diagram-node-radius);
   }
@@ -1369,9 +1408,16 @@ ${verticalSource}`;
   }
 
   .mermaid-presentation :global(.edgeLabel rect.background) {
-    fill: var(--diagram-canvas) !important;
+    fill: var(--diagram-label-surface) !important;
     stroke: none !important;
     filter: none !important;
+  }
+
+  .mermaid-presentation :global(.edge-label-knockout) {
+    fill: var(--diagram-label-surface) !important;
+    stroke: none !important;
+    filter: none !important;
+    pointer-events: none;
   }
 
   .mermaid-presentation :global(.node > .label),
@@ -1387,7 +1433,7 @@ ${verticalSource}`;
     display: inline-block;
     border: 0;
     border-radius: 2px;
-    background: var(--diagram-canvas) !important;
+    background: var(--diagram-label-surface) !important;
     color: hsl(var(--muted-foreground)) !important;
     box-sizing: border-box;
     box-shadow: none !important;

@@ -214,7 +214,7 @@
   }
 
   :global(.diagram-edge:hover .edge-path) {
-    stroke: var(--diagram-connector);
+    stroke: var(--diagram-connector-hover);
     stroke-width: var(--diagram-connector-width);
   }
 
@@ -224,42 +224,42 @@
 
   /* State-level highlighting (from DiagramState.highlightedEdges) */
   :global(.edge-state-highlighted .edge-path) {
-    stroke: var(--diagram-connector);
+    stroke: var(--diagram-connector-hover);
     stroke-width: var(--diagram-connector-width);
   }
 
   :global(.edge-highlighted .edge-path) {
-    stroke: var(--diagram-connector);
+    stroke: var(--diagram-connector-hover);
     stroke-width: var(--diagram-connector-width);
   }
 
   :global(.edge-muted .edge-path) {
-    stroke: hsl(var(--muted-foreground) / 0.45);
+    stroke: var(--diagram-connector-muted);
     stroke-width: 1px;
   }
 
   :global(.edge-danger .edge-path) {
-    stroke: hsl(var(--error-foreground));
+    stroke: var(--diagram-connector-danger);
     stroke-width: 1px;
   }
 
   :global(.edge-success .edge-path) {
-    stroke: hsl(var(--success) / 0.72);
+    stroke: var(--diagram-connector-success);
     stroke-width: 1px;
   }
 
   :global(.edge-warning .edge-path) {
-    stroke: hsl(var(--warning) / 0.78);
+    stroke: var(--diagram-connector-warning);
     stroke-width: 1px;
   }
 
   :global(.edge-inactive .edge-path) {
-    stroke: hsl(var(--muted-foreground) / 0.35);
+    stroke: var(--diagram-connector-inactive);
     stroke-width: 1px;
   }
 
   :global(.edge-active .edge-path) {
-    stroke: hsl(var(--accent));
+    stroke: var(--diagram-connector-active);
     stroke-width: 1px;
   }
 
@@ -275,26 +275,26 @@
   }
 
   :global(.edge-origin) {
-    fill: hsl(var(--muted-foreground) / 0.68);
+    fill: var(--diagram-connector);
     pointer-events: none;
   }
 
   :global(.edge-danger .edge-origin) {
-    fill: hsl(var(--error-foreground));
+    fill: var(--diagram-connector-danger);
   }
 
   :global(.edge-success .edge-origin) {
-    fill: hsl(var(--success) / 0.72);
+    fill: var(--diagram-connector-success);
   }
 
   :global(.edge-warning .edge-origin) {
-    fill: hsl(var(--warning) / 0.78);
+    fill: var(--diagram-connector-warning);
   }
 
   :global(.edge-highlighted .edge-origin),
   :global(.edge-active .edge-origin),
   :global(.edge-state-highlighted .edge-origin) {
-    fill: hsl(var(--accent));
+    fill: var(--diagram-connector-active);
   }
 
   @keyframes dash-flow {

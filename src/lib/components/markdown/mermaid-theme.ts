@@ -13,9 +13,23 @@ function readToken(styles: TokenStyle, name: string, fallbackName?: string): str
   return value;
 }
 
-function readColor(styles: TokenStyle, name: string): string {
-  const value = readToken(styles, name);
-  return /^(#|rgb|hsl|oklch|color\()/.test(value) ? value : `hsl(${value})`;
+function readColor(styles: TokenStyle, name: string, fallbackName?: string): string {
+  const value = readToken(styles, name, fallbackName);
+  if (value.startsWith('color-mix(') && typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+      return alpha === 255
+        ? `rgb(${red}, ${green}, ${blue})`
+        : `rgba(${red}, ${green}, ${blue}, ${alpha / 255})`;
+    }
+  }
+  return /^(#|rgb|hsl|oklch|color(?:-mix)?\()/.test(value) ? value : `hsl(${value})`;
 }
 
 function readPixelSize(styles: TokenStyle, name: string, fallbackName?: string): string {
@@ -29,13 +43,14 @@ function readPixelSize(styles: TokenStyle, name: string, fallbackName?: string):
 export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): MermaidConfig {
   const background = readColor(styles, '--background');
   const foreground = readColor(styles, '--foreground');
-  const card = readColor(styles, '--card');
   const cardForeground = readColor(styles, '--card-foreground');
   const muted = readColor(styles, '--muted');
-  const mutedForeground = readColor(styles, '--muted-foreground');
   const border = readColor(styles, '--border');
   const accent = readColor(styles, '--accent');
   const accentForeground = readColor(styles, '--accent-foreground');
+  const canvas = readColor(styles, '--diagram-canvas', '--background');
+  const nodeSurface = readColor(styles, '--diagram-node-surface', '--card');
+  const connector = readColor(styles, '--diagram-connector', '--muted-foreground');
   const fontFamily = styles.getPropertyValue('--font-ui').trim() || MERMAID_FONT_FAMILY;
   const fontSize = readPixelSize(styles, '--text-caption-size');
   readToken(styles, '--radius-small');
@@ -74,32 +89,32 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
     },
     themeVariables: {
       background,
-      primaryColor: card,
+      primaryColor: nodeSurface,
       primaryTextColor: cardForeground,
-      primaryBorderColor: border,
+      primaryBorderColor: nodeSurface,
       secondaryColor: muted,
       secondaryTextColor: foreground,
-      secondaryBorderColor: border,
+      secondaryBorderColor: muted,
       tertiaryColor: background,
       tertiaryTextColor: foreground,
       tertiaryBorderColor: border,
-      lineColor: mutedForeground,
-      arrowheadColor: mutedForeground,
+      lineColor: connector,
+      arrowheadColor: connector,
       textColor: foreground,
-      mainBkg: card,
-      nodeBkg: card,
-      nodeBorder: border,
+      mainBkg: nodeSurface,
+      nodeBkg: nodeSurface,
+      nodeBorder: nodeSurface,
       nodeTextColor: cardForeground,
       clusterBkg: muted,
       clusterBorder: border,
-      defaultLinkColor: mutedForeground,
-      edgeLabelBackground: background,
+      defaultLinkColor: connector,
+      edgeLabelBackground: canvas,
       titleColor: foreground,
-      actorBkg: card,
-      actorBorder: border,
+      actorBkg: nodeSurface,
+      actorBorder: nodeSurface,
       actorTextColor: cardForeground,
       actorLineColor: border,
-      signalColor: mutedForeground,
+      signalColor: connector,
       signalTextColor: foreground,
       labelBoxBkgColor: muted,
       labelBoxBorderColor: border,
@@ -110,16 +125,16 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       noteBkgColor: accent,
       noteBorderColor: border,
       noteTextColor: accentForeground,
-      transitionColor: mutedForeground,
+      transitionColor: connector,
       transitionLabelColor: foreground,
-      stateBkg: card,
+      stateBkg: nodeSurface,
       stateLabelColor: cardForeground,
-      labelBackgroundColor: background,
+      labelBackgroundColor: canvas,
       compositeBackground: muted,
       compositeTitleBackground: muted,
       compositeBorder: border,
       classText: cardForeground,
-      fillType0: card,
+      fillType0: nodeSurface,
       fillType1: muted,
       fontFamily,
     },

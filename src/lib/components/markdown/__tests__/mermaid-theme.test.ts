@@ -15,6 +15,9 @@ const baseTokens = {
   '--border': '210 10% 82%',
   '--accent': '145 30% 90%',
   '--accent-foreground': '145 50% 20%',
+  '--diagram-canvas': 'hsl(0 0% 100%)',
+  '--diagram-node-surface': 'hsl(0 0% 96%)',
+  '--diagram-connector': 'rgb(118 124 132)',
   '--font-ui': "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   '--text-caption-size': '0.8125rem',
   '--radius-small': '5px',
@@ -56,25 +59,30 @@ describe('Mermaid design-system theme', () => {
     });
     expect(config.sequence).toMatchObject({ actorMargin: 40, messageMargin: 24 });
     expect(theme).toMatchObject({
-      primaryColor: 'hsl(0 0% 98%)',
+      primaryColor: 'hsl(0 0% 96%)',
       primaryTextColor: 'hsl(0 0% 8%)',
-      primaryBorderColor: 'hsl(210 10% 82%)',
-      lineColor: 'hsl(210 8% 35%)',
+      primaryBorderColor: 'hsl(0 0% 96%)',
+      lineColor: 'rgb(118 124 132)',
+      arrowheadColor: 'rgb(118 124 132)',
       edgeLabelBackground: 'hsl(0 0% 100%)',
-      actorBkg: 'hsl(0 0% 98%)',
+      actorBkg: 'hsl(0 0% 96%)',
       noteBkgColor: 'hsl(145 30% 90%)',
       noteTextColor: 'hsl(145 50% 20%)',
-      stateBkg: 'hsl(0 0% 98%)',
+      stateBkg: 'hsl(0 0% 96%)',
       classText: 'hsl(0 0% 8%)',
     });
   });
 
   it('uses current custom-theme values without a separate palette', () => {
-    const custom = { ...baseTokens, '--card': '#201f2b', '--border': 'rgb(88 86 112)' };
+    const custom = {
+      ...baseTokens,
+      '--diagram-node-surface': '#201f2b',
+      '--border': 'rgb(88 86 112)',
+    };
     const theme = createMermaidConfig(styles(custom)).themeVariables;
 
     expect(theme.primaryColor).toBe('#201f2b');
-    expect(theme.primaryBorderColor).toBe('rgb(88 86 112)');
+    expect(theme.primaryBorderColor).toBe('#201f2b');
     expect(theme.actorBkg).toBe('#201f2b');
   });
 

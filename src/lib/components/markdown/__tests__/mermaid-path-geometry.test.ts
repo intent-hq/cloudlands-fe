@@ -77,6 +77,47 @@ describe('Mermaid path terminal geometry', () => {
     ).toBe(true);
   });
 
+  it('replaces a shared diagonal bend with two orthogonal bends', () => {
+    const points = snapOrthogonalTerminals(
+      [
+        { x: 40, y: 30 },
+        { x: 120, y: 110 },
+        { x: 70, y: 110 },
+      ],
+      { x: 40, y: 30 },
+      { x: 70, y: 110 },
+      false,
+    );
+
+    expect(points).toEqual([
+      { x: 40, y: 30 },
+      { x: 55, y: 30 },
+      { x: 55, y: 110 },
+      { x: 70, y: 110 },
+    ]);
+  });
+
+  it('rebuilds a route that retains an interior diagonal', () => {
+    const points = snapOrthogonalTerminals(
+      [
+        { x: 180, y: 270 },
+        { x: 120, y: 270 },
+        { x: 225, y: 390 },
+        { x: 230, y: 390 },
+      ],
+      { x: 180, y: 270 },
+      { x: 230, y: 390 },
+      false,
+    );
+
+    expect(points).toEqual([
+      { x: 180, y: 270 },
+      { x: 205, y: 270 },
+      { x: 205, y: 390 },
+      { x: 230, y: 390 },
+    ]);
+  });
+
   it('chooses one label segment with enough measured capacity', () => {
     const route = [
       { x: 0, y: 0 },

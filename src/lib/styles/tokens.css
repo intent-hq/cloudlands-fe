@@ -249,12 +249,41 @@
   --font-editorial:
     'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
   --diagram-canvas: hsl(var(--background));
-  --diagram-node-surface: color-mix(in srgb, hsl(var(--muted)) 58%, hsl(var(--card)));
+  --diagram-label-surface: var(--diagram-canvas);
+  --diagram-node-surface: hsl(var(--sidebar));
+  --diagram-node-hover-surface: color-mix(
+    in srgb,
+    hsl(var(--sidebar-accent)) 28%,
+    var(--diagram-node-surface)
+  );
   --diagram-node-outline: hsl(var(--border) / 0.42);
   --diagram-node-title: hsl(var(--foreground));
   --diagram-metadata: hsl(var(--muted-foreground));
   --diagram-group-outline: hsl(var(--border) / 0.58);
-  --diagram-connector: color-mix(in srgb, hsl(var(--foreground)) 86%, hsl(var(--border)));
+  --diagram-connector: color-mix(in srgb, hsl(var(--muted-foreground)) 52%, var(--diagram-canvas));
+  --diagram-connector-hover: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 64%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-muted: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 34%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-inactive: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 25%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-danger: color-mix(
+    in srgb,
+    hsl(var(--error-foreground)) 58%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-success: color-mix(in srgb, hsl(var(--success)) 56%, var(--diagram-canvas));
+  --diagram-connector-warning: color-mix(in srgb, hsl(var(--warning)) 52%, var(--diagram-canvas));
+  --diagram-connector-active: color-mix(in srgb, var(--diagram-accent) 58%, var(--diagram-canvas));
   --diagram-accent: hsl(var(--agent-avatar-surface-active));
   --diagram-accent-foreground: hsl(var(--agent-avatar-foreground));
   --diagram-node-radius: 16px;
