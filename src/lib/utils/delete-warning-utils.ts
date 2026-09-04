@@ -4,12 +4,16 @@
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
 import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
 import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-import type { OpenPrWarningItem } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
+import type {
+  LocalChangesWarning,
+  OpenPrWarningItem,
+} from '$store/renderer/slices/workspace-operations/workspace-operations-types';
 import { store as appStore } from '$store/renderer/store';
 
 /**
@@ -70,7 +74,10 @@ export async function getActiveHookNames(workspaceId: string): Promise<string[]>
     .map((hook) => hook.name || hook.hookId.substring(0, 8));
 }
 
-export type { OpenPrWarningItem } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
+export type {
+  LocalChangesWarning,
+  OpenPrWarningItem,
+} from '$store/renderer/slices/workspace-operations/workspace-operations-types';
 
 /**
  * Collect the workspace's unmerged PRs (status Open/Draft) from the Redux
@@ -107,23 +114,49 @@ export function getOpenPrItems(workspaceId: string): OpenPrWarningItem[] {
   return items;
 }
 
-/** Streaming agent names, active hook names, and open PRs for one workspace, for gating. */
+/**
+ * Fetch the workspace's local git work (unpushed commits / uncommitted
+ * changes per root) via `workspace.localChanges`. Fails open: any error
+ * (including an older daemon without the method) yields `null` so
+ * archive/delete is never blocked by the read.
+ * @param workspaceId - The workspace ID to check
+ */
+export async function getLocalChanges(workspaceId: string): Promise<LocalChangesWarning | null> {
+  try {
+    return await backendRequest<LocalChangesWarning>('workspace.localChanges', { workspaceId });
+  } catch {
+    return null;
+  }
+}
+
+/** Streaming agent names, active hook names, open PRs, and local changes for one workspace, for gating. */
 export interface ActiveWorkNames {
   agentNames: string[];
   hookNames: string[];
   openPrs: OpenPrWarningItem[];
+  /** `null` when not requested (bulk flows) or when the RPC failed. */
+  localChanges: LocalChangesWarning | null;
 }
 
 /**
  * Collect the in-flight work (streaming agents and active background hooks)
  * that a workspace archive/delete would stop, plus its unmerged (Open/Draft)
- * PRs.
+ * PRs and — only when `includeLocalChanges` is set — its local git changes.
+ * Bulk flows leave it off so they never fan out `workspace.localChanges`.
  * @param workspaceId - The workspace ID to check
  */
-export async function getActiveWorkNames(workspaceId: string): Promise<ActiveWorkNames> {
+export async function getActiveWorkNames(
+  workspaceId: string,
+  { includeLocalChanges = false }: { includeLocalChanges?: boolean } = {},
+): Promise<ActiveWorkNames> {
+  const [hookNames, localChanges] = await Promise.all([
+    getActiveHookNames(workspaceId),
+    includeLocalChanges ? getLocalChanges(workspaceId) : Promise.resolve(null),
+  ]);
   return {
     agentNames: getRunningAgentNames(workspaceId),
-    hookNames: await getActiveHookNames(workspaceId),
+    hookNames,
     openPrs: getOpenPrItems(workspaceId),
+    localChanges,
   };
 }
