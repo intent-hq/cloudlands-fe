@@ -136,7 +136,7 @@
   {/if}
 
   {#if $error$}
-    <p class="text-sm text-error-foreground">{$error$}</p>
+    <p class="text-sm text-danger">{$error$}</p>
   {/if}
 
   <div class="flex flex-col items-start gap-2 mt-9">

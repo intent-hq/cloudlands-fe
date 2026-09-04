@@ -268,8 +268,8 @@ describe('buildWorkspacePRPresentationModel', () => {
       },
       {
         status: 'closed',
-        foregroundClass: 'text-error-foreground',
-        backgroundClass: 'bg-destructive/10',
+        foregroundClass: 'text-danger',
+        backgroundClass: 'bg-danger-background/10',
         accessibleStateLabel: 'Closed',
       },
     ]);

@@ -7,7 +7,6 @@
     contentWidth?: number;
     zoom?: number;
     messageCount?: number;
-    heldForQuestions?: boolean;
     scrollViewport?: boolean;
     alignWithPrompt?: boolean;
   }
@@ -17,7 +16,6 @@
     contentWidth = width,
     zoom = 1,
     messageCount = 1,
-    heldForQuestions = false,
     scrollViewport = false,
     alignWithPrompt = false,
   }: Props = $props();
@@ -39,7 +37,6 @@
   <div class="mx-auto" style:width="{contentWidth}px" data-testid="queued-message-content-column">
     <QueuedMessageList
       {messages}
-      {heldForQuestions}
       onsendnow={(id) => (lastAction = `send:${id}`)}
       onremove={(id) => (lastAction = `remove:${id}`)}
       onedit={async (id, _content, editing) => {
@@ -59,7 +56,6 @@
       <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
         <QueuedMessageList
           {messages}
-          {heldForQuestions}
           onsendnow={(id) => (lastAction = `send:${id}`)}
           onremove={(id) => (lastAction = `remove:${id}`)}
           onedit={async (id, _content, editing) => {

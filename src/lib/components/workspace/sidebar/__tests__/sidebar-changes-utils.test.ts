@@ -32,6 +32,7 @@ import {
   aggregatePRFiles,
   computeTotalStats,
   mapWorkspacePRs,
+  legacyWorkspacePullRequest,
   mergeMonitoredPRs,
   orderPRSectionsForSelection,
   sortPRsByRecency,
@@ -768,6 +769,48 @@ describe('mapWorkspacePRs', () => {
     const prs = [makePR({ number: 1, url: 'https://github.com/other/repo/pull/1' })];
     const result = mapWorkspacePRs(prs, null, buildUrl, getTitle);
     expect(result[0].crossRepo).toBeUndefined();
+  });
+});
+
+// ─── legacyWorkspacePullRequest ────────────────────────────────────────────────
+
+describe('legacyWorkspacePullRequest', () => {
+  const updatedAt = '2026-08-12T00:00:00.000Z';
+
+  it('surfaces a workspace hydrated with only the legacy prNumber/prUrl fields', () => {
+    const pr = legacyWorkspacePullRequest({
+      prNumber: 7,
+      prUrl: 'https://github.com/acme/widgets/pull/7',
+      updatedAt,
+    });
+    expect(pr).toMatchObject({
+      number: 7,
+      url: 'https://github.com/acme/widgets/pull/7',
+      status: PullRequestStatus.Open,
+      updatedAt,
+    });
+    expect(
+      mapWorkspacePRs(undefined, pr, (n, fallback) => fallback ?? String(n), (p) => p.title),
+    ).toMatchObject([{ number: 7, url: 'https://github.com/acme/widgets/pull/7', status: 'open' }]);
+  });
+
+  it('honors a daemon-sent legacy prStatus', () => {
+    expect(
+      legacyWorkspacePullRequest({
+        prNumber: 7,
+        prUrl: 'https://github.com/acme/widgets/pull/7',
+        prStatus: PullRequestStatus.Merged,
+        updatedAt,
+      })?.status,
+    ).toBe(PullRequestStatus.Merged);
+  });
+
+  it('returns null when either legacy field is missing', () => {
+    expect(legacyWorkspacePullRequest({ prNumber: 7, updatedAt })).toBeNull();
+    expect(
+      legacyWorkspacePullRequest({ prUrl: 'https://github.com/acme/widgets/pull/7', updatedAt }),
+    ).toBeNull();
+    expect(legacyWorkspacePullRequest({ updatedAt })).toBeNull();
   });
 });
 

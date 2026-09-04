@@ -710,8 +710,8 @@ export interface AgentsClient {
    * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
    * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
    * question-bearing assistant message) in session metadata — so the
-   * dismissal survives reload — emits `agent:updated`, and kicks the queue
-   * drain so messages held by the question hold resume. Idempotent:
+   * dismissal survives reload — and emits `agent:updated`, which clears the
+   * pending question set so the sticky wizard hides everywhere. Idempotent:
    * re-dismissing the same message succeeds. A nonexistent agent or a
    * workspace mismatch rejects (folded into `{ success: false, error }`).
    */
@@ -2098,6 +2098,12 @@ export interface ServerPairingInfo {
    * enabled and up; absent on older daemons or while the tunnel is down.
    */
   tcAddress?: string;
+  /**
+   * Additive bind-candidate enumeration: the machine's non-loopback IPv4
+   * addresses regardless of the current bind set (unlike `localIps`, which is
+   * bind-filtered). Absent on older daemons.
+   */
+  availableIps?: string[];
 }
 
 export interface ServerClient {

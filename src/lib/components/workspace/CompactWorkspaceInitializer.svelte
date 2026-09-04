@@ -3071,7 +3071,7 @@
               tooltipSide="top"
               aria-label={m.chat_richInput_micStop_label()}
               aria-pressed="true"
-              class="text-error-foreground animate-pulse"
+              class="text-danger animate-pulse"
               data-testid="initializer-mic-button"
             >
               <Fa icon={faMicrophone} size="xs" />
@@ -3108,7 +3108,7 @@
               tooltipSide="top"
             >
               {#if isEnhancing}
-                <Fa icon={faStop} size="xs" class="text-error-foreground" />
+                <Fa icon={faStop} size="xs" class="text-danger" />
               {:else}
                 <Fa icon={faMagicWandSparkles} size="xs" />
               {/if}
@@ -3144,13 +3144,13 @@
       <!-- Git not installed banner -->
       {#if gitAvailable === false}
         <div
-          class="mx-0 mb-3 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm"
+          class="mx-0 mb-3 px-4 py-3 bg-danger-background/10 border border-danger/30 rounded-md text-sm"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-error-foreground mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-danger mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-error-foreground">
+              <p class="font-medium text-danger">
                 {m.workspace_compactInitializer_gitNotInstalled_label()}
               </p>
               <p class="text-subtle mt-1">
@@ -3265,7 +3265,7 @@
       <!-- Error message -->
       {#if error}
         <div
-          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-destructive text-destructive-foreground"
+          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {error}

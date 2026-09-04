@@ -12,16 +12,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  beforeAll,
-  afterAll,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
 import {
   parseSpecialistFile,
   parseModelOptionsScalar,
@@ -39,7 +30,6 @@ import {
 } from '../../../../shared/specialist-file-types';
 
 const TEST_HOME = '/tmp/augment-specialist-file-loader-test';
-let originalHome: string | undefined;
 
 // Mock electron app
 vi.mock('electron', () => ({
@@ -49,9 +39,22 @@ vi.mock('electron', () => ({
   },
 }));
 
+// Redirect the loader's user-level specialists directory (resolved via
+// getSafeHomeDir() -> os.homedir()) into TEST_HOME. Overriding process.env.HOME
+// is not sufficient: os.homedir() ignores env mutations made inside a worker
+// thread, so under `vitest --pool=threads` the write-path tests below leaked
+// their fixtures into the developer's real ~/.intent/specialists/
+// (intent-hq/intent#4332). Mocking homedir() holds regardless of the pool.
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return {
+    ...actual,
+    default: { ...actual, homedir: () => TEST_HOME },
+    homedir: () => TEST_HOME,
+  };
+});
+
 beforeAll(async () => {
-  originalHome = process.env.HOME;
-  process.env.HOME = TEST_HOME;
   await fs.rm(TEST_HOME, { recursive: true, force: true });
 });
 
@@ -61,11 +64,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await fs.rm(TEST_HOME, { recursive: true, force: true });
-  if (originalHome === undefined) {
-    delete process.env.HOME;
-  } else {
-    process.env.HOME = originalHome;
-  }
 });
 
 describe('parseSpecialistFile', () => {
@@ -313,7 +311,7 @@ Body`;
 
   describe('Windows line endings', () => {
     it('should handle CRLF line endings', () => {
-      const content = "---\r\nname: \"Test\"\r\ndescription: \"A test\"\r\n---\r\n\r\nBody content";
+      const content = '---\r\nname: "Test"\r\ndescription: "A test"\r\n---\r\n\r\nBody content';
 
       const result = parseSpecialistFile('/path/to/crlf.md', content);
       expect('error' in result).toBe(false);
@@ -461,9 +459,9 @@ Prompt.`;
     });
 
     it('should split legacy compound model ids into provider + bare model', () => {
-      expect(
-        parseModelOptionsScalar('[{"model":"opencode:kimi-k3","hint":"cheap"}]'),
-      ).toEqual([{ provider: 'opencode', model: 'kimi-k3', hint: 'cheap' }]);
+      expect(parseModelOptionsScalar('[{"model":"opencode:kimi-k3","hint":"cheap"}]')).toEqual([
+        { provider: 'opencode', model: 'kimi-k3', hint: 'cheap' },
+      ]);
       // The compound prefix wins over an entry-level provider field.
       expect(
         parseModelOptionsScalar('[{"provider":"auggie","model":"opencode:kimi-k3","hint":""}]'),
@@ -655,6 +653,11 @@ Prompt.`;
       });
 
       const loaded = await loadSpecialistFile('round-trip');
+
+      // The write must land under the isolated test home, never the real one.
+      await expect(
+        fs.access(path.join(TEST_HOME, '.intent', 'specialists', 'round-trip.md')),
+      ).resolves.toBeUndefined();
 
       expect(loaded).not.toBeNull();
       expect(loaded?.frontmatter.codingAgent).toBe('codex');
@@ -863,8 +866,12 @@ Prompt.`;
 
       expect(loaded?.source).toBe('project');
       expect(loaded?.behaviorPrompt).toBe('Project prompt');
-      expect(projectList.specialists.map((specialist) => specialist.id)).toContain('repo-specialist');
-      expect(projectList.specialists[0]?.filePath).toContain(getProjectSpecialistsDirectory(workspacePath));
+      expect(projectList.specialists.map((specialist) => specialist.id)).toContain(
+        'repo-specialist',
+      );
+      expect(projectList.specialists[0]?.filePath).toContain(
+        getProjectSpecialistsDirectory(workspacePath),
+      );
     });
   });
 
@@ -879,10 +886,7 @@ Prompt.`;
         'tech-spec-writer-2',
       );
       expect(
-        generateUniqueSpecialistId('Tech Spec Writer', [
-          'tech-spec-writer',
-          'tech-spec-writer-2',
-        ]),
+        generateUniqueSpecialistId('Tech Spec Writer', ['tech-spec-writer', 'tech-spec-writer-2']),
       ).toBe('tech-spec-writer-3');
     });
   });
@@ -929,9 +933,9 @@ describe('Stale specialist fallback on transient refresh failure', () => {
       migrateOverridesFromStore: vi.fn(async () => ({ migrated: 0, errors: [] })),
     }));
 
-    const service = await vi.importActual<
-      typeof import('../../../agent/main/specialists.service')
-    >('../../../agent/main/specialists.service');
+    const service = await vi.importActual<typeof import('../../../agent/main/specialists.service')>(
+      '../../../agent/main/specialists.service',
+    );
 
     vi.useFakeTimers();
 

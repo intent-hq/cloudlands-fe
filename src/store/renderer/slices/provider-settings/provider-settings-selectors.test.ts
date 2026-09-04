@@ -35,6 +35,8 @@ import {
   selectIsActiveProviderAvailable,
   selectIsProviderActive,
   selectIsProviderEnabled,
+  selectIsProviderModelAccessAllowed,
+  selectModelFetchProviderIds,
 } from './provider-settings-selectors';
 
 const providerCatalog = providerCatalogReducer(
@@ -155,6 +157,55 @@ describe('provider-settings selectors', () => {
   });
 
   describe('availability-gated selectors', () => {
+    it('removes signed-out Antigravity from model access without changing the saved preference', () => {
+      const signedIn = mockState({ antigravity: true }, 'antigravity', {
+        antigravity: { available: true, authenticated: true },
+      });
+      expect(selectModelFetchProviderIds.select(signedIn)).toContain('antigravity');
+      const signedOut = {
+        ...signedIn,
+        agentAvailability: agentAvailabilityReducer(
+          signedIn.agentAvailability,
+          checkSingleProviderSuccess('antigravity', { available: true, authenticated: false }),
+        ),
+      };
+      expect(selectIsProviderModelAccessAllowed.select(signedOut, 'antigravity')).toBe(false);
+      expect(selectModelFetchProviderIds.select(signedOut)).not.toContain('antigravity');
+      expect(selectActiveProviderId.select(signedOut)).toBe('antigravity');
+      expect(selectEnabledProviderIds.select(signedOut)).toContain('antigravity');
+    });
+    it.each([undefined, false, true])(
+      'requires confirmed Antigravity auth=%s before offering or fetching models',
+      (authenticated) => {
+        for (const hasCheckedOnce of [false, true]) {
+          const state = mockState({ antigravity: true, codex: true }, 'antigravity', {
+            antigravity: { available: true, authenticated },
+            codex: { available: true },
+          });
+          state.agentAvailability.hasCheckedOnce = hasCheckedOnce;
+          expect(selectAvailableEnabledProviderIds.select(state).includes('antigravity')).toBe(
+            authenticated === true,
+          );
+          expect(selectModelFetchProviderIds.select(state).includes('antigravity')).toBe(
+            authenticated === true,
+          );
+          expect(selectIsProviderModelAccessAllowed.select(state, 'antigravity')).toBe(
+            authenticated === true,
+          );
+          expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
+          expect(selectActiveProviderId.select(state)).toBe('antigravity');
+          expect(selectEnabledProviderIds.select(state)).toContain('antigravity');
+        }
+      },
+    );
+
+    it('blocks Antigravity on an empty status map, including per-agent and pre-check access', () => {
+      const state = mockState({ antigravity: true, codex: true }, 'antigravity');
+      expect(selectModelFetchProviderIds.select(state)).toEqual(['codex']);
+      expect(selectIsProviderModelAccessAllowed.select(state, 'antigravity')).toBe(false);
+      expect(selectIsProviderModelAccessAllowed.select(state, 'codex')).toBe(true);
+    });
+
     it('should exclude enabled-but-unavailable providers', () => {
       const state = mockState({ 'claude-code': true }, 'auggie', {
         auggie: { available: true },

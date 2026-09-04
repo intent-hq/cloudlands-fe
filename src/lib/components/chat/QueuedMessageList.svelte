@@ -14,7 +14,6 @@
     faTimes,
     faArrowRight,
     faRotateRight,
-    faCircleQuestion,
     faFile,
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
@@ -44,13 +43,6 @@
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
-    /**
-     * The daemon is parking these deliveries behind pending Agent Q&A
-     * questions (question hold, PROTOCOL §5.5): render a hint that the queue
-     * is deliberately held — not stalled — until the user answers or
-     * dismisses the questions.
-     */
-    heldForQuestions?: boolean;
     onedit?: (
       messageId: string,
       content: string,
@@ -61,15 +53,7 @@
     ondone?: () => void;
   }
 
-  let {
-    messages = [],
-    disabled = false,
-    heldForQuestions = false,
-    onedit,
-    onremove,
-    onsendnow,
-    ondone,
-  }: Props = $props();
+  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -504,25 +488,6 @@
         data-testid="queued-messages-content"
         transition:safeSubscriptionSlide
       >
-        {#if heldForQuestions}
-          <div
-            class="type-caption mb-2 flex items-center gap-1.5 px-2.5 text-warning"
-            data-testid="queued-messages-held-hint"
-            role="status"
-          >
-            <div aria-hidden="true" class="shrink-0">
-              <Fa icon={faCircleQuestion} class="w-3 h-3" />
-            </div>
-            <span>
-              {messages.length === 1
-                ? m.chat_queuedMessages_heldForQuestionsHint_one()
-                : m.chat_queuedMessages_heldForQuestionsHint_many({
-                    count: formatInteger(messages.length),
-                  })}
-            </span>
-          </div>
-        {/if}
-
         <div class="space-y-px">
           {#each messages as message (message.id)}
             <div

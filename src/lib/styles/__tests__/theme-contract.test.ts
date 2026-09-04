@@ -19,8 +19,8 @@ const COLOR_ROLES = [
   'accent-foreground',
   'muted',
   'muted-foreground',
-  'destructive',
-  'destructive-foreground',
+  'danger',
+  'danger-background',
   'border',
   'input',
   'ring',
@@ -45,7 +45,7 @@ const CONTRAST_PAIRS = [
   ['secondary-foreground', 'secondary'],
   ['accent-foreground', 'accent'],
   ['muted-foreground', 'muted'],
-  ['destructive-foreground', 'destructive'],
+  ['danger', 'danger-background'],
   ['info-foreground', 'info'],
   ['success-foreground', 'success'],
   ['warning-foreground', 'warning'],
@@ -105,8 +105,8 @@ const DEFAULT_NEUTRAL_SOURCE = {
 const PRESERVED_SEMANTIC_SOURCE = {
   'theme-light-primary': '145 67% 28%',
   'theme-light-primary-foreground': '0 0% 100%',
-  'theme-light-destructive': '0 65% 94%',
-  'theme-light-destructive-foreground': '0 63% 31%',
+  'theme-light-danger': '0 63% 31%',
+  'theme-light-danger-background': '0 65% 94%',
   'theme-light-ring': '260 58% 46%',
   'theme-light-info': '260 58% 46%',
   'theme-light-info-foreground': '0 0% 100%',
@@ -123,8 +123,8 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-light-agent-avatar-surface-waiting': '263.2 74.257% 80.196%',
   'theme-dark-primary': '145 58% 55%',
   'theme-dark-primary-foreground': '154 25% 9%',
-  'theme-dark-destructive': '0 35% 22%',
-  'theme-dark-destructive-foreground': '0 70% 88%',
+  'theme-dark-danger': '0 70% 88%',
+  'theme-dark-danger-background': '0 35% 22%',
   'theme-dark-ring': '260 80% 72%',
   'theme-dark-info': '260 80% 72%',
   'theme-dark-info-foreground': '154 25% 9%',
@@ -289,24 +289,30 @@ describe('theme color contract', () => {
   );
 
   it.each(['light', 'dark'] as const)(
-    'keeps the %s on-surface error foreground readable on normal surfaces',
+    'keeps the %s danger foreground readable on normal and danger surfaces',
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
       const values = tokenValues(css, mode);
-      expect(tokenValue(css, 'error-foreground')).toBe('var(--destructive-foreground)');
-      for (const surface of ['background', 'card', 'popover', 'muted', 'sidebar'] as const) {
+      for (const surface of [
+        'background',
+        'card',
+        'popover',
+        'muted',
+        'sidebar',
+        'danger-background',
+      ] as const) {
         expect(
-          contrast(values['destructive-foreground'], values[surface]),
-          `error-foreground on ${surface}`,
+          contrast(values.danger, values[surface]),
+          `danger on ${surface}`,
         ).toBeGreaterThanOrEqual(4.5);
       }
     },
   );
 
-  it('maps on-surface error content to the system text color in forced-colors mode', () => {
+  it('maps danger content to the system text color in forced-colors mode', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     expect(css).toMatch(
-      /@media \(forced-colors: active\)\s*{\s*:where\(\.text-error-foreground\)\s*{\s*color:\s*CanvasText !important;/,
+      /@media \(forced-colors: active\)\s*{\s*:where\(\.text-danger\)\s*{\s*color:\s*CanvasText !important;/,
     );
   });
 
@@ -421,6 +427,18 @@ describe('theme color contract', () => {
       expect(css.match(new RegExp(`--${role}:`, 'g'))).toHaveLength(1);
       expect(css).toContain(`--color-${role}: hsl(var(--${role}))`);
     }
+    expect(css).not.toContain('--destructive');
+    expect(css).not.toContain('--error-foreground');
+  });
+
+  it('exposes only the explicit danger roles through Tailwind', () => {
+    const config = fs.readFileSync(path.resolve(process.cwd(), 'tailwind.config.js'), 'utf8');
+    expect(config).toContain("danger: 'hsl(var(--danger) / <alpha-value>)'");
+    expect(config).toContain(
+      "'danger-background': 'hsl(var(--danger-background) / <alpha-value>)'",
+    );
+    expect(config).not.toMatch(/\bdestructive\s*:/);
+    expect(config).not.toContain("'error-foreground'");
   });
 
   it('keeps primary, focus, and semantic status source values unchanged', () => {

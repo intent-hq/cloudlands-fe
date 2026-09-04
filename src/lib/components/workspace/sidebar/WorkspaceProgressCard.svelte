@@ -67,11 +67,9 @@
     setWorkspaceEntity,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
-    selectWorkspaceActivePrSummary,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
   import type {
     WorkspaceProgressAction,
     WorkspaceProgressActionIconKey,
@@ -123,9 +121,6 @@
   // ✅ Selector readables captured at component init — the workspace slice owns
   // the workflow-stage, headline, and action logic.
   const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
-  // Active-PR summary backing the View PR action's status icon/color; null when
-  // the action falls back to a bare PR URL with no summary.
-  const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
 
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
@@ -895,11 +890,10 @@
   }
 
   // First actionable descriptor for the full-mode workflow button. Actions that
-  // require onAcceptChanges are hidden when no handler is provided.
+  // require onAcceptChanges are hidden when no handler is provided. The
+  // `view-pr` action is intentionally not rendered here: the Changes launcher's
+  // PR dropdown (SidebarPrDropdown) is the single PR surface in the sidebar.
   const displayAction = $derived($progressActions$.find((action) => action.url || onAcceptChanges));
-  const viewPullRequestAction = $derived(
-    displayAction?.id === 'view-pr' ? displayAction : undefined,
-  );
   const workflowAction = $derived(displayAction?.id === 'view-pr' ? undefined : displayAction);
 </script>
 
@@ -1255,41 +1249,6 @@
       </div>
     {/if}
 
-    {#if viewPullRequestAction}
-      {@const action = viewPullRequestAction}
-      {@const prStatus = $activePrSummary$
-        ? getActivePrStatusPresentation($activePrSummary$.status)
-        : undefined}
-      <div class="flex-1 w-full" data-workspace-view-pr>
-        {#if action}
-          <Tooltip
-            content={action?.tooltip}
-            side="bottom"
-            align="start"
-            delayDuration={300}
-            disabled={!action?.tooltip}
-          >
-            <Button
-              variant="ghost-light"
-              size="xs"
-              class="w-full text-left justify-start px-0! h-auto min-h-7 items-start py-[2px] whitespace-normal"
-              onclick={() => runProgressAction(action)}
-            >
-              <Fa
-                icon={prStatus?.icon ?? PROGRESS_ACTION_ICONS[action.iconKey]}
-                size={14}
-                class="ml-1 mt-1 size-3.5! shrink-0 {prStatus?.className ?? ''}"
-              />
-              <span
-                class="underline decoration-dotted underline-offset-2 whitespace-normal break-words min-w-0"
-                >{action.label}</span
-              >
-            </Button>
-          </Tooltip>
-        {/if}
-      </div>
-    {/if}
-
     <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
     {#if showStatusImage}
       <div class="py-1">
@@ -1366,7 +1325,7 @@
     </div>
   {:else if readyTasksError}
     <div
-      class="w-full px-4x pb-3 text-xs text-error-foreground mt-2"
+      class="w-full px-4x pb-3 text-xs text-danger mt-2"
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       Error: {readyTasksError}

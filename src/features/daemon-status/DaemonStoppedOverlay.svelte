@@ -369,7 +369,7 @@
             </button>
 
             {#if $spawnError$}
-              <p class="mt-2 text-sm text-destructive" data-testid="daemon-stopped-spawn-error">
+              <p class="mt-2 text-sm text-danger" data-testid="daemon-stopped-spawn-error">
                 {$spawnError$}
               </p>
             {/if}
@@ -387,7 +387,7 @@
             </button>
 
             {#if $runLogError$}
-              <p class="mt-2 text-sm text-destructive" data-testid="daemon-stopped-run-log-error">
+              <p class="mt-2 text-sm text-danger" data-testid="daemon-stopped-run-log-error">
                 {$runLogError$}
               </p>
             {:else if $runLog$}
@@ -436,7 +436,7 @@
             </button>
 
             {#if $spawnError$}
-              <p class="mt-2 text-sm text-destructive" data-testid="daemon-stopped-spawn-error">
+              <p class="mt-2 text-sm text-danger" data-testid="daemon-stopped-spawn-error">
                 {$spawnError$}
               </p>
             {/if}

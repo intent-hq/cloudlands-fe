@@ -278,6 +278,7 @@ export const UNDOCUMENTED_SERVER_FIXTURES = {
       path: '/ws',
       localIps: ['192.0.2.10'],
       hostname: 'fixture-host',
+      availableIps: ['192.0.2.10', '198.51.100.7'],
     },
   },
 } as const;

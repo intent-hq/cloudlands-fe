@@ -61,6 +61,24 @@ warmImport(
 );
 
 describe('ProviderPathConfig', () => {
+  it('saves the Antigravity ACP path without overwriting another provider', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ value: { codex: '/keep/codex' } });
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'antigravity',
+        providerName: 'Antigravity',
+        cliCommand: 'antigravity-acp',
+        isInstalled: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose file' }));
+    await flush();
+    await fireEvent.click(screen.getByTestId('mock-picker-select'));
+    await flush();
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledExactlyOnceWith([
+      { path: 'providers.paths', value: { codex: '/keep/codex', antigravity: '/Users/me/src' } },
+    ]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.mockSettingsGet.mockResolvedValue({ value: {} });

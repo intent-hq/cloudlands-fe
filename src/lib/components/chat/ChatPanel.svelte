@@ -928,12 +928,13 @@
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
   // its selected question-bearing assistant message stays pending across later
-  // rows until cleared, dismissed, or superseded. Transcript parsing remains
-  // the content source; legacy sessions use the daemon's non-system tail rule.
-  // The gate (own active turn, NOT the broad running gate — an agent paused
-  // on delegated agents has ended its turn and its questions must surface)
-  // lives in deriveWizardPendingQuestions so the regression suite exercises
-  // the real production gate.
+  // rows AND later automatic/user turns until cleared, dismissed, or
+  // superseded. Transcript parsing remains the content source; legacy sessions
+  // use the daemon's non-system tail rule, gated on the agent's own active
+  // turn (NOT the broad running gate — an agent paused on delegated agents has
+  // ended its turn and its questions must surface). Both live in
+  // deriveWizardPendingQuestions so the regression suite exercises the real
+  // production gate.
   const markedQuestionRecovery = $derived.by(() => {
     void $agentMessages$;
     void $agentHistoryMessages$;
@@ -1022,9 +1023,7 @@
   const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
-  // shown with a held-for-questions hint while Ignore-collapsed (the daemon
-  // parks automatic deliveries behind the pending Q&A — question hold,
-  // PROTOCOL §5.5). Derivation shared with the regression suite.
+  // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
       queueLength: visibleQueuedMessages.length,
@@ -1045,7 +1044,8 @@
   // `dismissedQuestionsMessageId` into session metadata optimistically (the
   // wizard-gate reads it, so the wizard hides immediately) and forwards
   // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
+  // reload) and clears the pending question set, so the sticky wizard stays
+  // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
   // Returns the action promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).
@@ -6375,7 +6375,6 @@
               <QueuedMessageList
                 bind:this={queuedMessageListRef}
                 messages={visibleQueuedMessages}
-                heldForQuestions={queuedMessagesVisibility.heldForQuestions}
                 onedit={handleEditQueuedMessage}
                 onremove={handleRemoveQueuedMessage}
                 onsendnow={handleSendQueuedMessageNow}

@@ -843,9 +843,10 @@ export async function replaceSecret(
  * first; `hosts` persists only the deduplicated extras. A no-op for unknown
  * ids and for records whose `detectHosts` is `false` (the user opted out of
  * IP detection at add time). Fail-soft by design: candidate hosts are a
- * resilience nicety, never a hard requirement.
+ * resilience nicety, never a hard requirement. Resolves `true` only when the
+ * persisted list actually changed (so callers can gate a broadcast on it).
  */
-export async function setHosts(id: string, hosts: string[]): Promise<void> {
+export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
   const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to update
@@ -856,11 +857,15 @@ export async function setHosts(id: string, hosts: string[]): Promise<void> {
     // edit in keychain sync).
     if (JSON.stringify(extras) === JSON.stringify(conn.hosts ?? [])) return false;
     conn.hosts = extras;
-    conn.updatedAt = Date.now();
+    // Strictly past the record's current clock (like setHostname/setTcAddress)
+    // so a same-millisecond or clock-ahead record never moves backwards and
+    // the refreshed routes win LWW reconciliation.
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
     await writeState(state);
     return true;
   });
   if (changed) notifyMutated();
+  return changed;
 }
 
 /**

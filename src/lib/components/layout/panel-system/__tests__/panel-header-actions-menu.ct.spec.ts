@@ -217,19 +217,46 @@ for (const scenario of [
     expect(geometry.left).toBeGreaterThanOrEqual(8 - 0.5);
     expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
     expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
+    expect(geometry.width).toBeGreaterThanOrEqual(224);
+    expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
 
     if (scenario.viewportWidth === 1000) {
-      expect(geometry.width).toBeGreaterThan(224);
-      expect(geometry.labelScrollWidth).toBeLessThanOrEqual(geometry.labelClientWidth + 1);
+      expect(geometry.width).toBeLessThanOrEqual(320);
     } else {
       expect(geometry.width).toBeLessThanOrEqual(scenario.viewportWidth - 16 + 0.5);
-      expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
     }
 
     await longItem.click();
     await expect(component).toHaveAttribute('data-display-count', '1');
   });
 }
+
+test('keeps the agent actions menu compact at desktop width', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  const component = await mount(PanelHeaderActionsHost, {
+    props: { panelType: 'agent', width: 560, zoom: 1 },
+  });
+  const trigger = component.locator(
+    '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+  );
+
+  await trigger.click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Copy Absolute Path' })).toBeVisible();
+
+  const geometry = await menu.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return {
+      width: box.width,
+      scrollWidth: node.scrollWidth,
+      clientWidth: node.clientWidth,
+    };
+  });
+  expect(geometry.width).toBeGreaterThanOrEqual(224);
+  expect(geometry.width).toBeLessThanOrEqual(320);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+});
 
 for (const stackCount of stackCounts) {
   test(`preserves required controls for ${stackCount} panes at narrow 200% zoom`, async ({

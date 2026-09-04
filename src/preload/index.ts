@@ -199,6 +199,7 @@ const ALLOWED_CHANNELS = [
   'droid:get-models',
   'grok:get-models',
   'unsloth:get-models',
+  'antigravity:get-models',
   'providers:get-availability',
   'providers:get-paths',
   'providers:check-single',

@@ -129,8 +129,8 @@ describe('Combobox behavior', () => {
   it('uses a contrast-validated invalid border and ring', () => {
     render(ComboboxHarness, { props: { invalid: true } });
     const input = screen.getByRole('combobox', { name: 'Search people' });
-    expect(input.className.split(/\s+/)).toContain('border-destructive-foreground');
-    expect(input.className.split(/\s+/)).toContain('ring-destructive-foreground/25');
+    expect(input.className.split(/\s+/)).toContain('border-danger');
+    expect(input.className.split(/\s+/)).toContain('ring-danger/25');
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }

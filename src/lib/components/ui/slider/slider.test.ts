@@ -37,8 +37,8 @@ describe('Slider', () => {
     });
     const slider = getByRole('slider', { name: 'Invalid volume' });
     expect(slider.getAttribute('aria-invalid')).toBe('true');
-    expect(slider.className.split(/\s+/)).toContain('aria-invalid:ring-destructive-foreground/25');
-    expect(slider.className.split(/\s+/)).toContain('aria-invalid:accent-destructive-foreground');
+    expect(slider.className.split(/\s+/)).toContain('aria-invalid:ring-danger/25');
+    expect(slider.className.split(/\s+/)).toContain('aria-invalid:accent-danger');
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }

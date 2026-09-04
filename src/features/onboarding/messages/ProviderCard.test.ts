@@ -88,6 +88,24 @@ beforeEach(() => {
 });
 
 describe('ProviderCard selected-state indicator', () => {
+  it('does not present unknown Antigravity authentication as ready', async () => {
+    const props = baseProps();
+    const provider = {
+      ...readyProvider(),
+      id: 'antigravity',
+      name: 'Antigravity',
+      authenticated: undefined,
+      loginCommand: 'intentd provider login antigravity',
+      docsUrl: '',
+    };
+    const result = render(ProviderCard, { props: { ...props, provider, selected: true } });
+    expect(result.getByText('Sign-in status unknown. Refresh to check again.')).toBeTruthy();
+    expect(result.getByText('intentd provider login antigravity')).toBeTruthy();
+    expect(banner(result.container)).toBeNull();
+    expect(result.queryByText('Connected')).toBeNull();
+    await fireEvent.click(result.getByText('Antigravity'));
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
   it('renders the full-width SELECTED banner when the ready card is selected', () => {
     const { container } = render(ProviderCard, {
       props: { ...baseProps(), provider: readyProvider(), selected: true },

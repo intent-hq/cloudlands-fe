@@ -2293,7 +2293,7 @@
                   </button>
                 </div>
                 {#if $sentryError$}
-                  <p class="text-xs text-destructive">{$sentryError$}</p>
+                  <p class="text-xs text-danger">{$sentryError$}</p>
                 {/if}
                 <p class="text-xs text-subtle opacity-50">
                   {m.workspace_issueSuggestions_createTokenAt_label()}

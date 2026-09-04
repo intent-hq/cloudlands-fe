@@ -63,6 +63,11 @@
   let port = $state<number | null>(null);
   let certFingerprint = $state('');
   let localIps = $state<string[]>([]);
+  // Bind candidates unfiltered by the bind set (additive `availableIps`).
+  // Undefined on older daemons, where the selector falls back to the
+  // bind-filtered `localIps` (its union with the bound set keeps the bound
+  // entries visible, but a loopback-only bind then offers nothing to pick).
+  let availableIps = $state<string[] | undefined>(undefined);
   let _hostname = $state('');
   let loading = $state(true);
   let regenerating = $state(false);
@@ -170,6 +175,7 @@
         port = info.port; // bound port from pairing info
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
+        availableIps = info.availableIps;
         _hostname = info.hostname;
         tcAddress = info.tcAddress ?? '';
         await refreshPublishState();
@@ -199,35 +205,30 @@
 
   /**
    * Persist a listen-target change: bind IPs → `server.bindAddress`, tunnel →
-   * `server.tunnel.enabled`, and tunnel-only (no IPs selected) →
-   * `server.tunnel.only`. One atomic settings.update batch; on failure the
-   * selector re-syncs from a fresh loadStatus().
+   * `server.tunnel.enabled`. Loopback is always bound (every selection
+   * carries at least 127.0.0.1 or 0.0.0.0), so a change always leaves the
+   * tunnel-only posture (`server.tunnel.only=false`). One atomic
+   * settings.update batch; on failure the selector re-syncs from a fresh
+   * loadStatus().
    */
   async function handleListenTargetChange(selection: ListenTargetSelection) {
     if (listenSaving) return;
     listenSaving = true;
     try {
-      const changes: { path: string; value: unknown }[] = [];
-      // Tunnel-only leaves the persisted bindAddress untouched — tunnel.only
-      // already disables direct listeners, and the previous IPs restore when
-      // an IP is re-selected.
-      if (selection.ips.length > 0) {
-        changes.push({ path: 'server.bindAddress', value: selection.ips });
-      }
+      const changes: { path: string; value: unknown }[] = [
+        { path: 'server.bindAddress', value: selection.ips },
+      ];
       // settings.update is atomic: on daemons predating server.tunnel.* the
       // unknown paths would reject the whole batch, so only include them when
       // supported (the selector never emits tunnel selections otherwise).
       if (tunnelSupported) {
         changes.push({ path: 'server.tunnel.enabled', value: selection.tunnel });
-        changes.push({
-          path: 'server.tunnel.only',
-          value: selection.tunnel && selection.ips.length === 0,
-        });
+        changes.push({ path: 'server.tunnel.only', value: false });
       }
       await appClient.settings.update(changes);
-      bindIps = selection.ips.length > 0 ? selection.ips : bindIps;
+      bindIps = selection.ips;
       tunnelEnabled = selection.tunnel;
-      tunnelOnly = selection.tunnel && selection.ips.length === 0;
+      tunnelOnly = false;
       toast.success(m.settings_listenTargets_saved());
       // The listen targets changed the published fields (hosts from the new
       // bind IPs, tc address from the tunnel toggle) — propagate them to the
@@ -249,59 +250,74 @@
 
   const ALL_INTERFACES = '0.0.0.0';
   const LOOPBACK = '127.0.0.1';
+  // The daemon treats the IPv6 unspecified address like 0.0.0.0: it must
+  // stand alone and already covers loopback (out-of-band config only).
+  const UNSPECIFIED = new Set([ALL_INTERFACES, '::']);
 
   // "Enable Local Network Access" is a view over server.bindAddress (no
   // daemon setting of its own): ON whenever a non-loopback target is bound.
   // Tunnel-only has no direct listeners (the persisted bindAddress is kept
   // only for later restoration), so it reads OFF there; toggling ON from
   // that posture emits 0.0.0.0 + tunnel.only=false.
-  // Because this is pure derivation, the Listen targets section (gated on
-  // it) also hides as soon as a selector change lands loopback-only — that
-  // state IS "Local Network Access OFF", so the collapse is intended.
   const localNetworkEnabled = $derived(!tunnelOnly && bindIps.some((ip) => ip !== LOOPBACK));
 
+  // Sticky UI-only counterpart: once the user hand-picks targets in the
+  // selector, the section stays open even when the pick lands loopback-only
+  // (e.g. unchecking 0.0.0.0 to pick specific IPs) — otherwise the section
+  // would collapse under them mid-edit. Cleared by an explicit Local Network
+  // Access OFF and by turning the WebSocket API off.
+  let localNetworkOpen = $state(false);
+  const localNetworkShown = $derived(localNetworkEnabled || localNetworkOpen);
+
   /**
-   * Force loopback into a bind set while the tunnel is on: the tailcat
-   * sidecar forwards tunnel connections to 127.0.0.1:<port>. All-interfaces
-   * already covers loopback, and an empty set (tunnel-only) binds loopback
-   * daemon-side, so neither needs the force.
+   * Loopback is always bound: this app and the tailcat sidecar (which forwards
+   * tunnel connections to 127.0.0.1:<port>) reach the daemon over it. Force
+   * it into every persisted bind set unless an unspecified address already
+   * covers it. An empty set (tunnel-only restore) therefore becomes
+   * loopback-only.
    */
-  function withLoopbackLock(ips: string[]): string[] {
-    if (ips.length > 0 && !ips.includes(ALL_INTERFACES) && !ips.includes(LOOPBACK)) {
-      return [...ips, LOOPBACK];
-    }
-    return ips;
+  function withLoopback(ips: string[]): string[] {
+    if (ips.some((ip) => UNSPECIFIED.has(ip)) || ips.includes(LOOPBACK)) return ips;
+    return [...ips, LOOPBACK];
   }
 
   /**
-   * The "Enable Tailcat Tunnel" toggle drives `server.tunnel.enabled`.
-   * Enabling locks loopback into the bind set (see withLoopbackLock);
-   * disabling from the tunnel-only posture restores the persisted bind IPs
-   * as active listeners so the daemon never ends up with zero targets.
+   * The "Enable Tailcat Tunnel" toggle drives `server.tunnel.enabled`; the
+   * bind set is carried through (loopback-repaired). Disabling from the
+   * tunnel-only posture restores the persisted bind IPs as active listeners
+   * so the daemon never ends up with zero targets.
    */
   function handleTunnelToggle() {
     if (listenSaving) return;
-    if (tunnelEnabled) {
-      let ips = tunnelOnly ? bindIps : withLoopbackLock(bindIps);
-      if (ips.length === 0) ips = [LOOPBACK];
-      void handleListenTargetChange({ ips, tunnel: false });
-    } else {
-      void handleListenTargetChange({ ips: withLoopbackLock(bindIps), tunnel: true });
-    }
+    void handleListenTargetChange({ ips: withLoopback(bindIps), tunnel: !tunnelEnabled });
   }
 
   /**
    * The "Enable Local Network Access" toggle rewrites the bind set: OFF
    * narrows it to loopback only (the tunnel, when on, still forwards to
-   * 127.0.0.1), ON widens it to all interfaces. The tunnel state is carried
-   * through untouched.
+   * 127.0.0.1) and collapses the section, ON widens it to all interfaces.
+   * The tunnel state is carried through untouched. When the section is open
+   * only via the sticky flag (loopback-only already persisted), OFF just
+   * collapses it — no round-trip.
    */
   function handleLocalNetworkToggle() {
     if (listenSaving) return;
+    const turningOff = localNetworkShown;
+    if (turningOff) {
+      localNetworkOpen = false;
+      if (!localNetworkEnabled) return;
+    }
     void handleListenTargetChange({
-      ips: localNetworkEnabled ? [LOOPBACK] : [ALL_INTERFACES],
+      ips: turningOff ? [LOOPBACK] : [ALL_INTERFACES],
       tunnel: tunnelEnabled,
     });
+  }
+
+  /** Selector picks keep the section open (see localNetworkOpen). */
+  function handleSelectorChange(selection: ListenTargetSelection) {
+    if (listenSaving) return;
+    localNetworkOpen = true;
+    void handleListenTargetChange(selection);
   }
 
   /**
@@ -370,6 +386,7 @@
         await maybeDefaultLocalNetworkAccess();
         await maybeAutoPublish();
       } else {
+        localNetworkOpen = false;
         await maybeAutoUnpublish();
       }
     } catch (error) {
@@ -728,8 +745,9 @@
     {#if enabled && bindAddressSupported}
       <div transition:slide={{ duration: 200 }}>
         <!-- Local Network Access: a view over server.bindAddress (ON when a
-             non-loopback target is bound). Absent on daemons that do not
-             report server.bindAddress. -->
+             non-loopback target is bound, or while the user is hand-picking
+             targets). Absent on daemons that do not report
+             server.bindAddress. -->
         <section data-local-network-toggle-row>
           <div class="flex items-center justify-between">
             <div>
@@ -741,7 +759,7 @@
               </p>
             </div>
             <Toggle
-              pressed={localNetworkEnabled}
+              pressed={localNetworkShown}
               onclick={handleLocalNetworkToggle}
               variant="indicator"
               size="xs"
@@ -795,17 +813,17 @@
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
-        <!-- Listen targets: the daemon's bound IPs. Shown only while Local
-             Network Access is ON; the tunnel is toggled above, not in the
-             selector. -->
-        {#if localNetworkEnabled}
+        <!-- Listen targets: the daemon's bind candidates with the bound ones
+             selected. Shown only while Local Network Access is ON; the tunnel
+             is toggled above, not in the selector. -->
+        {#if localNetworkShown}
           <section transition:slide={{ duration: 200 }}>
             <ListenTargetSelector
-              availableIps={localIps}
+              availableIps={availableIps ?? localIps}
               selectedIps={tunnelOnly ? [] : bindIps}
               tunnelSelected={tunnelEnabled}
               saving={listenSaving}
-              onchange={handleListenTargetChange}
+              onchange={handleSelectorChange}
             />
           </section>
         {/if}

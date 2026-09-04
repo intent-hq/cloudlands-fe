@@ -132,7 +132,7 @@
         {m.workspace_noteVersionHistory_loading_label()}
       </div>
     {:else if error}
-      <div class="px-2.5 py-1.5 text-ui text-error-foreground">
+      <div class="px-2.5 py-1.5 text-ui text-danger">
         {m.workspace_noteVersionHistory_error_label()}
       </div>
     {:else}

@@ -128,6 +128,17 @@ describe('selectShowRemoteSetupPrompt', () => {
 });
 
 describe('selectBackendSetupGate', () => {
+  it.each([undefined, false, true])(
+    'does not bypass setup with Antigravity auth=%s',
+    (authenticated) => {
+      const state = stateWith({
+        providerStatusMap: { antigravity: { available: true, authenticated } },
+      });
+      expect(selectBackendSetupGate.select(state)).toBe(
+        authenticated === true ? 'none' : 'pending',
+      );
+    },
+  );
   it("returns 'none' when the backend has workspaces", () => {
     const state = stateWith({ workspaceIds: ['ws-1'] });
     expect(selectBackendSetupGate.select(state)).toBe('none');
@@ -135,9 +146,7 @@ describe('selectBackendSetupGate', () => {
 
   it("returns 'pending' while the evaluation has not resolved", () => {
     expect(selectBackendSetupGate.select(stateWith({}))).toBe('pending');
-    expect(selectBackendSetupGate.select(stateWith({ workspaceHasLoaded: false }))).toBe(
-      'pending',
-    );
+    expect(selectBackendSetupGate.select(stateWith({ workspaceHasLoaded: false }))).toBe('pending');
   });
 
   it("returns 'redirect' when the local backend needs setup", () => {
@@ -163,7 +172,7 @@ describe('selectBackendSetupGate', () => {
     expect(selectBackendSetupGate.select(state)).toBe('pending');
   });
 
-  it("gates on the window backend, not the persisted activeId, in a divergent window", () => {
+  it('gates on the window backend, not the persisted activeId, in a divergent window', () => {
     const evaluation = { connectionId: 'remote-1', isLocal: false, setupNeeded: true };
     const state = stateWith({
       windowBackendId: 'remote-1',

@@ -221,7 +221,7 @@
             >
           </Button>
           <span
-            class="flex size-4 shrink-0 items-center justify-center text-destructive"
+            class="flex size-4 shrink-0 items-center justify-center text-danger"
             role={errorLabel ? 'alert' : undefined}
             aria-label={errorLabel}
             title={errorLabel}
@@ -271,7 +271,7 @@
                 variant="ghost-light"
                 size="icon-xs"
                 iconOnly
-                class="size-7 shrink-0 text-destructive hover:text-destructive active:bg-accent/80"
+                class="size-7 shrink-0 text-danger hover:text-danger active:bg-accent/80"
                 disabled={operation?.pending ?? false}
                 aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
                 aria-label={stopLabel}
