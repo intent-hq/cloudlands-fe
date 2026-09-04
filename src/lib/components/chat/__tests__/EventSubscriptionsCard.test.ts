@@ -11,6 +11,7 @@ const { liveSubscriptions } = vi.hoisted(() => ({
     hooks: [] as Array<{ agentId: string; state: string }>,
     monitors: [] as Array<{ agentId: string; state: string }>,
     agents: {} as Record<string, string[]>,
+    visibleAgentLanes: new Set<string>(),
   },
 }));
 
@@ -51,7 +52,8 @@ vi.mock(
         derived(agentId, ($agentId) => {
           const participantAgentIds = liveSubscriptions.agents[$agentId] ?? [];
           return {
-            visible: participantAgentIds.length > 0,
+            visible:
+              participantAgentIds.length > 0 || liveSubscriptions.visibleAgentLanes.has($agentId),
             count: participantAgentIds.length,
             participantAgentIds,
           };
@@ -79,6 +81,7 @@ beforeEach(() => {
     agents: ['agent-one'],
     'agents-hooks-prs': ['agent-one'],
   };
+  liveSubscriptions.visibleAgentLanes.clear();
 });
 
 afterEach(() => {
@@ -190,6 +193,19 @@ describe('EventSubscriptionsCard', () => {
     expect(screen.getByTestId('event-subscriptions-chevron')).toBeTruthy();
     expect(screen.getByTestId('mock-hook-event-section')).toBeTruthy();
     expect(screen.getByTestId('mock-pr-event-section')).toBeTruthy();
+  });
+
+  it('keeps the grouped header when a zero-count agent lane accompanies one hook', async () => {
+    const agentId = 'completed-agents-hooks';
+    liveSubscriptions.visibleAgentLanes.add(agentId);
+    liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
+
+    await renderCard(agentId);
+
+    expect(screen.getByTestId('event-subscriptions-outer-header')).toBeTruthy();
+    expect(screen.getByTestId('event-subscriptions-chevron')).toBeTruthy();
+    expect(screen.getByTestId('mock-agent-cohort-header')).toBeTruthy();
+    expect(screen.getByTestId('mock-hook-event-section')).toBeTruthy();
   });
 
   it('starts expanded and toggles every category without removing the card', async () => {

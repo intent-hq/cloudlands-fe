@@ -114,7 +114,14 @@
       ? isolatedPreview.count
       : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount,
   );
-  const isSingleEvent = $derived(hasEventSubscriptions && totalCount === 1);
+  const visibleSectionCount = $derived(
+    isolatedPreview
+      ? 1
+      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs].filter(Boolean).length,
+  );
+  const isSingleEvent = $derived(
+    hasEventSubscriptions && visibleSectionCount === 1 && totalCount === 1,
+  );
 
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
