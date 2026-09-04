@@ -979,7 +979,7 @@
           </label>
 
           <div
-            class="overflow-hidden rounded-(--radius-large) border border-border/70 bg-muted/30 divide-y divide-border/70"
+            class="overflow-hidden rounded-(--radius-large) border border-border bg-muted/30 divide-y divide-border"
             data-testid="proposal-metadata-group"
           >
             <div
