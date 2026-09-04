@@ -17,7 +17,8 @@
   import { onMount } from 'svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import Fa from 'svelte-fa';
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { faBoxArchive, faChevronDown, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import * as Tooltip from '$lib/components/ui/tooltip';
 
   import {
     selectPinnedWorkspaceIds,
@@ -40,6 +41,10 @@
   import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { Button } from '$lib/components/ui/button';
+  import {
+    openBulkArchiveConfirm,
+    openBulkDeleteConfirm,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 
   const REPOSITORY_WORKSPACE_LIMIT = 3;
 
@@ -322,6 +327,20 @@
     appStore.dispatch(toggleStatusGroupCollapsed(groupId));
   }
 
+  function openGroupArchive(event: MouseEvent, workspaces: Workspace[], groupLabel: string) {
+    event.stopPropagation();
+    appStore.dispatch(
+      openBulkArchiveConfirm({ workspaceIds: workspaces.map(({ id }) => id), groupLabel }),
+    );
+  }
+
+  function openGroupDelete(event: MouseEvent, workspaces: Workspace[], groupLabel: string) {
+    event.stopPropagation();
+    appStore.dispatch(
+      openBulkDeleteConfirm({ workspaceIds: workspaces.map(({ id }) => id), groupLabel }),
+    );
+  }
+
   function _getStreamingIds(ws: Workspace): string[] {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
@@ -432,6 +451,43 @@
     }
   }
 </script>
+
+{#snippet groupActions(workspaces: Workspace[], groupLabel: string)}
+  <div
+    class="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
+  >
+    {#if workspaces.some((workspace) => workspace.status !== WorkspaceStatusEnum.Archived)}
+      <Tooltip.Tooltip content={m.layout_allCard_groupArchiveAll_tooltip()}>
+        <Button
+          variant="plain"
+          size="xs"
+          iconOnly
+          class="size-7 text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+          aria-label={m.layout_allCard_groupArchiveAll_ariaLabel({ group: groupLabel })}
+          data-group-archive-all
+          onclick={(event) => openGroupArchive(event, workspaces, groupLabel)}
+          onkeydown={(event) => event.stopPropagation()}
+        >
+          <Fa icon={faBoxArchive} size="xs" />
+        </Button>
+      </Tooltip.Tooltip>
+    {/if}
+    <Tooltip.Tooltip content={m.layout_allCard_groupDeleteAll_tooltip()}>
+      <Button
+        variant="plain"
+        size="xs"
+        iconOnly
+        class="size-7 text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+        aria-label={m.layout_allCard_groupDeleteAll_ariaLabel({ group: groupLabel })}
+        data-group-delete-all
+        onclick={(event) => openGroupDelete(event, workspaces, groupLabel)}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        <Fa icon={faTrash} size="xs" />
+      </Button>
+    </Tooltip.Tooltip>
+  </div>
+{/snippet}
 
 <div
   class="flex flex-col h-full outline-none focus-visible:bg-muted/10"
@@ -569,7 +625,9 @@
         {:else if $viewMode$ === 'repo'}
           {#each visibleGroupedByRepo as repositoryGroup (repositoryGroup.key)}
             <div data-repository-group data-repository-key={repositoryGroup.key}>
-              <div class="section-header flex items-center gap-1.5 px-2 pt-2 pb-1 mt-2 min-w-0">
+              <div
+                class="section-header group flex items-center gap-1.5 px-2 pt-2 pb-1 mt-2 min-w-0"
+              >
                 {#if repositoryGroup.group.owner}
                   <img
                     src={getGitHubAvatarUrl(repositoryGroup.group.owner)}
@@ -579,7 +637,13 @@
                     onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                   />
                 {/if}
-                <Header size={4} class="truncate">{repositoryGroup.group.label}</Header>
+                <Header size={4} class="min-w-0 flex-1 truncate"
+                  >{repositoryGroup.group.label}</Header
+                >
+                {@render groupActions(
+                  repositoryGroup.group.workspaces,
+                  repositoryGroup.group.label,
+                )}
               </div>
               {#each repositoryGroup.visibleWorkspaces as workspace, _i (workspace.id)}
                 <div data-repository-space-row data-workspace-id={workspace.id}>
@@ -631,10 +695,13 @@
         {:else if $viewMode$ === 'status'}
           {#each groupedByStatus as group (group.id)}
             {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
-            <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
+            <div
+              class="section-header group flex items-center px-2 pt-2 pb-1 mt-2 min-w-0"
+              data-status-group={group.id}
+            >
               <button
                 type="button"
-                class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                 aria-expanded={isExpanded}
                 aria-controls={`status-group-${group.id}`}
                 data-status-group-toggle={group.id}
@@ -650,6 +717,7 @@
                 />
                 <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
               </button>
+              {@render groupActions(group.workspaces, group.label)}
             </div>
             <div id={`status-group-${group.id}`} hidden={!isExpanded}>
               {#each group.workspaces as workspace, _i (workspace.id)}
