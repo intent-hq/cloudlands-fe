@@ -43,4 +43,11 @@ describe('DeviceIconPicker', () => {
     });
     expect(screen.getByTestId('device-icon-picker-trigger').textContent).toContain('Cat');
   });
+
+  it('accepts an explicitly undefined bindable value and uses the record override', () => {
+    render(DeviceIconPicker, {
+      props: { record: { deviceIcon: 'cat', detectedDeviceKind: 'laptop' }, value: undefined },
+    });
+    expect(screen.getByTestId('device-icon-picker-trigger').textContent).toContain('Cat');
+  });
 });

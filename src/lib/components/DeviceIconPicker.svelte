@@ -20,7 +20,7 @@
 
   let {
     record,
-    value = $bindable(record.deviceIcon ?? 'auto'),
+    value = $bindable(),
     disabled = false,
     portal = false,
     class: className = '',
@@ -28,11 +28,14 @@
   }: Props = $props();
 
   const options = $derived(deviceIconOptions(record));
+  const selected = $derived(value ?? record.deviceIcon ?? 'auto');
   const selectItems = $derived(
     options.map(({ value: optionValue, label }) => ({ value: optionValue, label })),
   );
-  const selectedOption = $derived(options.find((option) => option.value === value) ?? options[0]);
-  const selectedRecord = $derived({ ...record, deviceIcon: value });
+  const selectedOption = $derived(
+    options.find((option) => option.value === selected) ?? options[0],
+  );
+  const selectedRecord = $derived({ ...record, deviceIcon: selected });
   const deviceOptions = $derived(options.filter((option) => option.group === 'devices'));
   const wildCardOptions = $derived(options.filter((option) => option.group === 'wildCards'));
 
@@ -52,7 +55,7 @@
 {/snippet}
 
 <div class={className} data-testid="device-icon-picker">
-  <Select.Root {value} items={selectItems} {disabled} onchange={choose}>
+  <Select.Root value={selected} items={selectItems} {disabled} onchange={choose}>
     <Select.Trigger
       aria-label={m.deviceIcons_picker_trigger_ariaLabel({ selection: selectedOption.label })}
       data-testid="device-icon-picker-trigger"
