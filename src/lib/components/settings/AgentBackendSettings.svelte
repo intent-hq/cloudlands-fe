@@ -367,7 +367,10 @@
         value = memoryBudgetQueuedMb;
         memoryBudgetQueuedMb = null;
         if (value === null) {
-          // Settled. Normalise only the surfaces the user has not touched since
+          // Settled: the target follows what the daemon acknowledged, so a
+          // differing ack does not make re-entering the requested value a no-op.
+          memoryBudgetTargetMb = memoryBudgetMb;
+          // Normalise only the surfaces the user has not touched since
           // the write went out — a response landing mid-edit must not rewrite
           // the number being typed or the slider being dragged.
           if (memoryBudgetInput === sentInput) memoryBudgetInput = String(memoryBudgetMb);
@@ -449,6 +452,9 @@
         next = idleReapQueuedMinutes;
         idleReapQueuedMinutes = null;
         if (next === null) {
+          // Settled: the target follows what the daemon acknowledged, so a
+          // differing ack does not make re-entering the requested value a no-op.
+          idleReapTargetMinutes = idleReapMinutes;
           // The toggle always follows the settled value — it has no in-progress
           // state to protect — but the stepper text is left alone if the user
           // has typed something newer since the write went out.

@@ -353,6 +353,32 @@ describe('AgentBackendSettings — agent memory budget', () => {
     // The half-typed 300 survives; the field is not rewritten under the cursor.
     expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('300');
   });
+
+  it('shows the daemon-acknowledged value rather than what was sent', async () => {
+    mockSettings({ budget: { value: 1000, max: TOTAL_RAM_MB } });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: MEMORY_BUDGET_PATH, value: 2000 }]);
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '2048' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('2000'),
+    );
+    expect((screen.getByRole('slider') as HTMLInputElement).value).toBe('2000');
+
+    // Re-entering the value the daemon did not honour must still be sent — the
+    // committed state is 2000 now, so 2048 is a change, not a no-op.
+    await fireEvent.input(input, { target: { value: '2048' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: MEMORY_BUDGET_PATH, value: 2048 },
+    ]);
+  });
 });
 
 describe('AgentBackendSettings — idle reap minutes', () => {
@@ -672,6 +698,33 @@ describe('AgentBackendSettings — idle reap minutes', () => {
       ).toBe('true'),
     );
     expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('10');
+  });
+
+  it('shows the daemon-acknowledged interval rather than what was sent', async () => {
+    mockSettings({ reap: { value: 10 } });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 45 }]);
+
+    render(AgentBackendSettings);
+
+    const stepper = (await waitFor(() =>
+      screen.getByLabelText(REAP_STEPPER_LABEL),
+    )) as HTMLInputElement;
+    await fireEvent.input(stepper, { target: { value: '60' } });
+    await fireEvent.blur(stepper);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('45'),
+    );
+
+    // Re-entering the interval the daemon did not honour must still be sent —
+    // the committed state is 45 now, so 60 is a change, not a no-op.
+    await fireEvent.input(stepper, { target: { value: '60' } });
+    await fireEvent.blur(stepper);
+
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: IDLE_REAP_PATH, value: 60 },
+    ]);
   });
 });
 
