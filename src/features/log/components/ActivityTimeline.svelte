@@ -211,7 +211,7 @@
             status === 'success'
               ? 'text-emerald-500/80 dark:text-emerald-400/70'
               : status === 'error'
-                ? 'text-error-foreground'
+                ? 'text-danger'
                 : 'text-ghost'}
           {@const prevEvent = index > 0 ? dedupedEvents[index - 1] : null}
           {@const thisTime = new Date(event.timestamp).getTime()}

@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from "@augmentcode/themis/types";
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 
 const MAX_DEPTH = 15;
 
@@ -6,7 +6,7 @@ const MAX_DEPTH = 15;
  * Check whether a value is a plain object (not a class instance).
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null) return false;
+  if (typeof value !== 'object' || value === null) return false;
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
@@ -17,8 +17,8 @@ interface Violation {
 }
 
 function getTypeName(value: unknown): string {
-  return value !== null && typeof value === "object"
-    ? (value as object).constructor?.name ?? typeof value
+  return value !== null && typeof value === 'object'
+    ? ((value as object).constructor?.name ?? typeof value)
     : typeof value;
 }
 
@@ -37,9 +37,9 @@ function collectViolations(
 
   if (obj === null || obj === undefined) return;
   const t = typeof obj;
-  if (t === "string" || t === "number" || t === "boolean") return;
+  if (t === 'string' || t === 'number' || t === 'boolean') return;
 
-  if (t === "function" || t === "symbol" || t === "bigint") {
+  if (t === 'function' || t === 'symbol' || t === 'bigint') {
     if (!reportedPaths.has(path)) {
       reportedPaths.add(path);
       violations.push({ path, typeName: getTypeName(obj) });
@@ -106,7 +106,7 @@ export function createStructuredCloneCheckerMiddleware(): StoreMiddleware {
       // --- Group violations by top-level slice ---
       const bySlice = new Map<string, Violation[]>();
       for (const v of violations) {
-        const sliceName = v.path.replace(/[.[].*/u, "");
+        const sliceName = v.path.replace(/[.[].*/u, '');
         let list = bySlice.get(sliceName);
         if (!list) {
           list = [];
@@ -125,9 +125,7 @@ export function createStructuredCloneCheckerMiddleware(): StoreMiddleware {
       const uniqueActions = [...actionCounts.keys()];
 
       // Top-level header (console.error so it stands out)
-      console.error(
-        `[structured-clone-checker] ${violations.length} violation(s) found`,
-      );
+      console.error(`[structured-clone-checker] ${violations.length} violation(s) found`);
 
       // Collapsible slice sections
       for (const [slice, sliceViolations] of bySlice) {
@@ -141,16 +139,14 @@ export function createStructuredCloneCheckerMiddleware(): StoreMiddleware {
       // Collapsible actions section
       console.group(`  Actions in this batch (${actionTypes.length} dispatches):`);
       for (const [actionType, count] of actionCounts) {
-        console.warn(`    ${actionType}${count > 1 ? ` ×${count}` : ""}`);
+        console.warn(`    ${actionType}${count > 1 ? ` ×${count}` : ''}`);
       }
       console.groupEnd();
 
       // Copy-pasteable summary
-      const pathList = violations
-        .map((v) => `${v.path} (${v.typeName})`)
-        .join(", ");
+      const pathList = violations.map((v) => `${v.path} (${v.typeName})`).join(', ');
       console.warn(
-        `  Summary: ${violations.length} non-serializable values in slices [${sliceNames.join(", ")}] after actions [${uniqueActions.join(", ")}]. Paths: ${pathList}`,
+        `  Summary: ${violations.length} non-serializable values in slices [${sliceNames.join(', ')}] after actions [${uniqueActions.join(', ')}]. Paths: ${pathList}`,
       );
     }
   }
@@ -161,7 +157,7 @@ export function createStructuredCloneCheckerMiddleware(): StoreMiddleware {
     const nextState = store.getState() as Record<string, unknown>;
 
     latestState = nextState;
-    const actionType = (action as { type?: string }).type ?? "unknown";
+    const actionType = (action as { type?: string }).type ?? 'unknown';
     pendingActionTypes.push(actionType);
 
     // Track which top-level slices changed by reference
@@ -184,4 +180,3 @@ export function createStructuredCloneCheckerMiddleware(): StoreMiddleware {
  * Exposed for testing only — force an immediate flush of pending checks.
  */
 export { CHECK_INTERVAL_MS };
-

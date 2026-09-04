@@ -1,10 +1,4 @@
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getSelectedTextWithinSurface } from '../selected-text';
 
 function mockSelection({
@@ -122,7 +116,12 @@ describe('getSelectedTextWithinSurface', () => {
     const textNode = document.createTextNode('alphabet');
     surface.append(textNode);
     document.body.append(surface);
-    mockSelection({ anchorNode: textNode, focusNode: textNode, text: 'alphabet', isCollapsed: true });
+    mockSelection({
+      anchorNode: textNode,
+      focusNode: textNode,
+      text: 'alphabet',
+      isCollapsed: true,
+    });
 
     expect(getSelectedTextWithinSurface(surface, { maxLength: 1 })).toBeNull();
   });

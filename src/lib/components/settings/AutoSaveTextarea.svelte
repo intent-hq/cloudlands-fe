@@ -142,7 +142,7 @@
       {placeholder}
       rows={minRows}
       noFocusStyle
-      class="grow {isOverLimit ? 'border-destructive' : ''}"
+      class="grow {isOverLimit ? 'border-danger' : ''}"
     ></Textarea>
 
     <!-- Save indicator -->
@@ -159,7 +159,7 @@
   {#if maxLength && (isApproachingLimit || isOverLimit)}
     <div
       class="flex items-center justify-end text-xs shrink-0 {isOverLimit
-        ? 'text-destructive'
+        ? 'text-danger'
         : 'text-warning'}"
     >
       <span>

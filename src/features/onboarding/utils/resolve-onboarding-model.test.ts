@@ -167,6 +167,31 @@ function setAvailability(
 }
 
 describe('resolveOnboardingModel', () => {
+  it('does not auto-pick Antigravity without a saved preference or card/model choice', async () => {
+    mockState.activeProviderId = '';
+    setAvailability({ antigravity: { available: true, authenticated: true } });
+    expect((await resolveOnboardingModel(fakeState)).provider).toBe('');
+    setAvailability({
+      antigravity: { available: true, authenticated: true },
+      codex: { available: true, authenticated: true },
+    });
+    expect((await resolveOnboardingModel(fakeState)).provider).toBe('codex');
+  });
+
+  it.each(['active', 'specialist', 'model'])(
+    'honors an explicit Antigravity %s choice',
+    async (choice) => {
+      mockState.activeProviderId = choice === 'active' ? 'antigravity' : '';
+      if (choice === 'specialist') mockState.specialists[0].codingAgent = 'antigravity';
+      setAvailability({
+        antigravity: { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      const pick = choice === 'model' ? { provider: 'antigravity', model: 'model-a' } : undefined;
+      expect((await resolveOnboardingModel(fakeState, pick)).provider).toBe('antigravity');
+    },
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
     setAvailability({ auggie: { available: true, authenticated: true } });

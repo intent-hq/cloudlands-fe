@@ -7,9 +7,11 @@
    * - agents.flushQueuedMessages: batch-deliver queued messages when a turn ends
    * - agents.memoryBudgetMb: aggregate child-tree memory admission gate (0 = off)
    * - agents.idleReapMinutes: idle-agent reap interval (0 = off)
+   * - agents.acpNodeMaxOldSpaceMb: V8 heap cap for Node/Electron ACP processes
    *
-   * None of these take effect live — every row says so, matching the shipped
-   * "Max concurrent agents" copy.
+   * The heap cap is read at spawn time and applies to newly started agent
+   * processes; the rest take effect on daemon restart. Every row says which,
+   * matching the shipped "Max concurrent agents" copy.
    */
 
   import { appClient } from '$lib/client';
@@ -40,6 +42,7 @@
   const FLUSH_SETTING_PATH = 'agents.flushQueuedMessages';
   const MEMORY_BUDGET_PATH = 'agents.memoryBudgetMb';
   const IDLE_REAP_PATH = 'agents.idleReapMinutes';
+  const ACP_HEAP_PATH = 'agents.acpNodeMaxOldSpaceMb';
 
   // Slider granularity. The *range* is never hardcoded — it comes from the
   // catalog bound the daemon reports for `agents.memoryBudgetMb` (total physical
@@ -55,6 +58,12 @@
   // past 1, and the toggle is what labels the disabled state.
   const IDLE_REAP_MIN_MINUTES = 1;
   const IDLE_REAP_FALLBACK_MAX_MINUTES = 120;
+
+  // Heap-cap bounds used only when the catalog entry omits them; the daemon's
+  // own definition (min/max/defaultValue) is authoritative when present.
+  const ACP_HEAP_FALLBACK_MIN_MB = 1024;
+  const ACP_HEAP_FALLBACK_MAX_MB = 65536;
+  const ACP_HEAP_FALLBACK_DEFAULT_MB = 8192;
 
   // Memory budget (MB). `committed` is the daemon-acknowledged value; `draft`
   // tracks the slider while dragging and is reset from `committed` whenever a
@@ -93,6 +102,20 @@
   let idleReapWriting = false;
   let idleReapQueuedMinutes: number | null = null;
 
+  // ACP Node heap cap (MB). `acpHeapMb` is the effective value: the daemon
+  // reports `value: null` while the config key is absent, in which case the
+  // catalog `defaultValue` is what spawns actually use.
+  let acpHeapSupported = $state(false);
+  let acpHeapMb = $state(ACP_HEAP_FALLBACK_DEFAULT_MB);
+  let acpHeapInput = $state('');
+  let acpHeapMinMb = $state(ACP_HEAP_FALLBACK_MIN_MB);
+  let acpHeapMaxMb = $state(ACP_HEAP_FALLBACK_MAX_MB);
+  let acpHeapDefaultMb = $state(ACP_HEAP_FALLBACK_DEFAULT_MB);
+  // As above: in-flight write bookkeeping, not rendered.
+  let acpHeapTargetMb = ACP_HEAP_FALLBACK_DEFAULT_MB;
+  let acpHeapWriting = false;
+  let acpHeapQueuedMb: number | null = null;
+
   const flushModeOptions = $derived([
     { value: 'all', label: m.settings_agentBackend_flushQueuedMessages_all_label() },
     { value: 'systemOnly', label: m.settings_agentBackend_flushQueuedMessages_systemOnly_label() },
@@ -113,12 +136,14 @@
     // keeps compatibility with isolated component harnesses that predate
     // SettingsClient.get while still exercising the exact live wire contract.
     if (typeof appClient.settings.get === 'function') {
-      const [maxConcurrentEntry, flushEntry, memoryBudgetEntry, idleReapEntry] = await Promise.all([
-        appClient.settings.get(SETTING_PATH),
-        appClient.settings.get(FLUSH_SETTING_PATH),
-        appClient.settings.get(MEMORY_BUDGET_PATH),
-        appClient.settings.get(IDLE_REAP_PATH),
-      ]);
+      const [maxConcurrentEntry, flushEntry, memoryBudgetEntry, idleReapEntry, acpHeapEntry] =
+        await Promise.all([
+          appClient.settings.get(SETTING_PATH),
+          appClient.settings.get(FLUSH_SETTING_PATH),
+          appClient.settings.get(MEMORY_BUDGET_PATH),
+          appClient.settings.get(IDLE_REAP_PATH),
+          appClient.settings.get(ACP_HEAP_PATH),
+        ]);
       if (!maxConcurrentEntry || !flushEntry) {
         settingsError = m.settings_agentBackend_loadError();
         return;
@@ -134,6 +159,7 @@
           : 'all';
       applyMemoryBudget(memoryBudgetEntry);
       applyIdleReap(idleReapEntry);
+      applyAcpHeap(acpHeapEntry);
       settingsError = '';
       return;
     }
@@ -163,6 +189,7 @@
     }
     applyMemoryBudget(byPath.get(MEMORY_BUDGET_PATH));
     applyIdleReap(byPath.get(IDLE_REAP_PATH));
+    applyAcpHeap(byPath.get(ACP_HEAP_PATH));
   }
 
   /**
@@ -224,10 +251,54 @@
     syncIdleReapFromCommitted();
   }
 
+  /**
+   * Hydrate the heap-cap row; an absent path hides it, as above. A `null`
+   * value means the config key is not set, so the effective cap is the
+   * catalog default — that is what the field shows, never a blank.
+   */
+  function applyAcpHeap(entry: SettingDefinitionWithValue | null | undefined) {
+    if (!entry) {
+      acpHeapSupported = false;
+      return;
+    }
+    acpHeapSupported = true;
+    const fallbackDefault =
+      typeof entry.defaultValue === 'number' && entry.defaultValue > 0
+        ? Math.round(entry.defaultValue)
+        : ACP_HEAP_FALLBACK_DEFAULT_MB;
+    const value =
+      typeof entry.value === 'number' && entry.value > 0
+        ? Math.round(entry.value)
+        : fallbackDefault;
+    const catalogMin =
+      typeof entry.min === 'number' && entry.min > 0 ? entry.min : ACP_HEAP_FALLBACK_MIN_MB;
+    const catalogMax =
+      typeof entry.max === 'number' && entry.max > 0 ? entry.max : ACP_HEAP_FALLBACK_MAX_MB;
+    // Same rule as the budget: the bounds widen to admit what the daemon
+    // already holds rather than clamping a real value and writing it back.
+    acpHeapMinMb = Math.min(catalogMin, value);
+    acpHeapMaxMb = Math.max(catalogMax, value);
+    acpHeapDefaultMb = fallbackDefault;
+    acpHeapMb = value;
+    acpHeapTargetMb = value;
+    syncAcpHeapFromCommitted();
+  }
+
   function clampMemoryBudget(value: number) {
     const rounded = Math.round(value);
     if (!Number.isFinite(rounded) || rounded < 0) return 0;
     return memoryBudgetMaxMb === null ? rounded : Math.min(rounded, memoryBudgetMaxMb);
+  }
+
+  function clampAcpHeap(value: number) {
+    const rounded = Math.round(value);
+    if (!Number.isFinite(rounded)) return acpHeapMb;
+    return Math.min(Math.max(rounded, acpHeapMinMb), acpHeapMaxMb);
+  }
+
+  /** Reset the field to the daemon-acknowledged (or effective default) cap. */
+  function syncAcpHeapFromCommitted() {
+    acpHeapInput = String(acpHeapMb);
   }
 
   function clampIdleReap(value: number) {
@@ -422,6 +493,71 @@
     if (event.key === 'Enter') await commitIdleReapInput();
   }
 
+  async function saveAcpHeap(next: number) {
+    const clamped = clampAcpHeap(next);
+    // Serialized and coalesced exactly like the budget, and for the same
+    // reason — see saveMemoryBudget.
+    if (clamped === acpHeapTargetMb) {
+      if (!acpHeapWriting) syncAcpHeapFromCommitted();
+      return;
+    }
+    acpHeapTargetMb = clamped;
+    if (acpHeapWriting) {
+      acpHeapQueuedMb = clamped;
+      return;
+    }
+    acpHeapWriting = true;
+    try {
+      let value: number | null = clamped;
+      while (value !== null) {
+        const sentInput = acpHeapInput;
+        const applied = await appClient.settings.update([{ path: ACP_HEAP_PATH, value }]);
+        const entry = applied.find((change) => change.path === ACP_HEAP_PATH);
+        if (!entry || typeof entry.value !== 'number') {
+          settingsError = m.settings_agentBackend_saveError();
+          acpHeapQueuedMb = null;
+          acpHeapTargetMb = acpHeapMb;
+          syncAcpHeapFromCommitted();
+          return;
+        }
+        acpHeapMb = entry.value;
+        settingsError = '';
+        value = acpHeapQueuedMb;
+        acpHeapQueuedMb = null;
+        if (value === null && acpHeapInput === sentInput) {
+          acpHeapInput = String(acpHeapMb);
+        }
+      }
+    } catch (error) {
+      settingsError = m.settings_agentBackend_saveError();
+      acpHeapQueuedMb = null;
+      acpHeapTargetMb = acpHeapMb;
+      syncAcpHeapFromCommitted();
+      console.error('Failed to save agent settings:', error);
+    } finally {
+      acpHeapWriting = false;
+    }
+  }
+
+  function handleAcpHeapInput(event: Event) {
+    acpHeapInput = (event.target as HTMLInputElement).value;
+  }
+
+  async function commitAcpHeapInput() {
+    const trimmed = acpHeapInput.trim();
+    const parsed = Number(trimmed);
+    if (trimmed === '' || !Number.isFinite(parsed)) {
+      // Invalid: restore the committed value rather than guessing at intent.
+      syncAcpHeapFromCommitted();
+      return;
+    }
+    await saveAcpHeap(parsed);
+  }
+
+  async function handleAcpHeapKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') await commitAcpHeapInput();
+  }
+
   async function handleFlushModeChange(value: string) {
     if (!isFlushMode(value) || value === flushQueuedMessages) return;
     try {
@@ -520,6 +656,13 @@
 
   const idleReapEnabled = $derived(idleReapMinutes > 0);
 
+  function formatAcpHeap(valueMb: number) {
+    return m.settings_agentBackend_acpHeap_megabytesValue({ value: formatInteger(valueMb) });
+  }
+
+  /** The effective cap: the daemon-acknowledged value, or the catalog default while unset. */
+  const acpHeapDisplay = $derived(formatAcpHeap(acpHeapMb));
+
   /** 0 reads as "off" — the documented disable value, not a 0-minute interval. */
   const idleReapDisplay = $derived(
     idleReapEnabled
@@ -530,7 +673,7 @@
 
 <div class="space-y-4">
   {#if settingsError}
-    <div class="text-xs text-destructive mb-2">
+    <div class="text-xs text-danger mb-2">
       {settingsError}
     </div>
   {/if}
@@ -696,5 +839,40 @@
         </div>
       </div>
     {/if}
+  {/if}
+
+  <!-- ACP Node heap limit (hidden when the daemon does not report the path) -->
+  {#if acpHeapSupported}
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <label for="acpNodeMaxOldSpaceMb" class="text-sm font-medium text-foreground">
+          {m.settings_agentBackend_acpHeap_label()}
+        </label>
+        <p class="text-xs text-subtle mt-0.5">
+          {m.settings_agentBackend_acpHeap_description({ current: acpHeapDisplay })}
+        </p>
+        <p class="text-xs text-subtle mt-0.5">
+          {m.settings_agentBackend_acpHeap_boundsNote({
+            min: formatAcpHeap(acpHeapMinMb),
+            max: formatAcpHeap(acpHeapMaxMb),
+            defaultValue: formatAcpHeap(acpHeapDefaultMb),
+          })}
+        </p>
+      </div>
+      <div class="shrink-0 w-32">
+        <Input
+          id="acpNodeMaxOldSpaceMb"
+          type="number"
+          bind:value={acpHeapInput}
+          oninput={handleAcpHeapInput}
+          onblur={commitAcpHeapInput}
+          onkeydown={handleAcpHeapKeydown}
+          min={String(acpHeapMinMb)}
+          max={String(acpHeapMaxMb)}
+          step="1"
+          class="h-9 text-sm"
+        />
+      </div>
+    </div>
   {/if}
 </div>

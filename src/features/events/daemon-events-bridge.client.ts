@@ -134,6 +134,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type {
   AgentSession,
   ContentBlock,
+  MessageMetadata,
   PullRequestInfo,
   PullRequestStatus,
   QueuedMessage,
@@ -281,6 +282,7 @@ import {
   streamTurnCorrelation,
 } from '$lib/utils/stream-lifecycle-telemetry';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
+import { resolveHashToTarget } from '$shared/app-ui-targets';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -723,12 +725,67 @@ function predictAttachmentBlockId(
   return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
 }
 
+/**
+ * Optional terminal fields of `agent:stream:end` (PROTOCOL §7 / §7.2) that
+ * the finalized message's metadata mirrors: the interrupt marker with its
+ * reason + sender attribution, and the abnormal finish reason. Every field is
+ * omitted when absent on the wire — never defaulted or `null`ed.
+ */
+interface StreamEndMetadata {
+  stopReason?: string;
+  finishReason?: string;
+  interruptReason?: MessageMetadata['interruptReason'];
+  interruptedBy?: MessageMetadata['interruptedBy'];
+}
+
+/**
+ * Read the §7.2 `interruptedBy` sender attribution off an `agent:stream:end`
+ * payload: `{ kind: "user" }` or `{ kind: "agent", agentId?, name? }`. A value
+ * that diverges from the documented shape is rejected whole rather than
+ * partially absorbed — and logged, so a daemon/FE contract drift is visible
+ * instead of silent (same posture as bare `trailingBlocks`).
+ */
+function readInterruptedBy(
+  value: unknown,
+  agentId: string,
+): MessageMetadata['interruptedBy'] | undefined {
+  if (value === undefined) return undefined;
+  const parsed = parseInterruptedBy(value);
+  if (parsed === undefined) {
+    logger.debug('Dropping malformed agent:stream:end interruptedBy', { agentId, value });
+  }
+  return parsed;
+}
+
+function parseInterruptedBy(value: unknown): MessageMetadata['interruptedBy'] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { kind, agentId, name } = value as Record<string, unknown>;
+  if (kind === 'user') return { kind: 'user' };
+  if (kind !== 'agent') return undefined;
+  if (agentId !== undefined && typeof agentId !== 'string') return undefined;
+  if (name !== undefined && typeof name !== 'string') return undefined;
+  return {
+    kind: 'agent',
+    ...(agentId !== undefined ? { agentId } : {}),
+    ...(name !== undefined ? { name } : {}),
+  };
+}
+
+function streamEndMetadataFields(end: StreamEndMetadata | undefined): StreamEndMetadata {
+  if (!end) return {};
+  return {
+    ...(end.stopReason ? { stopReason: end.stopReason } : {}),
+    ...(end.finishReason ? { finishReason: end.finishReason } : {}),
+    ...(end.interruptReason ? { interruptReason: end.interruptReason } : {}),
+    ...(end.interruptedBy ? { interruptedBy: end.interruptedBy } : {}),
+  };
+}
+
 function dispatchStreamUpdate(
   agentId: string,
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
-  stopReason?: string,
-  finishReason?: string,
+  end?: StreamEndMetadata,
 ): void {
   // SOLE-WRITER INVARIANT (PROTOCOL §7.1): when a standing chat.subscribe
   // registration covers this agent, the subscription owns message CONTENT —
@@ -754,8 +811,7 @@ function dispatchStreamUpdate(
       eventType,
       assistantMessageId: state.messageId,
       ...(contentBlocks ? { contentBlocks } : {}),
-      ...(stopReason ? { stopReason } : {}),
-      ...(finishReason ? { finishReason } : {}),
+      ...streamEndMetadataFields(end),
     }),
   );
   reportStreamLifecycle({
@@ -1278,6 +1334,21 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // as `metadata.finishReason`, so stamping it here just makes the notice
   // render live without waiting for a reconcile.
   const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;
+  // Interrupt cause + sender attribution (PROTOCOL §7.2): the interrupt-path
+  // emit always carries `interruptReason` (`user_stop` | `preempted_by_message`)
+  // and `interruptedBy` on an attributable preemption. Both mirror the
+  // persisted row's metadata, so stamping them here makes the reason-specific
+  // Stopped label ("Interrupted by <agent>" …) resolve live instead of the
+  // generic "Stopped" until the transcript reloads.
+  const interruptReason =
+    typeof data?.interruptReason === 'string' ? data.interruptReason : undefined;
+  const interruptedBy = readInterruptedBy(data?.interruptedBy, agentId);
+  const endMetadata: StreamEndMetadata = {
+    stopReason,
+    finishReason,
+    interruptReason,
+    interruptedBy,
+  };
   const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
   // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
   // `trailingBlocks` — the standalone resource blocks the daemon appended to
@@ -1341,16 +1412,16 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
       });
     }
-    dispatchStreamUpdate(agentId, state, 'complete', stopReason, finishReason);
+    dispatchStreamUpdate(agentId, state, 'complete', endMetadata);
     streamsByAgent.delete(agentId);
     return;
   }
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
     // fall through so the trailing blocks land under their own messageId.
-    // The stopReason/finishReason belong to THIS event's messageId — do not
-    // stamp the Stopped badge / finish notice onto the unrelated accumulated
-    // turn.
+    // The stopReason/finishReason/interrupt attribution belong to THIS
+    // event's messageId — do not stamp the Stopped badge / finish notice onto
+    // the unrelated accumulated turn.
     dispatchStreamUpdate(agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
@@ -1377,8 +1448,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         ...(hasStandingChatSubscription(agentId)
           ? {}
           : { contentBlocks: dedupeResourceBlocks(trailingBlocks) }),
-        ...(stopReason ? { stopReason } : {}),
-        ...(finishReason ? { finishReason } : {}),
+        ...streamEndMetadataFields(endMetadata),
       }),
     );
     reportStreamLifecycle({
@@ -3272,6 +3342,16 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
 }
 
 /**
+ * Daemon-sent highlight ids may be legacy hash aliases (e.g.
+ * `quickActions.defaultModel`); resolve them to the registry target id the
+ * DOM carries as `data-highlight-id`, like NavLink does, falling back to the
+ * raw id when unresolved.
+ */
+function resolveHighlightId(highlightId: string): string {
+  return resolveHashToTarget(highlightId)?.id ?? highlightId;
+}
+
+/**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
  * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
@@ -3286,7 +3366,8 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
   const route = rawRoute.trim();
   if (route.length === 0) return;
 
-  const highlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const rawHighlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const highlightId = rawHighlightId ? resolveHighlightId(rawHighlightId) : '';
   const durationMs =
     typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
       ? data.durationMs
@@ -3322,7 +3403,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
   const id = data.id;
   if (typeof id !== 'string' || id.trim().length === 0) return;
 
-  const highlightId = id.trim();
+  const highlightId = resolveHighlightId(id.trim());
   const durationMs =
     typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
       ? data.durationMs

@@ -1,7 +1,4 @@
-import {
-  test,
-  expect,
-} from '@playwright/experimental-ct-svelte';
+import { test, expect } from '@playwright/experimental-ct-svelte';
 import TaskItemNodeView from '../TaskItemNodeView.svelte';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/core';
@@ -65,9 +62,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
         props: createMockProps(),
       });
 
-      await expect(
-        component.getByRole('button', { name: 'Convert to Task Note' }),
-      ).toBeAttached();
+      await expect(component.getByRole('button', { name: 'Convert to Task Note' })).toBeAttached();
     });
   });
 
@@ -78,10 +73,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       });
 
       await expect(component).toHaveAttribute('data-status', 'todo');
-      await expect(component.locator('[role="checkbox"]')).toHaveAttribute(
-        'aria-checked',
-        'false',
-      );
+      await expect(component.locator('[role="checkbox"]')).toHaveAttribute('aria-checked', 'false');
     });
 
     test('in-progress task should stay unchecked with in-progress status', async ({ mount }) => {
@@ -92,10 +84,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       });
 
       await expect(component).toHaveAttribute('data-status', 'in-progress');
-      await expect(component.locator('[role="checkbox"]')).toHaveAttribute(
-        'aria-checked',
-        'false',
-      );
+      await expect(component.locator('[role="checkbox"]')).toHaveAttribute('aria-checked', 'false');
     });
 
     test('done task should have checked checkbox', async ({ mount }) => {

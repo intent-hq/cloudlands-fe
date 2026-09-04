@@ -3,34 +3,18 @@
  * escape-layer stack. Migrated from a manual `document` keydown listener;
  * the layer is only registered while the fullscreen overlay is open.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import type { NodeViewProps } from '@tiptap/core';
 
 // Stub the diagram renderer — the escape layer lives on the node view.
 vi.mock('$lib/components/markdown/MermaidRenderer.svelte', async () => ({
-  default: (
-    await import(
-      '../../workspace/initializer/__tests__/mocks/MockComponent.svelte'
-    )
-  ).default,
+  default: (await import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'))
+    .default,
 }));
 
 vi.mock('$store/renderer/slices/theme/theme-selectors', async () => {
-  const { createAppStoreMock } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
   const store = createAppStoreMock({ state: {} });
   return { selectIsDarkTheme: store.createSelector(() => false) };
 });
@@ -52,9 +36,7 @@ async function renderAndOpenFullscreen() {
     props: makeProps() as NodeViewProps,
   });
 
-  const expandButton = container.querySelector(
-    'button[title="Fullscreen"]',
-  ) as HTMLButtonElement;
+  const expandButton = container.querySelector('button[title="Fullscreen"]') as HTMLButtonElement;
   expect(expandButton).toBeTruthy();
   await fireEvent.click(expandButton);
   await waitFor(() => {

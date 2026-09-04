@@ -100,7 +100,7 @@
     background-color: hsl(var(--card)) !important;
     color: hsl(var(--foreground)) !important;
     /* Width/style stay !important, but color must NOT be — per-toast Tailwind
-       classes (e.g. !border-destructive/50 on custom toasts) override it.
+       classes (e.g. !border-danger/50 on custom toasts) override it.
        This also relies on these :global styles staying UNLAYERED: moving them
        into a cascade layer would change the fallback chain for default toasts. */
     border-width: 1px !important;

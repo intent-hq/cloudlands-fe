@@ -124,7 +124,9 @@ describe('renderCommitEntry', () => {
   it('renders a commit with PR number', () => {
     const commit = parseCommitMessage('feat: add feature (#123)');
     const result = renderCommitEntry(commit, 'intent-hq', 'cloudlands-fe');
-    expect(result).toBe('- add feature ([#123](https://github.com/intent-hq/cloudlands-fe/pull/123))');
+    expect(result).toBe(
+      '- add feature ([#123](https://github.com/intent-hq/cloudlands-fe/pull/123))',
+    );
   });
 
   it('renders a commit without PR number', () => {
@@ -146,10 +148,14 @@ describe('renderSection', () => {
     ];
 
     const result = renderSection('Features', commits, 'intent-hq', 'cloudlands-fe');
-    
+
     expect(result).toContain('### Features');
-    expect(result).toContain('- feature 1 ([#1](https://github.com/intent-hq/cloudlands-fe/pull/1))');
-    expect(result).toContain('- feature 2 ([#2](https://github.com/intent-hq/cloudlands-fe/pull/2))');
+    expect(result).toContain(
+      '- feature 1 ([#1](https://github.com/intent-hq/cloudlands-fe/pull/1))',
+    );
+    expect(result).toContain(
+      '- feature 2 ([#2](https://github.com/intent-hq/cloudlands-fe/pull/2))',
+    );
   });
 
   it('returns empty string for empty commits', () => {
@@ -166,8 +172,13 @@ describe('renderRepoNotes', () => {
       parseCommitMessage('perf: perf improvement (#3)'),
     ];
 
-    const result = renderRepoNotes('Desktop app (cloudlands-fe)', commits, 'intent-hq', 'cloudlands-fe');
-    
+    const result = renderRepoNotes(
+      'Desktop app (cloudlands-fe)',
+      commits,
+      'intent-hq',
+      'cloudlands-fe',
+    );
+
     expect(result).toContain('## Desktop app (cloudlands-fe)');
     expect(result).toContain('### Features');
     expect(result).toContain('### Bug Fixes');
@@ -181,7 +192,12 @@ describe('renderRepoNotes', () => {
       parseCommitMessage('perf: perf improvement (#3)'),
     ];
 
-    const result = renderRepoNotes('Desktop app (cloudlands-fe)', commits, 'intent-hq', 'cloudlands-fe');
+    const result = renderRepoNotes(
+      'Desktop app (cloudlands-fe)',
+      commits,
+      'intent-hq',
+      'cloudlands-fe',
+    );
 
     // Every `### Heading` must be preceded by a blank line
     expect(result).not.toMatch(/[^\n]\n### /);
@@ -228,9 +244,13 @@ describe('renderIntentdSection', () => {
     );
     expect(result).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
     expect(result).toContain('### Features');
-    expect(result).toContain('- add daemon feature ([#10](https://github.com/intent-hq/intentd/pull/10))');
+    expect(result).toContain(
+      '- add daemon feature ([#10](https://github.com/intent-hq/intentd/pull/10))',
+    );
     expect(result).toContain('### Bug Fixes');
-    expect(result).toContain('- fix daemon bug ([#11](https://github.com/intent-hq/intentd/pull/11))');
+    expect(result).toContain(
+      '- fix daemon bug ([#11](https://github.com/intent-hq/intentd/pull/11))',
+    );
   });
 
   it('renders "No changes." for a delta with no renderable commits', () => {

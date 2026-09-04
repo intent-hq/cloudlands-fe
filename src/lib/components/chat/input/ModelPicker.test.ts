@@ -198,7 +198,12 @@ const mockAgentSession$ = writable<
 >(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
-  selectEnabledProviderIds: () => enabledProviderIds$,
+  selectModelFetchProviderIds: () =>
+    derived(
+      [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
+      ([checked, enabled, available]) => (checked ? available : enabled),
+    ),
+  selectIsProviderModelAccessAllowed: () => readable(true),
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
@@ -835,30 +840,6 @@ describe('ModelPicker combined reasoning mode', () => {
 
     await fireEvent.keyDown(selectTrigger, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-  });
-
-  it('keeps the chat popover height stable while allowing the model list to scroll', async () => {
-    render(ModelPicker, {
-      props: {
-        selectedModel: 'codex:gpt-5.6-sol',
-        agentId: 'agent-1',
-        workspaceId: 'ws-1',
-        showReasoning: true,
-        portal: false,
-      },
-    });
-
-    await fireEvent.click(screen.getByRole('button'));
-
-    const popover = screen.getByRole('listbox');
-    expect(popover.className).toContain('w-85');
-    expect(popover.className).toContain('min-h-90');
-    expect(popover.className).toContain('max-h-90');
-    expect(popover.className).not.toContain(' h-[min(');
-    expect(popover.querySelector('[data-scroll-container]')?.className).toContain('flex-1');
-    expect(popover.querySelector('[data-scroll-container]')?.className).toContain(
-      'overflow-y-auto',
-    );
   });
 
   it('closes the open menu when the trigger is clicked again', async () => {
@@ -3073,6 +3054,23 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
 });
 
 describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
+  it('uses live Antigravity labels and preserves exact compound ids without effort controls', async () => {
+    enabledProviderIds$.set(['antigravity']);
+    activeProviderId$.set('antigravity');
+    const model = { value: 'antigravity:gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' };
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [model] });
+    const onModelChange = vi.fn();
+    render(ModelPicker, { props: { selectedModel: undefined, onModelChange, portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Gemini 3.7 Flash \(High\)/ }));
+    await waitFor(() =>
+      expect(onModelChange).toHaveBeenCalledWith('antigravity:gemini-3.7-flash-high', {
+        providerId: 'antigravity',
+        modelId: 'gemini-3.7-flash-high',
+      }),
+    );
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockModelState.selectedModel = 'sonnet4.6';

@@ -48,7 +48,9 @@ describe('isAbsolutePathOutsideRoot', () => {
 
   it('compares UNC paths case-insensitively in both separator forms', () => {
     expect(isAbsolutePathOutsideRoot('\\\\SERVER\\share\\x.ts', '\\\\server\\share')).toBe(false);
-    expect(isAbsolutePathOutsideRoot('//server/SHARE/repo/x.ts', '//Server/Share/repo')).toBe(false);
+    expect(isAbsolutePathOutsideRoot('//server/SHARE/repo/x.ts', '//Server/Share/repo')).toBe(
+      false,
+    );
     expect(isAbsolutePathOutsideRoot('\\\\other\\share\\x.ts', '\\\\server\\share')).toBe(true);
     expect(isAbsolutePathOutsideRoot('\\\\server\\other\\x.ts', '\\\\server\\share')).toBe(true);
   });

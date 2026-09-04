@@ -60,7 +60,7 @@ async function getActiveProviderId(): Promise<string | null> {
  * Import createAgentTypeId from '$shared/types/agent.types' and use it to create the branded type.
  *
  * DO NOT pass systemPrompt or rules - these are DEPRECATED and ignored.
- * The backend builds the complete system prompt from agentType via InstructionService.
+ * The intentd daemon builds the complete system prompt from agentType.
  *
  * Agent naming follows the VS Code webview pattern:
  * - If `name` is provided,
@@ -325,7 +325,7 @@ export class UnifiedAgentFactory {
           // agent creation ended up targeting an uninstalled Auggie binary.
           // An explicit config.provider is a caller's deliberate choice and
           // is not gated here; only this active-provider fallback is.
-          let isActiveProviderAvailable = true;
+          let isActiveProviderAvailable = activeId !== 'antigravity';
           try {
             // Only refuse once availability is confirmed known; while the
             // first check hasn't resolved yet, selectAvailableEnabledProviderIds
@@ -333,10 +333,10 @@ export class UnifiedAgentFactory {
             // unavailable" — that would refuse creation during initial load.
             const availabilityKnown = selectHasCheckedOnce.select(appStore.state);
             isActiveProviderAvailable =
-              !availabilityKnown ||
+              (!availabilityKnown && activeId !== 'antigravity') ||
               selectAvailableEnabledProviderIds.select(appStore.state).includes(activeId);
           } catch {
-            // Availability data not resolvable — don't block on an unknown state.
+            // Keep other providers' unknown-state behavior; Antigravity needs confirmation.
           }
           if (!isActiveProviderAvailable) {
             logger.error('Active provider is unavailable; refusing to create agent', {
@@ -682,19 +682,9 @@ export class UnifiedAgentFactory {
   }
 
   /**
-   * REMOVED: buildSystemPromptWithRules(), loadBaseSystemPrompt(), loadDefaultRulesForAgentType()
-   *
-   * These methods were dead code - never called in production.
-   *
-   * System prompts are now ONLY built by the backend via InstructionService.buildSystemPrompt()
-   * which is called in agent-backend-handler.service.ts when creating agents.
-   *
-   * InstructionService provides:
-   * - 3-tier fallback: user customizations → workspace files → bundled defaults
-   * - Proper caching and file watching
-   * - Consistent behavior across all agent types
-   *
-   * See AGENT_LAUNCHING_ANALYSIS.md for details.
+   * The FE does not build system prompts. They are assembled by the intentd
+   * daemon (harness) from `agentType` when the session is created through
+   * `appClient.agents.create` (see `createInBackend` below).
    */
 
   /**

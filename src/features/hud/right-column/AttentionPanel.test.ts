@@ -66,7 +66,9 @@ function chipTexts(row: HTMLElement): string[] {
 describe('AttentionPanel row structure (mock parity)', () => {
   beforeEach(() => {
     appStore.dispatch(resetWorkspaceState());
-    for (const [workspaceId, agentIds] of Object.entries(appStore.state.agentSessions.agentIdsByWorkspace)) {
+    for (const [workspaceId, agentIds] of Object.entries(
+      appStore.state.agentSessions.agentIdsByWorkspace,
+    )) {
       appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
     }
     appStore.dispatch(hudActivated());

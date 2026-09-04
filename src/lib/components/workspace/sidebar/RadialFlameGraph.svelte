@@ -4,10 +4,7 @@
   import { isSpecNote } from '$shared/constants/notes';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-  extractSpecTaskIds,
-  EXCLUDED_STATUSES,
-} from '$shared/utils/task-stats';
+  import { extractSpecTaskIds, EXCLUDED_STATUSES } from '$shared/utils/task-stats';
 
   interface Props {
     notes: Note[];
@@ -50,15 +47,17 @@
     depth: number;
   }
 
-
-
   // Build task tree from notes (same logic as WorkspaceProgressCard)
   function buildTaskTree(notesList: Note[]): TaskTreeNode[] {
     const specNote = notesList.find((n) => isSpecNote(n.id as string));
 
     const seenIds = new Set<string>();
     const allTaskNotes = notesList.filter((n) => {
-      if (!n.metadata?.task || isSpecNote(n.id as string) || EXCLUDED_STATUSES.has(n.metadata.task.status))
+      if (
+        !n.metadata?.task ||
+        isSpecNote(n.id as string) ||
+        EXCLUDED_STATUSES.has(n.metadata.task.status)
+      )
         return false;
       const noteId = n.id as string;
       if (seenIds.has(noteId)) return false;
@@ -106,8 +105,7 @@
     const specTaskIds = extractSpecTaskIds(specNote?.content);
     const hasSpecLinks = specTaskIds.size > 0;
     const roots = taskNotes.filter(
-      (n) =>
-        isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
+      (n) => isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
     );
     return roots.map(buildNode);
   }

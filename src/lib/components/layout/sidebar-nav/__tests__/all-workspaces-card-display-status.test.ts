@@ -33,6 +33,7 @@ import {
   type Workspace,
   type WorkspaceId,
 } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
@@ -288,13 +289,13 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
         'Completed',
         'PR Open',
         'PR Mergeable',
-        'Queued to merge',
+        m.layout_allCard_statusPrQueued_label(),
         'PR Merged',
       ]);
     });
   });
 
-  it('collapses a counted status group from a keyboard-generated activation', async () => {
+  it('collapses a status group from a keyboard-generated activation', async () => {
     const first = makeWorkspace('ws-collapse-1', 'First active workspace', {
       displayStatus: 'in_progress',
     });
@@ -315,7 +316,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
       },
     });
 
-    const toggle = await screen.findByRole('button', { name: 'In Progress 2' });
+    const toggle = await screen.findByRole('button', { name: 'In Progress' });
     expect(toggle.tagName).toBe('BUTTON');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText('First active workspace')).toBeTruthy();

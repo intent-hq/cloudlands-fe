@@ -64,9 +64,7 @@
 
   async function handleToonToggle(checked: boolean) {
     try {
-      const result = await appClient.settings.update([
-        { path: TOON_OUTPUT_PATH, value: checked },
-      ]);
+      const result = await appClient.settings.update([{ path: TOON_OUTPUT_PATH, value: checked }]);
 
       // Check if the daemon rolled back the setting on failure
       const applied = result.find(

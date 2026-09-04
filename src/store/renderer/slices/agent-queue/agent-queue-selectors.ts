@@ -1,14 +1,11 @@
-import { store } from "../../store";
-import type { QueuedMessage } from "$shared/types";
-import type { StoreState } from "../../types";
-import {
-  createCollection,
-  getItems,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import type { AgentQueueEntryState } from "./agent-queue-types";
+import { store } from '../../store';
+import type { QueuedMessage } from '$shared/types';
+import type { StoreState } from '../../types';
+import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { AgentQueueEntryState } from './agent-queue-types';
 
 const emptyAgentQueueEntry: AgentQueueEntryState = {
-  messages: createCollection<QueuedMessage, "id">("id"),
+  messages: createCollection<QueuedMessage, 'id'>('id'),
   recentlyRemovedMessageIds: [],
   isHydrating: false,
   error: null,

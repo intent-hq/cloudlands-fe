@@ -14,9 +14,8 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-error-foreground: hsl(var(--error-foreground));
+  --color-danger: hsl(var(--danger));
+  --color-danger-background: hsl(var(--danger-background));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -59,11 +58,11 @@
   --theme-light-accent-foreground: 0 0% 0%;
   --theme-light-muted: 20 4.7619047619% 87.6470588235%;
   --theme-light-muted-foreground: 60 0.826446281% 27.7254901961%;
-  --theme-light-destructive: 0 65% 94%;
-  --theme-light-destructive-foreground: 0 63% 31%;
+  --theme-light-danger: 0 63% 31%;
+  --theme-light-danger-background: 0 65% 94%;
   --theme-light-border: 20 4.7619047619% 87.6470588235%;
   --theme-light-input: 0 0% 0%;
-  --theme-light-ring: 260 58% 46%;
+  --theme-light-ring: 217.2 91.2% 59.8%;
   --theme-light-info: 260 58% 46%;
   --theme-light-info-foreground: 0 0% 100%;
   --theme-light-success: 145 67% 28%;
@@ -100,11 +99,11 @@
   --theme-dark-accent-foreground: 20 4.7619047619% 87.6470588235%;
   --theme-dark-muted: 0 0% 14.9019607843%;
   --theme-dark-muted-foreground: 20 4.7619047619% 83.6470588235%;
-  --theme-dark-destructive: 0 35% 22%;
-  --theme-dark-destructive-foreground: 0 70% 88%;
+  --theme-dark-danger: 0 70% 88%;
+  --theme-dark-danger-background: 0 35% 22%;
   --theme-dark-border: 60 0.826446281% 23.7254901961%;
   --theme-dark-input: 20 4.7619047619% 87.6470588235%;
-  --theme-dark-ring: 260 80% 72%;
+  --theme-dark-ring: 213.1 93.9% 67.8%;
   --theme-dark-info: 260 80% 72%;
   --theme-dark-info-foreground: 154 25% 9%;
   --theme-dark-success: 145 58% 55%;
@@ -141,8 +140,8 @@
   --theme-accent-foreground: var(--theme-light-accent-foreground);
   --theme-muted: var(--theme-light-muted);
   --theme-muted-foreground: var(--theme-light-muted-foreground);
-  --theme-destructive: var(--theme-light-destructive);
-  --theme-destructive-foreground: var(--theme-light-destructive-foreground);
+  --theme-danger: var(--theme-light-danger);
+  --theme-danger-background: var(--theme-light-danger-background);
   --theme-border: var(--theme-light-border);
   --theme-input: var(--theme-light-input);
   --theme-ring: var(--theme-light-ring);
@@ -182,10 +181,8 @@
   --accent-foreground: var(--theme-accent-foreground);
   --muted: var(--theme-muted);
   --muted-foreground: var(--theme-muted-foreground);
-  --destructive: var(--theme-destructive);
-  --destructive-foreground: var(--theme-destructive-foreground);
-  /* Destructive foreground is for a destructive surface; error foreground is for other surfaces. */
-  --error-foreground: var(--destructive-foreground);
+  --danger: var(--theme-danger);
+  --danger-background: var(--theme-danger-background);
   --border: var(--theme-border);
   --input: var(--theme-input);
   --ring: var(--theme-ring);
@@ -391,8 +388,8 @@
   --theme-accent-foreground: var(--theme-dark-accent-foreground);
   --theme-muted: var(--theme-dark-muted);
   --theme-muted-foreground: var(--theme-dark-muted-foreground);
-  --theme-destructive: var(--theme-dark-destructive);
-  --theme-destructive-foreground: var(--theme-dark-destructive-foreground);
+  --theme-danger: var(--theme-dark-danger);
+  --theme-danger-background: var(--theme-dark-danger-background);
   --theme-border: var(--theme-dark-border);
   --theme-input: var(--theme-dark-input);
   --theme-ring: var(--theme-dark-ring);
@@ -431,7 +428,7 @@
 }
 
 @media (forced-colors: active) {
-  :where(.text-error-foreground) {
+  :where(.text-danger) {
     color: CanvasText !important;
   }
 }

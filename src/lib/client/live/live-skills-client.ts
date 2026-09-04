@@ -5,23 +5,18 @@
  * The daemon watches SKILL.md files and emits `skills:changed` (§6.5) when the
  * discovered set changes; this client subscribes to that event and refetches.
  */
-import type {
-  AppClient,
-  SkillsClient,
-  SubscriptionHandler,
-  Unsubscribe,
-} from "../app-client";
-import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
-import { createLogger } from "$lib/utils/client-logger";
+import type { AppClient, SkillsClient, SubscriptionHandler, Unsubscribe } from '../app-client';
+import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+import { createLogger } from '$lib/utils/client-logger';
 import {
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
   onBackendReconnected,
-} from "./backend-transport";
+} from './backend-transport';
 
-const logger = createLogger("LiveSkillsClient");
+const logger = createLogger('LiveSkillsClient');
 
 /**
  * Wire shape for `skill.list` response per PROTOCOL §5.34 — a bare array of
@@ -33,7 +28,7 @@ interface WireSkill {
   name: string;
   description: string;
   location: string;
-  scope: "project" | "user";
+  scope: 'project' | 'user';
   allowedTools?: string;
   compatibility?: string;
 }
@@ -52,7 +47,7 @@ export class LiveSkillsClient implements SkillsClient {
   /** Raw `skill.list` fetch — throws on transport/daemon failure. */
   private async fetchList(workspaceId: string): Promise<SkillInfo[]> {
     // `skill.list` (§5.34) returns a bare array of skills (name-sorted).
-    const result = await backendRequest<WireSkill[]>("skill.list", { workspaceId });
+    const result = await backendRequest<WireSkill[]>('skill.list', { workspaceId });
     return Array.isArray(result) ? result.map(normalizeSkill) : [];
   }
 
@@ -81,13 +76,13 @@ export class LiveSkillsClient implements SkillsClient {
           if (!disposed) handler(skills);
         })
         .catch((error) => {
-          logger.error("Failed to refetch skill list; keeping last known-good view", error);
+          logger.error('Failed to refetch skill list; keeping last known-good view', error);
         });
     };
 
     // Register daemon subscription.
     const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ["skills:changed"] })
+      backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['skills:changed'] })
         .then((result) => {
           subscriptionId = result?.subscriptionId;
           if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
@@ -101,7 +96,7 @@ export class LiveSkillsClient implements SkillsClient {
     // Listen for skills:changed events (PROTOCOL §6.5) and refetch the updated
     // skill roster for the affected workspace, then push it to the handler.
     const removeNotificationListener = onBackendNotification((n) => {
-      if (n.method === "skills:changed" && !disposed) {
+      if (n.method === 'skills:changed' && !disposed) {
         const payload = n.params as { workspaceId?: string } | undefined;
         const workspaceId = payload?.workspaceId;
         if (workspaceId) {
@@ -132,7 +127,5 @@ export class LiveSkillsClient implements SkillsClient {
 }
 
 // Tied to AppClient["skills"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["skills"] | undefined = undefined as
-  | LiveSkillsClient
-  | undefined;
+const _interfaceCheck: AppClient['skills'] | undefined = undefined as LiveSkillsClient | undefined;
 void _interfaceCheck;

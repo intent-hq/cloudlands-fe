@@ -144,9 +144,7 @@ export function foldPrMonitorEvent(
     case 'prMonitor:emitted':
       return {
         monitors: monitors.map((m) =>
-          m.monitorId === monitorId
-            ? { ...m, pendingChanges: [], hasPendingChanges: false }
-            : m,
+          m.monitorId === monitorId ? { ...m, pendingChanges: [], hasPendingChanges: false } : m,
         ),
         needsRefetch: false,
       };

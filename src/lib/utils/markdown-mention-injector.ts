@@ -83,11 +83,7 @@ function contextSpanHtml(attrs: {
 }
 
 // --- Convert a match to its replacement HTML ---
-function matchToHtml(
-  kind: string,
-  value: string,
-  groups: string[],
-): string {
+function matchToHtml(kind: string, value: string, groups: string[]): string {
   if (kind === 'note') {
     const id = groups[0] || '';
     return mentionSpanHtml({ type: 'note', id, label: id });
@@ -124,11 +120,21 @@ function matchToHtml(
     return value;
   } else if (kind === 'personality') {
     const token = value.slice(1);
-    return mentionSpanHtml({ type: 'personality', id: token, label: token, meta: { promptToken: token } });
+    return mentionSpanHtml({
+      type: 'personality',
+      id: token,
+      label: token,
+      meta: { promptToken: token },
+    });
   } else if (kind === 'workspace-note-path') {
     const noteId = groups[0] || '';
     if (noteId) {
-      return mentionSpanHtml({ type: 'note', id: noteId, label: noteId, meta: { fullPath: value } });
+      return mentionSpanHtml({
+        type: 'note',
+        id: noteId,
+        label: noteId,
+        meta: { fullPath: value },
+      });
     }
     return ''; // skip the path
   } else if (kind === 'intent-url') {
@@ -228,7 +234,8 @@ function processText(text: string): string {
   const parts: string[] = [];
 
   while (idx < text.length) {
-    let best: { start: number; end: number; kind: string; value: string; groups: string[] } | null = null;
+    let best: { start: number; end: number; kind: string; value: string; groups: string[] } | null =
+      null;
 
     for (const { re, kind } of allPatterns) {
       re.lastIndex = 0;
@@ -306,9 +313,7 @@ export function injectMentionSpans(html: string): string {
       if (openMatch) {
         const tagName = openMatch[1].toLowerCase();
         const isSelfClosing = tag.endsWith('/>');
-        const isBlocked =
-          BLOCK_TAGS.has(tagName) ||
-          tag.includes('data-mention');
+        const isBlocked = BLOCK_TAGS.has(tagName) || tag.includes('data-mention');
 
         if (isBlocked && !isSelfClosing) {
           blockStack.push(tagName);

@@ -1,3 +1,4 @@
+import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
 
 /**
@@ -53,4 +54,39 @@ export function buildAnswerMessageMetadata(
   answeredQuestionsMessageId: string,
 ): QuestionAnswersMetadata {
   return { type: QUESTION_ANSWERS_METADATA_TYPE, answeredQuestionsMessageId };
+}
+
+interface AnswerMessageLike {
+  metadata?: Record<string, unknown> | null;
+  contentBlocks?: ContentBlock[];
+}
+
+function answeredIdFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const md = metadata as Record<string, unknown>;
+  if (md.type !== QUESTION_ANSWERS_METADATA_TYPE) return null;
+  const answered = md.answeredQuestionsMessageId;
+  return typeof answered === 'string' && answered.length > 0 ? answered : null;
+}
+
+/**
+ * Id of the question set a user message answers, or null for every other
+ * message. Reads the row's `metadata` first, falling back to the text blocks'
+ * `messageMetadata` (the same dual surface the daemon persists a tagged
+ * message on — see `questions-dismissed-notice.ts`).
+ */
+export function getAnsweredQuestionsMessageId(
+  message: AnswerMessageLike | null | undefined,
+): string | null {
+  if (!message) return null;
+  const fromRow = answeredIdFromMetadata(message.metadata);
+  if (fromRow) return fromRow;
+  const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      const fromBlock = answeredIdFromMetadata(block.messageMetadata);
+      if (fromBlock) return fromBlock;
+    }
+  }
+  return null;
 }

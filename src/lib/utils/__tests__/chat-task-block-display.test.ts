@@ -1,11 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { processMarkdownToHTML } from '../markdown-processor';
 
 const taskProposal = `@@@task

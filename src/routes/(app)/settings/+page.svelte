@@ -140,14 +140,14 @@
   }
 
   const hashToTab: Record<string, SettingsTab> = {
-    'default-model': 'agent-behavior',
+    'default-model': 'providers',
     'global-instructions': 'agent-behavior',
     specialists: 'agent-behavior',
     agents: 'agent-behavior',
     'all-agents': 'agent-behavior',
     'create-specialist': 'specialists',
-    'quickActions.defaultModel': 'agent-behavior',
-    'backgroundAgents.defaultModel': 'agent-behavior',
+    'quickActions.defaultModel': 'providers',
+    'backgroundAgents.defaultModel': 'providers',
     providers: 'providers',
     integrations: 'connections',
     devices: 'devices',
@@ -565,7 +565,9 @@
               {m.settings_section_defaults()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5"><DefaultAgentModelSettings /></section>
+              <section class="px-6 py-5">
+                <DefaultAgentModelSettings workspaceId={settingsWorkspaceId} />
+              </section>
               <section class="px-6 py-5">
                 <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-5">
                   {m.settings_section_quickActions()}
@@ -927,7 +929,7 @@
         {#if activeTab === 'agent-behavior'}
           <div
             id="global-instructions"
-            data-highlight-id="quickActions.defaultModel"
+            data-highlight-id="global-instructions"
             use:highlightTarget
             class="mb-12 min-w-0"
           >

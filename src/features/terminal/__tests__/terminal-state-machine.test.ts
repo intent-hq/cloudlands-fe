@@ -2,17 +2,8 @@
  * Tests for Terminal State Machine
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
-import {
-  TerminalStateMachine,
-  TerminalState,
-} from '../terminal-state-machine';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { TerminalStateMachine, TerminalState } from '../terminal-state-machine';
 
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({

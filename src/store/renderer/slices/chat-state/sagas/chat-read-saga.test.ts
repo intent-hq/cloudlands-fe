@@ -697,9 +697,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       ).toBe(false);
       // The started 'loading' marker must not leak: the path resets the
       // deleted agent's chat-state entry.
-      expect(
-        run.dispatch.mock.calls.some(([action]) => action.type === chatReset.type),
-      ).toBe(true);
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === chatReset.type)).toBe(true);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBeUndefined();
       run.task.cancel();
       await run.task.toPromise();

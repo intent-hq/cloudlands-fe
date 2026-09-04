@@ -25,10 +25,7 @@ import {
   bulkUpsertSessions,
   initialState as initialAgentSessionState,
 } from '../../agent-session/agent-session-slice';
-import {
-  closeTabsByAgentId,
-  destroyTabsByOwnerAgent,
-} from '../../panel-layout/panel-layout-slice';
+import { closeTabsByAgentId, destroyTabsByOwnerAgent } from '../../panel-layout/panel-layout-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,

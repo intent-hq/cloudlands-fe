@@ -4,7 +4,20 @@ import { getItem } from '@augmentcode/themis/utils/collections/collection-utils'
 
 import { appClient } from '$lib/client';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { addExpandedPath, addLoadingPath, expandToPathRequested, fileExplorerReducer, initialState, initializeFileExplorer, refreshFileExplorer, removeLoadingPath, setFileExplorerInitialized, setFileExplorerLoading, setFileExplorerWorkspacePath, setRootNode } from '../file-explorer-slice';
+import {
+  addExpandedPath,
+  addLoadingPath,
+  expandToPathRequested,
+  fileExplorerReducer,
+  initialState,
+  initializeFileExplorer,
+  refreshFileExplorer,
+  removeLoadingPath,
+  setFileExplorerInitialized,
+  setFileExplorerLoading,
+  setFileExplorerWorkspacePath,
+  setRootNode,
+} from '../file-explorer-slice';
 import { fileExplorerSaga } from './file-explorer-saga';
 
 const settle = async () => {

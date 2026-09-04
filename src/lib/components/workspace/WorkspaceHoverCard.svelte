@@ -312,7 +312,6 @@
   let hasAgentRows = $derived(allRows.length > 0);
   let hasPrRows = $derived(workspacePrRows.length > 0);
   let hasBodyContent = $derived(hasAgentRows || hasPrRows);
-  let hasBothColumns = $derived(hasAgentRows && hasPrRows);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -322,33 +321,36 @@
 </script>
 
 <section
-  class="workspace-hover-card shrink-0 overflow-hidden rounded-2xl bg-background text-left text-foreground shadow-(--elevation-overlay) ring-1 ring-border"
+  class="workspace-hover-card shrink-0 overflow-hidden rounded-md bg-background text-left text-foreground shadow-(--elevation-overlay) ring-1 ring-border"
   data-workspace-hover-card
   data-workspace-hover-card-layout="landscape"
 >
-  {#if isLoading || !workspace}<div class="px-6 pb-5 pt-5">
-      <div class="grid gap-0.5">
-        <div class="flex min-w-0 items-center justify-between gap-4">
+  {#if isLoading || !workspace}<div>
+      <div class="grid gap-0.5 px-5 pt-4">
+        <div class="flex min-w-0 items-center justify-between gap-3">
           <Skeleton class="h-7 min-w-0 max-w-64 flex-1" />
           <Skeleton class="h-5 w-20 shrink-0" />
         </div>
         <Skeleton class="h-4 w-40" />
         <Skeleton class="mt-2 h-10 w-full" />
       </div>
-      <div class="my-5 border-t border-border"></div>
-      <div class="body-grid grid min-w-0 grid-cols-2 items-stretch gap-0">
-        <div class="grid pr-5">
+      <div class="my-4 border-t border-border" data-workspace-hover-card-divider></div>
+      <div
+        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-4 px-5 pb-4"
+        data-workspace-hover-card-columns
+      >
+        <div class="grid" data-workspace-hover-card-activity>
           <Skeleton class="h-10 w-full" />
         </div>
-        <div class="pull-requests split-column grid border-l border-border pl-5">
+        <div class="pull-requests grid" data-workspace-hover-card-pr-column>
           <Skeleton class="h-10 w-full" />
         </div>
       </div>
     </div>
   {:else}
-    <header class="min-w-0 px-6 pt-5" class:pb-5={!hasBodyContent} data-workspace-hover-card-header>
+    <header class="min-w-0 px-5 pt-4" class:pb-4={!hasBodyContent} data-workspace-hover-card-header>
       <div class="min-w-0" data-workspace-hover-card-identity>
-        <div class="flex min-w-0 items-center justify-between gap-4">
+        <div class="flex min-w-0 items-center justify-between gap-3">
           <h2
             class="type-body min-w-0 truncate font-medium! text-foreground"
             data-workspace-hover-card-title
@@ -356,21 +358,20 @@
             {workspace.title || m.workspace_links_untitled_label()}
           </h2>
           <span
-            class="type-body flex shrink-0 items-center gap-1.5 text-foreground"
+            class="type-caption flex shrink-0 items-center gap-1.5 text-muted-foreground"
             data-workspace-hover-card-status
-            ><WorkspaceStatusIcon status={statusState} size={16} decorative /><span class="truncate"
-              >{status.label}</span
-            ></span
+            ><span class="truncate" data-workspace-hover-card-status-label>{status.label}</span
+            ><WorkspaceStatusIcon status={statusState} size={16} decorative /></span
           >
         </div>
         <div
-          class="type-body mt-0.5 min-w-0 truncate text-muted-foreground"
+          class="type-caption mt-1 min-w-0 truncate text-muted-foreground"
           data-workspace-hover-card-repo
         >
           {repo}
         </div>
         {#if summary}<p
-            class="type-body mt-2 min-w-0 line-clamp-3 text-muted-foreground"
+            class="type-caption mt-1 min-w-0 line-clamp-3 text-muted-foreground"
             title={summary}
             data-workspace-hover-card-summary
           >
@@ -379,23 +380,20 @@
       </div>
     </header>
     {#if hasBodyContent}<div
-        class="mx-6 my-5 border-t border-border"
+        class="my-4 border-t border-border"
         data-workspace-hover-card-divider
       ></div>
       <div
-        class="body-grid grid min-w-0 items-stretch gap-0 px-6 pb-5"
-        class:grid-cols-2={hasBothColumns}
-        class:grid-cols-1={!hasBothColumns}
+        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-4 px-5 pb-4"
         data-workspace-hover-card-columns
       >
         {#if hasAgentRows}<section
             class="activity min-w-0"
-            class:pr-5={hasBothColumns}
             aria-label={m.workspace_multiSelectSidebar_agentsTab_label()}
             data-workspace-hover-card-activity
             data-workspace-hover-card-agent-table
           >
-            <div class="grid gap-4" role="list">
+            <div class="grid gap-3" role="list">
               {#each visibleRows as row (row.id)}<div
                   class="agent-row grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-2.5"
                   role="listitem"
@@ -415,13 +413,13 @@
                     class="type-body min-w-0 truncate text-foreground"
                     data-workspace-hover-card-agent-name>{row.name}</span
                   ><time
-                    class="type-body whitespace-nowrap text-muted-foreground"
+                    class="type-caption whitespace-nowrap text-muted-foreground"
                     datetime={row.updated.dateTime}
                     aria-label={row.updated.accessible}
                     data-workspace-hover-card-agent-time>{row.updated.compact}</time
                   >
                   <span
-                    class="agent-detail type-body flex min-w-0 items-start gap-1.5 text-muted-foreground"
+                    class="agent-detail type-caption flex min-w-0 items-start gap-1.5 text-muted-foreground"
                     title={row.context}
                     data-workspace-hover-card-agent-detail
                     data-workspace-hover-card-agent-preview={row.contextIsPreview || undefined}
@@ -437,7 +435,7 @@
                 </div>{/each}
             </div>
             {#if hiddenCount}<div
-                class="type-body mt-5 flex items-center justify-between text-muted-foreground"
+                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
                 data-workspace-hover-card-overflow
               >
                 <span
@@ -450,45 +448,50 @@
           </section>{/if}
         {#if hasPrRows}<section
             class="pull-requests min-w-0"
-            class:split-column={hasBothColumns}
-            class:border-l={hasBothColumns}
-            class:border-solid={hasBothColumns}
-            class:border-border={hasBothColumns}
-            class:pl-5={hasBothColumns}
             aria-label={m.workspace_hoverCard_pullRequests_label()}
             data-workspace-hover-card-pr-column
           >
             <div
-              class="grid min-w-0 gap-4"
+              class="grid min-w-0 gap-3"
               aria-label={m.workspace_hoverCard_pullRequests_label()}
               role="list"
               data-workspace-hover-card-pr-list
             >
               {#each visiblePrRows as pr (pr.identity)}
                 <div
-                  class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2"
+                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5"
                   aria-label={getWorkspacePrLabel(pr)}
                   role="listitem"
                   data-workspace-hover-card-pr-row
                   data-pr-identity={pr.identity}
                   data-pr-status={pr.status}
                 >
-                  <Fa icon={pr.statusIcon} size={16} class="shrink-0 {pr.foregroundClass}" />
-                  <span class="type-body min-w-0 truncate text-foreground">
+                  <Fa
+                    icon={pr.statusIcon}
+                    size={18}
+                    class="shrink-0 justify-self-center {pr.foregroundClass}"
+                  />
+                  <span
+                    class="type-body min-w-0 truncate text-foreground"
+                    data-workspace-hover-card-pr-title
+                  >
                     {pr.title || m.workspace_hoverCard_pullRequest_label()}
                   </span>
                   <span
-                    class="type-body shrink-0 text-muted-foreground"
+                    class="type-caption shrink-0 text-muted-foreground"
                     data-workspace-hover-card-pr-status
                   >
                     {pr.accessibleStateLabel}
                   </span>
-                  <span class="type-body shrink-0 text-muted-foreground">#{pr.number}</span>
+                  <span
+                    class="type-caption shrink-0 text-muted-foreground"
+                    data-workspace-hover-card-pr-number>#{pr.number}</span
+                  >
                 </div>
               {/each}
             </div>
             {#if hiddenPrCount}<div
-                class="type-body mt-5 flex items-center justify-between text-muted-foreground"
+                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
                 data-workspace-hover-card-pr-overflow
               >
                 <span
@@ -505,27 +508,13 @@
 
 <style>
   .workspace-hover-card {
-    width: 40rem;
+    width: 35rem;
     max-width: min(100%, calc(100vw - 3.625rem));
-    container-type: inline-size;
   }
   .agent-row {
     min-height: 32px;
   }
   .agent-detail {
     grid-column: 2 / -1;
-  }
-  @container (max-width:34rem) {
-    .body-grid {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 0;
-    }
-    .pull-requests.split-column {
-      border-left-width: 0;
-      border-top-width: 1px;
-      margin-top: 1.25rem;
-      padding-left: 0;
-      padding-top: 1.25rem;
-    }
   }
 </style>

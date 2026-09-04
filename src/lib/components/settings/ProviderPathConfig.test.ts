@@ -61,6 +61,24 @@ warmImport(
 );
 
 describe('ProviderPathConfig', () => {
+  it('saves the Antigravity ACP path without overwriting another provider', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ value: { codex: '/keep/codex' } });
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'antigravity',
+        providerName: 'Antigravity',
+        cliCommand: 'antigravity-acp',
+        isInstalled: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose file' }));
+    await flush();
+    await fireEvent.click(screen.getByTestId('mock-picker-select'));
+    await flush();
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledExactlyOnceWith([
+      { path: 'providers.paths', value: { codex: '/keep/codex', antigravity: '/Users/me/src' } },
+    ]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.mockSettingsGet.mockResolvedValue({ value: {} });
@@ -84,6 +102,63 @@ describe('ProviderPathConfig', () => {
     });
     const input = screen.getByPlaceholderText(LONG_PATH) as HTMLInputElement;
     expect(input.value).toBe('/custom/bin/claude-agent-acp');
+  });
+
+  it('describes the pinned npx launch for npx-only providers instead of an auto-detected adapter', () => {
+    const npxPath = '/usr/local/bin/npx';
+    const npxPackage = '@agentclientprotocol/claude-agent-acp@1.2.3';
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        resolvedPath: npxPath,
+        npxPackage,
+        isInstalled: true,
+      },
+    });
+    // The daemon's resolvedPath for an npx-only provider is npx itself, so it
+    // must not be offered as the adapter path placeholder.
+    expect(screen.queryByPlaceholderText(npxPath)).toBeNull();
+    expect(screen.getByPlaceholderText('Path to claude-agent-acp')).toBeTruthy();
+    expect(screen.getByText(npxPath)).toBeTruthy();
+    // The pinned package spec is named in both the hint and the status row.
+    expect(screen.getAllByText(npxPackage, { exact: false }).length).toBeGreaterThan(0);
+  });
+
+  it('does not describe a pinned npx launch when npx itself is unresolved', () => {
+    const npxPackage = '@agentclientprotocol/claude-agent-acp@1.2.3';
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        resolvedPath: '',
+        npxPackage,
+        isInstalled: false,
+      },
+    });
+    // Nothing can run via npx, so the popup must not claim an npx default.
+    expect(screen.queryByText(npxPackage, { exact: false })).toBeNull();
+    expect(screen.getByPlaceholderText('Path to claude-agent-acp')).toBeTruthy();
+  });
+
+  it('keeps the npx path row alongside the configured path once an npx-only provider is overridden', () => {
+    const npxPath = '/usr/local/bin/npx';
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        configuredPath: '/opt/homebrew/bin/claude-agent-acp',
+        resolvedPath: npxPath,
+        npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
+        isInstalled: true,
+      },
+    });
+    const input = screen.getByPlaceholderText('Path to claude-agent-acp') as HTMLInputElement;
+    expect(input.value).toBe('/opt/homebrew/bin/claude-agent-acp');
+    expect(screen.getByText(npxPath)).toBeTruthy();
   });
 
   it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', () => {

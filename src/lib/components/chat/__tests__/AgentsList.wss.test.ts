@@ -173,10 +173,7 @@ describe('AgentsList — initial fetch + render against scripted daemon (WSS sea
     // No unbridged-channel rejections logged during fetch + render — those are
     // the ipc-mock-router loud-warning path; the WSS seam should reach the
     // daemon without touching legacy IPC bridges.
-    const consoleCalls = [
-      ...consoleErrorSpy.mock.calls,
-      ...consoleWarnSpy.mock.calls,
-    ];
+    const consoleCalls = [...consoleErrorSpy.mock.calls, ...consoleWarnSpy.mock.calls];
     for (const call of consoleCalls) {
       const joined = call.map((arg) => String(arg)).join(' ');
       expect(joined).not.toContain('UnbridgedMockIpcChannel');

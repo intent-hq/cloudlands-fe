@@ -54,4 +54,3 @@ describe('formatCompactNumber', () => {
     expect(formatCompactNumber(Number.POSITIVE_INFINITY)).toBe('0');
   });
 });
-

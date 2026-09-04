@@ -79,9 +79,10 @@ test.describe('E2E Smoke Test', () => {
 
     try {
       // Test various helpers
-      const metrics = await page.evaluate(() =>
-        // @ts-expect-error - Electron API not typed in test context
-        window.electronAPI?.getPerformanceMetrics?.() || { test: true },
+      const metrics = await page.evaluate(
+        () =>
+          // @ts-expect-error - Electron API not typed in test context
+          window.electronAPI?.getPerformanceMetrics?.() || { test: true },
       );
       expect(metrics).toBeDefined();
 

@@ -29,7 +29,7 @@
      the kind-flavored border tint is passed as a wrapper class by the service. -->
 <div class="relative flex w-full min-w-0 items-start gap-3">
   <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5 {kind === 'blocker' ? 'text-destructive' : 'text-primary'}">
+  <div class="flex-shrink-0 mt-0.5 {kind === 'blocker' ? 'text-danger' : 'text-primary'}">
     <Fa icon={kind === 'blocker' ? faTriangleExclamation : faComments} class="w-5 h-5" />
   </div>
 

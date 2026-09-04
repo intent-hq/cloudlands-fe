@@ -8,14 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
 // Mock the backend transport
-const { backendRequestMock, mockWorkspace, mockDismissed, recordLastUsedMock } = vi.hoisted(
-  () => ({
-    backendRequestMock: vi.fn(),
-    mockWorkspace: { value: { id: 'ws-test', repositoryPath: '/test/repo' } as any },
-    mockDismissed: { value: false },
-    recordLastUsedMock: vi.fn(),
-  }),
-);
+const { backendRequestMock, mockWorkspace, mockDismissed, recordLastUsedMock } = vi.hoisted(() => ({
+  backendRequestMock: vi.fn(),
+  mockWorkspace: { value: { id: 'ws-test', repositoryPath: '/test/repo' } as any },
+  mockDismissed: { value: false },
+  recordLastUsedMock: vi.fn(),
+}));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$features/setup-scripts')>()),
@@ -71,7 +69,9 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 // Mock terminal history tracker
 const { mockHistories } = vi.hoisted(() => ({
-  mockHistories: { value: [] as Array<{ commands: Array<{ command: string; timestamp: number }> }> },
+  mockHistories: {
+    value: [] as Array<{ commands: Array<{ command: string; timestamp: number }> }>,
+  },
 }));
 vi.mock('$features/terminal/terminal-history-tracker', () => ({
   terminalHistoryTracker: {

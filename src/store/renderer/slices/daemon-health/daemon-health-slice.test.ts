@@ -51,6 +51,7 @@ describe('daemonHealthReducer', () => {
       hasEverConnected: false,
       sidecarSpawnPending: false,
       sidecarSpawnError: null,
+      daemonUpdateDisconnectedAt: null,
       sidecarRunLog: null,
       sidecarRunLogPending: false,
       sidecarRunLogError: null,
@@ -364,6 +365,86 @@ describe('daemonHealthReducer', () => {
         connectionStatusChanged('connecting'),
       );
       expect(afterConnecting.hasEverConnected).toBe(false);
+    });
+
+    describe('daemonUpdateDisconnectedAt', () => {
+      const t0 = new Date('2026-09-04T10:00:00.000Z').getTime();
+
+      it('stores the drop time main stamped on an update-caused disconnect', () => {
+        const state = { ...initialState, health: 'healthy' as const };
+        const next = daemonHealthReducer(
+          state,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        expect(next.daemonUpdateDisconnectedAt).toBe(t0);
+        expect(next.health).toBe('down');
+      });
+
+      it('stores the time on a flagged connecting status too', () => {
+        const next = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('connecting', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        expect(next.daemonUpdateDisconnectedAt).toBe(t0);
+      });
+
+      it('mirrors the value main repeats across later pushes for the same restart', () => {
+        const first = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        const second = daemonHealthReducer(
+          first,
+          connectionStatusChanged('connecting', undefined, {
+            daemonUpdateDisconnectedAt: t0,
+            reconnectAttempts: 2,
+          }),
+        );
+        const third = daemonHealthReducer(
+          second,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        expect(second.daemonUpdateDisconnectedAt).toBe(t0);
+        expect(third.daemonUpdateDisconnectedAt).toBe(t0);
+      });
+
+      it('clears the time on a successful connect', () => {
+        const state = { ...initialState, daemonUpdateDisconnectedAt: t0 };
+        const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+        expect(next.daemonUpdateDisconnectedAt).toBeNull();
+      });
+
+      it('leaves the time untouched on a disconnect without the marker', () => {
+        const unflagged = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected'),
+        );
+        expect(unflagged.daemonUpdateDisconnectedAt).toBeNull();
+
+        const state = { ...initialState, daemonUpdateDisconnectedAt: t0 };
+        const next = daemonHealthReducer(
+          state,
+          connectionStatusChanged('disconnected', undefined, { reconnectAttempts: 1 }),
+        );
+        expect(next.daemonUpdateDisconnectedAt).toBe(t0);
+      });
+
+      it('stores a fresh time for a new update after a reconnect cleared the previous one', () => {
+        const first = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        const reconnected = daemonHealthReducer(first, connectionStatusChanged('connected'));
+        expect(reconnected.daemonUpdateDisconnectedAt).toBeNull();
+
+        const again = daemonHealthReducer(
+          reconnected,
+          connectionStatusChanged('disconnected', undefined, {
+            daemonUpdateDisconnectedAt: t0 + 60_000,
+          }),
+        );
+        expect(again.daemonUpdateDisconnectedAt).toBe(t0 + 60_000);
+      });
     });
   });
 

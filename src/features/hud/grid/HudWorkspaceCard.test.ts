@@ -103,9 +103,7 @@ describe('HudWorkspaceCard agent-row elapsed timer', () => {
   it('still shows the HH:MM:SS timer on a running agent row', () => {
     const { container } = render(HudWorkspaceCard, {
       props: {
-        card: makeCard([
-          makeAgent({ id: 'a-run', name: 'Implementor', bucket: 'running' }),
-        ]),
+        card: makeCard([makeAgent({ id: 'a-run', name: 'Implementor', bucket: 'running' })]),
         nowMs: NOW_MS,
       },
     });

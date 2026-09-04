@@ -1,14 +1,14 @@
 <script lang="ts">
   import {
-  faCirclePlus,
-  faArrowUp,
-  faTrash,
-  faChevronDown,
-  faCircle,
-  faCircleHalfStroke,
-  faCircleCheck,
-  faCircleXmark,
-} from '@fortawesome/free-solid-svg-icons';
+    faCirclePlus,
+    faArrowUp,
+    faTrash,
+    faChevronDown,
+    faCircle,
+    faCircleHalfStroke,
+    faCircleCheck,
+    faCircleXmark,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
   import type { TaskDiffSections, ParsedTask } from './tool-result-parser';
@@ -60,9 +60,24 @@
   }
 
   const sectionConfig = [
-    { key: 'created' as const, label: 'Created', icon: faCirclePlus, iconColor: 'var(--color-emerald-500, #10b981)' },
-    { key: 'updated' as const, label: 'Updated', icon: faArrowUp, iconColor: 'var(--color-blue-500, #3b82f6)' },
-    { key: 'deleted' as const, label: 'Deleted', icon: faTrash, iconColor: 'var(--color-red-500, #ef4444)' },
+    {
+      key: 'created' as const,
+      label: 'Created',
+      icon: faCirclePlus,
+      iconColor: 'var(--color-emerald-500, #10b981)',
+    },
+    {
+      key: 'updated' as const,
+      label: 'Updated',
+      icon: faArrowUp,
+      iconColor: 'var(--color-blue-500, #3b82f6)',
+    },
+    {
+      key: 'deleted' as const,
+      label: 'Deleted',
+      icon: faTrash,
+      iconColor: 'var(--color-red-500, #ef4444)',
+    },
   ];
 
   const hasAnyTasks = $derived(

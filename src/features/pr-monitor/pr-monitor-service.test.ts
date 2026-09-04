@@ -401,9 +401,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     let resolveSecondList: ((value: unknown) => void) | undefined;
     mockedRequest
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
-      .mockImplementationOnce(
-        () => new Promise((resolve) => (resolveSecondList = resolve)),
-      );
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecondList = resolve)));
     const seen: PrMonitorRow[][] = [];
     const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
@@ -435,9 +433,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     let resolveSecondList: ((value: unknown) => void) | undefined;
     mockedRequest
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
-      .mockImplementationOnce(
-        () => new Promise((resolve) => (resolveSecondList = resolve)),
-      )
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecondList = resolve)))
       .mockResolvedValueOnce({
         monitors: [makeMonitor({ pendingChanges: [], hasPendingChanges: false })],
       });

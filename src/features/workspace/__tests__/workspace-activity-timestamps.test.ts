@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId } from '../../../shared/types';
@@ -169,4 +162,3 @@ describe('workspace activity timestamps', () => {
   // returns without healing.
   it.skip('retired: FE no longer derives lastActivity', () => {});
 });
-

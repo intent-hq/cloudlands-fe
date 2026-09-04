@@ -94,7 +94,6 @@ describe('Menu command state behavior', () => {
     const item = screen.getByRole('menuitem', { name: 'Delete item' });
     expect(item.hasAttribute('data-destructive')).toBe(true);
     expect(item.className).toContain('data-[destructive]:text-foreground');
-    expect(item.className).not.toContain('data-[destructive]:text-destructive');
     await fireEvent.click(item);
     expect(screen.getByTestId('selected').textContent).toBe('delete');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());

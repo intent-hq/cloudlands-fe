@@ -46,14 +46,15 @@ describe('resolveTarget', () => {
 });
 
 describe('validateTargetOverride', () => {
-  it.each(Object.values(TARGET_BY_PLATFORM_ARCH))('accepts release-pipeline target %s', (target) => {
-    expect(validateTargetOverride(target)).toBe(target);
-  });
+  it.each(Object.values(TARGET_BY_PLATFORM_ARCH))(
+    'accepts release-pipeline target %s',
+    (target) => {
+      expect(validateTargetOverride(target)).toBe(target);
+    },
+  );
 
   it('accepts the linux-arm64 cross-staging target', () => {
-    expect(validateTargetOverride('aarch64-unknown-linux-musl')).toBe(
-      'aarch64-unknown-linux-musl',
-    );
+    expect(validateTargetOverride('aarch64-unknown-linux-musl')).toBe('aarch64-unknown-linux-musl');
   });
 
   it('rejects targets the release pipeline never publishes, listing supported ones', () => {

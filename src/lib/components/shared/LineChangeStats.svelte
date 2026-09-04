@@ -66,7 +66,9 @@
     )}
   >
     {#if loading}
-      <span class="text-subtle animate-pulse"> {m.shared_lineChangeStats_calculating_label()} </span>
+      <span class="text-subtle animate-pulse">
+        {m.shared_lineChangeStats_calculating_label()}
+      </span>
     {:else}
       {#if additions > 0 || showZero}
         <span class="text-green-600 dark:text-green-400 flex items-center gap-0.5">

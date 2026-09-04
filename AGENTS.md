@@ -88,9 +88,12 @@ corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
 corepack pnpm run lint          # ESLint
 corepack pnpm run format        # Prettier write pass
+corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
 corepack pnpm run test:playwright
 ```
+
+`.git-blame-ignore-revs` lists the repo-wide Prettier reformat commit so `git blame` skips it (GitHub honors it automatically; opt in locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
 
 ## Fast UI preview loop
 

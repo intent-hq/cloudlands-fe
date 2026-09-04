@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
@@ -176,7 +170,11 @@ function getDownloadAttachmentHandler(): Function {
 }
 
 describe('file:download-attachment IPC handler', () => {
-  const request = { workspaceId: 'ws-1', path: '.intent/attachments/photo.png', fileName: 'photo.png' };
+  const request = {
+    workspaceId: 'ws-1',
+    path: '.intent/attachments/photo.png',
+    fileName: 'photo.png',
+  };
   const TEMP_PATH_RE = /^\/dest\/photo\.png\.\d+-[a-z0-9]+\.tmp$/;
 
   beforeEach(() => {
@@ -240,11 +238,9 @@ describe('file:download-attachment IPC handler', () => {
     mocks.withTransferConnection.mockImplementation(async (_config, fn) =>
       fn({ request: connectionRequest, release: vi.fn() }),
     );
-    const write = vi
-      .fn()
-      .mockImplementation(async (buffer: Buffer, offset: number) => ({
-        bytesWritten: buffer.length - offset,
-      }));
+    const write = vi.fn().mockImplementation(async (buffer: Buffer, offset: number) => ({
+      bytesWritten: buffer.length - offset,
+    }));
     const close = vi.fn().mockResolvedValue(undefined);
     mocks.open.mockResolvedValue({ write, close });
 

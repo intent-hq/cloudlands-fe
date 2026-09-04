@@ -44,13 +44,9 @@ describe('Input', () => {
     });
     const fileInput = file.container.querySelector('input[type="file"]');
     for (const control of [textInput, fileInput]) {
-      expect(control?.className.split(/\s+/)).toContain(
-        'aria-invalid:border-destructive-foreground',
-      );
+      expect(control?.className.split(/\s+/)).toContain('aria-invalid:border-danger');
       expect(control?.className.split(/\s+/)).toContain('aria-invalid:ring-1');
-      expect(control?.className.split(/\s+/)).toContain(
-        'aria-invalid:ring-destructive-foreground/25',
-      );
+      expect(control?.className.split(/\s+/)).toContain('aria-invalid:ring-danger/25');
     }
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);

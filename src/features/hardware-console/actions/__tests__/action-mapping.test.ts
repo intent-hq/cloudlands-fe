@@ -196,7 +196,9 @@ describe('normalizeActionMappingsByModel', () => {
   });
 
   it('repairs garbage records to full defaults', () => {
-    expect(normalizeActionMappingsByModel('bogus')).toEqual(normalizeActionMappingsByModel(undefined));
+    expect(normalizeActionMappingsByModel('bogus')).toEqual(
+      normalizeActionMappingsByModel(undefined),
+    );
     expect(normalizeActionMappingsByModel([1, 2, 3])).toEqual(
       normalizeActionMappingsByModel(undefined),
     );
@@ -214,9 +216,7 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
       'creator-micro-2': [...priorDefaults],
     });
     expect(migrateLegacyCm2DefaultActionMapping(mappings)).toBe(true);
-    expect(mappings['creator-micro-2']).toEqual([
-      ...DEFAULT_ACTION_MAPPINGS['creator-micro-2'],
-    ]);
+    expect(mappings['creator-micro-2']).toEqual([...DEFAULT_ACTION_MAPPINGS['creator-micro-2']]);
   });
 
   it('leaves a customized CM2 mapping untouched', () => {

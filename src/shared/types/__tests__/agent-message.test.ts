@@ -2,11 +2,7 @@
  * Tests for Unified AgentMessage Type
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type {
   AgentMessage,
   ProviderMessage,

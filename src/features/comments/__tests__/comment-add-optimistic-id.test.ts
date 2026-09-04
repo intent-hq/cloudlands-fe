@@ -38,17 +38,14 @@ vi.mock('$store/renderer/store', async () => {
       return state;
     },
     createSelector: (selectorFunc: (state: any, ...args: any[]) => any) =>
-      Object.assign(
-        (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
-        {
-          select: selectorFunc,
-          effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
-          withStore:
-            (storeSource: { state?: unknown }) =>
-            (...args: any[]) =>
-              readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
-        },
-      ),
+      Object.assign((...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)), {
+        select: selectorFunc,
+        effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
+        withStore:
+          (storeSource: { state?: unknown }) =>
+          (...args: any[]) =>
+            readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+      }),
   };
   return createStoreMockModule(mockStore);
 });

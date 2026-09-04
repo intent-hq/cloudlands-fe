@@ -27,12 +27,9 @@ export function isAgentNotFoundError(error: unknown): boolean {
     code?: unknown;
     data?: unknown;
   };
-  const dataCode =
-    data && typeof data === 'object' ? (data as { code?: unknown }).code : undefined;
+  const dataCode = data && typeof data === 'object' ? (data as { code?: unknown }).code : undefined;
   if (code === NOT_FOUND_CODE || dataCode === NOT_FOUND_CODE) return true;
   return (
-    rpcCode === NOT_FOUND_RPC_CODE &&
-    typeof message === 'string' &&
-    /not found/i.test(message)
+    rpcCode === NOT_FOUND_RPC_CODE && typeof message === 'string' && /not found/i.test(message)
   );
 }

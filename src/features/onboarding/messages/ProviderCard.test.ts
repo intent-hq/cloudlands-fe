@@ -57,8 +57,6 @@ const readyProvider = (): ProviderCardData => ({
   authDetails: 'user@example.com',
   docsUrl: 'https://code.claude.com/docs',
   installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-  loginCommand: 'claude auth login',
-  description: '',
 });
 
 const notInstalledProvider = (): ProviderCardData => ({
@@ -88,6 +86,23 @@ beforeEach(() => {
 });
 
 describe('ProviderCard selected-state indicator', () => {
+  it('does not present unknown Antigravity authentication as ready', async () => {
+    const props = baseProps();
+    const provider = {
+      ...readyProvider(),
+      id: 'antigravity',
+      name: 'Antigravity',
+      authenticated: undefined,
+      docsUrl: '',
+    };
+    const result = render(ProviderCard, { props: { ...props, provider, selected: true } });
+    expect(result.getByText('Sign-in status unknown. Refresh to check again.')).toBeTruthy();
+    expect(banner(result.container)).toBeNull();
+    expect(result.queryByText('Connected')).toBeNull();
+    expect(result.queryByText('intentd provider login antigravity')).toBeNull();
+    await fireEvent.click(result.getByText('Antigravity'));
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
   it('renders the full-width SELECTED banner when the ready card is selected', () => {
     const { container } = render(ProviderCard, {
       props: { ...baseProps(), provider: readyProvider(), selected: true },
@@ -321,7 +336,6 @@ describe('ProviderCard auggie link-out click behavior', () => {
     name: 'Auggie',
     docsUrl: AUGGIE_DOCS_URL,
     installCommand: 'npm install -g @augmentcode/auggie',
-    loginCommand: 'auggie login',
     ...overrides,
   });
 

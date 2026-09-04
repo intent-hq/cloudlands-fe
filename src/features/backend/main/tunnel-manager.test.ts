@@ -908,7 +908,6 @@ describe('TunnelManager', () => {
   });
 });
 
-
 // The `ws` package is CJS and the vitest suite aliases the ESM import to a
 // browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both.
 const nodeRequire = createRequire(import.meta.url);

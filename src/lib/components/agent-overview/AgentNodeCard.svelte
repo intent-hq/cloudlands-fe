@@ -95,7 +95,7 @@
         date={$attentionRequest$.timestamp}
         compact
         class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
-          ? 'text-destructive'
+          ? 'text-danger'
           : 'text-warning'}"
       />
     {/if}

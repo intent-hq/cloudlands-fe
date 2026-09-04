@@ -22,8 +22,10 @@
  *  - auggie:      availability via `host.checkAuggie` (settings precedence +
  *                 PATH scan on the daemon).
  *  - claude-code: `claude` CLI installed (prerequisite for claude-agent-acp).
- *                 When the CLI is present but npx (the adapter's only runner)
- *                 does not resolve, a warning is attached.
+ *                 When the CLI is present but npx (the adapter's runner)
+ *                 does not resolve — and the daemon reports no valid
+ *                 `providers.paths` override in use (intentd#1714) — a
+ *                 warning is attached.
  *  - codex:       `codex` CLI installed (prerequisite for the codex-acp
  *                 adapter). When the CLI is present but neither a local
  *                 `codex-acp` nor npx (the pinned adapter fallback runner)
@@ -47,7 +49,7 @@
  * AuggieSetupGate's onMount probes resolve against the daemon from the very
  * first render.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import {
   AUGGIE_CHANNELS,
   CLAUDE_CODE_CHANNELS,
@@ -56,14 +58,14 @@ import {
   DROID_CHANNELS,
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
-} from "$shared/ipc/channels";
-import { getItem, getItems } from "@augmentcode/themis/utils/collections/collection-utils";
-import { store as appStore } from "$store/renderer/store";
-import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
-import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
-import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
-import { m } from "$shared/paraglide/messages.js";
-import { backendRequest } from "$lib/client/live/backend-transport";
+} from '$shared/ipc/channels';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { store as appStore } from '$store/renderer/store';
+import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
+import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
+import { m } from '$shared/paraglide/messages.js';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   PROVIDER_AUTH_STATUS_METHOD,
   buildProviderAuthStatusParams,
@@ -71,12 +73,13 @@ import {
   type ProviderAuthStatusParams,
   type ProviderAuthStatusResponse,
   type ProviderAuthVerdict,
-} from "$shared/provider-auth-status";
-import type {
-  NpxStatus,
-  ProviderAvailabilityResult,
-  ProviderStatus,
-} from "$shared/types/provider-availability";
+} from '$shared/provider-auth-status';
+import {
+  NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
+} from '$shared/types/provider-availability';
 
 /** Daemon `host.checkAuggie` / `host.findBinary` shape. */
 interface HostCheckResult {
@@ -97,18 +100,18 @@ interface HostToolAvailabilityResult {
  * "is codex installed" signal (mirrors isCodexInstalled in codex-resolver).
  */
 const PROVIDER_BINARIES: Record<string, string> = {
-  "claude-code": "claude",
-  codex: "codex",
-  cortex: "cortex",
-  opencode: "opencode",
-  pi: "pi",
-  droid: "droid",
-  grok: "grok",
-  unsloth: "unsloth",
+  'claude-code': 'claude',
+  codex: 'codex',
+  cortex: 'cortex',
+  opencode: 'opencode',
+  pi: 'pi',
+  droid: 'droid',
+  grok: 'grok',
+  unsloth: 'unsloth',
 };
 
 /** The codex ACP adapter binary — only consulted for the codex warning. */
-const CODEX_ACP_BINARY = "codex-acp";
+const CODEX_ACP_BINARY = 'codex-acp';
 
 /**
  * Auth verdicts from the daemon's `host.providerAuthStatus`
@@ -137,7 +140,7 @@ async function getAuthVerdicts(
  * here; callers decide between degrading (availability aggregate) and
  * surfacing the error. */
 async function checkAuggie(): Promise<HostCheckResult> {
-  const result = await backendRequest<HostCheckResult>("host.checkAuggie");
+  const result = await backendRequest<HostCheckResult>('host.checkAuggie');
   return result ?? { available: false };
 }
 
@@ -154,7 +157,10 @@ function computeHiddenProviders(): string[] {
 
 /** Attach an auth verdict (and its identity line) only when the provider is
  * actually available. */
-function withAuth(status: ProviderStatus, verdict: ProviderAuthVerdict | undefined): ProviderStatus {
+function withAuth(
+  status: ProviderStatus,
+  verdict: ProviderAuthVerdict | undefined,
+): ProviderStatus {
   if (!status.available || verdict === undefined) return status;
   if (verdict.authenticated !== undefined) {
     status.authenticated = verdict.authenticated;
@@ -179,29 +185,40 @@ function withAuth(status: ProviderStatus, verdict: ProviderAuthVerdict | undefin
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const hiddenProviders = computeHiddenProviders();
-  const [auggieCheck, toolsResult, authVerdicts] = await Promise.all([
+  const [auggieCheck, toolsResult, authVerdicts, discovery] = await Promise.all([
     checkAuggie(),
-    backendRequest<HostToolAvailabilityResult>("host.toolAvailability", {
+    backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
       // `codex-acp` (the adapter) rides along for the codex warning —
       // availability itself keys off the real `codex` CLI. `npx` rides
-      // along for the claude-code adapter check (it always runs via npx)
-      // and as the codex adapter's pinned fallback runner.
-      tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, "npx"],
+      // along for the claude-code adapter check (it runs via npx unless a
+      // path override is in use) and as the codex adapter's pinned fallback
+      // runner.
+      tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, 'npx'],
     }),
     getAuthVerdicts(),
+    // Serves Antigravity availability and the claude-code override check. A
+    // successful discovery can omit a provider; a failed discovery is unknown
+    // and must reach the existing failure envelope.
+    fetchProviderDiscovery(),
   ]);
   const tools = toolsResult?.tools ?? {};
   const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
 
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode: ProviderStatus = {
-    available: tool(PROVIDER_BINARIES["claude-code"]).available === true,
+    available: tool(PROVIDER_BINARIES['claude-code']).available === true,
   };
-  // claude-code's ACP adapter always runs via npx (pinned version) — mirror
-  // main's warning when the claude CLI is present but npx is not.
-  if (claudeCode.available && tool("npx").available !== true) {
+  // claude-code's ACP adapter runs via npx (pinned version) unless the daemon
+  // execs a valid `providers.paths` override — mirror main's warning when the
+  // claude CLI is present, npx is not, and no override is in use.
+  if (
+    claudeCode.available &&
+    tool('npx').available !== true &&
+    !claudeCodeRunsViaOverride(discovery)
+  ) {
     claudeCode.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
+  const antigravity = antigravityFromDiscovery(discovery);
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
@@ -211,7 +228,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   if (
     codex.available &&
     tool(CODEX_ACP_BINARY).available !== true &&
-    tool("npx").available !== true
+    tool('npx').available !== true
   ) {
     codex.warning = CODEX_ADAPTER_MISSING_WARNING;
   }
@@ -231,13 +248,14 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   if (unsloth.available) unsloth.authenticated = true;
   const mock: ProviderStatus = { available: false };
 
-  withAuth(auggie, authVerdicts["auggie"]);
-  withAuth(claudeCode, authVerdicts["claude-code"]);
-  withAuth(codex, authVerdicts["codex"]);
-  withAuth(opencode, authVerdicts["opencode"]);
-  withAuth(pi, authVerdicts["pi"]);
-  withAuth(droid, authVerdicts["droid"]);
-  withAuth(grok, authVerdicts["grok"]);
+  withAuth(auggie, authVerdicts['auggie']);
+  withAuth(claudeCode, authVerdicts['claude-code']);
+  withAuth(codex, authVerdicts['codex']);
+  withAuth(opencode, authVerdicts['opencode']);
+  withAuth(pi, authVerdicts['pi']);
+  withAuth(droid, authVerdicts['droid']);
+  withAuth(grok, authVerdicts['grok']);
+  withAuth(antigravity, authVerdicts['antigravity']);
 
   return {
     hasAnyProvider:
@@ -249,10 +267,52 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       pi.available ||
       droid.available ||
       grok.available ||
-      unsloth.available,
-    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid, grok, unsloth },
+      unsloth.available ||
+      antigravity.available,
+    providers: {
+      auggie,
+      claudeCode,
+      codex,
+      cortex,
+      mock,
+      opencode,
+      pi,
+      droid,
+      grok,
+      unsloth,
+      antigravity,
+    },
     hiddenProviders,
   };
+}
+
+type ProviderDiscoverySnapshot = { providers: ProviderDiscoveryEntry[] };
+
+function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
+  return backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+}
+
+function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
+  return {
+    available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
+    hasNpxFallback: false,
+  };
+}
+
+async function checkAntigravityAvailability(): Promise<ProviderStatus> {
+  return antigravityFromDiscovery(await fetchProviderDiscovery());
+}
+
+/**
+ * Whether the daemon will exec a `providers.paths["claude-code"]` override in
+ * place of the pinned npx adapter (intentd#1714). Discovery reports the
+ * npx-only provider `installed` from npx presence OR a valid override while
+ * `resolvedPath` stays the auto-detected npx — so `installed` with no
+ * resolved npx can only mean the override is in use (mirrors main).
+ */
+function claudeCodeRunsViaOverride(discovery: ProviderDiscoverySnapshot | undefined): boolean {
+  const row = discovery?.providers.find((provider) => provider.id === 'claude-code');
+  return row?.installed === true && (row.resolvedPath ?? null) === null;
 }
 
 /** Single-provider recheck (AgentGrid card refresh) — same verdicts as
@@ -263,7 +323,12 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
 
-  if (providerId === "auggie") {
+  if (providerId === 'antigravity') {
+    const status = await checkAntigravityAvailability();
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
+
+  if (providerId === 'auggie') {
     const check = await checkAuggie();
     const status: ProviderStatus = { available: check.available === true };
     if (status.available) {
@@ -271,17 +336,17 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
     }
     return status;
   }
-  if (providerId === "mock") {
+  if (providerId === 'mock') {
     // Env-var gated — the renderer cannot verify it, so it stays
     // unavailable (main's default-deny gating).
     return { available: false };
   }
-  if (providerId === "unsloth") {
+  if (providerId === 'unsloth') {
     // Rides the opencode binary AND requires the unsloth CLI itself;
     // local-only so available ⇒ authenticated.
     const [opencodeFound, unslothFound] = await Promise.all([
-      backendRequest<HostCheckResult>("host.findBinary", { name: PROVIDER_BINARIES.opencode }),
-      backendRequest<HostCheckResult>("host.findBinary", { name: PROVIDER_BINARIES.unsloth }),
+      backendRequest<HostCheckResult>('host.findBinary', { name: PROVIDER_BINARIES.opencode }),
+      backendRequest<HostCheckResult>('host.findBinary', { name: PROVIDER_BINARIES.unsloth }),
     ]);
     const status: ProviderStatus = {
       available: opencodeFound?.available === true && unslothFound?.available === true,
@@ -291,9 +356,9 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
   }
 
   const binary = PROVIDER_BINARIES[providerId];
-  const found = await backendRequest<HostCheckResult>("host.findBinary", { name: binary });
+  const found = await backendRequest<HostCheckResult>('host.findBinary', { name: binary });
   const status: ProviderStatus = { available: found?.available === true };
-  if (providerId === "codex") {
+  if (providerId === 'codex') {
     // Static registry fact (intent-providers' `fallback_npx_package` is set
     // only for codex) — mirrors the aggregate path's `hasNpxFallback` so the
     // npx-missing/too-old guidance still renders when codex is unavailable
@@ -302,33 +367,38 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
   }
   if (!status.available) return status;
 
-  if (providerId === "cortex") {
+  if (providerId === 'cortex') {
     // No auth surface — the daemon's providerAuthStatus sweep does not
     // cover cortex, so return presence alone.
     return status;
   }
-  if (providerId === "claude-code") {
-    // Adapter runs exclusively via npx — surface the same warning as main
-    // when the claude CLI is installed but npx is missing. A failed probe
-    // (RPC error) is an unknown, not a confirmed absence — no warning then.
-    const npx = await backendRequest<HostCheckResult>("host.findBinary", { name: "npx" }).catch(
+  if (providerId === 'claude-code') {
+    // Adapter runs via npx unless a valid path override is in use — surface
+    // the same warning as main when the claude CLI is installed, npx is
+    // missing, and the daemon reports no override. A failed probe (RPC
+    // error on either the npx probe or the discovery read) is an unknown,
+    // not a confirmed absence — no warning then.
+    const npx = await backendRequest<HostCheckResult>('host.findBinary', { name: 'npx' }).catch(
       () => undefined,
     );
     if (npx && npx.available !== true) {
-      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+      const discovery = await fetchProviderDiscovery().catch(() => undefined);
+      if (discovery && !claudeCodeRunsViaOverride(discovery)) {
+        status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+      }
     }
     return withAuth(status, await checkAuth());
   }
-  if (providerId === "codex") {
+  if (providerId === 'codex') {
     // Availability (and auth) key off the real `codex` CLI; the codex-acp
     // adapter (local binary or pinned npx fallback) is only probed for the
     // warning. Failed probes are unknowns, not confirmed absences — no
     // warning then (same rule as claude-code above).
     const [acp, npx] = await Promise.all([
-      backendRequest<HostCheckResult>("host.findBinary", { name: CODEX_ACP_BINARY }).catch(
+      backendRequest<HostCheckResult>('host.findBinary', { name: CODEX_ACP_BINARY }).catch(
         () => undefined,
       ),
-      backendRequest<HostCheckResult>("host.findBinary", { name: "npx" }).catch(() => undefined),
+      backendRequest<HostCheckResult>('host.findBinary', { name: 'npx' }).catch(() => undefined),
     ]);
     if (acp && acp.available !== true && npx && npx.available !== true) {
       status.warning = CODEX_ADAPTER_MISSING_WARNING;
@@ -353,6 +423,8 @@ interface ProviderDiscoveryEntry {
   id: string;
   installed: boolean;
   resolvedPath?: string | null;
+  npxOnly?: boolean;
+  npxPackage?: string;
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
@@ -362,8 +434,9 @@ interface ProviderDiscoveryEntry {
  * providers:get-paths — daemon-resolved CLI paths for every provider's
  * settings path popup, sourced from the daemon's `host.providerDiscovery`
  * snapshot (PROTOCOL §5.14): `paths[id]` is the primary binary's
- * `resolvedPath` (null when unresolved) and `secondaryPaths[id]` carries the
- * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI).
+ * `resolvedPath` (null when unresolved), `secondaryPaths[id]` carries the
+ * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI),
+ * and `npxPackages[id]` the pinned package spec of npx-only providers.
  * `npx` rides along from the same round-trip so the onboarding bulk check can
  * fetch it without the aggregated auth sweep.
  * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
@@ -373,16 +446,24 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
     const discovery = await backendRequest<{
       providers?: ProviderDiscoveryEntry[];
       npx?: NpxStatus;
-    }>("host.providerDiscovery", {}).catch(() => undefined);
+    }>('host.providerDiscovery', {}).catch(() => undefined);
     const paths: Record<string, string | null> = {};
     const secondaryPaths: Record<string, string | null> = {};
+    const npxPackages: Record<string, string> = {};
     for (const provider of discovery?.providers ?? []) {
       paths[provider.id] = provider.resolvedPath ?? null;
       if (provider.secondaryCommand !== undefined) {
         secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
       }
+      if (
+        provider.npxOnly === true &&
+        provider.npxPackage &&
+        NPX_ONLY_PATH_OVERRIDE_PROVIDERS.has(provider.id)
+      ) {
+        npxPackages[provider.id] = provider.npxPackage;
+      }
     }
-    return { success: true, data: { paths, secondaryPaths, npx: discovery?.npx } };
+    return { success: true, data: { paths, secondaryPaths, npxPackages, npx: discovery?.npx } };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -390,13 +471,16 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
 
 registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
   const request = arg as { providerId?: unknown; force?: unknown } | undefined;
-  const providerId =
-    typeof arg === "string" ? arg : ((request?.providerId as string) || "");
+  const providerId = typeof arg === 'string' ? arg : (request?.providerId as string) || '';
   // Default force: true (explicit rechecks); passive bulk loads send
   // `force: false` so the daemon's auth cache is used.
-  const force = typeof arg === "string" ? true : request?.force !== false;
+  const force = typeof arg === 'string' ? true : request?.force !== false;
   if (!providerId || !getItem(appStore.state.providerCatalog.providers, providerId)) {
-    return { success: false, providerId, error: m.providers_bridge_unknownProvider_error({ providerId }) };
+    return {
+      success: false,
+      providerId,
+      error: m.providers_bridge_unknownProvider_error({ providerId }),
+    };
   }
   try {
     return { success: true, providerId, data: await checkSingleProvider(providerId, force) };
@@ -417,7 +501,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
  * instead of being masked as "not installed".
  */
 const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
-  "claude-code": CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY,
+  'claude-code': CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY,
   codex: CODEX_CHANNELS.CHECK_AVAILABILITY,
   cortex: CORTEX_CHANNELS.CHECK_AVAILABILITY,
   opencode: OPENCODE_CHANNELS.CHECK_AVAILABILITY,
@@ -426,7 +510,7 @@ const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
 
 for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS)) {
   registerMockIpcHandler(channel, async () => {
-    const found = await backendRequest<HostCheckResult>("host.findBinary", {
+    const found = await backendRequest<HostCheckResult>('host.findBinary', {
       name: PROVIDER_BINARIES[providerId],
     });
     return { success: true, available: found?.available === true };
@@ -434,7 +518,7 @@ for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS))
 }
 
 /** Manual install step surfaced by the INSTALL / AUTHENTICATE instructions. */
-const AUGGIE_INSTALL_COMMAND = "npm install -g @augmentcode/auggie";
+const AUGGIE_INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
 
 /**
  * `auggie:install` — the reference main handler ran an npm/binary install on
@@ -465,7 +549,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
     const check = await checkAuggie();
     if (
       check.available &&
-      (await getAuthVerdicts({ providerId: "auggie", force: true }))["auggie"]?.authenticated ===
+      (await getAuthVerdicts({ providerId: 'auggie', force: true }))['auggie']?.authenticated ===
         true
     ) {
       return { success: true, data: { authenticated: true } };
@@ -483,7 +567,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
       success: true,
       data: {
         instructions: [m.providers_bridge_auggieLoginOnDaemon_instruction()],
-        command: "auggie login",
+        command: 'auggie login',
       },
     };
   } catch (error) {

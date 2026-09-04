@@ -1,21 +1,28 @@
-import { describe, expect, it } from "vitest";
-import { closeReleaseNotesModal, initialState, releaseNotesReducer, showReleaseNotes, showReleaseNotesSuccess, showReleaseNotesUnavailable } from "./release-notes-slice";
-import type { ReleaseNotes } from "./release-notes-types";
+import { describe, expect, it } from 'vitest';
+import {
+  closeReleaseNotesModal,
+  initialState,
+  releaseNotesReducer,
+  showReleaseNotes,
+  showReleaseNotesSuccess,
+  showReleaseNotesUnavailable,
+} from './release-notes-slice';
+import type { ReleaseNotes } from './release-notes-types';
 
 const NOTES: ReleaseNotes = {
-  version: "2.1.0",
-  notes: "## What changed",
-  url: "https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.1.0",
+  version: '2.1.0',
+  notes: '## What changed',
+  url: 'https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.1.0',
 };
 
-describe("releaseNotesReducer", () => {
-  it("returns the initial state", () => {
-    expect(releaseNotesReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
+describe('releaseNotesReducer', () => {
+  it('returns the initial state', () => {
+    expect(releaseNotesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it("opens the modal in a loading state on showReleaseNotes", () => {
+  it('opens the modal in a loading state on showReleaseNotes', () => {
     const state = releaseNotesReducer(
-      { ...initialState, releaseNotes: NOTES, error: "boom" },
+      { ...initialState, releaseNotes: NOTES, error: 'boom' },
       showReleaseNotes(),
     );
 
@@ -28,7 +35,7 @@ describe("releaseNotesReducer", () => {
     });
   });
 
-  it("resolves the modal into its content on showReleaseNotesSuccess", () => {
+  it('resolves the modal into its content on showReleaseNotesSuccess', () => {
     const state = releaseNotesReducer(
       releaseNotesReducer(initialState, showReleaseNotes()),
       showReleaseNotesSuccess(NOTES),
@@ -43,7 +50,7 @@ describe("releaseNotesReducer", () => {
     });
   });
 
-  it("keeps the modal open with no notes on showReleaseNotesUnavailable", () => {
+  it('keeps the modal open with no notes on showReleaseNotesUnavailable', () => {
     const state = releaseNotesReducer(
       releaseNotesReducer(initialState, showReleaseNotes()),
       showReleaseNotesUnavailable(),
@@ -54,7 +61,7 @@ describe("releaseNotesReducer", () => {
     expect(state.releaseNotes).toBeNull();
   });
 
-  it("closes the modal without discarding the loaded notes", () => {
+  it('closes the modal without discarding the loaded notes', () => {
     const opened = releaseNotesReducer(initialState, showReleaseNotesSuccess(NOTES));
     const state = releaseNotesReducer(opened, closeReleaseNotesModal());
 

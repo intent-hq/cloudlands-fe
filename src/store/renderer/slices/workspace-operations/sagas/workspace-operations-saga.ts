@@ -116,11 +116,22 @@ function activeForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
   );
 }
 
-function hasActiveWork({ agentNames, hookNames, openPrs }: ActiveWorkNames): boolean {
-  return agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0;
+function hasActiveWork({ agentNames, hookNames, openPrs, localChanges }: ActiveWorkNames): boolean {
+  return (
+    agentNames.length > 0 ||
+    hookNames.length > 0 ||
+    openPrs.length > 0 ||
+    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges)
+  );
 }
 
-// Bulk flows count only agents/hooks — open PRs never change bulk counts.
+// Single-workspace gating: the only path that fetches `workspace.localChanges`.
+function getSingleWorkspaceActiveWork(workspaceId: string): Promise<ActiveWorkNames> {
+  return getActiveWorkNames(workspaceId, { includeLocalChanges: true });
+}
+
+// Bulk flows count only agents/hooks — open PRs never change bulk counts and
+// local changes are never fetched (no `workspace.localChanges` fan-out).
 function countActiveWork(items: ActiveWorkNames[]): { agentCount: number; hookCount: number } {
   return items.reduce(
     (counts, item) => ({
@@ -242,7 +253,7 @@ function* requestDelete(action: ReturnType<typeof requestDeleteWorkspace>): Saga
   const [workspaceId] = action.payload;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
-  const activeWork = yield* call(getActiveWorkNames, workspaceId);
+  const activeWork = yield* call(getSingleWorkspaceActiveWork, workspaceId);
   if (hasActiveWork(activeWork)) {
     yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
     return;
@@ -301,7 +312,7 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
   const [workspaceId] = action.payload;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
-  const activeWork = yield* call(getActiveWorkNames, workspaceId);
+  const activeWork = yield* call(getSingleWorkspaceActiveWork, workspaceId);
   if (hasActiveWork(activeWork)) {
     yield* put(openArchiveWarning({ workspaceId, ...activeWork }));
     return;

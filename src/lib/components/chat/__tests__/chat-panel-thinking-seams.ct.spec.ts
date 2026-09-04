@@ -1,7 +1,39 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/test';
+import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
+recordCdpLifecycle(test);
+
+/**
+ * Explicit settle gate before a geometry read: web fonts applied, every finite
+ * animation in the subtree finished (Svelte transitions are WAAPI animations
+ * that Svelte cancels on completion, hence the catch; looping status
+ * indicators never finish and are skipped), then a layout flush so the read
+ * sees the settled frame instead of an arbitrary wall-clock delay. The
+ * animation wait loops because a finished animation can start another one
+ * (an intro chained after an outro), which a single pass would miss.
+ */
+async function settleLayout(scope: Locator) {
+  await scope.evaluate(async (element) => {
+    await document.fonts.ready;
+    for (;;) {
+      const running = element
+        .getAnimations({ subtree: true })
+        .filter(
+          (animation) =>
+            animation.playState === 'running' &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Infinity),
+        );
+      if (running.length === 0) break;
+      await Promise.all(running.map((animation) => animation.finished.catch(() => undefined)));
+    }
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  });
+}
 
 const eventPairs = [
   ['event-wake', 'assistant-wake'],
@@ -22,6 +54,7 @@ for (const theme of ['light', 'dark'] as const) {
       });
       const wrapper = component.getByTestId('end-of-list-streaming-status');
       await expect(wrapper.locator('[data-streaming-typing-row]')).toBeVisible();
+      await settleLayout(component);
 
       const geometry = await wrapper.evaluate((element) => {
         const previous = document.querySelector(
@@ -57,7 +90,6 @@ for (const theme of ['light', 'dark'] as const) {
         continue;
       test(`owns directional Thinking seams in ${theme} at ${width}px and ${zoom * 100}%`, async ({
         mount,
-        page,
       }) => {
         const component = await mount(ChatPanelOperationalGeometryHost, {
           props: { theme, width, zoom, seamOnly: true },
@@ -68,7 +100,7 @@ for (const theme of ['light', 'dark'] as const) {
           const assistant = component.locator(`[data-message-id="${assistantId}"]`);
           const thinking = assistant.locator('[data-message-content-block="thinking"]').first();
           await expect(thinking).toBeVisible();
-          await page.waitForTimeout(300);
+          await settleLayout(component);
           const gap = await event.evaluate((element, nextId) => {
             const next = document.querySelector(`[data-message-id="${nextId}"]`)!;
             const thinkingWrapper = next.querySelector('[data-message-content-block="thinking"]')!;
@@ -109,6 +141,7 @@ for (const theme of ['light', 'dark'] as const) {
             }
             await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
           }
+          await settleLayout(message);
           const rowSets = [
             {
               label: `${messageId}:ungrouped`,

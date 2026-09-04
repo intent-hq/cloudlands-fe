@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   computeBranchBaseCommittedFallbacks,
   computeBranchBaseCollapsedCommittedPaths,
@@ -86,7 +82,9 @@ describe('computeMergedDestinedPaths', () => {
     const changes: LocalFileChange[] = [];
     // 22 distinct single-stage files.
     for (let i = 0; i < 22; i++) {
-      changes.push(mkChange({ filePath: `file-${String(i).padStart(2, '0')}.ts`, category: 'unstaged' }));
+      changes.push(
+        mkChange({ filePath: `file-${String(i).padStart(2, '0')}.ts`, category: 'unstaged' }),
+      );
     }
     // File #23 (index 22) has mixed staged + unstaged parts.
     const target = 'file-23-merged.ts';
@@ -202,7 +200,9 @@ describe('applyNumstatStats', () => {
       mkChange({ filePath: 'src/a.ts', category: 'unstaged', additions: 5, deletions: 5 }),
     ];
 
-    const result = applyNumstatStats(changes, [{ filePath: 'src/a.ts', additions: 8, deletions: 2 }]);
+    const result = applyNumstatStats(changes, [
+      { filePath: 'src/a.ts', additions: 8, deletions: 2 },
+    ]);
 
     expect(result.map((change) => [change.additions, change.deletions])).toEqual([
       [8, 2],

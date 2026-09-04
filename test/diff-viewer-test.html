@@ -1,136 +1,139 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Diff Viewer Test</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 20px;
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #1e1e1e;
-      color: #fff;
-    }
-    #container {
-      width: 100%;
-      height: 600px;
-      border: 1px solid #444;
-    }
-    .controls {
-      margin-bottom: 20px;
-    }
-    button {
-      padding: 8px 16px;
-      margin-right: 10px;
-      background: #0e639c;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #1177bb;
-    }
-    #status {
-      margin-top: 20px;
-      padding: 10px;
-      background: #252526;
-      border-radius: 4px;
-      font-family: monospace;
-      white-space: pre-wrap;
-    }
-  </style>
-</head>
-<body>
-  <h1>Monaco Diff Viewer Test</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diff Viewer Test</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #1e1e1e;
+        color: #fff;
+      }
+      #container {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #444;
+      }
+      .controls {
+        margin-bottom: 20px;
+      }
+      button {
+        padding: 8px 16px;
+        margin-right: 10px;
+        background: #0e639c;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #1177bb;
+      }
+      #status {
+        margin-top: 20px;
+        padding: 10px;
+        background: #252526;
+        border-radius: 4px;
+        font-family: monospace;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Monaco Diff Viewer Test</h1>
 
-  <div class="controls">
-    <button onclick="testSmallDiff()">Test Small Diff</button>
-    <button onclick="testLargeDiff()">Test Large Diff</button>
-    <button onclick="inspectEditor()">Inspect Editor</button>
-  </div>
+    <div class="controls">
+      <button onclick="testSmallDiff()">Test Small Diff</button>
+      <button onclick="testLargeDiff()">Test Large Diff</button>
+      <button onclick="inspectEditor()">Inspect Editor</button>
+    </div>
 
-  <div id="container"></div>
-  <div id="status">Ready...</div>
+    <div id="container"></div>
+    <div id="status">Ready...</div>
 
-  <script src="https://unpkg.com/monaco-editor@0.54.0/min/vs/loader.js"></script>
-  <script>
-    let editor = null;
+    <script src="https://unpkg.com/monaco-editor@0.54.0/min/vs/loader.js"></script>
+    <script>
+      let editor = null;
 
-    require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.54.0/min/vs' } });
+      require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.54.0/min/vs' } });
 
-    require(['vs/editor/editor.main'], function() {
-      log('Monaco loaded successfully');
-      testSmallDiff();
-    });
+      require(['vs/editor/editor.main'], function () {
+        log('Monaco loaded successfully');
+        testSmallDiff();
+      });
 
-    function log(message) {
-      const status = document.getElementById('status');
-      status.textContent += '\n' + new Date().toLocaleTimeString() + ': ' + message;
-      console.log(message);
-    }
-
-    function createEditor(oldContent, newContent) {
-      if (editor) {
-        const model = editor.getModel();
-        if (model) {
-          model.original?.dispose();
-          model.modified?.dispose();
-        }
-        editor.dispose();
+      function log(message) {
+        const status = document.getElementById('status');
+        status.textContent += '\n' + new Date().toLocaleTimeString() + ': ' + message;
+        console.log(message);
       }
 
-      const container = document.getElementById('container');
+      function createEditor(oldContent, newContent) {
+        if (editor) {
+          const model = editor.getModel();
+          if (model) {
+            model.original?.dispose();
+            model.modified?.dispose();
+          }
+          editor.dispose();
+        }
 
-      log('Creating diff editor with hideUnchangedRegions enabled');
+        const container = document.getElementById('container');
 
-      editor = monaco.editor.createDiffEditor(container, {
-        theme: 'vs-dark',
-        readOnly: true,
-        renderSideBySide: true,
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        enableSplitViewResizing: true,
-        renderOverviewRuler: true,
-        diffCodeLens: true,
-        ignoreTrimWhitespace: false,
-        hideUnchangedRegions: {
-          enabled: true,
-          revealLineCount: 40,
-          minimumLineCount: 3,
-          contextLineCount: 3,
-        },
-      });
+        log('Creating diff editor with hideUnchangedRegions enabled');
 
-      const timestamp = Date.now();
-      const originalModel = monaco.editor.createModel(
-        oldContent,
-        'markdown',
-        monaco.Uri.parse(`inmemory://test/original?t=${timestamp}`)
-      );
-      const modifiedModel = monaco.editor.createModel(
-        newContent,
-        'markdown',
-        monaco.Uri.parse(`inmemory://test/modified?t=${timestamp}`)
-      );
+        editor = monaco.editor.createDiffEditor(container, {
+          theme: 'vs-dark',
+          readOnly: true,
+          renderSideBySide: true,
+          automaticLayout: true,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          enableSplitViewResizing: true,
+          renderOverviewRuler: true,
+          diffCodeLens: true,
+          ignoreTrimWhitespace: false,
+          hideUnchangedRegions: {
+            enabled: true,
+            revealLineCount: 40,
+            minimumLineCount: 3,
+            contextLineCount: 3,
+          },
+        });
 
-      editor.setModel({
-        original: originalModel,
-        modified: modifiedModel,
-      });
+        const timestamp = Date.now();
+        const originalModel = monaco.editor.createModel(
+          oldContent,
+          'markdown',
+          monaco.Uri.parse(`inmemory://test/original?t=${timestamp}`),
+        );
+        const modifiedModel = monaco.editor.createModel(
+          newContent,
+          'markdown',
+          monaco.Uri.parse(`inmemory://test/modified?t=${timestamp}`),
+        );
 
-      setTimeout(() => {
-        editor.layout();
-        log('Layout complete');
-        inspectEditor();
-      }, 100);
-    }
+        editor.setModel({
+          original: originalModel,
+          modified: modifiedModel,
+        });
 
-    function testSmallDiff() {
-      log('\n=== Testing Small Diff ===');
-      const oldContent = `# Project Specification
+        setTimeout(() => {
+          editor.layout();
+          log('Layout complete');
+          inspectEditor();
+        }, 100);
+      }
+
+      function testSmallDiff() {
+        log('\n=== Testing Small Diff ===');
+        const oldContent = `# Project Specification
 
 ## Overview
 
@@ -247,7 +250,7 @@ Alerts will be configured for:
 This specification provides a comprehensive overview of the project.
 Implementation will proceed according to the outlined phases.`;
 
-      const newContent = `# Project Specification
+        const newContent = `# Project Specification
 
 ## Overview
 
@@ -364,71 +367,75 @@ Alerts will be configured for:
 This specification provides a comprehensive overview of the project.
 Implementation will proceed according to the outlined phases.`;
 
-      createEditor(oldContent, newContent);
-    }
-
-    function testLargeDiff() {
-      log('\n=== Testing Large Diff ===');
-      const lines = [];
-      for (let i = 1; i <= 200; i++) {
-        lines.push(`Line ${i}: This is some content that represents a typical line in a document.`);
-      }
-      const oldContent = lines.join('\n');
-
-      // Change line 100
-      lines[99] = 'Line 100: THIS LINE WAS CHANGED - IT IS COMPLETELY DIFFERENT NOW';
-      const newContent = lines.join('\n');
-
-      createEditor(oldContent, newContent);
-    }
-
-    function inspectEditor() {
-      if (!editor) {
-        log('No editor created yet');
-        return;
+        createEditor(oldContent, newContent);
       }
 
-      const model = editor.getModel();
-      const container = document.getElementById('container');
+      function testLargeDiff() {
+        log('\n=== Testing Large Diff ===');
+        const lines = [];
+        for (let i = 1; i <= 200; i++) {
+          lines.push(
+            `Line ${i}: This is some content that represents a typical line in a document.`,
+          );
+        }
+        const oldContent = lines.join('\n');
 
-      // Check DOM elements
-      const diffEditor = container?.querySelector('.monaco-diff-editor');
-      const sideBySide = container?.querySelector('.side-by-side');
-      const insertDecorations = container?.querySelectorAll('.line-insert');
-      const deleteDecorations = container?.querySelectorAll('.line-delete');
-      const unchangedRegions = container?.querySelectorAll('.monaco-diff-hidden-lines');
+        // Change line 100
+        lines[99] = 'Line 100: THIS LINE WAS CHANGED - IT IS COMPLETELY DIFFERENT NOW';
+        const newContent = lines.join('\n');
 
-      // Get editor options
-      const hideUnchangedOption = editor.getOptions?.()?.get?.(monaco.editor.EditorOption.hideUnchangedRegions);
+        createEditor(oldContent, newContent);
+      }
 
-      log('\n=== Editor Inspection ===');
-      log('Editor exists: ' + !!editor);
-      log('Model exists: ' + !!model);
-      log('Original model: ' + !!model?.original);
-      log('Modified model: ' + !!model?.modified);
-      log('\n=== DOM Elements ===');
-      log('Diff editor element: ' + !!diffEditor);
-      log('Side-by-side element: ' + !!sideBySide);
-      log('Insert decorations: ' + (insertDecorations?.length || 0));
-      log('Delete decorations: ' + (deleteDecorations?.length || 0));
-      log('Unchanged regions: ' + (unchangedRegions?.length || 0));
-      log('\n=== Editor Options ===');
-      log('hideUnchangedRegions: ' + JSON.stringify(hideUnchangedOption, null, 2));
+      function inspectEditor() {
+        if (!editor) {
+          log('No editor created yet');
+          return;
+        }
 
-      // Make this available globally for CDP testing
-      window.editorInfo = {
-        hasEditor: !!editor,
-        hasModel: !!model,
-        hasOriginal: !!model?.original,
-        hasModified: !!model?.modified,
-        hasDiffEditor: !!diffEditor,
-        hasSideBySide: !!sideBySide,
-        insertCount: insertDecorations?.length || 0,
-        deleteCount: deleteDecorations?.length || 0,
-        unchangedRegionCount: unchangedRegions?.length || 0,
-        hideUnchangedOption: hideUnchangedOption,
-      };
-    }
-  </script>
-</body>
+        const model = editor.getModel();
+        const container = document.getElementById('container');
+
+        // Check DOM elements
+        const diffEditor = container?.querySelector('.monaco-diff-editor');
+        const sideBySide = container?.querySelector('.side-by-side');
+        const insertDecorations = container?.querySelectorAll('.line-insert');
+        const deleteDecorations = container?.querySelectorAll('.line-delete');
+        const unchangedRegions = container?.querySelectorAll('.monaco-diff-hidden-lines');
+
+        // Get editor options
+        const hideUnchangedOption = editor
+          .getOptions?.()
+          ?.get?.(monaco.editor.EditorOption.hideUnchangedRegions);
+
+        log('\n=== Editor Inspection ===');
+        log('Editor exists: ' + !!editor);
+        log('Model exists: ' + !!model);
+        log('Original model: ' + !!model?.original);
+        log('Modified model: ' + !!model?.modified);
+        log('\n=== DOM Elements ===');
+        log('Diff editor element: ' + !!diffEditor);
+        log('Side-by-side element: ' + !!sideBySide);
+        log('Insert decorations: ' + (insertDecorations?.length || 0));
+        log('Delete decorations: ' + (deleteDecorations?.length || 0));
+        log('Unchanged regions: ' + (unchangedRegions?.length || 0));
+        log('\n=== Editor Options ===');
+        log('hideUnchangedRegions: ' + JSON.stringify(hideUnchangedOption, null, 2));
+
+        // Make this available globally for CDP testing
+        window.editorInfo = {
+          hasEditor: !!editor,
+          hasModel: !!model,
+          hasOriginal: !!model?.original,
+          hasModified: !!model?.modified,
+          hasDiffEditor: !!diffEditor,
+          hasSideBySide: !!sideBySide,
+          insertCount: insertDecorations?.length || 0,
+          deleteCount: deleteDecorations?.length || 0,
+          unchangedRegionCount: unchangedRegions?.length || 0,
+          hideUnchangedOption: hideUnchangedOption,
+        };
+      }
+    </script>
+  </body>
 </html>

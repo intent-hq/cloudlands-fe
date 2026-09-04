@@ -9,14 +9,13 @@
   import { slide } from 'svelte/transition';
   import { Select } from '$lib/components/ui/select';
   import {
-  deleteActivityLogPreset,
-  saveActivityLogPreset,
-  type ActivityLogPresetPreference,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+    deleteActivityLogPreset,
+    saveActivityLogPreset,
+    type ActivityLogPresetPreference,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { selectActivityLogPresets } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   interface Filters {
     showFileChanges: boolean;
@@ -64,20 +63,70 @@
 
   // Date range options (getters so labels re-evaluate on locale change)
   const dateRangeOptions = [
-    { value: 'all', get label() { return m.log_filters_dateRangeAllTime_label(); } },
-    { value: 'today', get label() { return m.log_filters_dateRangeToday_label(); } },
-    { value: 'yesterday', get label() { return m.log_filters_dateRangeYesterday_label(); } },
-    { value: 'week', get label() { return m.log_filters_dateRangeLast7Days_label(); } },
-    { value: 'month', get label() { return m.log_filters_dateRangeLast30Days_label(); } },
-    { value: 'custom', get label() { return m.log_filters_dateRangeCustom_label(); } },
+    {
+      value: 'all',
+      get label() {
+        return m.log_filters_dateRangeAllTime_label();
+      },
+    },
+    {
+      value: 'today',
+      get label() {
+        return m.log_filters_dateRangeToday_label();
+      },
+    },
+    {
+      value: 'yesterday',
+      get label() {
+        return m.log_filters_dateRangeYesterday_label();
+      },
+    },
+    {
+      value: 'week',
+      get label() {
+        return m.log_filters_dateRangeLast7Days_label();
+      },
+    },
+    {
+      value: 'month',
+      get label() {
+        return m.log_filters_dateRangeLast30Days_label();
+      },
+    },
+    {
+      value: 'custom',
+      get label() {
+        return m.log_filters_dateRangeCustom_label();
+      },
+    },
   ];
 
   // Actor filter options (populated dynamically)
   let actorOptions = $state([
-    { value: 'all', get label() { return m.log_filters_actorAll_label(); } },
-    { value: 'user', get label() { return m.log_filters_actorUser_label(); } },
-    { value: 'agent', get label() { return m.log_filters_actorAgents_label(); } },
-    { value: 'system', get label() { return m.log_filters_actorSystem_label(); } },
+    {
+      value: 'all',
+      get label() {
+        return m.log_filters_actorAll_label();
+      },
+    },
+    {
+      value: 'user',
+      get label() {
+        return m.log_filters_actorUser_label();
+      },
+    },
+    {
+      value: 'agent',
+      get label() {
+        return m.log_filters_actorAgents_label();
+      },
+    },
+    {
+      value: 'system',
+      get label() {
+        return m.log_filters_actorSystem_label();
+      },
+    },
   ]);
 
   const selectedDateRangeLabel = $derived(
@@ -188,7 +237,9 @@
     <div class="mt-4 pt-4 border-t border-border" transition:slide={{ duration: 200 }}>
       <!-- Date Range -->
       <div class="flex items-center gap-2 mb-3">
-        <label for="date-range" class="text-sm min-w-[100px]">{m.log_filters_dateRange_label()}</label>
+        <label for="date-range" class="text-sm min-w-[100px]"
+          >{m.log_filters_dateRange_label()}</label
+        >
         <div class="flex-1 min-w-0">
           <Select.Root value={filters.dateRange} onchange={(value) => (filters.dateRange = value)}>
             <Select.Trigger id="date-range" class="py-1">
@@ -207,9 +258,13 @@
 
       <!-- Actor Filter -->
       <div class="flex items-center gap-2 mb-3">
-        <label for="actor-filter" class="text-sm min-w-[100px]">{m.log_filters_actor_label()}</label>
+        <label for="actor-filter" class="text-sm min-w-[100px]">{m.log_filters_actor_label()}</label
+        >
         <div class="flex-1 min-w-0">
-          <Select.Root value={filters.actorFilter} onchange={(value) => (filters.actorFilter = value)}>
+          <Select.Root
+            value={filters.actorFilter}
+            onchange={(value) => (filters.actorFilter = value)}
+          >
             <Select.Trigger id="actor-filter" class="py-1">
               <span class="truncate">{selectedActorLabel}</span>
             </Select.Trigger>
@@ -256,7 +311,9 @@
             {/each}
           </div>
         {:else}
-          <div class="text-sm text-subtle text-center p-2">{m.log_filters_noSavedPresets_label()}</div>
+          <div class="text-sm text-subtle text-center p-2">
+            {m.log_filters_noSavedPresets_label()}
+          </div>
         {/if}
       </div>
 

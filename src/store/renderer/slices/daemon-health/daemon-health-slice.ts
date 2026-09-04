@@ -36,6 +36,7 @@ export const initialState: DaemonHealthState = {
   hasEverConnected: false,
   sidecarSpawnPending: false,
   sidecarSpawnError: null,
+  daemonUpdateDisconnectedAt: null,
   sidecarRunLog: null,
   sidecarRunLogPending: false,
   sidecarRunLogError: null,
@@ -60,6 +61,13 @@ export interface ConnectionStatusExtras {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
+  /**
+   * Epoch ms of the first drop main observed for this window's backend while
+   * a user-requested `system.requestUpdate` is outstanding — the disconnect
+   * is the daemon restarting. Main owns the value so every window of the
+   * backend shares one countdown deadline.
+   */
+  daemonUpdateDisconnectedAt?: number;
 }
 
 /**
@@ -105,18 +113,14 @@ export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequ
  * Main spawns the sidecar (if needed) and opens/focuses the local backend's
  * windows; this window keeps its own backend and its overlay.
  */
-export const openLocalAndSpawnRequested = createAction(
-  'daemonHealth/openLocalAndSpawnRequested',
-);
+export const openLocalAndSpawnRequested = createAction('daemonHealth/openLocalAndSpawnRequested');
 
 /**
  * backend:open-local-and-spawn resolved ok. The initiating window stays bound
  * to its own (dead) backend, so no 'connected' backend:status event ever
  * reaches it to clear the pending flag — this action is that reset.
  */
-export const openLocalAndSpawnSucceeded = createAction(
-  'daemonHealth/openLocalAndSpawnSucceeded',
-);
+export const openLocalAndSpawnSucceeded = createAction('daemonHealth/openLocalAndSpawnSucceeded');
 
 /**
  * backend:spawn-sidecar failed (binary not found, spawn error). A successful
@@ -228,6 +232,7 @@ daemonHealthReducer.with(
         hasEverConnected: true,
         sidecarSpawnPending: false,
         sidecarSpawnError: null,
+        daemonUpdateDisconnectedAt: null,
         // The dialog dismisses on reconnect — drop the fetched run log with
         // it; it is stale by the next show.
         sidecarRunLog: null,
@@ -258,6 +263,11 @@ daemonHealthReducer.with(
         // "Starting sidecar…".
         sidecarSpawnPending:
           extras?.sidecarGaveUp || extras?.sidecarStartupFailed ? false : state.sidecarSpawnPending,
+        // Main stamps the FIRST update-caused drop and repeats it on every
+        // push for the same restart; store what was received so the
+        // updating-overlay countdown is anchored to main's time, not ours.
+        daemonUpdateDisconnectedAt:
+          extras?.daemonUpdateDisconnectedAt ?? state.daemonUpdateDisconnectedAt,
       };
     }
     return state;
