@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentNode, FileNode, GraphEdge, GraphState, TaskNode } from '../types';
@@ -16,31 +16,31 @@ import GraphEdgeLayer from '../GraphEdgeLayer.svelte';
 
 const timestamp = '2026-09-04T00:00:00.000Z';
 
-function agent(): AgentNode {
+function agent(id = 'one', x = 100): AgentNode {
   return {
-    id: 'agent:one',
+    id: `agent:${id}`,
     type: 'agent',
-    agentId: 'one',
-    name: 'Agent One',
+    agentId: id,
+    name: `Agent ${id === 'one' ? 'One' : id}`,
     isCoordinator: true,
     status: 'idle',
     createdAt: timestamp,
-    x: 100,
+    x,
     y: 100,
     vx: 0,
     vy: 0,
   };
 }
 
-function task(): TaskNode {
+function task(id = 'one', x = 300): TaskNode {
   return {
-    id: 'task:one',
+    id: `task:${id}`,
     type: 'task',
-    taskId: 'one',
-    title: 'Task One',
+    taskId: id,
+    title: `Task ${id === 'one' ? 'One' : id}`,
     state: 'in_progress',
     dependsOn: [],
-    x: 300,
+    x,
     y: 100,
     vx: 0,
     vy: 0,
@@ -116,7 +116,39 @@ function renderGraph(value: GraphState, overrides: Record<string, unknown> = {})
   });
 }
 
-afterEach(cleanup);
+function useReducedMotionViewport(): void {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query) =>
+      ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as MediaQueryList,
+  );
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+}
+
+function graphElements(container: HTMLElement): { viewport: HTMLElement; scene: HTMLElement } {
+  const viewport = container.querySelector<HTMLElement>('[data-agent-activity-graph]');
+  const scene = container.querySelector<HTMLElement>('.graph-scene');
+  if (!viewport || !scene) throw new Error('graph viewport did not mount');
+  return { viewport, scene };
+}
+
+async function waitForFit(scene: HTMLElement): Promise<void> {
+  await waitFor(() => expect(scene.style.transform).not.toBe(''));
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('AgentActivityGraph', () => {
   it('renders the empty state when there are no task or agent anchors', () => {
@@ -146,6 +178,49 @@ describe('AgentActivityGraph', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
 
     expect(screen.getByRole('button', { name: /file-1\.ts/ })).toBeTruthy();
+  });
+
+  it('fits again whenever the visible node set changes', async () => {
+    useReducedMotionViewport();
+    const view = renderGraph(graph([agent()]));
+    const { viewport, scene } = graphElements(view.container);
+    await waitForFit(scene);
+
+    await fireEvent.wheel(viewport, { deltaY: 400, clientX: 400, clientY: 300 });
+    const manualTransform = scene.style.transform;
+
+    await view.rerender({ graph: graph([agent(), task()]) });
+    await waitFor(() => expect(scene.style.transform).not.toBe(manualTransform));
+  });
+
+  it('does not fit again for a position-only update with the same node ids', async () => {
+    useReducedMotionViewport();
+    const view = renderGraph(graph([agent()]));
+    const { viewport, scene } = graphElements(view.container);
+    await waitForFit(scene);
+
+    await fireEvent.wheel(viewport, { deltaY: 400, clientX: 400, clientY: 300 });
+    const manualTransform = scene.style.transform;
+
+    await view.rerender({ graph: graph([agent('one', 700)]) });
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    expect(scene.style.transform).toBe(manualTransform);
+  });
+
+  it('keeps a manual zoom until an equal-sized node-id change requests a new fit', async () => {
+    useReducedMotionViewport();
+    const view = renderGraph(graph([agent()]));
+    const { viewport, scene } = graphElements(view.container);
+    await waitForFit(scene);
+
+    await fireEvent.wheel(viewport, { deltaY: 400, clientX: 400, clientY: 300 });
+    const manualTransform = scene.style.transform;
+    expect(manualTransform).not.toBe('');
+
+    await view.rerender({ graph: graph([agent('two', 650)]) });
+    await waitFor(() => expect(scene.style.transform).not.toBe(manualTransform));
   });
 
   it('completes message particles from native animation events without timers', async () => {

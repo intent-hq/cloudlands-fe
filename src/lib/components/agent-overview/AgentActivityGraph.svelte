@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { select, zoom, zoomIdentity, type ZoomBehavior } from 'd3';
+  import { easeCubicOut, select, zoom, zoomIdentity, type ZoomBehavior } from 'd3';
   import Fa from 'svelte-fa';
   import { faExpand } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
@@ -56,7 +56,7 @@
   let positions = $state<Map<string, GraphPosition>>(new Map());
   let expandedAgentIds = $state<Set<string>>(new Set());
   let spotlightNodeId = $state<string | null>(null);
-  let previousNodeCount = 0;
+  let previousNodeIds = '';
   let autoFitPending = false;
   let pendingPositions = new Map<string, GraphPosition>();
   let frame: number | null = null;
@@ -157,14 +157,20 @@
 
   function updateLayout(): void {
     if (!layout) return;
+    const nodeIds = visibleGraph.nodes
+      .map((node) => node.id)
+      .toSorted()
+      .join('\0');
+    const nodeSetChanged = nodeIds !== previousNodeIds;
+    previousNodeIds = nodeIds;
     layout.update(visibleGraph.nodes, visibleGraph.edges);
-    const count = visibleGraph.nodes.length;
-    const shouldFit =
-      previousNodeCount === 0 || Math.abs(count - previousNodeCount) > previousNodeCount * 0.5;
-    previousNodeCount = count;
-    if (shouldFit && count > 0) {
-      autoFitPending = true;
-      requestAnimationFrame(fitToView);
+    if (nodeSetChanged) {
+      autoFitPending = visibleGraph.nodes.length > 0;
+      if (autoFitPending) {
+        requestAnimationFrame(() => {
+          if (autoFitPending) fitToView();
+        });
+      }
     }
   }
 
@@ -186,12 +192,20 @@
     );
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
-    select(container).call(
-      zoomBehavior.transform,
-      zoomIdentity
-        .translate(width / 2 - centerX * scale, height / 2 - centerY * scale)
-        .scale(scale),
-    );
+    const transform = zoomIdentity
+      .translate(width / 2 - centerX * scale, height / 2 - centerY * scale)
+      .scale(scale);
+    const selection = select(container);
+    selection.interrupt('graph-fit');
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) {
+      selection.call(zoomBehavior.transform, transform);
+    } else {
+      selection
+        .transition('graph-fit')
+        .duration(500)
+        .ease(easeCubicOut)
+        .call(zoomBehavior.transform, transform);
+    }
   }
 
   function handleCanvasDoubleClick(event: MouseEvent): void {
@@ -363,6 +377,10 @@
         );
       })
       .on('zoom', (event) => {
+        if (event.sourceEvent) {
+          autoFitPending = false;
+          select(container).interrupt('graph-fit');
+        }
         zoomScale = event.transform.k;
         if (scene) {
           scene.style.transform = `translate(${event.transform.x}px, ${event.transform.y}px) scale(${event.transform.k})`;
@@ -373,7 +391,10 @@
       resizeObserver = new ResizeObserver(() => fitToView());
       resizeObserver.observe(container);
     }
-    previousNodeCount = visibleGraph.nodes.length;
+    previousNodeIds = visibleGraph.nodes
+      .map((node) => node.id)
+      .toSorted()
+      .join('\0');
     requestAnimationFrame(fitToView);
   });
 
