@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { HTMLAttributes } from 'svelte/elements';
   import { cn, type WithElementRef } from '$lib/utils.js';
+  import { scrollFade } from '$lib/actions/scroll-fade';
 
   let {
     ref = $bindable(null),
@@ -14,11 +15,9 @@
   bind:this={ref}
   data-slot="sidebar-content"
   data-sidebar="content"
-  class={cn(
-    'flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden',
-    className,
-  )}
+  class={cn('border-border flex min-h-0 flex-1 flex-col gap-2 overflow-auto border-y', className)}
   {...restProps}
+  use:scrollFade
 >
   {@render children?.()}
 </div>

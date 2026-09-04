@@ -1,7 +1,8 @@
 <script lang="ts">
   import { cn, type WithElementRef } from '$lib/utils.js';
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
+  import { getSidebarMenuActionsContext, getSidebarMenuRowContext } from './sidebar-menu-context';
 
   let {
     ref = $bindable(null),
@@ -9,27 +10,46 @@
     showOnHover = false,
     children,
     child,
+    onclick,
     ...restProps
   }: WithElementRef<HTMLButtonAttributes> & {
     child?: Snippet<[{ props: Record<string, unknown> }]>;
     showOnHover?: boolean;
   } = $props();
 
+  const row = getSidebarMenuRowContext();
+  const cluster = getSidebarMenuActionsContext();
+  let effectiveShowOnHover = $derived(cluster?.showOnHover ?? showOnHover);
+
+  $effect(() => {
+    const currentShowOnHover = effectiveShowOnHover;
+    return untrack(() => row?.registerAction(currentShowOnHover));
+  });
+
   const mergedProps = $derived({
     class: cn(
-      'text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground peer-hover/menu-button:text-sidebar-accent-foreground outline-hidden absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
+      cluster?.clustered
+        ? 'relative flex size-6 shrink-0 items-center justify-center'
+        : 'absolute right-1.5 z-10 flex size-6 items-center justify-center',
+      !cluster?.clustered && row?.hasBadge && 'right-8.5',
+      !cluster?.clustered && (row?.isSubRow ? 'top-0' : 'top-1'),
+      'text-muted-foreground rounded-md outline-none hover:bg-hover hover:text-foreground transition-[color,background-color,opacity] duration-spring-fast ease-spring-fast focus-visible:ring-1 focus-visible:ring-focus-ring motion-reduce:transition-none [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.5] [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast hover:[&>svg]:stroke-2',
       // Increases the hit area of the button on mobile.
       'after:absolute after:-inset-2 md:after:hidden',
-      'peer-data-[size=sm]/menu-button:top-1',
-      'peer-data-[size=default]/menu-button:top-1.5',
-      'peer-data-[size=lg]/menu-button:top-2.5',
       'group-data-[collapsible=icon]:hidden',
-      showOnHover &&
-        'peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0',
+      !cluster?.clustered &&
+        effectiveShowOnHover &&
+        'opacity-0 peer-focus-visible/menu-button:opacity-100 peer-hover/menu-button:opacity-100 group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100 hover:opacity-100',
+      'in-data-[force-actions=true]:opacity-100!',
       className,
     ),
     'data-slot': 'sidebar-menu-action',
     'data-sidebar': 'menu-action',
+    'data-show-on-hover': effectiveShowOnHover,
+    onclick: (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
+      event.stopPropagation();
+      onclick?.(event);
+    },
     ...restProps,
   });
 </script>

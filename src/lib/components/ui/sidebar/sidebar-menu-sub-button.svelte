@@ -1,7 +1,18 @@
+<script lang="ts" module>
+  function rowGutter(actionCount: number, hasBadge: boolean): number {
+    if (!actionCount && !hasBadge) return 8;
+    const actionsWidth = actionCount ? actionCount * 24 + (actionCount - 1) * 4 : 0;
+    const runWidth = (hasBadge ? 24 : 0) + actionsWidth + (hasBadge && actionCount ? 4 : 0);
+    return (hasBadge ? 8 : 6) + runWidth + 4;
+  }
+</script>
+
 <script lang="ts">
   import { cn, type WithElementRef } from '$lib/utils.js';
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import type { HTMLAnchorAttributes } from 'svelte/elements';
+  import { useSize } from '$lib/components/ui/size-context';
+  import { getSidebarMenuRowContext } from './sidebar-menu-context';
 
   let {
     ref = $bindable(null),
@@ -10,19 +21,51 @@
     class: className,
     size = 'md',
     isActive = false,
+    icon,
+    label,
+    onfocus,
+    onblur,
     ...restProps
   }: WithElementRef<HTMLAnchorAttributes> & {
     child?: Snippet<[{ props: Record<string, unknown> }]>;
     size?: 'sm' | 'md';
     isActive?: boolean;
+    icon?: Snippet;
+    label?: string;
   } = $props();
+
+  const row = getSidebarMenuRowContext();
+  const contextualSize = useSize();
+  let proximityActive = $derived(row?.menu?.hover?.activeIndex === row?.index);
+  let lit = $derived(isActive || proximityActive);
+  let gutterHover = $derived(rowGutter(row?.actionCount ?? 0, row?.hasBadge ?? false));
+  let gutterRest = $derived(
+    row?.actionsShowOnHover ? rowGutter(0, row?.hasBadge ?? false) : gutterHover,
+  );
+  let tabIndex = $derived.by(() => {
+    if (!row?.menu) return undefined;
+    const preferredIndex = row.menu.focusIndex ?? [...row.menu.activeIndexes.values()].at(-1) ?? 0;
+    return row.index === preferredIndex ? 0 : -1;
+  });
+
+  $effect(() => {
+    const active = isActive;
+    if (!row?.menu) return;
+    untrack(() => row.menu?.setActive(row.index, row.level, active));
+    return () => untrack(() => row.menu?.setActive(row.index, row.level, false));
+  });
+
+  $effect(() => {
+    const element = ref;
+    if (!row?.menu || !element) return;
+    untrack(() => row.menu?.registerElement(row.index, element));
+    return () => untrack(() => row.menu?.registerElement(row.index, null));
+  });
 
   const mergedProps = $derived({
     class: cn(
-      'text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground outline-hidden flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
-      'data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground',
-      size === 'sm' && 'type-caption',
-      size === 'md' && 'type-body',
+      'relative z-10 flex w-full min-w-0 cursor-pointer select-none items-center gap-2 overflow-hidden rounded-md pl-2 pr-(--row-gutter) text-left outline-none transition-[padding] duration-spring-fast ease-spring-fast group-hover/menu-sub-item:pr-(--row-gutter-hover) group-focus-within/menu-sub-item:pr-(--row-gutter-hover) motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
+      size === 'sm' || contextualSize === 'compact' ? 'h-6 text-xs' : 'type-body h-7',
       'group-data-[collapsible=icon]:hidden',
       className,
     ),
@@ -30,6 +73,19 @@
     'data-sidebar': 'menu-sub-button',
     'data-size': size,
     'data-active': isActive,
+    'data-proximity-active': proximityActive,
+    'data-sidebar-index': row?.index,
+    'aria-current': isActive ? ('page' as const) : undefined,
+    tabindex: tabIndex,
+    style: `--row-gutter: ${gutterRest}px; --row-gutter-hover: ${gutterHover}px;`,
+    onfocus: (event: FocusEvent & { currentTarget: HTMLAnchorElement }) => {
+      row?.menu?.hover?.setActiveIndex(row.index);
+      row?.menu?.setFocus(row.index);
+      onfocus?.(event);
+    },
+    onblur: (event: FocusEvent & { currentTarget: HTMLAnchorElement }) => {
+      onblur?.(event);
+    },
     ...restProps,
   });
 </script>
@@ -38,6 +94,38 @@
   {@render child({ props: mergedProps })}
 {:else}
   <a bind:this={ref} {...mergedProps}>
-    {@render children?.()}
+    {#if icon}
+      <span
+        class={cn(
+          'text-muted-foreground flex size-4 shrink-0 items-center justify-center transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none [&>svg]:size-4 [&>svg]:stroke-[1.5] [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
+          lit && 'text-foreground [&>svg]:stroke-2',
+        )}>{@render icon()}</span
+      >
+    {/if}
+    {#if label}
+      <span class="inline-grid min-w-0 flex-1 text-left">
+        <span
+          class="invisible col-start-1 row-start-1 truncate"
+          style="font-variation-settings: 'wght' 600"
+          aria-hidden="true">{label}</span
+        >
+        <span
+          class={cn(
+            'text-muted-foreground col-start-1 row-start-1 truncate transition-[color,font-variation-settings] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+            lit && 'text-foreground',
+          )}
+          style:font-variation-settings={isActive ? "'wght' 600" : "'wght' 400"}>{label}</span
+        >
+      </span>
+      {@render children?.()}
+    {:else}
+      <span
+        class={cn(
+          'text-muted-foreground flex min-w-0 flex-1 items-center gap-2 truncate transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+          lit && 'text-foreground',
+          isActive && 'font-semibold',
+        )}>{@render children?.()}</span
+      >
+    {/if}
   </a>
 {/if}
