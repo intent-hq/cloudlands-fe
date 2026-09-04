@@ -41,10 +41,6 @@ const preparedTabOutros = new WeakMap<HTMLElement, PreparedTabOutro>();
 const preparedTabOutroRegistrations = new WeakMap<HTMLElement, PreparedTabOutroRegistration>();
 const retainedTabOutros = new WeakMap<HTMLElement, RetainedTabOutro>();
 
-export function prepareTabOutro(strip: HTMLElement | null, workspaceId: string) {
-  return prepareTabOutros(strip, [workspaceId]);
-}
-
 export function prepareTabOutros(strip: HTMLElement | null, workspaceIds: string[]) {
   if (!strip) return;
   const previousRegistration = preparedTabOutroRegistrations.get(strip);
