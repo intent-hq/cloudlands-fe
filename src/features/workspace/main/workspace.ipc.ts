@@ -348,11 +348,11 @@ export function setupWorkspaceIPC(): void {
 
   // Open workspace
   //
-  // ⚠️  IMPORTANT: This handler has side effects beyond just "opening" the workspace:
-  // it warms caches. File-change monitoring is owned by the daemon; the FE-side
-  // change-detection stack has been removed. Script autoStart is owned by the
-  // daemon (`script.*`, PROTOCOL §5.8) — the legacy FE-side autoStart trigger
-  // has been removed.
+  // This handler has no FE-side side effects beyond opening the workspace: the
+  // legacy prompt-cache warming has been removed. File-change monitoring is owned
+  // by the daemon; the FE-side change-detection stack has been removed. Script
+  // autoStart is owned by the daemon (`script.*`, PROTOCOL §5.8) — the legacy
+  // FE-side autoStart trigger has been removed.
   //
   // The backend is IDEMPOTENT, so it's safe to call this multiple times for the
   // same workspace.
