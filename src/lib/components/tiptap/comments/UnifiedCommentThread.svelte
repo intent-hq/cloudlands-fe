@@ -10,6 +10,7 @@
   import { slide } from 'svelte/transition';
 
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
@@ -90,6 +91,10 @@
     showType = true,
   }: Props = $props();
 
+  // One cache-busting token per thread instance: re-rendering the comment or
+  // its replies keeps their workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
+
   let replyEditor: any = $state(null);
   $effect(() => {
     if (replyEditor && registerReplyInput) {
@@ -109,6 +114,7 @@
       processMarkdownToHTML(reply?.content || '', {
         allowEmpty: true,
         workspaceId: workspace?.id,
+        workspaceFileVersion,
       }),
     );
     replyEditHTML = html || '';
@@ -146,7 +152,11 @@
     let destroyed = false;
     const content = comment.content || '';
     Promise.resolve(
-      processMarkdownToHTML(content, { allowEmpty: true, workspaceId: workspace?.id }),
+      processMarkdownToHTML(content, {
+        allowEmpty: true,
+        workspaceId: workspace?.id,
+        workspaceFileVersion,
+      }),
     ).then((h) => {
       if (destroyed) return;
       try {
@@ -169,6 +179,7 @@
         processMarkdownToHTML(r.content || '', {
           allowEmpty: true,
           workspaceId: workspace?.id,
+          workspaceFileVersion,
         }),
       ).then((h) => {
         if (destroyed) return;

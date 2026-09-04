@@ -30,6 +30,15 @@ const urlCache = new Map<string, string>();
 const inflight = new Map<string, Promise<string | null>>();
 
 /**
+ * Drop a cached URL whose `<img>` failed to load (e.g. the protocol handler
+ * 404'd because the workspace's backend was disconnected), so the next
+ * render re-resolves instead of re-issuing a URL already known to fail.
+ */
+export function evictAttachmentImageUrl(workspaceId: string, attachmentId: string): void {
+  urlCache.delete(`${workspaceId}/${attachmentId}`);
+}
+
+/**
  * Resolve an attachment-reference image block to a renderable URL. Returns
  * null (after a warn log) when the registry row is unknown or its file was
  * deleted out-of-band — the caller renders a broken-image placeholder.
