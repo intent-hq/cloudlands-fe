@@ -11,6 +11,7 @@ import {
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   selectGraphState: vi.fn(),
+  selectGraphStateAt: { select: vi.fn() },
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -21,6 +22,7 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/agent-overview/agent-overview-selectors', () => ({
   selectGraphState: mocks.selectGraphState,
+  selectGraphStateAt: mocks.selectGraphStateAt,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -133,6 +135,7 @@ const graph: GraphState = {
 
 function renderPanel() {
   mocks.selectGraphState.mockReturnValue(readable(graph));
+  mocks.selectGraphStateAt.select.mockReturnValue({ ...graph, isLive: false });
   const result = render(AgentOverviewPanel, { props: { workspaceId: 'workspace-one' } });
   result.container.firstElementChild?.setAttribute('data-panel-id', 'source-panel');
   return result;

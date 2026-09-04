@@ -397,3 +397,108 @@ export function buildSingleAgentGraph(now = Date.now()): GraphState {
   );
   return graph([solo, ...files], edges, now);
 }
+
+export function buildReplayGraph(endTime = Date.now(), cursorTime = endTime): GraphState {
+  const start = endTime - 10 * 60_000;
+  const cursor = Math.min(endTime, Math.max(start, cursorTime));
+  const at = (offsetMs: number) => start + offsetMs;
+  const visible = (time: number) => time <= cursor;
+  const active = (time: number) => visible(time) && cursor - time < 10_000;
+  const eventOffsets = [
+    0, 20_000, 60_000, 85_000, 120_000, 145_000, 180_000, 220_000, 260_000, 305_000, 360_000,
+    405_000, 470_000, 530_000, 570_000, 600_000,
+  ];
+  const workerSpecs = [
+    { id: 'replay-model', name: 'Model implementor', created: at(60_000), done: at(360_000) },
+    { id: 'replay-canvas', name: 'Canvas implementor', created: at(120_000), done: at(470_000) },
+    { id: 'replay-tests', name: 'Test implementor', created: at(180_000), done: at(570_000) },
+  ];
+  const coordinator = agent(
+    'replay-coordinator',
+    'Playback coordinator',
+    cursor < at(590_000) ? 'responding' : 'idle',
+    endTime,
+    {
+      isCoordinator: true,
+      createdAt: timestamp(start),
+      activeToolName: cursor < at(590_000) ? 'workspace_api' : undefined,
+    },
+  );
+  const workers = workerSpecs
+    .filter(({ created }) => visible(created))
+    .map(({ id, name, created, done }, index) =>
+      agent(id, name, cursor < done ? 'responding' : 'completed', endTime, {
+        parentAgentId: 'replay-coordinator',
+        taskNoteId: `replay-task-${index + 1}`,
+        specialist: 'implementor',
+        createdAt: timestamp(created),
+        activeToolName: cursor < done ? 'apply_patch' : undefined,
+      }),
+    );
+  const tasks = workerSpecs.map(({ done }, index) => ({
+    ...task(
+      `replay-task-${index + 1}`,
+      ['Build graph model', 'Render constellation', 'Verify playback'][index],
+      cursor < done
+        ? visible(workerSpecs[index].created)
+          ? 'in_progress'
+          : 'not_started'
+        : 'complete',
+    ),
+    lastActionTimestamp: timestamp(start),
+  }));
+  const resources = [
+    { path: 'src/lib/components/agent-overview/types.ts', time: at(85_000), owner: 0 },
+    {
+      path: 'src/store/renderer/slices/agent-overview/agent-overview-selectors.ts',
+      time: at(145_000),
+      owner: 0,
+    },
+    {
+      path: 'src/lib/components/agent-overview/AgentActivityGraph.svelte',
+      time: at(220_000),
+      owner: 1,
+    },
+    { path: 'src/lib/components/agent-overview/TimeScrubber.svelte', time: at(305_000), owner: 1 },
+    {
+      path: 'src/lib/components/agent-overview/__tests__/playback.test.ts',
+      time: at(405_000),
+      owner: 2,
+    },
+    { path: 'messages/en.json', time: at(530_000), owner: 2 },
+  ].filter(({ time }) => visible(time));
+  const fileNodes = resources.map(({ path, time }) => file(path, 'write', endTime, endTime - time));
+  const timed = (edge: GraphEdge, time: number): GraphEdge => ({
+    ...edge,
+    timestamp: timestamp(time),
+    isActive: active(time),
+  });
+  const edges: GraphEdge[] = [];
+  workerSpecs.forEach(({ id, created }, index) => {
+    if (!visible(created)) return;
+    edges.push(timed(delegation('replay-coordinator', id, endTime), created));
+    edges.push(timed(assignment(id, `replay-task-${index + 1}`, endTime), created));
+  });
+  resources.forEach(({ owner, time }, index) => {
+    edges.push(
+      timed(
+        fileInteraction(workerSpecs[owner].id, fileNodes[index], 'write', endTime, index),
+        time,
+      ),
+    );
+  });
+  [at(260_000), at(405_000), at(530_000)].forEach((time, index) => {
+    if (visible(time)) {
+      edges.push(timed(message(workerSpecs[index].id, 'replay-coordinator', endTime), time));
+    }
+  });
+  const result = graph([coordinator, ...workers, ...tasks, ...fileNodes], edges, cursor);
+  return {
+    ...result,
+    currentTime: timestamp(cursor),
+    isLive: cursor >= endTime,
+    minTime: timestamp(start),
+    maxTime: timestamp(endTime),
+    eventTimes: eventOffsets.map((offset) => timestamp(start + offset)),
+  };
+}

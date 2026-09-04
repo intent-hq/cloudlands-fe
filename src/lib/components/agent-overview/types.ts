@@ -186,6 +186,8 @@ export interface GraphState {
   minTime: string;
   /** Max time in the event log */
   maxTime: string;
+  /** Full event-log timestamps used to render timeline activity ticks. */
+  eventTimes?: string[];
 }
 
 // ============================================================================

@@ -3,6 +3,7 @@ import {
   buildBusyGraph,
   buildConstellationGraph,
   buildEmptyGraph,
+  buildReplayGraph,
   buildSingleAgentGraph,
 } from './agent-activity-graph.fixtures';
 
@@ -56,5 +57,18 @@ describe('agent activity graph preview fixtures', () => {
     expect(countNodes(single, 'agent')).toBe(1);
     expect(countNodes(single, 'task')).toBe(0);
     expect(countNodes(single, 'file')).toBe(3);
+  });
+
+  it('builds a ten-minute replay story that grows between start and finish', () => {
+    const start = now - 10 * 60_000;
+    const beginning = buildReplayGraph(now, start);
+    const middle = buildReplayGraph(now, start + 5 * 60_000);
+    const live = buildReplayGraph(now);
+
+    expect(beginning.nodes.filter(({ type }) => type === 'agent')).toHaveLength(1);
+    expect(middle.nodes.filter(({ type }) => type === 'agent')).toHaveLength(4);
+    expect(middle.nodes.length).toBeLessThan(live.nodes.length);
+    expect(live.eventTimes).toHaveLength(16);
+    expect(Date.parse(live.maxTime) - Date.parse(live.minTime)).toBe(10 * 60_000);
   });
 });

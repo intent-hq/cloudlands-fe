@@ -76,54 +76,59 @@ function deriveCurrentTime(events: InteractionEvent[]): string {
  * Computes the full graph state from workspace state + line changes.
  * This replaces the $derived computeGraphState from the old Svelte store.
  */
-export const selectGraphState = store.createSelector((state, workspaceId: string): GraphState => {
-  const events = deriveInteractionEvents(state, workspaceId);
-  const currentTime = deriveCurrentTime(events);
-  const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
-  const tasks = selectWorkspaceTasks.select(state, workspaceId);
+export const selectGraphStateAt = store.createSelector(
+  (state, workspaceId: string, requestedTime: string | null): GraphState => {
+    const events = deriveInteractionEvents(state, workspaceId);
+    const currentTime = requestedTime ?? deriveCurrentTime(events);
+    const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
+    const tasks = selectWorkspaceTasks.select(state, workspaceId);
 
-  // Derive agents from workspace agentIds + the canonical agent-session slice.
-  const agents: Record<string, AgentSession> = {};
-  for (const session of selectAllWorkspaceAgents.select(state, workspaceId)) {
-    agents[String(session.id)] = session;
-  }
-
-  const canonicalTaskIds = new Set(tasks.map((task) => task.id));
-  const taskAssignments: Record<string, string> = {};
-  for (const [agentId, session] of Object.entries(agents)) {
-    const metadataTaskId = session.metadata?.taskNoteId;
-    if (metadataTaskId && canonicalTaskIds.has(metadataTaskId)) {
-      taskAssignments[agentId] = metadataTaskId;
-      continue;
+    const agents: Record<string, AgentSession> = {};
+    for (const session of selectAllWorkspaceAgents.select(state, workspaceId)) {
+      agents[String(session.id)] = session;
     }
-    const linkedTask = selectTasksForAgent
-      .select(state, workspaceId, agentId)
-      .filter((association) => canonicalTaskIds.has(association.noteId))
-      .sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (linkedTask) taskAssignments[agentId] = linkedTask.noteId;
-  }
 
-  // Build a note title lookup from Redux state (replaces old notesStore.notes access)
-  const wsNotes = state.workspaceNotes.byWorkspaceId[workspaceId];
-  const notesMap = new Map<string, Note>();
-  if (wsNotes) {
-    for (const note of getItems(wsNotes.notes)) {
-      notesMap.set(note.id, note);
+    const canonicalTaskIds = new Set(tasks.map((task) => task.id));
+    const taskAssignments: Record<string, string> = {};
+    for (const [agentId, session] of Object.entries(agents)) {
+      const metadataTaskId = session.metadata?.taskNoteId;
+      if (metadataTaskId && canonicalTaskIds.has(metadataTaskId)) {
+        taskAssignments[agentId] = metadataTaskId;
+        continue;
+      }
+      const linkedTask = selectTasksForAgent
+        .select(state, workspaceId, agentId)
+        .filter((association) => canonicalTaskIds.has(association.noteId))
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (linkedTask) taskAssignments[agentId] = linkedTask.noteId;
     }
-  }
 
-  return computeGraphState(
-    events,
-    agents,
-    currentTime,
-    true,
-    fileChanges,
-    state,
-    notesMap,
-    tasks,
-    taskAssignments,
-  );
-});
+    const wsNotes = state.workspaceNotes.byWorkspaceId[workspaceId];
+    const notesMap = new Map<string, Note>();
+    if (wsNotes) {
+      for (const note of getItems(wsNotes.notes)) {
+        notesMap.set(note.id, note);
+      }
+    }
+
+    return computeGraphState(
+      events,
+      agents,
+      currentTime,
+      requestedTime === null,
+      fileChanges,
+      state,
+      notesMap,
+      tasks,
+      taskAssignments,
+    );
+  },
+);
+
+/** Live graph alias retained for existing consumers. */
+export const selectGraphState = store.createSelector((state, workspaceId: string): GraphState =>
+  selectGraphStateAt.select(state, workspaceId, null),
+);
 
 // ============================================================================
 // computeGraphState — pure function (moved from old Svelte store)
@@ -156,6 +161,13 @@ function computeGraphState(
 
   // Filter events up to current time
   const visibleEvents = events.filter((e) => new Date(e.timestamp).getTime() <= currentTimestamp);
+  const visibleAgents = Object.fromEntries(
+    Object.entries(agents).filter(([, session]) => {
+      if (isLive || !session.createdAt) return true;
+      const createdAt = new Date(String(session.createdAt)).getTime();
+      return !Number.isFinite(createdAt) || createdAt <= currentTimestamp;
+    }),
+  );
 
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -185,7 +197,7 @@ function computeGraphState(
 
   // STEP 1: Find coordinator agent
   let coordinatorId: string | null = null;
-  for (const [agentId, session] of Object.entries(agents)) {
+  for (const [agentId, session] of Object.entries(visibleAgents)) {
     const parentId =
       (session.metadata?.createdByAgentId as string) || (session as any).parentAgentId || null;
     if (!parentId && !session.isBackground) {
@@ -195,7 +207,7 @@ function computeGraphState(
   }
 
   // STEP 2: Create ALL agent nodes from sessions
-  for (const [agentId, session] of Object.entries(agents)) {
+  for (const [agentId, session] of Object.entries(visibleAgents)) {
     if (nodeMap.has(agentId)) continue;
 
     const parentId =
@@ -208,15 +220,25 @@ function computeGraphState(
     const isWaitingForOtherAgents = selectAgentIsWaitingForOtherAgents.select(state, agentId);
     // Read the top-level daemon-owned array verbatim (PROTOCOL.md §5.5). The BE
     // emits it on AgentLite (agent.list/get) and chat.subscribe seq-0.
-    const waitingForAgentIds = session.waitingForAgentIds;
+    const historicalStatus = isLive
+      ? null
+      : (historicalAgentStatus(agentId, visibleEvents) ?? {
+          status: 'responding' as const,
+          waitingForAgentIds: [],
+        });
+    const waitingForAgentIds = isLive
+      ? session.waitingForAgentIds
+      : historicalStatus?.status === 'waiting'
+        ? historicalStatus.waitingForAgentIds
+        : [];
     const taskNoteId = taskAssignments[agentId] ?? null;
 
-    let nodeStatus = getNodeStatus(session, isResponding);
-    if (isWaitingForOtherAgents) {
+    let nodeStatus = historicalStatus?.status ?? getNodeStatus(session, isResponding);
+    if (isLive && isWaitingForOtherAgents) {
       nodeStatus = 'waiting';
-    } else if (isResponding) {
+    } else if (isLive && isResponding) {
       nodeStatus = 'responding';
-    } else if (nodeStatus === 'idle' && streamingState.activeToolName) {
+    } else if (isLive && nodeStatus === 'idle' && streamingState.activeToolName) {
       nodeStatus = 'responding';
     }
 
@@ -233,8 +255,8 @@ function computeGraphState(
       taskNoteId,
       createdAt: String(session.createdAt || currentTime),
       waitingForAgentIds,
-      activeToolName: streamingState.activeToolName,
-      activeToolInput: streamingState.activeToolInput,
+      activeToolName: isLive ? streamingState.activeToolName : undefined,
+      activeToolInput: isLive ? streamingState.activeToolInput : undefined,
       lastResponse: streamingState.lastResponse,
       agentType: (session.metadata as any)?.agentType || null,
       x: 0,
@@ -265,7 +287,7 @@ function computeGraphState(
     }
 
     // Queue delegation edge if parent exists
-    if (parentId && agents[parentId]) {
+    if (parentId && visibleAgents[parentId]) {
       const edgeKey = `del-${parentId}-${agentId}`;
       if (!edgeSet.has(edgeKey)) {
         addPendingEdge(edgeSet, pendingEdges, {
@@ -287,7 +309,10 @@ function computeGraphState(
     }
 
     // STEP 3: Create file nodes from agent's chat history
-    const messages = session.messages || [];
+    const messages = (session.messages || []).filter((message) => {
+      if (isLive || !message.timestamp) return true;
+      return new Date(String(message.timestamp)).getTime() <= currentTimestamp;
+    });
     const extractedFileChanges = extractFileChangesFromMessages(messages, currentTime);
 
     let fileChangesToProcess = extractedFileChanges.map((fc) => ({
@@ -297,6 +322,7 @@ function computeGraphState(
     }));
 
     if (
+      isLive &&
       fileChangesToProcess.length === 0 &&
       session.fileChanges &&
       session.fileChanges.length > 0
@@ -339,8 +365,11 @@ function computeGraphState(
   }
 
   // STEP 3.7: Compute delegation batch IDs
-  for (const [agentId, session] of Object.entries(agents)) {
-    const messages = session.messages || [];
+  for (const [agentId, session] of Object.entries(visibleAgents)) {
+    const messages = (session.messages || []).filter((message) => {
+      if (isLive || !message.timestamp) return true;
+      return new Date(String(message.timestamp)).getTime() <= currentTimestamp;
+    });
     if (messages.length === 0) continue;
     const batchMap = extractDelegationBatchMap(messages, agentId);
     if (batchMap.size === 0) continue;
@@ -355,9 +384,7 @@ function computeGraphState(
   // STEP 4: Process events for additional nodes and edges
   processVisibleEvents(
     visibleEvents,
-    isLive,
     currentTimestamp,
-    agents,
     fileChangesMap,
     getNoteTitle,
     nodeMap,
@@ -368,7 +395,8 @@ function computeGraphState(
 
   // The latest session snapshot can describe a live wait even when its event is
   // outside the retained activity window.
-  for (const [agentId, session] of Object.entries(agents)) {
+  for (const [agentId, session] of Object.entries(visibleAgents)) {
+    if (!isLive) break;
     for (const targetAgentId of session.waitingForAgentIds ?? []) {
       const edgeKey = `waiting-on-${agentId}-${targetAgentId}`;
       const existing = pendingEdges.find((candidate) => candidate.key === edgeKey);
@@ -398,8 +426,8 @@ function computeGraphState(
   // STEP 4b: Fallback file nodes from workspace-level changes
   createFallbackFileNodes(
     nodes,
-    fileChanges,
-    agents,
+    isLive ? fileChanges : [],
+    visibleAgents,
     coordinatorId,
     nodeMap,
     edgeSet,
@@ -447,7 +475,16 @@ function computeGraphState(
     notes: nodes.filter((node) => node.type === 'note').length,
   };
 
-  return { nodes, edges, stats, currentTime, isLive, minTime, maxTime };
+  return {
+    nodes,
+    edges,
+    stats,
+    currentTime,
+    isLive,
+    minTime,
+    maxTime,
+    eventTimes: events.map((event) => event.timestamp),
+  };
 }
 
 // ============================================================================
@@ -459,6 +496,21 @@ interface PendingEdge {
   sourceRawId: string;
   targetRawId: string;
   edge: GraphEdge;
+}
+
+function historicalAgentStatus(
+  agentId: string,
+  events: InteractionEvent[],
+): { status: AgentNode['status']; waitingForAgentIds: string[] } | null {
+  const latest = events
+    .filter((event) => event.agentId === agentId)
+    .toSorted((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))[0];
+  if (!latest) return null;
+  if (latest.type === 'agent-idle') return { status: 'idle', waitingForAgentIds: [] };
+  if (latest.type === 'agent-waiting') {
+    return { status: 'waiting', waitingForAgentIds: latest.targetId ? [latest.targetId] : [] };
+  }
+  return { status: 'responding', waitingForAgentIds: [] };
 }
 
 function addPendingEdge(
@@ -682,9 +734,7 @@ function createTaskNodesAndEdges(
 
 function processVisibleEvents(
   visibleEvents: InteractionEvent[],
-  isLive: boolean,
   currentTimestamp: number,
-  agents: Record<string, AgentSession>,
   fileChangesMap: Map<string, FileLineChange>,
   getNoteTitle: (noteId: string) => string,
   nodeMap: Map<string, GraphNode>,
@@ -694,7 +744,7 @@ function processVisibleEvents(
 ) {
   for (const event of visibleEvents) {
     const eventTime = new Date(event.timestamp).getTime();
-    const isActive = isLive && currentTimestamp - eventTime < ACTIVE_EDGE_WINDOW_MS;
+    const isActive = currentTimestamp - eventTime < ACTIVE_EDGE_WINDOW_MS;
 
     if (event.type === 'agent-created' || event.type === 'agent-idle') {
       if (event.parentAgentId) {

@@ -35,7 +35,7 @@ export const catalogEntries: CatalogEntry[] = [
       {
         id: 'agent-activity-graph',
         title: 'Agent activity graph',
-        states: ['constellation', 'busy', 'empty', 'single-agent'],
+        states: ['constellation', 'busy', 'empty', 'single-agent', 'replay'],
         themes: ['light', 'dark'],
         viewport: 'desktop',
         reducedMotion: true,

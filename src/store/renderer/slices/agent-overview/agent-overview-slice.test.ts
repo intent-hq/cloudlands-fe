@@ -4,7 +4,7 @@ import type { WorkspaceEvent } from '$features/events/types';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { TaskAgentAssociationsByTaskKey } from '../task-agent-associations/task-agent-associations-types';
 import type { StoreState } from '../../types';
-import { selectGraphState } from './agent-overview-selectors';
+import { selectGraphState, selectGraphStateAt } from './agent-overview-selectors';
 
 const WS = 'ws-test';
 
@@ -83,6 +83,40 @@ function makeWorkspaceEvent(overrides: Partial<WorkspaceEvent>): WorkspaceEvent 
 }
 
 describe('selectGraphState', () => {
+  it('replays only agents and events that existed at the requested time', () => {
+    const early = makeSession('early', { createdAt: '2026-03-20T13:00:00.000Z' });
+    const late = makeSession('late', { createdAt: '2026-03-20T13:30:00.000Z' });
+    const events = [
+      makeWorkspaceEvent({ id: 'early-file', timestamp: '2026-03-20T13:10:00.000Z' }),
+      makeWorkspaceEvent({
+        id: 'late-file',
+        timestamp: '2026-03-20T13:40:00.000Z',
+        actor: { type: 'agent', id: 'late', name: 'Late agent' },
+        data: { path: 'src/future.ts', relativePath: 'src/future.ts', action: 'modify' },
+      }),
+    ];
+
+    const graph = selectGraphStateAt.select(
+      makeOverviewState([early, late], events),
+      WS,
+      '2026-03-20T13:20:00.000Z',
+    );
+
+    expect(graph.isLive).toBe(false);
+    expect(graph.nodes).toContainEqual(
+      expect.objectContaining({ type: 'agent', agentId: 'early' }),
+    );
+    expect(graph.nodes).not.toContainEqual(
+      expect.objectContaining({ type: 'agent', agentId: 'late' }),
+    );
+    expect(graph.nodes).toContainEqual(
+      expect.objectContaining({ type: 'file', path: 'src/actual.ts' }),
+    );
+    expect(graph.nodes).not.toContainEqual(expect.objectContaining({ path: 'src/future.ts' }));
+    expect(graph.minTime).toBe('2026-03-20T13:10:00.000Z');
+    expect(graph.maxTime).toBe('2026-03-20T13:40:00.000Z');
+  });
+
   it('derives graph interactions from canonical workspace events via .select', () => {
     const session: AgentSession = {
       id: 'a1' as any,
