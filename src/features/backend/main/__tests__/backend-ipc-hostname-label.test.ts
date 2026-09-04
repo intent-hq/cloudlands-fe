@@ -108,6 +108,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDetectedDeviceKind: vi.fn(),
   setDaemonVersion: vi.fn(),
   getDetectHosts: vi.fn(),
   setHosts: vi.fn(),
@@ -121,6 +122,7 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDetectedDeviceKind: store.setDetectedDeviceKind,
   setDaemonVersion: store.setDaemonVersion,
   getDetectHosts: store.getDetectHosts,
   setHosts: store.setHosts,
@@ -174,6 +176,7 @@ beforeEach(() => {
   store.setDaemonVersion.mockResolvedValue(false);
   store.getDetectHosts.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
+  store.setDetectedDeviceKind.mockResolvedValue(false);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 
@@ -183,7 +186,12 @@ afterEach(() => {
 
 describe('openBackendWindow hostname labeling', () => {
   it('captures the remote hostname via host.status and persists it after opening', async () => {
-    hostStatus.value = { hostname: 'studio.local', os: 'macos', arch: 'aarch64' };
+    hostStatus.value = {
+      hostname: 'studio.local',
+      os: 'macos',
+      arch: 'aarch64',
+      deviceKind: 'macStudio',
+    };
     const send = installWindow();
     const mod = await loadModule();
 
@@ -193,12 +201,24 @@ describe('openBackendWindow hostname labeling', () => {
     await vi.waitFor(() =>
       expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'studio.local'),
     );
+    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('remote-1', 'macStudio');
     // A connections:changed broadcast follows so the menu re-renders the label.
     await vi.waitFor(() =>
       expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true),
     );
     // The main process is notified too (Window menu entries carry backend labels).
     expect(vi.mocked(app.emit).mock.calls.some(([e]) => e === 'connections-changed')).toBe(true);
+  });
+
+  it('rejects override-only device kinds reported by host.status', async () => {
+    hostStatus.value = { hostname: 'studio.local', deviceKind: 'robot' };
+    const mod = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('remote-1', null),
+    );
   });
 
   it('prefers a trimmed prettyHostname over hostname when host.status carries both', async () => {

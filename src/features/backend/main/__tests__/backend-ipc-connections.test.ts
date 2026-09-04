@@ -142,6 +142,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDetectedDeviceKind: vi.fn(),
   setDaemonVersion: vi.fn(),
   setUpdateSupported: vi.fn(),
   setTcAddress: vi.fn(),
@@ -159,6 +160,7 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDetectedDeviceKind: store.setDetectedDeviceKind,
   setDaemonVersion: store.setDaemonVersion,
   setUpdateSupported: store.setUpdateSupported,
   setTcAddress: store.setTcAddress,
@@ -1432,7 +1434,13 @@ describe('connections:* IPC handlers', () => {
   });
 
   it('connections:update changes remote presentation metadata without revalidating its saved address', async () => {
-    const updated = { ...REMOTE, label: 'Editing Mac', accent: 'violet' as const };
+    const updated = {
+      ...REMOTE,
+      label: 'Editing Mac',
+      accent: 'violet' as const,
+      detectedDeviceKind: 'macStudio' as const,
+      deviceIcon: 'cat' as const,
+    };
     store.getDecryptedToken.mockRejectedValue(new Error('undecryptable secret material'));
     store.updateMetadata.mockResolvedValue(updated);
     const send = installWindow();
@@ -1441,17 +1449,45 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:update');
 
     await expect(
-      handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'violet' }),
+      handler!(
+        {},
+        {
+          id: REMOTE.id,
+          label: 'Editing Mac',
+          accent: 'violet',
+          detectedDeviceKind: 'macStudio',
+          deviceIcon: 'cat',
+        },
+      ),
     ).resolves.toEqual({ status: 'updated', connection: updated });
-    expect(store.updateMetadata).toHaveBeenCalledWith(REMOTE.id, {
-      label: 'Editing Mac',
-      accent: 'violet',
-      host: REMOTE.host,
-      port: REMOTE.port,
-      fingerprint: REMOTE.fingerprint,
-    });
+    expect(store.updateMetadata).toHaveBeenCalledWith(
+      REMOTE.id,
+      expect.objectContaining({
+        label: 'Editing Mac',
+        accent: 'violet',
+        host: REMOTE.host,
+        port: REMOTE.port,
+        fingerprint: REMOTE.fingerprint,
+        detectedDeviceKind: 'macStudio',
+        deviceIcon: 'cat',
+      }),
+    );
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
     expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
+  it('connections:update forwards a local device icon to the store', async () => {
+    const updated = { ...LOCAL, deviceIcon: 'cat' as const };
+    store.updateMetadata.mockResolvedValue(updated);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    const params = { id: 'local', label: LOCAL.label, accent: null, deviceIcon: 'cat' };
+    await expect(handler!({}, params)).resolves.toEqual({ status: 'updated', connection: updated });
+    expect(store.updateMetadata).toHaveBeenCalledWith('local', params);
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 
@@ -2375,6 +2411,7 @@ describe('self-publish IPC', () => {
     localIps: ['192.168.1.10', '10.0.0.5'],
     hostname: 'my-mac.local',
     prettyHostname: "Clement's Mac Studio",
+    deviceKind: 'macStudio',
   };
   const SELF_RECORD = {
     id: 'self-1',
@@ -2415,12 +2452,17 @@ describe('self-publish IPC', () => {
       port: 5181,
       fingerprint: '11:22:33:44',
       token: 'a'.repeat(64),
+      detectedDeviceKind: 'macStudio',
       detectHosts: true,
       syncExcluded: false,
     });
     // All local IPs persist as candidate hosts; the hostname persists too.
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
     expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ detectedDeviceKind: 'macStudio' }),
+    );
+    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', 'macStudio');
     // Self fingerprint persisted (normalized) + suppression marker cleared.
     expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
     expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
@@ -2428,6 +2470,19 @@ describe('self-publish IPC', () => {
     expect(result.connection.id).toBe('self-1');
     expect(result.connection).not.toHaveProperty('token');
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+  });
+
+  it('connections:publish-self rejects override-only device kinds from pairingInfo', async () => {
+    installPairingInfo({ deviceKind: 'robot' });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ detectedDeviceKind: null }));
+    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', null);
   });
 
   it('connections:publish-self sets hosts even for a single IP (stale extras must converge)', async () => {
@@ -2791,6 +2846,7 @@ describe('self-entry refresh IPC', () => {
       port: 5181,
       fingerprint: '11:22:33:44',
       token: 'b'.repeat(64),
+      detectedDeviceKind: null,
       detectHosts: true,
     });
     // Regression (PR #1762 review): the refresh upsert must NOT carry a
