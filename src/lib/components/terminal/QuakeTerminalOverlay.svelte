@@ -1463,7 +1463,7 @@
                   <Fa icon={faArrowUpRightFromSquare} size="xs" />
                 </Button>
               {/if}
-              {#if isPreviouslyRunningOnly}
+              {#if editingScriptTabId !== script.id && isPreviouslyRunningOnly}
                 <Button
                   variant="plain"
                   size="icon-xs"

@@ -944,6 +944,7 @@
         {/if}
         <span
           aria-hidden="true"
+          data-workspace-title-edit-decoration
           class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
             ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
             : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
@@ -1255,6 +1256,7 @@
           {/if}
           <span
             aria-hidden="true"
+            data-workspace-status-edit-decoration
             class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingStatusMessage
               ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
               : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
@@ -1352,5 +1354,12 @@
 <style>
   .edit-input::selection {
     background: hsl(var(--ring) / 0.3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-workspace-title-edit-decoration],
+    [data-workspace-status-edit-decoration] {
+      transition-duration: 0s !important;
+    }
   }
 </style>
