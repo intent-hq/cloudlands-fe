@@ -1,5 +1,6 @@
 <script lang="ts">
   import BulkActionConfirmDialog from './BulkActionConfirmDialog.svelte';
+  import BulkWorkspaceList from './BulkWorkspaceList.svelte';
   import DeleteWarningDialog from './DeleteWarningDialog.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -87,12 +88,15 @@
         count: formatInteger($pendingBulkWorkspaceIds$.length),
       })}
   confirmText={m.modals_bulkArchive_confirm_label()}
-  workspaces={$pendingBulkWorkspaces$}
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
   onConfirm={() => appStore.dispatch(confirmBulkArchive())}
   onCancel={() => appStore.dispatch(closeBulkArchiveConfirm())}
-/>
+>
+  {#snippet body()}
+    <BulkWorkspaceList workspaces={$pendingBulkWorkspaces$} />
+  {/snippet}
+</BulkActionConfirmDialog>
 
 <BulkActionConfirmDialog
   open={$showBulkDeleteConfirm$}
@@ -106,9 +110,12 @@
       })}
   confirmText={m.modals_bulkDelete_confirm_label()}
   variant="destructive"
-  workspaces={$pendingBulkWorkspaces$}
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
   onConfirm={() => appStore.dispatch(confirmBulkDelete())}
   onCancel={() => appStore.dispatch(closeBulkDeleteConfirm())}
-/>
+>
+  {#snippet body()}
+    <BulkWorkspaceList workspaces={$pendingBulkWorkspaces$} />
+  {/snippet}
+</BulkActionConfirmDialog>
