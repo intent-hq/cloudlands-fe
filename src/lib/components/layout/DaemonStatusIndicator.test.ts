@@ -122,7 +122,7 @@ describe('DaemonStatusIndicator', () => {
       expect(module.default).toBe(DaemonStatusIndicatorPreloaded);
     });
 
-    it('renders a legible 16px header icon with the current health tint', () => {
+    it('renders a legible 16px header icon with a quiet healthy tint', () => {
       mockStoreState = {
         daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
       };
@@ -132,7 +132,8 @@ describe('DaemonStatusIndicator', () => {
       const icon = trigger.querySelector('svg');
       expect(icon?.getAttribute('width')).toBe('16');
       expect(icon?.getAttribute('height')).toBe('16');
-      expect(icon?.classList.contains('text-green-500')).toBe(true);
+      expect(icon?.classList.contains('text-subtle')).toBe(true);
+      expect(icon?.classList.contains('text-green-500')).toBe(false);
       expect(trigger.classList.contains('h-6')).toBe(true);
     });
   });
@@ -503,7 +504,7 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.queryByText('Workspace disk')).toBeNull();
     });
 
-    it('shows the warning icon and turns the dot yellow when free space is below 10%', async () => {
+    it('shows the warning icon and turns the header icon yellow below 10% free', async () => {
       // 50 GB free of 1 TB = ~4.9% free.
       mockStoreState = withDisk({ availableBytes: 50 * GB, totalBytes: TB });
 
@@ -512,7 +513,7 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
       expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
-      expect(iconOf(trigger).classList.contains('text-green-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
 
       await fireEvent.click(trigger);
       await fireEvent.click(screen.getByText(/^Status - /));
@@ -526,14 +527,14 @@ describe('DaemonStatusIndicator', () => {
       expect(statusValue.classList.contains('text-green-500')).toBe(false);
     });
 
-    it('keeps the green dot at exactly 10% free (threshold is strictly below)', async () => {
+    it('keeps the neutral healthy icon at exactly 10% free', async () => {
       mockStoreState = withDisk({ availableBytes: 0.1 * TB, totalBytes: TB });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(iconOf(trigger).classList.contains('text-green-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(true);
     });
 
     it('keeps the red dot and down label when the daemon is down despite low disk', async () => {
@@ -654,7 +655,7 @@ describe('DaemonStatusIndicator', () => {
 
     const iconOf = (trigger: HTMLElement) => trigger.querySelector('svg')!;
 
-    it('turns the healthy dot yellow and updates the trigger label when the daemon is behind the pin', async () => {
+    it('turns the healthy icon yellow and updates the trigger label when behind the pin', async () => {
       mockStoreState = withVersions({ daemonVersion: '0.9.0', pinnedVersion: '1.0.0' });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -664,7 +665,7 @@ describe('DaemonStatusIndicator', () => {
         name: 'intentd: healthy (version mismatch)',
       });
       expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
-      expect(iconOf(trigger).classList.contains('text-green-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
     });
 
     it('shows the "behind" tooltip and warning icon on the version row when the daemon is older', async () => {
@@ -719,14 +720,14 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.queryByText(/vv/)).toBeNull();
     });
 
-    it('keeps the green dot and plain version row when the versions match', async () => {
+    it('keeps the neutral healthy icon and plain version row when versions match', async () => {
       mockStoreState = withVersions({ daemonVersion: '1.0.0', pinnedVersion: '1.0.0' });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(iconOf(trigger).classList.contains('text-green-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(true);
 
       await fireEvent.click(trigger);
       await fireEvent.click(screen.getByText(/^Status - /));
@@ -735,14 +736,14 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.queryByText(/bundled sidecar/)).toBeNull();
     });
 
-    it('keeps the green dot when there is no pin to compare against', async () => {
+    it('keeps the neutral healthy icon when there is no pin to compare against', async () => {
       mockStoreState = withVersions({ daemonVersion: '1.0.0' });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(iconOf(trigger).classList.contains('text-green-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(true);
     });
 
     it('does not override the degraded label/dot with the mismatch state', async () => {

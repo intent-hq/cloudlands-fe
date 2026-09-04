@@ -154,11 +154,10 @@
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
 
-  // Color mapping for health states
-  const healthColors: Record<DaemonHealth, string> = {
-    healthy: 'bg-green-500',
-    degraded: 'bg-yellow-500',
-    down: 'bg-red-500',
+  const healthIconColors: Record<DaemonHealth, string> = {
+    healthy: 'text-subtle',
+    degraded: 'text-yellow-500',
+    down: 'text-red-500',
   };
 
   const healthLabels: Record<DaemonHealth, () => string> = {
@@ -196,14 +195,13 @@
       : m.layout_daemonStatus_workspaceDiskFree_label({ free: formatDiskSize(available) });
   });
 
-  // A version mismatch or low workspace disk turns an otherwise-healthy dot
+  // A version mismatch or low workspace disk turns an otherwise-neutral healthy icon
   // yellow; degraded (already yellow) and down (red) are unchanged.
-  const dotColorClass = $derived(
+  const iconColorClass = $derived(
     $health$ === 'healthy' && (versionMismatch || workspaceDiskLow)
-      ? 'bg-yellow-500'
-      : healthColors[$health$],
+      ? 'text-yellow-500'
+      : healthIconColors[$health$],
   );
-  const iconColorClass = $derived(dotColorClass.replace(/^bg-/, 'text-'));
 
   const triggerLabel = $derived(
     $health$ === 'healthy' && versionMismatch
