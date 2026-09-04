@@ -9,7 +9,11 @@
   import AgentOrbNode from './nodes/AgentOrbNode.svelte';
   import ResourceNode from './nodes/ResourceNode.svelte';
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
-  import { MAX_VISIBLE_RESOURCES_PER_AGENT } from './constants';
+  import {
+    GRAPH_FIT_PADDING,
+    GRAPH_ZOOM_EXTENT,
+    MAX_VISIBLE_RESOURCES_PER_AGENT,
+  } from './constants';
   import type { AgentNode, FileNode, GraphNode, GraphState, NoteNode, TaskNode } from './types';
 
   export interface GraphLayers {
@@ -48,6 +52,7 @@
   let expandedAgentIds = $state<Set<string>>(new Set());
   let spotlightNodeId = $state<string | null>(null);
   let previousNodeCount = 0;
+  let autoFitPending = false;
   let pendingPositions = new Map<string, GraphPosition>();
   let frame: number | null = null;
   let unsubscribeTick: (() => void) | null = null;
@@ -132,12 +137,16 @@
     return Date.parse(node.lastActionTimestamp) || 0;
   }
 
-  function publishPositions(nodes: GraphNode[]): void {
+  function publishPositions(nodes: GraphNode[], alpha = 1): void {
     pendingPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     if (frame !== null) return;
     frame = requestAnimationFrame(() => {
       positions = pendingPositions;
       frame = null;
+      if (autoFitPending && alpha < 0.01) {
+        autoFitPending = false;
+        fitToView();
+      }
     });
   }
 
@@ -148,7 +157,10 @@
     const shouldFit =
       previousNodeCount === 0 || Math.abs(count - previousNodeCount) > previousNodeCount * 0.5;
     previousNodeCount = count;
-    if (shouldFit && count > 0) requestAnimationFrame(fitToView);
+    if (shouldFit && count > 0) {
+      autoFitPending = true;
+      requestAnimationFrame(fitToView);
+    }
   }
 
   function fitToView(): void {
@@ -156,14 +168,14 @@
     const bounds = layout.fitBounds();
     const width = container.clientWidth;
     const height = container.clientHeight;
-    const padding = 96;
+    const [minimumScale, maximumScale] = GRAPH_ZOOM_EXTENT;
     const scale = Math.max(
-      0.25,
+      minimumScale,
       Math.min(
-        2.5,
+        maximumScale,
         Math.min(
-          width / Math.max(1, bounds.width + padding),
-          height / Math.max(1, bounds.height + padding),
+          width / Math.max(1, bounds.width + GRAPH_FIT_PADDING * 2),
+          height / Math.max(1, bounds.height + GRAPH_FIT_PADDING * 2),
         ),
       ),
     );
@@ -309,9 +321,10 @@
     const height = Math.max(1, container.clientHeight);
     layout = createConstellationLayout({ width, height });
     layout.update(visibleGraph.nodes, visibleGraph.edges);
+    autoFitPending = true;
     unsubscribeTick = layout.tick(publishPositions);
     zoomBehavior = zoom<HTMLDivElement, unknown>()
-      .scaleExtent([0.25, 2.5])
+      .scaleExtent(GRAPH_ZOOM_EXTENT)
       .filter((event) => {
         if (event.type === 'wheel') return true;
         const target = event.target;

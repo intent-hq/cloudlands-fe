@@ -65,6 +65,25 @@ export const ACTIVE_EDGE_WINDOW_MS = 5000;
 /** Maximum resource satellites shown for an agent before they collapse. */
 export const MAX_VISIBLE_RESOURCES_PER_AGENT = 6;
 
+/** Maximum rendered node dimensions used by layout collision and fit-to-view. */
+export const GRAPH_NODE_DIMENSIONS = {
+  agent: { width: 150, height: 130 },
+  task: { width: 136, height: 136 },
+  file: { width: 190, height: 53 },
+  note: { width: 190, height: 53 },
+} as const;
+
+/** Clear space beyond node bounds for related-node orbits. */
+export const GRAPH_NODE_GAPS = {
+  collision: 10,
+  taskAgent: 24,
+  agentResource: 16,
+} as const;
+
+/** Shared zoom limits and per-side fit padding. */
+export const GRAPH_ZOOM_EXTENT: [number, number] = [0.25, 2.5];
+export const GRAPH_FIT_PADDING = 48;
+
 /** Task anchor ring colors, expressed only through theme tokens. */
 export const TASK_STATUS_RING_CLASSES = {
   not_started: 'border-border text-subtle',

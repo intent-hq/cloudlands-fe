@@ -8,6 +8,7 @@ import {
   type Simulation,
   type SimulationLinkDatum,
 } from 'd3';
+import { GRAPH_NODE_DIMENSIONS, GRAPH_NODE_GAPS } from './constants';
 import type { GraphEdge, GraphNode } from './types';
 
 export interface ConstellationLayoutConfig {
@@ -27,10 +28,11 @@ interface ConstellationBounds {
 
 export interface ConstellationLayout {
   update(nodes: GraphNode[], edges: GraphEdge[]): void;
-  tick(callback: (nodes: GraphNode[]) => void): () => void;
+  tick(callback: (nodes: GraphNode[], alpha: number) => void): () => void;
   pin(id: string, x: number, y: number): void;
   unpin(id: string): void;
   reheat(): void;
+  settle(): void;
   stop(): void;
   fitBounds(): ConstellationBounds;
 }
@@ -46,12 +48,17 @@ interface Point {
   y: number;
 }
 
-const NODE_RADII: Record<GraphNode['type'], number> = {
-  agent: 42,
-  task: 34,
-  file: 24,
-  note: 24,
-};
+const NODE_RADII = Object.fromEntries(
+  Object.entries(GRAPH_NODE_DIMENSIONS).map(([type, dimensions]) => [
+    type,
+    Math.hypot(dimensions.width, dimensions.height) / 2,
+  ]),
+) as Record<GraphNode['type'], number>;
+const TASK_AGENT_DISTANCE = NODE_RADII.task + NODE_RADII.agent + GRAPH_NODE_GAPS.taskAgent + 20;
+const RESOURCE_DISTANCE = NODE_RADII.agent + NODE_RADII.file + GRAPH_NODE_GAPS.agentResource + 30;
+const AGENT_DISTANCE = NODE_RADII.agent * 2 + GRAPH_NODE_GAPS.taskAgent + 16;
+const AGENT_FAN_STEP = 1;
+const RESOURCE_FAN_STEP = 0.95;
 
 const SIMULATION_FIELDS = new Set(['x', 'y', 'vx', 'vy', 'fx', 'fy', 'index']);
 
@@ -110,40 +117,162 @@ export function createConstellationLayout({
   seed = 1,
 }: ConstellationLayoutConfig): ConstellationLayout {
   const center = { x: width / 2, y: height / 2 };
-  const ringRadius = Math.max(32, Math.min(width, height) * 0.32);
-  const callbacks = new Set<(nodes: GraphNode[]) => void>();
+  const callbacks = new Set<(nodes: GraphNode[], alpha: number) => void>();
   let currentNodes: GraphNode[] = [];
   let nodeById = new Map<string, GraphNode>();
   let taskAnchors = new Map<string, Point>();
+  let desiredPositions = new Map<string, Point>();
   let fingerprint = '';
 
   const simulation: Simulation<GraphNode, LayoutLink> = forceSimulation<GraphNode>([])
     .velocityDecay(0.35)
     .alphaDecay(0.035)
-    .force('charge', forceManyBody<GraphNode>().strength(-35).distanceMax(360))
+    .force('charge', forceManyBody<GraphNode>().strength(-24).distanceMax(420))
     .force(
       'collision',
-      forceCollide<GraphNode>((node) => NODE_RADII[node.type] + 6)
-        .strength(0.9)
-        .iterations(2),
+      forceCollide<GraphNode>((node) => NODE_RADII[node.type] + GRAPH_NODE_GAPS.collision)
+        .strength(1)
+        .iterations(4),
     )
     .on('tick.constellation', () => {
-      callbacks.forEach((callback) => callback(currentNodes));
+      callbacks.forEach((callback) => callback(currentNodes, simulation.alpha()));
     })
     .stop();
 
   function computeTaskAnchors(nodes: GraphNode[]): Map<string, Point> {
     const tasks = nodes.filter((node) => node.type === 'task');
+    const topLevelCount = nodes.filter(isTopLevelAgent).length;
+    const centerOrbit =
+      topLevelCount > 1 ? AGENT_DISTANCE / (2 * Math.sin(Math.PI / topLevelCount)) : 0;
+    const centerClearance =
+      topLevelCount > 0
+        ? centerOrbit + NODE_RADII.agent + NODE_RADII.task + GRAPH_NODE_GAPS.taskAgent
+        : 0;
+    const clusterSpacing = NODE_RADII.task * 2 + NODE_RADII.agent + GRAPH_NODE_GAPS.taskAgent;
+    const taskSpacingRadius =
+      tasks.length > 1 ? clusterSpacing / (2 * Math.sin(Math.PI / tasks.length)) : 0;
+    const ringRadius = Math.max(Math.min(width, height) * 0.32, centerClearance, taskSpacingRadius);
     const anchors = new Map<string, Point>();
     tasks.forEach((task, index) => {
       const angle = -Math.PI / 2 + (index / Math.max(1, tasks.length)) * Math.PI * 2;
-      const radius = task.state === 'in_progress' ? ringRadius * 0.62 : ringRadius;
       anchors.set(task.id, {
-        x: center.x + Math.cos(angle) * radius,
-        y: center.y + Math.sin(angle) * radius,
+        x: center.x + Math.cos(angle) * ringRadius,
+        y: center.y + Math.sin(angle) * ringRadius,
       });
     });
     return anchors;
+  }
+
+  function angleFromCenter(point: Point, fallbackId: string): number {
+    if (point.x !== center.x || point.y !== center.y) {
+      return Math.atan2(point.y - center.y, point.x - center.x);
+    }
+    return seededUnit(seed, fallbackId, 2) * Math.PI * 2;
+  }
+
+  function topLevelResourceAngles(): number[] {
+    const angles = [...taskAnchors.values()]
+      .map((point) => Math.atan2(point.y - center.y, point.x - center.x))
+      .sort((a, b) => a - b);
+    if (angles.length === 0) return [];
+    return angles.map((angle, index) => {
+      const next =
+        angles[(index + 1) % angles.length] + (index === angles.length - 1 ? Math.PI * 2 : 0);
+      return angle + (next - angle) / 2;
+    });
+  }
+
+  function computeDesiredPositions(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
+    const positions = new Map(taskAnchors);
+    const orderedIds = new Map(nodes.map((node, index) => [node.id, index]));
+    const topLevelAgents = nodes.filter(isTopLevelAgent);
+    const topLevelRadius =
+      topLevelAgents.length > 1
+        ? AGENT_DISTANCE / (2 * Math.sin(Math.PI / topLevelAgents.length))
+        : 0;
+    topLevelAgents.forEach((node, index) => {
+      const angle = -Math.PI / 2 + (index / Math.max(1, topLevelAgents.length)) * Math.PI * 2;
+      positions.set(node.id, {
+        x: center.x + Math.cos(angle) * topLevelRadius,
+        y: center.y + Math.sin(angle) * topLevelRadius,
+      });
+    });
+
+    const assignments = edges.filter((edge) => edgeType(edge) === 'task-assignment');
+    for (const task of nodes.filter((node) => node.type === 'task')) {
+      const taskPosition = taskAnchors.get(task.id);
+      if (!taskPosition) continue;
+      const assigned = assignments
+        .filter(
+          (edge) => edge.targetId === task.id && nodeById.get(edge.sourceId)?.type === 'agent',
+        )
+        .sort((a, b) => (orderedIds.get(a.sourceId) ?? 0) - (orderedIds.get(b.sourceId) ?? 0));
+      const baseAngle = angleFromCenter(taskPosition, task.id);
+      assigned.forEach((edge, index) => {
+        const angle = baseAngle + (index - (assigned.length - 1) / 2) * AGENT_FAN_STEP;
+        positions.set(edge.sourceId, {
+          x: taskPosition.x + Math.cos(angle) * TASK_AGENT_DISTANCE,
+          y: taskPosition.y + Math.sin(angle) * TASK_AGENT_DISTANCE,
+        });
+      });
+    }
+
+    const assignedAgents = new Set(assignments.map((edge) => edge.sourceId));
+    const delegations = edges.filter(
+      (edge) => edgeType(edge) === 'delegation' && !assignedAgents.has(edge.targetId),
+    );
+    const placeDelegatedAgent = (id: string, visiting = new Set<string>()): Point => {
+      const existing = positions.get(id);
+      if (existing) return existing;
+      if (visiting.has(id)) return center;
+      visiting.add(id);
+      const delegation = delegations.find((edge) => edge.targetId === id);
+      const parent = delegation ? placeDelegatedAgent(delegation.sourceId, visiting) : center;
+      const siblings = delegation
+        ? delegations.filter((edge) => edge.sourceId === delegation.sourceId)
+        : [];
+      const siblingIndex = delegation ? siblings.indexOf(delegation) : 0;
+      const baseAngle = angleFromCenter(parent, id);
+      const angle = baseAngle + (siblingIndex - (siblings.length - 1) / 2) * AGENT_FAN_STEP;
+      const position = {
+        x: parent.x + Math.cos(angle) * AGENT_DISTANCE,
+        y: parent.y + Math.sin(angle) * AGENT_DISTANCE,
+      };
+      positions.set(id, position);
+      return position;
+    };
+    nodes
+      .filter(
+        (node) => node.type === 'agent' && !isTopLevelAgent(node) && !assignedAgents.has(node.id),
+      )
+      .forEach((node) => placeDelegatedAgent(node.id));
+
+    const safeTopLevelAngles = topLevelResourceAngles();
+    const resourceEdges = edges.filter(
+      (edge) => edgeType(edge).startsWith('file-') || edgeType(edge).startsWith('note-'),
+    );
+    for (const owner of nodes.filter((node) => node.type === 'agent')) {
+      const ownerPosition = positions.get(owner.id) ?? center;
+      const resources = resourceEdges
+        .filter((edge) => edge.sourceId === owner.id)
+        .filter(
+          (edge, index, all) =>
+            all.findIndex(({ targetId }) => targetId === edge.targetId) === index,
+        )
+        .sort((a, b) => (orderedIds.get(a.targetId) ?? 0) - (orderedIds.get(b.targetId) ?? 0));
+      const baseAngle = angleFromCenter(ownerPosition, owner.id);
+      resources.forEach((edge, index) => {
+        const angle =
+          isTopLevelAgent(owner) && safeTopLevelAngles.length > 0
+            ? safeTopLevelAngles[index % safeTopLevelAngles.length]
+            : baseAngle + (index - (resources.length - 1) / 2) * RESOURCE_FAN_STEP;
+        positions.set(edge.targetId, {
+          x: ownerPosition.x + Math.cos(angle) * RESOURCE_DISTANCE,
+          y: ownerPosition.y + Math.sin(angle) * RESOURCE_DISTANCE,
+        });
+      });
+    }
+    return positions;
   }
 
   function anchorIdFor(node: GraphNode, edges: GraphEdge[]): string | undefined {
@@ -186,31 +315,46 @@ export function createConstellationLayout({
 
   function configureForces(edges: GraphEdge[]): void {
     const links = buildLinks(edges);
+    desiredPositions = computeDesiredPositions(currentNodes, edges);
     simulation
       .nodes(currentNodes)
       .force(
         'x',
-        forceX<GraphNode>((node) =>
-          node.type === 'task' ? (taskAnchors.get(node.id)?.x ?? center.x) : center.x,
-        ).strength((node) => (node.type === 'task' ? 0.3 : isTopLevelAgent(node) ? 0.18 : 0)),
+        forceX<GraphNode>((node) => desiredPositions.get(node.id)?.x ?? center.x).strength(
+          (node) =>
+            node.type === 'task' || isTopLevelAgent(node)
+              ? 0.5
+              : node.type === 'agent'
+                ? 0.22
+                : 0.16,
+        ),
       )
       .force(
         'y',
-        forceY<GraphNode>((node) =>
-          node.type === 'task' ? (taskAnchors.get(node.id)?.y ?? center.y) : center.y,
-        ).strength((node) => (node.type === 'task' ? 0.3 : isTopLevelAgent(node) ? 0.18 : 0)),
+        forceY<GraphNode>((node) => desiredPositions.get(node.id)?.y ?? center.y).strength(
+          (node) =>
+            node.type === 'task' || isTopLevelAgent(node)
+              ? 0.5
+              : node.type === 'agent'
+                ? 0.22
+                : 0.16,
+        ),
       )
       .force(
         'links',
         forceLink<GraphNode, LayoutLink>(links)
           .id((node) => node.id)
           .distance((link) =>
-            link.kind === 'task-assignment' ? 88 : link.kind === 'delegation' ? 104 : 74,
+            link.kind === 'task-assignment'
+              ? TASK_AGENT_DISTANCE
+              : link.kind === 'delegation'
+                ? AGENT_DISTANCE
+                : RESOURCE_DISTANCE,
           )
           .strength((link) => {
-            if (link.kind === 'task-assignment') return 0.38;
-            if (link.kind === 'delegation') return 0.18;
-            return Math.min(0.34, 0.07 + Math.log2(link.count + 1) * 0.06);
+            if (link.kind === 'task-assignment') return 0.5;
+            if (link.kind === 'delegation') return 0.32;
+            return Math.min(0.5, 0.28 + Math.log2(link.count + 1) * 0.05);
           }),
       );
   }
@@ -255,18 +399,18 @@ export function createConstellationLayout({
         if (positioned.has(anchorNode.id)) anchor = { x: anchorNode.x, y: anchorNode.y };
       }
       const offset = jitter(seed, node.id);
-      node.x = node.fx ?? anchor.x + offset.x;
-      node.y = node.fy ?? anchor.y + offset.y;
+      const desired = desiredPositions.get(node.id);
+      node.x = node.fx ?? desired?.x ?? anchor.x + offset.x;
+      node.y = node.fy ?? desired?.y ?? anchor.y + offset.y;
       node.vx = 0;
       node.vy = 0;
       positioning.delete(node.id);
       positioned.add(node.id);
     };
-    nextNodes.forEach(positionNewNode);
-
     currentNodes = nextNodes;
     nodeById = nextById;
     configureForces(edges);
+    nextNodes.forEach(positionNewNode);
     fingerprint = nextFingerprint;
     simulation.alpha(0.65).restart();
   }
@@ -279,7 +423,7 @@ export function createConstellationLayout({
     update,
     tick(callback) {
       callbacks.add(callback);
-      callback(currentNodes);
+      callback(currentNodes, simulation.alpha());
       return () => callbacks.delete(callback);
     },
     pin(id, x, y) {
@@ -301,6 +445,13 @@ export function createConstellationLayout({
       reheat();
     },
     reheat,
+    settle() {
+      simulation.stop();
+      for (let index = 0; index < 300 && simulation.alpha() >= 0.001; index += 1) {
+        simulation.tick();
+      }
+      callbacks.forEach((callback) => callback(currentNodes, simulation.alpha()));
+    },
     stop() {
       simulation.stop();
     },
@@ -316,10 +467,18 @@ export function createConstellationLayout({
         };
       }
 
-      const minX = Math.min(...currentNodes.map((node) => node.x - NODE_RADII[node.type]));
-      const minY = Math.min(...currentNodes.map((node) => node.y - NODE_RADII[node.type]));
-      const maxX = Math.max(...currentNodes.map((node) => node.x + NODE_RADII[node.type]));
-      const maxY = Math.max(...currentNodes.map((node) => node.y + NODE_RADII[node.type]));
+      const minX = Math.min(
+        ...currentNodes.map((node) => node.x - GRAPH_NODE_DIMENSIONS[node.type].width / 2),
+      );
+      const minY = Math.min(
+        ...currentNodes.map((node) => node.y - GRAPH_NODE_DIMENSIONS[node.type].height / 2),
+      );
+      const maxX = Math.max(
+        ...currentNodes.map((node) => node.x + GRAPH_NODE_DIMENSIONS[node.type].width / 2),
+      );
+      const maxY = Math.max(
+        ...currentNodes.map((node) => node.y + GRAPH_NODE_DIMENSIONS[node.type].height / 2),
+      );
       return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
     },
   };
