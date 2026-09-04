@@ -1212,13 +1212,16 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:update');
 
     await expect(
-      handler!({}, {
-        id: REMOTE.id,
-        label: 'Editing Mac',
-        accent: 'violet',
-        detectedDeviceKind: 'macStudio',
-        deviceIcon: 'cat',
-      }),
+      handler!(
+        {},
+        {
+          id: REMOTE.id,
+          label: 'Editing Mac',
+          accent: 'violet',
+          detectedDeviceKind: 'macStudio',
+          deviceIcon: 'cat',
+        },
+      ),
     ).resolves.toEqual({ status: 'updated', connection: updated });
     expect(store.updateMetadata).toHaveBeenCalledWith(
       REMOTE.id,
