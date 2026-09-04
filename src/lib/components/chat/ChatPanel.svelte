@@ -3618,7 +3618,10 @@
     // Empty chats start at the top and unlock until the first send. Non-empty
     // chats are positioned by the follow action itself. A still-hydrating
     // transcript (empty store, hydration not settled) is left untouched: the
-    // first-hydration auto-scroll effect owns that entry.
+    // first-hydration auto-scroll effect owns that entry. The settled-empty
+    // branch only fires on a remount over an already-settled store (a new
+    // agent's hydration settles after this frame); either way an empty
+    // container sits at 0, so this is a no-op safeguard, not the entry owner.
     const initialScrollFrame = requestAnimationFrame(() => {
       if (!isActive) return;
       if (scrollContainer) {
