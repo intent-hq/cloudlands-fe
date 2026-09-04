@@ -9,25 +9,15 @@ import {
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { newIdempotencyKey } from '$lib/client/live/live-support';
-import { navigateToRoute } from '$lib/utils/navigation.client';
 import type { DraftDelivery, WorkspaceDraft } from '$shared/types';
-import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   selectHasCheckedOnce,
   selectProviderStatusMap,
 } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   beginWorkspaceCreateProgress,
   clearWorkspaceCreateProgress,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
-import {
-  createWorkspaceNavigationState,
-  hydrateWorkspaceNavigation,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
 import { effectsFor } from '../controller/effects';
 import type {
@@ -39,6 +29,7 @@ import type {
   DraftInput,
   FailureKind,
 } from '../controller/types';
+import { adoptPromotedWorkspace, type WorkspaceAdoption } from './adoption';
 
 const SAVE_DEBOUNCE_MS = 250;
 const CONFLICT_CODE = -32009;
@@ -56,7 +47,7 @@ export interface NewWorkspaceSagaDependencies {
   client?: AppClient;
   dispatch: (event: ControllerEvent) => void;
   getState: () => ControllerState;
-  navigate?: typeof navigateToRoute;
+  adopt?: WorkspaceAdoption;
   saveDebounceMs?: number;
 }
 
@@ -262,7 +253,7 @@ function* reconcilePromotion(
       });
       return;
     }
-    if (draft.promotedWorkspaceId) {
+    if (draft.promotedWorkspaceId && draft.initialAgentId) {
       runtime.operationByWorkspace.set(draft.promotedWorkspaceId, effect.operationKey);
       yield* emit(dependencies, {
         type: 'draft.promoted',
@@ -270,6 +261,25 @@ function* reconcilePromotion(
         draftId: draft.id,
         workspaceId: draft.promotedWorkspaceId,
         initialAgentId: draft.initialAgentId,
+      });
+      return;
+    }
+    if (draft.promotedWorkspaceId && !draft.initialAgentId) {
+      const result = yield* call(
+        [client.workspaceDrafts, client.workspaceDrafts.promote],
+        draft.id,
+        draft.revision,
+        { prompt: '', specialist: 'spec-writer' },
+      );
+      rememberPromotion(runtime, result);
+      runtime.operationByWorkspace.set(result.workspace.id, effect.operationKey);
+      yield* emit(dependencies, {
+        type: 'promote.ack',
+        generation: effect.generation,
+        operationKey: effect.operationKey,
+        draft: result.draft,
+        workspaceId: result.workspace.id,
+        initialAgentId: result.initialAgent?.id,
       });
       return;
     }
@@ -296,47 +306,34 @@ function* adopt(
 ): SagaGenerator<void> {
   const client = dependencies.client ?? appClient;
   try {
-    const cached = runtime.promotionByWorkspace.get(effect.workspaceId);
+    let cached = runtime.promotionByWorkspace.get(effect.workspaceId);
+    const state = dependencies.getState();
+    if (!cached?.initialAgent && !state.initialAgentId && state.draft) {
+      cached = yield* call(
+        [client.workspaceDrafts, client.workspaceDrafts.promote],
+        state.draft.id,
+        state.draft.revision,
+        { prompt: '', specialist: 'spec-writer' },
+      );
+      rememberPromotion(runtime, cached);
+    }
     const workspace =
       cached?.workspace ??
       (yield* call([client.workspaces, client.workspaces.get], effect.workspaceId));
     if (!workspace)
       throw Object.assign(new Error('Promoted workspace was not found'), { rpcCode: -32602 });
-    const state = dependencies.getState();
     const initialAgentId = cached?.initialAgent?.id ?? state.initialAgentId ?? undefined;
     const initialAgent =
       cached?.initialAgent ??
       (initialAgentId ? yield* call([client.agents, client.agents.get], initialAgentId) : null);
 
-    yield* put(setWorkspaceEntity(workspace));
-    yield* put(setInitialAgentId(workspace.id, initialAgent?.id ?? null));
-    if (initialAgent) yield* put(bulkUpsertSessions([initialAgent]));
-    yield* put(
-      bootstrapNewWorkspaceLayout(
-        workspace.id,
-        initialAgent?.id ?? null,
-        initialAgent?.name ?? '',
-        true,
-        undefined,
-        workspace.contextLinks,
-      ),
-    );
-    yield* put(
-      hydrateWorkspaceNavigation(
-        workspace.id,
-        createWorkspaceNavigationState(workspace.id, {
-          mainPanel: { type: 'empty' },
-          ui: { hasInitialized: false },
-        }),
-      ),
-    );
-    yield* put(openWorkspaceTab(workspace.id));
-    yield* call(dependencies.navigate ?? navigateToRoute, `/workspace/${workspace.id}`);
     const operationKey = runtime.operationByWorkspace.get(workspace.id);
-    if (operationKey) {
-      yield* put(clearWorkspaceCreateProgress(operationKey));
-      runtime.operationByWorkspace.delete(workspace.id);
-    }
+    yield* call(dependencies.adopt ?? adoptPromotedWorkspace, {
+      workspace,
+      initialAgent,
+      operationKey,
+    });
+    if (operationKey) runtime.operationByWorkspace.delete(workspace.id);
 
     const pending = pendingAttachmentIds(state.input);
     yield* emit(dependencies, {

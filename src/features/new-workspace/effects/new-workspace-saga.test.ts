@@ -12,7 +12,11 @@ import {
   type ControllerState,
 } from '../controller';
 import { FIXED_IDS, FIXED_TIMESTAMP } from '../sandbox/scenarios';
-import { newWorkspaceEffectSaga, type NewWorkspaceSagaDependencies } from '.';
+import {
+  createWorkspaceAdoption,
+  newWorkspaceEffectSaga,
+  type NewWorkspaceSagaDependencies,
+} from '.';
 
 const attachmentMocks = vi.hoisted(() => ({
   redeem: vi.fn(),
@@ -111,7 +115,10 @@ async function execute(
       events.push(event);
       current = reduce(current, event);
     },
-    navigate: vi.fn(),
+    adopt: createWorkspaceAdoption({
+      dispatchBatch: (actions) => actions.forEach((action) => reduxDispatch(action)),
+      navigate: vi.fn(),
+    }),
     saveDebounceMs: 0,
   };
   await runSaga(
@@ -180,6 +187,46 @@ describe('newWorkspaceEffectSaga', () => {
     expect(get).toHaveBeenCalledWith(FIXED_IDS.draft);
     expect(promote).toHaveBeenCalledTimes(1);
     expect(second.state).toMatchObject({
+      phase: 'adopting',
+      workspaceId: FIXED_IDS.workspace,
+      initialAgentId: FIXED_IDS.agent,
+    });
+  });
+
+  it('finalizes an incomplete durable reservation without creating another workspace', async () => {
+    const reserved = draft({
+      revision: 2,
+      phase: 'failed',
+      promotedWorkspaceId: FIXED_IDS.workspace,
+    });
+    const finalized = draft({
+      revision: 3,
+      phase: 'promoted',
+      promotedWorkspaceId: FIXED_IDS.workspace,
+      initialAgentId: FIXED_IDS.agent,
+    });
+    const promote = vi.fn().mockResolvedValue({
+      draft: finalized,
+      workspace: { id: FIXED_IDS.workspace },
+      initialAgent: { id: FIXED_IDS.agent },
+    });
+    const appClient = client({
+      workspaceDrafts: { get: vi.fn().mockResolvedValue(reserved), promote },
+    });
+    const state = {
+      ...baseState(),
+      phase: 'promoting',
+      operationKey: FIXED_IDS.operation,
+      promoteAttempt: 'ack-lost',
+    } as ControllerState;
+
+    const result = await execute(state, appClient);
+
+    expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 2, {
+      prompt: '',
+      specialist: 'spec-writer',
+    });
+    expect(result.state).toMatchObject({
       phase: 'adopting',
       workspaceId: FIXED_IDS.workspace,
       initialAgentId: FIXED_IDS.agent,

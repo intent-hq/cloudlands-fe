@@ -218,14 +218,20 @@ function withData<State extends ControllerState>(state: State, data: ControllerD
 function restoreDraft(state: ControllerState, draft: WorkspaceDraft): ControllerState {
   const preserveInput = hasUnsavedInput(state);
   const data = acknowledge(state, draft, preserveInput);
+  if (draft.promotedWorkspaceId) {
+    return adopting(
+      data as ControllerState,
+      draft.promotedWorkspaceId,
+      draft.initialAgentId,
+      draft,
+    );
+  }
   if (draft.phase === 'promoted') {
-    return draft.promotedWorkspaceId
-      ? adopting(data as ControllerState, draft.promotedWorkspaceId, draft.initialAgentId, draft)
-      : failed(
-          data as ControllerState,
-          'draft',
-          draft.lastError ?? 'Promoted draft has no workspace',
-        );
+    return failed(
+      data as ControllerState,
+      'draft',
+      draft.lastError ?? 'Promoted draft has no workspace',
+    );
   }
   if (draft.phase === 'promoting') {
     return {
