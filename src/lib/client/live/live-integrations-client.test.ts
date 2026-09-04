@@ -474,6 +474,15 @@ describe('LiveIntegrationsClient.githubPullRequest (github.pulls.get, §5.27)', 
     expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('closed');
   });
 
+  it("collapses a closed, unmerged draft → 'closed' (GitHub keeps draft: true after close)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      pull: { ...PULL_WIRE, state: 'closed', draft: true, merged: false },
+    });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('closed');
+  });
+
   it('throws when the daemon reports no such PR (pull: null)', async () => {
     mockedRequest.mockResolvedValueOnce({ pull: null });
     const client = new LiveIntegrationsClient();

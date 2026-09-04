@@ -63,11 +63,16 @@ function abortError(): Error {
 }
 
 function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(abortError());
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(abortError());
-    signal.addEventListener('abort', onAbort, { once: true });
+    // Observe the shared promise before any early exit so a rejection it
+    // settles with later is never left unhandled.
     promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 

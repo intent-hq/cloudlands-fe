@@ -71,11 +71,15 @@ interface GithubIssueWire {
   user: GithubUserWire;
 }
 
-/** Collapse the wire's `state` + `merged` + `draft` into the FE's single state. */
+/**
+ * Collapse the wire's `state` + `merged` + `draft` into the FE's single state.
+ * GitHub keeps `draft: true` on a closed draft PR, so `closed` wins over `draft`.
+ */
 function pullRequestState(pull: GithubPullWire): GitHubPullRequestState {
   if (pull.merged === true) return "merged";
+  if (pull.state === "closed") return "closed";
   if (pull.draft === true) return "draft";
-  return pull.state === "closed" ? "closed" : "open";
+  return "open";
 }
 
 export class LiveIntegrationsClient implements IntegrationsClient {

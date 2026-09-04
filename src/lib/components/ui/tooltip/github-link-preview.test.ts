@@ -160,6 +160,32 @@ describe('loadGitHubLinkPreview', () => {
       loadGitHubLinkPreview(PR_URL, { client, signal: controller.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('a pre-aborted hover still observes the shared request, so its failure is not an unhandled rejection', async () => {
+    vi.useRealTimers();
+    const client = makeClient();
+    let fail!: (reason: Error) => void;
+    client.githubPullRequest.mockImplementationOnce(
+      () => new Promise<GitHubPullRequestDetails>((_, reject) => (fail = reject)),
+    );
+    const onUnhandled = vi.fn();
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const controller = new AbortController();
+      controller.abort();
+      await expect(
+        loadGitHubLinkPreview(PR_URL, { client, signal: controller.signal }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      fail(new Error('GitHub is not configured.'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onUnhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(client.githubPullRequest).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('createPreviewRequest (stale-response guard)', () => {
