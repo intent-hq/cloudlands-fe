@@ -746,8 +746,8 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'Providers', 'page'],
-    ['quickActions.defaultModel', 'quickActions.defaultModel', 'Providers', 'page'],
+    ['default-model', 'utility-default-model', 'Providers', 'page'],
+    ['quickActions.defaultModel', 'utility-default-model', 'Providers', 'page'],
     ['global-instructions', 'global-instructions', 'Agent Behavior', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
     ['updates', 'updates', 'App Behavior', 'page'],

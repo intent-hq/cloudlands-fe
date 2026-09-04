@@ -28,11 +28,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Create-workspace flow.',
   },
   settingsTarget({
-    id: 'quickActions.defaultModel',
+    id: 'utility-default-model',
     tab: 'providers',
-    // The hash is UI-only, so the pre-rename alias stays resolvable for chat
+    // The hash is UI-only, so the pre-rename aliases stay resolvable for chat
     // NavLinks and bookmarks minted before monorepo#1729.
-    hashAliases: ['default-model', 'quickActions.defaultModel', 'backgroundAgents.defaultModel'],
+    hashAliases: [
+      'utility-default-model',
+      'default-model',
+      'quickActions.defaultModel',
+      'backgroundAgents.defaultModel',
+    ],
     scrollSelector: '#utility-default-model',
     highlightSelector: '[data-highlight-id="utility-default-model"]',
     label: 'Settings: Default model',
@@ -99,7 +104,6 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['workspace', 'Workspace', 'Workspace defaults.', 'setup'],
     ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'setup'],
     ['workspace-api', 'Workspace API', 'Workspace API output settings.', 'advanced'],
-    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'providers'],
     ['notifications', 'Notifications', 'Notification preferences.', 'app-behavior'],
     ['updates', 'Updates', 'Application update preferences.', 'app-behavior'],
     ['open-in', 'Open In', 'External editor/app launch preferences.', 'app-behavior'],

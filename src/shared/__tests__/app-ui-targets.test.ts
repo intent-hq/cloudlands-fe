@@ -40,7 +40,6 @@ describe('app UI targets registry', () => {
       'github-link-action': 'app-behavior',
       'agent-features': 'agent-behavior',
       'global-instructions': 'agent-behavior',
-      'quickActions.defaultModel': 'providers',
       appearance: 'display',
       'font-style': 'display',
       language: 'display',
@@ -104,7 +103,7 @@ describe('app UI targets registry', () => {
     const target = resolveHashToTarget('default-model');
 
     expect(target).toMatchObject({
-      id: 'quickActions.defaultModel',
+      id: 'utility-default-model',
       tab: 'providers',
       scrollSelector: '#utility-default-model',
       highlightSelector: '[data-highlight-id="utility-default-model"]',
@@ -130,7 +129,7 @@ describe('app UI targets registry', () => {
   // backgroundAgents.* → quickActions.* rename must keep resolving.
   it('still resolves the pre-rename backgroundAgents.defaultModel hash', () => {
     expect(resolveHashToTarget('backgroundAgents.defaultModel')).toMatchObject({
-      id: 'quickActions.defaultModel',
+      id: 'utility-default-model',
     });
     expect(isResolvableNavTarget('/settings#backgroundAgents.defaultModel')).toBe(true);
   });
