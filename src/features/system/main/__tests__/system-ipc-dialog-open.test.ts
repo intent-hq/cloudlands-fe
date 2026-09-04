@@ -83,7 +83,7 @@ describe('dialog:open IPC', () => {
     });
   });
 
-  it('opens a file-only native dialog when mode is file', async () => {
+  it('opens a file-only native dialog when mode is file, keeping picked symlinks unresolved', async () => {
     const focusedWindow = { id: 1 };
     electronMocks.getFocusedWindow.mockReturnValue(focusedWindow);
     electronMocks.showOpenDialog.mockResolvedValue({
@@ -101,10 +101,12 @@ describe('dialog:open IPC', () => {
     );
 
     expect(result).toEqual(['/tmp/key.pem']);
+    // noResolveAliases: a picked symlink (e.g. ~/.local/bin/claude) must be
+    // stored as-is, not as its versioned target (monorepo#4352).
     expect(electronMocks.showOpenDialog).toHaveBeenCalledExactlyOnceWith(focusedWindow, {
       title: 'Choose a file',
       defaultPath: '/tmp',
-      properties: ['openFile'],
+      properties: ['openFile', 'noResolveAliases'],
     });
   });
 

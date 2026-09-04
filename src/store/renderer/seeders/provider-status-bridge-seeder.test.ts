@@ -1007,6 +1007,16 @@ describe('provider-status-bridge-seeder', () => {
               npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
             },
             {
+              id: 'pi',
+              displayName: 'Pi',
+              command: 'npx',
+              installed: true,
+              resolvedPath: '/usr/local/bin/npx',
+              hasNpxFallback: false,
+              npxOnly: true,
+              npxPackage: 'pi-acp@0.0.33',
+            },
+            {
               id: 'grok',
               displayName: 'Grok',
               command: 'grok',
@@ -1055,11 +1065,16 @@ describe('provider-status-bridge-seeder', () => {
           paths: {
             auggie: '/usr/local/bin/auggie',
             'claude-code': '/usr/local/bin/npx',
+            pi: '/usr/local/bin/npx',
             grok: '/home/user/.grok/bin/grok',
             unsloth: '/home/user/.opencode/bin/opencode',
             codex: null,
           },
           secondaryPaths: { unsloth: '/usr/local/bin/unsloth' },
+          // Only npx-only providers whose path override the daemon honors
+          // carry their pinned package spec (their path is npx, not the
+          // adapter); pi stays pinned-npx-only and is excluded.
+          npxPackages: { 'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3' },
           // npx rides the same discovery round-trip so the onboarding bulk
           // check can read it without the aggregated auth sweep.
           npx: { resolvedPath: '/usr/local/bin/npx', version: '10.2.4', versionOk: true },
@@ -1100,6 +1115,7 @@ describe('provider-status-bridge-seeder', () => {
         data: {
           paths: { unsloth: '/home/user/.opencode/bin/opencode' },
           secondaryPaths: { unsloth: null },
+          npxPackages: {},
           npx: { resolvedPath: null, version: null, versionOk: false },
         },
       });
@@ -1112,7 +1128,7 @@ describe('provider-status-bridge-seeder', () => {
 
       expect(response).toEqual({
         success: true,
-        data: { paths: {}, secondaryPaths: {} },
+        data: { paths: {}, secondaryPaths: {}, npxPackages: {} },
       });
     });
   });
