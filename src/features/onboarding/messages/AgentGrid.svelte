@@ -96,9 +96,6 @@
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
 
-  /** Short descriptions for each provider */
-  const PROVIDER_DESCRIPTIONS: Record<string, string> = {};
-
   /**
    * Install command + docs URL for each provider.
    * Shown on the card so users can copy/run them without leaving the app.
@@ -212,7 +209,6 @@
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
-          description: PROVIDER_DESCRIPTIONS[p.id] ?? '',
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,
