@@ -149,12 +149,6 @@
       <div class="flex items-center gap-1.5 min-w-0">
         <!-- <Fa icon={faChevronLeft} class="w-2.5! h-2.5! text-ghost opacity-50 shrink-0" /> -->
         <div class="relative inline-flex min-w-0 items-center">
-          <span
-            aria-hidden="true"
-            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
-              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
-              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
-          ></span>
           {#if isEditingTitle}
             <input
               bind:this={titleInputRef}
@@ -177,6 +171,12 @@
               {title}
             </button>
           {/if}
+          <span
+            aria-hidden="true"
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+          ></span>
         </div>
         {#if subtitle}
           <span class="text-xs text-subtle truncate">{subtitle}</span>

@@ -118,15 +118,6 @@
 </script>
 
 <div class={cn('relative inline-flex items-center min-w-0 shrink whitespace-nowrap', className)}>
-  <span
-    aria-hidden="true"
-    class={cn(
-      'pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
-      isEditing
-        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
-        : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent',
-    )}
-  ></span>
   {#if isEditing}
     <input
       bind:this={inputRef}
@@ -163,6 +154,15 @@
       {value || placeholder}
     </button>
   {/if}
+  <span
+    aria-hidden="true"
+    class={cn(
+      'pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
+      isEditing
+        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+        : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent',
+    )}
+  ></span>
 </div>
 
 <style>
