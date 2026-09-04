@@ -162,6 +162,12 @@ describe('payload schema', () => {
       kind: 'record',
       record: { detectedDeviceKind: null, deviceIcon: 'auto' },
     });
+    legacy.detectedDeviceKind = 'robot';
+    legacy.deviceIcon = 'robot';
+    expect(parsePayload(JSON.stringify(legacy))).toMatchObject({
+      kind: 'record',
+      record: { detectedDeviceKind: null, deviceIcon: 'robot' },
+    });
   });
 
   it('round-trips a live record', () => {

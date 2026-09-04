@@ -89,9 +89,9 @@ import {
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
-  isDeviceKind,
+  isDetectedDeviceKind,
   type ConnectionRecord,
-  type DeviceKind,
+  type DetectedDeviceKind,
 } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
@@ -1243,10 +1243,10 @@ async function captureRemoteHostname(id: string): Promise<void> {
   }
 }
 
-function extractDeviceKind(result: unknown): DeviceKind | null {
+function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
   if (!result || typeof result !== 'object') return null;
   const value = (result as { deviceKind?: unknown }).deviceKind;
-  return isDeviceKind(value) ? value : null;
+  return isDetectedDeviceKind(value) ? value : null;
 }
 
 /** Capture the synthesized local record's kind from the connected daemon. */

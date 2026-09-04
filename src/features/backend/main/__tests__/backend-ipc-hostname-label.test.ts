@@ -210,6 +210,17 @@ describe('openBackendWindow hostname labeling', () => {
     expect(vi.mocked(app.emit).mock.calls.some(([e]) => e === 'connections-changed')).toBe(true);
   });
 
+  it('rejects override-only device kinds reported by host.status', async () => {
+    hostStatus.value = { hostname: 'studio.local', deviceKind: 'robot' };
+    const mod = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('remote-1', null),
+    );
+  });
+
   it('prefers a trimmed prettyHostname over hostname when host.status carries both', async () => {
     hostStatus.value = {
       hostname: 'studio.local',
