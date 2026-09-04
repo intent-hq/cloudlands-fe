@@ -39,6 +39,7 @@
     selectSidecarRunLog,
     selectSidecarRunLogPending,
     selectSidecarRunLogError,
+    selectDaemonUpdateDisconnectedAt,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     spawnSidecarRequested,
@@ -57,9 +58,11 @@
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
+  const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
   const transport$ = selectDaemonTransport();
   const reconnectAttempts$ = selectReconnectAttempts();
   const sidecarGaveUp$ = selectSidecarGaveUp();
@@ -83,6 +86,8 @@
 
   // Presentational grace-period latch: health 'down' arms a timer; a recovery
   // before it fires cancels the overlay entirely (no flash on quick blips).
+  // An update-caused drop defers instead to the end of DaemonUpdatingOverlay's
+  // countdown — that window replaces the grace period, it is not added to it.
   let visible = $state(false);
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
   const isSandboxPage = $derived(
@@ -92,12 +97,20 @@
   );
 
   $effect(() => {
+    const updateDisconnectedAt = $updateDisconnectedAt$;
     if ($health$ === 'down' && !isSandboxPage) {
       if (!visible && graceTimer === null) {
-        graceTimer = setTimeout(() => {
-          graceTimer = null;
-          visible = true;
-        }, DAEMON_STOPPED_GRACE_MS);
+        const updatingRemaining =
+          updateDisconnectedAt === null
+            ? 0
+            : updateDisconnectedAt + DAEMON_UPDATING_COUNTDOWN_MS - Date.now();
+        graceTimer = setTimeout(
+          () => {
+            graceTimer = null;
+            visible = true;
+          },
+          updatingRemaining > 0 ? updatingRemaining : DAEMON_STOPPED_GRACE_MS,
+        );
       }
     } else {
       if (graceTimer !== null) {

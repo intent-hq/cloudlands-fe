@@ -108,6 +108,9 @@ vi.mock('$features/stats/StatsOverlay.svelte', async () => ({
 vi.mock('$features/daemon-status/DaemonStoppedOverlay.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
+vi.mock('$features/daemon-status/DaemonUpdatingOverlay.svelte', async () => ({
+  default: (await import('./mocks/Marker.svelte')).default,
+}));
 vi.mock('$lib/components/terminal/RootQuakeTerminalOverlay.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));

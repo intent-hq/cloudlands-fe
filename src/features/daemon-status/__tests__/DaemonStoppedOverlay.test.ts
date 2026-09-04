@@ -98,6 +98,7 @@ vi.mock('$app/stores', () => ({
 }));
 
 import DaemonStoppedOverlay, { DAEMON_STOPPED_GRACE_MS } from '../DaemonStoppedOverlay.svelte';
+import { DAEMON_UPDATING_COUNTDOWN_MS } from '../DaemonUpdatingOverlay.svelte';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -246,6 +247,43 @@ describe('DaemonStoppedOverlay', () => {
     appStore.dispatch(connectionStatusChanged('connected', sidecarTransport));
     await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS * 2);
     expect(overlay()).toBeNull();
+  });
+
+  describe('update-caused disconnect (defers to DaemonUpdatingOverlay)', () => {
+    async function dropForUpdate() {
+      bootTransport = externalTransport;
+      dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
+      await vi.advanceTimersByTimeAsync(10);
+      dispatchAndFlush(
+        connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+      );
+    }
+
+    it('stays hidden through the updating countdown, then appears without an extra grace period', async () => {
+      render(DaemonStoppedOverlay);
+      await dropForUpdate();
+
+      await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
+      expect(overlay()).toBeNull();
+      await vi.advanceTimersByTimeAsync(DAEMON_UPDATING_COUNTDOWN_MS - DAEMON_STOPPED_GRACE_MS - 150);
+      expect(overlay()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(overlay()).toBeTruthy();
+      // Once shown it is the ordinary external-mode posture with its recovery actions.
+      expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
+    });
+
+    it('never appears when the daemon reconnects during the countdown', async () => {
+      render(DaemonStoppedOverlay);
+      await dropForUpdate();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(overlay()).toBeNull();
+
+      dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
+      await vi.advanceTimersByTimeAsync(DAEMON_UPDATING_COUNTDOWN_MS + DAEMON_STOPPED_GRACE_MS);
+      expect(overlay()).toBeNull();
+    });
   });
 
   it('appears after the grace period and auto-dismisses on reconnect', async () => {
