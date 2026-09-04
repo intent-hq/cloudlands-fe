@@ -68,9 +68,10 @@ test.describe('Code Block Line Positioning', () => {
     await page.waitForTimeout(200);
 
     // Test the second code block which has a very long line
-    const result = await page.evaluate(() =>
-      // @ts-expect-error - Test harness function not typed
-      window.testCodeBlockPositioning(1), // Second code block
+    const result = await page.evaluate(
+      () =>
+        // @ts-expect-error - Test harness function not typed
+        window.testCodeBlockPositioning(1), // Second code block
     );
 
     // We should have 3 logical lines (from the source code)
@@ -103,9 +104,10 @@ test.describe('Code Block Line Positioning', () => {
     await page.waitForSelector('code', { timeout: 5000 });
 
     // Test the third code block (SQL)
-    const result = await page.evaluate(() =>
-      // @ts-expect-error - Test harness function not typed
-      window.testCodeBlockPositioning(2), // Third code block
+    const result = await page.evaluate(
+      () =>
+        // @ts-expect-error - Test harness function not typed
+        window.testCodeBlockPositioning(2), // Third code block
     );
 
     // Count the actual lines in the SQL code
@@ -154,9 +156,10 @@ ORDER BY type, created_at;`.split('\n');
     await page.waitForSelector('code', { timeout: 5000 });
 
     // Test the fourth code block (no attribution)
-    const result = await page.evaluate(() =>
-      // @ts-expect-error - Test harness function not typed
-      window.testCodeBlockPositioning(3), // Fourth code block
+    const result = await page.evaluate(
+      () =>
+        // @ts-expect-error - Test harness function not typed
+        window.testCodeBlockPositioning(3), // Fourth code block
     );
 
     // Should still measure all lines correctly even without attribution

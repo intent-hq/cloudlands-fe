@@ -12,11 +12,7 @@ import { describe, it, expect } from 'vitest';
 // Updated to accept ALL context items with imageData/imageMimeType (not just inline-image type)
 function extractImageBlocks(contextItems: any[]): any[] {
   return contextItems
-    .filter(
-      (item) =>
-        typeof item.imageData === 'string' &&
-        typeof item.imageMimeType === 'string',
-    )
+    .filter((item) => typeof item.imageData === 'string' && typeof item.imageMimeType === 'string')
     .map((item) => ({
       type: 'image' as const,
       data: item.imageData,
@@ -39,14 +35,14 @@ function extractFileBlocks(contextItems: any[]): any[] {
 }
 
 describe('ChatPanel imageBlocks transformation helper (STAB-7)', () => {
-
   it('transforms file-type context items with imageData into imageBlocks', () => {
     const contextItems = [
       {
         id: 'file-upload-123-screenshot.png',
         type: 'file' as const,
         label: 'screenshot.png',
-        imageData: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        imageData:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         imageMimeType: 'image/png',
       },
       { id: 'ctx-1', type: 'file' as const, label: 'README.md' },

@@ -174,4 +174,3 @@ describe('missingPendingProposalMessageIds', () => {
     ).toEqual(['m2']);
   });
 });
-

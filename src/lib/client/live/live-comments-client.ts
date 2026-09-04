@@ -15,7 +15,7 @@ import type {
   CommentType,
   CommentV2,
   AuthorType as CommentAuthorType,
-} from "$features/comments/comment-types-v2";
+} from '$features/comments/comment-types-v2';
 import type {
   CommentAddParams,
   CommentRespondParams,
@@ -23,15 +23,15 @@ import type {
   MutationResult,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
-import { createDeltaSubscription } from "./delta-subscription";
-import type { TypedChannelDescriptor } from "./delta-subscription";
-import { newIdempotencyKey, resolveNoteWorkspaceId, runMutation } from "./live-support";
+} from '../app-client';
+import { backendRequest } from './backend-transport';
+import { createDeltaSubscription } from './delta-subscription';
+import type { TypedChannelDescriptor } from './delta-subscription';
+import { newIdempotencyKey, resolveNoteWorkspaceId, runMutation } from './live-support';
 
 /** Coerce the daemon's §8.7 reaction map into the renderer `Record<string, string[]>`. */
 function normalizeReactions(raw: unknown): Record<string, string[]> | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
+  if (!raw || typeof raw !== 'object') return undefined;
   return Object.fromEntries(
     Object.entries(raw as Record<string, unknown>).map(([key, value]) => [
       key,
@@ -42,18 +42,18 @@ function normalizeReactions(raw: unknown): Record<string, string[]> | undefined 
 
 /** Map the daemon's optional nested `anchorContext { before, after }` (§8.7). */
 function normalizeAnchorContext(raw: unknown): { before: string; after: string } | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
+  if (!raw || typeof raw !== 'object') return undefined;
   const ctx = raw as { before?: unknown; after?: unknown };
-  return { before: String(ctx.before ?? ""), after: String(ctx.after ?? "") };
+  return { before: String(ctx.before ?? ''), after: String(ctx.after ?? '') };
 }
 
 /** Map the daemon's nested suggestion diff `{ original, proposed }` (§8.7). */
 function normalizeSuggestionDiff(raw: unknown): { original: string; proposed: string } {
-  const diff = (raw && typeof raw === "object" ? raw : {}) as {
+  const diff = (raw && typeof raw === 'object' ? raw : {}) as {
     original?: unknown;
     proposed?: unknown;
   };
-  return { original: String(diff.original ?? ""), proposed: String(diff.proposed ?? "") };
+  return { original: String(diff.original ?? ''), proposed: String(diff.proposed ?? '') };
 }
 
 /**
@@ -70,18 +70,18 @@ function normalizeComment(
   workspaceId?: string,
 ): CommentV2 {
   const now = new Date().toISOString();
-  const id = String(raw.id ?? "");
+  const id = String(raw.id ?? '');
   // Post-#729 replies carry no anchor on the wire — they anchor through their
   // thread root (PROTOCOL §5.3 "Reply anchoring"), so no point anchor is
   // synthesized for them (monorepo#749). Anchorless roots (thread-summary
   // proxies, legacy rows) keep the point fallback.
-  const isReply = typeof raw.parentId === "string" && raw.parentId.length > 0;
+  const isReply = typeof raw.parentId === 'string' && raw.parentId.length > 0;
   const anchor =
-    raw.anchor && typeof raw.anchor === "object"
+    raw.anchor && typeof raw.anchor === 'object'
       ? (raw.anchor as CommentAnchor)
       : isReply
         ? undefined
-        : ({ type: "point" } as CommentAnchor);
+        : ({ type: 'point' } as CommentAnchor);
   const anchorContext = normalizeAnchorContext(raw.anchorContext);
   const reactions = normalizeReactions(raw.reactions);
 
@@ -90,34 +90,34 @@ function normalizeComment(
     threadId: String(raw.threadId ?? id),
     noteId: String(raw.noteId ?? noteId),
     ...(workspaceId ? { workspaceId } : {}),
-    content: String(raw.content ?? ""),
-    author: String(raw.author ?? ""),
-    authorType: (raw.authorType === "agent" ? "agent" : "user") as CommentAuthorType,
-    status: (typeof raw.status === "string" ? raw.status : "open") as CommentStatus,
+    content: String(raw.content ?? ''),
+    author: String(raw.author ?? ''),
+    authorType: (raw.authorType === 'agent' ? 'agent' : 'user') as CommentAuthorType,
+    status: (typeof raw.status === 'string' ? raw.status : 'open') as CommentStatus,
     ...(anchor ? { anchor } : {}),
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
-    ...(typeof raw.parentId === "string" ? { parentId: raw.parentId } : {}),
+    ...(typeof raw.parentId === 'string' ? { parentId: raw.parentId } : {}),
     ...(raw.anchorText !== undefined || raw.section !== undefined
-      ? { anchorText: String(raw.anchorText ?? raw.section ?? "") }
+      ? { anchorText: String(raw.anchorText ?? raw.section ?? '') }
       : {}),
     ...(anchorContext ? { anchorContext } : {}),
-    ...(typeof raw.isOrphaned === "boolean" ? { isOrphaned: raw.isOrphaned } : {}),
+    ...(typeof raw.isOrphaned === 'boolean' ? { isOrphaned: raw.isOrphaned } : {}),
     ...(reactions ? { reactions } : {}),
   };
 
-  const type = (typeof raw.type === "string" ? raw.type : "comment") as CommentType;
+  const type = (typeof raw.type === 'string' ? raw.type : 'comment') as CommentType;
   switch (type) {
-    case "suggestion":
+    case 'suggestion':
       return { ...base, type, suggestionDiff: normalizeSuggestionDiff(raw.suggestionDiff) };
-    case "session":
-      return { ...base, type, agentId: String(raw.agentId ?? "") };
-    case "change-request":
-    case "question":
+    case 'session':
+      return { ...base, type, agentId: String(raw.agentId ?? '') };
+    case 'change-request':
+    case 'question':
       return { ...base, type };
-    case "comment":
+    case 'comment':
     default:
-      return { ...base, type: "comment" };
+      return { ...base, type: 'comment' };
   }
 }
 
@@ -129,7 +129,7 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
     // populates each `threads[].comments` when `includeComments` is set. The
     // renderer needs a flat `CommentV2[]`, so request the nested comments and
     // flatten them in order.
-    const result = await backendRequest<{ threads?: unknown[] }>("comment.list", {
+    const result = await backendRequest<{ threads?: unknown[] }>('comment.list', {
       workspaceId,
       noteId,
       includeComments: true,
@@ -139,7 +139,7 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
       : [];
     const out: CommentV2[] = [];
     for (const t of threads) {
-      if (!t || typeof t !== "object") continue;
+      if (!t || typeof t !== 'object') continue;
       const thread = t as { comments?: unknown[] };
       if (Array.isArray(thread.comments)) {
         for (const c of thread.comments) {
@@ -175,7 +175,7 @@ export class LiveCommentsClient implements CommentsClient {
   async add(noteId: string, params: CommentAddParams): Promise<MutationResult> {
     return this.runCommentMutation(
       noteId,
-      "comment.add",
+      'comment.add',
       {
         searchContext: params.searchContext,
         commentTarget: params.commentTarget,
@@ -193,7 +193,7 @@ export class LiveCommentsClient implements CommentsClient {
   async respond(noteId: string, params: CommentRespondParams): Promise<MutationResult> {
     return this.runCommentMutation(
       noteId,
-      "comment.respond",
+      'comment.respond',
       {
         ...(params.threadId !== undefined ? { threadId: params.threadId } : {}),
         ...(params.commentId !== undefined ? { commentId: params.commentId } : {}),
@@ -212,7 +212,7 @@ export class LiveCommentsClient implements CommentsClient {
   }
 
   async delete(noteId: string, commentId: string, workspaceId?: string): Promise<MutationResult> {
-    return this.runCommentMutation(noteId, "comment.delete", { commentId }, workspaceId);
+    return this.runCommentMutation(noteId, 'comment.delete', { commentId }, workspaceId);
   }
 
   /**
@@ -259,8 +259,8 @@ export class LiveCommentsClient implements CommentsClient {
     // yields it (registration — and thus every push — happens after).
     let channelWorkspaceId = workspaceId;
     const channel: TypedChannelDescriptor = {
-      subscribeMethod: "comment.subscribe",
-      unsubscribeMethod: "comment.unsubscribe",
+      subscribeMethod: 'comment.subscribe',
+      unsubscribeMethod: 'comment.unsubscribe',
       ...(workspaceId
         ? { params: { workspaceId, noteId } }
         : {
@@ -287,7 +287,7 @@ export class LiveCommentsClient implements CommentsClient {
     };
     return createDeltaSubscription<CommentV2>({
       channel,
-      getId: (raw) => String(raw.id ?? ""),
+      getId: (raw) => String(raw.id ?? ''),
       normalize: (raw) => normalizeComment(raw, noteId, channelWorkspaceId),
       handler,
     });

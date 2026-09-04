@@ -11,4 +11,3 @@
 </script>
 
 {@render children()}
-

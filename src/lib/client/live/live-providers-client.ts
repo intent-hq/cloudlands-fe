@@ -17,9 +17,9 @@ import {
   ProviderCatalogRequestSchema,
   ProviderCatalogResponseSchema,
   type ProviderCatalogResult,
-} from "$shared/provider-catalog";
-import type { AppClient, ProvidersClient } from "../app-client";
-import { backendRequest } from "./backend-transport";
+} from '$shared/provider-catalog';
+import type { AppClient, ProvidersClient } from '../app-client';
+import { backendRequest } from './backend-transport';
 
 export class LiveProvidersClient implements ProvidersClient {
   async catalog(): Promise<ProviderCatalogResult> {
@@ -32,7 +32,6 @@ export class LiveProvidersClient implements ProvidersClient {
 }
 
 // Tied to AppClient["providers"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["providers"] | undefined = undefined as
-  | LiveProvidersClient
-  | undefined;
+const _interfaceCheck: AppClient['providers'] | undefined = undefined as
+  LiveProvidersClient | undefined;
 void _interfaceCheck;

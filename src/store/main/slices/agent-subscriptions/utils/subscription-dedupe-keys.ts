@@ -1,6 +1,9 @@
-const KEY_SEPARATOR = "\u001f";
+const KEY_SEPARATOR = '\u001f';
 
-export function buildWorkspaceScopedSubscriptionKey(workspaceId: string, subscriptionId: string): string {
+export function buildWorkspaceScopedSubscriptionKey(
+  workspaceId: string,
+  subscriptionId: string,
+): string {
   return [workspaceId, subscriptionId].join(KEY_SEPARATOR);
 }
 

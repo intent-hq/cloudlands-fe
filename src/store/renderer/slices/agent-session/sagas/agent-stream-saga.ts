@@ -1,12 +1,5 @@
 import { buffers } from 'redux-saga';
-import {
-  actionChannel,
-  call,
-  flush,
-  put,
-  take,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { actionChannel, call, flush, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import {
@@ -34,8 +27,12 @@ const logger = createLogger('AgentStreamSaga');
 function isStreamUpdateAction(
   action: unknown,
 ): action is ReturnType<typeof agentStreamUpdateReceived> {
-  return !!action && typeof action === 'object' && 'type' in action &&
-    action.type === agentStreamUpdateReceived.type;
+  return (
+    !!action &&
+    typeof action === 'object' &&
+    'type' in action &&
+    action.type === agentStreamUpdateReceived.type
+  );
 }
 
 function interruptedMetadata(
@@ -52,9 +49,7 @@ function interruptedMetadata(
  * (PROTOCOL §7.3 — refusal / max_tokens / max_turn_requests notice). Mirrors
  * what the daemon persists on the row, so live and reloaded transcripts agree.
  */
-function finalizedMetadata(
-  payload: AgentStreamUpdatePayload,
-): Record<string, unknown> | undefined {
+function finalizedMetadata(payload: AgentStreamUpdatePayload): Record<string, unknown> | undefined {
   const interrupted = interruptedMetadata(payload);
   const finishReason =
     payload.eventType === 'complete' && payload.finishReason
@@ -135,7 +130,9 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
 
   if (eventType === 'error' || eventType === 'timeout') {
     if (existing) {
-      yield* put(updateMessage(agentId, existing.id, { isStreaming: false, streamingComplete: true }));
+      yield* put(
+        updateMessage(agentId, existing.id, { isStreaming: false, streamingComplete: true }),
+      );
     }
     yield* call(clearSessionStreaming, agentId, eventType);
     yield* reportAppliedStoreState(payload, 'update-applied');
@@ -188,7 +185,9 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
   }
 
   if (nextBlocks && nextBlocks !== existing.contentBlocks) {
-    yield* put(updateMessage(agentId, existing.id, { contentBlocks: nextBlocks, isStreaming: true }));
+    yield* put(
+      updateMessage(agentId, existing.id, { contentBlocks: nextBlocks, isStreaming: true }),
+    );
     yield* reportAppliedStoreState(payload, 'update-applied');
     return;
   }

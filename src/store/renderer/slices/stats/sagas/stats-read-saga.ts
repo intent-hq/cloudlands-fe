@@ -4,17 +4,11 @@ import { appClient } from '$lib/client';
 import type { UsageStatsResult } from '$lib/client/app-client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import {
-  loadUsageStatsRequested,
-  usageStatsFailed,
-  usageStatsLoaded,
-} from '../stats-slice';
+import { loadUsageStatsRequested, usageStatsFailed, usageStatsLoaded } from '../stats-slice';
 
 const logger = createLogger('StatsReadSaga');
 
-function* fetchUsageStats(
-  action: ReturnType<typeof loadUsageStatsRequested>,
-): SagaGenerator<void> {
+function* fetchUsageStats(action: ReturnType<typeof loadUsageStatsRequested>): SagaGenerator<void> {
   const [mode, key, tzOffsetMinutes] = action.payload;
   try {
     const data: UsageStatsResult = yield* call(

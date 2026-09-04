@@ -13,10 +13,9 @@ export const LIVE_STREAM_PHASE_GRACE_MS = 500;
  * phases the indicator renders. `live` (hydrated) and `null` (no standing
  * subscription) hide it.
  */
-export function isPreLivePhase(phase: LiveStreamPhase | null): phase is Exclude<
-  LiveStreamPhase,
-  'live'
-> {
+export function isPreLivePhase(
+  phase: LiveStreamPhase | null,
+): phase is Exclude<LiveStreamPhase, 'live'> {
   return (
     phase === 'connecting' ||
     phase === 'awaiting-snapshot' ||

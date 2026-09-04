@@ -104,14 +104,18 @@ describe('Preload IPC Allowlist Parity', () => {
       for (const channel of REQUIRED_SUBSCRIPTION_CHANNELS) {
         // These channels MUST be in both files — the pre-fix bug was index.ts missing them
         expect(indexAllowed, `index.ts ALLOWED_CHANNELS missing ${channel}`).toContain(channel);
-        expect(templateAllowed, `index.template.ts ALLOWED_CHANNELS missing ${channel}`).toContain(channel);
+        expect(templateAllowed, `index.template.ts ALLOWED_CHANNELS missing ${channel}`).toContain(
+          channel,
+        );
       }
     });
 
     it('EVENT_CHANNELS should include all required subscription channels in both files', () => {
       for (const channel of REQUIRED_SUBSCRIPTION_CHANNELS) {
         expect(indexEvents, `index.ts EVENT_CHANNELS missing ${channel}`).toContain(channel);
-        expect(templateEvents, `index.template.ts EVENT_CHANNELS missing ${channel}`).toContain(channel);
+        expect(templateEvents, `index.template.ts EVENT_CHANNELS missing ${channel}`).toContain(
+          channel,
+        );
       }
     });
 
@@ -127,9 +131,7 @@ describe('Preload IPC Allowlist Parity', () => {
         subscriptionChannelPattern.test(ch),
       );
 
-      const missingFromIndex = templateSubChannels.filter(
-        (ch) => !indexSubChannels.includes(ch),
-      );
+      const missingFromIndex = templateSubChannels.filter((ch) => !indexSubChannels.includes(ch));
       const missingFromTemplate = indexSubChannels.filter(
         (ch) => !templateSubChannels.includes(ch),
       );
@@ -161,7 +163,7 @@ describe('Preload IPC Allowlist Parity', () => {
         expect(
           simulateIsChannelAllowed(channel),
           `isChannelAllowed() would block "${channel}" at runtime — ` +
-          `channel must be in ALLOWED_CHANNELS, EVENT_CHANNELS, or match a DYNAMIC_CHANNEL_PATTERN`,
+            `channel must be in ALLOWED_CHANNELS, EVENT_CHANNELS, or match a DYNAMIC_CHANNEL_PATTERN`,
         ).toBe(true);
       });
     }
@@ -285,4 +287,3 @@ describe('Preload IPC Allowlist Parity', () => {
     }
   });
 });
-

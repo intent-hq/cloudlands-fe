@@ -51,9 +51,7 @@ vi.mock('svelte-sonner', () => ({
   toast: { warning: mocks.toastWarning },
 }));
 
-import NodeVersionToast, {
-  resetNodeVersionToastSessionLatch,
-} from './NodeVersionToast.svelte';
+import NodeVersionToast, { resetNodeVersionToastSessionLatch } from './NodeVersionToast.svelte';
 import { store as mockStore } from '$store/renderer/store';
 
 const stateWithNode = (

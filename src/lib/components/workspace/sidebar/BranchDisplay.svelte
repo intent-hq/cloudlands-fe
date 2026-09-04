@@ -33,7 +33,6 @@
 
   let { workspaceId, trunkBranch, repoPath, repoType, canChangeTrunk }: Props = $props();
 
-
   const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -42,10 +41,20 @@
   const workspace = selectWorkspaceById(workspaceIdStore);
 
   // Branch rename state
-  let branchRename = $state<{ active: boolean; value: string; inputRef: HTMLInputElement | null; saving: boolean }>({ active: false, value: '', inputRef: null, saving: false });
+  let branchRename = $state<{
+    active: boolean;
+    value: string;
+    inputRef: HTMLInputElement | null;
+    saving: boolean;
+  }>({ active: false, value: '', inputRef: null, saving: false });
 
   // Branch copy state
-  let branchCopy = $state({ copiedWorking: false, workingTooltip: false, copiedTrunk: false, trunkTooltip: false });
+  let branchCopy = $state({
+    copiedWorking: false,
+    workingTooltip: false,
+    copiedTrunk: false,
+    trunkTooltip: false,
+  });
 
   // Reset branch rename state when workspace changes
   $effect(() => {
@@ -134,7 +143,11 @@
   }
 
   function handleBranchClickOutside(e: MouseEvent) {
-    if (branchRename.active && branchRename.inputRef && !branchRename.inputRef.contains(e.target as Node)) {
+    if (
+      branchRename.active &&
+      branchRename.inputRef &&
+      !branchRename.inputRef.contains(e.target as Node)
+    ) {
       saveBranch();
     }
   }
@@ -227,7 +240,8 @@
       disableCloseOnTriggerClick
       bind:open={branchCopy.trunkTooltip}
     >
-      {#snippet content()}{#if canChangeTrunk}<span>{m.workspace_branchDisplay_trunkChange_tooltip()}</span
+      {#snippet content()}{#if canChangeTrunk}<span
+            >{m.workspace_branchDisplay_trunkChange_tooltip()}</span
           >{:else}<span>{m.workspace_branchDisplay_trunkLocked_tooltip()}</span>{/if}<br /><span
           class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
         >{#if branchCopy.copiedTrunk}<span

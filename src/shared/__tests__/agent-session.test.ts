@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { hasAgentHandledFirstPrompt } from '../types/agent-session';
 
@@ -27,7 +23,9 @@ describe('hasAgentHandledFirstPrompt', () => {
   });
 
   it('returns false when a blank agent only has a local backend session id', () => {
-    expect(hasAgentHandledFirstPrompt(createSession({ backendSessionId: 'backend-1' }))).toBe(false);
+    expect(hasAgentHandledFirstPrompt(createSession({ backendSessionId: 'backend-1' }))).toBe(
+      false,
+    );
   });
 
   it('returns false when only an ACP session has been created', () => {
@@ -44,9 +42,7 @@ describe('hasAgentHandledFirstPrompt', () => {
 
   it('returns true once the agent has a user message', () => {
     expect(
-      hasAgentHandledFirstPrompt(
-        createSession({ messages: [{ role: 'user', content: 'hello' }] }),
-      ),
+      hasAgentHandledFirstPrompt(createSession({ messages: [{ role: 'user', content: 'hello' }] })),
     ).toBe(true);
   });
 });

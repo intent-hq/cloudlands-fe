@@ -49,12 +49,17 @@ function scanFile(filePath: string): void {
     // Check for event listeners without cleanup
     // Exclude app-lifetime singletons (error-reporter, theme, global-error-handler, debug config)
     // and beforeunload handlers which are intentionally persistent
-    const isAppLifetimeSingleton = relativePath.includes('error-reporter') ||
-                                    relativePath.includes('theme.ts') ||
-                                    relativePath.includes('global-error-handler') ||
-                                    relativePath.includes('debug.ts') ||
-                                    line.includes('beforeunload');
-    if (line.includes('addEventListener') && !line.includes('removeEventListener') && !isAppLifetimeSingleton) {
+    const isAppLifetimeSingleton =
+      relativePath.includes('error-reporter') ||
+      relativePath.includes('theme.ts') ||
+      relativePath.includes('global-error-handler') ||
+      relativePath.includes('debug.ts') ||
+      line.includes('beforeunload');
+    if (
+      line.includes('addEventListener') &&
+      !line.includes('removeEventListener') &&
+      !isAppLifetimeSingleton
+    ) {
       const hasCleanup = content.includes('removeEventListener');
       if (!hasCleanup && !line.includes('{ once: true }')) {
         issues.push({
@@ -71,7 +76,8 @@ function scanFile(filePath: string): void {
     // Exclude test files which may intentionally allocate large arrays
     const isTestFile = relativePath.includes('.test.') || relativePath.includes('__tests__');
     // Only flag truly unbounded growth patterns (while(true) with push)
-    const hasUnboundedGrowth = line.includes('while') && line.includes('true') && line.includes('.push');
+    const hasUnboundedGrowth =
+      line.includes('while') && line.includes('true') && line.includes('.push');
     if (!isTestFile && (line.match(/new Array\(\d{6,}\)/) || hasUnboundedGrowth)) {
       issues.push({
         file: relativePath,
@@ -84,10 +90,14 @@ function scanFile(filePath: string): void {
 
     // Check for synchronous file operations in renderer
     // Exclude main process files (src/main, src/lib/utils/main, src/shared/main)
-    const isMainProcess = relativePath.includes('src/main') ||
-                          relativePath.includes('/main/') ||
-                          relativePath.includes('src/preload');
-    if ((relativePath.includes('src/lib') || relativePath.includes('src/routes')) && !isMainProcess) {
+    const isMainProcess =
+      relativePath.includes('src/main') ||
+      relativePath.includes('/main/') ||
+      relativePath.includes('src/preload');
+    if (
+      (relativePath.includes('src/lib') || relativePath.includes('src/routes')) &&
+      !isMainProcess
+    ) {
       if (line.includes('fs.readFileSync') || line.includes('fs.writeFileSync')) {
         issues.push({
           file: relativePath,
@@ -100,7 +110,11 @@ function scanFile(filePath: string): void {
     }
 
     // Check for console.log in production code
-    if (line.includes('console.log') && !relativePath.includes('test') && !relativePath.includes('scripts')) {
+    if (
+      line.includes('console.log') &&
+      !relativePath.includes('test') &&
+      !relativePath.includes('scripts')
+    ) {
       issues.push({
         file: relativePath,
         line: lineNum,
@@ -160,9 +174,9 @@ console.log('🔍 Starting Performance Audit...\n');
 scanDirectory(path.join(rootDir, 'src'));
 
 // Group issues by severity
-const highSeverity = issues.filter(i => i.severity === 'high');
-const mediumSeverity = issues.filter(i => i.severity === 'medium');
-const lowSeverity = issues.filter(i => i.severity === 'low');
+const highSeverity = issues.filter((i) => i.severity === 'high');
+const mediumSeverity = issues.filter((i) => i.severity === 'medium');
+const lowSeverity = issues.filter((i) => i.severity === 'low');
 
 // Print results
 console.log('📊 Performance Audit Results');
@@ -174,7 +188,7 @@ console.log(`  🟢 Low Severity: ${lowSeverity.length}`);
 
 if (highSeverity.length > 0) {
   console.log('\n🔴 High Severity Issues:');
-  highSeverity.slice(0, 10).forEach(issue => {
+  highSeverity.slice(0, 10).forEach((issue) => {
     console.log(`  ${issue.file}:${issue.line}`);
     console.log(`    ${issue.type}: ${issue.description}`);
   });
@@ -182,7 +196,7 @@ if (highSeverity.length > 0) {
 
 if (mediumSeverity.length > 0) {
   console.log('\n🟡 Medium Severity Issues:');
-  mediumSeverity.slice(0, 15).forEach(issue => {
+  mediumSeverity.slice(0, 15).forEach((issue) => {
     console.log(`  ${issue.file}:${issue.line}`);
     console.log(`    ${issue.type}: ${issue.description}`);
   });

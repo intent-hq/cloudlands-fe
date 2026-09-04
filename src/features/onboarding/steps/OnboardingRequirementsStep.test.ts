@@ -76,7 +76,13 @@ beforeEach(() => {
   mocks.hostRequirements.value = failedState();
   // Default: daemon reports a macOS host (system.status host.os mirrored
   // into daemonHealth.stats by its polling service).
-  mocks.daemonHealthStats.value = { os: 'macos', arch: 'aarch64', clients: 1, agents: 0, listenMode: 'uds' };
+  mocks.daemonHealthStats.value = {
+    os: 'macos',
+    arch: 'aarch64',
+    clients: 1,
+    agents: 0,
+    listenMode: 'uds',
+  };
 });
 
 describe('OnboardingRequirementsStep', () => {

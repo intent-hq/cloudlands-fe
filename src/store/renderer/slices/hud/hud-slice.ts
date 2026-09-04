@@ -256,9 +256,8 @@ export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesClea
  * Persisted per-backend grid filter restored on activation (already sanitized
  * by `$features/hud/hud-grid-filter-persistence`).
  */
-export const hudGridFilterHydrated = createAction<[filter: HudGridFilter]>(
-  'hud/gridFilterHydrated',
-);
+export const hudGridFilterHydrated =
+  createAction<[filter: HudGridFilter]>('hud/gridFilterHydrated');
 
 // ── Reducer ──
 

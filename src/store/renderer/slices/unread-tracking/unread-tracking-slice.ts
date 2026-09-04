@@ -12,7 +12,7 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { UnreadTrackingState } from "./unread-tracking-types";
+import type { UnreadTrackingState } from './unread-tracking-types';
 
 export const initialState: UnreadTrackingState = {
   currentlyViewedAgentId: null,
@@ -24,7 +24,7 @@ export const initialState: UnreadTrackingState = {
 
 /** Mark an agent as currently viewed. */
 export const markAgentAsViewed = createAction<[agentId: string]>(
-  "unreadTracking/markAgentAsViewed"
+  'unreadTracking/markAgentAsViewed',
 );
 
 /**
@@ -34,7 +34,7 @@ export const markAgentAsViewed = createAction<[agentId: string]>(
  * trailing clear cannot clobber the newly viewed agent (monorepo#1215).
  */
 export const clearCurrentlyViewedAgent = createAction<[agentId?: string]>(
-  "unreadTracking/clearCurrentlyViewedAgent"
+  'unreadTracking/clearCurrentlyViewedAgent',
 );
 
 /**
@@ -45,12 +45,12 @@ export const clearCurrentlyViewedAgent = createAction<[agentId?: string]>(
  * "session started, no divider".
  */
 export const startDividerSession = createAction<[agentId: string, anchorId: string | null]>(
-  "unreadTracking/startDividerSession"
+  'unreadTracking/startDividerSession',
 );
 
 /** End one agent's divider viewing session (its chat tab was closed). */
 export const endDividerSession = createAction<[agentId: string]>(
-  "unreadTracking/endDividerSession"
+  'unreadTracking/endDividerSession',
 );
 
 /**
@@ -61,48 +61,50 @@ export const endDividerSession = createAction<[agentId: string]>(
  * `startDividerSession` fires for that agent.
  */
 export const recordWatchedStreamingTail = createAction<[agentId: string, messageId: string]>(
-  "unreadTracking/recordWatchedStreamingTail"
+  'unreadTracking/recordWatchedStreamingTail',
 );
 
 // ── Reducer ──
 
 export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialState);
 unreadTrackingReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
-    if (!agentId) return state;
-    if (state.currentlyViewedAgentId === agentId) return state;
-    return { ...state, currentlyViewedAgentId: agentId };
-  });
+  if (!agentId) return state;
+  if (state.currentlyViewedAgentId === agentId) return state;
+  return { ...state, currentlyViewedAgentId: agentId };
+});
 unreadTrackingReducer.with(clearCurrentlyViewedAgent, (state, { payload: [agentId] }) => {
-    if (state.currentlyViewedAgentId === null) return state;
-    if (agentId !== undefined && state.currentlyViewedAgentId !== agentId) return state;
-    return { ...state, currentlyViewedAgentId: null };
-  });
+  if (state.currentlyViewedAgentId === null) return state;
+  if (agentId !== undefined && state.currentlyViewedAgentId !== agentId) return state;
+  return { ...state, currentlyViewedAgentId: null };
+});
 unreadTrackingReducer.with(startDividerSession, (state, { payload: [agentId, anchorId] }) => {
-    if (!agentId) return state;
-    if (state.dividerSessionByAgentId[agentId] !== undefined) return state;
-    const watchedTail = state.watchedStreamingTailByAgentId[agentId];
-    const suppress = watchedTail !== undefined && watchedTail === (anchorId ?? null);
-    let watchedStreamingTailByAgentId = state.watchedStreamingTailByAgentId;
-    if (watchedTail !== undefined) {
-      watchedStreamingTailByAgentId = { ...state.watchedStreamingTailByAgentId };
-      delete watchedStreamingTailByAgentId[agentId];
-    }
-    return {
-      ...state,
-      dividerSessionByAgentId: {
-        ...state.dividerSessionByAgentId,
-        [agentId]: { anchorId: suppress ? null : anchorId ?? null },
-      },
-      watchedStreamingTailByAgentId,
-    };
-  });
+  if (!agentId) return state;
+  if (state.dividerSessionByAgentId[agentId] !== undefined) return state;
+  const watchedTail = state.watchedStreamingTailByAgentId[agentId];
+  const suppress = watchedTail !== undefined && watchedTail === (anchorId ?? null);
+  let watchedStreamingTailByAgentId = state.watchedStreamingTailByAgentId;
+  if (watchedTail !== undefined) {
+    watchedStreamingTailByAgentId = { ...state.watchedStreamingTailByAgentId };
+    delete watchedStreamingTailByAgentId[agentId];
+  }
+  return {
+    ...state,
+    dividerSessionByAgentId: {
+      ...state.dividerSessionByAgentId,
+      [agentId]: { anchorId: suppress ? null : (anchorId ?? null) },
+    },
+    watchedStreamingTailByAgentId,
+  };
+});
 unreadTrackingReducer.with(endDividerSession, (state, { payload: [agentId] }) => {
-    if (state.dividerSessionByAgentId[agentId] === undefined) return state;
-    const dividerSessionByAgentId = { ...state.dividerSessionByAgentId };
-    delete dividerSessionByAgentId[agentId];
-    return { ...state, dividerSessionByAgentId };
-  });
-unreadTrackingReducer.with(recordWatchedStreamingTail, (state, { payload: [agentId, messageId] }) => {
+  if (state.dividerSessionByAgentId[agentId] === undefined) return state;
+  const dividerSessionByAgentId = { ...state.dividerSessionByAgentId };
+  delete dividerSessionByAgentId[agentId];
+  return { ...state, dividerSessionByAgentId };
+});
+unreadTrackingReducer.with(
+  recordWatchedStreamingTail,
+  (state, { payload: [agentId, messageId] }) => {
     if (!agentId || !messageId) return state;
     if (state.watchedStreamingTailByAgentId[agentId] === messageId) return state;
     return {
@@ -112,4 +114,5 @@ unreadTrackingReducer.with(recordWatchedStreamingTail, (state, { payload: [agent
         [agentId]: messageId,
       },
     };
-  });
+  },
+);

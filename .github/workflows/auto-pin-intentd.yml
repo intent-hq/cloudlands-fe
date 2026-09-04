@@ -47,13 +47,13 @@ permissions: {}
 
 on:
   schedule:
-    - cron: "15 * * * *"
+    - cron: '15 * * * *'
   repository_dispatch:
     types: [intentd-alpha-published]
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Report what would happen; never push or touch PRs"
+        description: 'Report what would happen; never push or touch PRs'
         type: boolean
         default: false
 

@@ -1,7 +1,4 @@
-import {
-  getItems,
-  type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import type { OpenPrWarningItem } from './workspace-operations-types';
 

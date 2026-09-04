@@ -1,12 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  generateUniqueId,
-  generateUniqueIds,
-} from '../unique-id';
+import { describe, it, expect } from 'vitest';
+import { generateUniqueId, generateUniqueIds } from '../unique-id';
 
 describe('generateUniqueId', () => {
   it('should generate ID with prefix', () => {

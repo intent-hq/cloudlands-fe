@@ -513,19 +513,22 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       ['updateWorkspace', async (id: WorkspaceId) => service.updateWorkspace({ id, title: 'New' })],
       ['deleteWorkspace', async (id: WorkspaceId) => service.deleteWorkspace(id)],
       ['archiveWorkspace', async (id: WorkspaceId) => service.archiveWorkspace(id)],
-    ])('clears the cached workspace.list after %s so a later list refetches', async (_name, mutate) => {
-      const ws = seed();
-      daemonWorkspaces.set(ws.id, { ...ws });
+    ])(
+      'clears the cached workspace.list after %s so a later list refetches',
+      async (_name, mutate) => {
+        const ws = seed();
+        daemonWorkspaces.set(ws.id, { ...ws });
 
-      // Prime the cache.
-      await service.listWorkspaces();
-      requestMock.mockClear();
+        // Prime the cache.
+        await service.listWorkspaces();
+        requestMock.mockClear();
 
-      await mutate(ws.id);
+        await mutate(ws.id);
 
-      await service.listWorkspaces();
-      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
-    });
+        await service.listWorkspaces();
+        expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+      },
+    );
 
     it('clears the cached workspace.list after unarchiveWorkspace so a later list refetches', async () => {
       const ws = seed({ status: WorkspaceStatus.Archived });

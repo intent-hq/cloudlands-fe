@@ -40,9 +40,10 @@ describe('appendPage', () => {
 
 describe('createPagedSource', () => {
   it('refresh replaces items and stores the nextToken', async () => {
-    const fetchPage = vi.fn(
-      async (): Promise<PageResult<Item>> => ({ items: [item('a')], nextToken: 't1' }),
-    );
+    const fetchPage = vi.fn(async (): Promise<PageResult<Item>> => ({
+      items: [item('a')],
+      nextToken: 't1',
+    }));
     const source = createPagedSource<Item>({ getId: (i) => i.id, fetchPage });
 
     await source.refresh('q');

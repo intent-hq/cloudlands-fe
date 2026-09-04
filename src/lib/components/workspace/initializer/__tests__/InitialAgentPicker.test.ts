@@ -169,8 +169,7 @@ vi.mock('svelte-fa', async () => ({
 import InitialAgentPicker from '../InitialAgentPicker.svelte';
 import { store as mockAppStore } from '$store/renderer/store';
 
-const emitStoreState = () =>
-  (mockAppStore as unknown as { emitState: () => void }).emitState();
+const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 
 /** The team-mode card renders first; its picker is index 0. */
 function teamPickerSelected(): string {

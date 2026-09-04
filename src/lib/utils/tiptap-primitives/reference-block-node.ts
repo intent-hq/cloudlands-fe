@@ -4,10 +4,7 @@
  * Custom TipTap node for reference primitives
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { ReferencePrimitive } from '../../../shared/types/notes-primitives';
 import ReferenceBlock from '../../components/notes/primitives/ReferenceBlock.svelte';
@@ -172,43 +169,43 @@ export const ReferenceBlockNode = Node.create<ReferenceBlockOptions>({
     return {
       insertReferenceBlock:
         (primitive: ReferencePrimitive) =>
-          ({ commands }) =>
-            commands.insertContent({
-              type: this.name,
-              attrs: {
-                id: primitive.id,
-                data: primitive,
-              },
-            }),
+        ({ commands }) =>
+          commands.insertContent({
+            type: this.name,
+            attrs: {
+              id: primitive.id,
+              data: primitive,
+            },
+          }),
 
       updateReferenceBlock:
         (id: string, updates: Partial<ReferencePrimitive>) =>
-          ({ state, dispatch }) => {
-            const { doc, tr } = state;
-            let found = false;
+        ({ state, dispatch }) => {
+          const { doc, tr } = state;
+          let found = false;
 
-            doc.descendants((node, pos) => {
-              if (node.type.name === this.name && node.attrs.id === id) {
-                const currentData = node.attrs.data as ReferencePrimitive;
-                const updatedData = { ...currentData, ...updates };
+          doc.descendants((node, pos) => {
+            if (node.type.name === this.name && node.attrs.id === id) {
+              const currentData = node.attrs.data as ReferencePrimitive;
+              const updatedData = { ...currentData, ...updates };
 
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  data: updatedData,
-                });
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                data: updatedData,
+              });
 
-                found = true;
-                return false; // Stop searching
-              }
-            });
-
-            if (found && dispatch) {
-              dispatch(tr);
-              return true;
+              found = true;
+              return false; // Stop searching
             }
+          });
 
-            return false;
-          },
+          if (found && dispatch) {
+            dispatch(tr);
+            return true;
+          }
+
+          return false;
+        },
     };
   },
 

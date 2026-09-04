@@ -52,9 +52,7 @@ export function clampPromptPickerLimit(value: unknown): number {
 export function rankPromptUsage(entries: readonly PromptUsageEntry[]): PromptUsageEntry[] {
   return [...entries].sort(
     (a, b) =>
-      b.count - a.count ||
-      b.lastUsedAt.localeCompare(a.lastUsedAt) ||
-      a.text.localeCompare(b.text),
+      b.count - a.count || b.lastUsedAt.localeCompare(a.lastUsedAt) || a.text.localeCompare(b.text),
   );
 }
 

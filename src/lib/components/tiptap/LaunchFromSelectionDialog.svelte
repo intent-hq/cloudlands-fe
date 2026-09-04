@@ -103,8 +103,7 @@
         placeholder={m.tiptap_launchDialog_message_placeholder()}
         onkeydown={handleKeyDown}
         class="launch-textarea"
-        rows="1"
-      ></textarea>
+        rows="1"></textarea>
       <button
         onclick={handleSubmit}
         class="launch-submit-btn"
@@ -114,7 +113,9 @@
       </button>
     </div>
     <div class="launch-hint">
-      {m.tiptap_launchDialog_hint_before()} <kbd>{m.tiptap_launchDialog_enterKey_label()}</kbd> {m.tiptap_launchDialog_hint_middle()} <kbd>{m.tiptap_launchDialog_escKey_label()}</kbd> {m.tiptap_launchDialog_hint_after()}
+      {m.tiptap_launchDialog_hint_before()} <kbd>{m.tiptap_launchDialog_enterKey_label()}</kbd>
+      {m.tiptap_launchDialog_hint_middle()} <kbd>{m.tiptap_launchDialog_escKey_label()}</kbd>
+      {m.tiptap_launchDialog_hint_after()}
     </div>
   </div>
 </Portal>

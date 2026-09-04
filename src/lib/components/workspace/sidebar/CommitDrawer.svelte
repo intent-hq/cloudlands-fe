@@ -5,9 +5,9 @@
    */
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-  executeBackgroundAgent,
-  cancelExecution,
-} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+    executeBackgroundAgent,
+    cancelExecution,
+  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import { setSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-slice';
   import { selectSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-selectors';
 
@@ -15,20 +15,17 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
-  faCheck,
-  faCodeCommit,
-  faEye,
-  faRobot,
-  faSpinner,
-  faStop,
-} from '@fortawesome/free-solid-svg-icons';
+    faCheck,
+    faCodeCommit,
+    faEye,
+    faRobot,
+    faSpinner,
+    faStop,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-  readable,
-  writable,
-} from 'svelte/store';
+  import { readable, writable } from 'svelte/store';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
   import TimelineDivider from './TimelineDivider.svelte';
@@ -55,7 +52,6 @@
     stagedChanges,
     onCommit,
   }: Props = $props();
-
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -103,7 +99,6 @@
       );
     }
   }
-
 </script>
 
 <!-- Divider with Commit button -->
@@ -156,9 +151,7 @@
         size="xs"
         data-testid="commit-submit-button"
         onclick={() => onCommit()}
-        disabled={!commitMessage.trim() ||
-          isCommitting ||
-          (isGenerating && $commitWhenReady$)}
+        disabled={!commitMessage.trim() || isCommitting || (isGenerating && $commitWhenReady$)}
       >
         {#if isCommitting || (isGenerating && $commitWhenReady$)}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />

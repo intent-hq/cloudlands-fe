@@ -118,4 +118,3 @@ export interface TaskStats {
   completed: number;
   inProgress: number;
 }
-

@@ -339,9 +339,7 @@ describe('setupScriptDisplayName', () => {
 
   it('renders the English labels in the base locale', () => {
     overwriteGetLocale(() => 'en');
-    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')).toBe(
-      'From repo config',
-    );
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')).toBe('From repo config');
     expect(setupScriptDisplayName('Custom', 'custom')).toBe('Custom');
   });
 
@@ -358,8 +356,6 @@ describe('setupScriptDisplayName', () => {
     // A user-saved script named "Custom" or "From repo config" is a named
     // script — its name must pass through, never be relabeled as a sentinel.
     expect(setupScriptDisplayName('Custom', 'named')).toBe('Custom');
-    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'named')).toBe(
-      REPO_CONFIG_SCRIPT_NAME,
-    );
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'named')).toBe(REPO_CONFIG_SCRIPT_NAME);
   });
 });

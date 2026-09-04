@@ -7,10 +7,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from 'ssh2';
-import {
-  RemoteEnvProfile,
-  getProfileOrThrow,
-} from './remote-env-config';
+import { RemoteEnvProfile, getProfileOrThrow } from './remote-env-config';
 
 // Get profile from environment or default to standard
 const PROFILE_NAME = process.env.REMOTE_ENV_PROFILE || 'standard';

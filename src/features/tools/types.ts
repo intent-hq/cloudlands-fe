@@ -5,7 +5,6 @@
  * These types are protocol-agnostic and represent pure business logic.
  */
 
-
 /**
  * User context for permission checking
  */

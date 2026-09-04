@@ -3,7 +3,8 @@
    * Minimal RichTextarea stand-in for CompactWorkspaceInitializer tests.
    * Exposes the imperative surface the initializer calls via bind:this.
    */
-  let { value = $bindable(''), disabled = false }: { value?: string; disabled?: boolean } = $props();
+  let { value = $bindable(''), disabled = false }: { value?: string; disabled?: boolean } =
+    $props();
 
   export function focus() {}
   export function focusAndSelectAll() {}
