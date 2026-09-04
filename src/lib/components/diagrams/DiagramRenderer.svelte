@@ -396,7 +396,20 @@
           (candidate) => candidate.from === modelEdge.to && candidate.to === modelEdge.from,
         );
       if (reverseEdge && points.length === 2) {
-        const fraction = 0.35;
+        const reverseLabel = measureEdgeLabel(
+          reverseEdge.label ?? '',
+          layoutWidthLimit < 500 ? compactEdgeLabelMaxWidth(reverseEdge.label ?? '') : undefined,
+        );
+        const dx = Math.abs(points[1].x - points[0].x);
+        const dy = Math.abs(points[1].y - points[0].y);
+        const axisLength = Math.max(dx, dy);
+        const pairExtent =
+          dx >= dy
+            ? (labelWidth + reverseLabel.width) / 2
+            : (labelHeight + reverseLabel.height) / 2;
+        const fraction = visibleEdgeIds.includes(reverseEdge.id)
+          ? Math.max(0.05, Math.min(0.35, (1 - (pairExtent + 6) / axisLength) / 2))
+          : 0.35;
         const x = points[0].x + (points[1].x - points[0].x) * fraction - labelWidth / 2;
         const y = points[0].y + (points[1].y - points[0].y) * fraction - labelHeight / 2;
         positions.set(edge.id, { x, y, width: labelWidth, height: labelHeight });

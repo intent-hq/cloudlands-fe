@@ -62,8 +62,9 @@
       ];
       const mermaidReady = mermaidRenderers.every(
         (renderer) =>
-          !renderer.querySelector('.mermaid-loading') &&
-          Boolean(renderer.querySelector('.mermaid-svg svg, .mermaid-error, .mermaid-empty')),
+          Boolean(renderer.querySelector('.mermaid-error, .mermaid-empty')) ||
+          (renderer.dataset.renderSettled === 'true' &&
+            Boolean(renderer.querySelector('.mermaid-svg svg[data-layout-settled="true"]'))),
       );
 
       if (
@@ -84,7 +85,12 @@
     };
 
     const observer = new MutationObserver(markReady);
-    observer.observe(workbenchElement, { childList: true, subtree: true });
+    observer.observe(workbenchElement, {
+      attributes: true,
+      attributeFilter: ['data-render-settled', 'data-layout-settled'],
+      childList: true,
+      subtree: true,
+    });
     markReady();
     return () => observer.disconnect();
   });

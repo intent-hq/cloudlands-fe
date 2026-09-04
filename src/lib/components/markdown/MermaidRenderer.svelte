@@ -746,20 +746,20 @@ ${verticalSource}`;
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
-  async function fitRenderedSvg(generation: number) {
+  async function fitRenderedSvg(generation: number): Promise<boolean> {
     const fit = ++fitGeneration;
     await tick();
     await document.fonts?.ready;
-    if (generation !== renderGeneration) return;
+    if (generation !== renderGeneration) return false;
     const svg = rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg');
-    if (!svg || typeof svg.getBBox !== 'function') return;
+    if (!svg || typeof svg.getBBox !== 'function') return false;
     delete svg.dataset.layoutSettled;
     replaceSequenceActorFigures(svg);
     if (svg.getAttribute('aria-roledescription') === 'sequence') {
       addMermaidLabelKnockouts(svg);
       setReadableMermaidWidth(svg, svg.viewBox.baseVal.width);
       svg.dataset.layoutSettled = 'true';
-      return;
+      return true;
     }
     addSemanticLabelBreaks(svg);
     hideEmptyEdgeLabels(svg);
@@ -776,7 +776,7 @@ ${verticalSource}`;
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
-    if (generation !== renderGeneration) return;
+    if (generation !== renderGeneration) return false;
     svg.getBoundingClientRect();
     routeFlowchartFeedbackLane(svg);
     routeFlowchartCenteredFanouts(svg);
@@ -811,7 +811,7 @@ ${verticalSource}`;
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
-    if (generation !== renderGeneration) return;
+    if (generation !== renderGeneration) return false;
     recenterStateLabels(svg);
     routeFlowchartDecisionBranches(svg);
     roundOrthogonalBends(svg);
@@ -838,7 +838,7 @@ ${verticalSource}`;
             ) - Math.min(baseBounds.y, ...extraBounds.map((bounds) => bounds.y)),
         })
       : baseBounds;
-    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return;
+    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
     const flowchart = svg.getAttribute('aria-roledescription') === 'flowchart-v2';
     const groupedFlowchart = Boolean(svg.querySelector('g.cluster'));
     const padding = flowchart
@@ -858,7 +858,7 @@ ${verticalSource}`;
     svg.setAttribute('height', String(height));
     if (normalizedState) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      if (generation !== renderGeneration) return;
+      if (generation !== renderGeneration) return false;
       const settledBounds = svg.getBBox();
       width = Math.ceil(settledBounds.width + padding * 2);
       height = Math.ceil(settledBounds.height + padding * 2);
@@ -871,7 +871,7 @@ ${verticalSource}`;
     }
     setReadableMermaidWidth(svg, width);
     await new Promise<void>((resolve) => setTimeout(resolve, 64));
-    if (generation !== renderGeneration) return;
+    if (generation !== renderGeneration) return false;
     if (!compactLayout && svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       routeFlowchartFeedbackLane(svg, true);
       alignFlowchartMarkerTips(svg);
@@ -888,7 +888,7 @@ ${verticalSource}`;
     }
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      if (generation !== renderGeneration) return;
+      if (generation !== renderGeneration) return false;
       snapFlowchartPorts(svg);
       snapFlowchartFeedbackPorts(svg);
       routeGroupedReturnEdges(svg);
@@ -923,7 +923,7 @@ ${verticalSource}`;
     }
     if (normalizedState) attachStateTerminalArrowheads(svg);
     await new Promise<void>((resolve) => setTimeout(resolve, 120));
-    if (generation !== renderGeneration || fit !== fitGeneration) return;
+    if (generation !== renderGeneration || fit !== fitGeneration) return false;
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       const settledBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(settledBounds.width + padding * 2);
@@ -936,9 +936,10 @@ ${verticalSource}`;
       svg.setAttribute('height', String(height));
       setReadableMermaidWidth(svg, width);
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      if (generation !== renderGeneration || fit !== fitGeneration) return;
+      if (generation !== renderGeneration || fit !== fitGeneration) return false;
     }
     svg.dataset.layoutSettled = 'true';
+    return true;
   }
 
   async function renderDiagram(rawCode: string) {
@@ -994,8 +995,8 @@ ${verticalSource}`;
       if (generation !== renderGeneration) return;
       renderedSvg = svg;
       error = null;
-      await fitRenderedSvg(generation);
-      if (generation === renderGeneration) settledGeneration = generation;
+      const fitCompleted = await fitRenderedSvg(generation);
+      if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
     } catch (err) {
       if (generation !== renderGeneration) return;
       logger.error('Failed to render mermaid diagram:', err);

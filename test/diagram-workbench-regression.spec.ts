@@ -25,6 +25,19 @@ async function openState(
   await expect(scene).toHaveAttribute('data-preview-state', state);
   await expect(scene).toHaveAttribute('data-preview-width', String(width));
   await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
+  const targetRenderer = page.locator(`#${state} .mermaid-renderer`);
+  if ((await targetRenderer.count()) > 0) {
+    await expect
+      .poll(async () => {
+        const terminalState = await targetRenderer
+          .locator('.mermaid-error, .mermaid-empty')
+          .count();
+        return (
+          terminalState > 0 || (await targetRenderer.getAttribute('data-render-settled')) === 'true'
+        );
+      })
+      .toBe(true);
+  }
   expect(await page.evaluate(() => window.__INTENT_PREVIEW__?.current())).toEqual({
     slug: 'diagram-workbench',
     state,

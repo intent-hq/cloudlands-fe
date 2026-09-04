@@ -2423,7 +2423,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
           !compact &&
           Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
           path.dataset.routeLabel === STATE_LABEL.toolCompletes;
-        if (placesToolCompletionBesideReturnLane) midpoint.x += local.width / 2 + 6;
+        if (placesToolCompletionBesideReturnLane) midpoint.x += local.width / 2 - 6;
         const bounds = {
           x: midpoint.x - local.width / 2,
           y: midpoint.y - local.height / 2,
