@@ -4,6 +4,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
+import type { Workspace } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -13,6 +15,25 @@ vi.mock('svelte-fa', async () => ({
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../BulkActionConfirmDialog.svelte'));
+
+function makeWorkspace(
+  id: string,
+  title: string,
+  branch: string,
+  status = WorkspaceStatusEnum.Active,
+): Workspace {
+  return {
+    id: id as Workspace['id'],
+    title,
+    branch,
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+}
 
 describe('BulkActionConfirmDialog', () => {
   it('renders the active-work warning panel with plural agent and hook lines', async () => {
@@ -77,6 +98,30 @@ describe('BulkActionConfirmDialog', () => {
 
     expect(screen.queryByText(/active agent/)).toBeNull();
     expect(screen.queryByText(/background hook/)).toBeNull();
+  });
+
+  it('renders one row for every affected workspace', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+    const workspaces = [
+      makeWorkspace('ws-1', 'First workspace', 'feature/first'),
+      makeWorkspace('ws-2', 'Second workspace', 'feature/second'),
+      makeWorkspace('ws-3', 'Legacy workspace', 'old-branch', WorkspaceStatusEnum.Archived),
+    ];
+
+    render(BulkActionConfirmDialog, { props: { open: true, workspaces } });
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(workspaces.length);
+    for (const workspace of workspaces) {
+      expect(screen.getByText(workspace.title)).toBeTruthy();
+    }
+  });
+
+  it('renders no workspace list when workspaces is empty', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, { props: { open: true, workspaces: [] } });
+
+    expect(screen.queryByRole('list')).toBeNull();
   });
 
   it('confirms the action even when active work is present', async () => {

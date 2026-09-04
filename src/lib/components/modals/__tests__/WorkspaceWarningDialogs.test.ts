@@ -21,6 +21,7 @@ const { dispatch, selectorState } = vi.hoisted(() => ({
     showBulkArchiveConfirm: false,
     showBulkDeleteConfirm: false,
     pendingBulkWorkspaceIds: [] as string[],
+    pendingBulkWorkspaces: [] as unknown[],
     pendingBulkGroupLabel: null as string | null,
     bulkActiveAgentCount: 0,
     bulkActiveHookCount: 0,
@@ -49,6 +50,7 @@ vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-select
     selectShowBulkArchiveConfirm: selector('showBulkArchiveConfirm'),
     selectShowBulkDeleteConfirm: selector('showBulkDeleteConfirm'),
     selectPendingBulkWorkspaceIds: selector('pendingBulkWorkspaceIds'),
+    selectPendingBulkWorkspaces: selector('pendingBulkWorkspaces'),
     selectPendingBulkGroupLabel: selector('pendingBulkGroupLabel'),
     selectBulkActiveAgentCount: selector('bulkActiveAgentCount'),
     selectBulkActiveHookCount: selector('bulkActiveHookCount'),
@@ -63,6 +65,7 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
     selectorState.showBulkArchiveConfirm = false;
     selectorState.showBulkDeleteConfirm = false;
     selectorState.pendingBulkWorkspaceIds = [];
+    selectorState.pendingBulkWorkspaces = [];
     selectorState.pendingBulkGroupLabel = null;
   });
   afterEach(cleanup);
@@ -70,6 +73,10 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
   it('renders the pending archive count and dispatches the confirm action', async () => {
     selectorState.showBulkArchiveConfirm = true;
     selectorState.pendingBulkWorkspaceIds = ['ws-1', 'ws-2'];
+    selectorState.pendingBulkWorkspaces = [
+      { id: 'ws-1', title: 'First workspace', branch: 'main', status: 'Active' },
+      { id: 'ws-2', title: 'Second workspace', branch: 'feature/two', status: 'Active' },
+    ];
     selectorState.pendingBulkGroupLabel = 'Idle';
     const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
 
@@ -77,6 +84,8 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText(/^2 /)).toBeTruthy();
+    expect(within(dialog).getByText('First workspace')).toBeTruthy();
+    expect(within(dialog).getByText('Second workspace')).toBeTruthy();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Archive all' }));
     expect(
       dispatch.mock.calls.some(
@@ -88,6 +97,11 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
   it('renders the pending delete count and dispatches the confirm action', async () => {
     selectorState.showBulkDeleteConfirm = true;
     selectorState.pendingBulkWorkspaceIds = ['ws-1', 'ws-2', 'ws-3'];
+    selectorState.pendingBulkWorkspaces = [
+      { id: 'ws-1', title: 'First workspace', branch: 'main', status: 'Active' },
+      { id: 'ws-2', title: 'Second workspace', branch: 'feature/two', status: 'Active' },
+      { id: 'ws-3', title: 'Third workspace', branch: 'old', status: 'Archived' },
+    ];
     selectorState.pendingBulkGroupLabel = 'Completed';
     const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
 
@@ -95,6 +109,9 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText(/^3 /)).toBeTruthy();
+    expect(within(dialog).getByText('First workspace')).toBeTruthy();
+    expect(within(dialog).getByText('Second workspace')).toBeTruthy();
+    expect(within(dialog).getByText('Third workspace')).toBeTruthy();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete all' }));
     expect(
       dispatch.mock.calls.some(

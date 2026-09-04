@@ -1,6 +1,7 @@
 import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import type { OpenPrWarningItem } from './workspace-operations-types';
+import { selectWorkspaceById } from '../workspace/workspace-selectors';
 
 export const selectShowDeleteWarning = store.createSelector((state) => {
   return state.workspaceOperations.showDeleteWarning;
@@ -64,6 +65,13 @@ export const selectShowBulkDeleteConfirm = store.createSelector((state) => {
 
 export const selectPendingBulkWorkspaceIds = store.createSelector((state) => {
   return state.workspaceOperations.pendingBulkWorkspaceIds;
+});
+
+export const selectPendingBulkWorkspaces = store.createSelector((state) => {
+  return state.workspaceOperations.pendingBulkWorkspaceIds.flatMap((id) => {
+    const workspace = selectWorkspaceById.select(state, id);
+    return workspace ? [workspace] : [];
+  });
 });
 
 export const selectPendingBulkGroupLabel = store.createSelector((state) => {

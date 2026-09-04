@@ -4,6 +4,7 @@
   import * as Dialog from '$lib/components/ui/dialog';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { type Workspace, WorkspaceStatusEnum } from '$shared/types';
 
   interface Props {
     open?: boolean;
@@ -11,6 +12,7 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    workspaces?: Workspace[];
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
@@ -25,6 +27,7 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    workspaces = [],
     activeAgentCount = 0,
     activeHookCount = 0,
     onConfirm,
@@ -67,6 +70,30 @@
         <Dialog.Title>{title}</Dialog.Title>
         <Dialog.Description class="leading-5">{description}</Dialog.Description>
       </Dialog.Header>
+
+      {#if workspaces.length > 0}
+        <div
+          role="list"
+          class="max-h-56 overflow-y-auto rounded-md border border-border/60 bg-muted/30 divide-y divide-border/40"
+        >
+          {#each workspaces as workspace (workspace.id)}
+            <div role="listitem" class="flex items-center gap-2 px-3 py-1.5 text-sm">
+              <span class="min-w-0 flex-1 truncate">{workspace.title}</span>
+              {#if workspace.status === WorkspaceStatusEnum.Archived}
+                <span
+                  class="shrink-0 rounded bg-foreground/[0.05] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  {m.lib_commandPalette_archivedWorkspace_pill()}
+                </span>
+              {:else if workspace.branch}
+                <span class="max-w-[40%] truncate font-mono text-xs text-muted-foreground">
+                  {workspace.branch}
+                </span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
 
       {#if hasActiveWork}
         <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">

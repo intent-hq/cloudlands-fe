@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { StoreState } from '../../types';
+import type { Workspace } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
+import {
+  initialState as workspaceInitialState,
+  setWorkspaceEntity,
+  workspaceReducer,
+} from '../workspace/workspace-slice';
+import { selectPendingBulkWorkspaces } from './workspace-operations-selectors';
 import {
   bulkActiveWorkComputed,
   closeArchiveWarning,
@@ -37,6 +46,20 @@ const localChanges = {
   hasUnpushedCommits: true,
   hasUncommittedChanges: true,
 };
+
+function makeWorkspace(id: string, title: string): Workspace {
+  return {
+    id: id as Workspace['id'],
+    title,
+    branch: 'main',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatusEnum.Active,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+}
 
 describe('workspaceOperationsReducer', () => {
   it('starts with no local-changes data for either warning', () => {
@@ -233,5 +256,26 @@ describe('workspaceOperationsReducer', () => {
 
     expect(closed.showRemoveRepoConfirm).toBe(false);
     expect(closed.pendingRemoveRepoPath).toBeNull();
+  });
+});
+
+describe('workspace operations selectors', () => {
+  it('resolves pending bulk workspace ids in order and drops unknown ids', () => {
+    const first = makeWorkspace('ws-1', 'First');
+    const second = makeWorkspace('ws-2', 'Second');
+    const workspaceState = workspaceReducer(
+      workspaceReducer(workspaceInitialState, setWorkspaceEntity(first)),
+      setWorkspaceEntity(second),
+    );
+    const workspaceOperations = workspaceOperationsReducer(
+      initialState,
+      openBulkDeleteConfirm({
+        workspaceIds: ['ws-2', 'ws-missing', 'ws-1'],
+        groupLabel: 'All',
+      }),
+    );
+    const state = { workspace: workspaceState, workspaceOperations } as StoreState;
+
+    expect(selectPendingBulkWorkspaces.select(state)).toEqual([second, first]);
   });
 });

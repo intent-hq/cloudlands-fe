@@ -24,6 +24,7 @@
     selectOpenPrsForArchive,
     selectOpenPrsForDelete,
     selectPendingBulkGroupLabel,
+    selectPendingBulkWorkspaces,
     selectPendingBulkWorkspaceIds,
     selectRunningAgentNamesForArchive,
     selectRunningAgentNamesForDelete,
@@ -46,6 +47,7 @@
   const showBulkArchiveConfirm$ = selectShowBulkArchiveConfirm();
   const showBulkDeleteConfirm$ = selectShowBulkDeleteConfirm();
   const pendingBulkWorkspaceIds$ = selectPendingBulkWorkspaceIds();
+  const pendingBulkWorkspaces$ = selectPendingBulkWorkspaces();
   const pendingBulkGroupLabel$ = selectPendingBulkGroupLabel();
   const bulkActiveAgentCount$ = selectBulkActiveAgentCount();
   const bulkActiveHookCount$ = selectBulkActiveHookCount();
@@ -85,6 +87,7 @@
         count: formatInteger($pendingBulkWorkspaceIds$.length),
       })}
   confirmText={m.modals_bulkArchive_confirm_label()}
+  workspaces={$pendingBulkWorkspaces$}
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
   onConfirm={() => appStore.dispatch(confirmBulkArchive())}
@@ -103,6 +106,7 @@
       })}
   confirmText={m.modals_bulkDelete_confirm_label()}
   variant="destructive"
+  workspaces={$pendingBulkWorkspaces$}
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
   onConfirm={() => appStore.dispatch(confirmBulkDelete())}
