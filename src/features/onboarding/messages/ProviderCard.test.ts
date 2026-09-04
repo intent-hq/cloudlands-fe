@@ -57,7 +57,6 @@ const readyProvider = (): ProviderCardData => ({
   authDetails: 'user@example.com',
   docsUrl: 'https://code.claude.com/docs',
   installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-  description: '',
 });
 
 const notInstalledProvider = (): ProviderCardData => ({
