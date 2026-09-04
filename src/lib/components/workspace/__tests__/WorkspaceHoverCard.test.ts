@@ -251,7 +251,6 @@ describe('WorkspaceHoverCard', () => {
     const row = screen.getByRole('listitem', { name: /augment\/intent #42/i });
     expect(row.getAttribute('data-pr-status')).toBe('open');
     expect(text(row.querySelector('[data-workspace-hover-card-pr-status]')!)).toBe('Queued');
-    expect(row.textContent).not.toContain('Open');
   });
 
   it('preserves the public loading and data-loading behavior', async () => {

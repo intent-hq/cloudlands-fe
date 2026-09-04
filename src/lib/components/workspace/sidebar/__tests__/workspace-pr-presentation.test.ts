@@ -319,6 +319,73 @@ describe('buildWorkspacePRPresentationModel', () => {
         backgroundClass: 'bg-success/10',
       });
     });
+
+    it('labels a monitor-only row Queued from its snapshot', () => {
+      const [row] = build([], null, [
+        makeMonitor({ prNumber: 9, lastSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ]);
+
+      expect(row).toMatchObject({
+        number: 9,
+        monitorOnly: true,
+        status: 'open',
+        queued: true,
+        accessibleStateLabel: 'Queued',
+      });
+      expect(row.details.split('\n')[0]).toBe('Queued');
+    });
+
+    it('labels a cross-repo monitor-only row Queued from its snapshot', () => {
+      const [row] = build([], null, [
+        makeMonitor({
+          repo: 'other/tools',
+          prNumber: 5,
+          url: 'https://github.com/other/tools/pull/5',
+          lastSnapshot: makeSnapshot({ isInMergeQueue: true }),
+        }),
+      ]);
+
+      expect(row).toMatchObject({
+        identity: 'other/tools#5',
+        repoContext: 'other/tools',
+        monitorOnly: true,
+        status: 'open',
+        queued: true,
+        accessibleStateLabel: 'Queued',
+      });
+    });
+
+    it('ignores a stale queue flag on a settled monitor-only row', () => {
+      const rows = build([], null, [
+        makeMonitor({
+          monitorId: 'mon-merged',
+          prNumber: 3,
+          url: 'https://github.com/acme/widgets/pull/3',
+          lastSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }),
+        }),
+        makeMonitor({
+          monitorId: 'mon-closed',
+          prNumber: 4,
+          url: 'https://github.com/acme/widgets/pull/4',
+          lastSnapshot: makeSnapshot({ state: 'closed', isInMergeQueue: true }),
+        }),
+      ]);
+
+      expect(rows.find((row) => row.number === 3)).toMatchObject({
+        monitorOnly: true,
+        status: 'merged',
+        queued: false,
+        accessibleStateLabel: 'Merged',
+        details: 'Merged',
+      });
+      expect(rows.find((row) => row.number === 4)).toMatchObject({
+        monitorOnly: true,
+        status: 'closed',
+        queued: false,
+        accessibleStateLabel: 'Closed',
+        details: 'Closed',
+      });
+    });
   });
 
   it('returns one semantic icon and color treatment for each state', () => {
