@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   bulkEventsReceived,
   eventReceived,
@@ -113,9 +114,14 @@ describe('workspaceEventsReducer', () => {
   it('tracks initial loading and failure state', () => {
     let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
     expect(state.byWorkspaceId[WS_1]).toMatchObject({ loading: true, error: null });
+    state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent('evt-live')));
 
     state = workspaceEventsReducer(state, eventsLoadFailed(WS_1, 'offline'));
-    expect(state.byWorkspaceId[WS_1]).toMatchObject({ loading: false, error: 'offline' });
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      pendingLiveEventIds: null,
+      loading: false,
+      error: 'offline',
+    });
   });
 
   it('deduplicates an older page at its boundary and records the end state', () => {
@@ -156,6 +162,81 @@ describe('workspaceEventsReducer', () => {
     ]);
   });
 
+  it('retains an explicitly requested older page beyond the live-event cap', () => {
+    const recent = Array.from({ length: 300 }, (_, index) =>
+      mockEvent(`recent-${index}`, WS_1, new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString()),
+    );
+    const older = Array.from({ length: 100 }, (_, index) =>
+      mockEvent(`older-${index}`, WS_1, new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString()),
+    );
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, recent, 'older-1'));
+
+    state = workspaceEventsReducer(state, olderEventsLoaded(WS_1, older, null));
+
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(400);
+    expect(state.byWorkspaceId[WS_1].events[0].id).toBe('older-0');
+    expect(state.byWorkspaceId[WS_1].events[399].id).toBe('recent-299');
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({ nextToken: null, endReached: true });
+  });
+
+  it('retains expanded history when a live event arrives', () => {
+    const recent = Array.from({ length: 300 }, (_, index) =>
+      mockEvent(`recent-${index}`, WS_1, new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString()),
+    );
+    const older = Array.from({ length: 100 }, (_, index) =>
+      mockEvent(`older-${index}`, WS_1, new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString()),
+    );
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, recent, 'older-1'));
+    state = workspaceEventsReducer(state, olderEventsLoaded(WS_1, older, null));
+
+    state = workspaceEventsReducer(
+      state,
+      eventReceived(WS_1, mockEvent('live', WS_1, '2026-01-03T00:00:00.000Z')),
+    );
+
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(401);
+    expect(state.byWorkspaceId[WS_1].events[0].id).toBe('older-0');
+    expect(state.byWorkspaceId[WS_1].events[400].id).toBe('live');
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({ nextToken: null, endReached: true });
+  });
+
+  it('retains expanded history when bulk live events arrive', () => {
+    const recent = Array.from({ length: 300 }, (_, index) => mockEvent(`recent-${index}`));
+    const older = Array.from({ length: 100 }, (_, index) => mockEvent(`older-${index}`));
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, recent, 'older-1'));
+    state = workspaceEventsReducer(state, olderEventsLoaded(WS_1, older, null));
+
+    state = workspaceEventsReducer(
+      state,
+      bulkEventsReceived(WS_1, [mockEvent('live-1'), mockEvent('live-2')]),
+    );
+
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(402);
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual(
+      expect.arrayContaining(['older-0', 'live-1', 'live-2']),
+    );
+  });
+
+  it('does not advance the older cursor when the returned page cannot be retained', () => {
+    let state = workspaceEventsReducer(
+      initialState,
+      eventsLoaded(WS_1, [mockEvent('evt-1')], 'older-1'),
+    );
+    state = workspaceEventsReducer(state, loadOlderEventsRequested(WS_1));
+
+    state = workspaceEventsReducer(
+      state,
+      olderEventsLoaded(WS_1, [{ not: 'an event' }] as any, null),
+    );
+
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual(['evt-1']);
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      loadingOlder: false,
+      nextToken: 'older-1',
+      endReached: false,
+    });
+  });
+
   it('marks an empty initial page as the end without dropping a live event', () => {
     let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
     state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent('evt-live')));
@@ -192,6 +273,95 @@ describe('workspaceEventsReducer', () => {
       'evt-live',
     ]);
     expect(state.byWorkspaceId[WS_1].nextToken).toBe('older-1');
+  });
+
+  it('preserves bulk live events interleaved with a fresh page', () => {
+    let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
+    state = workspaceEventsReducer(
+      state,
+      bulkEventsReceived(WS_1, [mockEvent('live-1'), mockEvent('live-2')]),
+    );
+    state = workspaceEventsReducer(state, eventsLoaded(WS_1, [mockEvent('page')], null));
+
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      'live-1',
+      'live-2',
+      'page',
+    ]);
+  });
+
+  it('retains an oversized initial page merge before advancing its cursor', () => {
+    const page = Array.from({ length: 100 }, (_, index) =>
+      mockEvent(`page-${index}`, WS_1, new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString()),
+    );
+    const live = Array.from({ length: 250 }, (_, index) =>
+      mockEvent(`live-${index}`, WS_1, new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString()),
+    );
+    let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
+    state = workspaceEventsReducer(state, bulkEventsReceived(WS_1, live));
+
+    state = workspaceEventsReducer(state, eventsLoaded(WS_1, page, 'older-1'));
+
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(350);
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      ...page.map((event) => event.id),
+      ...live.map((event) => event.id),
+    ]);
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      historyExpanded: true,
+      nextToken: 'older-1',
+      endReached: false,
+    });
+  });
+
+  it('keeps a below-cap initial page merge bounded', () => {
+    const page = Array.from({ length: 100 }, (_, index) => mockEvent(`page-${index}`));
+    const live = Array.from({ length: 50 }, (_, index) => mockEvent(`live-${index}`));
+    let state = workspaceEventsReducer(initialState, loadEventsRequested(WS_1));
+    state = workspaceEventsReducer(state, bulkEventsReceived(WS_1, live));
+
+    state = workspaceEventsReducer(state, eventsLoaded(WS_1, page, 'older-1'));
+
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(150);
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      historyExpanded: false,
+      nextToken: 'older-1',
+      endReached: false,
+    });
+  });
+
+  it('keeps the retained cursor until a fresh page atomically replaces it', () => {
+    let state = workspaceEventsReducer(
+      initialState,
+      eventsLoaded(WS_1, [mockEvent('evt-recent')], 'older-1'),
+    );
+    state = workspaceEventsReducer(
+      state,
+      olderEventsLoaded(WS_1, [mockEvent('evt-old')], 'older-2'),
+    );
+    expect(state.byWorkspaceId[WS_1].historyExpanded).toBe(true);
+
+    state = workspaceEventsReducer(state, loadEventsRequested(WS_1));
+    state = workspaceEventsReducer(
+      state,
+      eventReceived(WS_1, mockEvent('evt-live', WS_1, '2026-01-03T00:00:00.000Z')),
+    );
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({ nextToken: 'older-2', endReached: false });
+
+    state = workspaceEventsReducer(
+      state,
+      eventsLoaded(WS_1, [mockEvent('evt-fresh', WS_1, '2026-01-02T00:00:00.000Z')], null),
+    );
+
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      'evt-fresh',
+      'evt-live',
+    ]);
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      historyExpanded: false,
+      nextToken: null,
+      endReached: true,
+    });
   });
 
   it('tracks an older-page failure without losing its cursor', () => {
@@ -273,6 +443,28 @@ describe('workspaceEventsReducer', () => {
     );
     const cleared = workspaceEventsReducer(loaded, eventsCleared(WS_1));
     expect(cleared.byWorkspaceId[WS_1]).toBeUndefined();
+  });
+
+  it('returns expanded history to the bounded buffer on workspace unmount', () => {
+    const recent = Array.from({ length: 300 }, (_, index) =>
+      mockEvent(`recent-${index}`, WS_1, new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString()),
+    );
+    const older = Array.from({ length: 100 }, (_, index) =>
+      mockEvent(`older-${index}`, WS_1, new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString()),
+    );
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, recent, 'older-1'));
+    state = workspaceEventsReducer(state, olderEventsLoaded(WS_1, older, null));
+
+    state = workspaceEventsReducer(state, workspaceUnmounted(WS_1));
+
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(300);
+    expect(state.byWorkspaceId[WS_1].events[0].id).toBe('recent-0');
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      historyExpanded: false,
+      pendingLiveEventIds: null,
+      nextToken: null,
+      endReached: false,
+    });
   });
 
   it('does not affect other workspaces', () => {

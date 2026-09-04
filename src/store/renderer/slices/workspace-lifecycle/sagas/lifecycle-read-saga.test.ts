@@ -647,6 +647,7 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.events.queryPage.mock.calls).toEqual([[WS, { limit: 100 }]]);
     expect(run.actions).toEqual([
+      { type: 'workspaceEvents/eventsLoadStarted', payload: [WS] },
       {
         type: 'workspaceEvents/eventsLoaded',
         payload: [WS, [oldestEvent, newestEvent], 'older-events'],
@@ -677,6 +678,54 @@ describe('lifecycleReadSaga', () => {
       {
         type: 'workspaceEvents/olderEventsLoaded',
         payload: [WS, [oldest, newest], null],
+      },
+    ]);
+    await stop(run.task);
+  });
+
+  it('marks older event history complete without querying when no cursor remains', async () => {
+    const run = start();
+
+    run.channel.put(loadOlderEventsRequested(WS));
+    await settle();
+
+    expect(mocks.events.queryPage).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([
+      { type: 'workspaceEvents/olderEventsLoaded', payload: [WS, [], null] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('serializes a fresh events load behind an in-flight older-page load', async () => {
+    let resolveOlder!: (value: { items: unknown[]; nextToken: string | null }) => void;
+    const olderPage = { items: [{ id: 'older' }], nextToken: null };
+    const freshPage = { items: [{ id: 'fresh' }], nextToken: 'fresh-cursor' };
+    mocks.events.queryPage
+      .mockReturnValueOnce(new Promise((done) => (resolveOlder = done)))
+      .mockResolvedValueOnce(freshPage);
+    const run = start(state(null, 'older-cursor'));
+
+    run.channel.put(loadOlderEventsRequested(WS));
+    await settle();
+    run.channel.put(loadEventsRequested(WS));
+    await settle();
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+    ]);
+
+    resolveOlder(olderPage);
+    await settle();
+
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+      [WS, { limit: 100 }],
+    ]);
+    expect(run.actions).toEqual([
+      { type: 'workspaceEvents/olderEventsLoaded', payload: [WS, [{ id: 'older' }], null] },
+      { type: 'workspaceEvents/eventsLoadStarted', payload: [WS] },
+      {
+        type: 'workspaceEvents/eventsLoaded',
+        payload: [WS, [{ id: 'fresh' }], 'fresh-cursor'],
       },
     ]);
     await stop(run.task);
@@ -1895,6 +1944,7 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.events.queryPage.mock.calls).toEqual([[WS, { limit: 100 }]]);
     expect(run.actions).toEqual([
+      { type: 'workspaceEvents/eventsLoadStarted', payload: [WS] },
       { type: 'workspaceEvents/eventsLoaded', payload: [WS, [{ id: 'late' }], null] },
     ]);
     await stop(run.task);
