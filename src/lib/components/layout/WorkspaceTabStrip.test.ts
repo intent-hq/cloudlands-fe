@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   goto: vi.fn(() => Promise.resolve()),
   nextCurrentId: 'ws-2' as string | null,
   tabOrder: ['ws-1', 'ws-2', 'ws-3'] as string[],
+  stateListeners: new Set<(state: unknown) => void>(),
   loadedWorkspaceIds: new Set<string>(),
   tabStatuses: {} as Record<string, WorkspaceTabStatus>,
 }));
@@ -33,6 +34,13 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: mocks.dispatch,
+    getReadableState: () => ({
+      subscribe(listener: (state: unknown) => void) {
+        mocks.stateListeners.add(listener);
+        listener({ tabState: { currentTabId: mocks.nextCurrentId } });
+        return () => mocks.stateListeners.delete(listener);
+      },
+    }),
     get state() {
       return { tabState: { currentTabId: mocks.nextCurrentId } };
     },
@@ -42,7 +50,9 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: Object.assign(() => readable('ws-1'), {
     select: () => mocks.nextCurrentId,
   }),
-  selectWorkspaceTabOrder: () => readable(mocks.tabOrder),
+  selectWorkspaceTabOrder: Object.assign(() => readable(mocks.tabOrder), {
+    select: () => mocks.tabOrder,
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () =>
@@ -178,6 +188,7 @@ describe('WorkspaceTabStrip', () => {
     workspaceHoverCardIntentSession.reset();
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
+    mocks.stateListeners.clear();
     mocks.nextCurrentId = 'ws-2';
     mocks.tabOrder = ['ws-1', 'ws-2', 'ws-3'];
     mocks.dispatch.mockImplementation((action: { type?: string; payload?: unknown[] }) => {
@@ -185,17 +196,18 @@ describe('WorkspaceTabStrip', () => {
         const workspaceId = String(action.payload?.[0] ?? '');
         if (!mocks.tabOrder.includes(workspaceId)) mocks.tabOrder.push(workspaceId);
         mocks.nextCurrentId = workspaceId;
-        return;
+      } else if (action.type === 'tabState/closeWorkspaceTab') {
+        const workspaceId = String(action.payload?.[0] ?? '');
+        const closedIndex = mocks.tabOrder.indexOf(workspaceId);
+        if (closedIndex < 0) return;
+        mocks.tabOrder = mocks.tabOrder.filter((id) => id !== workspaceId);
+        if (mocks.nextCurrentId === workspaceId) {
+          mocks.nextCurrentId =
+            mocks.tabOrder[Math.min(closedIndex, mocks.tabOrder.length - 1)] ?? null;
+        }
       }
-      if (action.type !== 'tabState/closeWorkspaceTab') return;
-      const workspaceId = String(action.payload?.[0] ?? '');
-      const closedIndex = mocks.tabOrder.indexOf(workspaceId);
-      if (closedIndex < 0) return;
-      mocks.tabOrder = mocks.tabOrder.filter((id) => id !== workspaceId);
-      if (mocks.nextCurrentId === workspaceId) {
-        mocks.nextCurrentId =
-          mocks.tabOrder[Math.min(closedIndex, mocks.tabOrder.length - 1)] ?? null;
-      }
+      const state = { tabState: { currentTabId: mocks.nextCurrentId } };
+      mocks.stateListeners.forEach((listener) => listener(state));
     });
     mocks.loadedWorkspaceIds.clear();
     mocks.loadedWorkspaceIds.add('ws-1');

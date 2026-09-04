@@ -7,66 +7,99 @@ type WorkspaceTabLifecycleMotionOptions = {
   onFrame: (overflow?: boolean) => void;
 };
 
-type PreparedTabOutro = {
+type PreparedTabOutroGroup = {
   scrollLeft: number | null;
   basePaddingRight: number;
   paddingRight: number;
   originalPaddingRight: string;
-  originalMarginRight: string;
   reserve: number;
+  removedFootprint: number;
   launcherLeft: number | null;
   launcherTargetLeft: number | null;
   gap: number;
   willOverflow: boolean;
 };
 
+type PreparedTabOutro = {
+  group: PreparedTabOutroGroup;
+  managesGroup: boolean;
+  originalMarginRight: string;
+  slotReserve: number;
+};
+
+type PreparedTabOutroRegistration = {
+  originalPaddingRight: string;
+  slots: Array<{ node: HTMLElement; originalMarginRight: string }>;
+};
+
 type RetainedTabOutro = Pick<
-  PreparedTabOutro,
+  PreparedTabOutroGroup,
   'basePaddingRight' | 'originalPaddingRight' | 'reserve'
 >;
 
 const preparedTabOutros = new WeakMap<HTMLElement, PreparedTabOutro>();
+const preparedTabOutroRegistrations = new WeakMap<HTMLElement, PreparedTabOutroRegistration>();
 const retainedTabOutros = new WeakMap<HTMLElement, RetainedTabOutro>();
 
 export function prepareTabOutro(strip: HTMLElement | null, workspaceId: string) {
+  return prepareTabOutros(strip, [workspaceId]);
+}
+
+export function prepareTabOutros(strip: HTMLElement | null, workspaceIds: string[]) {
   if (!strip) return;
-  const slot = strip.querySelector<HTMLElement>(`[data-workspace-tab-motion="${workspaceId}"]`);
-  if (!slot) return;
-  const slotWidth = slot.getBoundingClientRect().width;
+  const previousRegistration = preparedTabOutroRegistrations.get(strip);
+  if (previousRegistration) {
+    strip.style.paddingRight = previousRegistration.originalPaddingRight;
+    for (const { node, originalMarginRight } of previousRegistration.slots) {
+      node.style.marginRight = originalMarginRight;
+      preparedTabOutros.delete(node);
+    }
+    preparedTabOutroRegistrations.delete(strip);
+  }
+  const requestedIds = new Set(workspaceIds);
+  const slots = Array.from(strip.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement && requestedIds.has(child.dataset.workspaceTabMotion ?? ''),
+  );
+  if (slots.length === 0) return;
+  const slotWidths = slots.map((slot) => slot.getBoundingClientRect().width);
+  const slotWidth = slotWidths.reduce((total, width) => total + width, 0);
   const pinsRightEdge =
     strip.scrollWidth > strip.clientWidth + 1 &&
     strip.scrollWidth - strip.clientWidth - strip.scrollLeft <= 1;
   let retainedOutro = retainedTabOutros.get(strip);
   const gap = Number.parseFloat(getComputedStyle(strip).columnGap) || 0;
-  const willOverflow =
-    strip.scrollWidth -
-      slotWidth -
-      (strip.children.length > 1 ? gap : 0) -
-      (retainedOutro?.reserve ?? 0) >
-    strip.clientWidth + 1;
   if (retainedOutro && !pinsRightEdge) {
     strip.style.paddingRight = retainedOutro.originalPaddingRight;
     retainedTabOutros.delete(strip);
     retainedOutro = undefined;
   }
   const paddingRight = Number.parseFloat(getComputedStyle(strip).paddingRight) || 0;
+  const remainingCount = strip.children.length - slots.length;
+  const removedGapCount = Math.max(0, strip.children.length - 1) - Math.max(0, remainingCount - 1);
+  const removedFootprint = slotWidth + removedGapCount * gap;
+  const willOverflow =
+    strip.scrollWidth - removedFootprint - (retainedOutro?.reserve ?? 0) > strip.clientWidth + 1;
   const reserve = pinsRightEdge ? slotWidth : 0;
   const launcher = strip.parentElement?.querySelector<HTMLElement>(
     '[data-workspace-repo-launcher], [data-preview-launcher]',
   );
   const launcherLeft = launcher?.getBoundingClientRect().left ?? null;
+  const closingSlots = new Set(slots);
   const remainingRight = Math.max(
     ...Array.from(strip.children, (child) =>
-      child === slot ? Number.NEGATIVE_INFINITY : child.getBoundingClientRect().right,
+      closingSlots.has(child as HTMLElement)
+        ? Number.NEGATIVE_INFINITY
+        : child.getBoundingClientRect().right,
     ),
   );
-  preparedTabOutros.set(strip, {
+  const group: PreparedTabOutroGroup = {
     scrollLeft: pinsRightEdge ? strip.scrollLeft : null,
     basePaddingRight: retainedOutro?.basePaddingRight ?? paddingRight,
     paddingRight,
     originalPaddingRight: retainedOutro?.originalPaddingRight ?? strip.style.paddingRight,
-    originalMarginRight: slot.style.marginRight,
     reserve,
+    removedFootprint,
     gap,
     willOverflow,
     launcherLeft,
@@ -74,11 +107,24 @@ export function prepareTabOutro(strip: HTMLElement | null, workspaceId: string) 
       launcherLeft !== null && Number.isFinite(remainingRight) && !willOverflow
         ? remainingRight + strip.scrollLeft + paddingRight
         : null,
+  };
+  const registration = {
+    originalPaddingRight: group.originalPaddingRight,
+    slots: slots.map((node) => ({ node, originalMarginRight: node.style.marginRight })),
+  };
+  preparedTabOutroRegistrations.set(strip, registration);
+  slots.forEach((slot, index) => {
+    preparedTabOutros.set(slot, {
+      group,
+      managesGroup: index === 0,
+      originalMarginRight: slot.style.marginRight,
+      slotReserve: slotWidths[index],
+    });
   });
   if (pinsRightEdge) {
     strip.style.paddingRight = `${paddingRight + reserve}px`;
-    slot.style.marginRight = `${-reserve}px`;
-    strip.scrollLeft = preparedTabOutros.get(strip)?.scrollLeft ?? strip.scrollLeft;
+    slots.forEach((slot, index) => (slot.style.marginRight = `${-slotWidths[index]}px`));
+    strip.scrollLeft = group.scrollLeft ?? strip.scrollLeft;
   }
   return pinsRightEdge || willOverflow;
 }
@@ -91,42 +137,52 @@ export function workspaceTabLifecycleMotion(
   const strip = node.parentElement;
   const controls = strip?.parentElement;
   const direction = phase;
-  const preparedOutro = strip ? preparedTabOutros.get(strip) : undefined;
+  const preparedOutro = preparedTabOutros.get(node);
+  const preparedGroup = preparedOutro?.group;
+  if (preparedOutro) preparedTabOutros.delete(node);
+  if (strip && preparedOutro) preparedTabOutroRegistrations.delete(strip);
   const retainedIntro = direction === 'intro' && strip ? retainedTabOutros.get(strip) : undefined;
   const introReserve = Math.min(naturalWidth, retainedIntro?.reserve ?? 0);
-  if (strip) preparedTabOutros.delete(strip);
-  if (strip && direction === 'outro') retainedTabOutros.delete(strip);
+  if (strip && direction === 'outro' && (!preparedOutro || preparedOutro.managesGroup)) {
+    retainedTabOutros.delete(strip);
+  }
   const launcher = controls?.querySelector<HTMLElement>(
     '[data-workspace-repo-launcher], [data-preview-launcher]',
   );
   const launcherOffset =
-    preparedOutro?.launcherLeft != null && launcher
-      ? preparedOutro.launcherLeft - launcher.getBoundingClientRect().left
-      : naturalWidth + ((strip?.children.length ?? 0) > 1 ? 2 : 0);
+    preparedOutro && !preparedOutro.managesGroup
+      ? 0
+      : preparedGroup?.launcherLeft != null && launcher
+        ? preparedGroup.launcherLeft - launcher.getBoundingClientRect().left
+        : naturalWidth + ((strip?.children.length ?? 0) > 1 ? 2 : 0);
   const pinnedScrollLeft =
     direction === 'outro' &&
     strip &&
-    (preparedOutro?.scrollLeft != null ||
+    (!preparedOutro || preparedOutro.managesGroup) &&
+    (preparedGroup?.scrollLeft != null ||
       (strip.scrollWidth > strip.clientWidth + 1 &&
         strip.scrollWidth - strip.clientWidth - strip.scrollLeft <= 1))
-      ? (preparedOutro?.scrollLeft ?? strip.scrollLeft)
+      ? (preparedGroup?.scrollLeft ?? strip.scrollLeft)
       : null;
   const offsetsLauncher = direction === 'outro' && Math.abs(launcherOffset) > 0.01;
-  const launcherTargetLeft = preparedOutro?.launcherTargetLeft ?? null;
-  const launcherStartLeft = preparedOutro?.launcherLeft ?? null;
+  const launcherTargetLeft = preparedGroup?.launcherTargetLeft ?? null;
+  const launcherStartLeft = preparedGroup?.launcherLeft ?? null;
   const releasesReserve =
-    direction === 'outro' && preparedOutro != null && preparedOutro.scrollLeft !== null;
+    direction === 'outro' && preparedGroup != null && preparedGroup.scrollLeft !== null;
   const releasesLauncher =
     releasesReserve && launcherTargetLeft !== null && launcherStartLeft !== null;
-  const tracksLauncher = offsetsLauncher || releasesReserve;
+  const tracksLauncher =
+    (preparedOutro?.managesGroup ?? true) && (offsetsLauncher || releasesReserve);
   let appliedLauncherOffset = offsetsLauncher ? launcherOffset : 0;
-  let appliedReserve = preparedOutro?.reserve ?? 0;
+  let appliedReserve = preparedGroup?.reserve ?? 0;
   let appliedScrollLeft = pinnedScrollLeft;
-  let previousLauncherLeft = preparedOutro?.launcherLeft ?? null;
+  let previousLauncherLeft = preparedGroup?.launcherLeft ?? null;
   let appliedSlotOffset = 0;
 
   if (duration === 0) {
-    if (strip && preparedOutro) strip.style.paddingRight = preparedOutro.originalPaddingRight;
+    if (strip && preparedOutro?.managesGroup && preparedGroup) {
+      strip.style.paddingRight = preparedGroup.originalPaddingRight;
+    }
     if (strip && retainedIntro) {
       const reserve = retainedIntro.reserve - introReserve;
       strip.style.paddingRight = `${retainedIntro.basePaddingRight + reserve}px`;
@@ -140,7 +196,10 @@ export function workspaceTabLifecycleMotion(
     visual?.style.removeProperty('opacity');
     controls?.style.setProperty('--workspace-tab-launcher-offset', '0px');
     onFrame(
-      preparedOutro && preparedOutro.scrollLeft !== null && !preparedOutro.willOverflow
+      preparedOutro?.managesGroup &&
+        preparedGroup &&
+        preparedGroup.scrollLeft !== null &&
+        !preparedGroup.willOverflow
         ? false
         : undefined,
     );
@@ -184,33 +243,35 @@ export function workspaceTabLifecycleMotion(
           : 1
         : 1;
       if (strip && pinnedScrollLeft !== null) {
-        if (preparedOutro) {
-          const desiredReserve = releaseProgress * preparedOutro.reserve;
+        if (preparedOutro?.managesGroup && preparedGroup) {
+          const desiredReserve = releaseProgress * preparedGroup.reserve;
           appliedReserve += Math.min(5.5, Math.max(-5.5, desiredReserve - appliedReserve));
           const reserve = appliedReserve;
-          const targetScrollLeft = preparedOutro.willOverflow
-            ? Math.max(0, pinnedScrollLeft - preparedOutro.reserve - preparedOutro.gap)
+          const targetScrollLeft = preparedGroup.willOverflow
+            ? Math.max(0, pinnedScrollLeft - preparedGroup.removedFootprint)
             : 0;
           const desiredScrollLeft =
             targetScrollLeft + releaseProgress * (pinnedScrollLeft - targetScrollLeft);
           appliedScrollLeft ??= desiredScrollLeft;
           appliedScrollLeft += Math.min(7.5, Math.max(-7.5, desiredScrollLeft - appliedScrollLeft));
-          strip.style.paddingRight = `${preparedOutro.paddingRight + reserve}px`;
-          node.style.marginRight = `${-slotProgress * preparedOutro.reserve}px`;
+          strip.style.paddingRight = `${preparedGroup.paddingRight + reserve}px`;
           strip.scrollLeft = appliedScrollLeft;
           if (reserve > 0.01) {
             retainedTabOutros.set(strip, {
-              basePaddingRight: preparedOutro.basePaddingRight,
-              originalPaddingRight: preparedOutro.originalPaddingRight,
-              reserve: preparedOutro.paddingRight - preparedOutro.basePaddingRight + reserve,
+              basePaddingRight: preparedGroup.basePaddingRight,
+              originalPaddingRight: preparedGroup.originalPaddingRight,
+              reserve: preparedGroup.paddingRight - preparedGroup.basePaddingRight + reserve,
             });
           } else {
-            strip.style.paddingRight = preparedOutro.originalPaddingRight;
+            strip.style.paddingRight = preparedGroup.originalPaddingRight;
             retainedTabOutros.delete(strip);
           }
         } else {
           strip.scrollLeft = pinnedScrollLeft;
         }
+      }
+      if (direction === 'outro' && preparedOutro) {
+        node.style.marginRight = `${-slotProgress * preparedOutro.slotReserve}px`;
       }
       if (strip && retainedIntro) {
         const reserve = retainedIntro.reserve - progress * introReserve;
@@ -223,7 +284,7 @@ export function workspaceTabLifecycleMotion(
       else node.style.removeProperty('overflow');
       const previousSlot = direction === 'outro' ? node.previousElementSibling : null;
       if (previousSlot instanceof HTMLElement) {
-        const targetLeft = previousSlot.getBoundingClientRect().right + (preparedOutro?.gap ?? 0);
+        const targetLeft = previousSlot.getBoundingClientRect().right + (preparedGroup?.gap ?? 0);
         appliedSlotOffset += targetLeft - node.getBoundingClientRect().left;
         node.style.translate = `${appliedSlotOffset}px 0`;
       }
@@ -257,7 +318,11 @@ export function workspaceTabLifecycleMotion(
         }
       }
       onFrame(
-        releasesReserve && releaseProgress < 1 && preparedOutro && !preparedOutro.willOverflow
+        releasesReserve &&
+          releaseProgress < 1 &&
+          preparedOutro?.managesGroup &&
+          preparedGroup &&
+          !preparedGroup.willOverflow
           ? false
           : undefined,
       );

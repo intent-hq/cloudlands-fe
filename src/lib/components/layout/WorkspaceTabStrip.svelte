@@ -52,7 +52,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
-  import { prepareTabOutro, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
+  import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_BORDER_WIDTH_PX,
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -99,6 +99,9 @@
   let workspaceHoverCardOpenDelay = $state(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
   const openWorkspaceHoverCardIds = new Set<string>();
   const pointerOpenEligibleWorkspaceHoverCardIds = new Set<string>();
+  let observedTabOrder = selectWorkspaceTabOrder.select(appStore.state);
+  let pendingRemovedTabIds: string[] = [];
+  let pendingRemovalResetQueued = false;
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -213,6 +216,22 @@
   onMount(() => {
     activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const unsubscribeTabState = appStore.getReadableState().subscribe((state) => {
+      const nextTabOrder = selectWorkspaceTabOrder.select(state);
+      const nextTabIds = new Set(nextTabOrder);
+      const removedTabIds = observedTabOrder.filter((workspaceId) => !nextTabIds.has(workspaceId));
+      observedTabOrder = nextTabOrder;
+      if (removedTabIds.length === 0) return;
+      pendingRemovedTabIds = Array.from(new Set([...pendingRemovedTabIds, ...removedTabIds]));
+      pendingOutroOverflow = prepareTabOutros(stripElement, pendingRemovedTabIds) ?? null;
+      if (!pendingRemovalResetQueued) {
+        pendingRemovalResetQueued = true;
+        queueMicrotask(() => {
+          pendingRemovedTabIds = [];
+          pendingRemovalResetQueued = false;
+        });
+      }
+    });
     const unsubscribeHoverCardIntent = workspaceHoverCardIntentSession.subscribe(
       (delay) => (workspaceHoverCardOpenDelay = delay),
     );
@@ -228,6 +247,7 @@
     window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     return () => {
       unsubscribe();
+      unsubscribeTabState();
       unsubscribeHoverCardIntent();
       openWorkspaceHoverCardIds.forEach(() => workspaceHoverCardIntentSession.notifyClosed());
       openWorkspaceHoverCardIds.clear();
@@ -533,7 +553,6 @@
   function closeWorkspace(workspaceId: string, event?: Event) {
     event?.stopPropagation();
     const wasCurrent = selectedWorkspaceId === workspaceId;
-    pendingOutroOverflow = prepareTabOutro(stripElement, workspaceId) ?? null;
     appStore.dispatch(closeWorkspaceTab(workspaceId));
     if (!wasCurrent) return;
 
