@@ -187,6 +187,29 @@
   let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
+  let titleElement: HTMLSpanElement | null = $state(null);
+  let titleTextElement: HTMLSpanElement | null = $state(null);
+  let titleOverflowPx = $state(0);
+
+  function measureTitleOverflow() {
+    titleOverflowPx = titleElement
+      ? Math.max(0, titleElement.scrollWidth - titleElement.clientWidth)
+      : 0;
+  }
+
+  $effect(() => {
+    const clip = titleElement;
+    const text = titleTextElement;
+    if (!clip || !text) return;
+
+    measureTitleOverflow();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(measureTitleOverflow);
+    observer.observe(clip);
+    observer.observe(text);
+    return () => observer.disconnect();
+  });
 
   // Hover-intent delay before mounting the hover card. Mounting
   // WorkspaceHoverCard is expensive (7 store selector subscriptions plus
@@ -269,6 +292,7 @@
 
   function handleMouseEnter() {
     pointerWithinRow = true;
+    measureTitleOverflow();
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
@@ -555,15 +579,22 @@
     <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
       <span class="flex min-w-0 flex-1 items-center gap-1" data-workspace-card-title-group>
         <span
+          bind:this={titleElement}
           class="wc-title type-body min-w-0 truncate font-normal!
           {isCurrent
             ? 'text-foreground'
             : workspace.title
               ? 'text-foreground'
               : 'text-muted-foreground'}"
+          data-overflowing={titleOverflowPx > 0}
+          data-marquee-enabled={titleOverflowPx > 0 && !highlighted && !suppressHover}
+          style:--wc-title-marquee-distance={`${titleOverflowPx}px`}
+          style:--wc-title-marquee-duration={`${Math.max(0.4, titleOverflowPx / 35).toFixed(2)}s`}
           data-workspace-card-title
         >
-          {workspace.title || m.workspace_links_untitled_label()}
+          <span bind:this={titleTextElement} class="wc-title-text">
+            {workspace.title || m.workspace_links_untitled_label()}
+          </span>
         </span>
         {#if isPinned}
           <span
@@ -910,6 +941,57 @@
 {/if}
 
 <style>
+  .wc-title {
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .wc-title[data-overflowing='true'] {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(100% - 1.5rem),
+      transparent 100%
+    );
+    mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
+  }
+
+  .wc-title-text {
+    display: inline-block;
+    min-width: max-content;
+    transform: translateX(0);
+    transition: transform var(--motion-standard) var(--ease-standard);
+  }
+
+  .wc-root:hover .wc-title[data-marquee-enabled='true'] {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+  }
+
+  .wc-root:hover .wc-title[data-marquee-enabled='true'] .wc-title-text {
+    transform: translateX(calc(-1 * var(--wc-title-marquee-distance)));
+    transition-duration: var(--wc-title-marquee-duration);
+    transition-timing-function: linear;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wc-title-text {
+      transform: none !important;
+      transition: none;
+    }
+
+    .wc-root:hover .wc-title[data-marquee-enabled='true'] {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        black 0,
+        black calc(100% - 1.5rem),
+        transparent 100%
+      );
+      mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
+    }
+  }
+
   @container (max-width: 220px) {
     .wc-secondary {
       display: none;
