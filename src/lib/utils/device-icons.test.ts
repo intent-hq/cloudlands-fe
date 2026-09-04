@@ -19,6 +19,7 @@ describe('device icons', () => {
       resolveDeviceKind({ deviceIcon: 'auto', detectedDeviceKind: 'macStudio', os: 'linux' }),
     ).toBe('macStudio');
     expect(resolveDeviceKind({ detectedDeviceKind: null, os: 'linux' })).toBe('server');
+    expect(resolveDeviceKind({ detectedDeviceKind: null, os: 'Linux' })).toBe('server');
     expect(resolveDeviceKind({ detectedDeviceKind: null, os: 'macos' })).toBe('desktop');
     expect(resolveDeviceKind({})).toBe('desktop');
   });

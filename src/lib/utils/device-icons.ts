@@ -173,12 +173,13 @@ export const DEVICE_ICON_REGISTRY = {
 
 function fallbackDeviceKind(os: string | null | undefined): DeviceKind {
   const normalized = os?.toLowerCase();
+  // This covers pre-device-kind daemons and never-connected remotes, where Linux is most likely headless.
   if (normalized === 'linux') return 'server';
   return 'desktop';
 }
 
 export function resolveDeviceKind(source: DeviceIconSource): DeviceKind {
-  if (source.deviceIcon !== 'auto' && isDeviceKind(source.deviceIcon)) return source.deviceIcon;
+  if (isDeviceKind(source.deviceIcon)) return source.deviceIcon;
   if (isDetectedDeviceKind(source.detectedDeviceKind)) return source.detectedDeviceKind;
   return fallbackDeviceKind(source.os);
 }

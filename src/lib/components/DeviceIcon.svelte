@@ -10,11 +10,19 @@
     record: DeviceIconSource;
     size?: number | string;
     class?: string;
+    /** Accessible name for standalone use; omit when adjacent text already labels the icon. */
+    label?: string;
   }
 
-  let { record, size = 16, class: className = '' }: Props = $props();
+  let { record, size = 16, class: className = '', label }: Props = $props();
   const kind = $derived(resolveDeviceKind(record));
   const Icon = $derived(DEVICE_ICON_REGISTRY[kind].icon);
 </script>
 
-<Icon {size} class={cn('shrink-0', className)} aria-hidden="true" />
+<Icon
+  {size}
+  class={cn('shrink-0', className)}
+  role={label === undefined ? undefined : 'img'}
+  aria-label={label}
+  aria-hidden={label === undefined ? 'true' : undefined}
+/>

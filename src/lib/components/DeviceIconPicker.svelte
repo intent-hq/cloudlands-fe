@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Select as SelectPrimitive } from 'bits-ui';
   import { Select } from '$lib/components/ui/select';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import type { DeviceIconChoice } from '$shared/types/connections';
@@ -69,22 +70,26 @@
       <Select.Item value="auto" label={options[0].label}
         >{@render optionRow(options[0])}</Select.Item
       >
-      <div role="presentation" class="px-2 pb-1 pt-2 type-caption text-muted-foreground">
-        {m.deviceIcons_group_devices_label()}
-      </div>
-      {#each deviceOptions as option (option.value)}
-        <Select.Item value={option.value} label={option.label}
-          >{@render optionRow(option)}</Select.Item
-        >
-      {/each}
-      <div role="presentation" class="px-2 pb-1 pt-2 type-caption text-muted-foreground">
-        {m.deviceIcons_group_wildCards_label()}
-      </div>
-      {#each wildCardOptions as option (option.value)}
-        <Select.Item value={option.value} label={option.label}
-          >{@render optionRow(option)}</Select.Item
-        >
-      {/each}
+      <SelectPrimitive.Group>
+        <SelectPrimitive.GroupHeading class="px-2 pb-1 pt-2 type-caption text-muted-foreground">
+          {m.deviceIcons_group_devices_label()}
+        </SelectPrimitive.GroupHeading>
+        {#each deviceOptions as option (option.value)}
+          <Select.Item value={option.value} label={option.label}
+            >{@render optionRow(option)}</Select.Item
+          >
+        {/each}
+      </SelectPrimitive.Group>
+      <SelectPrimitive.Group>
+        <SelectPrimitive.GroupHeading class="px-2 pb-1 pt-2 type-caption text-muted-foreground">
+          {m.deviceIcons_group_wildCards_label()}
+        </SelectPrimitive.GroupHeading>
+        {#each wildCardOptions as option (option.value)}
+          <Select.Item value={option.value} label={option.label}
+            >{@render optionRow(option)}</Select.Item
+          >
+        {/each}
+      </SelectPrimitive.Group>
     </Select.Content>
   </Select.Root>
 </div>
