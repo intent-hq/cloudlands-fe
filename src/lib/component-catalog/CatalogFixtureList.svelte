@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CatalogEntry } from './catalog';
+  import { m } from '$shared/paraglide/messages.js';
   import { getCatalogRenderer } from './catalog-renderers';
   import ProposalCatalogPreview from './renderers/ProposalCatalogPreview.svelte';
   import ChatPolishCatalogPreview from './renderers/ChatPolishCatalogPreview.svelte';
@@ -69,6 +70,10 @@
               compact={chatPolishGeometry.compact}
               stickySimulation={chatPolishGeometry.stickySimulation}
             />
+          {:else if entry.slug === 'new-workspace'}
+            <a class="focus-link m-4 inline-flex" href="/sandbox/new-workspace">
+              {m.sandbox_newWorkspace_openRegistry_label()}
+            </a>
           {:else if renderer}
             {@const Preview = renderer.component}
             <Preview componentId={renderer.id} {fixture} />

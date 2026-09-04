@@ -12,6 +12,7 @@
     (entry) =>
       entry.slug === 'proposal-card' ||
       entry.slug === 'chat-polish' ||
+      entry.slug === 'new-workspace' ||
       catalogRendererIds.includes(entry.slug as (typeof catalogRendererIds)[number]),
   );
   const groups = buildCatalogGroups(renderableEntries);

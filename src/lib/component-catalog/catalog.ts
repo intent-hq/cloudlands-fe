@@ -26,6 +26,29 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
   {
+    slug: 'new-workspace',
+    get name() {
+      return m.sandbox_newWorkspace_title();
+    },
+    get description() {
+      return m.sandbox_newWorkspace_description();
+    },
+    category: 'product',
+    source: 'src/features/new-workspace/sandbox',
+    fixtures: [
+      {
+        id: 'scenario-registry',
+        get title() {
+          return m.sandbox_newWorkspace_allScenarios_label();
+        },
+        states: ['entry', 'capability', 'source', 'transaction', 'recovery'],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
+  {
     slug: 'chat-polish',
     name: m.sandbox_chatPolish_title(),
     description: m.sandbox_chatPolish_description(),
