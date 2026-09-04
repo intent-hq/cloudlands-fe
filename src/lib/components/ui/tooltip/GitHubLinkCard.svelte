@@ -60,7 +60,7 @@
         case 'closed':
           return {
             icon: faCodePullRequest,
-            iconClass: 'text-destructive',
+            iconClass: 'text-danger',
             badge: 'destructive',
             label: m.ui_linkTooltip_gitHubStateClosed_label(),
           };
@@ -102,7 +102,7 @@
     />
     <span class="github-link-card-ref">{owner}/{repo} #{number}</span>
     {#if stateStyle}
-      <Badge variant={stateStyle.badge} class="github-link-card-badge ml-auto h-4 px-1.5">
+      <Badge variant={stateStyle.badge} class="ml-auto h-4 px-1.5">
         {stateStyle.label}
       </Badge>
     {/if}
