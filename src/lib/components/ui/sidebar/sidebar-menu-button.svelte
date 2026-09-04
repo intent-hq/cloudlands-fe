@@ -2,7 +2,7 @@
   import { tv, type VariantProps } from 'tailwind-variants';
 
   export const sidebarMenuButtonVariants = tv({
-    base: 'peer/menu-button relative z-10 flex w-full cursor-pointer select-none items-center gap-2 overflow-hidden rounded-md pl-2 pr-(--row-gutter) text-left outline-none transition-[padding] duration-spring-fast ease-spring-fast group-hover/menu-item:pr-(--row-gutter-hover) group-focus-within/menu-item:pr-(--row-gutter-hover) motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.5]',
+    base: 'peer/menu-button relative z-10 flex w-full cursor-pointer select-none items-center gap-2 overflow-hidden rounded-md pl-2 pr-(--row-gutter) text-left outline-none transition-[padding] duration-spring-fast ease-spring-fast group-hover/menu-item:pr-(--row-gutter-hover) group-focus-within/menu-item:pr-(--row-gutter-hover) motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
     variants: {
       variant: {
         default: '',
@@ -44,6 +44,7 @@
   import { untrack, type ComponentProps, type Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { useSize } from '$lib/components/ui/size-context';
+  import { m } from '$shared/paraglide/messages.js';
   import { useSidebar } from './context.svelte.js';
   import { getSidebarMenuRowContext } from './sidebar-menu-context';
 
@@ -148,8 +149,8 @@
       {#if icon}
         <span
           class={cn(
-            'text-muted-foreground flex size-4 shrink-0 items-center justify-center transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none [&>svg]:size-4 [&>svg]:stroke-[1.5] [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
-            lit && 'text-foreground [&>svg]:stroke-2',
+            'sidebar-menu-icon text-muted-foreground flex size-4 shrink-0 items-center justify-center transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none [&>svg]:size-4 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
+            lit && 'text-foreground',
           )}>{@render icon()}</span
         >
       {:else if resolvedDot}
@@ -189,7 +190,9 @@
           )}>{@render children?.()}</span
         >
       {/if}
-      {#if status === 'unread'}<span class="sr-only">, unread</span>{/if}
+      {#if status === 'unread'}
+        <span class="sr-only">, {m.hud_workspaceState_unread_label()}</span>
+      {/if}
     </button>
   {/if}
 {/snippet}
@@ -220,3 +223,16 @@
     </Tooltip.Root>
   </Tooltip.Provider>
 {/if}
+
+<style>
+  :global([data-sidebar='menu-button'] > svg),
+  .sidebar-menu-icon :global(svg) {
+    stroke-width: 1.5;
+  }
+
+  :global([data-sidebar='menu-button'][data-active='true'] > svg),
+  :global([data-sidebar='menu-button'][data-proximity-active='true'] > svg),
+  .sidebar-menu-icon.text-foreground :global(svg) {
+    stroke-width: 2;
+  }
+</style>

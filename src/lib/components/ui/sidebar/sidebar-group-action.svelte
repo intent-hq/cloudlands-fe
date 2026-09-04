@@ -27,7 +27,7 @@
       clustered
         ? 'relative flex size-6 items-center justify-center'
         : 'absolute right-3.5 top-3 flex size-6 items-center justify-center',
-      'text-muted-foreground rounded-md p-0 outline-none hover:bg-hover hover:text-foreground transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-focus-ring [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.5] [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast hover:[&>svg]:stroke-2',
+      'text-muted-foreground rounded-md p-0 outline-none hover:bg-hover hover:text-foreground transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-focus-ring [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
       // Increases the hit area of the button on mobile.
       'after:absolute after:-inset-2 md:after:hidden',
       'group-data-[collapsible=icon]:hidden',
@@ -46,3 +46,13 @@
     {@render children?.()}
   </button>
 {/if}
+
+<style>
+  :global([data-sidebar='group-action'] > svg) {
+    stroke-width: 1.5;
+  }
+
+  :global([data-sidebar='group-action']:hover > svg) {
+    stroke-width: 2;
+  }
+</style>

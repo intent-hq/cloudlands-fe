@@ -37,10 +37,7 @@
     data-slot="sidebar-menu-sub"
     data-sidebar="menu-sub"
     data-state={open ? 'open' : 'closed'}
-    class={cn(
-      'border-border relative ml-[15px] flex min-w-0 flex-col gap-0.5 border-l pl-2',
-      className,
-    )}
+    class={cn('border-border relative ml-4 flex min-w-0 flex-col gap-0.5 border-l pl-2', className)}
     {...restProps}
   >
     {@render children?.()}

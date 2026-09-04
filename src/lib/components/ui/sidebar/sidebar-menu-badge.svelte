@@ -26,8 +26,8 @@
   data-slot="sidebar-menu-badge"
   data-sidebar="menu-badge"
   class={cn(
-    'pointer-events-none absolute right-2 z-10 flex h-5 min-w-5 select-none items-center justify-center px-1 tabular-nums transition-[color,font-variation-settings] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-    size === 'compact' ? 'top-1 text-[10px]' : 'top-1.5 text-[11px]',
+    'type-caption pointer-events-none absolute right-2 z-10 flex h-5 min-w-5 select-none items-center justify-center px-1 tabular-nums transition-[color,font-variation-settings] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+    size === 'compact' ? 'top-1' : 'top-1.5',
     lit ? 'text-foreground' : 'text-muted-foreground',
     'group-data-[collapsible=icon]:hidden',
     className,

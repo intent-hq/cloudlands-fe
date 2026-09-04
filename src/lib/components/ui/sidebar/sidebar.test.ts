@@ -187,7 +187,7 @@ describe('Sidebar', () => {
   it('announces unread status and renders one active highlight per selected tree level', () => {
     stubMatchMedia(false);
     const status = render(SidebarHarness, { props: { open: true, fixtureState: 'status-dots' } });
-    expect(screen.getByRole('button', { name: /Projects\s*, unread/ })).not.toBeNull();
+    expect(screen.getByRole('button', { name: /Projects\s*, unread/i })).not.toBeNull();
     status.unmount();
 
     const nested = render(SidebarHarness, { props: { open: true, fixtureState: 'nested' } });

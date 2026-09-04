@@ -97,8 +97,8 @@
     {#if icon}
       <span
         class={cn(
-          'text-muted-foreground flex size-4 shrink-0 items-center justify-center transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none [&>svg]:size-4 [&>svg]:stroke-[1.5] [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
-          lit && 'text-foreground [&>svg]:stroke-2',
+          'sidebar-menu-sub-icon text-muted-foreground flex size-4 shrink-0 items-center justify-center transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none [&>svg]:size-4 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
+          lit && 'text-foreground',
         )}>{@render icon()}</span
       >
     {/if}
@@ -129,3 +129,13 @@
     {/if}
   </a>
 {/if}
+
+<style>
+  .sidebar-menu-sub-icon :global(svg) {
+    stroke-width: 1.5;
+  }
+
+  .sidebar-menu-sub-icon.text-foreground :global(svg) {
+    stroke-width: 2;
+  }
+</style>
