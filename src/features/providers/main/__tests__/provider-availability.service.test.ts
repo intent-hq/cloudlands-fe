@@ -377,12 +377,13 @@ describe('provider availability service', () => {
     // Since intentd#1714 a valid `providers.paths["claude-code"]` override is
     // exec'd in place of the pinned npx adapter, and discovery reports the
     // provider `installed` from the override while `resolvedPath` stays the
-    // auto-detected npx (null when npx is absent). npx is not involved on that
-    // path, so the npx-missing warning must not fire.
+    // auto-detected npx (the key is omitted on the wire when npx is absent).
+    // npx is not involved on that path, so the npx-missing warning must not
+    // fire.
     const OVERRIDE_DISCOVERY = {
       ...EMPTY_DISCOVERY,
-      providers: EMPTY_DISCOVERY.providers.map((p) =>
-        p.id === 'claude-code' ? { ...p, installed: true, resolvedPath: null } : p,
+      providers: EMPTY_DISCOVERY.providers.map(({ resolvedPath, ...p }) =>
+        p.id === 'claude-code' ? { ...p, installed: true } : { ...p, resolvedPath },
       ),
       npx: { resolvedPath: null, version: null, versionOk: false },
     };
