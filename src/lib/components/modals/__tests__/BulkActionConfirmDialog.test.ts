@@ -2,13 +2,18 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { workspaceHoverCardIntentSession } from '../../workspace/utils/workspace-hover-card-intent';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
+}));
+vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
+  default: (await import('../../layout/__tests__/mocks/MockWorkspaceHoverCard.svelte')).default,
 }));
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -36,7 +41,14 @@ function makeWorkspace(
 }
 
 describe('BulkActionConfirmDialog', () => {
-  it('renders the active-work warning panel with plural agent and hook lines', async () => {
+  beforeEach(() => workspaceHoverCardIntentSession.reset());
+
+  afterEach(() => {
+    vi.useRealTimers();
+    workspaceHoverCardIntentSession.reset();
+  });
+
+  it('renders plural agent and hook lines', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
@@ -84,7 +96,7 @@ describe('BulkActionConfirmDialog', () => {
     expect(screen.queryByText(/active agent/)).toBeNull();
   });
 
-  it('renders no warning panel when there is no active work', async () => {
+  it('renders no active-work copy when there is no active work', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
@@ -102,10 +114,19 @@ describe('BulkActionConfirmDialog', () => {
 
   it('renders one row for every affected workspace', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
-    const workspaces = [
-      makeWorkspace('ws-1', 'First workspace', 'feature/first'),
-      makeWorkspace('ws-2', 'Second workspace', 'feature/second'),
-      makeWorkspace('ws-3', 'Legacy workspace', 'old-branch', WorkspaceStatusEnum.Archived),
+    const workspaces: Workspace[] = [
+      {
+        ...makeWorkspace('ws-1', 'First workspace', 'feature/first'),
+        displayStatus: 'in_progress',
+      },
+      {
+        ...makeWorkspace('ws-2', 'Second workspace', 'feature/second'),
+        displayStatus: 'needs_attention',
+      },
+      {
+        ...makeWorkspace('ws-3', 'Legacy workspace', 'old-branch', WorkspaceStatusEnum.Archived),
+        displayStatus: 'complete',
+      },
     ];
 
     render(BulkActionConfirmDialog, { props: { open: true, workspaces } });
@@ -113,7 +134,34 @@ describe('BulkActionConfirmDialog', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(workspaces.length);
     for (const workspace of workspaces) {
       expect(screen.getByText(workspace.title)).toBeTruthy();
+      expect(screen.queryByText(workspace.branch!)).toBeNull();
     }
+    expect(screen.getByText('In progress')).toBeTruthy();
+    expect(screen.getByText('Needs attention')).toBeTruthy();
+    expect(screen.getByText('Complete')).toBeTruthy();
+    expect(screen.getByText('Archived workspace')).toBeTruthy();
+  });
+
+  it('opens a workspace hover card after pointer rest and closes it on leave', async () => {
+    vi.useFakeTimers();
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+    const workspace = makeWorkspace('ws-hover', 'Hover workspace', 'feature/hover');
+
+    render(BulkActionConfirmDialog, { props: { open: true, workspaces: [workspace] } });
+    const row = screen.getByText(workspace.title).closest('[role="listitem"]')!;
+
+    await fireEvent.mouseEnter(row);
+    vi.advanceTimersByTime(399);
+    await tick();
+    expect(document.querySelector('[data-workspace-hover-card]')).toBeNull();
+
+    vi.advanceTimersByTime(1);
+    await tick();
+    expect(document.querySelector('[data-workspace-hover-card]')).toBeTruthy();
+
+    await fireEvent.mouseLeave(row);
+    await tick();
+    expect(document.querySelector('[data-workspace-hover-card]')).toBeNull();
   });
 
   it('renders no workspace list when workspaces is empty', async () => {
@@ -143,18 +191,14 @@ describe('BulkActionConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
-  it('uses the canonical icon-free surface and visibly focuses the confirm action', async () => {
+  it('focuses the confirm action when the dialog opens', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
       props: { open: true, title: 'Archive spaces?', confirmText: 'Archive' },
     });
 
-    const dialog = screen.getByRole('dialog');
     const confirm = screen.getByRole('button', { name: 'Archive' });
     await waitFor(() => expect(document.activeElement).toBe(confirm));
-    expect(confirm.className).toContain('ring-[3px]');
-    expect(dialog.className).toContain('max-w-sm');
-    expect(dialog.querySelector('.svelte-fa')).toBeNull();
   });
 });

@@ -29,6 +29,9 @@ const { dispatch, selectorState } = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
+vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
+  default: (await import('../../layout/__tests__/mocks/MockWorkspaceHoverCard.svelte')).default,
+}));
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-selectors', () => {
   const selector = (key: keyof typeof selectorState) => () => ({
     subscribe: (run: (value: unknown) => void) => {
