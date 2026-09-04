@@ -255,7 +255,7 @@
     "d3": "^7.9.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.14",
-    "electron": "^42.8.0",
+    "electron": "^44.1.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.9.1",
     "eslint-plugin-svelte": "^3.23.0",
