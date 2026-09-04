@@ -51,7 +51,9 @@ function createMockGL() {
     clear: vi.fn(),
     useProgram: vi.fn(),
     uniform1f: vi.fn(),
+    uniform1fv: vi.fn(),
     uniform2f: vi.fn(),
+    uniform2fv: vi.fn(),
     uniform3f: vi.fn(),
     drawArrays: vi.fn(),
     getExtension: vi.fn((name: string) => (name === 'WEBGL_lose_context' ? { loseContext } : null)),
@@ -270,6 +272,31 @@ describe('AuroraBackground cleanup', () => {
     now.mockReturnValue(34);
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it('uploads stable phases once and moving centers for each drawn frame', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
+    expect(Array.from(mockGL.gl.uniform1fv.mock.calls[0][1])).toHaveLength(5);
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(mockGL.gl.uniform2fv).toHaveBeenCalledTimes(1);
+    const firstCenters = Array.from(mockGL.gl.uniform2fv.mock.calls[0][1]);
+
+    now.mockReturnValue(68);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(2);
+    expect(mockGL.gl.uniform2fv).toHaveBeenCalledTimes(2);
+    const secondCenters = Array.from(mockGL.gl.uniform2fv.mock.calls[1][1]);
+
+    expect(firstCenters).toHaveLength(10);
+    expect(secondCenters).not.toEqual(firstCenters);
+    expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
     now.mockRestore();
   });
 
