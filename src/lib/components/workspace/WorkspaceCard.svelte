@@ -705,31 +705,6 @@
               ? 'opacity-0 group-hover/wc:opacity-100'
               : 'opacity-0 group-hover:opacity-100'}"
       >
-        {#if onOpenInNewWindow}
-          <SidebarOverflowMenu
-            bind:open={overflowMenuOpen}
-            items={getContextMenuItems()}
-            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
-            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
-          />
-        {/if}
-        {@render actions?.()}
-        {#if isUnread && onMarkAsRead}
-          <Button
-            variant="plain"
-            size="icon-xs"
-            iconOnly
-            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
-            onclick={(event) => {
-              event.stopPropagation();
-              onMarkAsRead?.(event);
-            }}
-            aria-label={m.workspace_card_markAsRead_label()}
-            title={m.workspace_card_markAsRead_label()}
-          >
-            <Fa icon={faCheck} size="xs" />
-          </Button>
-        {/if}
         {#if onTogglePin}
           <Button
             variant="plain"
@@ -748,6 +723,31 @@
           >
             <span aria-hidden="true"><Fa icon={faThumbtack} size="xs" /></span>
           </Button>
+        {/if}
+        {#if isUnread && onMarkAsRead}
+          <Button
+            variant="plain"
+            size="icon-xs"
+            iconOnly
+            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+            onclick={(event) => {
+              event.stopPropagation();
+              onMarkAsRead?.(event);
+            }}
+            aria-label={m.workspace_card_markAsRead_label()}
+            title={m.workspace_card_markAsRead_label()}
+          >
+            <Fa icon={faCheck} size="xs" />
+          </Button>
+        {/if}
+        {@render actions?.()}
+        {#if onOpenInNewWindow}
+          <SidebarOverflowMenu
+            bind:open={overflowMenuOpen}
+            items={getContextMenuItems()}
+            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
+            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
+          />
         {/if}
       </div>
     {/if}
