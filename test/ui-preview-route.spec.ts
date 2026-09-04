@@ -4,6 +4,52 @@ const baseUrl = process.env.UI_PREVIEW_BASE_URL;
 
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to a running pnpm run dev:ui server.');
 
+test('renders fit mode as a component-only document', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(
+    `${baseUrl}/sandbox/button?state=loading&fit=component&theme=dark&width=420&motion=reduced`,
+  );
+
+  const scene = page.getByTestId('catalog-scene');
+  const focus = page.getByTestId('catalog-scene-focus');
+  await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 90_000 });
+  await expect(scene).toHaveAttribute('data-preview-fit', 'component');
+  await expect(focus).toHaveCount(1);
+  await expect(page.locator('.catalog-topbar')).toHaveCount(0);
+  await expect(scene.locator('header, nav, h1, h2')).toHaveCount(0);
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-theme', 'dark');
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
+
+  const documentStyles = await page.evaluate(() => ({
+    html: {
+      margin: getComputedStyle(document.documentElement).margin,
+      padding: getComputedStyle(document.documentElement).padding,
+    },
+    body: {
+      margin: getComputedStyle(document.body).margin,
+      padding: getComputedStyle(document.body).padding,
+      bounds: document.body.getBoundingClientRect().toJSON(),
+    },
+    focusBounds: document
+      .querySelector('[data-testid="catalog-scene-focus"]')
+      ?.getBoundingClientRect()
+      .toJSON(),
+    current: window.__INTENT_PREVIEW__?.current(),
+  }));
+  expect(documentStyles.html).toEqual({ margin: '0px', padding: '0px' });
+  expect(documentStyles.body.margin).toBe('0px');
+  expect(documentStyles.body.padding).toBe('0px');
+  expect(documentStyles.focusBounds).toBeDefined();
+  expect(documentStyles.body.bounds).toEqual(documentStyles.focusBounds);
+  expect(documentStyles.current).toMatchObject({
+    slug: 'button',
+    state: 'loading',
+    width: 420,
+    status: 'ready',
+    fit: 'component',
+  });
+});
+
 test('selects direct preview states in the browser-only Vite runtime', async ({ page }) => {
   test.setTimeout(120_000);
   const consoleErrors: string[] = [];

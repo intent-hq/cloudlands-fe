@@ -1,4 +1,10 @@
 import type { Component } from 'svelte';
+import type { CatalogPreviewFit } from './catalog-preferences';
+import {
+  collectGeometry,
+  type GeometryProbeOptions,
+  type GeometryProbeResult,
+} from './geometry-probe';
 import {
   validatePreviewDefinition,
   type LoadedPreview,
@@ -70,13 +76,18 @@ export interface ActivePreview {
   state: string;
   width: number;
   status: 'ready';
+  fit?: CatalogPreviewFit;
 }
 
 interface PreviewBrowserApi {
   list: () => string[];
   states: (slug: string) => Promise<string[]>;
   current: () => ActivePreview | null;
+  probe: (options?: GeometryProbeOptions) => ActivePreviewGeometry | null;
 }
+
+export type ActivePreviewGeometry = GeometryProbeResult &
+  Pick<ActivePreview, 'slug' | 'state' | 'width'>;
 
 let activePreview: ActivePreview | null = null;
 
@@ -93,6 +104,15 @@ export function installPreviewBrowserApi(target: Window): () => void {
       return loaded ? Object.keys(loaded.definition.states) : [];
     },
     current: () => activePreview,
+    probe: (options) => {
+      if (!activePreview) return null;
+      const root = target.document.querySelector<HTMLElement>(
+        '[data-preview-ready="true"] [data-testid="catalog-scene-focus"]',
+      );
+      if (!root) return null;
+      const { slug, state, width } = activePreview;
+      return { slug, state, width, ...collectGeometry(root, options) };
+    },
   };
   target.__INTENT_PREVIEW__ = api;
   return () => {
