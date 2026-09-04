@@ -7,7 +7,7 @@
    *
    * Performance optimizations:
    * - Throttled to 30fps instead of 60fps (halves GPU usage)
-   * - Caps the backing buffer at one render pixel per CSS pixel
+   * - Renders the backing buffer at half the CSS resolution
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
    * - Respects prefers-reduced-motion
@@ -40,7 +40,7 @@
   // Target 30fps instead of 60fps to reduce GPU usage
   const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
   // The effect is intentionally soft, so Retina supersampling adds fragment work without useful detail.
-  const MAX_RENDER_DPR = 1;
+  const MAX_RENDER_DPR = 0.5;
 
   // Random seed for variety each session
   const seed = Math.random() * 1000;
@@ -263,7 +263,7 @@
       intensity *= 0.85 + sin(time * 0.5) * 0.15;
 
       // Simplified grain (less expensive)
-      float grainValue = hash(gl_FragCoord.xy * 0.5);
+      float grainValue = hash(gl_FragCoord.xy);
       color = color + (grainValue - 0.5) * 0.15;
 
       float alpha = intensity * 0.9;
@@ -382,8 +382,8 @@
     cachedCanvasWidth = cssWidth;
     cachedCanvasHeight = cssHeight;
 
-    const pixelWidth = Math.round(cssWidth * cachedDpr);
-    const pixelHeight = Math.round(cssHeight * cachedDpr);
+    const pixelWidth = Math.max(1, Math.round(cssWidth * cachedDpr));
+    const pixelHeight = Math.max(1, Math.round(cssHeight * cachedDpr));
     if (canvas.width === pixelWidth && canvas.height === pixelHeight) return;
 
     canvas.width = pixelWidth;

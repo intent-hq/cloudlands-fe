@@ -296,20 +296,24 @@ describe('AuroraBackground cleanup', () => {
       [1440, 360],
     ]) {
       MockResizeObserver.instances[0].fire(width, height);
-      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width, height);
-      expect([canvas.width, canvas.height]).toEqual([width, height]);
-      expect(canvas.width * canvas.height).toBe((width * 2 * height * 2) / 4);
+      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width / 2, height / 2);
+      expect([canvas.width, canvas.height]).toEqual([width / 2, height / 2]);
+      expect(canvas.width * canvas.height).toBe((width * height) / 4);
     }
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
 
     MockResizeObserver.instances[0].fire(640.25, 360.25);
-    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 640, 360);
-    expect([canvas.width, canvas.height]).toEqual([640, 360]);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 320, 180);
+    expect([canvas.width, canvas.height]).toEqual([320, 180]);
 
     mockGL.gl.viewport.mockClear();
     MockResizeObserver.instances[0].fire(640.25, 360.25);
     expect(mockGL.gl.viewport).not.toHaveBeenCalled();
+
+    MockResizeObserver.instances[0].fire(0, 0);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 1, 1);
+    expect([canvas.width, canvas.height]).toEqual([1, 1]);
 
     devicePixelRatio.mockRestore();
     clientWidth.mockRestore();
