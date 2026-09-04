@@ -88,7 +88,7 @@
   import { onMount, tick } from 'svelte';
   import ContentHeader from '$features/layout/components/content-header/ContentHeader.svelte';
   import WorkspaceSidebarHeader from '$lib/components/workspace/WorkspaceSidebarHeader.svelte';
-  import EditableName from './EditableName.svelte';
+  import EditableName from '$lib/components/ui/EditableName.svelte';
 
   let { layout, mode }: EditableTextPreviewProps = $props();
   let previewRoot: HTMLElement;
@@ -140,7 +140,7 @@
 
 <div
   bind:this={previewRoot}
-  class:w-[280px]={layout === 'narrow'}
+  class:w-70={layout === 'narrow'}
   class="grid max-w-full gap-8 text-foreground"
   data-editable-text-preview
 >
