@@ -54,6 +54,15 @@
     controllerState = reduce(controllerState, { type: 'user.edited', patch });
   }
 
+  function chooseNewFolder(name: string): void {
+    edit({ source: { kind: 'newFolder', parentPath: '/test/projects', name } });
+  }
+
+  function selectedSourceName(): string {
+    const source = controllerState.input.source;
+    return source?.kind === 'newFolder' ? source.name : '';
+  }
+
   function settleProbes(): void {
     for (const capability of ['git', 'node', 'github'] as Capability[]) {
       controllerState = reduce(controllerState, {
@@ -76,5 +85,8 @@
   presentation={{ requiredCapabilities: ['provider'] }}
   onEdit={edit}
   onStart={() => (startCount += 1)}
+  onChooseNewFolder={chooseNewFolder}
 />
 <output class="sr-only" data-testid="start-count">{startCount}</output>
+<output class="sr-only" data-testid="source-kind">{controllerState.input.source?.kind}</output>
+<output class="sr-only" data-testid="source-name">{selectedSourceName()}</output>

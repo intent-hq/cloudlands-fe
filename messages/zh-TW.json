@@ -3384,6 +3384,8 @@
   "newWorkspace_source_unresolved_description": "此連結會保留為內容。開始前請選擇其所屬專案。",
   "newWorkspace_source_publicGithub_title": "公開 GitHub 儲存庫",
   "newWorkspace_source_privateGithub_title": "私人 GitHub 儲存庫",
+  "newWorkspace_source_newProject_title": "開始新專案",
+  "newWorkspace_source_newProject_description": "啟動此工作區時建立新的本機儲存庫。",
   "newWorkspace_source_isolation_label": "隔離",
   "newWorkspace_source_inPlace_label": "原地作業",
   "newWorkspace_coordinator_checking_description": "正在檢查供應商是否就緒。你的草稿仍可編輯。",

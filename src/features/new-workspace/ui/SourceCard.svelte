@@ -9,9 +9,10 @@
     faGithub,
   } from '$lib/icons/phosphor-icons';
   import { Button } from '$lib/components/ui/button';
+  import Input from '$lib/components/ui/input/input.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource } from '$shared/types/workspace-draft';
-  import type { SourcePresentation } from './types';
+  import { getNewFolderNameError, type NewFolderNameError, type SourcePresentation } from './types';
 
   interface Props {
     source: DraftSource | null;
@@ -19,7 +20,7 @@
     disabled?: boolean;
     onChooseLocal?: () => void;
     onChooseGitHub?: () => void;
-    onChooseNewFolder?: () => void;
+    onChooseNewFolder?: (name: string) => void;
   }
 
   let {
@@ -31,19 +32,30 @@
     onChooseNewFolder,
   }: Props = $props();
 
-  const state = $derived.by(() => {
+  // i18n-ignore (default filesystem-safe directory name)
+  let newFolderName = $state('my-project');
+  const newFolderNameError = $derived(getNewFolderNameError(newFolderName));
+  const activeNewFolderError = $derived(
+    source?.kind === 'newFolder' ? getNewFolderNameError(source.name) : newFolderNameError,
+  );
+
+  const sourceState = $derived.by(() => {
     if (presentation.unresolvedLink) return 'unresolved-link';
+    if (!source && activeNewFolderError) return 'new-folder-invalid';
     if (!source) return 'none';
     if (source.kind === 'local') return presentation.localKind === 'non-git' ? 'non-git' : 'local';
-    if (source.kind === 'newFolder') return 'new-folder';
+    if (source.kind === 'newFolder')
+      return activeNewFolderError ? 'new-folder-invalid' : 'new-folder';
     if (presentation.githubAccess === 'no-access') return 'github-no-access';
     return presentation.githubAccess === 'private' ? 'github-private' : 'github-public';
   });
 
   const title = $derived.by(() => {
-    switch (state) {
+    switch (sourceState) {
       case 'none':
         return m.newWorkspace_source_none_title();
+      case 'new-folder-invalid':
+        return m.newWorkspace_source_newProject_title();
       case 'unresolved-link':
         return m.newWorkspace_source_unresolved_title();
       case 'local':
@@ -68,18 +80,41 @@
     if (source.kind === 'newFolder') return `${source.parentPath}/${source.name}`;
     return `${source.owner}/${source.name}`;
   });
+
+  function errorLabel(error: NewFolderNameError): string {
+    switch (error) {
+      case 'required':
+        return m.workspaceValidation_projectNameRequired_error();
+      case 'path-separator':
+        return m.onboarding_projectPicker_pathSeparators_error();
+      case 'dot-name':
+        return m.onboarding_projectPicker_dotName_error();
+      case 'null-character':
+        return m.onboarding_projectPicker_nullChars_error();
+      case 'invalid-character':
+        return m.onboarding_projectPicker_invalidChars_error();
+      case 'too-long':
+        return m.onboarding_projectPicker_nameTooLong_error();
+    }
+  }
+
+  function chooseNewFolder(): void {
+    if (!newFolderNameError) onChooseNewFolder?.(newFolderName.trim());
+  }
 </script>
 
-<section class="rounded-xl border border-border bg-card p-4" data-source-state={state}>
+<section class="rounded-xl border border-border bg-card p-4" data-source-state={sourceState}>
   <div class="flex items-start gap-3">
     <div class="mt-0.5 text-muted-foreground">
-      {#if state === 'unresolved-link'}
+      {#if sourceState === 'new-folder-invalid'}
+        <Fa icon={faTriangleExclamation} class="text-danger" />
+      {:else if sourceState === 'unresolved-link'}
         <Fa icon={faLink} />
-      {:else if state === 'github-public'}
+      {:else if sourceState === 'github-public'}
         <Fa icon={faGlobe} />
-      {:else if state === 'github-private'}
+      {:else if sourceState === 'github-private'}
         <Fa icon={faLock} />
-      {:else if state === 'github-no-access'}
+      {:else if sourceState === 'github-no-access'}
         <Fa icon={faTriangleExclamation} />
       {:else if source?.kind === 'github'}
         <Fa icon={faGithub} />
@@ -90,11 +125,13 @@
     <div class="min-w-0 flex-1">
       <h2 class="text-sm font-semibold">{title}</h2>
       <p class="mt-1 break-all text-xs text-muted-foreground">{summary}</p>
-      {#if state === 'unresolved-link'}
+      {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
+        <p class="mt-2 text-xs text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
+      {:else if sourceState === 'unresolved-link'}
         <p class="mt-2 text-xs text-muted-foreground">
           {m.newWorkspace_source_unresolved_description()}
         </p>
-      {:else if state === 'non-git'}
+      {:else if sourceState === 'non-git'}
         <p class="mt-2 text-xs text-muted-foreground">
           {m.workspace_validation_nonGitInit_warning()}
         </p>
@@ -124,17 +161,38 @@
     </details>
   {/if}
 
-  {#if state === 'none' || state === 'unresolved-link' || state === 'github-no-access'}
-    <div class="mt-4 flex flex-wrap gap-2">
+  {#if sourceState === 'none' || sourceState === 'new-folder-invalid' || sourceState === 'unresolved-link' || sourceState === 'github-no-access'}
+    <div class="mt-4 flex flex-wrap gap-2 border-b border-border pb-4">
       <Button size="sm" variant="outline" {disabled} onclick={onChooseLocal}>
         {m.onboarding_projectPicker_localFolder_label()}
       </Button>
       <Button size="sm" variant="outline" {disabled} onclick={onChooseGitHub}>
         {m.onboarding_projectPicker_githubRepo_label()}
       </Button>
-      <Button size="sm" variant="outline" {disabled} onclick={onChooseNewFolder}>
-        {m.onboarding_dirPicker_newFolder_label()}
-      </Button>
+    </div>
+    <div class="mt-4 rounded-lg border border-border bg-background p-3">
+      <h3 class="text-sm font-semibold">{m.newWorkspace_source_newProject_title()}</h3>
+      <p class="mt-1 text-xs text-muted-foreground">
+        {m.newWorkspace_source_newProject_description()}
+      </p>
+      <div class="mt-3 flex gap-2">
+        <Input
+          value={newFolderName}
+          oninput={(event) => (newFolderName = event.currentTarget.value)}
+          placeholder={m.onboarding_newProjectTab_projectName_placeholder()}
+          aria-label={m.onboarding_newProjectTab_projectName_placeholder()}
+          aria-invalid={newFolderNameError ? 'true' : undefined}
+          {disabled}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disabled || Boolean(newFolderNameError)}
+          onclick={chooseNewFolder}
+        >
+          {m.onboarding_newProjectTab_selectFolder_label()}
+        </Button>
+      </div>
     </div>
   {/if}
 </section>

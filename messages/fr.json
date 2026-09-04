@@ -3384,6 +3384,8 @@
   "newWorkspace_source_unresolved_description": "Le lien est conservé comme contexte. Choisissez le projet auquel il appartient avant de démarrer.",
   "newWorkspace_source_publicGithub_title": "Dépôt GitHub public",
   "newWorkspace_source_privateGithub_title": "Dépôt GitHub privé",
+  "newWorkspace_source_newProject_title": "Démarrer un nouveau projet",
+  "newWorkspace_source_newProject_description": "Créez un nouveau dépôt local au démarrage de cet espace de travail.",
   "newWorkspace_source_isolation_label": "Mode isolé",
   "newWorkspace_source_inPlace_label": "Sur place",
   "newWorkspace_coordinator_checking_description": "Vérification de la disponibilité d’un fournisseur. Votre brouillon reste modifiable.",

@@ -3385,6 +3385,8 @@
   "newWorkspace_source_unresolved_description": "The link is kept as context. Choose the project it belongs to before starting.",
   "newWorkspace_source_publicGithub_title": "Public GitHub repository",
   "newWorkspace_source_privateGithub_title": "Private GitHub repository",
+  "newWorkspace_source_newProject_title": "Start a new project",
+  "newWorkspace_source_newProject_description": "Create a fresh local repository when this workspace starts.",
   "newWorkspace_source_isolation_label": "Isolation",
   "newWorkspace_source_inPlace_label": "In place",
   "newWorkspace_coordinator_checking_description": "Checking whether a provider is ready. Your draft remains editable.",

@@ -79,6 +79,11 @@
     }
   }
 
+  function chooseNewFolder(name: string): void {
+    // i18n-ignore (deterministic sandbox fixture path)
+    editDraft({ source: { kind: 'newFolder', parentPath: '/sandbox/projects', name } });
+  }
+
   function dispatchSimpleEvent(
     type: 'reconnect' | 'conflict.acceptRemote' | 'conflict.keepLocal' | 'retry',
   ): void {
@@ -176,6 +181,7 @@
               onReconnect={() => dispatchSimpleEvent('reconnect')}
               onAcceptRemote={() => dispatchSimpleEvent('conflict.acceptRemote')}
               onKeepLocal={() => dispatchSimpleEvent('conflict.keepLocal')}
+              onChooseNewFolder={chooseNewFolder}
             />
           {/if}
         </div>

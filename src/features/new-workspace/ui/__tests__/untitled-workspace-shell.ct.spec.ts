@@ -27,6 +27,27 @@ test.describe('new-workspace shell', () => {
     await expect(component.getByTestId('start-count')).toHaveText('1');
   });
 
+  test('selects a fresh local project with a validated folder name', async ({ mount }) => {
+    const component = await mount(UntitledWorkspaceShellHost);
+    const input = component.getByRole('textbox', { name: 'my-project' });
+    await input.fill('fresh-project');
+    await component.getByRole('button', { name: 'Select folder…' }).click();
+
+    await expect(component.getByTestId('source-kind')).toHaveText('newFolder');
+    await expect(component.getByTestId('source-name')).toHaveText('fresh-project');
+  });
+
+  test('rejects unsafe fresh-project folder names', async ({ mount }) => {
+    const component = await mount(UntitledWorkspaceShellHost);
+    const input = component.getByRole('textbox', { name: 'my-project' });
+    await input.fill('../outside');
+
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+    await expect(component.locator('[data-source-state="new-folder-invalid"]')).toBeVisible();
+    await expect(component.getByRole('button', { name: 'Select folder…' })).toBeDisabled();
+    await expect(component.getByTestId('source-kind')).toBeEmpty();
+  });
+
   test('keeps the shell and composer contained at narrow width', async ({ mount, page }) => {
     await page.setViewportSize({ width: 360, height: 900 });
     const component = await mount(UntitledWorkspaceShellHost);

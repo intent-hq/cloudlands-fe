@@ -3384,6 +3384,8 @@
   "newWorkspace_source_unresolved_description": "该链接会保留为上下文。开始前请选择其所属项目。",
   "newWorkspace_source_publicGithub_title": "公开 GitHub 仓库",
   "newWorkspace_source_privateGithub_title": "私有 GitHub 仓库",
+  "newWorkspace_source_newProject_title": "启动新项目",
+  "newWorkspace_source_newProject_description": "启动此工作区时创建一个新的本地仓库。",
   "newWorkspace_source_isolation_label": "隔离",
   "newWorkspace_source_inPlace_label": "原地工作",
   "newWorkspace_coordinator_checking_description": "正在检查提供商是否就绪。你的草稿仍可编辑。",

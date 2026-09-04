@@ -3384,6 +3384,8 @@
   "newWorkspace_source_unresolved_description": "リンクはコンテキストとして保持されます。開始前に関連するプロジェクトを選択してください。",
   "newWorkspace_source_publicGithub_title": "公開 GitHub リポジトリ",
   "newWorkspace_source_privateGithub_title": "非公開 GitHub リポジトリ",
+  "newWorkspace_source_newProject_title": "新しいプロジェクトを開始",
+  "newWorkspace_source_newProject_description": "このワークスペースの開始時に新しいローカルリポジトリを作成します。",
   "newWorkspace_source_isolation_label": "分離",
   "newWorkspace_source_inPlace_label": "その場で作業",
   "newWorkspace_coordinator_checking_description": "プロバイダーの準備状況を確認しています。下書きは引き続き編集できます。",

@@ -3384,6 +3384,8 @@
   "newWorkspace_source_unresolved_description": "Der Link bleibt als Kontext erhalten. Wähle vor dem Start das zugehörige Projekt.",
   "newWorkspace_source_publicGithub_title": "Öffentliches GitHub-Repository",
   "newWorkspace_source_privateGithub_title": "Privates GitHub-Repository",
+  "newWorkspace_source_newProject_title": "Neues Projekt starten",
+  "newWorkspace_source_newProject_description": "Erstelle beim Start dieses Arbeitsbereichs ein neues lokales Repository.",
   "newWorkspace_source_isolation_label": "Isolierung",
   "newWorkspace_source_inPlace_label": "Direkt im Ordner",
   "newWorkspace_coordinator_checking_description": "Es wird geprüft, ob ein Anbieter bereit ist. Dein Entwurf bleibt bearbeitbar.",

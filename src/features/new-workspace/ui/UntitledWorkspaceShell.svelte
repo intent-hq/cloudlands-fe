@@ -34,7 +34,7 @@
     onAddFiles?: () => void;
     onChooseLocal?: () => void;
     onChooseGitHub?: () => void;
-    onChooseNewFolder?: () => void;
+    onChooseNewFolder?: (name: string) => void;
     onRecheckCapabilities?: () => void;
     onProviderSelected?: (providerId: string) => void;
   }

@@ -3384,6 +3384,8 @@
   "newWorkspace_source_unresolved_description": "El enlace se conserva como contexto. Elige el proyecto al que pertenece antes de empezar.",
   "newWorkspace_source_publicGithub_title": "Repositorio público de GitHub",
   "newWorkspace_source_privateGithub_title": "Repositorio privado de GitHub",
+  "newWorkspace_source_newProject_title": "Iniciar un proyecto nuevo",
+  "newWorkspace_source_newProject_description": "Crea un repositorio local nuevo al iniciar este espacio de trabajo.",
   "newWorkspace_source_isolation_label": "Aislamiento",
   "newWorkspace_source_inPlace_label": "En el lugar",
   "newWorkspace_coordinator_checking_description": "Comprobando si hay un proveedor listo. Puedes seguir editando el borrador.",
