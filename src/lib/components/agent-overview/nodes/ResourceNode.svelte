@@ -5,6 +5,12 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { FileNode, NoteNode } from '../types';
+  import {
+    activityMotion,
+    activityNodeTransition,
+    resourceBrightness,
+    resourceCooldownRemaining,
+  } from '../activity-motion';
 
   interface Props {
     node: FileNode | NoteNode;
@@ -39,9 +45,13 @@
   const accessLabel = $derived(
     access === 'read' ? m.chat_toolClassifier_read_label() : m.chat_toolClassifier_writeTo_label(),
   );
+  const brightness = $derived(resourceBrightness(node.lastActionTimestamp));
+  const cooldownRemaining = $derived(resourceCooldownRemaining(node.lastActionTimestamp));
 </script>
 
 <button
+  use:activityMotion
+  transition:activityNodeTransition
   type="button"
   class="resource-node flex max-w-44 touch-none items-center gap-2 rounded-full border border-border bg-card/95 px-3 py-1.5 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 {isActive
     ? 'ring-1 ring-primary/30'
@@ -50,6 +60,8 @@
   data-node-id={node.id}
   data-active={isActive}
   data-last-activity-at={lastActivityAt}
+  style:--resource-brightness={brightness}
+  style:--resource-cooldown={`${cooldownRemaining}ms`}
   {...events}
 >
   <span class="shrink-0 text-subtle"
@@ -66,3 +78,31 @@
     <LineChangesBadge {additions} {deletions} size="xxs" />
   {/if}
 </button>
+
+<style>
+  .resource-node {
+    opacity: var(--resource-brightness);
+    animation: resource-cooldown var(--resource-cooldown) linear forwards;
+    transition:
+      opacity 600ms linear,
+      border-color 180ms ease;
+  }
+  .resource-node[data-motion-enabled='false'] {
+    animation-play-state: paused;
+    transition: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .resource-node {
+      animation: none;
+      transition: none;
+    }
+  }
+  @keyframes resource-cooldown {
+    from {
+      opacity: var(--resource-brightness);
+    }
+    to {
+      opacity: 0.35;
+    }
+  }
+</style>

@@ -3,6 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { TaskNode } from '../types';
   import { TASK_STATUS_RING_CLASSES } from '../constants';
+  import { activityMotion, activityNodeTransition } from '../activity-motion';
 
   interface Props {
     node: TaskNode;
@@ -42,6 +43,8 @@
 </script>
 
 <button
+  use:activityMotion
+  transition:activityNodeTransition
   type="button"
   class="task-anchor flex size-32 touch-none flex-col items-center justify-center gap-1 rounded-full border-[3px] bg-card/95 px-4 text-center shadow-sm backdrop-blur-sm transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 {isActive
     ? 'ring-2 ring-primary/30'
@@ -56,3 +59,30 @@
   <span class="text-xs font-medium">{labels[node.state]()}</span>
   <span class="text-xs text-subtle">{agentCountLabel}</span>
 </button>
+
+<style>
+  .task-anchor {
+    transition:
+      opacity 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+  .task-anchor[data-active='true'] {
+    animation: task-pulse 1.8s ease-in-out infinite;
+  }
+  .task-anchor[data-motion-enabled='false'] {
+    animation: none;
+    transition: none;
+  }
+  @keyframes task-pulse {
+    50% {
+      box-shadow: 0 0 18px color-mix(in srgb, currentColor 28%, transparent);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .task-anchor {
+      animation: none;
+      transition: none;
+    }
+  }
+</style>

@@ -6,21 +6,6 @@
  */
 
 // ============================================================================
-// Node Dimensions
-// ============================================================================
-
-/**
- * Visual card dimensions for edge endpoint calculations.
- * These should match the actual rendered card sizes.
- */
-export const CARD_DIMENSIONS = {
-  agent: { width: 232, height: 72 },
-  file: { width: 120, height: 47 },
-  note: { width: 120, height: 47 },
-  task: { width: 120, height: 47 },
-} as const;
-
-// ============================================================================
 // Tool Names for File/Note Detection
 // ============================================================================
 
@@ -127,7 +112,7 @@ export const EDGE_STYLES = {
   message: {
     stroke: 'rgb(59, 130, 246)',
     strokeWidth: 2,
-    strokeDasharray: 'none',
+    strokeDasharray: '6,4',
     opacity: 0.9,
   },
   'waiting-on': {

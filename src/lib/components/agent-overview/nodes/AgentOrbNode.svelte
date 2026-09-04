@@ -4,6 +4,7 @@
   import { classifyTool } from '$lib/utils/tool-classifier';
   import { m } from '$shared/paraglide/messages.js';
   import type { AgentNode } from '../types';
+  import { activityMotion, activityNodeTransition } from '../activity-motion';
 
   interface Props {
     node: AgentNode;
@@ -54,6 +55,8 @@
 </script>
 
 <button
+  use:activityMotion
+  transition:activityNodeTransition
   type="button"
   class="agent-orb flex w-36 touch-none flex-col items-center gap-1.5 rounded-xl border border-border bg-card/95 px-3 py-2.5 text-center shadow-sm backdrop-blur-sm transition-opacity hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 {isActive
     ? 'ring-2 ring-primary/30'
@@ -62,6 +65,7 @@
   data-node-id={node.id}
   data-active={isActive}
   data-last-activity-at={lastActivityAt}
+  data-agent-status={node.status}
   {...events}
 >
   <AgentAvatarWithState
@@ -78,3 +82,54 @@
   {/if}
   <span class="line-clamp-2 w-full text-xs leading-tight text-subtle">{activityLabel}</span>
 </button>
+
+<style>
+  .agent-orb {
+    position: relative;
+    transition:
+      opacity 180ms ease,
+      filter 180ms ease,
+      scale 180ms ease;
+  }
+  .agent-orb::before {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: 1rem;
+    pointer-events: none;
+  }
+  .agent-orb[data-agent-status='responding']::before {
+    box-shadow: 0 0 18px color-mix(in srgb, var(--color-primary) 45%, transparent);
+    animation: responding-glow 1.4s ease-in-out infinite;
+  }
+  .agent-orb[data-agent-status='waiting'] {
+    animation: waiting-pulse 2.8s ease-in-out infinite;
+  }
+  .agent-orb:is([data-agent-status='completed'], [data-agent-status='failed']) {
+    filter: saturate(0.35);
+    scale: 0.94;
+  }
+  .agent-orb[data-motion-enabled='false'],
+  .agent-orb[data-motion-enabled='false']::before {
+    animation: none;
+    transition: none;
+  }
+  @keyframes responding-glow {
+    50% {
+      opacity: 0.45;
+      scale: 1.04;
+    }
+  }
+  @keyframes waiting-pulse {
+    50% {
+      opacity: 0.72;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-orb,
+    .agent-orb::before {
+      animation: none !important;
+      transition: none;
+    }
+  }
+</style>
