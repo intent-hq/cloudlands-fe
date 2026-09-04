@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GRAPH_NODE_DIMENSIONS, GRAPH_NODE_GAPS } from '../constants';
 import { createConstellationLayout } from '../constellation-layout';
 import {
@@ -52,6 +52,21 @@ function edge(type: string, sourceId: string, targetId: string): GraphEdge {
   } as GraphEdge;
 }
 
+function alpha(layout: ReturnType<typeof createConstellationLayout>): number {
+  let value = Number.NaN;
+  const dispose = layout.tick((_nodes, nextAlpha) => {
+    value = nextAlpha;
+  });
+  dispose();
+  return value;
+}
+
+function positions(
+  layout: ReturnType<typeof createConstellationLayout>,
+): [string, number, number][] {
+  return snapshot(layout).map((node) => [node.id, node.x, node.y]);
+}
+
 function snapshot(layout: ReturnType<typeof createConstellationLayout>): GraphNode[] {
   let nodes: GraphNode[] = [];
   const dispose = layout.tick((nextNodes) => {
@@ -91,6 +106,104 @@ function overlaps(a: GraphNode, b: GraphNode): boolean {
 }
 
 describe('constellation layout', () => {
+  it('leaves positions, alpha, and tick callbacks untouched for presentation-only updates', () => {
+    vi.useFakeTimers();
+    const layout = createConstellationLayout({ width: 800, height: 600, seed: 5 });
+    const nodes = [agent('coordinator'), task('task-1')];
+    layout.update(nodes, []);
+    layout.settle();
+    const beforePositions = positions(layout);
+    const beforeAlpha = alpha(layout);
+    const onTick = vi.fn();
+    const dispose = layout.tick(onTick);
+    onTick.mockClear();
+
+    layout.update(
+      [
+        {
+          ...nodes[0],
+          name: 'Streaming coordinator',
+          status: 'responding',
+          lastResponse: 'Working',
+          activeToolName: 'workspace_api',
+          activeToolInput: { code: 'return true' },
+          waitingForAgentIds: ['agent-2'],
+        } as AgentNode,
+        {
+          ...nodes[1],
+          title: 'Renamed task',
+          state: 'in_progress',
+          lastActionTimestamp: '2026-01-01T00:00:01.000Z',
+        } as TaskNode,
+      ],
+      [],
+    );
+    vi.advanceTimersByTime(100);
+    layout.stop();
+
+    expect(positions(layout)).toEqual(beforePositions);
+    expect(alpha(layout)).toBe(beforeAlpha);
+    expect(onTick).not.toHaveBeenCalled();
+    dispose();
+    vi.useRealTimers();
+  });
+
+  it('reheats when a node is added', () => {
+    const layout = createConstellationLayout({ width: 800, height: 600 });
+    const firstTask = task('task-1');
+    layout.update([firstTask], []);
+    layout.settle();
+    const existing = snapshot(layout)[0];
+
+    layout.update([{ ...firstTask, title: 'Fresh title' }, task('task-2')], []);
+    layout.stop();
+
+    expect(alpha(layout)).toBe(0.65);
+    expect(snapshot(layout)[0]).toBe(existing);
+    expect((snapshot(layout)[0] as TaskNode).title).toBe('Fresh title');
+  });
+
+  it('reheats when an edge is added', () => {
+    const layout = createConstellationLayout({ width: 800, height: 600 });
+    const nodes = [agent('agent-1'), task('task-1')];
+    layout.update(nodes, []);
+    layout.settle();
+
+    layout.update(nodes, [edge('task-assignment', 'agent-1', 'task-1')]);
+    layout.stop();
+
+    expect(alpha(layout)).toBe(0.65);
+  });
+
+  it('refreshes count-based link strength without reheating', () => {
+    const graph = buildConstellationGraph(Date.parse('2026-09-04T00:00:00.000Z'));
+    const resourceEdge = graph.edges.find(
+      ({ type }) => type.startsWith('file-') || type.startsWith('note-'),
+    )!;
+    const layout = createConstellationLayout({ width: 800, height: 600 });
+    layout.update(graph.nodes, graph.edges);
+    layout.settle();
+    const beforeAlpha = alpha(layout);
+    const beforePositions = positions(layout);
+    const onTick = vi.fn();
+    const dispose = layout.tick(onTick);
+    onTick.mockClear();
+
+    layout.update(
+      graph.nodes,
+      graph.edges.map((graphEdge) =>
+        graphEdge.id === resourceEdge.id ? { ...graphEdge, count: 64 } : graphEdge,
+      ),
+    );
+    layout.stop();
+
+    expect(alpha(layout)).toBe(beforeAlpha);
+    expect(alpha(layout)).toBeLessThanOrEqual(0.1);
+    expect(positions(layout)).toEqual(beforePositions);
+    expect(onTick).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it('spawns a newly assigned agent outside its task anchor', () => {
     const layout = createConstellationLayout({ width: 800, height: 600, seed: 11 });
     layout.update(

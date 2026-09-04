@@ -60,8 +60,6 @@ const AGENT_DISTANCE = NODE_RADII.agent * 2 + GRAPH_NODE_GAPS.taskAgent + 16;
 const AGENT_FAN_STEP = 1;
 const RESOURCE_FAN_STEP = 0.95;
 
-const SIMULATION_FIELDS = new Set(['x', 'y', 'vx', 'vy', 'fx', 'fy', 'index']);
-
 function edgeType(edge: GraphEdge): string {
   return String(edge.type);
 }
@@ -71,22 +69,36 @@ function edgeCount(edge: GraphEdge): number {
   return typeof count === 'number' && Number.isFinite(count) ? Math.max(1, count) : 1;
 }
 
-function semanticValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(semanticValue);
-  if (!value || typeof value !== 'object') return value;
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => !SIMULATION_FIELDS.has(key))
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, child]) => [key, semanticValue(child)]),
-  );
+function structuralNodeValue(node: GraphNode): unknown {
+  if (node.type === 'agent') {
+    return [
+      node.id,
+      node.type,
+      node.parentAgentId,
+      node.taskNoteId,
+      node.isCoordinator,
+      node.isBackground,
+    ];
+  }
+  if (node.type === 'task') return [node.id, node.type, node.dependsOn];
+  return [node.id, node.type];
 }
 
 function graphFingerprint(nodes: GraphNode[], edges: GraphEdge[]): string {
-  const nodeFingerprint = nodes.map((node) => semanticValue(node));
-  const edgeFingerprint = edges.map((edge) => JSON.stringify(semanticValue(edge))).sort();
+  const nodeFingerprint = nodes.map(structuralNodeValue);
+  const edgeFingerprint = edges
+    .map((edge) => JSON.stringify([edge.sourceId, edge.targetId, edge.type]))
+    .sort();
   return JSON.stringify([nodeFingerprint, edgeFingerprint]);
+}
+
+function linkStrengthFingerprint(edges: GraphEdge[]): string {
+  return JSON.stringify(
+    edges
+      .filter((edge) => edgeType(edge).startsWith('file-') || edgeType(edge).startsWith('note-'))
+      .map((edge) => JSON.stringify([edge.sourceId, edge.targetId, edge.type, edgeCount(edge)]))
+      .sort(),
+  );
 }
 
 function seededUnit(seed: number, id: string, axis: number): number {
@@ -123,6 +135,7 @@ export function createConstellationLayout({
   let taskAnchors = new Map<string, Point>();
   let desiredPositions = new Map<string, Point>();
   let fingerprint = '';
+  let strengthFingerprint = '';
 
   const simulation: Simulation<GraphNode, LayoutLink> = forceSimulation<GraphNode>([])
     .velocityDecay(0.35)
@@ -313,8 +326,27 @@ export function createConstellationLayout({
     });
   }
 
+  function configureLinkForce(edges: GraphEdge[]): void {
+    simulation.force(
+      'links',
+      forceLink<GraphNode, LayoutLink>(buildLinks(edges))
+        .id((node) => node.id)
+        .distance((link) =>
+          link.kind === 'task-assignment'
+            ? TASK_AGENT_DISTANCE
+            : link.kind === 'delegation'
+              ? AGENT_DISTANCE
+              : RESOURCE_DISTANCE,
+        )
+        .strength((link) => {
+          if (link.kind === 'task-assignment') return 0.5;
+          if (link.kind === 'delegation') return 0.32;
+          return Math.min(0.5, 0.28 + Math.log2(link.count + 1) * 0.05);
+        }),
+    );
+  }
+
   function configureForces(edges: GraphEdge[]): void {
-    const links = buildLinks(edges);
     desiredPositions = computeDesiredPositions(currentNodes, edges);
     simulation
       .nodes(currentNodes)
@@ -339,29 +371,20 @@ export function createConstellationLayout({
                 ? 0.22
                 : 0.16,
         ),
-      )
-      .force(
-        'links',
-        forceLink<GraphNode, LayoutLink>(links)
-          .id((node) => node.id)
-          .distance((link) =>
-            link.kind === 'task-assignment'
-              ? TASK_AGENT_DISTANCE
-              : link.kind === 'delegation'
-                ? AGENT_DISTANCE
-                : RESOURCE_DISTANCE,
-          )
-          .strength((link) => {
-            if (link.kind === 'task-assignment') return 0.5;
-            if (link.kind === 'delegation') return 0.32;
-            return Math.min(0.5, 0.28 + Math.log2(link.count + 1) * 0.05);
-          }),
       );
+    configureLinkForce(edges);
   }
 
   function update(nodes: GraphNode[], edges: GraphEdge[]): void {
     const nextFingerprint = graphFingerprint(nodes, edges);
-    if (nextFingerprint === fingerprint) return;
+    const nextStrengthFingerprint = linkStrengthFingerprint(edges);
+    if (nextFingerprint === fingerprint) {
+      if (nextStrengthFingerprint !== strengthFingerprint) {
+        configureLinkForce(edges);
+        strengthFingerprint = nextStrengthFingerprint;
+      }
+      return;
+    }
 
     const previousNodes = nodeById;
     const incomingById = new Map(nodes.map((node) => [node.id, node]));
@@ -412,6 +435,7 @@ export function createConstellationLayout({
     configureForces(edges);
     nextNodes.forEach(positionNewNode);
     fingerprint = nextFingerprint;
+    strengthFingerprint = nextStrengthFingerprint;
     simulation.alpha(0.65).restart();
   }
 
