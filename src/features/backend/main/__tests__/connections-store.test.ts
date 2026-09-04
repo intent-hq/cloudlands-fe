@@ -234,6 +234,49 @@ describe('connections-store', () => {
     expect((await reloaded.list())[0].deviceIcon).toBe('cat');
   });
 
+  it('rejects override-only kinds as detected metadata while keeping them valid as icons', async () => {
+    const store = await import('../connections-store');
+    const { ConnectionsAddSchema } = await import('../../../../main/ipc-schemas');
+    const rec = await store.add({ ...sampleConn, deviceIcon: 'robot' });
+    expect(rec.deviceIcon).toBe('robot');
+    expect(ConnectionsAddSchema.safeParse({ ...sampleConn, deviceIcon: 'robot' }).success).toBe(
+      true,
+    );
+    expect(
+      ConnectionsAddSchema.safeParse({ ...sampleConn, detectedDeviceKind: 'robot' }).success,
+    ).toBe(false);
+
+    await expect(
+      store.add({ ...sampleConn, detectedDeviceKind: 'robot' as never }),
+    ).rejects.toThrow(/detected device kind/i);
+    await expect(
+      store.updateMetadata(rec.id, {
+        label: rec.label,
+        accent: rec.accent ?? 'blue',
+        detectedDeviceKind: 'robot' as never,
+      }),
+    ).rejects.toThrow(/detected device kind/i);
+  });
+
+  it('drops override-only detected kinds when hydrating remote and local records', async () => {
+    const store = await import('../connections-store');
+    await store.add({ ...sampleConn, detectedDeviceKind: 'macStudio' });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    parsed.connections[0].detectedDeviceKind = 'robot';
+    parsed.localDetectedDeviceKind = 'robot';
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    expect(await reloaded.list()).toEqual([
+      expect.objectContaining({ id: reloaded.LOCAL_CONNECTION_ID, detectedDeviceKind: null }),
+      expect.objectContaining({ detectedDeviceKind: null }),
+    ]);
+  });
+
   it('updateMetadata rejects local, unknown, blank-name, and invalid-accent updates', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
@@ -476,6 +519,21 @@ describe('connections-store', () => {
 
     // The stored token was replaced.
     expect(await store.getDecryptedToken(original.id)).toBe('fresh-token');
+  });
+
+  it('re-pair keeps a supplied detected kind and clears it only when omitted', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add({ ...sampleConn, detectedDeviceKind: 'server' });
+
+    const detected = await store.add({
+      ...sampleConn,
+      fingerprint: 'DD:EE:FF',
+      detectedDeviceKind: 'macStudio',
+    });
+    expect(detected).toMatchObject({ id: original.id, detectedDeviceKind: 'macStudio' });
+
+    const cleared = await store.add({ ...sampleConn, fingerprint: '11:22:33' });
+    expect(cleared).toMatchObject({ id: original.id, detectedDeviceKind: null });
   });
 
   it('collapses pre-existing host:port duplicates on add (keeps the first, drops the rest)', async () => {

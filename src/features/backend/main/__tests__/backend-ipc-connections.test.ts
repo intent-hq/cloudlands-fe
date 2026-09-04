@@ -2201,6 +2201,19 @@ describe('self-publish IPC', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
+  it('connections:publish-self rejects override-only device kinds from pairingInfo', async () => {
+    installPairingInfo({ deviceKind: 'robot' });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ detectedDeviceKind: null }));
+    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', null);
+  });
+
   it('connections:publish-self sets hosts even for a single IP (stale extras must converge)', async () => {
     installPairingInfo({ localIps: ['192.168.1.10'] });
     store.add.mockResolvedValue(SELF_RECORD);

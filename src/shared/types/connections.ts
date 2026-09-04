@@ -71,14 +71,20 @@ export type ConnectionAccent = ConnectionAccentName | null;
 /** Deterministic fallback for records written before accent metadata existed. */
 export const DEFAULT_CONNECTION_ACCENT: ConnectionAccentName = 'blue';
 
-/** Stable device identifiers accepted from daemon detection and user overrides. */
-export const DEVICE_KINDS = [
+/** Stable device identifiers reported by daemon detection. */
+export const DETECTED_DEVICE_KINDS = [
   'macMini',
   'macStudio',
   'laptop',
   'desktop',
   'server',
   'cloudVm',
+] as const;
+
+export type DetectedDeviceKind = (typeof DETECTED_DEVICE_KINDS)[number];
+
+/** Playful icon identifiers available only as user overrides. */
+export const WILD_CARD_DEVICE_KINDS = [
   'robot',
   'rocket',
   'flyingSaucer',
@@ -90,6 +96,9 @@ export const DEVICE_KINDS = [
   'planet',
   'pottedPlant',
 ] as const;
+
+/** Stable device identifiers accepted as user overrides. */
+export const DEVICE_KINDS = [...DETECTED_DEVICE_KINDS, ...WILD_CARD_DEVICE_KINDS] as const;
 
 export type DeviceKind = (typeof DEVICE_KINDS)[number];
 export type DeviceIconChoice = 'auto' | DeviceKind;
@@ -106,6 +115,10 @@ export function isConnectionAccent(value: unknown): value is ConnectionAccent {
 
 export function isDeviceKind(value: unknown): value is DeviceKind {
   return typeof value === 'string' && (DEVICE_KINDS as readonly string[]).includes(value);
+}
+
+export function isDetectedDeviceKind(value: unknown): value is DetectedDeviceKind {
+  return typeof value === 'string' && (DETECTED_DEVICE_KINDS as readonly string[]).includes(value);
 }
 
 export function isDeviceIconChoice(value: unknown): value is DeviceIconChoice {
@@ -131,7 +144,7 @@ export interface ConnectionRecord {
   /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
   accent?: ConnectionAccent;
   /** Daemon-detected kind; `null` when the daemon omits or predates the field. */
-  detectedDeviceKind?: DeviceKind | null;
+  detectedDeviceKind?: DetectedDeviceKind | null;
   /** User-selected icon override; `auto` resolves from the detected kind. */
   deviceIcon?: DeviceIconChoice;
   /** Remote host/IP; `null` for the local UDS entry. */
@@ -300,7 +313,7 @@ export interface AddConnectionParams {
   label: string;
   /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}; `null` explicitly clears it. */
   accent?: ConnectionAccent;
-  detectedDeviceKind?: DeviceKind | null;
+  detectedDeviceKind?: DetectedDeviceKind | null;
   deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
@@ -346,7 +359,7 @@ export interface UpdateConnectionParams {
   id: string;
   label: string;
   accent: ConnectionAccent;
-  detectedDeviceKind?: DeviceKind | null;
+  detectedDeviceKind?: DetectedDeviceKind | null;
   deviceIcon?: DeviceIconChoice;
   /** Optional for compatibility with presentation-only callers. */
   host?: string;

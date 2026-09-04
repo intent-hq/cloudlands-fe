@@ -36,12 +36,12 @@ import {
   DEFAULT_CONNECTION_ACCENT,
   LOCAL_CONNECTION_ID,
   isConnectionAccent,
+  isDetectedDeviceKind,
   isDeviceIconChoice,
-  isDeviceKind,
   type ConnectionAccent,
   type ConnectionRecord,
+  type DetectedDeviceKind,
   type DeviceIconChoice,
-  type DeviceKind,
 } from '../../../shared/types/connections';
 import { TOMBSTONE_TTL_MS, accountKeyFor, type KeychainSyncRecord } from './keychain-sync';
 
@@ -76,7 +76,7 @@ interface StoredConnection {
   label: string;
   /** Optional for backward compatibility; missing uses the default, null is explicitly blank. */
   accent?: ConnectionAccent;
-  detectedDeviceKind?: DeviceKind | null;
+  detectedDeviceKind?: DetectedDeviceKind | null;
   deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
@@ -178,7 +178,7 @@ interface StoredTombstone {
 export interface NewConnection {
   label: string;
   accent?: ConnectionAccent;
-  detectedDeviceKind?: DeviceKind | null;
+  detectedDeviceKind?: DetectedDeviceKind | null;
   deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
@@ -205,7 +205,7 @@ interface PersistedState {
   /** Local-only icon override; intentionally excluded from keychain sync. */
   localDeviceIcon?: DeviceIconChoice;
   /** Last kind detected from the local daemon. */
-  localDetectedDeviceKind?: DeviceKind | null;
+  localDetectedDeviceKind?: DetectedDeviceKind | null;
 }
 
 /** In-flight write chain so concurrent writers serialize. */
@@ -268,7 +268,9 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     id: stored.id,
     label: stored.label,
     accent: stored.accent === undefined ? DEFAULT_CONNECTION_ACCENT : stored.accent,
-    detectedDeviceKind: isDeviceKind(stored.detectedDeviceKind) ? stored.detectedDeviceKind : null,
+    detectedDeviceKind: isDetectedDeviceKind(stored.detectedDeviceKind)
+      ? stored.detectedDeviceKind
+      : null,
     deviceIcon: isDeviceIconChoice(stored.deviceIcon) ? stored.deviceIcon : 'auto',
     host: stored.host,
     hosts: candidateHosts(stored),
@@ -365,7 +367,7 @@ async function readState(): Promise<PersistedState> {
       const localDeviceIcon = isDeviceIconChoice(obj.localDeviceIcon)
         ? obj.localDeviceIcon
         : 'auto';
-      const localDetectedDeviceKind = isDeviceKind(obj.localDetectedDeviceKind)
+      const localDetectedDeviceKind = isDetectedDeviceKind(obj.localDetectedDeviceKind)
         ? obj.localDetectedDeviceKind
         : null;
       return { connections, activeId, tombstones, localDeviceIcon, localDetectedDeviceKind };
@@ -584,7 +586,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   if (conn.deviceIcon !== undefined && !isDeviceIconChoice(conn.deviceIcon)) {
     throw new Error('Invalid device icon');
   }
-  if (conn.detectedDeviceKind != null && !isDeviceKind(conn.detectedDeviceKind)) {
+  if (conn.detectedDeviceKind != null && !isDetectedDeviceKind(conn.detectedDeviceKind)) {
     throw new Error('Invalid detected device kind');
   }
   const encToken = encryptToken(conn.token);
@@ -618,11 +620,12 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.label = conn.label;
       survivor.accent = accent;
       survivor.deviceIcon = conn.deviceIcon ?? survivor.deviceIcon ?? 'auto';
-      survivor.detectedDeviceKind = fingerprintChanged
-        ? null
-        : conn.detectedDeviceKind !== undefined
+      survivor.detectedDeviceKind =
+        conn.detectedDeviceKind !== undefined
           ? conn.detectedDeviceKind
-          : survivor.detectedDeviceKind;
+          : fingerprintChanged
+            ? null
+            : survivor.detectedDeviceKind;
       survivor.host = conn.host;
       survivor.port = conn.port;
       // Extras keyed to the old primary may be stale after a host change;
@@ -698,7 +701,7 @@ export async function updateMetadata(
     host?: string;
     port?: number;
     fingerprint?: string;
-    detectedDeviceKind?: DeviceKind | null;
+    detectedDeviceKind?: DetectedDeviceKind | null;
     deviceIcon?: DeviceIconChoice;
     detectHosts?: boolean;
     syncExcluded?: boolean;
@@ -707,7 +710,7 @@ export async function updateMetadata(
   if (metadata.deviceIcon !== undefined && !isDeviceIconChoice(metadata.deviceIcon)) {
     throw new Error('Invalid device icon');
   }
-  if (metadata.detectedDeviceKind != null && !isDeviceKind(metadata.detectedDeviceKind)) {
+  if (metadata.detectedDeviceKind != null && !isDetectedDeviceKind(metadata.detectedDeviceKind)) {
     throw new Error('Invalid detected device kind');
   }
   if (id === LOCAL_CONNECTION_ID) {
@@ -1010,7 +1013,10 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
 }
 
 /** Persist the latest daemon-detected device kind, clearing it with `null`. */
-export async function setDetectedDeviceKind(id: string, kind: DeviceKind | null): Promise<boolean> {
+export async function setDetectedDeviceKind(
+  id: string,
+  kind: DetectedDeviceKind | null,
+): Promise<boolean> {
   const changed = await mutate(async (state) => {
     if (id === LOCAL_CONNECTION_ID) {
       if ((state.localDetectedDeviceKind ?? null) === kind) return false;
