@@ -519,7 +519,7 @@
             </div>
             {#if secretUnavailableConnection}
               <p
-                class="mt-2 text-sm text-destructive"
+                class="mt-2 text-sm text-danger"
                 role="alert"
                 data-testid="daemon-stopped-open-secret-unavailable"
               >

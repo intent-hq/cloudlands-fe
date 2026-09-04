@@ -139,7 +139,7 @@
         {/if}
         {#if openError}
           <p
-            class="px-2 pt-1.5 pb-1 text-xs text-destructive"
+            class="px-2 pt-1.5 pb-1 text-xs text-danger"
             role="alert"
             data-testid="hud-backend-menu-open-error"
           >
