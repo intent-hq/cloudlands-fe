@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.136.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.135.0...v2.136.0) (2026-09-04)
+
+
+### 🚀 Features
+
+* add device icon picker ([#2130](https://github.com/intent-hq/cloudlands-fe/issues/2130)) ([9f176b7](https://github.com/intent-hq/cloudlands-fe/commit/9f176b73a259728cef1f839d1ad000bb55701a5e))
+* add same-origin intentd dev bridge for dev:web ([#2061](https://github.com/intent-hq/cloudlands-fe/issues/2061)) ([e86c1bf](https://github.com/intent-hq/cloudlands-fe/commit/e86c1bf08488fe5001cdb74798598cef697ddded))
+* render agent proposals inline in the chat transcript ([#2050](https://github.com/intent-hq/cloudlands-fe/issues/2050)) ([47b5815](https://github.com/intent-hq/cloudlands-fe/commit/47b5815c7fbeb4f398c44f6f1e0dd978fe341aac))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.21 ([#2176](https://github.com/intent-hq/cloudlands-fe/issues/2176)) ([44fcc66](https://github.com/intent-hq/cloudlands-fe/commit/44fcc662e4eb90c7b92a208436e752c010804a74))
+
 ## [2.135.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.134.0...v2.135.0) (2026-09-04)
 
 
