@@ -134,6 +134,33 @@
         <Dialog.Description class="leading-5">{description}</Dialog.Description>
       </Dialog.Header>
 
+      {#if hasActiveWork}
+        <div class="space-y-1">
+          {#if activeAgentCount > 0}
+            <p class="text-sm text-muted-foreground">
+              {activeAgentCount === 1
+                ? m.modals_deleteWarning_agentsStopped_one({
+                    count: formatInteger(activeAgentCount),
+                  })
+                : m.modals_deleteWarning_agentsStopped_many({
+                    count: formatInteger(activeAgentCount),
+                  })}
+            </p>
+          {/if}
+          {#if activeHookCount > 0}
+            <p class="text-sm text-muted-foreground">
+              {activeHookCount === 1
+                ? m.modals_deleteWarning_hooksCancelled_one({
+                    count: formatInteger(activeHookCount),
+                  })
+                : m.modals_deleteWarning_hooksCancelled_many({
+                    count: formatInteger(activeHookCount),
+                  })}
+            </p>
+          {/if}
+        </div>
+      {/if}
+
       {#if workspaces.length > 0}
         <div role="list" class="max-h-56 w-full min-w-0 overflow-y-auto">
           {#each workspaces as workspace (workspace.id)}
@@ -161,33 +188,6 @@
               {/if}
             </div>
           {/each}
-        </div>
-      {/if}
-
-      {#if hasActiveWork}
-        <div class="space-y-1">
-          {#if activeAgentCount > 0}
-            <p class="text-sm text-muted-foreground">
-              {activeAgentCount === 1
-                ? m.modals_deleteWarning_agentsStopped_one({
-                    count: formatInteger(activeAgentCount),
-                  })
-                : m.modals_deleteWarning_agentsStopped_many({
-                    count: formatInteger(activeAgentCount),
-                  })}
-            </p>
-          {/if}
-          {#if activeHookCount > 0}
-            <p class="text-sm text-muted-foreground">
-              {activeHookCount === 1
-                ? m.modals_deleteWarning_hooksCancelled_one({
-                    count: formatInteger(activeHookCount),
-                  })
-                : m.modals_deleteWarning_hooksCancelled_many({
-                    count: formatInteger(activeHookCount),
-                  })}
-            </p>
-          {/if}
         </div>
       {/if}
     </div>
