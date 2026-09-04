@@ -1,5 +1,5 @@
 <script lang="ts">
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   let {
     file,
     onFileClick,
@@ -15,6 +15,7 @@
     focused,
     locked,
   }: any = $props();
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->

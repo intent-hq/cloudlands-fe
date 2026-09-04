@@ -19,7 +19,7 @@
     onclick?: () => void;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   let {
     node,
     isActive = false,
@@ -27,6 +27,7 @@
     actionType = null,
     onclick,
   }: Props = $props();
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   // Action indicator icon
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
