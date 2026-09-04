@@ -60,7 +60,7 @@ async function getActiveProviderId(): Promise<string | null> {
  * Import createAgentTypeId from '$shared/types/agent.types' and use it to create the branded type.
  *
  * DO NOT pass systemPrompt or rules - these are DEPRECATED and ignored.
- * The backend builds the complete system prompt from agentType via InstructionService.
+ * The intentd daemon builds the complete system prompt from agentType.
  *
  * Agent naming follows the VS Code webview pattern:
  * - If `name` is provided,
@@ -682,19 +682,9 @@ export class UnifiedAgentFactory {
   }
 
   /**
-   * REMOVED: buildSystemPromptWithRules(), loadBaseSystemPrompt(), loadDefaultRulesForAgentType()
-   *
-   * These methods were dead code - never called in production.
-   *
-   * System prompts are now ONLY built by the backend via InstructionService.buildSystemPrompt()
-   * which is called in agent-backend-handler.service.ts when creating agents.
-   *
-   * InstructionService provides:
-   * - 3-tier fallback: user customizations → workspace files → bundled defaults
-   * - Proper caching and file watching
-   * - Consistent behavior across all agent types
-   *
-   * See AGENT_LAUNCHING_ANALYSIS.md for details.
+   * The FE does not build system prompts. They are assembled by the intentd
+   * daemon (harness) from `agentType` when the session is created through
+   * `appClient.agents.create` (see `createInBackend` below).
    */
 
   /**
