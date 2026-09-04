@@ -11,12 +11,16 @@ export type AntigravitySetupState = {
   generation: number;
   command: SetupCommand;
   busy: boolean;
+  attempted: boolean;
+  verified: boolean;
   result: AntigravitySetupResult | null;
 };
 export const initialState: AntigravitySetupState = {
   generation: 0,
   command: 'close',
   busy: false,
+  attempted: false,
+  verified: false,
   result: null,
 };
 export const antigravitySetupRequested = createAction<[command: SetupCommand]>(
@@ -36,6 +40,9 @@ antigravitySetupReducer.with(antigravitySetupRequested, (state, { payload: [comm
     generation: state.generation + 1,
     command,
     busy: command !== 'cancel' && command !== 'close',
+    attempted:
+      command === 'close' ? false : state.attempted || command === 'start' || command === 'login',
+    verified: command === 'status' ? state.verified : false,
     result: command === 'close' ? null : state.result,
   };
 });
@@ -48,5 +55,9 @@ antigravitySetupReducer.with(
           ...state,
           result,
           busy: result.ok && isAntigravitySetupBusy(result.status),
+          verified: state.verified && result.ok && result.status.phase === 'connected',
         },
+);
+antigravitySetupReducer.with(antigravitySetupVerified, (state) =>
+  state.attempted ? { ...state, verified: true } : state,
 );

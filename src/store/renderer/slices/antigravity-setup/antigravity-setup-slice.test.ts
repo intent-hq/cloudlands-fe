@@ -10,6 +10,7 @@ import {
   agentAvailabilityReducer,
   checkSingleProviderSuccess,
 } from '../agent-availability/agent-availability-slice';
+import { selectAntigravitySetupPolicy } from './antigravity-setup-selectors';
 
 const status = {
   operationId: 'one',
@@ -20,6 +21,54 @@ const status = {
 };
 
 describe('Antigravity setup state', () => {
+  const policy = (setup: typeof initialState) =>
+    selectAntigravitySetupPolicy.select({
+      antigravitySetup: setup,
+      agentAvailability: {
+        providerStatusMap: { antigravity: { available: true, authenticated: true } },
+      },
+    } as Parameters<typeof selectAntigravitySetupPolicy.select>[0]);
+
+  it('keeps a failed attempt blocked until a retry verifies fresh models', () => {
+    let state = antigravitySetupReducer(initialState, antigravitySetupRequested('start'));
+    expect(policy(state)).toMatchObject({ hasAttempt: true, canEnable: false });
+    state = antigravitySetupReducer(
+      state,
+      antigravitySetupReceived(state.generation, {
+        ok: true,
+        status: { ...status, phase: 'failed', code: 'modelsUnavailable' },
+      }),
+    );
+    expect(policy(state)).toMatchObject({ hasAttempt: true, connected: false, canEnable: false });
+
+    // A passive daemon status cannot replace the frontend's failed model check.
+    state = antigravitySetupReducer(state, antigravitySetupRequested('status'));
+    const connected = {
+      ok: true as const,
+      status: { ...status, phase: 'connected' as const, modelCount: 1 },
+    };
+    state = antigravitySetupReducer(state, antigravitySetupReceived(state.generation, connected));
+    expect(policy(state)).toMatchObject({ connected: false, canEnable: false });
+
+    state = antigravitySetupReducer(state, antigravitySetupRequested('start'));
+    state = antigravitySetupReducer(state, antigravitySetupVerified());
+    state = antigravitySetupReducer(state, antigravitySetupReceived(state.generation, connected));
+    expect(policy(state)).toMatchObject({ connected: true, canEnable: true });
+    state = antigravitySetupReducer(state, antigravitySetupRequested('cancel'));
+    expect(policy(state).canEnable).toBe(false);
+  });
+
+  it('does not impose guided setup on a pre-existing installation after passive status', () => {
+    for (const code of ['remoteHost', 'unsupportedHost', 'updateRequired'] as const) {
+      let state = antigravitySetupReducer(initialState, antigravitySetupRequested('status'));
+      state = antigravitySetupReducer(
+        state,
+        antigravitySetupReceived(state.generation, { ok: false, code }),
+      );
+      expect(policy(state)).toMatchObject({ hasAttempt: false, canEnable: true });
+    }
+  });
+
   it('starts empty and coalesces repeat connect and login clicks', () => {
     expect(antigravitySetupReducer(undefined, { type: 'init' })).toEqual(initialState);
     for (const command of ['start', 'login'] as const) {

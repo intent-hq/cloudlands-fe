@@ -54,6 +54,65 @@ function session(current = () => true) {
 }
 
 describe('Antigravity private setup session', () => {
+  it.each([
+    [
+      'status',
+      'providers.setup.status',
+      { providerId: 'antigravity' },
+      { ...status, operationId: null, phase: 'idle' },
+    ],
+    [
+      'start',
+      'providers.setup.start',
+      { providerId: 'antigravity' },
+      { ...status, phase: 'checking' },
+    ],
+    [
+      'login',
+      'providers.setup.login',
+      { providerId: 'antigravity', operationId: 'operation-1' },
+      { ...status, phase: 'signingIn' },
+    ],
+    [
+      'cancel',
+      'providers.setup.cancel',
+      { providerId: 'antigravity', operationId: 'operation-1' },
+      { ...status, phase: 'cancelled' },
+    ],
+  ] as const)(
+    'sends the documented %s method and params',
+    async (action, method, params, response) => {
+      const { client } = session();
+      // Establish ownership for actions that require the daemon's operation ID.
+      if (action === 'login' || action === 'cancel') await client.request('start');
+      else await client.request('status');
+      mocks.request.mockClear();
+      mocks.request.mockResolvedValueOnce(response);
+      const result = await client.request(
+        action,
+        'operationId' in params ? params.operationId : undefined,
+      );
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith(method, params);
+      expect(result).toEqual({ ok: true, status: response });
+    },
+  );
+
+  it.each(['login', 'cancel'] as const)(
+    'never sends %s for a missing or foreign operation ID',
+    async (action) => {
+      const { client } = session();
+      await client.request('start');
+      mocks.request.mockClear();
+      for (const operationId of [undefined, 'foreign-operation']) {
+        expect(await client.request(action, operationId)).toEqual({
+          ok: false,
+          code: 'invalidOperation',
+        });
+      }
+      expect(mocks.request).not.toHaveBeenCalled();
+    },
+  );
+
   it('removes unknown fields before the response enters IPC or Redux', async () => {
     const { client } = session();
     mocks.request.mockResolvedValueOnce({ ...status, url });

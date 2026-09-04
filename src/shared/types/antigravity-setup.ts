@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const setupFailureSchema = z.enum([
+const setupFailureSchema = z.enum([
   'unsupportedHost',
   'downloadFailed',
   'invalidArchive',
@@ -45,7 +45,7 @@ export const antigravitySetupStatusSchema = z
 
 export type AntigravitySetupStatus = z.infer<typeof antigravitySetupStatusSchema>;
 export type AntigravitySetupAction = 'status' | 'start' | 'login' | 'cancel';
-export type AntigravitySetupClientError =
+type AntigravitySetupClientError =
   | 'remoteHost'
   | 'unsupportedHost'
   | 'updateRequired'

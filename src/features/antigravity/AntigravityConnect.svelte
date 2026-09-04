@@ -1,19 +1,25 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
   import { antigravitySetupRequested } from '$store/renderer/slices/antigravity-setup/antigravity-setup-slice';
-  import { selectAntigravitySetup } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
+  import {
+    selectAntigravitySetup,
+    selectAntigravitySetupPolicy,
+  } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
   let { ready = false }: { ready?: boolean } = $props();
   const setup$ = selectAntigravitySetup();
+  const policy$ = selectAntigravitySetupPolicy();
   const status = $derived($setup$.result?.ok ? $setup$.result.status : null);
   const errorCode = $derived(
     $setup$.result && !$setup$.result.ok
       ? $setup$.result.code
       : status?.phase === 'failed'
         ? status.code
-        : null,
+        : status?.phase === 'connected' && !$policy$.connected && !$setup$.busy
+          ? 'modelsUnavailable'
+          : null,
   );
   const limited = $derived(
     errorCode === 'remoteHost' || errorCode === 'unsupportedHost' || errorCode === 'updateRequired',
@@ -54,12 +60,12 @@
   }
 </script>
 
-{#if !ready || $setup$.busy || status?.phase === 'connected'}
+{#if !ready || $setup$.busy || $policy$.hasAttempt || status?.phase === 'connected'}
   <div class="mt-3 space-y-2 text-xs text-muted-foreground">
     <div role="status" aria-live="polite">
       {#if errorCode}
         <p>{failureText(errorCode)}</p>
-      {:else if status?.phase === 'connected'}
+      {:else if $policy$.connected}
         <p>{m.antigravity_setup_connected_description()}</p>
       {:else if status?.phase === 'signInRequired'}
         <p>{m.antigravity_setup_signIn_description()}</p>
@@ -109,7 +115,7 @@
           onclick={() => appStore.dispatch(antigravitySetupRequested('cancel'))}
           >{m.antigravity_setup_cancel_label()}</Button
         >
-      {:else if !limited && status?.phase !== 'connected'}
+      {:else if !limited && !$policy$.connected}
         <Button
           size="xs"
           variant="secondary"
