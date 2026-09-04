@@ -135,17 +135,14 @@
       </Dialog.Header>
 
       {#if workspaces.length > 0}
-        <div
-          role="list"
-          class="max-h-56 w-full min-w-0 overflow-y-auto rounded-md border border-border/60 bg-muted/30 divide-y divide-border/40"
-        >
+        <div role="list" class="max-h-56 w-full min-w-0 overflow-y-auto">
           {#each workspaces as workspace (workspace.id)}
             {@const statusState = resolveWorkspaceStatusState(workspace)}
             {@const statusPresentation = getWorkspaceStatusPresentation(statusState)}
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <div
               role="listitem"
-              class="flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-sm"
+              class="flex min-w-0 items-center gap-2.5 py-1.5 text-sm"
               onmouseenter={(event) => handleWorkspaceMouseEnter(workspace, event)}
               onmouseleave={() => handleWorkspaceMouseLeave(workspace)}
               style:anchor-name="--bulk-dialog-workspace-{workspace.id}"
