@@ -628,21 +628,18 @@ describe('settings tab route and focus behavior', () => {
     expect(window.location.hash).toBe('#specialist-implementor');
   });
 
-  it('keeps Providers and Global Instructions default-model entry points on shared state', async () => {
+  it('renders the default model row under Providers only, not Agent Behavior', async () => {
     appStore.dispatch(hydrateDefaultProvider('codex'));
     appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
+    expect(document.getElementById('utility-default-model')).not.toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
-    await screen.findByTestId('global-instructions-default-model-row');
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain('system-prompt');
+    expect(document.getElementById('utility-default-model')).toBeNull();
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
-
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'updated-fixture' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('updated-fixture');
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
@@ -749,8 +746,9 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
-    ['global-instructions', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
+    ['default-model', 'quickActions.defaultModel', 'Providers', 'page'],
+    ['quickActions.defaultModel', 'quickActions.defaultModel', 'Providers', 'page'],
+    ['global-instructions', 'global-instructions', 'Agent Behavior', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
     ['updates', 'updates', 'App Behavior', 'page'],
     ['open-in', 'open-in', 'App Behavior', 'page'],
