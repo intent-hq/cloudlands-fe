@@ -10,6 +10,7 @@ export const SANDBOX_HEALTH_PATH = '/__sandbox/health';
 export const MAX_MESSAGE_BYTES = 40 * 1024 * 1024;
 
 const SOCKET_CONNECT_TIMEOUT_MS = 250;
+const SANDBOX_HEALTH_WAIT_MS = 1_500;
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const NEWLINE = Buffer.from('\n');
@@ -81,6 +82,19 @@ function isLoopbackRequest(request) {
   }
 }
 
+function requestPathname(url) {
+  try {
+    return new URL(url, 'http://localhost').pathname;
+  } catch {
+    return null;
+  }
+}
+
+function resolveHealthWaitMs(env = process.env) {
+  const configured = env.SANDBOX_HEALTH_WAIT_MS?.trim();
+  return configured && /^[0-9]+$/.test(configured) ? Number(configured) : SANDBOX_HEALTH_WAIT_MS;
+}
+
 function probeSocket(socketPath, timeoutMs) {
   return new Promise((resolve) => {
     const socket = net.connect(socketPath);
@@ -100,15 +114,19 @@ function probeSocket(socketPath, timeoutMs) {
   });
 }
 
-function resolveGitInfo(root) {
-  const run = (...args) =>
+export function resolveGitInfo(
+  root,
+  run = (...args) =>
     execFileSync('git', args, {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    }).trim(),
+) {
   try {
-    return { sha: run('rev-parse', 'HEAD'), branch: run('rev-parse', '--abbrev-ref', 'HEAD') };
+    const sha = run('rev-parse', 'HEAD');
+    const branch = run('rev-parse', '--abbrev-ref', 'HEAD');
+    return { sha, branch: branch === 'HEAD' ? null : branch };
   } catch {
     return { sha: 'unknown', branch: 'unknown' };
   }
@@ -164,16 +182,33 @@ async function writeHealthResponse(request, response, server, socketPath, timeou
   }
 
   const warmupEntries = server.config?.server?.warmup?.clientFiles ?? [];
-  if (warmupEntries.length) await server.waitForRequestsIdle();
+  if (warmupEntries.length) {
+    let timer;
+    const settled = await Promise.race([
+      Promise.resolve()
+        .then(() => server.waitForRequestsIdle())
+        .then(() => true),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs.healthWait);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    if (!settled) {
+      response.statusCode = 503;
+      response.setHeader('Cache-Control', 'no-store');
+      response.setHeader('Content-Type', 'application/json; charset=utf-8');
+      response.end(JSON.stringify({ ok: false, warmup: 'pending', git: gitInfo() }));
+      return;
+    }
+  }
   const moduleGraph = clientModuleGraph(server);
-  const daemon = await probeSocket(socketPath, timeoutMs);
+  const daemon = await probeSocket(socketPath, timeoutMs.socketConnect);
   const entriesWarm = configuredEntriesAreWarm(server, moduleGraph);
   const body = {
     ok: daemon.reachable && entriesWarm,
     vite: { ready: true },
     daemon: { socket: socketPath, ...daemon },
     warm: { moduleGraph: moduleGraph?.idToModuleMap?.size ?? 0, entriesWarm },
-    git: gitInfo,
+    git: gitInfo(),
   };
   response.statusCode = body.ok ? 200 : 503;
   response.setHeader('Cache-Control', 'no-store');
@@ -366,7 +401,8 @@ export function intentdBridgePlugin({
   platform = process.platform,
   maxMessageBytes = MAX_MESSAGE_BYTES,
   socketConnectTimeoutMs = SOCKET_CONNECT_TIMEOUT_MS,
-  gitInfo,
+  healthWaitMs = resolveHealthWaitMs(),
+  gitInfoResolver,
 } = {}) {
   return {
     name: 'intentd-same-origin-bridge',
@@ -398,26 +434,38 @@ export function intentdBridgePlugin({
         }
       });
 
-      const resolvedGitInfo = gitInfo ?? resolveGitInfo(server.config?.root ?? process.cwd());
+      const getGitInfo =
+        gitInfoResolver ?? (() => resolveGitInfo(server.config?.root ?? process.cwd()));
 
       server.middlewares.use((request, response, next) => {
-        if (request.url === SANDBOX_HEALTH_PATH) {
+        const pathname = requestPathname(request.url);
+        if (
+          (pathname === BRIDGE_PATH || pathname === SANDBOX_HEALTH_PATH) &&
+          (!bridgeAvailable || !isLoopbackPeer(request.socket))
+        ) {
+          response.statusCode = 403;
+          response.end();
+          return;
+        }
+        if (pathname === SANDBOX_HEALTH_PATH) {
           void writeHealthResponse(
             request,
             response,
             server,
             socketPath,
-            socketConnectTimeoutMs,
-            resolvedGitInfo,
-          );
+            { socketConnect: socketConnectTimeoutMs, healthWait: healthWaitMs },
+            getGitInfo,
+          ).catch((error) => {
+            console.error('[intentd-bridge] health handler failed', error);
+            if (response.writableEnded) return;
+            response.statusCode = 500;
+            response.setHeader('Cache-Control', 'no-store');
+            response.setHeader('Content-Type', 'application/json; charset=utf-8');
+            response.end(JSON.stringify({ ok: false, error: 'health handler failed' }));
+          });
           return;
         }
-        if (request.url !== BRIDGE_PATH) return next();
-        if (!bridgeAvailable || !isLoopbackPeer(request.socket)) {
-          response.statusCode = 403;
-          response.end();
-          return;
-        }
+        if (pathname !== BRIDGE_PATH) return next();
         response.statusCode = 426;
         response.setHeader('Connection', 'close');
         response.setHeader('Upgrade', 'websocket');

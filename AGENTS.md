@@ -157,6 +157,8 @@ The app and stack sandboxes enable the Vite dev server's same-origin daemon brid
 renderer reaches `/intentd/ws` on the page origin through `INTENTD_SOCKET` or the platform
 default socket; `/__sandbox/health` checks the same socket plus Vite warm-up. The browser
 therefore needs one tunnel for the page, daemon RPC, and HMR.
+During the first page load, the health probe returns 503 quickly while warm-up is pending
+rather than blocking on the import crawl.
 
 A first tunneled open of a fresh, pre-warmed app takes roughly one to three minutes to
 hydrate depending on host load. If the splash remains after health is ok, keep waiting
