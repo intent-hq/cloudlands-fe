@@ -106,6 +106,7 @@
     onTaskClick={(id, event) => logClick('task', id, event)}
     onNoteClick={(id, event) => logClick('note', id, event)}
     onFileClick={(id, event) => logClick('file', id, event)}
+    playbackSpeed={speed}
     showFitControl
   />
   {#if replayEnd !== undefined}

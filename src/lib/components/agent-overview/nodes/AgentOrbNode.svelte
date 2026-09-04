@@ -9,6 +9,8 @@
     node: AgentNode;
     isActive?: boolean;
     lastActivityAt?: string;
+    enterDelay?: number;
+    playbackSpeed?: number;
     onclick?: (event: MouseEvent) => void;
     ondblclick?: (event: MouseEvent) => void;
     onpointerdown?: (event: PointerEvent) => void;
@@ -21,7 +23,14 @@
     onblur?: () => void;
   }
 
-  let { node, isActive = false, lastActivityAt, ...events }: Props = $props();
+  let {
+    node,
+    isActive = false,
+    lastActivityAt,
+    enterDelay = 0,
+    playbackSpeed = 1,
+    ...events
+  }: Props = $props();
 
   const avatarState = $derived(
     getAvatarState(
@@ -46,7 +55,8 @@
 
 <button
   use:activityMotion
-  transition:activityNodeTransition
+  in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
+  out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
   class="agent-orb relative flex h-[68px] w-44 touch-none items-center gap-3 rounded-xl border bg-card/95 px-3 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 {isActive
     ? 'border-primary'
@@ -100,6 +110,15 @@
   .agent-orb[data-agent-status='waiting'] {
     animation: waiting-pulse 2.8s ease-in-out infinite;
   }
+  .agent-orb[data-active='true']::before {
+    position: absolute;
+    inset: -1px;
+    border: 1px solid var(--color-primary);
+    border-radius: inherit;
+    content: '';
+    pointer-events: none;
+    animation: working-breathe 2.4s ease-in-out infinite;
+  }
   .agent-orb[data-motion-enabled='false'],
   .agent-orb[data-motion-enabled='false']::before {
     animation: none;
@@ -108,6 +127,11 @@
   @keyframes waiting-pulse {
     50% {
       opacity: 0.72;
+    }
+  }
+  @keyframes working-breathe {
+    50% {
+      opacity: 0.6;
     }
   }
   @media (prefers-reduced-motion: reduce) {

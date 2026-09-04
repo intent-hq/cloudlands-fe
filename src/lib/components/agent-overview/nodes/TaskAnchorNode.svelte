@@ -10,6 +10,8 @@
     node: TaskNode;
     isActive?: boolean;
     lastActivityAt?: string;
+    enterDelay?: number;
+    playbackSpeed?: number;
     onclick?: (event: MouseEvent) => void;
     ondblclick?: (event: MouseEvent) => void;
     onpointerdown?: (event: PointerEvent) => void;
@@ -22,7 +24,22 @@
     onblur?: () => void;
   }
 
-  let { node, isActive = false, lastActivityAt, ...events }: Props = $props();
+  let {
+    node,
+    isActive = false,
+    lastActivityAt,
+    enterDelay = 0,
+    playbackSpeed = 1,
+    ...events
+  }: Props = $props();
+  let previousState: TaskStatus | null = null;
+  let settling = $state(false);
+
+  $effect(() => {
+    const state = node.state;
+    settling = previousState !== null && state === 'complete' && previousState !== 'complete';
+    previousState = state;
+  });
 
   const labels: Record<TaskStatus, () => string> = {
     not_started: m.workspace_taskStatus_notStarted_label,
@@ -38,7 +55,8 @@
 
 <button
   use:activityMotion
-  transition:activityNodeTransition
+  in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
+  out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
   class="task-anchor relative flex h-[84px] w-[168px] touch-none flex-col justify-center gap-1 overflow-hidden rounded-xl border bg-card/95 px-3.5 py-3 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 {isActive
     ? 'border-primary'
@@ -47,6 +65,7 @@
   data-node-id={node.id}
   data-active={isActive}
   data-task-state={node.state}
+  class:task-settling={settling}
   data-last-activity-at={lastActivityAt}
   {...events}
 >
@@ -65,7 +84,7 @@
   <span class="line-clamp-2 text-sm font-medium leading-tight text-foreground">{node.title}</span>
   {#if node.state === 'in_progress' || node.state === 'complete'}
     <span
-      class="absolute inset-x-0 bottom-0 h-px {node.state === 'complete'
+      class="task-progress absolute inset-x-0 bottom-0 h-px origin-left {node.state === 'complete'
         ? 'bg-foreground'
         : 'bg-primary'}"
       aria-hidden="true"
@@ -84,10 +103,43 @@
     animation: none;
     transition: none;
   }
+  .task-progress {
+    transform: scaleX(0.64);
+    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .task-anchor[data-task-state='complete'] .task-progress {
+    transform: scaleX(1);
+  }
+  .task-settling::after {
+    position: absolute;
+    inset: -1px;
+    border: 1px solid var(--color-primary);
+    border-radius: inherit;
+    content: '';
+    pointer-events: none;
+    animation: task-settle 520ms ease-out 260ms 1 both;
+  }
+  @keyframes task-settle {
+    from {
+      opacity: 0.7;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.13);
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .task-anchor {
       animation: none;
       transition: none;
+    }
+    .task-progress {
+      transition: opacity 140ms ease;
+      transform: scaleX(1);
+    }
+    .task-settling::after {
+      animation: none;
     }
   }
 </style>

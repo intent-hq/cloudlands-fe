@@ -140,6 +140,7 @@
     onFileClick={handleFileClick}
     {layers}
     {fitRequest}
+    playbackSpeed={speed}
     showFitControl={false}
   />
 

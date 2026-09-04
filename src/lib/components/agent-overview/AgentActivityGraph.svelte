@@ -16,6 +16,8 @@
     MAX_VISIBLE_RESOURCES_PER_AGENT,
   } from './constants';
   import type { AgentNode, FileNode, GraphNode, GraphState, NoteNode } from './types';
+  import { nodeEnterDelay } from './activity-motion';
+  import type { PlaybackSpeed } from './playback';
 
   export interface GraphLayers {
     files: boolean;
@@ -32,6 +34,7 @@
     layers: GraphLayers;
     fitRequest?: number;
     showFitControl?: boolean;
+    playbackSpeed?: PlaybackSpeed;
   }
 
   let {
@@ -43,6 +46,7 @@
     layers,
     fitRequest = 0,
     showFitControl = true,
+    playbackSpeed = 1,
   }: Props = $props();
   let container: HTMLDivElement;
   let scene = $state<HTMLDivElement>();
@@ -68,6 +72,8 @@
     moved: boolean;
   } | null>(null);
   const suppressedClicks = new Set<string>();
+  let messageArrivalNodeIds = $state<Set<string>>(new Set());
+  const messageArrivalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const visibleGraph = $derived.by(() => {
     const baseNodes = graph.nodes.filter(
@@ -253,17 +259,42 @@
     deletions: number;
     isActive: boolean;
     lastActivityAt?: string;
+    nudgeX: number;
+    nudgeY: number;
   } {
     const edges = visibleGraph.edges.filter((edge) => edge.targetId === node.id);
     const writes = edges.filter((edge) => edge.type === 'file-write' || edge.type === 'note-write');
     const latest = edges.toSorted((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))[0];
+    const latestWrite = writes.toSorted(
+      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    )[0];
+    const source = latestWrite ? positions.get(latestWrite.sourceId) : undefined;
+    const target = positions.get(node.id);
+    const distance = source && target ? Math.hypot(source.x - target.x, source.y - target.y) : 0;
     return {
       access: writes.length > 0 ? 'write' : 'read',
       additions: writes.reduce((sum, edge) => sum + (edge.additions ?? 0), 0),
       deletions: writes.reduce((sum, edge) => sum + (edge.deletions ?? 0), 0),
       isActive: edges.some((edge) => edge.isActive),
       lastActivityAt: latest?.timestamp,
+      nudgeX: source && target && distance > 0 ? ((source.x - target.x) / distance) * 2 : 0,
+      nudgeY: source && target && distance > 0 ? ((source.y - target.y) / distance) * 2 : 0,
     };
+  }
+
+  function handleMessageArrival(targetId: string): void {
+    const previousTimer = messageArrivalTimers.get(targetId);
+    if (previousTimer) clearTimeout(previousTimer);
+    messageArrivalNodeIds = new Set(messageArrivalNodeIds).add(targetId);
+    messageArrivalTimers.set(
+      targetId,
+      setTimeout(() => {
+        const next = new Set(messageArrivalNodeIds);
+        next.delete(targetId);
+        messageArrivalNodeIds = next;
+        messageArrivalTimers.delete(targetId);
+      }, 180),
+    );
   }
 
   function nodeActivity(node: GraphNode): { isActive: boolean; lastActivityAt?: string } {
@@ -356,6 +387,7 @@
     unsubscribeTick?.();
     layout?.stop();
     if (frame !== null) cancelAnimationFrame(frame);
+    for (const timer of messageArrivalTimers.values()) clearTimeout(timer);
   });
 </script>
 
@@ -386,20 +418,35 @@
         nodes={visibleGraph.nodes}
         {positions}
         {spotlightNodeId}
+        {playbackSpeed}
+        onMessageArrival={handleMessageArrival}
       />
-      {#each visibleGraph.nodes as node (node.id)}
+      {#each visibleGraph.nodes as node, index (node.id)}
         {@const position = positions.get(node.id) ?? node}
         {@const activity = nodeActivity(node)}
         <div
-          class="absolute transition-opacity"
-          class:opacity-15={spotlightIds !== null && !spotlightIds.has(node.id)}
+          class="absolute transition-opacity duration-150"
+          class:opacity-35={spotlightIds !== null && !spotlightIds.has(node.id)}
+          class:message-arrival={messageArrivalNodeIds.has(node.id)}
           style:transform={`translate(${position.x}px, ${position.y}px) translate(-50%, -50%)`}
           style:z-index={node.type === 'task' ? 2 : node.type === 'agent' ? 3 : 1}
         >
           {#if node.type === 'task'}
-            <TaskAnchorNode {node} {...activity} {...nodeEvents(node)} />
+            <TaskAnchorNode
+              {node}
+              {...activity}
+              enterDelay={nodeEnterDelay(index, playbackSpeed)}
+              {playbackSpeed}
+              {...nodeEvents(node)}
+            />
           {:else if node.type === 'agent'}
-            <AgentOrbNode {node} {...activity} {...nodeEvents(node)} />
+            <AgentOrbNode
+              {node}
+              {...activity}
+              enterDelay={nodeEnterDelay(index, playbackSpeed)}
+              {playbackSpeed}
+              {...nodeEvents(node)}
+            />
             {#if visibleGraph.collapsedByAgent.has(node.id)}
               <Button
                 type="button"
@@ -415,7 +462,13 @@
             {/if}
           {:else}
             {@const access = resourceAccess(node)}
-            <ResourceNode {node} {...access} {...nodeEvents(node)} />
+            <ResourceNode
+              {node}
+              {...access}
+              enterDelay={nodeEnterDelay(index, playbackSpeed)}
+              {playbackSpeed}
+              {...nodeEvents(node)}
+            />
           {/if}
         </div>
       {/each}
@@ -437,3 +490,19 @@
     {/if}
   {/if}
 </div>
+
+<style>
+  .message-arrival :global([data-graph-node]) {
+    animation: message-arrival-flash 180ms ease-out 1;
+  }
+  @keyframes message-arrival-flash {
+    50% {
+      border-color: var(--color-primary);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .message-arrival :global([data-graph-node]) {
+      animation: none;
+    }
+  }
+</style>

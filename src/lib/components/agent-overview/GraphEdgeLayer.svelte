@@ -1,7 +1,15 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { GraphEdge, GraphNode } from './types';
   import { EDGE_STYLES, GRAPH_ACTIVE_ACCENT, GRAPH_NODE_DIMENSIONS } from './constants';
-  import { activityMotion, edgeAnimationDuration, isRecentlyActive } from './activity-motion';
+  import {
+    activityMotion,
+    edgeAnimationDuration,
+    isRecentlyActive,
+    messageParticleLimit,
+    playbackDuration,
+  } from './activity-motion';
+  import type { PlaybackSpeed } from './playback';
 
   export interface GraphPosition {
     x: number;
@@ -13,19 +21,54 @@
     nodes: GraphNode[];
     positions: Map<string, GraphPosition>;
     spotlightNodeId?: string | null;
+    playbackSpeed?: PlaybackSpeed;
+    onMessageArrival?: (targetId: string) => void;
   }
 
-  let { edges, nodes, positions, spotlightNodeId = null }: Props = $props();
+  let {
+    edges,
+    nodes,
+    positions,
+    spotlightNodeId = null,
+    playbackSpeed = 1,
+    onMessageArrival = () => {},
+  }: Props = $props();
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
 
-  const activeEdges = $derived(
-    edges
+  let travelingEdges = $state<GraphEdge[]>([]);
+  const seenMessageEvents = new Set<string>();
+  const travelTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  $effect(() => {
+    const limit = messageParticleLimit(playbackSpeed);
+    const arrivals = edges
       .filter(
-        (edge) => edge.type !== 'waiting-on' && (edge.isActive || isRecentlyActive(edge.timestamp)),
+        (edge) => edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp)),
       )
-      .slice(0, 40),
-  );
+      .filter((edge) => !seenMessageEvents.has(`${edge.id}:${edge.timestamp}`))
+      .slice(-limit);
+    if (arrivals.length === 0) return;
+    arrivals.forEach((edge) => seenMessageEvents.add(`${edge.id}:${edge.timestamp}`));
+    travelingEdges = [...travelingEdges, ...arrivals].slice(-limit);
+    for (const edge of arrivals) {
+      const timer = setTimeout(
+        () => {
+          travelingEdges = travelingEdges.filter(
+            (candidate) =>
+              `${candidate.id}:${candidate.timestamp}` !== `${edge.id}:${edge.timestamp}`,
+          );
+          travelTimers.delete(timer);
+        },
+        playbackDuration(2_600, playbackSpeed),
+      );
+      travelTimers.add(timer);
+    }
+  });
+
+  onDestroy(() => {
+    for (const timer of travelTimers) clearTimeout(timer);
+  });
 
   function opacityFor(edge: GraphEdge): number {
     const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default;
@@ -37,6 +80,38 @@
 
   function isActiveNow(edge: GraphEdge): boolean {
     return edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp));
+  }
+
+  function isWorkingEdge(edge: GraphEdge): boolean {
+    const source = nodeById.get(edge.sourceId);
+    const target = nodeById.get(edge.targetId);
+    return (
+      edge.type === 'task-assignment' &&
+      source?.type === 'agent' &&
+      source.status === 'responding' &&
+      target?.type === 'task' &&
+      target.state === 'in_progress'
+    );
+  }
+
+  function arrowAngle(source: GraphPosition, target: GraphPosition): number {
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 0 : 180;
+    return dy >= 0 ? 90 : -90;
+  }
+
+  function notifyMessageArrival(element: SVGAnimateMotionElement, targetId: string) {
+    const notify = () => onMessageArrival(targetId);
+    element.addEventListener('endEvent', notify);
+    return {
+      update(nextTargetId: string) {
+        targetId = nextTargetId;
+      },
+      destroy() {
+        element.removeEventListener('endEvent', notify);
+      },
+    };
   }
 
   function endpoint(
@@ -96,55 +171,52 @@
   class="edge-layer pointer-events-none absolute inset-0 h-full w-full overflow-visible"
   aria-hidden="true"
 >
-  <defs>
-    <marker
-      id="graph-edge-dot"
-      markerWidth="4"
-      markerHeight="4"
-      refX="2"
-      refY="2"
-      orient="auto"
-      markerUnits="userSpaceOnUse"
-    >
-      <circle cx="2" cy="2" r="2" fill="context-stroke" />
-    </marker>
-    <marker
-      id="graph-edge-arrow"
-      markerWidth="4"
-      markerHeight="4"
-      refX="4"
-      refY="2"
-      orient="auto"
-      markerUnits="userSpaceOnUse"
-    >
-      <path d="M 0 0 L 4 2 L 0 4 Z" fill="context-stroke" />
-    </marker>
-  </defs>
   {#each edges as edge (edge.id)}
     {@const source = positions.get(edge.sourceId)}
     {@const target = positions.get(edge.targetId)}
     {@const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default}
-    {@const stroke = isActiveNow(edge) ? GRAPH_ACTIVE_ACCENT : style.stroke}
+    {@const working = isWorkingEdge(edge)}
+    {@const stroke = isActiveNow(edge) || working ? GRAPH_ACTIVE_ACCENT : style.stroke}
     {#if source && target}
       {@const endpoints = endpointsFor(edge, source, target)}
       {@const path = pathFor(endpoints.source, endpoints.target)}
       {@const label = labelFor(edge)}
+      {@const edgeOpacity = opacityFor(edge)}
+      {@const drawDuration = playbackDuration(350, playbackSpeed)}
       <path
+        class="edge-path"
         class:delegation-pulse={edge.type === 'delegation' && isRecentlyActive(edge.timestamp)}
         class:waiting-breathe={edge.type === 'waiting-on'}
+        class:working-drift={working}
         d={path}
+        pathLength="1"
         fill="none"
         {stroke}
         stroke-width={style.strokeWidth}
         stroke-dasharray={style.strokeDasharray}
         stroke-linecap="round"
-        marker-start="url(#graph-edge-dot)"
-        marker-end="url(#graph-edge-arrow)"
-        opacity={opacityFor(edge)}
+        opacity={edgeOpacity}
+        style:--edge-draw-duration={`${drawDuration}ms`}
         data-edge-id={edge.id}
         data-edge-type={edge.type}
         data-active={edge.isActive}
         data-last-activity-at={edge.timestamp}
+      />
+      <circle
+        cx={endpoints.source.x}
+        cy={endpoints.source.y}
+        r="2"
+        fill={stroke}
+        opacity={edgeOpacity}
+      />
+      <path
+        class="edge-arrow"
+        d="M 0 -2 L 4 0 L 0 2 Z"
+        fill={stroke}
+        opacity={edgeOpacity}
+        transform={`translate(${endpoints.target.x} ${endpoints.target.y}) rotate(${arrowAngle(endpoints.source, endpoints.target)})`}
+        style:--edge-draw-duration={`${drawDuration}ms`}
+        style:--edge-opacity={edgeOpacity}
       />
       {#if label}
         {@const labelWidth = 12 + label.length * 6}
@@ -173,19 +245,44 @@
       {/if}
     {/if}
   {/each}
-  {#each activeEdges as edge (`${edge.id}:${edge.timestamp}`)}
+  {#each travelingEdges as edge (`${edge.id}:${edge.timestamp}`)}
     {@const source = positions.get(edge.sourceId)}
     {@const target = positions.get(edge.targetId)}
     {#if source && target}
       {@const endpoints = endpointsFor(edge, source, target)}
-      <circle class="activity-particle" r="2" fill={GRAPH_ACTIVE_ACCENT} opacity={opacityFor(edge)}>
+      <g
+        class="message-pill"
+        opacity={opacityFor(edge)}
+        data-message-particle
+        data-target-id={edge.targetId}
+      >
+        <rect
+          x="-14"
+          y="-7"
+          width="28"
+          height="14"
+          rx="7"
+          fill="var(--color-card)"
+          stroke={GRAPH_ACTIVE_ACCENT}
+        />
+        <text
+          text-anchor="middle"
+          dominant-baseline="central"
+          fill={GRAPH_ACTIVE_ACCENT}
+          font-family="var(--font-code)"
+          font-size="9"><!-- i18n-ignore (compact graph edge-kind token) -->msg</text
+        >
         <animateMotion
+          use:notifyMessageArrival={edge.targetId}
           path={pathFor(endpoints.source, endpoints.target)}
-          dur={`${edgeAnimationDuration(endpoints.source, endpoints.target)}s`}
+          dur={`${edgeAnimationDuration(endpoints.source, endpoints.target, playbackSpeed)}s`}
+          calcMode="spline"
+          keyTimes="0;1"
+          keySplines="0.45 0 0.55 1"
           repeatCount="1"
           fill="freeze"
         />
-      </circle>
+      </g>
     {/if}
   {/each}
 </svg>
@@ -194,14 +291,50 @@
   .delegation-pulse {
     animation: delegation-pulse 900ms ease-out 1;
   }
+  .edge-path {
+    animation: edge-draw var(--edge-draw-duration) ease-out 1;
+  }
+  .edge-path.working-drift {
+    stroke-dasharray: 5 5;
+    animation:
+      edge-draw var(--edge-draw-duration) ease-out 1,
+      working-drift 3s linear var(--edge-draw-duration) infinite;
+  }
+  .edge-arrow {
+    animation: edge-arrow-in 120ms ease-out calc(var(--edge-draw-duration) - 80ms) both;
+  }
   .waiting-breathe {
     animation: waiting-breathe 2.8s ease-in-out infinite;
   }
-  :global(.edge-layer[data-motion-enabled='false']) .activity-particle {
+  :global(.edge-layer[data-motion-enabled='false']) .message-pill {
     display: none;
   }
-  :global(.edge-layer[data-motion-enabled='false']) :is(.delegation-pulse, .waiting-breathe) {
+  :global(.edge-layer[data-motion-enabled='false'])
+    :is(.edge-path, .edge-arrow, .delegation-pulse, .waiting-breathe, .working-drift) {
     animation: none;
+  }
+  @keyframes edge-draw {
+    from {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes edge-arrow-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: var(--edge-opacity);
+    }
+  }
+  @keyframes working-drift {
+    to {
+      stroke-dashoffset: -10;
+    }
   }
   @keyframes delegation-pulse {
     50% {
@@ -215,11 +348,14 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .activity-particle {
+    .message-pill {
       display: none;
     }
+    .edge-path,
+    .edge-arrow,
     .delegation-pulse,
-    .waiting-breathe {
+    .waiting-breathe,
+    .working-drift {
       animation: none;
     }
   }
