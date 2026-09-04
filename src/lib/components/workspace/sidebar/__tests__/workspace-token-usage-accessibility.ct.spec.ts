@@ -203,7 +203,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     );
   const themeCompositionColors: string[][] = [];
 
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
   await expect(agentAlpha).toHaveRole('radio');
   await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
   await expect(agentAlpha).toHaveAttribute('tabindex', '0');
@@ -212,10 +212,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(modelGroup.getByRole('radio')).toHaveCount(4);
 
   await agentBeta.focus();
-  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 0 processed');
   await page.keyboard.press('Shift+Tab');
   await expect(disclosure).toBeFocused();
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
   await page.keyboard.press('Tab');
   await expect(agentAlpha).toBeFocused();
 
@@ -224,13 +224,13 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     await expect(component).toHaveAttribute('data-theme', theme);
     await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
     await agentAlpha.dispatchEvent('pointerenter', { pointerType: 'mouse' });
-    await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+    await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
     await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
     expect(await compositionValues()).toEqual([
-      { value: '550', share: '73%' },
-      { value: '150', share: '20%' },
+      { value: '400', share: '67%' },
+      { value: '150', share: '25%' },
       { value: '0', share: '0%' },
-      { value: '50', share: '7%' },
+      { value: '50', share: '8%' },
     ]);
     const compositionSegments = details.locator('.composition-strip-segment');
     await expect(compositionSegments).toHaveCount(3);
@@ -369,7 +369,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     expect(focus.outlineColor).not.toBe(navigatorColors.appRingColor);
     await currentAgentAlpha.blur();
     await agentAlpha.dispatchEvent('pointerleave', { pointerType: 'mouse' });
-    await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+    await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
   }
   expect(themeCompositionColors[0]).not.toEqual(themeCompositionColors[1]);
 
@@ -378,13 +378,13 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(agentBeta).toBeFocused();
   await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
   await expect(agentBeta).toHaveAttribute('tabindex', '0');
-  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 0 processed');
   await agentBeta.press('ArrowLeft');
   await expect(agentAlpha).toBeFocused();
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
   await agentAlpha.press('ArrowLeft');
   await expect(agentFinal).toBeFocused();
-  await expect(previewStatus).toContainText('By agent Agent producti 25 processed');
+  await expect(previewStatus).toContainText('By agent Agent producti 0 processed');
   await agentFinal.press('ArrowRight');
   await expect(agentAlpha).toBeFocused();
   await agentAlpha.press('End');
@@ -398,19 +398,19 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   );
   await page.keyboard.press('Shift+Tab');
   await expect(agentAlpha).toBeFocused();
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
 
   await agentBeta.focus();
   await expect(agentBeta).toBeFocused();
-  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 0 processed');
   expect(await compositionValues()).toEqual([
-    { value: '50', share: '33%' },
-    { value: '70', share: '47%' },
     { value: '0', share: '0%' },
-    { value: '30', share: '20%' },
+    { value: '0', share: '0%' },
+    { value: '0', share: '0%' },
+    { value: '0', share: '0%' },
   ]);
   await expect(messageRows.locator('.animated-number-value')).toHaveText(
-    '3 human and 6 agent messages',
+    '0 human and 0 agent messages',
   );
   const reducedNumberStyles = await details.locator('.animated-number').evaluateAll((numbers) =>
     numbers.map((number) => ({
@@ -426,21 +426,25 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     ),
   ).toBe(true);
   await agentBeta.blur();
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
 
+  await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await finalModel.focus();
   await expect(finalModel).toBeFocused();
-  await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 10 processed');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
+  await expect(finalModel).toHaveAttribute('aria-checked', 'true');
   expect(await compositionValues()).toEqual([
-    { value: '30', share: '60%' },
-    { value: '15', share: '30%' },
     { value: '0', share: '0%' },
-    { value: '5', share: '10%' },
+    { value: '10', share: '100%' },
+    { value: '0', share: '0%' },
+    { value: '0', share: '0%' },
   ]);
-  await expect(details.locator('.composition-strip-segment')).toHaveCount(3);
+  await expect(details.locator('.composition-strip-segment')).toHaveCount(1);
   await expect(details.locator('.composition-strip')).toHaveAccessibleName(
-    /Token composition, Cached context: 30 tokens, 60%.*Model output: 15 tokens, 30%.*Input context: 5 tokens, 10%/,
+    /Token composition, Model output: 10 tokens, 100%/,
   );
+  await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
 
   await longModel.focus();
   const selectedLongModel = page
@@ -458,14 +462,14 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   ).toEqual({ isTruncated: true, textOverflow: 'ellipsis' });
   await finalModel.focus();
   await finalModel.blur();
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
 
   await agentBeta.dispatchEvent('pointerenter', { pointerType: 'touch' });
   await agentBeta.dispatchEvent('pointerdown', { pointerType: 'touch' });
   await agentBeta.focus();
-  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 0 processed');
   await agentBeta.dispatchEvent('pointerdown', { pointerType: 'touch' });
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
 
   await page.keyboard.press('Tab');
   await longModel.focus();
@@ -493,7 +497,7 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   const localizedStatus = (await page.locator('.preview-status').textContent())
     ?.replace(/\s+/g, ' ')
     .trim();
-  expect(localizedStatus).toBe('Aktiver Bereich Nach Agent Agent beta-02 150 verarbeitet');
+  expect(localizedStatus).toBe('Aktiver Bereich Nach Agent Agent beta-02 0 verarbeitet');
   expect(localizedStatus?.match(/Nach Agent/g)).toHaveLength(1);
   await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'true');
 });
@@ -501,7 +505,7 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
 for (const localeCase of [
   {
     locale: 'en',
-    plural: '4 human and 7 agent messages',
+    plural: '3 human and 5 agent messages',
     singular: '1 human message and 1 agent message',
     pluralHuman: '2 human messages and 1 agent message',
     pluralAgent: '1 human message and 3 agent messages',
@@ -509,7 +513,7 @@ for (const localeCase of [
   },
   {
     locale: 'de',
-    plural: '4 menschliche Nachrichten und 7 Agentennachrichten',
+    plural: '3 menschliche Nachrichten und 5 Agentennachrichten',
     singular: '1 menschliche Nachricht und 1 Agentennachricht',
     pluralHuman: '2 menschliche Nachrichten und 1 Agentennachricht',
     pluralAgent: '1 menschliche Nachricht und 3 Agentennachrichten',
@@ -517,7 +521,7 @@ for (const localeCase of [
   },
   {
     locale: 'es',
-    plural: '4 mensajes humanos y 7 mensajes del agente',
+    plural: '3 mensajes humanos y 5 mensajes del agente',
     singular: '1 mensaje humano y 1 mensaje del agente',
     pluralHuman: '2 mensajes humanos y 1 mensaje del agente',
     pluralAgent: '1 mensaje humano y 3 mensajes del agente',
@@ -525,7 +529,7 @@ for (const localeCase of [
   },
   {
     locale: 'fr',
-    plural: '4 messages humains et 7 messages de l’agent',
+    plural: '3 messages humains et 5 messages de l’agent',
     singular: '1 message humain et 1 message de l’agent',
     pluralHuman: '2 messages humains et 1 message de l’agent',
     pluralAgent: '1 message humain et 3 messages de l’agent',
@@ -533,7 +537,7 @@ for (const localeCase of [
   },
   {
     locale: 'ja',
-    plural: '人間のメッセージ 4 件、エージェントメッセージ 7 件',
+    plural: '人間のメッセージ 3 件、エージェントメッセージ 5 件',
     singular: '人間のメッセージ 1 件、エージェントメッセージ 1 件',
     pluralHuman: '人間のメッセージ 2 件、エージェントメッセージ 1 件',
     pluralAgent: '人間のメッセージ 1 件、エージェントメッセージ 3 件',
@@ -541,7 +545,7 @@ for (const localeCase of [
   },
   {
     locale: 'ko',
-    plural: '사람 메시지 4개 및 에이전트 메시지 7개',
+    plural: '사람 메시지 3개 및 에이전트 메시지 5개',
     singular: '사람 메시지 1개 및 에이전트 메시지 1개',
     pluralHuman: '사람 메시지 2개 및 에이전트 메시지 1개',
     pluralAgent: '사람 메시지 1개 및 에이전트 메시지 3개',
@@ -549,7 +553,7 @@ for (const localeCase of [
   },
   {
     locale: 'zh-CN',
-    plural: '4 条人工消息，7 条智能体消息',
+    plural: '3 条人工消息，5 条智能体消息',
     singular: '1 条人工消息，1 条智能体消息',
     pluralHuman: '2 条人工消息，1 条智能体消息',
     pluralAgent: '1 条人工消息，3 条智能体消息',
@@ -557,7 +561,7 @@ for (const localeCase of [
   },
   {
     locale: 'zh-TW',
-    plural: '4 則人工訊息，7 則智慧體訊息',
+    plural: '3 則人工訊息，5 則智慧體訊息',
     singular: '1 則人工訊息，1 則智慧體訊息',
     pluralHuman: '2 則人工訊息，1 則智慧體訊息',
     pluralAgent: '1 則人工訊息，3 則智慧體訊息',
@@ -582,27 +586,26 @@ for (const localeCase of [
     await expect(details.locator('.composition-value-suffix')).toHaveText(localeCase.suffixes[0]);
     await expect(details.locator('.composition-context-suffix')).toHaveText(localeCase.suffixes[1]);
 
-    await page
+    const agentControls = page
       .getByTestId('token-usage-by-agent')
-      .locator('.breakdown-item-control')
-      .last()
-      .focus();
+      .locator('.breakdown-item-control');
+    const modelControls = page
+      .getByTestId('token-usage-by-model')
+      .locator('.breakdown-item-control');
+    await agentControls.last().dispatchEvent('pointerenter', { pointerType: 'mouse' });
+    await modelControls.last().focus();
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.singular);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.singular);
 
-    await page
-      .getByTestId('token-usage-by-model')
-      .locator('.breakdown-item-control')
-      .nth(2)
-      .focus();
+    await agentControls.last().dispatchEvent('pointerleave', { pointerType: 'mouse' });
+    await agentControls.nth(1).dispatchEvent('pointerenter', { pointerType: 'mouse' });
+    await modelControls.nth(2).focus();
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.pluralHuman);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.pluralHuman);
 
-    await page
-      .getByTestId('token-usage-by-model')
-      .locator('.breakdown-item-control')
-      .last()
-      .focus();
+    await agentControls.nth(1).dispatchEvent('pointerleave', { pointerType: 'mouse' });
+    await agentControls.first().dispatchEvent('pointerenter', { pointerType: 'mouse' });
+    await modelControls.nth(1).focus();
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.pluralAgent);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.pluralAgent);
   });
@@ -632,10 +635,10 @@ test('retargets animated values smoothly with final-only accessibility and stabl
     .getByTestId('token-usage-by-agent')
     .locator('.breakdown-item-control')
     .nth(1);
-  const finalModel = page
+  const modelBeta = page
     .getByTestId('token-usage-by-model')
     .locator('.breakdown-item-control')
-    .last();
+    .nth(1);
   const geometry = async () => ({
     details: await details.boundingBox(),
     rightEdges: await rows.evaluateAll((elements) =>
@@ -668,9 +671,9 @@ test('retargets animated values smoothly with final-only accessibility and stabl
     ),
   ).toBe(true);
 
-  await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
-  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
-  await expect(finalTargets).toHaveText(['50', '70', '0', '30']);
+  await modelBeta.focus();
+  await expect(previewStatus).toContainText('By model Model Beta 150 processed');
+  await expect(finalTargets).toHaveText(['150', '0', '0', '0']);
   expect(
     await animatedValues.evaluateAll((values) =>
       values.every((value) => value.ariaHidden === 'true'),
@@ -678,8 +681,8 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   ).toBe(true);
   await page.clock.runFor(75);
   const midpoint = Number.parseFloat((await animatedValues.first().textContent()) ?? '');
-  expect(midpoint).toBeGreaterThan(50);
-  expect(midpoint).toBeLessThan(550);
+  expect(midpoint).toBeGreaterThan(150);
+  expect(midpoint).toBeLessThan(400);
   expect(await geometry()).toEqual(initialGeometry);
   expect(
     (await details.locator('.animated-number-value').allTextContents()).every(
@@ -687,12 +690,14 @@ test('retargets animated values smoothly with final-only accessibility and stabl
     ),
   ).toBe(true);
 
-  await finalModel.focus();
-  await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
+  await page.clock.runFor(275);
+  await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
-  await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
-  await expect(finalTargets).toHaveText(['30', '15', '0', '5']);
-  await expect(messageTargets).toHaveText('1 human message and 3 agent messages');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 100 processed');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
+  await expect(modelBeta).toHaveAttribute('aria-checked', 'true');
+  await expect(finalTargets).toHaveText(['10', '60', '0', '30']);
+  await expect(messageTargets).toHaveText('2 human and 4 agent messages');
   expect(
     await finalTargets.evaluateAll((targets) =>
       targets.every((target) => target.ariaAtomic === 'true'),
@@ -701,16 +706,21 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   const midpointGeometry = await geometry();
   expect(midpointGeometry).toEqual(initialGeometry);
 
-  await page.clock.runFor(225);
-  await expect(messageValues).toHaveText('1 human message and 3 agent messages');
-  await page.clock.runFor(125);
-  await expect(animatedValues).toHaveText(['30', '15', '0', '5']);
+  await page.clock.runFor(350);
+  await expect(messageValues).toHaveText('2 human and 4 agent messages');
+  await expect(animatedValues).toHaveText(['10', '60', '0', '30']);
   expect(await geometry()).toEqual(initialGeometry);
 
-  await finalModel.blur();
-  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
+  await expect(previewStatus).toContainText('By model Model Beta 150 processed');
+  await expect(messageTargets).toHaveText('1 human message and 3 agent messages');
   await page.clock.runFor(350);
-  await expect(animatedValues).toHaveText(['550', '150', '0', '50']);
+  await expect(animatedValues).toHaveText(['150', '0', '0', '0']);
+
+  await modelBeta.blur();
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
+  await page.clock.runFor(350);
+  await expect(animatedValues).toHaveText(['400', '150', '0', '50']);
 });
 
 test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
@@ -829,22 +839,22 @@ test('renders the full reference table as a wide overlay from the real workspace
     position: 'fixed',
     zIndex: 40,
   });
-  await expect(details).toContainText('By agent Agent alpha-01 750 processed');
+  await expect(details).toContainText('By agent Agent alpha-01 600 processed');
   await expect(compositionRows).toHaveCount(5);
   await expect(compositionStrip).toHaveRole('img');
   await expect(compositionStrip).toHaveAccessibleName(
-    /Token composition, Cached context: 550 tokens, 73%.*Model output: 150 tokens, 20%.*Input context: 50 tokens, 7%/,
+    /Token composition, Cached context: 400 tokens, 67%.*Model output: 150 tokens, 25%.*Input context: 50 tokens, 8%/,
   );
   await expect(compositionSegments).toHaveCount(3);
   await expect(composition.locator('.composition-header')).toHaveCount(0);
   await expect(compositionRows.nth(0)).toContainText('Cached context');
   await expect(
     compositionRows.nth(0).locator('.composition-value .animated-number-value'),
-  ).toHaveText('550');
+  ).toHaveText('400');
   await expect(compositionRows.nth(0).locator('.composition-value-suffix')).toHaveText('tokens');
   await expect(
     compositionRows.nth(0).locator('.composition-context .animated-number-value'),
-  ).toHaveText('73%');
+  ).toHaveText('67%');
   await expect(compositionRows.nth(0).locator('.composition-context-suffix')).toHaveText(
     'of total',
   );
@@ -852,7 +862,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
   await expect(compositionRows.nth(3)).toContainText('Input context');
   await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText(
-    '4 human and 7 agent messages',
+    '3 human and 5 agent messages',
   );
   await expect(messageCompositionRows.locator('.composition-value')).toHaveCount(0);
   await expect(messageCompositionRows.locator('.composition-context')).toHaveCount(0);
@@ -1264,9 +1274,9 @@ test('renders the full reference table as a wide overlay from the real workspace
   ]);
   expect(new Set(compositionBar.segments.map(({ color }) => color)).size).toBe(3);
   const compositionUsableWidth = compositionBar.box.width - compositionBar.gaps.length;
-  expect(compositionBar.segments[0].box.width / compositionUsableWidth).toBeCloseTo(550 / 750, 2);
-  expect(compositionBar.segments[1].box.width / compositionUsableWidth).toBeCloseTo(150 / 750, 2);
-  expect(compositionBar.segments[2].box.width / compositionUsableWidth).toBeCloseTo(50 / 750, 2);
+  expect(compositionBar.segments[0].box.width / compositionUsableWidth).toBeCloseTo(400 / 600, 2);
+  expect(compositionBar.segments[1].box.width / compositionUsableWidth).toBeCloseTo(150 / 600, 2);
+  expect(compositionBar.segments[2].box.width / compositionUsableWidth).toBeCloseTo(50 / 600, 2);
   expect(
     compositionBar.segments.every((segment, index, segments) =>
       index === 0
