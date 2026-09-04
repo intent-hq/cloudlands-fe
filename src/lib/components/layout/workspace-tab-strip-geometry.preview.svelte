@@ -27,6 +27,7 @@
 <script lang="ts">
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { Button } from '$lib/components/ui/button';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { store } from '$store/renderer/configured-store';
   import {
@@ -141,13 +142,13 @@
 {#if interactive}
   <div class="preview-controls">
     <!-- i18n-ignore (component preview control) -->
-    <button type="button" onclick={() => store.dispatch(openWorkspaceTab(ids[2]))} data-open-tab>
+    <Button type="button" onclick={() => store.dispatch(openWorkspaceTab(ids[2]))} data-open-tab>
       Open tab
-    </button>
+    </Button>
     <!-- i18n-ignore (component preview control) -->
-    <button type="button" onclick={() => store.dispatch(closeWorkspaceTab(ids[2]))} data-close-tab>
+    <Button type="button" onclick={() => store.dispatch(closeWorkspaceTab(ids[2]))} data-close-tab>
       Close tab
-    </button>
+    </Button>
   </div>
 {/if}
 
