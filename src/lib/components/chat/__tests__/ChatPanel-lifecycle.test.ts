@@ -47,6 +47,16 @@ const mocks = vi.hoisted(() => {
     agentMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
     agentSessionIsStreaming: mutableReadable(false),
+    pendingProposalRecovery: mutableReadable<
+      | Record<
+          string,
+          {
+            status: 'loading' | 'found' | 'not-found' | 'error';
+            proposals?: Array<{ proposalId: string; proposal: unknown }>;
+          }
+        >
+      | undefined
+    >(undefined),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -82,6 +92,7 @@ const mocks = vi.hoisted(() => {
       enabled: boolean;
       onChange: (prompt: { id: string; message: unknown } | null) => void;
     } | null,
+    seekConversationToMessage: vi.fn(),
     selector,
   };
 });
@@ -154,7 +165,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   }),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
-  selectPendingProposalRecovery: mocks.selector(undefined),
+  selectPendingProposalRecovery: () => mocks.pendingProposalRecovery,
   selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
@@ -304,6 +315,9 @@ vi.mock('$features/agent/services/consolidated-backend.service', () => ({
   unifiedOrchestrator: { editQueuedMessage: vi.fn() },
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
+vi.mock('$lib/utils/open-message', () => ({
+  seekConversationToMessage: mocks.seekConversationToMessage,
+}));
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
@@ -353,10 +367,12 @@ let nextFrameId: number;
 class MockChatIntersectionObserver {
   static instances: MockChatIntersectionObserver[] = [];
   callback: IntersectionObserverCallback;
+  options?: IntersectionObserverInit;
   observed = new Set<Element>();
 
-  constructor(callback: IntersectionObserverCallback) {
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
     this.callback = callback;
+    this.options = options;
     MockChatIntersectionObserver.instances.push(this);
   }
 
@@ -489,6 +505,7 @@ beforeEach(() => {
   mocks.agentMessages.set([]);
   mocks.agentSession.set(null);
   mocks.agentSessionIsStreaming.set(false);
+  mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -1807,6 +1824,133 @@ describe('ChatPanel mounted lifecycle', () => {
     staleHighlightCallback();
     expect(target.classList.contains('message-highlight-flash')).toBe(false);
     expect(target.classList.contains('highlight-flash')).toBe(true);
+  });
+
+  it('shows a pending-proposal chip for an off-screen inline card and scrolls to it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    const pendingSession = {
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-1', messageId: 'proposal-message' }],
+      },
+    };
+    mocks.agentSession.set(pendingSession);
+    mocks.agentMessages.set([
+      {
+        id: 'proposal-message',
+        role: 'assistant',
+        content: 'Proposal',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    const message = view.container.querySelector<HTMLElement>(
+      '[data-message-id="proposal-message"]',
+    );
+    expect(message).not.toBeNull();
+    const card = document.createElement('section');
+    card.dataset.proposalKind = 'workspace-create';
+    card.dataset.applyToolCallId = 'toolu-1';
+    message?.append(card);
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: false,
+    });
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: true,
+    });
+    await tick();
+    await tick();
+
+    const shell = message?.closest('[data-lazy-turn-key]');
+    expect(shell).not.toBeNull();
+    const observer = MockChatIntersectionObserver.instances.find(
+      (candidate) => candidate.options?.threshold === 0.01 && candidate.observed.has(shell!),
+    );
+    expect(observer).toBeDefined();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+
+    observer?.fire([{ target: shell!, isIntersecting: false }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    expect(frames.length).toBeGreaterThan(0);
+
+    observer?.fire([{ target: shell!, isIntersecting: true }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+  });
+
+  it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-far', messageId: 'proposal-message-far' }],
+      },
+    });
+    mocks.agentMessages.set([
+      {
+        id: 'tail-message',
+        role: 'assistant',
+        content: 'Tail',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mocks.pendingProposalRecovery.set({
+      'proposal-message-far': {
+        status: 'found',
+        proposals: [
+          {
+            proposalId: 'toolu-far',
+            proposal: { kind: 'workspace-create', applyToolCallId: 'toolu-far' },
+          },
+        ],
+      },
+    });
+    mocks.seekConversationToMessage.mockImplementation(async () => {
+      mocks.agentMessages.set([
+        {
+          id: 'proposal-message-far',
+          role: 'assistant',
+          content: 'Recovered proposal',
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      return true;
+    });
+
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    flushFrame();
+    await tick();
+
+    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith('agent-a', 'proposal-message-far');
+    expect(view.container.querySelector('[data-message-id="proposal-message-far"]')).not.toBeNull();
   });
 
   it('cancels draftPrompt apply and focus while inactive and restores on reactivation', async () => {
