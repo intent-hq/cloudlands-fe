@@ -8,11 +8,7 @@
  */
 import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
-import type {
-  UsageModelStats,
-  UsageProviderStats,
-  UsageTokenTotals,
-} from '$lib/client/app-client';
+import type { UsageModelStats, UsageProviderStats, UsageTokenTotals } from '$lib/client/app-client';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -149,7 +145,5 @@ export function rankProviders(byProvider: UsageProviderStats[], limit = 4): Rank
  */
 export function providerDisplayName(providerId: string): string {
   if (providerId === 'unknown') return 'Unknown';
-  return (
-    selectProviderCatalogEntry.select(appStore.state, providerId)?.shortName ?? providerId
-  );
+  return selectProviderCatalogEntry.select(appStore.state, providerId)?.shortName ?? providerId;
 }

@@ -18,8 +18,8 @@
  * shaped failure when it does not (browser dev / bridge-less build) so
  * callers degrade exactly as the former allowlist arms did.
  */
-import { AUTO_UPDATE_CHANNELS } from "$features/auto-update/types";
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
+import { AUTO_UPDATE_CHANNELS } from '$features/auto-update/types';
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 
 const AUTO_UPDATE_INVOKE_CHANNELS = [
   AUTO_UPDATE_CHANNELS.CHECK_MANUAL,
@@ -31,7 +31,7 @@ const AUTO_UPDATE_INVOKE_CHANNELS = [
 
 const NOT_AVAILABLE = {
   success: false,
-  error: { message: "Auto-update is not available in this build" },
+  error: { message: 'Auto-update is not available in this build' },
 } as const;
 
 /** Register the auto-update invoke bridge handlers. Idempotent. */
@@ -40,8 +40,8 @@ export function registerAutoUpdateBridge(): void {
     // Forward exactly one payload argument — the real preload bridge signature
     // is `invoke(channel, data?)`, so extra args would be silently dropped.
     registerMockIpcHandler(channel, async (payload?: unknown) => {
-      const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-      if (bridge && typeof bridge.invoke === "function") {
+      const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (bridge && typeof bridge.invoke === 'function') {
         return bridge.invoke(channel, payload);
       }
       return NOT_AVAILABLE;

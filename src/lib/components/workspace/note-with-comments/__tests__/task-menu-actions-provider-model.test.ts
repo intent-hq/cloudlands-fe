@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -63,7 +57,8 @@ vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => appStoreFactoryMock()?.getState?.() ?? {},
@@ -196,9 +191,7 @@ describe('task menu actions provider model', () => {
     );
     // No client-supplied agentId: the daemon assigns the agent id on create.
     expect(agentsCreateMock.mock.calls[0][0]).not.toHaveProperty('agentId');
-    expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(
-      legacyState.model.selectedModel,
-    );
+    expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(legacyState.model.selectedModel);
   });
 
   it('persists menu-assigned duplicate tasks keyed to the daemon-assigned agent id', async () => {

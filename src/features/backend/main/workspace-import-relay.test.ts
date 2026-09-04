@@ -451,7 +451,7 @@ describe('workspace import relay — per-window session affinity (monorepo#3519)
     await expect(second).resolves.toMatchObject({ success: true });
   });
 
-  it('keeps rejecting a second start while the in-flight run\'s owner is alive', async () => {
+  it("keeps rejecting a second start while the in-flight run's owner is alive", async () => {
     const client = makeGatedClient();
     const file = makeFile();
     const { deps } = makeDeps(client, file);
@@ -468,7 +468,7 @@ describe('workspace import relay — per-window session affinity (monorepo#3519)
     await expect(first).resolves.toMatchObject({ success: true });
   });
 
-  it('does not reuse another window\'s last file: retry from a second window re-opens the dialog', async () => {
+  it("does not reuse another window's last file: retry from a second window re-opens the dialog", async () => {
     const failing = makeClient({
       'workspace.import.commit': () => new Error('boom'),
     });

@@ -112,6 +112,23 @@ const createProposal = (applyToolCallId: string): WorkspaceCreateProposal => ({
   applyToolCallId,
 });
 
+const noActiveWork = { agentNames: [], hookNames: [], openPrs: [], localChanges: null };
+
+const localChanges = {
+  roots: [
+    {
+      kind: 'primary' as const,
+      path: '/work/repo',
+      branch: 'feat/x',
+      hasRemoteRefs: true,
+      unpushedCount: 2,
+      uncommittedCount: 0,
+    },
+  ],
+  hasUnpushedCommits: true,
+  hasUncommittedChanges: false,
+};
+
 function latestUndo(): (() => void) | undefined {
   const options = mocks.toast.warning.mock.calls.at(-1)?.[1] as
     { action?: { onClick?: () => void } } | undefined;
@@ -163,7 +180,7 @@ function harness(seed: Workspace[]) {
 describe('workspaceOperationsSaga', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: [], openPrs: [] });
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
   });
   afterEach(() => vi.useRealTimers());
@@ -326,6 +343,7 @@ describe('workspaceOperationsSaga', () => {
       agentNames: ['Ada'],
       hookNames: ['ci-watch'],
       openPrs: [],
+      localChanges: null,
     });
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -336,9 +354,21 @@ describe('workspaceOperationsSaga', () => {
     run.send(requestDeleteWorkspace('ws-1'));
     await settle();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    // Single-workspace gating is the only path that asks for local changes
+    expect(mocks.getActiveWorkNames).toHaveBeenCalledExactlyOnceWith('ws-1', {
+      includeLocalChanges: true,
+    });
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: ['Ada'], hookNames: ['ci-watch'], openPrs: [] }],
+      payload: [
+        {
+          workspaceId: 'ws-1',
+          agentNames: ['Ada'],
+          hookNames: ['ci-watch'],
+          openPrs: [],
+          localChanges: null,
+        },
+      ],
     });
 
     run.send(confirmDeleteWorkspace());
@@ -395,6 +425,7 @@ describe('workspaceOperationsSaga', () => {
       agentNames: [],
       hookNames: ['pr-watch'],
       openPrs: [],
+      localChanges: null,
     });
     mocks.archive.mockResolvedValue({
       ok: true,
@@ -406,9 +437,20 @@ describe('workspaceOperationsSaga', () => {
     await settle();
 
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(mocks.getActiveWorkNames).toHaveBeenCalledExactlyOnceWith('ws-1', {
+      includeLocalChanges: true,
+    });
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: ['pr-watch'], openPrs: [] }],
+      payload: [
+        {
+          workspaceId: 'ws-1',
+          agentNames: [],
+          hookNames: ['pr-watch'],
+          openPrs: [],
+          localChanges: null,
+        },
+      ],
     });
 
     run.send(confirmArchiveWorkspace());
@@ -428,7 +470,7 @@ describe('workspaceOperationsSaga', () => {
         status: 'Open' as const,
       },
     ];
-    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: [], openPrs });
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, openPrs });
     const run = harness([workspace('ws-1'), workspace('ws-2')]);
 
     run.send(requestDeleteWorkspace('ws-1'));
@@ -436,7 +478,9 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs }],
+      payload: [
+        { workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs, localChanges: null },
+      ],
     });
 
     run.send(requestArchiveWorkspace('ws-2'));
@@ -444,9 +488,93 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs }],
+      payload: [
+        { workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs, localChanges: null },
+      ],
     });
 
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shows the delete and archive warnings when only local changes exist (zero agents/hooks/PRs)', async () => {
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, localChanges });
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+
+    run.send(requestDeleteWorkspace('ws-1'));
+    await settle();
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    expect(run.state().workspaceOperations.showDeleteWarning).toBe(true);
+    expect(run.state().workspaceOperations.localChangesForDelete).toEqual(localChanges);
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openDeleteWarning',
+      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs: [], localChanges }],
+    });
+
+    run.send(requestArchiveWorkspace('ws-2'));
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(true);
+    expect(run.state().workspaceOperations.localChangesForArchive).toEqual(localChanges);
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openArchiveWarning',
+      payload: [{ workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs: [], localChanges }],
+    });
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not warn when the local-changes result reports a clean, fully pushed tree', async () => {
+    mocks.getActiveWorkNames.mockResolvedValue({
+      ...noActiveWork,
+      localChanges: {
+        roots: [{ ...localChanges.roots[0], unpushedCount: 0 }],
+        hasUnpushedCommits: false,
+        hasUncommittedChanges: false,
+      },
+    });
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
+    const run = harness([workspace('ws-1')]);
+
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('never asks for local changes in the bulk archive / bulk delete-archived flows', async () => {
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([
+      workspace('ws-1'),
+      workspace('ws-2'),
+      workspace('ws-3', WorkspaceStatusEnum.Archived),
+    ]);
+
+    run.send(openBulkArchiveConfirm('intent-hq/repo'));
+    run.send(confirmBulkArchive());
+    await settle();
+    run.send(openBulkDeleteArchivedConfirm('intent-hq/repo'));
+    run.send(confirmBulkDeleteArchived());
+    await settle();
+
+    expect(new Set(mocks.getActiveWorkNames.mock.calls.map(([id]) => id))).toEqual(
+      new Set(['ws-1', 'ws-2', 'ws-3']),
+    );
+    // Bulk paths never pass includeLocalChanges — the RPC is single-workspace only
+    for (const call of mocks.getActiveWorkNames.mock.calls) {
+      expect(call).toHaveLength(1);
+    }
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -467,7 +595,7 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('runs deletion undo windows concurrently and undoes each via cancelDelete', async () => {
-    mocks.getActiveWorkNames.mockReturnValue({ agentNames: [], hookNames: [], openPrs: [] });
+    mocks.getActiveWorkNames.mockReturnValue(noActiveWork);
     mocks.navigate.mockReturnValue(undefined);
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -495,7 +623,7 @@ describe('workspaceOperationsSaga', () => {
 
   it('ignores repeated delete requests for the same soft-hidden workspace', async () => {
     vi.useFakeTimers();
-    mocks.getActiveWorkNames.mockReturnValue({ agentNames: [], hookNames: [], openPrs: [] });
+    mocks.getActiveWorkNames.mockReturnValue(noActiveWork);
     mocks.navigate.mockReturnValue(undefined);
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -587,8 +715,8 @@ describe('workspaceOperationsSaga', () => {
     mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
       Promise.resolve(
         workspaceId === 'ws-2'
-          ? { agentNames: [], hookNames: ['pr-watch'], openPrs: [bulkPr] }
-          : { agentNames: ['Ada'], hookNames: [], openPrs: [bulkPr] },
+          ? { ...noActiveWork, hookNames: ['pr-watch'], openPrs: [bulkPr] }
+          : { ...noActiveWork, agentNames: ['Ada'], openPrs: [bulkPr] },
       ),
     );
     mocks.deleteWorkspace

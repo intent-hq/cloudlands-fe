@@ -1,10 +1,6 @@
 <script lang="ts">
-  import type { ContentBlock, ToolUseBlock, Proposal, MessageRole } from '$shared/types';
-  import {
-    dedupeAgentVideoContentBlocks,
-    isProposal,
-    normalizeAgentVideoContentBlocks,
-  } from '$shared/types';
+  import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
     findToolResult,
@@ -16,7 +12,7 @@
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
-  import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
@@ -40,6 +36,7 @@
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
+  import InlineProposal from './proposals/InlineProposal.svelte';
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
@@ -151,12 +148,6 @@
       if (isQuestionResourceBlock(block)) {
         return false;
       }
-      // Proposals are tray-only (PROTOCOL §5.5 `pendingProposals` — the
-      // composer tray is the sole rendering surface, question-wizard model):
-      // proposal blocks never render in the transcript, in any state.
-      if (getProposalFromBlock(block) !== null) {
-        return false;
-      }
       if (block.type === 'text') {
         const text = block.text || '';
         const { cleanedContent } = parseSuggestedPrompts(text);
@@ -232,9 +223,8 @@
     return states;
   });
 
-  // Collected from the pre-strip content: proposal blocks never render in
-  // the transcript, but a bulk-op proposal's covered workspace cards stay
-  // suppressed so the prose does not duplicate the tray's list.
+  // Collect from the source content so a bulk-op proposal's covered workspace
+  // cards stay suppressed and do not duplicate the inline proposal's list.
   const bulkProposalWorkspaceIds = $derived.by(() =>
     collectBulkProposalWorkspaceIds(hydratedContent),
   );
@@ -322,21 +312,6 @@
     );
   }
 
-  function getProposalFromBlock(block: ContentBlock): Proposal | null {
-    if (isProposal(block.proposal)) return block.proposal;
-    const candidate = {
-      kind: block.kind,
-      payload: block.payload ?? {},
-      preview: block.preview,
-      applyToolCallId: block.applyToolCallId,
-    };
-    if (isProposal(candidate)) return candidate;
-    // Standalone proposal-resource block (PROTOCOL §7.1): the daemon lifts a
-    // proposal-MIME resource item out of a completed tool's output into a
-    // top-level `{ type: "resource", resource: {…} }` block.
-    return getProposalFromResourceBlock(block);
-  }
-
   function addBulkProposalWorkspaceIds(block: ContentBlock, ids: Set<string>) {
     const proposal = getProposalFromBlock(block);
     if (proposal?.kind !== 'bulk-op') return;
@@ -409,6 +384,7 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    if (getProposalFromBlock(contentBlock)) return true;
     if (contentBlock.type === 'tool_result') {
       return isStandaloneToolResult(toolResultClassification, contentBlock);
     }
@@ -523,7 +499,12 @@
   reasoningHistory = false,
   searchPath: string | undefined = undefined,
 )}
-  {#if isNavLinkBlock(block)}
+  {@const proposal = getProposalFromBlock(block)}
+  {#if proposal !== null}
+    {#if proposal && agentId && workspaceId && messageId}
+      <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
+    {/if}
+  {:else if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>

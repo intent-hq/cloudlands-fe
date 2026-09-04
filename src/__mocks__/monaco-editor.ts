@@ -15,7 +15,7 @@ export const editor = {
       /* no-op */
     },
   }),
-   
+
   createModel: (_value: string, _language?: string) => ({
     getValue: () => _value,
     dispose: () => {

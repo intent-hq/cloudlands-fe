@@ -430,8 +430,7 @@ describe('ChatMessage image lightbox', () => {
   });
 
   describe('lazy attachment hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
-    const thumbnailData =
-      'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const thumbnailData = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const fullImageData =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 

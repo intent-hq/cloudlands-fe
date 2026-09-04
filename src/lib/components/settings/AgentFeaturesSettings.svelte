@@ -307,7 +307,9 @@
                 variant="secondary"
                 size="xs"
                 onclick={handleMaxAgentsSave}
-                disabled={maxAgentsSaving || !isMaxAgentsValid || !values['agentFeatures.peerAgents']}
+                disabled={maxAgentsSaving ||
+                  !isMaxAgentsValid ||
+                  !values['agentFeatures.peerAgents']}
               >
                 {maxAgentsSaving
                   ? m.settings_agentFeatures_maxTopLevelAgents_saving()

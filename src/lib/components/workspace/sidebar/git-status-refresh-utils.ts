@@ -62,10 +62,7 @@ export function shouldClearGitStatusOnError(
  * Checks whether the result of a fetch should be applied based on the fetch generation.
  * Returns false if a newer fetch has been started since this one began (stale result).
  */
-export function isFetchCurrent(
-  capturedGeneration: number,
-  currentGeneration: number,
-): boolean {
+export function isFetchCurrent(capturedGeneration: number, currentGeneration: number): boolean {
   return capturedGeneration === currentGeneration;
 }
 
@@ -114,7 +111,14 @@ export function simulateLoadGitStatus(
     // else: stale result, discard
   } else {
     // Error case
-    if (shouldApply && shouldClearGitStatusOnError(currentWorkspaceId, capturedWorkspaceId, newState.lastLoadedWorkspaceId)) {
+    if (
+      shouldApply &&
+      shouldClearGitStatusOnError(
+        currentWorkspaceId,
+        capturedWorkspaceId,
+        newState.lastLoadedWorkspaceId,
+      )
+    ) {
       newState.gitStatus = null;
     }
     // else: same-workspace refresh error or stale fetch, keep existing data
@@ -185,4 +189,3 @@ export function simulateOverlappingFetches(
 
   return stateAfterBothStart;
 }
-

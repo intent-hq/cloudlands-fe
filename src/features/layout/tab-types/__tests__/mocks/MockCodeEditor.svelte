@@ -22,5 +22,4 @@
   data-panel-focused={isPanelFocused}
   data-external-content-version={externalContentVersion}
   data-initial-value={initialValue}
-  bind:value
-></textarea>
+  bind:value></textarea>

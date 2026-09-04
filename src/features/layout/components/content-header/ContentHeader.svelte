@@ -148,28 +148,36 @@
       <!-- Title -->
       <div class="flex items-center gap-1.5 min-w-0">
         <!-- <Fa icon={faChevronLeft} class="w-2.5! h-2.5! text-ghost opacity-50 shrink-0" /> -->
-        {#if isEditingTitle}
-          <input
-            bind:this={titleInputRef}
-            type="text"
-            bind:value={editedTitle}
-            onblur={saveTitle}
-            onkeydown={handleTitleKeydown}
-            class="text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
-            style="field-sizing: content;"
-          />
-        {:else}
-          <button
-            class="text-sm font-medium truncate text-left hover:opacity-80 transition-opacity {editableTitle
-              ? 'cursor-text'
-              : 'cursor-default'}"
-            onclick={startEditingTitle}
-            disabled={!editableTitle}
-            title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
-          >
-            {title}
-          </button>
-        {/if}
+        <div class="relative inline-flex min-w-0 items-center">
+          {#if isEditingTitle}
+            <input
+              bind:this={titleInputRef}
+              type="text"
+              bind:value={editedTitle}
+              onblur={saveTitle}
+              onkeydown={handleTitleKeydown}
+              class="edit-input relative z-10 text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
+              style="field-sizing: content;"
+            />
+          {:else}
+            <button
+              class="relative z-10 text-sm font-medium truncate text-left hover:opacity-80 transition-opacity {editableTitle
+                ? 'cursor-text'
+                : 'cursor-default'}"
+              onclick={startEditingTitle}
+              disabled={!editableTitle}
+              title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
+            >
+              {title}
+            </button>
+          {/if}
+          <span
+            aria-hidden="true"
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+          ></span>
+        </div>
         {#if subtitle}
           <span class="text-xs text-subtle truncate">{subtitle}</span>
         {/if}
@@ -241,3 +249,9 @@
     {/if}
   </div>
 </div>
+
+<style>
+  input.edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

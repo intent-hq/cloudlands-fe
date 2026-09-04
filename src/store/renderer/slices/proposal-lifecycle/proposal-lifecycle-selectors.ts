@@ -30,8 +30,8 @@ export const selectProposalResult = store.createSelector(
 );
 
 /**
- * The whole lifecycle map — reactivity source for derivations that scan
- * statuses across many proposals at once (the composer-slot proposal tray).
+ * The whole lifecycle map — reactivity source for inline cards and derivations
+ * that scan statuses across many proposals at once, such as the off-screen chip.
  */
 export const selectProposalLifecycleMap = store.createSelector(
   (state): Record<string, ProposalLifecycleEntry> => state.proposalLifecycle,

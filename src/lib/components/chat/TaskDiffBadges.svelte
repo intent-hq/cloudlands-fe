@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-  faCirclePlus,
-  faArrowUp,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCirclePlus, faArrowUp, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { TaskDiffCounts } from './tool-result-parser';
   import { m } from '$shared/paraglide/messages.js';

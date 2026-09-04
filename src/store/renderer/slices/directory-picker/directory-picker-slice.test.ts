@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   clearCreateDirectoryError,
   clearPathNavigationError,
@@ -13,298 +13,255 @@ import {
   pathNavigationFailed,
   resetDirectoryPicker,
   type DirectoryPickerListing,
-} from "./directory-picker-slice";
+} from './directory-picker-slice';
 
 const listing = (path: string): DirectoryPickerListing => ({
   path,
-  parent: "/Users",
-  home: "/Users/me",
-  entries: [
-    { name: "src", path: `${path}/src`, isDirectory: true, isGitRepo: false },
-  ],
+  parent: '/Users',
+  home: '/Users/me',
+  entries: [{ name: 'src', path: `${path}/src`, isDirectory: true, isGitRepo: false }],
 });
 
-describe("directoryPickerReducer", () => {
-  it("returns the initial state", () => {
-    expect(directoryPickerReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
+describe('directoryPickerReducer', () => {
+  it('returns the initial state', () => {
+    expect(directoryPickerReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it("flips to loading and records the requested path on loadDirectoryRequested", () => {
-    const next = directoryPickerReducer(
-      initialState,
-      loadDirectoryRequested("/Users/me/code"),
-    );
+  it('flips to loading and records the requested path on loadDirectoryRequested', () => {
+    const next = directoryPickerReducer(initialState, loadDirectoryRequested('/Users/me/code'));
 
     expect(next).toEqual({
       listing: null,
       loading: true,
       error: null,
-      requestedPath: "/Users/me/code",
+      requestedPath: '/Users/me/code',
       pathError: null,
       createError: null,
     });
   });
 
-  it("treats an undefined path as the daemon-host home (requestedPath = null)", () => {
+  it('treats an undefined path as the daemon-host home (requestedPath = null)', () => {
     const next = directoryPickerReducer(initialState, loadDirectoryRequested());
 
     expect(next.loading).toBe(true);
     expect(next.requestedPath).toBeNull();
   });
 
-  it("clears a stale error when starting a new load", () => {
+  it('clears a stale error when starting a new load', () => {
     const previous = {
       ...initialState,
-      error: "stale",
+      error: 'stale',
       loading: false,
-      requestedPath: "/old",
+      requestedPath: '/old',
     };
 
-    const next = directoryPickerReducer(
-      previous,
-      loadDirectoryRequested("/new"),
-    );
+    const next = directoryPickerReducer(previous, loadDirectoryRequested('/new'));
 
     expect(next.error).toBeNull();
     expect(next.loading).toBe(true);
-    expect(next.requestedPath).toBe("/new");
+    expect(next.requestedPath).toBe('/new');
   });
 
-  it("applies a successful listing that matches the requested path", () => {
-    const loading = directoryPickerReducer(
-      initialState,
-      loadDirectoryRequested("/Users/me/code"),
-    );
+  it('applies a successful listing that matches the requested path', () => {
+    const loading = directoryPickerReducer(initialState, loadDirectoryRequested('/Users/me/code'));
 
     const next = directoryPickerReducer(
       loading,
-      directoryListingLoaded("/Users/me/code", listing("/Users/me/code")),
+      directoryListingLoaded('/Users/me/code', listing('/Users/me/code')),
     );
 
     expect(next.loading).toBe(false);
     expect(next.error).toBeNull();
-    expect(next.listing?.path).toBe("/Users/me/code");
+    expect(next.listing?.path).toBe('/Users/me/code');
     expect(next.listing?.entries).toHaveLength(1);
   });
 
-  it("discards a stale success whose requestedPath does not match", () => {
-    const loading = directoryPickerReducer(
-      initialState,
-      loadDirectoryRequested("/Users/me/new"),
-    );
+  it('discards a stale success whose requestedPath does not match', () => {
+    const loading = directoryPickerReducer(initialState, loadDirectoryRequested('/Users/me/new'));
 
     const next = directoryPickerReducer(
       loading,
-      directoryListingLoaded("/Users/me/old", listing("/Users/me/old")),
+      directoryListingLoaded('/Users/me/old', listing('/Users/me/old')),
     );
 
     // Loading state is preserved; stale listing is not applied.
     expect(next.loading).toBe(true);
     expect(next.listing).toBeNull();
-    expect(next.requestedPath).toBe("/Users/me/new");
+    expect(next.requestedPath).toBe('/Users/me/new');
   });
 
-  it("records an error for the matching request and clears the listing", () => {
-    const loading = directoryPickerReducer(
-      initialState,
-      loadDirectoryRequested("/forbidden"),
-    );
+  it('records an error for the matching request and clears the listing', () => {
+    const loading = directoryPickerReducer(initialState, loadDirectoryRequested('/forbidden'));
 
-    const next = directoryPickerReducer(
-      loading,
-      directoryListingFailed("/forbidden", "EACCES"),
-    );
+    const next = directoryPickerReducer(loading, directoryListingFailed('/forbidden', 'EACCES'));
 
     expect(next.loading).toBe(false);
-    expect(next.error).toBe("EACCES");
+    expect(next.error).toBe('EACCES');
     expect(next.listing).toBeNull();
   });
 
-  it("ignores a stale failure whose requestedPath does not match", () => {
-    const loading = directoryPickerReducer(
-      initialState,
-      loadDirectoryRequested("/Users/me/new"),
-    );
+  it('ignores a stale failure whose requestedPath does not match', () => {
+    const loading = directoryPickerReducer(initialState, loadDirectoryRequested('/Users/me/new'));
 
-    const next = directoryPickerReducer(
-      loading,
-      directoryListingFailed("/Users/me/old", "boom"),
-    );
+    const next = directoryPickerReducer(loading, directoryListingFailed('/Users/me/old', 'boom'));
 
     expect(next.loading).toBe(true);
     expect(next.error).toBeNull();
   });
 
-  it("resets back to the initial state on resetDirectoryPicker", () => {
+  it('resets back to the initial state on resetDirectoryPicker', () => {
     const populated = {
-      listing: listing("/some/path"),
+      listing: listing('/some/path'),
       loading: false,
       error: null,
-      requestedPath: "/some/path",
+      requestedPath: '/some/path',
       pathError: null,
       createError: null,
     };
 
-    expect(directoryPickerReducer(populated, resetDirectoryPicker())).toEqual(
-      initialState,
-    );
+    expect(directoryPickerReducer(populated, resetDirectoryPicker())).toEqual(initialState);
   });
 
-  describe("typed-path navigation", () => {
+  describe('typed-path navigation', () => {
     const populated = {
       ...initialState,
-      listing: listing("/Users/me"),
-      requestedPath: "/Users/me",
+      listing: listing('/Users/me'),
+      requestedPath: '/Users/me',
     };
 
-    it("flips to loading and clears a stale hint on navigateToPathRequested", () => {
+    it('flips to loading and clears a stale hint on navigateToPathRequested', () => {
       const next = directoryPickerReducer(
-        { ...populated, pathError: "stale hint" },
-        navigateToPathRequested("/typed/path"),
+        { ...populated, pathError: 'stale hint' },
+        navigateToPathRequested('/typed/path'),
       );
 
       expect(next.loading).toBe(true);
       expect(next.pathError).toBeNull();
-      expect(next.requestedPath).toBe("/typed/path");
+      expect(next.requestedPath).toBe('/typed/path');
       // The current listing stays visible while the navigation is in flight.
-      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.listing?.path).toBe('/Users/me');
     });
 
-    it("records the hint and keeps the listing on pathNavigationFailed", () => {
-      const loading = directoryPickerReducer(
-        populated,
-        navigateToPathRequested("/typed/missing"),
-      );
+    it('records the hint and keeps the listing on pathNavigationFailed', () => {
+      const loading = directoryPickerReducer(populated, navigateToPathRequested('/typed/missing'));
 
       const next = directoryPickerReducer(
         loading,
-        pathNavigationFailed("/typed/missing", "Path not found"),
+        pathNavigationFailed('/typed/missing', 'Path not found'),
       );
 
       expect(next.loading).toBe(false);
-      expect(next.pathError).toBe("Path not found");
-      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.pathError).toBe('Path not found');
+      expect(next.listing?.path).toBe('/Users/me');
       expect(next.error).toBeNull();
     });
 
-    it("ignores a stale pathNavigationFailed whose requestedPath does not match", () => {
-      const loading = directoryPickerReducer(
-        populated,
-        navigateToPathRequested("/typed/new"),
-      );
+    it('ignores a stale pathNavigationFailed whose requestedPath does not match', () => {
+      const loading = directoryPickerReducer(populated, navigateToPathRequested('/typed/new'));
 
-      const next = directoryPickerReducer(
-        loading,
-        pathNavigationFailed("/typed/old", "boom"),
-      );
+      const next = directoryPickerReducer(loading, pathNavigationFailed('/typed/old', 'boom'));
 
       expect(next.loading).toBe(true);
       expect(next.pathError).toBeNull();
     });
 
-    it("clears the hint when a matching listing loads", () => {
+    it('clears the hint when a matching listing loads', () => {
       const failed = {
         ...populated,
-        requestedPath: "/typed/path",
-        pathError: "Path not found",
+        requestedPath: '/typed/path',
+        pathError: 'Path not found',
       };
 
       const next = directoryPickerReducer(
         failed,
-        directoryListingLoaded("/typed/path", listing("/typed/path")),
+        directoryListingLoaded('/typed/path', listing('/typed/path')),
       );
 
       expect(next.pathError).toBeNull();
-      expect(next.listing?.path).toBe("/typed/path");
+      expect(next.listing?.path).toBe('/typed/path');
     });
 
-    it("clears the hint on clearPathNavigationError", () => {
+    it('clears the hint on clearPathNavigationError', () => {
       const next = directoryPickerReducer(
-        { ...populated, pathError: "Path not found" },
+        { ...populated, pathError: 'Path not found' },
         clearPathNavigationError(),
       );
 
       expect(next.pathError).toBeNull();
-      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.listing?.path).toBe('/Users/me');
     });
   });
 
-  describe("directory creation", () => {
+  describe('directory creation', () => {
     const populated = {
       ...initialState,
-      listing: listing("/Users/me"),
-      requestedPath: "/Users/me",
+      listing: listing('/Users/me'),
+      requestedPath: '/Users/me',
     };
 
-    it("flips to loading and clears a stale hint on createDirectoryRequested", () => {
+    it('flips to loading and clears a stale hint on createDirectoryRequested', () => {
       const next = directoryPickerReducer(
-        { ...populated, createError: "stale hint" },
-        createDirectoryRequested("/Users/me/new-folder"),
+        { ...populated, createError: 'stale hint' },
+        createDirectoryRequested('/Users/me/new-folder'),
       );
 
       expect(next.loading).toBe(true);
       expect(next.createError).toBeNull();
-      expect(next.requestedPath).toBe("/Users/me/new-folder");
+      expect(next.requestedPath).toBe('/Users/me/new-folder');
       // The current listing stays visible while the creation is in flight.
-      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.listing?.path).toBe('/Users/me');
     });
 
-    it("records the hint and keeps the listing on createDirectoryFailed", () => {
+    it('records the hint and keeps the listing on createDirectoryFailed', () => {
       const loading = directoryPickerReducer(
         populated,
-        createDirectoryRequested("/Users/me/new-folder"),
+        createDirectoryRequested('/Users/me/new-folder'),
       );
 
       const next = directoryPickerReducer(
         loading,
-        createDirectoryFailed("/Users/me/new-folder", "Permission denied"),
+        createDirectoryFailed('/Users/me/new-folder', 'Permission denied'),
       );
 
       expect(next.loading).toBe(false);
-      expect(next.createError).toBe("Permission denied");
-      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.createError).toBe('Permission denied');
+      expect(next.listing?.path).toBe('/Users/me');
       expect(next.error).toBeNull();
     });
 
-    it("ignores a stale createDirectoryFailed whose requestedPath does not match", () => {
-      const loading = directoryPickerReducer(
-        populated,
-        createDirectoryRequested("/Users/me/new"),
-      );
+    it('ignores a stale createDirectoryFailed whose requestedPath does not match', () => {
+      const loading = directoryPickerReducer(populated, createDirectoryRequested('/Users/me/new'));
 
-      const next = directoryPickerReducer(
-        loading,
-        createDirectoryFailed("/Users/me/old", "boom"),
-      );
+      const next = directoryPickerReducer(loading, createDirectoryFailed('/Users/me/old', 'boom'));
 
       expect(next.loading).toBe(true);
       expect(next.createError).toBeNull();
     });
 
-    it("clears the hint when a matching listing loads (post-create navigation)", () => {
+    it('clears the hint when a matching listing loads (post-create navigation)', () => {
       const failed = {
         ...populated,
-        requestedPath: "/Users/me/new-folder",
-        createError: "Permission denied",
+        requestedPath: '/Users/me/new-folder',
+        createError: 'Permission denied',
       };
 
       const next = directoryPickerReducer(
         failed,
-        directoryListingLoaded("/Users/me/new-folder", listing("/Users/me/new-folder")),
+        directoryListingLoaded('/Users/me/new-folder', listing('/Users/me/new-folder')),
       );
 
       expect(next.createError).toBeNull();
-      expect(next.listing?.path).toBe("/Users/me/new-folder");
+      expect(next.listing?.path).toBe('/Users/me/new-folder');
     });
 
-    it("clears the hint on clearCreateDirectoryError", () => {
+    it('clears the hint on clearCreateDirectoryError', () => {
       const next = directoryPickerReducer(
-        { ...populated, createError: "Permission denied" },
+        { ...populated, createError: 'Permission denied' },
         clearCreateDirectoryError(),
       );
 
       expect(next.createError).toBeNull();
-      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.listing?.path).toBe('/Users/me');
     });
   });
 });

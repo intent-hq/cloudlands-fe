@@ -9,10 +9,7 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  registerMockIpcHandler,
-  unregisterMockIpcHandler,
-} from '$shared/ipc-mock-router';
+import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -26,9 +23,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({ theme: { name: 'dark' } }) });
 });
 
@@ -98,7 +94,9 @@ class MockIntersectionObserver {
     observers.push({ callback, elements: [], instance: this as unknown as IntersectionObserver });
   }
   observe(el: Element) {
-    observers.find((o) => o.instance === (this as unknown as IntersectionObserver))?.elements.push(el);
+    observers
+      .find((o) => o.instance === (this as unknown as IntersectionObserver))
+      ?.elements.push(el);
   }
   disconnect() {}
   unobserve() {}
@@ -111,7 +109,9 @@ function intersectLatestSentinel(): void {
   const latest = observers.at(-1);
   if (!latest) throw new Error('no IntersectionObserver was created');
   latest.callback(
-    latest.elements.map((el) => ({ isIntersecting: true, target: el }) as IntersectionObserverEntry),
+    latest.elements.map(
+      (el) => ({ isIntersecting: true, target: el }) as IntersectionObserverEntry,
+    ),
     latest.instance,
   );
 }

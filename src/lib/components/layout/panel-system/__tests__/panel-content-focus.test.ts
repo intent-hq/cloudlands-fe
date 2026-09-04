@@ -181,9 +181,9 @@ describe('PanelLayout reveal blur contract (#2895)', () => {
   it('routes every dispatchFocusPanelContent blur through shouldBlurActiveElement', () => {
     const fn = dispatchFocusPanelContentSource();
     const blurCount = fn.split('document.activeElement.blur()').length - 1;
-    const guardedCount = fn.split(
-      'shouldBlurActiveElement(document.activeElement, panelId, targetLayoutId)',
-    ).length - 1;
+    const guardedCount =
+      fn.split('shouldBlurActiveElement(document.activeElement, panelId, targetLayoutId)').length -
+      1;
     expect(blurCount).toBeGreaterThan(0);
     expect(guardedCount).toBe(blurCount);
     expect(fn).not.toContain('document.activeElement instanceof HTMLElement');

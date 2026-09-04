@@ -2037,8 +2037,57 @@ export interface GitHubRepoConfigResult {
   exists: boolean;
 }
 
+/** Normalized single-value PR state (the wire carries `state` + `merged` + `draft`). */
+export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft';
+
+/**
+ * One pull request (`github.pulls.get`, §5.27) normalized for link previews:
+ * the wire's `state` + `merged` + `draft` collapse into a single `state`
+ * (merged → `'merged'`, draft → `'draft'`, else the wire state).
+ */
+export interface GitHubPullRequestDetails {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  state: GitHubPullRequestState;
+  /** `user.login` of the PR author. */
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+  headRef: string;
+  baseRef: string;
+}
+
+/** One issue (`github.issues.get`, §5.27) normalized for link previews. */
+export interface GitHubIssueDetails {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  /** `user.login` of the issue author. */
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+}
+
 export interface IntegrationsClient {
   githubUser(): Promise<GitHubUser | null>;
+  /**
+   * One pull request by number (`github.pulls.get`, §5.27). THROWS on
+   * transport/daemon errors (e.g. "GitHub is not configured.") and when the
+   * daemon reports no such PR, so the link hover card renders an explicit
+   * URL-only fallback — never a fabricated card.
+   */
+  githubPullRequest(owner: string, repo: string, number: number): Promise<GitHubPullRequestDetails>;
+  /**
+   * One issue by number (`github.issues.get`, §5.27). Same THROWS contract as
+   * `githubPullRequest`.
+   */
+  githubIssue(owner: string, repo: string, number: number): Promise<GitHubIssueDetails>;
   /**
    * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
    * with the default branch from `github.repos.get` (best-effort). Unlike the

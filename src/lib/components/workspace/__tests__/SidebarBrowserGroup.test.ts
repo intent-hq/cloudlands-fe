@@ -70,9 +70,7 @@ describe('SidebarBrowserGroup hidden rows', () => {
     const hidden = document.querySelector(
       '[data-sidebar-browser-hidden-tab="hidden-1"]',
     ) as HTMLElement;
-    const visible = document.querySelector(
-      '[data-sidebar-browser-tab="visible-1"]',
-    ) as HTMLElement;
+    const visible = document.querySelector('[data-sidebar-browser-tab="visible-1"]') as HTMLElement;
     // Both rows are plain-variant Buttons; identical box classes keep the
     // dot/text x-offsets aligned between hidden and visible rows.
     expect(hidden.tagName).toBe(visible.tagName);

@@ -12,17 +12,20 @@ remote environment configurations.
 ## Environment Profiles
 
 ### Standard (default)
+
 - SSH on port 22
 - Standard user configuration
 - Full system persistence
 
 ### DevPod
+
 - SSH on port 22022 (non-standard)
 - Shared `devuser` user
 - Persistent home, ephemeral system
 - Boot scripts in `~/.config/pod-init.d/`
 
 ### Minimal
+
 - Bare-bones environment
 - Limited tools installed
 - Tests graceful degradation

@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   agentSubscriptionUIReducer,
   initialState,
@@ -24,7 +20,11 @@ import {
   selectCompletionStatus,
   selectSubscriptionSnapshotFetched,
 } from './agent-subscription-ui-selectors';
-import type { AgentSubscriptionUIState, Subscription, DelegationGroupStatus } from './agent-subscription-ui-types';
+import type {
+  AgentSubscriptionUIState,
+  Subscription,
+  DelegationGroupStatus,
+} from './agent-subscription-ui-types';
 
 const WS = 'ws-1';
 const AGENT = 'agent-1';
@@ -60,7 +60,6 @@ describe('agentSubscriptionUIReducer', () => {
   it('makeKey produces composite key', () => {
     expect(makeKey('ws', 'ag')).toBe('ws:ag');
   });
-
 
   describe('setSubscriptionSnapshot', () => {
     it('sets snapshot data for a new key', () => {
@@ -432,9 +431,9 @@ describe('agentSubscriptionUIReducer', () => {
       expect(agentSubscriptionUIReducer(seeded, removeWatchedAgent(WS, 'no-such-agent'))).toBe(
         seeded,
       );
-      expect(
-        agentSubscriptionUIReducer(seeded, removeWatchedAgent('ws-unknown', 'a-1')),
-      ).toBe(seeded);
+      expect(agentSubscriptionUIReducer(seeded, removeWatchedAgent('ws-unknown', 'a-1'))).toBe(
+        seeded,
+      );
     });
   });
 

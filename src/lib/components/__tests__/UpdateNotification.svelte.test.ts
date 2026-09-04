@@ -68,9 +68,8 @@ const storeHolder = vi.hoisted(() => ({
   onDispatch: undefined as undefined | ((action: unknown) => void),
 }));
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => storeHolder.getState?.() ?? {},
     dispatch: (action: unknown) => storeHolder.onDispatch?.(action),

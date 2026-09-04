@@ -1,12 +1,9 @@
-import { store } from "../../store";
-import {
-  getItems,
-  type Collection,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import type { GithubRepoItem } from "./github-repos-slice";
+import { store } from '../../store';
+import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { GithubRepoItem } from './github-repos-slice';
 
 const selectGithubReposCollection = store.createSelector(
-  (state): Collection<GithubRepoItem, "id"> => state.githubRepos.repos,
+  (state): Collection<GithubRepoItem, 'id'> => state.githubRepos.repos,
 );
 
 /** Ordered list view of the repo collection. */

@@ -1,15 +1,8 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import {
-  common,
-  createLowlight,
-} from 'lowlight';
+import { common, createLowlight } from 'lowlight';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { mapLineAttributionsToBlocks } from '../line-to-block-mapper';
 
@@ -86,7 +79,6 @@ Paragraph after heading.`;
         for (const lineAttr of attrValue.lines) {
           // Find the markdown line number for this attribution
           const lineNum = Array.from(lineAttributionsMap.entries()).find(
-
             ([_, attr]) => attr === lineAttr.attribution,
           )?.[0];
           const line = lineNum ? markdown.split('\n')[lineNum - 1] : '';
@@ -100,7 +92,6 @@ Paragraph after heading.`;
       } else {
         // Regular block
         const lineNum = Array.from(lineAttributionsMap.entries()).find(
-
           ([_, attr]) => attr === attrValue,
         )?.[0];
         const line = lineNum ? markdown.split('\n')[lineNum - 1] : '';

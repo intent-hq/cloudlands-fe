@@ -5,13 +5,7 @@
  * of the refactored agent system.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
 import { EventEmitter } from '../../../../shared/event-emitter';
 

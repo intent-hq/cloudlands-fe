@@ -236,10 +236,7 @@ describe('RequestDeduplicator', () => {
       content: 'Fix the build',
       messageId: 'm1',
     };
-    const KEY = RequestDeduplicator.generateMessageKey(
-      PARAMS.agentId,
-      PARAMS.content,
-    );
+    const KEY = RequestDeduplicator.generateMessageKey(PARAMS.agentId, PARAMS.content);
 
     beforeEach(() => {
       resetMockIpcRouter();

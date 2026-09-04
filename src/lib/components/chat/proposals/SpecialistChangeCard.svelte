@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { faUserTie } from '@fortawesome/free-solid-svg-icons';
   import type {
     ProposalActionDetail,
     ProposalEditableField,
@@ -13,6 +14,7 @@
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import { getProposalId } from './proposal-id';
   import { m } from '$shared/paraglide/messages.js';
+  import ProposalCardHeader from './ProposalCardHeader.svelte';
 
   interface Props {
     proposal: SpecialistEditProposal;
@@ -145,33 +147,30 @@
 {:else}
   <section
     bind:this={rootElement}
-    class="min-w-0 w-full"
+    class="min-w-0 w-full overflow-hidden rounded-(--radius-large) border border-border bg-card shadow-(--elevation-raised)"
     data-proposal-kind={proposal.kind}
     data-apply-tool-call-id={proposal.applyToolCallId}
     title={proposal.applyToolCallId
       ? m.chat_shared_tool_title({ id: proposal.applyToolCallId })
       : undefined}
   >
-    <div class="px-3 pt-3">
-      <h3 class="type-body font-medium leading-snug text-foreground">{proposal.preview.title}</h3>
-      {#if proposal.preview.summary}
-        <p class="type-body mt-1 leading-relaxed text-muted-foreground">
-          {proposal.preview.summary}
-        </p>
-      {/if}
+    <div class="px-5 pt-5">
+      <ProposalCardHeader
+        icon={faUserTie}
+        title={m.chat_proposalCard_specialistQuestion_title()}
+        summary={proposal.preview.summary}
+      />
     </div>
 
-    <div class="space-y-2 px-3 py-2.5">
+    <div class="space-y-2 px-5 py-4">
+      <p class="type-body font-medium text-foreground">{proposal.preview.title}</p>
       {#each rows as row (row.key)}
         <div
-          class="type-body min-w-0 break-words rounded-(--radius-medium) border border-border bg-background px-3 py-2.5"
+          class="type-body min-w-0 break-words rounded-(--radius-large) border border-border bg-muted/20 px-3 py-2.5"
           data-proposal-field={row.key}
         >
-          <span class="font-medium text-foreground">{row.label}</span><span
-            class="text-muted-foreground"
-            >:
-          </span>
-          <span class="text-muted-foreground" data-proposal-before-after-row={row.key}
+          <span class="type-caption block font-medium text-muted-foreground">{row.label}</span>
+          <span class="mt-1 block text-foreground" data-proposal-before-after-row={row.key}
             >{formatRowValue(row.before)} → {formatRowValue(row.after)}</span
           >
         </div>
@@ -208,11 +207,16 @@
         </Button>
       </div>
     {:else}
-      <div class="flex items-center justify-end gap-2 border-t border-border bg-muted/10 px-3 py-3">
+      <div class="flex items-center justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
           >{m.chat_shared_discard_label()}</Button
         >
-        <Button size="sm" disabled={actionDisabled} onclick={handleApply}>
+        <Button
+          size="sm"
+          class="border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80"
+          disabled={actionDisabled}
+          onclick={handleApply}
+        >
           {isApplying
             ? m.chat_shared_applying_label()
             : isFailed

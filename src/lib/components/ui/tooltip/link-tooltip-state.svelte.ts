@@ -2,13 +2,34 @@
  * Singleton link tooltip state.
  * Call `showLinkTooltip` / `hideLinkTooltip` from anywhere to control it.
  */
+import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
+import {
+  createPreviewRequest,
+  loadGitHubLinkPreview,
+  type GitHubLinkPreview,
+} from './github-link-preview';
+
+/**
+ * Hover-card preview for GitHub issue/PR links. `idle` for every other URL
+ * (and after a failed load, which renders the URL-only fallback via `error`).
+ */
+export type LinkTooltipPreview =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; data: GitHubLinkPreview }
+  | { status: 'error' };
 
 export interface LinkTooltipState {
   visible: boolean;
   url: string;
+  /** Horizontal center of the hovered anchor (viewport px). */
   x: number;
+  /** Top edge of the hovered anchor (viewport px); the tooltip sits above it. */
   y: number;
+  /** Bottom edge of the hovered anchor; used when the card must flip below. */
+  anchorBottom: number;
   copied: boolean;
+  preview: LinkTooltipPreview;
 }
 
 export const state = $state<LinkTooltipState>({
@@ -16,11 +37,37 @@ export const state = $state<LinkTooltipState>({
   url: '',
   x: 0,
   y: 0,
+  anchorBottom: 0,
   copied: false,
+  preview: { status: 'idle' },
 });
 
 let showTimeout: ReturnType<typeof setTimeout> | null = null;
 let copiedTimeout: ReturnType<typeof setTimeout> | null = null;
+const previewRequest = createPreviewRequest();
+
+/**
+ * Start loading the GitHub hover card for `url`. A newer hover (or a hide)
+ * retires the ticket so a late response never overwrites the current tooltip.
+ */
+function startPreview(url: string): void {
+  const ticket = previewRequest.next();
+  if (!parseGitHubIssueOrPrUrl(url)) {
+    state.preview = { status: 'idle' };
+    return;
+  }
+  state.preview = { status: 'loading' };
+  loadGitHubLinkPreview(url).then(
+    (data) => {
+      if (!ticket.isCurrent) return;
+      state.preview = data ? { status: 'ready', data } : { status: 'idle' };
+    },
+    () => {
+      if (!ticket.isCurrent) return;
+      state.preview = { status: 'error' };
+    },
+  );
+}
 
 /**
  * Format a URL for display in the tooltip.
@@ -70,6 +117,8 @@ export function showLinkTooltip(anchor: HTMLAnchorElement, url: string): void {
     state.url = url;
     state.x = rect.left + rect.width / 2;
     state.y = rect.top;
+    state.anchorBottom = rect.bottom;
+    startPreview(url);
   }, 300);
 }
 
@@ -84,4 +133,6 @@ export function hideLinkTooltip(): void {
   }
   if (state.copied) return;
   state.visible = false;
+  previewRequest.invalidate();
+  state.preview = { status: 'idle' };
 }

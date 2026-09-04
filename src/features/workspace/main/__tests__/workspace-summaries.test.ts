@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Note, WorkspaceId } from '../../../../shared/types';
 
 const mocks = vi.hoisted(() => ({
@@ -122,4 +116,3 @@ describe('getWorkspaceTasks', () => {
     await expect(getWorkspaceTasks(WORKSPACE_ID)).rejects.toThrow('notes unavailable');
   });
 });
-

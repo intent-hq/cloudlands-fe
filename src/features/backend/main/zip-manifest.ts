@@ -123,7 +123,13 @@ function findEntry(directory: Buffer, count: number, fileName: string): CentralE
         }
         extraPos += 4 + dataSize;
       }
-      return { fileName: name, compressionMethod, compressedSize, uncompressedSize, localHeaderOffset };
+      return {
+        fileName: name,
+        compressionMethod,
+        compressedSize,
+        uncompressedSize,
+        localHeaderOffset,
+      };
     }
     pos += 46 + nameLength + extraLength + commentLength;
   }
@@ -134,7 +140,10 @@ function findEntry(directory: Buffer, count: number, fileName: string): CentralE
  * Read one file's bytes out of a zip archive via its central directory.
  * Returns null when the archive has no entry with that exact name.
  */
-export async function readZipEntry(source: ZipByteSource, fileName: string): Promise<Buffer | null> {
+export async function readZipEntry(
+  source: ZipByteSource,
+  fileName: string,
+): Promise<Buffer | null> {
   const eocd = await findEocd(source);
   const { offset, directorySize, count } = await centralDirectory(source, eocd);
   const directory = await source.read(offset, directorySize);

@@ -42,7 +42,10 @@ function deferred<T>() {
 function harness() {
   const channel = stdChannel();
   const dispatched: unknown[] = [];
-  const task = runSaga({ channel, dispatch: (action) => dispatched.push(action) }, legacyImportSaga);
+  const task = runSaga(
+    { channel, dispatch: (action) => dispatched.push(action) },
+    legacyImportSaga,
+  );
   return { channel, dispatched, task };
 }
 

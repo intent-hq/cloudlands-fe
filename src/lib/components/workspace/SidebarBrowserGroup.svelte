@@ -5,7 +5,11 @@
    * tabs. Hidden (user-closed) owned tabs render dimmed with a restore
    * affordance instead of the liveness dot.
    */
-  import { faChevronDown, faChevronRight, faWindowRestore } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faChevronDown,
+    faChevronRight,
+    faWindowRestore,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
@@ -34,7 +38,8 @@
     aria-label={m.browser_panel_toggleGroup_ariaLabel({ name: groupLabel })}
   >
     <Fa icon={expanded ? faChevronDown : faChevronRight} size="xs" class="text-muted-foreground" />
-    <span class="truncate text-ui uppercase tracking-wider text-muted-foreground">{groupLabel}</span>
+    <span class="truncate text-ui uppercase tracking-wider text-muted-foreground">{groupLabel}</span
+    >
     <span class="text-ui text-muted-foreground">{group.entries.length}</span>
   </Button>
   {#if expanded}
@@ -58,10 +63,14 @@
               aria-hidden="true"
             ></span>
             <span class="min-w-0 flex-1 opacity-60">
-              <span class="block truncate text-sm font-medium text-foreground" title={entry.tab.title}
-                >{entry.tab.title}</span
+              <span
+                class="block truncate text-sm font-medium text-foreground"
+                title={entry.tab.title}>{entry.tab.title}</span
               >
-              <span class="block truncate text-xs text-muted-foreground" title={entry.tab.browserUrl ?? ''}>
+              <span
+                class="block truncate text-xs text-muted-foreground"
+                title={entry.tab.browserUrl ?? ''}
+              >
                 {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
               </span>
             </span>
@@ -87,10 +96,14 @@
               aria-hidden="true"
             ></span>
             <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium text-foreground" title={entry.tab.title}
-                >{entry.tab.title}</span
+              <span
+                class="block truncate text-sm font-medium text-foreground"
+                title={entry.tab.title}>{entry.tab.title}</span
               >
-              <span class="block truncate text-xs text-muted-foreground" title={entry.tab.browserUrl ?? ''}>
+              <span
+                class="block truncate text-xs text-muted-foreground"
+                title={entry.tab.browserUrl ?? ''}
+              >
                 {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
               </span>
             </span>

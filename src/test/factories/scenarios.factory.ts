@@ -5,10 +5,7 @@
  * Useful for integration and end-to-end tests.
  */
 
-import {
-  AgentBuilder,
-  MessageBuilder,
-} from './builders';
+import { AgentBuilder, MessageBuilder } from './builders';
 import { AgentStatus } from '$shared/types';
 import type { AgentSession } from '$shared/types';
 

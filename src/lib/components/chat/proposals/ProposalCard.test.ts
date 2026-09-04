@@ -261,7 +261,7 @@ describe('ProposalCard', () => {
     expect(status.textContent).toContain('Applying…');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(screen.getByRole('button', { name: 'Applying…' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Not now' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('renders applied proposals as completed instead of actionable', () => {
@@ -281,7 +281,7 @@ describe('ProposalCard', () => {
     expect(status.className).toContain('text-success');
     expect(container.querySelector('[data-lifecycle-status="applied"]')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit Title' })).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
     expect(onDiscard).not.toHaveBeenCalled();
@@ -294,8 +294,8 @@ describe('ProposalCard', () => {
       },
     });
 
-    expect(screen.getByRole('heading', { name: 'Change settings' }).className).toContain(
-      'type-body',
+    expect(screen.getByRole('heading', { name: 'Apply these changes?' }).className).toContain(
+      'type-title',
     );
     expect(container.innerHTML).not.toMatch(/(?:green|emerald)-[0-9]/);
   });
@@ -447,14 +447,13 @@ describe('ProposalCard', () => {
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
   });
 
-  it('renders Layout A Discard with the same Button styling as Layout B', () => {
+  it('renders the same secondary action for workspace and settings proposals', () => {
     const { unmount } = render(ProposalCard, {
       props: {
         proposal: makeWorkspaceProposal(),
       },
     });
-    const workspaceDiscard = screen.getByRole('button', { name: 'Discard' });
-    const workspaceDiscardClass = workspaceDiscard.className;
+    const workspaceDismiss = screen.getByRole('button', { name: 'Not now' });
 
     unmount();
 
@@ -464,8 +463,8 @@ describe('ProposalCard', () => {
       },
     });
 
-    expect(workspaceDiscard.getAttribute('data-slot')).toBe('button');
-    expect(workspaceDiscardClass).toBe(screen.getByRole('button', { name: 'Discard' }).className);
+    expect(workspaceDismiss.getAttribute('data-slot')).toBe('button');
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeTruthy();
   });
 
   it('renders workspace metadata controls with the shared label and control row structure', () => {
@@ -484,12 +483,11 @@ describe('ProposalCard', () => {
 
     const rows = Array.from(container.querySelectorAll('[data-row="metadata"]'));
 
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect(
       rows.map((row) => row.querySelector('[data-metadata-label]')?.textContent?.trim()),
-    ).toEqual(['Repo', 'Base branch', 'Specialist']);
+    ).toEqual(['Project', 'Initial agent']);
     for (const row of rows) {
-      expect(row.className).toContain('grid-cols-[6rem_minmax(0,1fr)]');
       expect(row.querySelector('[data-metadata-label]')?.className).toContain(
         'text-muted-foreground',
       );
@@ -500,9 +498,9 @@ describe('ProposalCard', () => {
       rows[0],
     );
     expect(screen.getByTestId('proposal-branch-picker').closest('[data-row="metadata"]')).toBe(
-      rows[1],
+      rows[0],
     );
-    expect(screen.getByTestId('proposal-specialist-dropdown')).toBe(rows[2]);
+    expect(screen.getByTestId('proposal-specialist-dropdown')).toBe(rows[1]);
     const pickerMocks = screen.getAllByTestId('mock-repo-and-branch-picker');
     expect(pickerMocks.map((picker) => picker.getAttribute('data-field'))).toEqual([
       'repo',
@@ -550,7 +548,9 @@ describe('ProposalCard', () => {
     });
 
     expect(screen.getByText('Edit specialist: Review Buddy')).toBeTruthy();
-    expect(container.textContent).toContain('Name: Reviewer → Review Buddy');
+    expect(
+      container.querySelector('[data-proposal-before-after-row="name"]')?.textContent,
+    ).toContain('Reviewer → Review Buddy');
     expect(container.textContent).not.toContain('specialist edit');
   });
 
@@ -989,15 +989,14 @@ describe('ProposalCard', () => {
       },
     });
 
-    expect(screen.getByRole('heading', { name: 'Create new workspace' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Create a new workspace?' })).toBeTruthy();
     unmount();
 
     render(ProposalCard, { props: { proposal: makeWorkspaceProposal() } });
-    expect(screen.getByRole('heading', { name: 'Create workspace: Review PR #647' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Create new workspace' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Create a new workspace?' })).toBeTruthy();
   });
 
-  it('matches the locked sibling Repo field to the Base branch soft filled surface', () => {
+  it('keeps the sibling repository locked while the branch remains selectable', () => {
     render(ProposalCard, {
       props: {
         proposal: makeWorkspaceProposal({
@@ -1011,20 +1010,8 @@ describe('ProposalCard', () => {
       },
     });
 
-    const repoClasses = screen.getByTestId('proposal-repo-locked').className.split(/\s+/);
-    expect(repoClasses).toEqual(
-      expect.arrayContaining([
-        'rounded-md',
-        'bg-muted/40',
-        'px-2',
-        'py-1',
-        'text-sm',
-        'leading-5',
-        'font-normal',
-        'text-foreground',
-      ]),
-    );
-    expect(repoClasses).not.toContain('border');
+    expect(screen.getByTestId('proposal-repo-locked').textContent).toContain('/repo/current');
+    expect(screen.queryByTestId('proposal-repo-picker')).toBeNull();
     expect(getBranchPicker().getAttribute('data-presentation')).toBe('metadata');
   });
 
@@ -1120,7 +1107,7 @@ describe('ProposalCard', () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
 
     expect(onApply).not.toHaveBeenCalled();
     expect(onDiscard).toHaveBeenCalledTimes(1);
@@ -1193,7 +1180,7 @@ describe('ProposalCard', () => {
     expect(screen.queryByTestId('proposal-repo-picker')).toBeNull();
     expect(screen.queryByTestId('proposal-branch-picker')).toBeNull();
     expect(screen.queryByTestId('proposal-specialist-dropdown')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Applying/ })).toBeNull();
   });

@@ -44,7 +44,14 @@ class FakeMediaRecorder {
 }
 
 class FakeMediaStream {
-  tracks = [{ stopped: false, stop(): void { this.stopped = true; } }];
+  tracks = [
+    {
+      stopped: false,
+      stop(): void {
+        this.stopped = true;
+      },
+    },
+  ];
   getTracks() {
     return this.tracks;
   }
