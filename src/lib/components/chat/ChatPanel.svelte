@@ -1069,7 +1069,8 @@
   // `dismissedQuestionsMessageId` into session metadata optimistically (the
   // wizard-gate reads it, so the wizard hides immediately) and forwards
   // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
+  // reload) and clears the pending question set, so the sticky wizard stays
+  // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
   // Returns the action promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).

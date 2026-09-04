@@ -12,7 +12,8 @@
   state stored beside it). Dismiss is a
   destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
-  the dismissal (survives reload) and releases the question hold. The stored
+  the dismissal (survives reload) and clears the pending question set, so the
+  otherwise-sticky wizard stays hidden through later turns. The stored
   draft is only cleared once `onDismiss` resolves, so a failed dismissal
   (wizard re-surfaces) keeps the in-progress answers. On the last
   question an option submits immediately; typed text uses Send. Single-question

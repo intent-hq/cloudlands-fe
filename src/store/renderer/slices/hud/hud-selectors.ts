@@ -377,7 +377,7 @@ function sinceMs(item: HudAttentionItem): number {
  * exact and `unread` stays excluded). An attention card state
  * (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no other row already
  * covers raises a generic workspace row — the same authoritative-rollup
- * fallback the ATTN counter applies, so a question hold the FE never
+ * fallback the ATTN counter applies, so a pending question set the FE never
  * captured still gets a panel row. Rows for workspaces no longer in the
  * list are dropped.
  */
