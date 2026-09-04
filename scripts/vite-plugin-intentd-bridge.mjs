@@ -58,6 +58,14 @@ export function isSameLoopbackOrigin(origin, host) {
   }
 }
 
+function normalizeSocketAddress(address) {
+  return String(address || '').replace(/^::ffff:/i, '');
+}
+
+function isLoopbackPeer(socket) {
+  return isLoopbackHostname(normalizeSocketAddress(socket.remoteAddress));
+}
+
 function computeAccept(key) {
   return crypto
     .createHash('sha1')
@@ -260,8 +268,26 @@ export function intentdBridgePlugin({
         '[intentd-bridge] WARNING: DEV ONLY — same-origin clients receive full daemon access',
       );
 
+      let bridgeAvailable = true;
+      server.httpServer.once('listening', () => {
+        const address = server.httpServer?.address();
+        const boundAddress =
+          address && typeof address === 'object' ? normalizeSocketAddress(address.address) : '';
+        if (!isLoopbackHostname(boundAddress)) {
+          bridgeAvailable = false;
+          console.warn(
+            `[intentd-bridge] REFUSING bridge: dev server is bound to non-loopback address ${boundAddress || 'unknown'}`,
+          );
+        }
+      });
+
       server.middlewares.use((request, response, next) => {
         if (request.url !== BRIDGE_PATH) return next();
+        if (!bridgeAvailable || !isLoopbackPeer(request.socket)) {
+          response.statusCode = 403;
+          response.end();
+          return;
+        }
         response.statusCode = 426;
         response.setHeader('Connection', 'close');
         response.setHeader('Upgrade', 'websocket');
@@ -271,7 +297,10 @@ export function intentdBridgePlugin({
       const clients = new Set();
       const onUpgrade = (request, socket, head) => {
         if (isViteHmrUpgrade(request)) return;
-        if (request.url !== BRIDGE_PATH) return rejectUpgrade(socket, 404, 'Not Found');
+        if (request.url !== BRIDGE_PATH) return;
+        if (!bridgeAvailable || !isLoopbackPeer(socket)) {
+          return rejectUpgrade(socket, 403, 'Forbidden');
+        }
         const key = request.headers['sec-websocket-key'];
         if (
           request.method !== 'GET' ||

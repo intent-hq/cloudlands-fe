@@ -1,6 +1,6 @@
 // @vitest-environment node
 import crypto from 'node:crypto';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -16,6 +16,9 @@ import {
 } from './vite-plugin-intentd-bridge.mjs';
 
 const resources = [];
+const nonLoopbackIpv4 = Object.values(os.networkInterfaces())
+  .flat()
+  .find((address) => address?.family === 'IPv4' && !address.internal)?.address;
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -97,7 +100,7 @@ function middlewareServer() {
   return { server, middlewares: { use: (handler) => handlers.push(handler) } };
 }
 
-async function setup(maxMessageBytes = 40 * 1024 * 1024) {
+async function setup({ maxMessageBytes = 40 * 1024 * 1024, listenHost = '127.0.0.1' } = {}) {
   const socketPath = path.join(
     os.tmpdir(),
     `intentd-vite-${crypto.randomBytes(6).toString('hex')}.sock`,
@@ -131,9 +134,11 @@ async function setup(maxMessageBytes = 40 * 1024 * 1024) {
   server.on('upgrade', (request, socket) => {
     if (request.headers['sec-websocket-protocol'] === 'vite-hmr') {
       socket.end('HTTP/1.1 200 HMR Pass Through\r\nConnection: close\r\n\r\n');
+    } else if (request.url === '/other') {
+      socket.end('HTTP/1.1 200 Other Pass Through\r\nConnection: close\r\n\r\n');
     }
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => server.listen(0, listenHost, resolve));
   const port = server.address().port;
 
   resources.push(async () => {
@@ -151,14 +156,17 @@ async function setup(maxMessageBytes = 40 * 1024 * 1024) {
   };
 }
 
-async function connect(port, { url = BRIDGE_PATH, origin, protocol, method = 'GET' } = {}) {
-  const socket = net.connect(port, '127.0.0.1');
+async function connect(
+  port,
+  { url = BRIDGE_PATH, origin, protocol, method = 'GET', address = '127.0.0.1', host } = {},
+) {
+  const socket = net.connect(port, address);
   await once(socket, 'connect');
-  const host = `127.0.0.1:${port}`;
-  const requestOrigin = origin === undefined ? `http://${host}` : origin;
+  const requestHost = host ?? `127.0.0.1:${port}`;
+  const requestOrigin = origin === undefined ? `http://${requestHost}` : origin;
   socket.write(
     `${method} ${url} HTTP/1.1\r\n` +
-      `Host: ${host}\r\n` +
+      `Host: ${requestHost}\r\n` +
       'Connection: Upgrade\r\n' +
       'Upgrade: websocket\r\n' +
       `Sec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}\r\n` +
@@ -183,6 +191,7 @@ describe('intentd Vite bridge', () => {
   it('is wired only into web development with page-origin HMR', async () => {
     vi.stubEnv('INTENT_BUILD_TARGET', 'web');
     vi.stubEnv('INTENT_DEV_DAEMON_BRIDGE', '1');
+    vi.stubEnv('VITE_INTENTD_WS_URL', '');
     const { default: configure } = await import('../vite.config.mjs');
     const development = configure({ command: 'serve', mode: 'development', isPreview: false });
     expect(development.plugins.some((plugin) => plugin.name === 'intentd-same-origin-bridge')).toBe(
@@ -292,6 +301,56 @@ describe('intentd Vite bridge', () => {
     expect(bridge.received().toString()).toBe(`${request}\n`);
   });
 
+  it('accepts matching forged loopback headers from a loopback peer', async () => {
+    const bridge = await setup();
+    const host = `localhost:${bridge.port}`;
+    const { response } = await connect(bridge.port, { host, origin: `http://${host}` });
+    expect(response).toMatch(/^HTTP\/1\.1 101 /);
+    await vi.waitFor(() => expect(bridge.udsConnections()).toBe(1));
+  });
+
+  it.skipIf(!nonLoopbackIpv4)(
+    'rejects a non-loopback peer with matching forged headers (no non-internal IPv4 skips)',
+    async () => {
+      const bridge = await setup({ listenHost: '0.0.0.0' });
+      const host = `localhost:${bridge.port}`;
+      const { response } = await connect(bridge.port, {
+        address: nonLoopbackIpv4,
+        host,
+        origin: `http://${host}`,
+      });
+      expect(response).toMatch(/^HTTP\/1\.1 403 /);
+      expect(bridge.udsConnections()).toBe(0);
+    },
+  );
+
+  it('fails closed when the HTTP server reports a non-loopback bind address', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const httpServer = new EventEmitter();
+    httpServer.address = () => ({ address: '0.0.0.0' });
+    const use = vi.fn();
+    intentdBridgePlugin({ socketPath: '/unused.sock' }).configureServer({
+      httpServer,
+      middlewares: { use },
+    });
+
+    httpServer.emit('listening');
+    const response = { statusCode: 0, setHeader: vi.fn(), end: vi.fn() };
+    const next = vi.fn();
+    use.mock.calls[0][0](
+      { url: BRIDGE_PATH, socket: { remoteAddress: '127.0.0.1' } },
+      response,
+      next,
+    );
+
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/REFUSING bridge.*0\.0\.0\.0/));
+    expect(response.statusCode).toBe(403);
+    expect(response.end).toHaveBeenCalledOnce();
+    expect(next).not.toHaveBeenCalled();
+    httpServer.emit('close');
+  });
+
   it('leaves Vite HMR upgrades untouched', async () => {
     const bridge = await setup();
     const { response } = await connect(bridge.port, {
@@ -314,10 +373,10 @@ describe('intentd Vite bridge', () => {
     expect(bridge.udsConnections()).toBe(0);
   });
 
-  it('rejects WebSocket upgrades on other paths', async () => {
+  it('leaves non-bridge WebSocket upgrades to other listeners', async () => {
     const bridge = await setup();
     const { response } = await connect(bridge.port, { url: '/other' });
-    expect(response).toMatch(/^HTTP\/1\.1 404 /);
+    expect(response).toMatch(/^HTTP\/1\.1 200 Other Pass Through/);
     expect(bridge.udsConnections()).toBe(0);
   });
 
@@ -334,7 +393,7 @@ describe('intentd Vite bridge', () => {
   });
 
   it('enforces the message cap across fragments', async () => {
-    const bridge = await setup(16);
+    const bridge = await setup({ maxMessageBytes: 16 });
     const { socket, reader } = await connect(bridge.port);
     socket.write(maskedFrame(0x1, '1234567890', false));
     socket.write(maskedFrame(0x0, 'abcdefghij'));
