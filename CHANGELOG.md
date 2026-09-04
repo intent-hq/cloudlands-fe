@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.136.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.136.0...v2.136.1) (2026-09-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.23 ([#2184](https://github.com/intent-hq/cloudlands-fe/issues/2184)) ([03470d6](https://github.com/intent-hq/cloudlands-fe/commit/03470d6df35c06c5c777fba08919d2d2f9d81a0f))
+* **chat:** do not commit the empty-chat entry while the transcript is hydrating ([#2178](https://github.com/intent-hq/cloudlands-fe/issues/2178)) ([94404aa](https://github.com/intent-hq/cloudlands-fe/commit/94404aac268ee23479caf8607ad560ebeb03207e))
+* **main:** route workspace-file requests by requesting window backend and cache-bust images ([#2180](https://github.com/intent-hq/cloudlands-fe/issues/2180)) ([70e674a](https://github.com/intent-hq/cloudlands-fe/commit/70e674a7777da182184e75707596abaf700348e6))
+* **model-picker:** keep focus on the effort trigger after a committed change ([#2179](https://github.com/intent-hq/cloudlands-fe/issues/2179)) ([b772576](https://github.com/intent-hq/cloudlands-fe/commit/b7725760a38af5cea27571f4f6139ce8955de34c))
+
 ## [2.136.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.135.0...v2.136.0) (2026-09-04)
 
 
