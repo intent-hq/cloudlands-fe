@@ -117,6 +117,14 @@ export const selectSidecarSpawnError = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnError,
 );
 
+/**
+ * Epoch ms of the first disconnect caused by a user-requested daemon update,
+ * or null when the current outage (if any) is not update-caused.
+ */
+export const selectDaemonUpdateDisconnectedAt = store.createSelector(
+  (state) => state.daemonHealth.daemonUpdateDisconnectedAt,
+);
+
 /** Last-run sidecar log fetched on demand for the daemon-loss dialog, if any. */
 export const selectSidecarRunLog = store.createSelector(
   (state) => state.daemonHealth.sidecarRunLog,

@@ -211,6 +211,14 @@ export interface DaemonHealthState {
   /** Error string when the last on-demand sidecar spawn failed. */
   sidecarSpawnError: string | null;
   /**
+   * Epoch ms of the first drop main observed for this backend while a
+   * user-requested `system.requestUpdate` was outstanding (received via the
+   * `daemonUpdateDisconnectedAt` backend:status marker), or null. Main
+   * stamps it once per restart so every window shares one "Updating
+   * intentd…" countdown deadline; cleared on the next successful connect.
+   */
+  daemonUpdateDisconnectedAt: number | null;
+  /**
    * Last-run sidecar log fetched on demand (backend:get-sidecar-run-log) for
    * the daemon-loss dialog, or null before a fetch / after it is dropped.
    * Cleared on the next successful connect — it is stale by the next show.
