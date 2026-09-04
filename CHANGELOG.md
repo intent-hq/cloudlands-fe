@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.134.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.133.0...v2.134.0) (2026-09-04)
+
+
+### 🚀 Features
+
+* **workspace:** warn about unpushed and uncommitted changes when archiving or deleting a workspace ([#2152](https://github.com/intent-hq/cloudlands-fe/issues/2152)) ([4f5cc02](https://github.com/intent-hq/cloudlands-fe/commit/4f5cc02c42f612b78996678003ad1fa79bc12716))
+
+
+### 🐛 Bug Fixes
+
+* stop warning npx missing for claude-code when a path override is in use ([#2166](https://github.com/intent-hq/cloudlands-fe/issues/2166)) ([084f8a6](https://github.com/intent-hq/cloudlands-fe/commit/084f8a6cb6f717aab43f26020b48b6b47dc29531))
+
 ## [2.133.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.132.0...v2.133.0) (2026-09-04)
 
 
