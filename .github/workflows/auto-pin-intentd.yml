@@ -30,6 +30,11 @@
 # - `node scripts/fetch-sidecar.cjs` runs as a preflight after editing the pin;
 #   if the sidecar cannot be fetched and verified, the run warns and stops —
 #   a pin that cannot resolve artifacts is never pushed.
+# - `node scripts/auto-pin-revalidate.mjs` re-reads the pin from LIVE main
+#   right before the branch is published: the checkout is the event snapshot,
+#   and a queued rolling PR can squash-merge while this run is still working
+#   from it, so the run must not recreate an already-landed bump as a
+#   duplicate PR (which defers the alpha cut; intent-hq/monorepo#4359).
 # - A `hold-release` label on the rolling PR pauses the workflow (run skips).
 # - Fail-soft without RELEASE_PAT: warn and exit green. RELEASE_PAT (not
 #   GITHUB_TOKEN) must author the branch/PR/merge so the squash-merge push to
@@ -203,8 +208,36 @@ jobs:
           fi
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
-      - name: Push branch and open/update rolling PR
+      # Race guard (intent-hq/monorepo#4359): everything above ran against the
+      # event snapshot of main. A previously queued rolling PR can squash-merge
+      # in the meantime — its merge also deletes the rolling branch, so the
+      # remote-tree check in the push step never sees it — and this run would
+      # recreate the identical bump as a duplicate PR, deferring the alpha cut.
+      # Re-read the pin from live main now and publish only when main still
+      # carries the pin this run started from; otherwise the bump either
+      # already landed (nothing to do) or main moved under us (skip; the next
+      # run rebuilds from a fresh checkout instead of pushing a stale-based
+      # commit that would conflict on intentd.version).
+      - name: Revalidate pin against live main
+        id: live
         if: steps.preflight.outputs.ok == 'true'
+        env:
+          CURRENT: ${{ steps.decide.outputs.current }}
+          LATEST: ${{ steps.decide.outputs.latest }}
+        run: |
+          set -euo pipefail
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          if ! out=$(node scripts/auto-pin-revalidate.mjs --current "$CURRENT" --latest "$LATEST"); then
+            echo "::warning::could not revalidate the pin against live main; not landing the pin this run."
+            exit 0
+          fi
+          echo "$out" >> "$GITHUB_OUTPUT"
+          if ! grep -qx 'proceed=true' <<<"$out"; then
+            echo "::notice::Live main no longer carries pin $CURRENT (see auto-pin-revalidate output above); skipping this run without pushing $BRANCH."
+          fi
+
+      - name: Push branch and open/update rolling PR
+        if: steps.live.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           CURRENT: ${{ steps.decide.outputs.current }}
