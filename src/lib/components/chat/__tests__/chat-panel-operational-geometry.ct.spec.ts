@@ -3,6 +3,15 @@ import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost
 
 test.setTimeout(120_000);
 
+// The zoom-200% cells here leave a heavy document behind, and the next spec's
+// first mount() on the reused per-worker page intermittently failed with
+// "Execution context was destroyed" on the merge queue (intent-hq/intent#4373).
+// Run this spec in its own worker without context reuse so its teardown never
+// races another spec's mount. Playwright-internal option, not in the public
+// types; ct-core pins it to 'when-possible' in its fixtures.
+// @ts-expect-error -- _optionContextReuseMode is a boxed internal option
+test.use({ _optionContextReuseMode: 'none' });
+
 for (const zoom of [1, 2]) {
   test(`aligns terminal status columns with tool rows at ${zoom * 100}%`, async ({ mount }) => {
     const component = await mount(ChatPanelOperationalGeometryHost, {
