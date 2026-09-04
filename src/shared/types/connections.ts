@@ -84,7 +84,7 @@ export const DETECTED_DEVICE_KINDS = [
 export type DetectedDeviceKind = (typeof DETECTED_DEVICE_KINDS)[number];
 
 /** Playful icon identifiers available only as user overrides. */
-const WILD_CARD_DEVICE_KINDS = [
+export const WILD_CARD_DEVICE_KINDS = [
   'robot',
   'rocket',
   'flyingSaucer',
@@ -113,7 +113,7 @@ export function isConnectionAccent(value: unknown): value is ConnectionAccent {
   );
 }
 
-function isDeviceKind(value: unknown): value is DeviceKind {
+export function isDeviceKind(value: unknown): value is DeviceKind {
   return typeof value === 'string' && (DEVICE_KINDS as readonly string[]).includes(value);
 }
 
