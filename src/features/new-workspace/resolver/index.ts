@@ -139,14 +139,23 @@ export function resolveStart(input: ResolveStartInput): ResolvedStart {
   let textIsSourceOnly = false;
 
   if (prefill.repoPath) {
-    explicitSource = localSource(prefill.repoPath, prefill.branch);
-    if (prefill.isNewRepo) {
+    if (prefill.isRemoteDaemon) {
       unresolved.push({
         value: prefill.repoPath,
         kind: 'path',
-        reason: 'needs-git-init',
-        needsGitInit: true,
+        reason: 'remote-daemon-path',
+        rejectedForRemoteDaemon: true,
       });
+    } else {
+      explicitSource = localSource(prefill.repoPath, prefill.branch);
+      if (prefill.isNewRepo) {
+        unresolved.push({
+          value: prefill.repoPath,
+          kind: 'path',
+          reason: 'needs-git-init',
+          needsGitInit: true,
+        });
+      }
     }
   } else if (prefill.githubUrl) {
     explicitSource = githubSource(prefill.githubUrl, prefill.branch) ?? undefined;

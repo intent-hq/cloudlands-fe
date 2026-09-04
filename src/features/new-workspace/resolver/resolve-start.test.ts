@@ -142,6 +142,23 @@ describe('resolveStart', () => {
     });
   });
 
+  it('rejects local repo prefill for a remote daemon', () => {
+    expect(
+      resolveStart({ prefill: { repoPath: '/Users/ada/project', isRemoteDaemon: true } }),
+    ).toEqual({
+      intentText: '',
+      contextLinks: [],
+      unresolved: [
+        {
+          value: '/Users/ada/project',
+          kind: 'path',
+          reason: 'remote-daemon-path',
+          rejectedForRemoteDaemon: true,
+        },
+      ],
+    });
+  });
+
   it('uses existing local, GitHub issue, and new-folder prefill shapes', () => {
     expect(resolveStart({ prefill: { repoPath: '/daemon/repo', prompt: 'Fix it' } })).toMatchObject(
       {
