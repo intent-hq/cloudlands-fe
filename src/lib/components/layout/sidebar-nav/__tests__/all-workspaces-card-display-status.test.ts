@@ -33,6 +33,7 @@ import {
   type Workspace,
   type WorkspaceId,
 } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
@@ -288,7 +289,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
         'Completed',
         'PR Open',
         'PR Mergeable',
-        'PR Queued',
+        m.layout_allCard_statusPrQueued_label(),
         'PR Merged',
       ]);
     });
