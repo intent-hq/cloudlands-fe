@@ -1,5 +1,13 @@
 import type { Component } from 'svelte';
-import { isDeviceKind, type DeviceIconChoice, type DeviceKind } from '$shared/types/connections';
+import {
+  DETECTED_DEVICE_KINDS,
+  WILD_CARD_DEVICE_KINDS,
+  isDetectedDeviceKind,
+  isDeviceKind,
+  type DetectedDeviceKind,
+  type DeviceIconChoice,
+  type DeviceKind,
+} from '$shared/types/connections';
 import { m } from '$shared/paraglide/messages.js';
 import {
   AlienIcon,
@@ -25,7 +33,7 @@ export type DeviceIconComponent = Component<Record<string, unknown>>;
 
 export interface DeviceIconSource {
   deviceIcon?: DeviceIconChoice;
-  detectedDeviceKind?: DeviceKind | null;
+  detectedDeviceKind?: DetectedDeviceKind | null;
   os?: string | null;
 }
 
@@ -43,19 +51,8 @@ export interface DeviceIconOption {
 }
 
 export const DEVICE_ICON_KINDS = {
-  devices: ['server', 'cloudVm', 'desktop', 'laptop', 'macMini', 'macStudio'],
-  wildCards: [
-    'robot',
-    'rocket',
-    'flyingSaucer',
-    'ghost',
-    'cat',
-    'dog',
-    'gameController',
-    'coffee',
-    'planet',
-    'pottedPlant',
-  ],
+  devices: DETECTED_DEVICE_KINDS,
+  wildCards: WILD_CARD_DEVICE_KINDS,
 } as const satisfies Record<DeviceIconGroup, readonly DeviceKind[]>;
 
 export const DEVICE_ICON_REGISTRY = {
@@ -182,7 +179,7 @@ function fallbackDeviceKind(os: string | null | undefined): DeviceKind {
 
 export function resolveDeviceKind(source: DeviceIconSource): DeviceKind {
   if (source.deviceIcon !== 'auto' && isDeviceKind(source.deviceIcon)) return source.deviceIcon;
-  if (isDeviceKind(source.detectedDeviceKind)) return source.detectedDeviceKind;
+  if (isDetectedDeviceKind(source.detectedDeviceKind)) return source.detectedDeviceKind;
   return fallbackDeviceKind(source.os);
 }
 
