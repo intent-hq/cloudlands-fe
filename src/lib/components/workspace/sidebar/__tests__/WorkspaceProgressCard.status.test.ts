@@ -473,6 +473,39 @@ describe('WorkspaceProgressCard status message', () => {
     expect(titleInput.style.width).toBe('');
   });
 
+  it('applies the sidebar title decoration classes in display and edit modes', async () => {
+    await renderProgressCard();
+    const titleButton = screen.getByRole('button', { name: 'Active Workspace' });
+    const decoration = titleButton.parentElement?.querySelector<HTMLElement>(
+      ':scope > [aria-hidden="true"]',
+    );
+
+    expect(decoration).toBeTruthy();
+    expect(decoration!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        '-inset-x-1',
+        '-inset-y-0.5',
+        'border-transparent',
+        'bg-transparent',
+        'motion-reduce:transition-none',
+        'transition-[inset,border-color,background-color]',
+      ]),
+    );
+
+    await fireEvent.click(titleButton);
+
+    expect(decoration!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        '-inset-x-2',
+        '-inset-y-1.5',
+        'border-ring/60',
+        'bg-sidebar',
+        'motion-reduce:transition-none',
+        'transition-[inset,border-color,background-color]',
+      ]),
+    );
+  });
+
   it('aligns the branch control, explains its context, and copies on click', async () => {
     const { container } = await renderProgressCard({
       branch: 'feature/status',
@@ -528,6 +561,39 @@ describe('WorkspaceProgressCard status message', () => {
     expect(editor.className).toContain('break-words');
     expect(editor.className).toContain('resize-none');
     expect(editor.className).toContain('min-h-0');
+  });
+
+  it('applies the sidebar status decoration classes in display and edit modes', async () => {
+    await renderProgressCard({ statusMessage: 'Ready for review.' });
+    const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
+    const decoration = statusButton.parentElement?.querySelector<HTMLElement>(
+      ':scope > [aria-hidden="true"]',
+    );
+
+    expect(decoration).toBeTruthy();
+    expect(decoration!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        '-inset-x-1',
+        '-inset-y-0.5',
+        'border-transparent',
+        'bg-transparent',
+        'motion-reduce:transition-none',
+        'transition-[inset,border-color,background-color]',
+      ]),
+    );
+
+    await fireEvent.click(statusButton);
+
+    expect(decoration!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        '-inset-x-2',
+        '-inset-y-1.5',
+        'border-ring/60',
+        'bg-sidebar',
+        'motion-reduce:transition-none',
+        'transition-[inset,border-color,background-color]',
+      ]),
+    );
   });
 
   it('hides the status row when the active sidebar status is empty', async () => {
