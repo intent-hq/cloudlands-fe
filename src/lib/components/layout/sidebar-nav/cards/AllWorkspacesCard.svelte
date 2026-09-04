@@ -454,15 +454,15 @@
 
 {#snippet groupActions(workspaces: Workspace[], groupLabel: string)}
   <div
-    class="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
+    class="ml-auto mr-0.5 flex shrink-0 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
   >
     {#if workspaces.some((workspace) => workspace.status !== WorkspaceStatusEnum.Archived)}
       <Tooltip.Tooltip content={m.layout_allCard_groupArchiveAll_tooltip()}>
         <Button
           variant="plain"
-          size="xs"
+          size="icon-xs"
           iconOnly
-          class="size-7 text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+          class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
           aria-label={m.layout_allCard_groupArchiveAll_ariaLabel({ group: groupLabel })}
           data-group-archive-all
           onclick={(event) => openGroupArchive(event, workspaces, groupLabel)}
@@ -475,9 +475,9 @@
     <Tooltip.Tooltip content={m.layout_allCard_groupDeleteAll_tooltip()}>
       <Button
         variant="plain"
-        size="xs"
+        size="icon-xs"
         iconOnly
-        class="size-7 text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+        class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
         aria-label={m.layout_allCard_groupDeleteAll_ariaLabel({ group: groupLabel })}
         data-group-delete-all
         onclick={(event) => openGroupDelete(event, workspaces, groupLabel)}
