@@ -477,6 +477,22 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     );
   });
 
+  it('should map a trailing :<line> suffix to the line option', async () => {
+    const rawHref = 'src/main.rs:17';
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        line: 17,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
   it('should map Cmd/Ctrl+Click to openInAdjacentPanel', async () => {
     const rawHref = 'src/main.rs';
     const result = await handleLink(resolvedUrl(rawHref), {
