@@ -3026,4 +3026,93 @@ describe('ChatPanel mounted lifecycle', () => {
     // Hidden IMMEDIATELY — no quiet-window timer needed.
     expect(view.container.querySelector('[data-testid="chat-older-history-loading"]')).toBeNull();
   });
+
+  it('does not commit the empty-chat entry while the transcript is hydrating and re-snaps to the bottom once rows lay out', async () => {
+    // Regression (blank transcript on workspace switch-back): only the active
+    // and the most-recently-inactive surfaces are retained, so switching back
+    // to an older workspace remounts ChatPanel fresh. The mount-time entry
+    // frame used to treat a still-empty store (hydration in flight) as an
+    // empty chat — scrollTop 0, follow off — and the first-hydration snap then
+    // ran once against a container whose rows were not laid out yet, where
+    // the write clamps to the top and nothing re-snaps.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydration.set('loading');
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    // Emulate the browser's clamp to the scrollable range and record every
+    // programmatic write so an entry commit is observable even at 0.
+    const scrollTopWrites: number[] = [];
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        scrollTopWrites.push(value);
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    // Mount-time entry frame: the store is still empty and the container is
+    // collapsed. Nothing may be committed yet.
+    flushFrame();
+    expect(scrollTopWrites).toEqual([]);
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    // Hydration lands a multi-row transcript before the rows are laid out.
+    mocks.transcriptHydration.set('settled');
+    mocks.transcriptHydratedOnce.set(true);
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'user', content: 'one', timestamp: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', role: 'assistant', content: 'two', timestamp: '2026-01-01T00:00:01.000Z' },
+      { id: 'm3', role: 'user', content: 'three', timestamp: '2026-01-01T00:00:02.000Z' },
+    ]);
+    await tick();
+    await tick();
+    expect(mocks.followBottomOptions?.follow).toBe(true);
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // The rows lay out on the next frame: the entry re-snaps to the bottom
+    // instead of leaving the viewport at the clamped top.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+    expect(mocks.followBottomOptions?.follow).toBe(true);
+  });
+
+  it('still enters a settled-empty transcript at the top with follow disabled', async () => {
+    // Guard for the genuinely-empty chat: hydration settled with no messages
+    // and no conversation evidence keeps the top entry (specialist switcher
+    // visible) and leaves auto-follow off until the first send.
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    scrollContainer.scrollTop = 120;
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+
+    expect(scrollContainer.scrollTop).toBe(0);
+    expect(mocks.followBottomOptions?.follow).toBe(false);
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+  });
 });

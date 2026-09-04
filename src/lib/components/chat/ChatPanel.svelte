@@ -499,6 +499,17 @@
       $transcriptSnapshotMeta$?.totalMessages ?? 0,
     ),
   );
+  // The transcript is KNOWN empty (not merely not-yet-hydrated): hydration
+  // settled, no switch-back snapshot outstanding, and no durable evidence of
+  // messages. A fresh mount over a still-hydrating conversation must not be
+  // mistaken for an empty chat.
+  const transcriptSettledEmpty = $derived(
+    $agentMessages$.length === 0 &&
+      $transcriptHydration$ === 'settled' &&
+      !isFirstHydrationLoading &&
+      !$awaitingSwitchBackSnapshot$ &&
+      !authoritativeConversationEvidence,
+  );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
@@ -3288,8 +3299,16 @@
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
           const startedTransition = startPendingSendTransitions();
-          if (!startedTransition && scrollContainer && shouldScroll)
-            followToBottom(scrollContainer);
+          if (startedTransition || !scrollContainer || !shouldScroll) return;
+          followToBottom(scrollContainer);
+          // First-hydration entry: the rows may not be laid out yet at this
+          // tick (collapsed container, scroll range still empty), where the
+          // snap clamps to the top. Re-snap once more on the next frame.
+          if (isFirstMessage && scrollContainer.scrollHeight <= scrollContainer.clientHeight) {
+            scheduleActiveAnimationFrame(() => {
+              if (scrollContainer && shouldFollowBottom) followToBottom(scrollContainer);
+            });
+          }
         });
       }
     }
@@ -3606,7 +3625,9 @@
     // delivered message once it arrives.
 
     // Empty chats start at the top and unlock until the first send. Non-empty
-    // chats are positioned by the follow action itself.
+    // chats are positioned by the follow action itself. A still-hydrating
+    // transcript (empty store, hydration not settled) is left untouched: the
+    // first-hydration auto-scroll effect owns that entry.
     const initialScrollFrame = requestAnimationFrame(() => {
       if (!isActive) return;
       if (scrollContainer) {
@@ -3619,7 +3640,7 @@
             shouldFollowBottom = true;
             followToBottom(scrollContainer);
           }
-        } else {
+        } else if (transcriptSettledEmpty) {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
           // Don't auto-follow until user sends a message
