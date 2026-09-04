@@ -119,25 +119,21 @@
     return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
   }
 
-  function humanMessageCountLabel(value: number): string {
-    const roundedValue = Math.round(value);
-    return roundedValue === 1
-      ? m.workspace_tokenUsage_humanMessages_one()
-      : m.workspace_tokenUsage_humanMessages_many({ count: formatInteger(roundedValue) });
-  }
-
-  function agentMessageCountLabel(value: number): string {
-    const roundedValue = Math.round(value);
-    return roundedValue === 1
-      ? m.workspace_tokenUsage_agentMessages_one()
-      : m.workspace_tokenUsage_agentMessages_many({ count: formatInteger(roundedValue) });
-  }
-
   function messageCountsLabel(humanValue: number, agentValue = 0): string {
-    return m.workspace_tokenUsage_messageCounts_label({
-      humanMessages: humanMessageCountLabel(humanValue),
-      agentMessages: agentMessageCountLabel(agentValue),
-    });
+    const humanCount = Math.round(humanValue);
+    const agentCount = Math.round(agentValue);
+    const counts = {
+      humanCount: formatInteger(humanCount),
+      agentCount: formatInteger(agentCount),
+    };
+    if (humanCount === 1) {
+      return agentCount === 1
+        ? m.workspace_tokenUsage_messageCounts_humanOneAgentOne_label(counts)
+        : m.workspace_tokenUsage_messageCounts_humanOneAgentMany_label(counts);
+    }
+    return agentCount === 1
+      ? m.workspace_tokenUsage_messageCounts_humanManyAgentOne_label(counts)
+      : m.workspace_tokenUsage_messageCounts_humanManyAgentMany_label(counts);
   }
 
   function compactWholeNumber(value: number): string {
@@ -667,7 +663,7 @@
             {#if crossFilterAvailable}
               <div class="composition-row message-composition-row min-w-0 py-1">
                 <dt
-                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-foreground"
+                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-muted-foreground"
                 >
                   <AnimatedNumber
                     value={previewHumanMessages ?? 0}
