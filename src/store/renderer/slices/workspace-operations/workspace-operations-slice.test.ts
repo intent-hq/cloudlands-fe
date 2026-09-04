@@ -23,7 +23,27 @@ const openPr = {
   status: 'Open' as const,
 };
 
+const localChanges = {
+  roots: [
+    {
+      kind: 'primary' as const,
+      path: '/work/repo',
+      branch: 'feat/x',
+      hasRemoteRefs: true,
+      unpushedCount: 3,
+      uncommittedCount: 2,
+    },
+  ],
+  hasUnpushedCommits: true,
+  hasUncommittedChanges: true,
+};
+
 describe('workspaceOperationsReducer', () => {
+  it('starts with no local-changes data for either warning', () => {
+    expect(initialState.localChangesForDelete).toBeNull();
+    expect(initialState.localChangesForArchive).toBeNull();
+  });
+
   it('opens and clears the delete warning state', () => {
     const opened = workspaceOperationsReducer(
       initialState,
@@ -32,6 +52,7 @@ describe('workspaceOperationsReducer', () => {
         agentNames: ['Agent One'],
         hookNames: ['ci-watch'],
         openPrs: [openPr],
+        localChanges,
       }),
     );
 
@@ -40,6 +61,8 @@ describe('workspaceOperationsReducer', () => {
     expect(opened.runningAgentNamesForDelete).toEqual(['Agent One']);
     expect(opened.activeHookNamesForDelete).toEqual(['ci-watch']);
     expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
+    expect(opened.localChangesForDelete).toEqual(localChanges);
+    expect(opened.localChangesForArchive).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -48,6 +71,22 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.runningAgentNamesForDelete).toEqual([]);
     expect(closed.activeHookNamesForDelete).toEqual([]);
     expect(getItems(closed.openPrsForDelete)).toEqual([]);
+    expect(closed.localChangesForDelete).toBeNull();
+  });
+
+  it('opens the delete warning with null local changes when none were supplied', () => {
+    const opened = workspaceOperationsReducer(
+      initialState,
+      openDeleteWarning({
+        workspaceId: 'ws-1',
+        agentNames: ['Agent One'],
+        hookNames: [],
+        openPrs: [],
+      }),
+    );
+
+    expect(opened.showDeleteWarning).toBe(true);
+    expect(opened.localChangesForDelete).toBeNull();
   });
 
   it('opens and clears the archive warning state', () => {
@@ -58,6 +97,7 @@ describe('workspaceOperationsReducer', () => {
         agentNames: ['Agent Two'],
         hookNames: ['pr-watch'],
         openPrs: [{ ...openPr, status: 'Draft' as const, mergeConflicts: true }],
+        localChanges,
       }),
     );
 
@@ -68,6 +108,8 @@ describe('workspaceOperationsReducer', () => {
     expect(getItems(opened.openPrsForArchive)).toEqual([
       { ...openPr, status: 'Draft', mergeConflicts: true },
     ]);
+    expect(opened.localChangesForArchive).toEqual(localChanges);
+    expect(opened.localChangesForDelete).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeArchiveWarning());
 
@@ -76,6 +118,23 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.runningAgentNamesForArchive).toEqual([]);
     expect(closed.activeHookNamesForArchive).toEqual([]);
     expect(getItems(closed.openPrsForArchive)).toEqual([]);
+    expect(closed.localChangesForArchive).toBeNull();
+  });
+
+  it('opens the archive warning with null local changes when the RPC failed', () => {
+    const opened = workspaceOperationsReducer(
+      initialState,
+      openArchiveWarning({
+        workspaceId: 'ws-2',
+        agentNames: [],
+        hookNames: ['pr-watch'],
+        openPrs: [],
+        localChanges: null,
+      }),
+    );
+
+    expect(opened.showArchiveWarning).toBe(true);
+    expect(opened.localChangesForArchive).toBeNull();
   });
 
   it('tracks and clears bulk delete warning details', () => {

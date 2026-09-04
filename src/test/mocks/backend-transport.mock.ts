@@ -55,10 +55,14 @@ type SubscribeHandler = (
   params: unknown,
 ) => { subscriptionId?: string } | Promise<{ subscriptionId?: string }>;
 
-/** Recorded request / subscribe / unsubscribe call. */
+/**
+ * Recorded request / subscribe / unsubscribe call. `options` is present only
+ * when the caller passed a per-call options object (e.g. `{ timeoutMs }`).
+ */
 interface RecordedRequest {
   method: string;
   params: unknown;
+  options?: { timeoutMs?: number };
 }
 
 interface MockState {
@@ -98,8 +102,12 @@ export function resetMockBackend(): void {
   state.unsubscribes.length = 0;
 }
 
-async function mockBackendRequest<T = unknown>(method: string, params?: unknown): Promise<T> {
-  state.requests.push({ method, params });
+async function mockBackendRequest<T = unknown>(
+  method: string,
+  params?: unknown,
+  options?: { timeoutMs?: number },
+): Promise<T> {
+  state.requests.push(options === undefined ? { method, params } : { method, params, options });
   const handler = state.requestHandlers.get(method);
   if (!handler) {
     throw new BackendError({

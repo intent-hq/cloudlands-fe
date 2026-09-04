@@ -185,6 +185,7 @@
   "menu_window_localBackend_label": ["fr", "es"],
   "modals_connect_host_label": ["de", "es"],
   "modals_connect_port_label": ["de", "fr"],
+  "modals_deleteWarning_localChanges_secondaryRoot_label": "*",
   "modals_input_confirm_label": ["ja", "de", "fr"],
   "modals_protocolMismatch_remoteVersion_label": ["de"],
   "modals_pullConflict_branch_label": ["de"],
