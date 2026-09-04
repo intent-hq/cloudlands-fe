@@ -2,7 +2,6 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faWindowMaximize } from '@fortawesome/free-solid-svg-icons';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
@@ -86,22 +85,24 @@
 {/snippet}
 
 {#if entries.length > 0}
-  <DropdownMenu align="end" side="bottom" contentClass="min-w-52 max-w-80">
-    {#snippet trigger({ props })}
-      <Button
-        {...props}
-        variant="ghost-light"
-        size="icon-sm"
-        aria-label={triggerLabel}
-        tooltip={triggerLabel}
-        tooltipSide="bottom"
-        tooltipDelayDuration={300}
-        data-testid="browser-tabs-trigger"
-      >
-        <Fa icon={faWindowMaximize} size={14} class="size-3.5!" />
-      </Button>
-    {/snippet}
-    {#snippet content({ close })}
+  <Menu.Root>
+    <Menu.Trigger>
+      {#snippet child({ props })}
+        <Button
+          {...props}
+          variant="ghost-light"
+          size="icon-sm"
+          aria-label={triggerLabel}
+          tooltip={triggerLabel}
+          tooltipSide="bottom"
+          tooltipDelayDuration={300}
+          data-testid="browser-tabs-trigger"
+        >
+          <Fa icon={faWindowMaximize} size={14} class="size-3.5!" />
+        </Button>
+      {/snippet}
+    </Menu.Trigger>
+    <Menu.Content align="end" side="bottom" class="min-w-52 max-w-80">
       {#each entries as entry (entry.tab.id)}
         {@const label = tabLabel(entry)}
         <Menu.Item
@@ -109,15 +110,12 @@
           data-testid="browser-tabs-menu-item"
           data-browser-tab-id={entry.tab.id}
           data-hidden={entry.hidden || undefined}
-          onclick={() => {
-            handleTabClick(entry);
-            close();
-          }}
+          onSelect={() => handleTabClick(entry)}
         >
           {@render favicon(entry)}
           <span class="min-w-0 flex-1 truncate text-muted-foreground">{label}</span>
         </Menu.Item>
       {/each}
-    {/snippet}
-  </DropdownMenu>
+    </Menu.Content>
+  </Menu.Root>
 {/if}
