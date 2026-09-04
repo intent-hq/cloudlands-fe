@@ -4,6 +4,7 @@ import {
   installPreviewBrowserApi,
   listPreviewIds,
   loadPreviewFromLoader,
+  registerPreviewLoader,
   setActivePreview,
 } from './preview-discovery';
 
@@ -57,6 +58,17 @@ describe('preview discovery', () => {
     await expect(loadPreviewFromLoader('example', loader('example'))).rejects.toThrow(
       'Preview “example” must define at least one state.',
     );
+  });
+
+  it('allows a harness to register and restore a preview loader', () => {
+    const unregister = registerPreviewLoader(
+      'ct-only',
+      loader('ct-only', { default: { props: {} } }),
+    );
+
+    expect(listPreviewIds()).toContain('ct-only');
+    unregister();
+    expect(listPreviewIds()).not.toContain('ct-only');
   });
 
   it('exposes geometry for the active ready scene focus frame', () => {

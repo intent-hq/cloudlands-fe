@@ -61,6 +61,16 @@ const loadersBySlug = createPreviewLoaderIndex(
   Object.entries(previewLoaders) as Array<[string, PreviewLoader]>,
 );
 
+export function registerPreviewLoader(slug: string, loader: PreviewLoader): () => void {
+  const previous = loadersBySlug.get(slug);
+  loadersBySlug.set(slug, loader);
+  return () => {
+    if (loadersBySlug.get(slug) !== loader) return;
+    if (previous) loadersBySlug.set(slug, previous);
+    else loadersBySlug.delete(slug);
+  };
+}
+
 export function listPreviewIds(): string[] {
   return [...loadersBySlug.keys()].sort();
 }

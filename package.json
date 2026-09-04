@@ -18,6 +18,8 @@
     "dev:renderer:force": "cross-env GIT_TERMINAL_PROMPT=0 vite dev --force --strictPort",
     "dev:web": "cross-env GIT_TERMINAL_PROMPT=0 INTENT_BUILD_TARGET=web vite dev --strictPort",
     "dev:ui": "cross-env INTENT_UI_PREVIEW=1 pnpm run dev:web",
+    "sandbox:shot": "node scripts/sandbox/shot.mjs",
+    "sandbox:geometry:update": "cross-env SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'",
     "dev:electron": "node scripts/dev-electron.js",
     "dev:electron:cdp": "node scripts/dev-electron.js --cdp",
     "kill:electron": "node scripts/kill-electron.js",

@@ -155,12 +155,36 @@ function listCtTests(root) {
 
 function importTargets(source, testPath, root) {
   const targets = new Set();
-  const importRe = /(?:from\s*|import\s*)["']([^"']+)["']/g;
+  const importRe = /(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g;
   for (const match of source.matchAll(importRe)) {
     if (!match[1].startsWith('.')) continue;
     const base = resolve(root, dirname(testPath), match[1]);
     for (const suffix of ['', '.svelte', '.ts', '.tsx', '.js', '.mjs']) {
       targets.add(slash(relative(root, `${base}${suffix}`)));
+    }
+  }
+  return targets;
+}
+
+function geometrySnapshotTargets(testPath, root, readText) {
+  const match = testPath.match(/^(.*\/)?([^/]+)\.geometry\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/);
+  if (!match) return new Set();
+  const directory = match[1] ?? '';
+  const scene = match[2];
+  const targets = new Set([
+    `${directory}__geometry__/${scene}.geometry.json`,
+    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
+      (extension) => `${directory}${scene}.preview.${extension}`,
+    ),
+    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
+      (extension) => `${directory}${scene}.preview-fixtures.${extension}`,
+    ),
+  ]);
+
+  for (const previewPath of [...targets].filter((path) => /\.preview\.[^.]+$/.test(path))) {
+    if (!existsSync(resolve(root, previewPath))) continue;
+    for (const imported of importTargets(readText(previewPath), previewPath, root)) {
+      if (imported.endsWith('.svelte')) targets.add(imported);
     }
   }
   return targets;
@@ -177,7 +201,9 @@ export function findRelatedCtTests(files, options = {}) {
   for (const test of ctTests) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
-    if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
+    const geometryTargets = geometrySnapshotTargets(test, root, readText);
+    if (files.some((file) => geometryTargets.has(file))) selected.add(test);
+    else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
   }
   return [...selected].sort();
 }
