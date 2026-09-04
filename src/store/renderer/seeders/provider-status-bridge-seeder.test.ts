@@ -470,6 +470,36 @@ describe('provider-status-bridge-seeder', () => {
       });
     });
 
+    it('does not warn on claude-code when npx is missing but the daemon runs a path override (intent#4378)', async () => {
+      // Since intentd#1714 discovery reports the npx-only provider installed
+      // from a valid `providers.paths` override while `resolvedPath` stays the
+      // (absent) auto-detected npx — the daemon execs the override, so npx
+      // is not involved. Reuses the discovery round-trip already made for
+      // Antigravity.
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
+          tools: {
+            ...NO_TOOLS.tools,
+            claude: { available: true, path: '/usr/local/bin/claude' },
+          },
+        },
+        'host.providerAuthStatus': authSweep({ 'claude-code': true }),
+        'host.providerDiscovery': {
+          providers: [{ id: 'claude-code', installed: true }],
+        },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.claudeCode).toEqual({ available: true, authenticated: true });
+      expect(
+        mockedRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+      ).toHaveLength(1);
+    });
+
     it('reports codex available on the real CLI alone (no local adapter needed)', async () => {
       routeDaemon({
         'host.checkAuggie': { available: false },
@@ -643,6 +673,53 @@ describe('provider-status-bridge-seeder', () => {
           throw new Error('transport down');
         },
         'host.providerAuthStatus': authOne('claude-code', true),
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
+
+      expect(response).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('does not warn when npx is missing but the daemon runs a path override (intent#4378)', async () => {
+      routeDaemon({
+        'host.findBinary': (params) => {
+          const { name } = params as { name: string };
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
+            : { available: false };
+        },
+        'host.providerAuthStatus': authOne('claude-code', true),
+        'host.providerDiscovery': {
+          providers: [{ id: 'claude-code', installed: true }],
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
+
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+      expect(response).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('does not warn when npx is missing and the discovery read fails (unknown, not confirmed absence)', async () => {
+      routeDaemon({
+        'host.findBinary': (params) => {
+          const { name } = params as { name: string };
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
+            : { available: false };
+        },
+        'host.providerAuthStatus': authOne('claude-code', true),
+        'host.providerDiscovery': () => {
+          throw new Error('discovery transport down');
+        },
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
