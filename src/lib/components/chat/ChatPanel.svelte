@@ -499,6 +499,16 @@
       $transcriptSnapshotMeta$?.totalMessages ?? 0,
     ),
   );
+  // The transcript is KNOWN empty (not merely not-yet-hydrated): hydration
+  // settled, no switch-back snapshot outstanding, and no durable evidence of
+  // messages. A fresh mount over a still-hydrating conversation must not be
+  // mistaken for an empty chat.
+  const transcriptSettledEmpty = $derived(
+    $agentMessages$.length === 0 &&
+      $transcriptHydration$ === 'settled' &&
+      !$awaitingSwitchBackSnapshot$ &&
+      !authoritativeConversationEvidence,
+  );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
@@ -3606,7 +3616,12 @@
     // delivered message once it arrives.
 
     // Empty chats start at the top and unlock until the first send. Non-empty
-    // chats are positioned by the follow action itself.
+    // chats are positioned by the follow action itself. A still-hydrating
+    // transcript (empty store, hydration not settled) is left untouched: the
+    // first-hydration auto-scroll effect owns that entry. The settled-empty
+    // branch only fires on a remount over an already-settled store (a new
+    // agent's hydration settles after this frame); either way an empty
+    // container sits at 0, so this is a no-op safeguard, not the entry owner.
     const initialScrollFrame = requestAnimationFrame(() => {
       if (!isActive) return;
       if (scrollContainer) {
@@ -3619,7 +3634,7 @@
             shouldFollowBottom = true;
             followToBottom(scrollContainer);
           }
-        } else {
+        } else if (transcriptSettledEmpty) {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
           // Don't auto-follow until user sends a message
