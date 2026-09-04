@@ -18,7 +18,7 @@ const expected: Array<
   ['not_started', 'dot', null, 'text-muted-foreground/35', 'Not started'],
   ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],
   ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
-  ['pr_queued', 'icon', 'hourglass-half', 'text-info', 'Queued to merge'],
+  ['pr_queued', 'icon', 'hourglass-half', 'text-info', 'PR Queued'],
   ['pr_ready', 'icon', 'code-pull-request', 'text-success', 'PR Mergeable'],
   ['pr_open', 'icon', 'code-pull-request', 'text-info', 'PR open'],
   ['pr_merged', 'icon', 'code-merge', 'text-purple-500', 'PR merged'],

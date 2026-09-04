@@ -288,7 +288,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
         'Completed',
         'PR Open',
         'PR Mergeable',
-        'Queued to merge',
+        'PR Queued',
         'PR Merged',
       ]);
     });
