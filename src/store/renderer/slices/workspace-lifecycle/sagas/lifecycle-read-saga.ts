@@ -667,6 +667,9 @@ function* eventsWorker(
   const workspaceId = action.payload[0];
   if (pendingInitialReads.delete(workspaceId)) {
     yield* runWorkspaceRead(scheduler, 'events', workspaceId, refreshEvents, false);
+    if (action.type === loadOlderEventsRequested.type) {
+      yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
+    }
     return;
   }
   yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);

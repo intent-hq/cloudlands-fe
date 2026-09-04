@@ -125,7 +125,12 @@ function* hydrateOptionalWorkspaceDetail(
   }
 }
 
-function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): SagaGenerator<void> {
+type ActiveWorkspaceLoad = { workspaceId: string; task?: Task; succeeded: boolean };
+
+function* loadWorkspace(
+  action: ReturnType<typeof workspaceLoadRequested>,
+  slot: ActiveWorkspaceLoad,
+): SagaGenerator<void> {
   const workspaceId = action.payload[0];
   if (workspaceId.startsWith('optimistic-')) {
     yield* put(workspaceLoadOptimisticReady(workspaceId));
@@ -136,6 +141,7 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
   const live = yield* select(selectIsWorkspaceSessionLive.select, workspaceId);
   if (cached && live) {
     yield* put(workspaceLoadSucceeded(workspaceId));
+    slot.succeeded = true;
     yield* put(markWorkspaceNavigationInitialized(workspaceId));
     return;
   }
@@ -178,6 +184,7 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
     if (yield* isLoadInvalidated(workspaceId)) return;
     yield* put(workspaceOpenSucceeded(workspaceId));
     yield* put(workspaceLoadSucceeded(workspaceId));
+    slot.succeeded = true;
     yield* put(markWorkspaceNavigationInitialized(workspaceId));
     if (!workspace.repositoryPath) {
       yield* call(hydrateOptionalWorkspaceDetail, workspaceId, workspace);
@@ -194,22 +201,23 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
 }
 
 export function* workspaceLoadSaga(): SagaGenerator<void> {
-  let active: { workspaceId: string; task?: Task } | undefined;
+  let active: ActiveWorkspaceLoad | undefined;
   while (true) {
     const action = yield* take(workspaceLoadRequested);
     const workspaceId = action.payload[0];
-    if (active?.task?.isRunning()) {
+    const activeTask = active?.task;
+    if (active && activeTask?.isRunning()) {
       if (active.workspaceId === workspaceId) continue;
-      const staleWorkspaceId = active.workspaceId;
-      yield* cancel(active.task);
-      yield* put(workspaceLoadCancelled(staleWorkspaceId));
+      const stale = active;
+      yield* cancel(activeTask);
+      if (!stale.succeeded) yield* put(workspaceLoadCancelled(stale.workspaceId));
     }
 
-    const slot: { workspaceId: string; task?: Task } = { workspaceId };
+    const slot: ActiveWorkspaceLoad = { workspaceId, succeeded: false };
     active = slot;
     const task = yield* fork(function* activeWorkspaceLoad() {
       try {
-        yield* loadWorkspace(action as ReturnType<typeof workspaceLoadRequested>);
+        yield* loadWorkspace(action as ReturnType<typeof workspaceLoadRequested>, slot);
       } finally {
         if (active === slot) active = undefined;
       }

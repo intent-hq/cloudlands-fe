@@ -731,6 +731,62 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('runs a replaced initial load before the trailing older-page request', async () => {
+    let resolveOlder!: (value: { items: unknown[]; nextToken: string | null }) => void;
+    let resolveFresh!: (value: { items: unknown[]; nextToken: string | null }) => void;
+    mocks.events.queryPage
+      .mockReturnValueOnce(new Promise((done) => (resolveOlder = done)))
+      .mockReturnValueOnce(new Promise((done) => (resolveFresh = done)))
+      .mockResolvedValueOnce({ items: [{ id: 'fresh-older' }], nextToken: null });
+    const current = state(null, 'older-cursor');
+    const run = start(current);
+
+    run.channel.put(loadOlderEventsRequested(WS));
+    await settle();
+    run.channel.put(loadEventsRequested(WS));
+    run.channel.put(loadOlderEventsRequested(WS));
+    await settle();
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+    ]);
+
+    resolveOlder({ items: [{ id: 'leading-older' }], nextToken: 'stale-cursor' });
+    await settle();
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+      [WS, { limit: 100 }],
+    ]);
+
+    const eventState = current.workspaceEvents.byWorkspaceId[WS];
+    expect(eventState).toBeDefined();
+    if (!eventState) throw new Error('Expected seeded workspace event state');
+    eventState.nextToken = 'fresh-cursor';
+    resolveFresh({ items: [{ id: 'fresh' }], nextToken: 'fresh-cursor' });
+    await settle();
+
+    expect(mocks.events.queryPage.mock.calls).toEqual([
+      [WS, { limit: 100, nextToken: 'older-cursor' }],
+      [WS, { limit: 100 }],
+      [WS, { limit: 100, nextToken: 'fresh-cursor' }],
+    ]);
+    expect(run.actions).toEqual([
+      {
+        type: 'workspaceEvents/olderEventsLoaded',
+        payload: [WS, [{ id: 'leading-older' }], 'stale-cursor'],
+      },
+      { type: 'workspaceEvents/eventsLoadStarted', payload: [WS] },
+      {
+        type: 'workspaceEvents/eventsLoaded',
+        payload: [WS, [{ id: 'fresh' }], 'fresh-cursor'],
+      },
+      {
+        type: 'workspaceEvents/olderEventsLoaded',
+        payload: [WS, [{ id: 'fresh-older' }], null],
+      },
+    ]);
+    await stop(run.task);
+  });
+
   it('runs a trailing script refresh after an in-flight response can become stale', async () => {
     let resolveFirst!: (scripts: unknown[]) => void;
     const stale = [{ id: 'script-old' }];

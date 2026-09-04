@@ -19,6 +19,7 @@ import {
   initialState as initialLifecycleState,
   workspaceDeleted,
   workspaceHydrationRequested,
+  workspaceLoadCancelled,
   workspaceLoadRequested,
   workspaceLoadSucceeded,
   workspaceLifecycleReducer,
@@ -197,6 +198,34 @@ describe('workspaceLoadSaga', () => {
     expect(selectWorkspaceById.select(run.getState() as never, opened.id)?.repositoryPath).toBe(
       '/hydrated/repo',
     );
+    await stop(run.task);
+  });
+
+  it('keeps a succeeded load ready when a later route cancels optional hydration', async () => {
+    const first = { ...workspace('first-space'), repositoryPath: undefined } as Workspace;
+    const second = workspace('second-space');
+    const gate = deferred<Workspace>();
+    mocks.open
+      .mockResolvedValueOnce({ ok: true, data: first })
+      .mockResolvedValueOnce({ ok: true, data: second });
+    mocks.get.mockReturnValueOnce(gate.promise);
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(first.id));
+    await settle();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[first.id]?.status).toBe('ready');
+
+    run.dispatch(workspaceLoadRequested(second.id));
+    await settle();
+    gate.resolve({ ...first, repositoryPath: '/late/repo' } as Workspace);
+    await settle();
+
+    expect(run.actions).not.toContainEqual(workspaceLoadCancelled(first.id));
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[first.id]?.status).toBe('ready');
+    expect(selectWorkspaceById.select(run.getState() as never, first.id)?.repositoryPath).toBe(
+      undefined,
+    );
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[second.id]?.status).toBe('ready');
     await stop(run.task);
   });
 
