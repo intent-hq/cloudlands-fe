@@ -5,10 +5,7 @@
  * Converts ```diff code blocks into rendered diff viewers.
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import DiffBlockNodeView from './DiffBlockNodeView.svelte';
 

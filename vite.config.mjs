@@ -512,8 +512,6 @@ export default defineConfig(({ command, mode, isPreview }) => {
           // Note: We do NOT ignore the entire ~/.workspaces/ directory because
           // git worktrees for development may be located there
           '**/.workspace/**',
-          // Ignore agent instruction files to prevent HMR when editing via sandbox/rules page
-          '**/features/agent/main/instructions/**',
           // Ignore preload directory - it's Electron-specific and compiled separately
           // Changes here should not trigger HMR (the generate:ipc-channels script writes here)
           '**/src/preload/**',

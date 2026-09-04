@@ -7,7 +7,6 @@
   <button
     data-testid="branch-selector-change"
     type="button"
-    onclick={() => onchange?.({ detail: { branch: 'develop' } })}
-  >change</button>
+    onclick={() => onchange?.({ detail: { branch: 'develop' } })}>change</button
+  >
 </div>
-

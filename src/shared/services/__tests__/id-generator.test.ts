@@ -2,11 +2,7 @@
  * Tests for ID Generator Service
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { IdGenerator } from '../id-generator';
 import * as BrandedIds from '../../types/branded-ids';
 

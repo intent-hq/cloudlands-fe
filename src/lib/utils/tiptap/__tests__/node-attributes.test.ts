@@ -1,9 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { updateNodeAttributes } from '../node-attributes';
 import type { Editor } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';

@@ -5,7 +5,7 @@
  * IPC channel. The main-process handlers (and the daemon-build mock-router
  * bridge in `model-catalog-bridge-seeder.ts`) are uniform thin calls to the
  * daemon's per-provider catalog (`models.list { providerId, forceRefresh }`,
- * PROTOCOL §6.7), so one client covers all nine providers.
+ * PROTOCOL §6.7), so one client covers all supported providers.
  *
  * `forceRefresh: true` makes the daemon skip its cache read and await a fresh
  * probe — the returned promise resolves only when the probe completes, so
@@ -58,11 +58,12 @@ interface GetModelsEnvelope {
 }
 
 /**
- * The nine uniform `<provider>:get-models` channels. Recorded in
+ * The uniform `<provider>:get-models` channels. Recorded in
  * `DYNAMIC_INVOKE_CALL_SITES` (ipc-channel-reconciliation.test.ts) because the
  * concrete channel is selected at runtime.
  */
 const PROVIDER_MODEL_CHANNELS: Record<string, string> = {
+  antigravity: 'antigravity:get-models',
   auggie: 'auggie:get-models',
   'claude-code': 'claude-code:get-models',
   codex: 'codex:get-models',

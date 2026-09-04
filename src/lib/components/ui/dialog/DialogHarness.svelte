@@ -26,7 +26,7 @@
       </div>
     {/if}
     <Dialog.Footer>
-      <button class="text-destructive" onclick={() => (destructiveCount += 1)}>Delete item</button>
+      <button class="text-danger" onclick={() => (destructiveCount += 1)}>Delete item</button>
     </Dialog.Footer>
     <output aria-label="Dialog destructive count">{destructiveCount}</output>
   </Dialog.Content>

@@ -2,11 +2,7 @@
  * Tests for file tracking types
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   ChangeStage,
   type TrackedChange,

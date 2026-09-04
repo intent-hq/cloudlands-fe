@@ -1,6 +1,6 @@
 /**
  * Release Notes Generator - Core Logic
- * 
+ *
  * Pure functions for parsing, grouping, and rendering release notes.
  * No network calls or side effects - those are in generate-release-notes.mjs
  */
@@ -17,7 +17,7 @@ export function parseCommitMessage(message) {
   // type!: subject (#123)
   // type: subject (#123)
   const match = message.match(/^(\w+)(?:\(([^)]+)\))?(!)?\s*:\s*(.+?)(?:\s+\(#(\d+)\))?$/);
-  
+
   if (!match) {
     return null;
   }
@@ -40,7 +40,7 @@ export function parseCommitMessage(message) {
  */
 export function shouldSkipCommit(parsed) {
   if (!parsed) return true;
-  
+
   // Skip chore(release) commits
   if (parsed.type === 'chore' && parsed.scope === 'release') {
     return true;
@@ -48,17 +48,17 @@ export function shouldSkipCommit(parsed) {
 
   // Skip release-plz style bump commits, e.g. `chore: release v0.2.4`
   // or `chore: release 0.2.4-beta.1`
-  if (parsed.type === 'chore' && /^release v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/i.test(parsed.subject)) {
+  if (
+    parsed.type === 'chore' &&
+    /^release v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/i.test(parsed.subject)
+  ) {
     return true;
   }
 
   // Skip version bump commits (common patterns in subject line)
-  const versionBumpPatterns = [
-    /^bump version to/i,
-    /^version \d+\.\d+\.\d+/i,
-  ];
+  const versionBumpPatterns = [/^bump version to/i, /^version \d+\.\d+\.\d+/i];
 
-  return versionBumpPatterns.some(pattern => pattern.test(parsed.subject));
+  return versionBumpPatterns.some((pattern) => pattern.test(parsed.subject));
 }
 
 /**
@@ -91,7 +91,7 @@ export function groupCommitsByType(commits) {
 
   for (const commit of commits) {
     if (!commit) continue;
-    
+
     const type = commit.type;
     if (type in groups) {
       groups[type].push(commit);
@@ -112,14 +112,14 @@ export function groupCommitsByType(commits) {
  */
 export function renderCommitEntry(commit, repoOwner, repoName) {
   if (!commit) return '';
-  
+
   let line = `- ${commit.subject}`;
-  
+
   if (commit.prNumber) {
     const prUrl = `https://github.com/${repoOwner}/${repoName}/pull/${commit.prNumber}`;
     line += ` ([#${commit.prNumber}](${prUrl}))`;
   }
-  
+
   return line;
 }
 
@@ -133,13 +133,13 @@ export function renderCommitEntry(commit, repoOwner, repoName) {
  */
 export function renderSection(title, commits, repoOwner, repoName) {
   if (commits.length === 0) return '';
-  
+
   const lines = [`### ${title}`, ''];
-  
+
   for (const commit of commits) {
     lines.push(renderCommitEntry(commit, repoOwner, repoName));
   }
-  
+
   lines.push('');
   return lines.join('\n');
 }

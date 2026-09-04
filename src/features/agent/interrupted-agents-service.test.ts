@@ -9,17 +9,17 @@
  * - Cross-window reconciliation: agent:updated for a listed agent debounces a
  *   listInterrupted re-query that prunes resolved rows / closes silently
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   INTERRUPTED_RECONCILE_DEBOUNCE_MS,
   installInterruptedAgentsService,
   notifyInterruptedAgentUpdated,
   notifyInterruptedAgentsModalClosed,
   resolveInterruptedAgents,
-} from "./interrupted-agents-service";
-import type { InterruptedAgent } from "$lib/client/app-client";
+} from './interrupted-agents-service';
+import type { InterruptedAgent } from '$lib/client/app-client';
 
-describe("interrupted-agents-service", () => {
+describe('interrupted-agents-service', () => {
   let mockAppClient: {
     agents: {
       listInterrupted: ReturnType<typeof vi.fn>;
@@ -70,14 +70,14 @@ describe("interrupted-agents-service", () => {
     delete (global as any).window;
   });
 
-  it("queries backend status on install and checks if already connected (catch-up)", async () => {
-    mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
+  it('queries backend status on install and checks if already connected (catch-up)', async () => {
+    mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'connected' });
     const interruptedAgent: InterruptedAgent = {
-      sessionId: "agent-1",
-      workspaceId: "ws-1",
-      name: "Agent One",
-      status: "active",
-      interruptedAt: "2026-07-18T01:41:14Z",
+      sessionId: 'agent-1',
+      workspaceId: 'ws-1',
+      name: 'Agent One',
+      status: 'active',
+      interruptedAt: '2026-07-18T01:41:14Z',
     };
     mockAppClient.agents.listInterrupted.mockResolvedValueOnce([interruptedAgent]);
 
@@ -86,43 +86,43 @@ describe("interrupted-agents-service", () => {
     // Wait for async catch-up
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(mockElectronAPI.invoke).toHaveBeenCalledWith("backend:get-status");
+    expect(mockElectronAPI.invoke).toHaveBeenCalledWith('backend:get-status');
     expect(mockAppClient.agents.listInterrupted).toHaveBeenCalled();
     expect(showHandler).toHaveBeenCalledWith([interruptedAgent]);
   });
 
-  it("does not check on install if backend is not connected", async () => {
-    mockElectronAPI.invoke.mockResolvedValueOnce({ status: "disconnected" });
+  it('does not check on install if backend is not connected', async () => {
+    mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'disconnected' });
 
     dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(mockElectronAPI.invoke).toHaveBeenCalledWith("backend:get-status");
+    expect(mockElectronAPI.invoke).toHaveBeenCalledWith('backend:get-status');
     expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
     expect(showHandler).not.toHaveBeenCalled();
   });
 
-  it("handles errors during status query gracefully", async () => {
-    mockElectronAPI.invoke.mockRejectedValueOnce(new Error("IPC error"));
+  it('handles errors during status query gracefully', async () => {
+    mockElectronAPI.invoke.mockRejectedValueOnce(new Error('IPC error'));
 
     dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(mockElectronAPI.invoke).toHaveBeenCalledWith("backend:get-status");
+    expect(mockElectronAPI.invoke).toHaveBeenCalledWith('backend:get-status');
     expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
     expect(showHandler).not.toHaveBeenCalled();
   });
 
-  it("listens for initial connection event (install before connect)", async () => {
-    mockElectronAPI.invoke.mockResolvedValueOnce({ status: "disconnected" });
+  it('listens for initial connection event (install before connect)', async () => {
+    mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'disconnected' });
     const interruptedAgent: InterruptedAgent = {
-      sessionId: "agent-2",
-      workspaceId: "ws-2",
-      name: "Agent Two",
-      status: "active",
-      interruptedAt: "2026-07-18T01:42:00Z",
+      sessionId: 'agent-2',
+      workspaceId: 'ws-2',
+      name: 'Agent Two',
+      status: 'active',
+      interruptedAt: '2026-07-18T01:42:00Z',
     };
     mockAppClient.agents.listInterrupted.mockResolvedValue([interruptedAgent]);
 
@@ -135,10 +135,10 @@ describe("interrupted-agents-service", () => {
 
     // Simulate initial connection event
     const statusListener = mockElectronAPI.on.mock.calls.find(
-      ([channel]) => channel === "backend:status",
+      ([channel]) => channel === 'backend:status',
     )?.[1];
     expect(statusListener).toBeDefined();
-    statusListener({ status: "connected", reconnected: false });
+    statusListener({ status: 'connected', reconnected: false });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -146,14 +146,14 @@ describe("interrupted-agents-service", () => {
     expect(showHandler).toHaveBeenCalledWith([interruptedAgent]);
   });
 
-  it("allows checks for different epochs (sequential connections)", async () => {
-    mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
+  it('allows checks for different epochs (sequential connections)', async () => {
+    mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'connected' });
     const interruptedAgent: InterruptedAgent = {
-      sessionId: "agent-3",
-      workspaceId: "ws-3",
-      name: "Agent Three",
-      status: "active",
-      interruptedAt: "2026-07-18T01:43:00Z",
+      sessionId: 'agent-3',
+      workspaceId: 'ws-3',
+      name: 'Agent Three',
+      status: 'active',
+      interruptedAt: '2026-07-18T01:43:00Z',
     };
     mockAppClient.agents.listInterrupted.mockResolvedValue([interruptedAgent]);
 
@@ -170,9 +170,9 @@ describe("interrupted-agents-service", () => {
 
     // Simulate the initial connection event (which would increment epoch and try again)
     const statusListener = mockElectronAPI.on.mock.calls.find(
-      ([channel]) => channel === "backend:status",
+      ([channel]) => channel === 'backend:status',
     )?.[1];
-    statusListener({ status: "connected", reconnected: false });
+    statusListener({ status: 'connected', reconnected: false });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -181,14 +181,14 @@ describe("interrupted-agents-service", () => {
     expect(showHandler).toHaveBeenCalledTimes(1);
   });
 
-  it("handles reconnect events", async () => {
-    mockElectronAPI.invoke.mockResolvedValueOnce({ status: "disconnected" });
+  it('handles reconnect events', async () => {
+    mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'disconnected' });
     const interruptedAgent: InterruptedAgent = {
-      sessionId: "agent-4",
-      workspaceId: "ws-4",
-      name: "Agent Four",
-      status: "active",
-      interruptedAt: "2026-07-18T01:44:00Z",
+      sessionId: 'agent-4',
+      workspaceId: 'ws-4',
+      name: 'Agent Four',
+      status: 'active',
+      interruptedAt: '2026-07-18T01:44:00Z',
     };
     mockAppClient.agents.listInterrupted.mockResolvedValue([interruptedAgent]);
 
@@ -201,12 +201,12 @@ describe("interrupted-agents-service", () => {
 
     // Simulate reconnect event - call all backend:status listeners
     const statusListeners = mockElectronAPI.on.mock.calls
-      .filter(([channel]) => channel === "backend:status")
+      .filter(([channel]) => channel === 'backend:status')
       .map(([, handler]) => handler);
     expect(statusListeners.length).toBeGreaterThanOrEqual(1);
 
     statusListeners.forEach((listener) => {
-      listener({ status: "connected", reconnected: true });
+      listener({ status: 'connected', reconnected: true });
     });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -215,8 +215,8 @@ describe("interrupted-agents-service", () => {
     expect(showHandler).toHaveBeenCalledWith([interruptedAgent]);
   });
 
-  it("cleans up listeners on dispose", async () => {
-    mockElectronAPI.invoke.mockResolvedValueOnce({ status: "disconnected" });
+  it('cleans up listeners on dispose', async () => {
+    mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'disconnected' });
 
     const localDispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
@@ -227,21 +227,21 @@ describe("interrupted-agents-service", () => {
     expect(mockElectronAPI.offById).toHaveBeenCalled();
   });
 
-  describe("cross-window reconciliation (agent:updated → listInterrupted re-query)", () => {
+  describe('cross-window reconciliation (agent:updated → listInterrupted re-query)', () => {
     function interrupted(agentId: string): InterruptedAgent {
       return {
         agentId,
-        workspaceId: "ws-1",
-        workspaceName: "Workspace One",
+        workspaceId: 'ws-1',
+        workspaceName: 'Workspace One',
         agentName: `Agent ${agentId}`,
-        prevStatus: "active",
-        interruptedAt: "2026-08-01T00:00:00Z",
+        prevStatus: 'active',
+        interruptedAt: '2026-08-01T00:00:00Z',
       };
     }
 
     /** Install with the modal open on the given agents; returns after catch-up. */
     async function installWithOpenModal(agents: InterruptedAgent[]): Promise<void> {
-      mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
+      mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'connected' });
       mockAppClient.agents.listInterrupted.mockResolvedValueOnce(agents);
       dispose = installInterruptedAgentsService(mockAppClient, showHandler);
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -251,56 +251,54 @@ describe("interrupted-agents-service", () => {
     }
 
     async function flushDebounce(): Promise<void> {
-      await new Promise((resolve) =>
-        setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30),
-      );
+      await new Promise((resolve) => setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30));
     }
 
-    it("prunes rows resolved elsewhere after a listed agent:updated", async () => {
-      const a1 = interrupted("agent-1");
-      const a2 = interrupted("agent-2");
+    it('prunes rows resolved elsewhere after a listed agent:updated', async () => {
+      const a1 = interrupted('agent-1');
+      const a2 = interrupted('agent-2');
       await installWithOpenModal([a1, a2]);
 
       // Another window resolved agent-1; the re-query only returns agent-2.
       mockAppClient.agents.listInterrupted.mockResolvedValue([a2]);
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
       await flushDebounce();
 
       expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
       expect(showHandler).toHaveBeenCalledWith([a2]);
     });
 
-    it("closes the modal silently (empty list) when all agents were resolved elsewhere", async () => {
-      const a1 = interrupted("agent-1");
+    it('closes the modal silently (empty list) when all agents were resolved elsewhere', async () => {
+      const a1 = interrupted('agent-1');
       await installWithOpenModal([a1]);
 
       mockAppClient.agents.listInterrupted.mockResolvedValue([]);
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
       await flushDebounce();
 
       expect(showHandler).toHaveBeenCalledWith([]);
     });
 
-    it("ignores agent:updated for agents not listed by the modal", async () => {
-      await installWithOpenModal([interrupted("agent-1")]);
+    it('ignores agent:updated for agents not listed by the modal', async () => {
+      await installWithOpenModal([interrupted('agent-1')]);
 
-      notifyInterruptedAgentUpdated("agent-unrelated");
+      notifyInterruptedAgentUpdated('agent-unrelated');
       await flushDebounce();
 
       expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
       expect(showHandler).not.toHaveBeenCalled();
     });
 
-    it("debounces a burst of agent:updated into a single re-query", async () => {
-      const a1 = interrupted("agent-1");
-      const a2 = interrupted("agent-2");
-      const a3 = interrupted("agent-3");
+    it('debounces a burst of agent:updated into a single re-query', async () => {
+      const a1 = interrupted('agent-1');
+      const a2 = interrupted('agent-2');
+      const a3 = interrupted('agent-3');
       await installWithOpenModal([a1, a2, a3]);
 
       mockAppClient.agents.listInterrupted.mockResolvedValue([a3]);
-      notifyInterruptedAgentUpdated("agent-1");
-      notifyInterruptedAgentUpdated("agent-2");
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
+      notifyInterruptedAgentUpdated('agent-2');
+      notifyInterruptedAgentUpdated('agent-1');
       await flushDebounce();
 
       expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
@@ -308,22 +306,22 @@ describe("interrupted-agents-service", () => {
       expect(showHandler).toHaveBeenCalledWith([a3]);
     });
 
-    it("no-ops once the modal closed locally (local resolve path unchanged)", async () => {
-      await installWithOpenModal([interrupted("agent-1")]);
+    it('no-ops once the modal closed locally (local resolve path unchanged)', async () => {
+      await installWithOpenModal([interrupted('agent-1')]);
 
       notifyInterruptedAgentsModalClosed();
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
       await flushDebounce();
 
       expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
       expect(showHandler).not.toHaveBeenCalled();
     });
 
-    it("cancels a pending reconcile timer when notified the modal closed (dismiss via onClose)", async () => {
-      await installWithOpenModal([interrupted("agent-1")]);
+    it('cancels a pending reconcile timer when notified the modal closed (dismiss via onClose)', async () => {
+      await installWithOpenModal([interrupted('agent-1')]);
 
       // A listed agent:updated schedules the debounced reconcile...
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
       // ...but the user dismisses the modal (layout onClose) before it fires.
       notifyInterruptedAgentsModalClosed();
       await flushDebounce();
@@ -333,19 +331,19 @@ describe("interrupted-agents-service", () => {
       expect(showHandler).not.toHaveBeenCalled();
     });
 
-    it("a reconnect-epoch re-check replaces the open list instead of double-showing", async () => {
-      const a1 = interrupted("agent-1");
-      const a2 = interrupted("agent-2");
+    it('a reconnect-epoch re-check replaces the open list instead of double-showing', async () => {
+      const a1 = interrupted('agent-1');
+      const a2 = interrupted('agent-2');
       await installWithOpenModal([a1, a2]);
 
       // During the outage everything was resolved: the reconnect check
       // returns an empty list, which must close the stale modal silently.
       mockAppClient.agents.listInterrupted.mockResolvedValue([]);
       const statusListeners = mockElectronAPI.on.mock.calls
-        .filter(([channel]) => channel === "backend:status")
+        .filter(([channel]) => channel === 'backend:status')
         .map(([, handler]) => handler);
       statusListeners.forEach((listener) => {
-        listener({ status: "connected", reconnected: true });
+        listener({ status: 'connected', reconnected: true });
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -354,8 +352,8 @@ describe("interrupted-agents-service", () => {
     });
   });
 
-  describe("resolveInterruptedAgents", () => {
-    it("does not send the RPC when both resume and abandon are empty", async () => {
+  describe('resolveInterruptedAgents', () => {
+    it('does not send the RPC when both resume and abandon are empty', async () => {
       const resolveInterrupted = vi.fn();
       await resolveInterruptedAgents({ agents: { resolveInterrupted } }, [], []);
       expect(resolveInterrupted).not.toHaveBeenCalled();
@@ -364,20 +362,20 @@ describe("interrupted-agents-service", () => {
 
   // Resolving locally must stop the cross-window watcher on both arms, so a
   // later agent:updated cannot re-open the modal for agents just resolved.
-  describe("resolveInterruptedAgents stops the cross-window watcher", () => {
+  describe('resolveInterruptedAgents stops the cross-window watcher', () => {
     function interrupted(agentId: string): InterruptedAgent {
       return {
         agentId,
-        workspaceId: "ws-1",
-        workspaceName: "Workspace One",
+        workspaceId: 'ws-1',
+        workspaceName: 'Workspace One',
         agentName: `Agent ${agentId}`,
-        prevStatus: "active",
-        interruptedAt: "2026-08-01T00:00:00Z",
+        prevStatus: 'active',
+        interruptedAt: '2026-08-01T00:00:00Z',
       };
     }
 
     async function installWithOpenModal(agents: InterruptedAgent[]): Promise<void> {
-      mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
+      mockElectronAPI.invoke.mockResolvedValueOnce({ status: 'connected' });
       mockAppClient.agents.listInterrupted.mockResolvedValueOnce(agents);
       dispose = installInterruptedAgentsService(mockAppClient, showHandler);
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -389,49 +387,47 @@ describe("interrupted-agents-service", () => {
     }
 
     async function flushDebounce(): Promise<void> {
-      await new Promise((resolve) =>
-        setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30),
-      );
+      await new Promise((resolve) => setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30));
     }
 
-    it("resume arm: a later agent:updated cannot re-open the modal", async () => {
-      await installWithOpenModal([interrupted("agent-1")]);
+    it('resume arm: a later agent:updated cannot re-open the modal', async () => {
+      await installWithOpenModal([interrupted('agent-1')]);
       const resolveInterrupted = vi.fn().mockResolvedValue({
-        resumed: ["agent-1"],
+        resumed: ['agent-1'],
         abandoned: [],
         failed: [],
       });
 
       await resolveInterruptedAgents(
         { agents: { resolveInterrupted, listInterrupted: mockAppClient.agents.listInterrupted } },
-        ["agent-1"],
+        ['agent-1'],
         [],
       );
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
       await flushDebounce();
 
-      expect(resolveInterrupted).toHaveBeenCalledWith({ resume: ["agent-1"] });
+      expect(resolveInterrupted).toHaveBeenCalledWith({ resume: ['agent-1'] });
       expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
       expect(showHandler).not.toHaveBeenCalled();
     });
 
-    it("abandon arm: a later agent:updated cannot re-open the modal", async () => {
-      await installWithOpenModal([interrupted("agent-1")]);
+    it('abandon arm: a later agent:updated cannot re-open the modal', async () => {
+      await installWithOpenModal([interrupted('agent-1')]);
       const resolveInterrupted = vi.fn().mockResolvedValue({
         resumed: [],
-        abandoned: ["agent-1"],
+        abandoned: ['agent-1'],
         failed: [],
       });
 
       await resolveInterruptedAgents(
         { agents: { resolveInterrupted, listInterrupted: mockAppClient.agents.listInterrupted } },
         [],
-        ["agent-1"],
+        ['agent-1'],
       );
-      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated('agent-1');
       await flushDebounce();
 
-      expect(resolveInterrupted).toHaveBeenCalledWith({ abandon: ["agent-1"] });
+      expect(resolveInterrupted).toHaveBeenCalledWith({ abandon: ['agent-1'] });
       expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
       expect(showHandler).not.toHaveBeenCalled();
     });

@@ -10,14 +10,52 @@ import DOMPurify from 'dompurify';
 
 const logger = new Logger('html-sanitizer');
 
-// Restrict workspace-file: URLs to img[src]. ALLOWED_URI_REGEXP is
+const isWorkspaceFileUrl = (value: string): boolean =>
+  /^[\s\u0000-\u001f]*workspace-file:/i.test(value);
+
+let sanitizedWorkspaceId: string | undefined;
+let enforceWorkspaceFileScope = false;
+
+function isAllowedWorkspaceFileUrl(value: string): boolean {
+  if (!isWorkspaceFileUrl(value)) return false;
+  const match = /^[\s\u0000-\u001f]*workspace-file:\/\/([^/?#]+)/i.exec(value);
+  if (!match || !sanitizedWorkspaceId) return false;
+  try {
+    return decodeURIComponent(match[1]) === sanitizedWorkspaceId;
+  } catch {
+    return false;
+  }
+}
+
+// Inline markdown videos are local workspace artifacts only. Remove the whole
+// element rather than leaving an inert player when an unsafe source is used.
+DOMPurify.addHook('uponSanitizeElement', (node) => {
+  if (
+    node instanceof Element &&
+    node.nodeName === 'VIDEO' &&
+    (!isWorkspaceFileUrl(node.getAttribute('src') ?? '') ||
+      (enforceWorkspaceFileScope && !isAllowedWorkspaceFileUrl(node.getAttribute('src') ?? '')))
+  ) {
+    node.remove();
+  }
+});
+
+// Restrict workspace-file: URLs to media src attributes. ALLOWED_URI_REGEXP is
 // attribute-agnostic, so without this hook the scheme would also survive in
-// anchor hrefs; keeping it image-only avoids relying on the main-process
+// anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
   if (
-    /^[\s\u0000-\u001f]*workspace-file:/i.test(data.attrValue) &&
-    !(data.attrName === 'src' && node.nodeName === 'IMG')
+    enforceWorkspaceFileScope &&
+    isWorkspaceFileUrl(data.attrValue) &&
+    !isAllowedWorkspaceFileUrl(data.attrValue)
+  ) {
+    data.keepAttr = false;
+    return;
+  }
+  if (
+    isWorkspaceFileUrl(data.attrValue) &&
+    !(data.attrName === 'src' && (node.nodeName === 'IMG' || node.nodeName === 'VIDEO'))
   ) {
     data.keepAttr = false;
   }
@@ -192,65 +230,80 @@ function sanitizeHTML(html: string, options: Partial<typeof purifyConfig> = {}):
 /**
  * Sanitize HTML for display in markdown preview
  */
-export function sanitizeMarkdownHTML(html: string): string {
-  return sanitizeHTML(html, {
-    // Allow more tags for markdown
-    ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'hr', 'details', 'summary', 'sub', 'sup'],
-    // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
-    // DOMPurify expects attribute names in the array, not "tag:attr" format
-    ALLOWED_ATTR: [
-      'class',
-      'id',
-      'title',
-      'dir',
-      'lang', // Global attributes from "*"
-      'href',
-      'target',
-      'rel', // Link attributes from "a"
-      'data-mention',
-      'data-mention-id',
-      'data-mention-type',
-      'data-id',
-      'data-label',
-      'data-uri',
-      'data-meta', // TipTap mention attributes
-      'data-comment-id', // Span attributes
-      'data-anchor-id',
-      'data-anchor-type', // Comment anchor attributes
-      'data-comment-anchor', // Div attributes
-      'data-mermaid-code', // Mermaid diagram code
-      'data-diff-code', // Diff block code
-      'data-type',
-      'data-checked',
-      'data-status',
-      'data-delegated-agent-id', // Task list attributes
-      'data-question',
-      'data-options',
-      'data-selected', // Choice block attributes (V1 and V2)
-      'type',
-      'checked',
-      'disabled', // Input attributes
-      'src',
-      'alt',
-      'width',
-      'height', // Image attributes
-      'data-primitive',
-      'data-primitive-type',
-      'data-primitive-id',
-      'data-primitive-base64', // ws-block primitive attributes
-      'data-item-type',
-      'data-provider',
-      'data-title',
-      'data-identifier',
-      'data-url',
-      'data-description',
-      'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
-      'open', // details element open state
-      'tabindex', // for focusable elements like mention chips
-    ],
-    // Allow workspace-asset:// (embedded note images) and workspace-file://
-    // (inline workspace file images) protocols
-    ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset|workspace-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-  });
+export function sanitizeMarkdownHTML(html: string, workspaceId?: string): string {
+  const previousWorkspaceId = sanitizedWorkspaceId;
+  const previousEnforcement = enforceWorkspaceFileScope;
+  sanitizedWorkspaceId = workspaceId;
+  enforceWorkspaceFileScope = true;
+  try {
+    return sanitizeHTML(html, {
+      // Allow more tags for markdown
+      ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'video', 'hr', 'details', 'summary', 'sub', 'sup'],
+      // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
+      // DOMPurify expects attribute names in the array, not "tag:attr" format
+      ALLOWED_ATTR: [
+        'class',
+        'id',
+        'title',
+        'dir',
+        'lang', // Global attributes from "*"
+        'href',
+        'target',
+        'rel', // Link attributes from "a"
+        'data-mention',
+        'data-mention-id',
+        'data-mention-type',
+        'data-id',
+        'data-label',
+        'data-uri',
+        'data-meta', // TipTap mention attributes
+        'data-comment-id', // Span attributes
+        'data-anchor-id',
+        'data-anchor-type', // Comment anchor attributes
+        'data-comment-anchor', // Div attributes
+        'data-mermaid-code', // Mermaid diagram code
+        'data-diff-code', // Diff block code
+        'data-type',
+        'data-checked',
+        'data-status',
+        'data-delegated-agent-id', // Task list attributes
+        'data-question',
+        'data-options',
+        'data-selected', // Choice block attributes (V1 and V2)
+        'type',
+        'checked',
+        'disabled', // Input attributes
+        'src',
+        'alt',
+        'width',
+        'height', // Image attributes
+        'controls',
+        'preload',
+        'playsinline',
+        'poster',
+        'data-name', // Video attributes
+        'data-media-unsupported', // Unsupported workspace media placeholder marker
+        'data-primitive',
+        'data-primitive-type',
+        'data-primitive-id',
+        'data-primitive-base64', // ws-block primitive attributes
+        'data-item-type',
+        'data-provider',
+        'data-title',
+        'data-identifier',
+        'data-url',
+        'data-description',
+        'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
+        'open', // details element open state
+        'tabindex', // for focusable elements like mention chips
+      ],
+      // Allow workspace-asset:// (embedded note images) and workspace-file://
+      // (inline workspace file images) protocols
+      ALLOWED_URI_REGEXP:
+        /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset|workspace-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    });
+  } finally {
+    sanitizedWorkspaceId = previousWorkspaceId;
+    enforceWorkspaceFileScope = previousEnforcement;
+  }
 }

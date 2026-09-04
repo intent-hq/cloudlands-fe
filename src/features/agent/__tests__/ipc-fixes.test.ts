@@ -7,14 +7,7 @@
  * 3. IPC heartbeat ping/pong mechanism
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock logger before any other imports that might use it
 const mockLogger = {
@@ -255,7 +248,11 @@ describe('Preload Listener Registry', () => {
         if (!channelListeners) {
           throw new Error(`Listener registry missing for channel ${channel}`);
         }
-        channelListeners.set(listenerId, { id: listenerId, original: callback, wrapped: wrappedCallback });
+        channelListeners.set(listenerId, {
+          id: listenerId,
+          original: callback,
+          wrapped: wrappedCallback,
+        });
 
         // Mirror the real preload bridge behavior (for callers that inspect the callback)
         (callback as any).__ipcWrapper = wrappedCallback;
@@ -494,7 +491,6 @@ describe('IPC Heartbeat Ping/Pong', () => {
 
     it('should respond to ping with pong', () => {
       const agentId = 'agent-123';
-
 
       // Create ping handler that mirrors the implementation
       const pingHandler = (data: { agentId: string; timestamp: number }) => {

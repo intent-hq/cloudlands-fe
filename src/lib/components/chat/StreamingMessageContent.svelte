@@ -66,7 +66,6 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
-    getResponseGroupCurrentChildIndex,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -432,13 +431,14 @@
     setupScript: { name: string; description: string; content: string } | null;
   };
 
-  // Cache for parsed text blocks - keyed by text content
+  // Cache for parsed text blocks - parsing also resolves workspace-relative media.
   let parsedTextCache = new Map<string, ParsedTextResult>();
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
+    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
     // Check cache first
-    const cached = parsedTextCache.get(text);
+    const cached = parsedTextCache.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -448,13 +448,13 @@
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
 
     // Cache the result (flatten accumulated streaming text so the Map retains flat strings)
-    parsedTextCache.set(flatstr(text), result);
+    parsedTextCache.set(cacheKey, result);
 
     // Limit cache size (LRU-style: remove oldest entries)
     if (parsedTextCache.size > MAX_CACHE_SIZE) {
@@ -683,6 +683,9 @@
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
     />
+  {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
+    {@const video = parsedBlock.metadata.videoData}
+    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}
@@ -908,7 +911,6 @@
   groupIndex: number,
   childBlock: ContentBlock,
   childIndex: number,
-  suppressSpacing: boolean = false,
   nested: boolean = true,
 )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
@@ -918,16 +920,14 @@
     isVisibleGroupChild,
   )}
   <div
-    class="content-block content-block--{childBlock.type} {suppressSpacing
-      ? ''
-      : reasoningSectionBoundary
-        ? NESTED_REASONING_SECTION_SEAM_CLASS
-        : getOperationalClusterSpacingClass(
-            group.children,
-            childIndex,
-            isVisibleGroupChild,
-            group.isReasoningPhase,
-          )} {nested
+    class="content-block content-block--{childBlock.type} {reasoningSectionBoundary
+      ? NESTED_REASONING_SECTION_SEAM_CLASS
+      : getOperationalClusterSpacingClass(
+          group.children,
+          childIndex,
+          isVisibleGroupChild,
+          group.isReasoningPhase,
+        )} {nested
       ? isOperationalClusterBlock(childBlock)
         ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
         : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
@@ -971,28 +971,10 @@
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(
-              group,
-              blockIndex,
-              childBlock,
-              childIndex,
-              false,
-              false,
-            )}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex, false)}
           {/if}
         {/each}
       {:else}
-        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
-        {@const currentChildKey = currentChildIndex >= 0 ? childKeys[currentChildIndex] : undefined}
-        {#snippet currentChild()}
-          {@render renderResponseGroupChild(
-            group,
-            blockIndex,
-            group.children[currentChildIndex],
-            currentChildIndex,
-            true,
-          )}
-        {/snippet}
         <div
           class="content-block content-block--group {getOperationalClusterSpacingClass(
             groupedBlocks,
@@ -1010,8 +992,6 @@
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
-            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
-            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,

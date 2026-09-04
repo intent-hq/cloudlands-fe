@@ -50,7 +50,6 @@
   interface Props {
     proposal: Proposal;
     disabled?: boolean;
-    neutralBorder?: boolean;
     onApply?: (detail: ProposalActionDetail) => void;
     onDiscard?: (detail: ProposalActionDetail) => void;
     onUndo?: (proposalId: string) => void;
@@ -82,7 +81,6 @@
   let {
     proposal,
     disabled = false,
-    neutralBorder = false,
     onApply,
     onDiscard,
     onUndo,
@@ -206,16 +204,9 @@
     isSiblingWorkspaceCreate && workspaceShortcutEditorFocused && !actionDisabled,
   );
   const metadataIdPrefix = $derived(`proposal-${toDomId(proposalId)}`);
-  const cardClass = $derived.by(() => {
-    if (isWorkspaceCreate) {
-      return isWorkspaceCreated && !neutralBorder
-        ? 'my-2 min-w-0 w-full max-w-xl rounded-(--radius-medium) border border-success/40 bg-card p-4 shadow-(--elevation-raised) sm:p-5'
-        : 'my-2 min-w-0 w-full max-w-xl rounded-(--radius-medium) border border-border bg-card p-4 shadow-(--elevation-raised) sm:p-5';
-    }
-    return isApplied && !neutralBorder
-      ? 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-success/40 bg-card shadow-(--elevation-raised)'
-      : 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)';
-  });
+  // Tray-hosted: the tray body provides the surface (bg, radius, padding), so
+  // the card spans the full width with no border/shadow chrome of its own.
+  const cardClass = $derived(isWorkspaceCreate ? 'min-w-0 w-full p-4 sm:p-5' : 'min-w-0 w-full');
 
   // One-shot restored-draft overlays: consumed on the first run of the
   // matching sync effect so a later proposal identity change (remount-less
@@ -829,9 +820,7 @@
 </script>
 
 {#if showDismissed}
-  <div
-    class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
-  >
+  <div class="type-body px-3 py-2 text-muted-foreground">
     {m.chat_shared_discarded_label()}
     {proposal.preview.title}
   </div>
@@ -1103,7 +1092,7 @@
             <div
               bind:this={statusElement}
               class={isFailed
-                ? 'type-caption text-error-foreground focus:outline-none'
+                ? 'type-caption text-danger focus:outline-none'
                 : 'type-caption text-muted-foreground focus:outline-none'}
               role="status"
               aria-live={isFailed ? 'assertive' : 'polite'}
@@ -1373,7 +1362,7 @@
           class={isApplied
             ? 'type-caption border-t border-success/30 bg-success/10 px-3 py-2 text-success focus:outline-none'
             : isFailed
-              ? 'type-caption border-t border-border px-3 py-2 text-error-foreground focus:outline-none'
+              ? 'type-caption border-t border-border px-3 py-2 text-danger focus:outline-none'
               : 'type-caption border-t border-border px-3 py-2 text-muted-foreground focus:outline-none'}
           role="status"
           aria-live={isFailed ? 'assertive' : 'polite'}

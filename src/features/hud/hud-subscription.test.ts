@@ -15,10 +15,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 // actions directly to drive the selectHudSystem view.
 vi.mock('$store/renderer/middlewares/daemon-health-service', () => ({
   createDaemonHealthMiddleware:
-    () =>
-    () =>
-    (next: (action: unknown) => unknown) =>
-    (action: unknown) =>
+    () => () => (next: (action: unknown) => unknown) => (action: unknown) =>
       next(action),
   disposeDaemonHealthService: () => {},
 }));
@@ -180,7 +177,9 @@ describe('HUD subscription (mock backend, real store)', () => {
       tzOffsetMinutes: -new Date().getTimezoneOffset(),
     });
     const usage = selectHudUsage.select(appStore.state);
-    expect(usage?.totals).toEqual(totals({ inputTokens: 130, outputTokens: 45, thoughtTokens: 20 }));
+    expect(usage?.totals).toEqual(
+      totals({ inputTokens: 130, outputTokens: 45, thoughtTokens: 20 }),
+    );
     expect(usage?.runs).toBe(3);
     expect(usage?.rateSamples).toHaveLength(24);
     // 130 + 45 + 20 thoughts — every counter counts toward the hourly bucket.

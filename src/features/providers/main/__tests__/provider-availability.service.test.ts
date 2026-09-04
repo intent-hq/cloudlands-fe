@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROVIDERS_CHANNELS } from '../../../../shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../../shared/constants/claude-code';
 
@@ -59,22 +53,21 @@ const EMPTY_DISCOVERY = {
     'droid',
     'grok',
     'unsloth',
-  ].map(
-    (id) => ({
-      id,
-      displayName: id,
-      command: id,
-      installed: false,
-      resolvedPath: null,
-      gatedOff: null,
-      hasNpxFallback: false,
-    }),
-  ),
+  ].map((id) => ({
+    id,
+    displayName: id,
+    command: id,
+    installed: false,
+    resolvedPath: null,
+    gatedOff: null,
+    hasNpxFallback: false,
+  })),
   npx: { resolvedPath: null, version: null, versionOk: false },
 };
 
 /** Provider ids the daemon's providerAuthStatus sweep covers. */
 const AUTH_PROVIDER_IDS = [
+  'antigravity',
   'auggie',
   'claude-code',
   'codex',
@@ -109,6 +102,66 @@ function routeBackend(responses: Record<string, unknown | ((params: unknown) => 
 }
 
 describe('provider availability service', () => {
+  it.each([true, false, null])(
+    'reads Antigravity discovery and auth=%s from the daemon without local probes',
+    async (authenticated) => {
+      routeBackend({
+        'host.providerDiscovery': {
+          ...EMPTY_DISCOVERY,
+          providers: [
+            ...EMPTY_DISCOVERY.providers,
+            {
+              id: 'antigravity',
+              installed: true,
+              hasNpxFallback: false,
+              resolvedPath: '/configured/agy_acp_server.par',
+            },
+          ],
+        },
+        'host.providerAuthStatus': authSweep({ antigravity: authenticated }),
+      });
+      const { getProviderAvailability, setupProviderAvailabilityIPC } =
+        await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
+        {},
+        { providerId: 'antigravity', force: true },
+      );
+      expect(result).toMatchObject({
+        success: true,
+        data: { available: true, hasNpxFallback: false, authenticated: authenticated ?? undefined },
+      });
+      expect(result.data).not.toHaveProperty('authDetails');
+
+      const aggregate = await getProviderAvailability();
+      expect(aggregate.providers.antigravity).toEqual({
+        available: true,
+        hasNpxFallback: false,
+        authenticated: authenticated ?? undefined,
+      });
+      expect(aggregate.providers.antigravity).not.toHaveProperty('authDetails');
+      expect(mocks.findBinary).not.toHaveBeenCalled();
+      expect(mocks.hostExec).not.toHaveBeenCalled();
+      expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'antigravity',
+        force: true,
+      });
+    },
+  );
+
+  it('does not treat agy presence as an installed Antigravity ACP server', async () => {
+    routeBackend({ 'host.providerDiscovery': EMPTY_DISCOVERY });
+    mocks.findBinary.mockResolvedValue('/usr/bin/agy');
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'antigravity');
+    expect(result).toMatchObject({ success: true, data: { available: false } });
+    expect(mocks.findBinary).not.toHaveBeenCalled();
+    expect(mocks.backendRequest).not.toHaveBeenCalledWith(
+      'host.providerAuthStatus',
+      expect.anything(),
+    );
+  });
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -392,6 +445,41 @@ describe('provider availability service', () => {
     expect(result.providers.grok.authenticated).toBeUndefined();
   });
 
+  it('attaches the protocol-9.4 identity line only to the provider that sent one', async () => {
+    routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: EMPTY_DISCOVERY.providers.map((p) =>
+          ['pi', 'droid'].includes(p.id)
+            ? { ...p, installed: true, resolvedPath: `/usr/local/bin/${p.id}` }
+            : p,
+        ),
+      },
+      'host.providerAuthStatus': {
+        providers: [
+          {
+            id: 'pi',
+            authenticated: true,
+            identity: { email: 'dev@example.com', orgName: 'Example Org', subscriptionType: 'max' },
+          },
+          { id: 'droid', authenticated: true },
+        ],
+      },
+    });
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+    const result = await getProviderAvailability();
+
+    expect(result.providers.pi).toMatchObject({
+      available: true,
+      authenticated: true,
+      authDetails: 'dev@example.com · Example Org',
+    });
+    // No identity on the wire → no authDetails key at all (pre-9.4 shape).
+    expect(result.providers.droid.authenticated).toBe(true);
+    expect(result.providers.droid).not.toHaveProperty('authDetails');
+  });
+
   it('does not attach auth verdicts to unavailable providers', async () => {
     routeBackend({
       'host.providerDiscovery': EMPTY_DISCOVERY,
@@ -401,9 +489,7 @@ describe('provider availability service', () => {
     const { getProviderAvailability } = await import('../provider-availability.service');
     const result = await getProviderAvailability();
 
-    expect(result.providers.codex).toEqual(
-      expect.objectContaining({ available: false }),
-    );
+    expect(result.providers.codex).toEqual(expect.objectContaining({ available: false }));
     expect(result.providers.codex.authenticated).toBeUndefined();
   });
 
@@ -538,6 +624,48 @@ describe('provider availability service', () => {
     });
   });
 
+  it('single recheck attaches the protocol-9.4 identity line and omits it without one', async () => {
+    routeBackend({
+      'host.providerAuthStatus': {
+        providers: [
+          {
+            id: 'claude-code',
+            authenticated: true,
+            identity: { email: 'dev@example.com', orgName: 'Example Org', subscriptionType: 'max' },
+          },
+        ],
+      },
+    });
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+      name === 'claude' || name === 'npx' ? `/usr/local/bin/${name}` : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const withIdentity = await handler({}, 'claude-code');
+    expect(withIdentity).toEqual({
+      success: true,
+      providerId: 'claude-code',
+      data: { available: true, authenticated: true, authDetails: 'dev@example.com · Example Org' },
+    });
+
+    // The same recheck against a daemon that sent no identity (pre-9.4 shape)
+    // yields no authDetails key at all.
+    routeBackend({
+      'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
+    });
+    const withoutIdentity = await handler({}, 'claude-code');
+    expect(withoutIdentity).toEqual({
+      success: true,
+      providerId: 'claude-code',
+      data: { available: true, authenticated: true },
+    });
+    expect(withoutIdentity.data).not.toHaveProperty('authDetails');
+  });
+
   it('single recheck resolves unsloth off both opencode and unsloth binaries without an auth probe', async () => {
     routeBackend({});
     mocks.findBinaryStrict.mockImplementation(async (name: string) =>
@@ -644,10 +772,7 @@ describe('provider availability service', () => {
 
   describe('hiddenProviders gating verdict', () => {
     /** Schema-valid `providers.catalog` row (PROTOCOL §5.38). */
-    const catalogEntry = (
-      id: string,
-      overrides: Record<string, unknown> = {},
-    ) => ({
+    const catalogEntry = (id: string, overrides: Record<string, unknown> = {}) => ({
       id,
       displayName: id,
       shortName: id,

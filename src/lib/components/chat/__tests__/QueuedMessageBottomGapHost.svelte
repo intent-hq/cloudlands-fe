@@ -14,7 +14,6 @@
     zoom?: number;
     queueCount?: number;
     reverse?: boolean;
-    heldForQuestions?: boolean;
     saveDelayMs?: number;
   }
 
@@ -24,7 +23,6 @@
     zoom = 1,
     queueCount = 0,
     reverse = false,
-    heldForQuestions = false,
     saveDelayMs = 0,
   }: Props = $props();
   let removedIds = $state<string[]>([]);
@@ -93,7 +91,6 @@
           <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
             <QueuedMessageList
               {messages}
-              {heldForQuestions}
               onedit={editMessage}
               onremove={(id) => (removedIds = [...removedIds, id])}
             />

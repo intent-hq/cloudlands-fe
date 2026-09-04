@@ -6,11 +6,7 @@
  * Supports structured labels with styling for rich text rendering.
  */
 
-import {
-  cleanToolName,
-  isDeferredToolLoad,
-  isRawMcpName,
-} from '$lib/utils/tool-classifier';
+import { cleanToolName, isDeferredToolLoad, isRawMcpName } from '$lib/utils/tool-classifier';
 import { m } from '$shared/paraglide/messages.js';
 
 import type { WorkspaceEvent } from './types';

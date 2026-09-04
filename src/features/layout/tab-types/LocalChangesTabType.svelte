@@ -76,9 +76,7 @@
   const rootCommitFiles = $derived(rootGit.commitFiles);
   const rootCommits = $derived.by(() => {
     const boundary = selectedRoot?.registeredCommitSha;
-    const index = boundary
-      ? rootGit.commits.findIndex((commit) => commit.hash === boundary)
-      : -1;
+    const index = boundary ? rootGit.commits.findIndex((commit) => commit.hash === boundary) : -1;
     return index >= 0 ? rootGit.commits.slice(0, index) : rootGit.commits;
   });
 
@@ -86,9 +84,7 @@
     const wsId = workspaceId;
     const rootId = gitRootId;
     if (wsId && rootId) {
-      appStore.dispatch(
-        loadSecondaryRootGit(wsId, rootId, selectedRoot?.registeredCommitSha, 100),
-      );
+      appStore.dispatch(loadSecondaryRootGit(wsId, rootId, selectedRoot?.registeredCommitSha, 100));
     }
   });
 

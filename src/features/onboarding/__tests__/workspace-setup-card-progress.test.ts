@@ -34,13 +34,15 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('svelte-sonner', () => ({

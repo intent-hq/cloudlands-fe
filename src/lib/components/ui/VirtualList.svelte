@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('VirtualList');

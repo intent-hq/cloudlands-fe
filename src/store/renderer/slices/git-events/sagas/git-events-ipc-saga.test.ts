@@ -55,7 +55,12 @@ function startSaga(dispatch: ReturnType<typeof vi.fn>, current = state()) {
       workspaceId
         ? openWorkspaceTab(workspaceId)
         : loadWorkspaceTabsState({
-            openTabs: [], currentTabId: null, pinnedTabs: [], unsavedTabs: [], optimisticTabs: [], tabOrder: [],
+            openTabs: [],
+            currentTabId: null,
+            pinnedTabs: [],
+            unsavedTabs: [],
+            optimisticTabs: [],
+            tabOrder: [],
           }),
     );
     listeners.forEach((listener) => listener());

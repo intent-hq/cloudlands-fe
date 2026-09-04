@@ -180,9 +180,9 @@ test.describe('Build Smoke — Provider Verification', () => {
       const mockEnv =
         providerId === 'mock'
           ? setMockAgentBehavior({
-            files: { 'README.md': 'hello world' },
-            response: 'I have written hello world to the README. TASK_COMPLETE',
-          })
+              files: { 'README.md': 'hello world' },
+              response: 'I have written hello world to the README. TASK_COMPLETE',
+            })
           : {};
 
       try {
@@ -233,11 +233,15 @@ test.describe('Build Smoke — Provider Verification', () => {
             const deadline = Date.now() + 30_000;
             while (Date.now() < deadline) {
               try {
-                const result = await (window as any).electronAPI.invoke('workspace:get', { id: wsId });
+                const result = await (window as any).electronAPI.invoke('workspace:get', {
+                  id: wsId,
+                });
                 const ws = result?.data || result?.workspace || result;
                 if (ws?.worktreePath) return ws.worktreePath;
-              } catch { /* retry */ }
-              await new Promise(r => setTimeout(r, 1_000));
+              } catch {
+                /* retry */
+              }
+              await new Promise((r) => setTimeout(r, 1_000));
             }
             return null;
           }, workspaceId);
@@ -286,11 +290,7 @@ test.describe('Build Smoke — Provider Verification', () => {
         try {
           // startChatNudgeMonitor handles approval nudging reactively —
           // no need for the inline nudge in waitForFileContentWithNudge.
-          await waitForFileContent(
-            readmePath,
-            /hello world/i,
-            Math.max(remainingTimeout, 10_000),
-          );
+          await waitForFileContent(readmePath, /hello world/i, Math.max(remainingTimeout, 10_000));
         } finally {
           clearInterval(diagnosticInterval);
           stopPermissionApprover();
@@ -329,10 +329,18 @@ test.describe('Build Smoke — Provider Verification', () => {
             // Get the IPC-reported worktree path for diagnostic comparison
             const ipcWorktree = await page.evaluate(async (wsId) => {
               try {
-                const result = await (window as any).electronAPI.invoke('workspace:get', { id: wsId });
+                const result = await (window as any).electronAPI.invoke('workspace:get', {
+                  id: wsId,
+                });
                 const ws = result?.data || result?.workspace || result;
-                return { worktreePath: ws?.worktreePath, repositoryPath: ws?.repositoryPath, path: ws?.path };
-              } catch { return null; }
+                return {
+                  worktreePath: ws?.worktreePath,
+                  repositoryPath: ws?.repositoryPath,
+                  path: ws?.path,
+                };
+              } catch {
+                return null;
+              }
             }, workspaceId);
             console.error(`🔍 IPC workspace paths: ${JSON.stringify(ipcWorktree)}`);
 
@@ -355,9 +363,14 @@ test.describe('Build Smoke — Provider Verification', () => {
             const wsBase = path.join(require('os').homedir(), 'intent', 'workspaces', workspaceId);
             try {
               const { execSync } = require('child_process');
-              const listing = execSync(`find ${wsBase} -maxdepth 3 -type f -name "README*" 2>/dev/null || echo "(no README files found)"`, { encoding: 'utf-8' });
+              const listing = execSync(
+                `find ${wsBase} -maxdepth 3 -type f -name "README*" 2>/dev/null || echo "(no README files found)"`,
+                { encoding: 'utf-8' },
+              );
               console.error(`📁 README files under ${wsBase}:\n${listing.trim()}`);
-            } catch { /* best-effort */ }
+            } catch {
+              /* best-effort */
+            }
           }
 
           if (workspaceId) {
@@ -389,7 +402,9 @@ test.describe('Build Smoke — Provider Verification', () => {
               // Return last 6 messages
               return result.slice(-6);
             });
-            console.error(`💬 Last chat messages:\n${chatMessages.map((m) => `  [${m.role}]: ${m.text}`).join('\n')}`);
+            console.error(
+              `💬 Last chat messages:\n${chatMessages.map((m) => `  [${m.role}]: ${m.text}`).join('\n')}`,
+            );
           }
         } catch {
           // diagnostic dump is best-effort

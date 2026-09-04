@@ -25,8 +25,8 @@ const approved = [
   'accent-foreground',
   'muted',
   'muted-foreground',
-  'destructive',
-  'destructive-foreground',
+  'danger',
+  'danger-background',
   'border',
   'input',
   'ring',
@@ -100,6 +100,8 @@ const runtimePatterns = [
   /^--color-[a-z]+-[0-9]{2,3}$/,
   /^--radix-/,
   /^--bits-popover-content-available-(height|width)$/,
+  // Set by bits-ui at runtime on Select content; externally owned, not a design token.
+  /^--bits-select-content-available-height$/,
   // Set by bits-ui at runtime on menu content (dropdown-menu content and the shared
   // menu primitive used by SubContent); externally owned, not design tokens.
   /^--bits-(?:dropdown-)?menu-content-available-height$/,

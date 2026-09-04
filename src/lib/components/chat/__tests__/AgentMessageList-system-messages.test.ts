@@ -8,7 +8,8 @@ import type { AgentMessage } from '$shared/types';
 
 // Mock the Redux store to avoid initialization errors
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: {} });
 });
 
@@ -31,7 +32,9 @@ describe('AgentMessageList - System Messages', () => {
       {
         id: 'msg-2',
         role: 'system',
-        contentBlocks: [{ type: 'text', text: 'This conversation was interrupted because intentd restarted.' }],
+        contentBlocks: [
+          { type: 'text', text: 'This conversation was interrupted because intentd restarted.' },
+        ],
         timestamp: new Date().toISOString(),
       },
       {
@@ -229,7 +232,11 @@ describe('AgentMessageList - System Messages', () => {
         id: 'msg-1',
         role: 'system',
         contentBlocks: [
-          { type: 'text', text: 'Need input on the API design', meta: { kind: 'discussion-request' } },
+          {
+            type: 'text',
+            text: 'Need input on the API design',
+            meta: { kind: 'discussion-request' },
+          },
         ],
         timestamp: new Date().toISOString(),
       },

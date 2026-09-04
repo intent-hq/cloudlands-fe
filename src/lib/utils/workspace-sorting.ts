@@ -93,4 +93,3 @@ export function groupAndSortWorkspaces<W, K extends GroupKeyInfo = GroupKeyInfo>
 
   return groups;
 }
-

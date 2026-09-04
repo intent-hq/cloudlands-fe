@@ -6,34 +6,36 @@
    * Handles authentication flow if not authenticated.
    */
   import {
-  sentryAuthClient,
-  type SentryIssueResult,
-} from '$features/sentry-auth/renderer/sentry-auth.client';
+    sentryAuthClient,
+    type SentryIssueResult,
+  } from '$features/sentry-auth/renderer/sentry-auth.client';
   import {
-  selectSentryIsAuthenticated,
-  selectSentryIsConnecting,
-} from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
+    selectSentryIsAuthenticated,
+    selectSentryIsConnecting,
+  } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
-  initializeSentryAuth,
-  connectSentry,
-} from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
+    initializeSentryAuth,
+    connectSentry,
+  } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import {
-  faSpinner,
-  faSearch,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
-
   interface Props {
     workspaceId: string;
-    onSelect: (item: { type: string; title: string; url: string; identifier: string; metadata?: Record<string, unknown> }) => void;
+    onSelect: (item: {
+      type: string;
+      title: string;
+      url: string;
+      identifier: string;
+      metadata?: Record<string, unknown>;
+    }) => void;
     onClose: () => void;
   }
 
@@ -149,7 +151,11 @@
           <Button variant="outline" onclick={() => (showConfigForm = false)} class="flex-1">
             {m.workspace_prCreator_cancel_label()}
           </Button>
-          <Button onclick={handleConnect} disabled={$storeIsConnecting$ || !sentryOrg || !sentryToken} class="flex-1">
+          <Button
+            onclick={handleConnect}
+            disabled={$storeIsConnecting$ || !sentryOrg || !sentryToken}
+            class="flex-1"
+          >
             {#if $storeIsConnecting$}
               <Fa icon={faSpinner} class="animate-spin mr-2" />
             {/if}

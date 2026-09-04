@@ -81,7 +81,10 @@ function patchInfoPlist() {
 
     // Clear the launch services cache to pick up the change
     try {
-      execSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user', { stdio: 'ignore' });
+      execSync(
+        '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user',
+        { stdio: 'ignore' },
+      );
     } catch (e) {
       // Ignore - this is optional
     }

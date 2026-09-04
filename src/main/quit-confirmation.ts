@@ -200,9 +200,8 @@ function defaultShowMessageBox(
  * did; tests inject this seam instead.
  */
 async function defaultListDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[]> {
-  const { embeddedBrowserCdp } = await import(
-    '../features/browser/main/embedded-browser-cdp-service'
-  );
+  const { embeddedBrowserCdp } =
+    await import('../features/browser/main/embedded-browser-cdp-service');
   return embeddedBrowserCdp.listAgentOwnedTabs();
 }
 
@@ -330,15 +329,14 @@ async function defaultConfirmViaRenderer(
     ackTimer = setTimeout(() => resolve('timeout'), RENDERER_ACK_TIMEOUT_MS);
   });
   try {
-    const ackOutcome = await Promise.race([
-      acked.then(() => 'acked' as const),
-      ackTimeout,
-      gone,
-    ]);
+    const ackOutcome = await Promise.race([acked.then(() => 'acked' as const), ackTimeout, gone]);
     if (ackOutcome === 'gone') {
-      logger.warn('Renderer went away before acknowledging quit confirmation; using native dialog', {
-        requestId: payload.requestId,
-      });
+      logger.warn(
+        'Renderer went away before acknowledging quit confirmation; using native dialog',
+        {
+          requestId: payload.requestId,
+        },
+      );
       return null;
     }
     if (ackOutcome === 'timeout') {

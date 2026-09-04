@@ -196,8 +196,6 @@ describe('StreamingStatus rendered UI', () => {
     );
     expect(screen.getByTestId('error-message').parentElement?.className).toContain('type-caption');
     expect(container.firstElementChild?.className).not.toContain('pl-2');
-    expect(container.firstElementChild?.className).not.toContain('bg-destructive');
-    expect(container.firstElementChild?.className).not.toContain('border-destructive');
     expect(container.firstElementChild?.className).toContain('mt-2');
 
     const copyButton = screen.getByRole('button', { name: /copy error details/i });
@@ -380,18 +378,6 @@ describe('StreamingStatus rendered UI', () => {
 
     await waitFor(() => expect(screen.queryByTestId('error-title')).toBeNull());
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
-  });
-
-  it('uses a red title with muted error details', () => {
-    render(StreamingStatus, {
-      props: {
-        error: 'Stream timeout',
-      },
-    });
-
-    const errorTitle = screen.getByTestId('error-title');
-    expect(errorTitle.className).toContain('text-error-foreground');
-    expect(errorTitle.className).not.toContain('text-xs');
   });
 
   it('renders a live "failed X ago" span next to the error title when failedAt is set', () => {
@@ -602,9 +588,7 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
       ],
     });
 
-    await waitFor(() =>
-      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
-    );
+    await waitFor(() => expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull());
     expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
   });
 
@@ -623,9 +607,7 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
       lastChunkTime: 2_000,
     });
 
-    await waitFor(() =>
-      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
-    );
+    await waitFor(() => expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull());
     expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
   });
 
@@ -651,9 +633,7 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
       lastChunkTime: 2_000,
     });
 
-    await waitFor(() =>
-      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
-    );
+    await waitFor(() => expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull());
     expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Streaming response…');
     expect(screen.getByTestId('streaming-status-phase').textContent).not.toContain(
       'No model activity',

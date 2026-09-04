@@ -21,9 +21,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({ theme: { name: 'dark' } }) });
 });
 
@@ -164,7 +163,9 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   it('persists the source when an item is selected and opens it first on remount', async () => {
     linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
     linearMocks.fetchMyIssuesPage.mockImplementation(async (filter: string) =>
-      filter === 'assigned' ? { issues: [linearIssue], nextToken: null } : { issues: [], nextToken: null },
+      filter === 'assigned'
+        ? { issues: [linearIssue], nextToken: null }
+        : { issues: [], nextToken: null },
     );
 
     render(IssueSuggestions, { props: { initiallyExpanded: true, onSelect: vi.fn() } });
@@ -187,7 +188,9 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   it('linear row trigger wrappers carry width-constraining classes so long titles truncate', async () => {
     linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
     linearMocks.fetchMyIssuesPage.mockImplementation(async (filter: string) =>
-      filter === 'assigned' ? { issues: [linearIssue], nextToken: null } : { issues: [], nextToken: null },
+      filter === 'assigned'
+        ? { issues: [linearIssue], nextToken: null }
+        : { issues: [], nextToken: null },
     );
 
     const { container } = render(IssueSuggestions, { props: { initiallyExpanded: true } });
@@ -228,8 +231,7 @@ describe('IssueSuggestions source preference + provider ordering', () => {
 
   it('does not switch panes mid-search when auth resolves', async () => {
     linearMocks.getAuthState.mockImplementation(
-      () =>
-        new Promise((resolve) => setTimeout(() => resolve({ isAuthenticated: true }), 400)),
+      () => new Promise((resolve) => setTimeout(() => resolve({ isAuthenticated: true }), 400)),
     );
 
     render(IssueSuggestions, { props: { initiallyExpanded: true } });

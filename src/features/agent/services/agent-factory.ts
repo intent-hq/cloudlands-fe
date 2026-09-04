@@ -30,8 +30,6 @@ import {
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
-import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -62,7 +60,7 @@ async function getActiveProviderId(): Promise<string | null> {
  * Import createAgentTypeId from '$shared/types/agent.types' and use it to create the branded type.
  *
  * DO NOT pass systemPrompt or rules - these are DEPRECATED and ignored.
- * The backend builds the complete system prompt from agentType via InstructionService.
+ * The intentd daemon builds the complete system prompt from agentType.
  *
  * Agent naming follows the VS Code webview pattern:
  * - If `name` is provided,
@@ -327,7 +325,7 @@ export class UnifiedAgentFactory {
           // agent creation ended up targeting an uninstalled Auggie binary.
           // An explicit config.provider is a caller's deliberate choice and
           // is not gated here; only this active-provider fallback is.
-          let isActiveProviderAvailable = true;
+          let isActiveProviderAvailable = activeId !== 'antigravity';
           try {
             // Only refuse once availability is confirmed known; while the
             // first check hasn't resolved yet, selectAvailableEnabledProviderIds
@@ -335,10 +333,10 @@ export class UnifiedAgentFactory {
             // unavailable" — that would refuse creation during initial load.
             const availabilityKnown = selectHasCheckedOnce.select(appStore.state);
             isActiveProviderAvailable =
-              !availabilityKnown ||
+              (!availabilityKnown && activeId !== 'antigravity') ||
               selectAvailableEnabledProviderIds.select(appStore.state).includes(activeId);
           } catch {
-            // Availability data not resolvable — don't block on an unknown state.
+            // Keep other providers' unknown-state behavior; Antigravity needs confirmation.
           }
           if (!isActiveProviderAvailable) {
             logger.error('Active provider is unavailable; refusing to create agent', {
@@ -355,31 +353,12 @@ export class UnifiedAgentFactory {
       }
 
       // Step 6.6: Model is daemon-resolved (single resolver, PROTOCOL §5.11).
-      // Pass the caller's explicit model through untouched; when absent, omit
-      // it from `agent.create` so the daemon applies its resolved default
-      // (specialist frontmatter > settings chain > provider CLI default). No
-      // client-side default-model synthesis.
-      let resolvedModel = normalized.model;
-
-      // Step 6.8: Safety-net — reject cross-provider compound model IDs.
-      // If the supplied model is a compound ID whose provider prefix doesn't
-      // match the target provider (e.g., "codex:opencode/big-pickle"), log a
-      // warning and drop it so the daemon resolves the target provider's own
-      // default instead of a cross-provider model leaking through.
-      if (resolvedModel && provider && resolvedModel.includes(':')) {
-        const defaultProviderId = isBackend
-          ? ''
-          : selectEffectiveDefaultProviderId.select(appStore.state);
-        const modelProvider = splitLegacyCompoundId(resolvedModel).providerId;
-        if ((modelProvider ?? defaultProviderId) !== provider) {
-          logger.warn('Safety net: cross-provider model mismatch in agent creation', {
-            resolvedModel,
-            modelProvider,
-            expectedProvider: provider,
-          });
-          resolvedModel = undefined;
-        }
-      }
+      // Pass the caller's explicit bare model id through untouched paired with
+      // the provider above; when absent, omit it from `agent.create` so the
+      // daemon applies its resolved default (specialist frontmatter > settings
+      // chain > provider CLI default). No client-side default-model synthesis
+      // and no model-string parsing — provider attribution is the caller's.
+      const resolvedModel = normalized.model;
 
       // Step 7: Create agent session object (system prompt will be built by backend)
       // The id starts as a provisional local value (config.id or a generated
@@ -397,6 +376,9 @@ export class UnifiedAgentFactory {
         messages: [],
         model: resolvedModel,
         provider, // Top-level ACP provider — immutable after creation
+        // Explicit reasoning-effort override (the triple's optional third
+        // leg); omitted ⇒ the daemon resolves the model's default effort.
+        reasoningEffort: normalized.reasoningEffort,
         // systemPrompt is built by backend, not included in frontend agent object
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -686,6 +668,7 @@ export class UnifiedAgentFactory {
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
       provider: config.provider, // Preserve provider for propagation to session
+      reasoningEffort: config.reasoningEffort, // Explicit effort override (triple's third leg)
       initialMessage: config.initialMessage,
       appMessageId: config.appMessageId,
       contextReferences: config.contextReferences || [],
@@ -699,19 +682,9 @@ export class UnifiedAgentFactory {
   }
 
   /**
-   * REMOVED: buildSystemPromptWithRules(), loadBaseSystemPrompt(), loadDefaultRulesForAgentType()
-   *
-   * These methods were dead code - never called in production.
-   *
-   * System prompts are now ONLY built by the backend via InstructionService.buildSystemPrompt()
-   * which is called in agent-backend-handler.service.ts when creating agents.
-   *
-   * InstructionService provides:
-   * - 3-tier fallback: user customizations → workspace files → bundled defaults
-   * - Proper caching and file watching
-   * - Consistent behavior across all agent types
-   *
-   * See AGENT_LAUNCHING_ANALYSIS.md for details.
+   * The FE does not build system prompts. They are assembled by the intentd
+   * daemon (harness) from `agentType` when the session is created through
+   * `appClient.agents.create` (see `createInBackend` below).
    */
 
   /**
@@ -758,6 +731,9 @@ export class UnifiedAgentFactory {
         ...(nameExplicitlySet !== undefined ? { nameExplicitlySet } : {}),
         model: agent.model ?? undefined, // Coerce null to undefined for wire format
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
+        // Explicit reasoning-effort override (Option B session field, §5.5);
+        // omitted so the daemon resolves the default when the caller sent none.
+        reasoningEffort: agent.reasoningEffort ?? undefined,
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
         prompt: behaviorPrompt, // Maps to wire `behaviorPrompt` (AgentCreateRequest.prompt)
         // Maps to wire `specialistId` (PROTOCOL §5.5) — the daemon persists the

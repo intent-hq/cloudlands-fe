@@ -66,7 +66,12 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
   selectOrchestratorSpecialist: Object.assign(
     () =>
-      mocks.readable(() => ({ id: 'spec-writer', name: 'Coordinator', description: '', role: 'orchestrator' })),
+      mocks.readable(() => ({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+      })),
     {
       select: vi.fn(() => ({
         id: 'spec-writer',

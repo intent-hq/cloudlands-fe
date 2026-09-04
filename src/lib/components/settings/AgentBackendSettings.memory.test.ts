@@ -40,7 +40,7 @@ const IDLE_REAP_PATH = 'agents.idleReapMinutes';
 const TOTAL_RAM_MB = 49152;
 
 const BUDGET_LABEL = 'Agent memory budget';
-const REAP_STEPPER_LABEL = 'Minutes before an idle agent is reaped';
+const REAP_STEPPER_LABEL = 'Idle reap minutes';
 const REAP_TOGGLE_LABEL = 'Reap idle agents';
 
 type Entry = Record<string, unknown> | null;
@@ -204,7 +204,9 @@ describe('AgentBackendSettings — agent memory budget', () => {
 
     render(AgentBackendSettings);
 
-    await waitFor(() => expect(screen.getByLabelText(REAP_STEPPER_LABEL)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL })).toBeTruthy(),
+    );
     expect(screen.queryByLabelText(BUDGET_LABEL)).toBeNull();
     expect(screen.queryByRole('slider')).toBeNull();
   });
@@ -339,18 +341,15 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     cleanup();
   });
 
-  it('reads 0 as an explicit off state with the stepper disabled', async () => {
+  it('reads 0 as an explicit off state with no minutes row rendered', async () => {
     mockSettings({ reap: { value: 0, defaultValue: 10 } });
 
     render(AgentBackendSettings);
 
-    const stepper = (await waitFor(() =>
-      screen.getByLabelText(REAP_STEPPER_LABEL),
-    )) as HTMLInputElement;
-    expect(stepper.disabled).toBe(true);
-    expect(
-      screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
-    ).toBe('false');
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
+    expect(screen.getByText(/Turn off to disable reaping entirely \(0 minutes\)\./)).toBeTruthy();
   });
 
   it('exposes the documented stepper range with 0 reachable through the toggle', async () => {
@@ -363,12 +362,8 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     )) as HTMLInputElement;
     expect(stepper.min).toBe('1');
     expect(stepper.max).toBe('120');
-    expect(stepper.disabled).toBe(false);
-    expect(
-      screen.getByText(
-        /Turn off to disable reaping entirely \(0 minutes\); otherwise 1–120 minutes\./,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/1–120 minutes\./)).toBeTruthy();
+    expect(screen.getByText(/Turn off to disable reaping entirely \(0 minutes\)\./)).toBeTruthy();
   });
 
   it('writes 0 when reaping is switched off — the disable state is reachable', async () => {
@@ -383,9 +378,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 0 }]),
     );
-    await waitFor(() =>
-      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(true),
-    );
+    await waitFor(() => expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull());
   });
 
   it("keeps an existing install's own interval rather than migrating it to the new default", async () => {
@@ -505,7 +498,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     expect(
       screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
     ).toBe('true');
-    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByLabelText(REAP_STEPPER_LABEL)).toBeTruthy();
   });
 
   it('respects a catalog-supplied maximum over the UI convention', async () => {
@@ -565,10 +558,10 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     expect(screen.queryByRole('switch', { name: REAP_TOGGLE_LABEL })).toBeNull();
   });
 
-  it('disables the stepper as soon as reaping is switched off, before the write lands', async () => {
+  it('removes the minutes row as soon as reaping is switched off, before the write lands', async () => {
     // The daemon still reports the old interval while the 0 is in flight. A
-    // stepper left live in that window lets an edit queue a positive write
-    // behind the disable and quietly undo the switch-off.
+    // stepper left in the DOM in that window lets an edit queue a positive
+    // write behind the disable and quietly undo the switch-off.
     mockSettings({ reap: { value: 10 } });
     const pending: Array<(value: unknown) => void> = [];
     mocks.mockSettingsUpdate.mockImplementation(
@@ -584,12 +577,18 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     await fireEvent.click(toggle);
     await waitFor(() => expect(pending).toHaveLength(1));
 
-    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
+    // The daemon has not acknowledged anything yet.
+    expect(screen.getByText(/Current: 10 min/)).toBeTruthy();
 
     pending[0]();
-    await waitFor(() =>
-      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(true),
-    );
+    // The readout follows the acknowledged value, so it only flips once the
+    // write has settled — unlike aria-checked, which the toggle flips on click.
+    await waitFor(() => expect(screen.getByText(/Current: Off/)).toBeTruthy());
+    expect(
+      screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+    ).toBe('false');
+    expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
     // The disable is the only write: nothing resurrected the interval.
     expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
     expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
@@ -597,7 +596,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     ]);
   });
 
-  it('re-enables the stepper when a failed disable puts the toggle back', async () => {
+  it('brings the minutes row back when a failed disable puts the toggle back', async () => {
     mockSettings({ reap: { value: 10 } });
     mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
 
@@ -607,7 +606,7 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     await fireEvent.click(toggle);
 
     await waitFor(() =>
-      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false),
+      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('10'),
     );
   });
 
@@ -649,6 +648,6 @@ describe('AgentBackendSettings — idle reap minutes', () => {
         screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
       ).toBe('true'),
     );
-    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('10');
   });
 });

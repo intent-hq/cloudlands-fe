@@ -9,7 +9,7 @@ import { SPECIALISTS } from '$lib/constants/specialists';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-import { hydrateActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { selectBundledSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -182,7 +182,7 @@ function createFixtureContext(
   catalog: SettingsCatalog,
 ): SettingsStateFixtureContext {
   const routerValue = String(
-    catalog.find(({ path }) => path === 'providers.active')?.value ?? 'missing',
+    catalog.find(({ path }) => path === 'model.defaultProvider')?.value ?? 'missing',
   );
   const snapshot = (value: string): SettingsOwnerSnapshot => ({
     state: value as SettingsFixtureState,
@@ -203,7 +203,7 @@ function createFixtureContext(
 
   switch (fixture.stateOwner) {
     case 'Redux providerSettings':
-      writeOwner = (value) => appStore.dispatch(hydrateActiveProvider(value));
+      writeOwner = (value) => appStore.dispatch(hydrateDefaultProvider(value));
       readOwner = () => snapshot(selectActiveProviderId.select(appStore.state));
       break;
     case 'Redux auth':
@@ -393,7 +393,7 @@ describe('settings state and save-mode fixtures', () => {
     async ({ id, url, label, tab, state, stateOwner, saveMode }) => {
       if (stateOwner === 'daemon settings') {
         settingsCatalogResponse = settingsCatalogResponse.map((setting) =>
-          setting.path === 'providers.active' ? { ...setting, value: state } : setting,
+          setting.path === 'model.defaultProvider' ? { ...setting, value: state } : setting,
         );
       }
 
@@ -628,21 +628,18 @@ describe('settings tab route and focus behavior', () => {
     expect(window.location.hash).toBe('#specialist-implementor');
   });
 
-  it('keeps Providers and Global Instructions default-model entry points on shared state', async () => {
-    appStore.dispatch(hydrateActiveProvider('codex'));
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:shared-fixture' }));
+  it('renders the default model row under Providers only, not Agent Behavior', async () => {
+    appStore.dispatch(hydrateDefaultProvider('codex'));
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+    expect(document.getElementById('utility-default-model')).not.toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
-    await screen.findByTestId('global-instructions-default-model-row');
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
-
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:updated-fixture' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:updated-fixture');
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain('system-prompt');
+    expect(document.getElementById('utility-default-model')).toBeNull();
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
@@ -749,8 +746,9 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
-    ['global-instructions', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
+    ['default-model', 'utility-default-model', 'Providers', 'page'],
+    ['quickActions.defaultModel', 'utility-default-model', 'Providers', 'page'],
+    ['global-instructions', 'global-instructions', 'Agent Behavior', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
     ['updates', 'updates', 'App Behavior', 'page'],
     ['open-in', 'open-in', 'App Behavior', 'page'],

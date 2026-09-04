@@ -562,7 +562,9 @@ describe('message hydration policy', () => {
 
     it('eagerly hydrates exactly the MAX_EAGER_APPEND_ROWS tail of a large append', () => {
       const transitions: string[] = [];
-      const policy = createPolicy([assistant('seed')], (transition) => transitions.push(transition));
+      const policy = createPolicy([assistant('seed')], (transition) =>
+        transitions.push(transition),
+      );
 
       const backlog = Array.from({ length: 40 }, (_, index) => assistant(`appended-${index}`));
       policy.updateMessages([assistant('seed'), ...backlog]);

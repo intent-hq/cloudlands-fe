@@ -9,7 +9,7 @@
  *   1. the currently active provider, if it is ready
  *   2. the settings-derived default provider, if designated and ready
  *      ('' — unresolved — never matches a ready id)
- *   3. the first ready provider in the caller-supplied order
+ *   3. the first ready non-opt-in provider in the caller-supplied order
  *
  * "Ready" here means installed + authenticated (and, for Auggie, on a
  * supported version) — determined by the caller from Redux state so this
@@ -27,6 +27,9 @@ export function resolveOnboardingSelectedProvider(
   input: ResolveOnboardingSelectedProviderInput,
 ): string | undefined {
   const { activeProviderId, defaultProviderId, readyProviderIds } = input;
+  if (activeProviderId === 'antigravity' && !readyProviderIds.includes(activeProviderId)) {
+    return undefined;
+  }
   if (readyProviderIds.length === 0) return undefined;
   if (activeProviderId && readyProviderIds.includes(activeProviderId)) {
     return activeProviderId;
@@ -34,5 +37,7 @@ export function resolveOnboardingSelectedProvider(
   if (readyProviderIds.includes(defaultProviderId)) {
     return defaultProviderId;
   }
-  return readyProviderIds[0];
+  // Detection alone is not consent to use Antigravity. A card click writes
+  // activeProviderId; a saved default is already an explicit preference.
+  return readyProviderIds.find((providerId) => providerId !== 'antigravity');
 }

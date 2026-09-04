@@ -1,17 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import PanelFindBarTestHarness from './__tests__/PanelFindBarTestHarness.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -114,7 +102,13 @@ describe('PanelFindBar', () => {
     expect(onNext).not.toHaveBeenCalled();
     expect(onPrevious).not.toHaveBeenCalled();
 
-    rerender({ initialQuery: 'needle', totalMatches: 2, navigationDisabled: true, onPrevious, onNext });
+    rerender({
+      initialQuery: 'needle',
+      totalMatches: 2,
+      navigationDisabled: true,
+      onPrevious,
+      onNext,
+    });
     expect(previous.disabled).toBe(true);
     expect(next.disabled).toBe(true);
   });

@@ -112,6 +112,12 @@ export interface BackendTransportInfo {
    * (#2444). The renderer offers a kill-and-restart recovery for it.
    */
   isOrphanedSidecar?: boolean;
+  /**
+   * How a remote pinned `wss` connection reached the daemon: `'tunnel'` when
+   * the tailcat tunnel won the connection race, `'direct'` when a host dial
+   * won. Absent when unknown and in every non-wss mode.
+   */
+  connectedVia?: 'direct' | 'tunnel';
 }
 
 /**
@@ -204,6 +210,14 @@ export interface DaemonHealthState {
   sidecarSpawnPending: boolean;
   /** Error string when the last on-demand sidecar spawn failed. */
   sidecarSpawnError: string | null;
+  /**
+   * Epoch ms of the first drop main observed for this backend while a
+   * user-requested `system.requestUpdate` was outstanding (received via the
+   * `daemonUpdateDisconnectedAt` backend:status marker), or null. Main
+   * stamps it once per restart so every window shares one "Updating
+   * intentd…" countdown deadline; cleared on the next successful connect.
+   */
+  daemonUpdateDisconnectedAt: number | null;
   /**
    * Last-run sidecar log fetched on demand (backend:get-sidecar-run-log) for
    * the daemon-loss dialog, or null before a fetch / after it is dropped.

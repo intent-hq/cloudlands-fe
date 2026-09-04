@@ -2,6 +2,8 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Editor } from '@tiptap/core';
+import { createEditorConfig } from './editor-config';
 import { processHTMLToMarkdown, processMarkdownToHTML } from './markdown-processor';
 
 describe('processMarkdownForDisplay error path', () => {
@@ -95,5 +97,50 @@ describe('markdown-processor inline workspace file images', () => {
 
     expect(a).toContain('workspace-file://ws-a/cache-test.png');
     expect(b).toContain('workspace-file://ws-b/cache-test.png');
+  });
+});
+
+describe('markdown-processor inline workspace file videos', () => {
+  it('renders allowlisted video markdown as a playable workspace video', async () => {
+    const html = await processMarkdownToHTML('![demo](intent://local/file/out/demo.mp4)', {
+      workspaceId: 'ws-abc',
+    });
+
+    expect(html).toContain('<video');
+    expect(html).toContain('src="workspace-file://ws-abc/out/demo.mp4"');
+    expect(html).toContain('controls');
+    expect(html).toContain('preload="metadata"');
+    expect(html).toContain('playsinline');
+    expect(html).toContain('data-name="demo"');
+  });
+
+  it.each(['mov', 'svg'])('does not rewrite non-allowlisted %s media', async (extension) => {
+    const html = await processMarkdownToHTML(`![demo](intent://local/file/out/demo.${extension})`, {
+      workspaceId: 'ws-abc',
+    });
+
+    expect(html).not.toContain('<video');
+    expect(html).not.toContain('workspace-file://');
+  });
+
+  it('survives the note editor and saves the original portable markdown link', async () => {
+    const markdown = '![demo](intent://local/file/out/demo.webm)';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'ws-abc' });
+    const element = document.createElement('div');
+    const editor = new Editor(
+      createEditorConfig({
+        element,
+        content: html,
+        editable: false,
+        onUpdate: () => {},
+        useMarkdown: true,
+        workspace: { id: 'ws-abc' },
+        enableMentions: false,
+      }),
+    );
+
+    expect(editor.getHTML()).toContain('video');
+    expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+    editor.destroy();
   });
 });

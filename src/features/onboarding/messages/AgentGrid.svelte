@@ -21,6 +21,7 @@
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
   import { stableShuffleOrder, type StableShuffleCache } from '../utils/stable-shuffle-order';
+  import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -45,6 +46,11 @@
     onProviderSelected?: (providerId: string) => void;
     /** Called when the availability of any provider changes */
     onAvailabilityChange?: (hasAny: boolean) => void;
+    /** Called whenever the card rendered as selected changes (including on
+     *  first resolution and when nothing is ready → undefined). Lets the
+     *  parent gate selection-dependent UI (e.g. the test-prompt checkbox)
+     *  without re-deriving the resolver. */
+    onSelectionChange?: (providerId: string | undefined) => void;
     /**
      * Layout mode.
      *  - `false` (default): wrapping flex grid where cards stretch via `flex-1`
@@ -57,8 +63,13 @@
     horizontal?: boolean;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Svelte prop used by parent
-  let { onProviderSelected, onAvailabilityChange, horizontal = false }: Props = $props();
+  let {
+    onProviderSelected,
+    onAvailabilityChange,
+    onSelectionChange,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Svelte prop used by parent
+    horizontal = false,
+  }: Props = $props();
 
   // Reactive Redux selectors — init at component top level
   const providerStatusMap$ = selectProviderStatusMap();
@@ -72,6 +83,7 @@
    *  from full opacity at the top to transparent at the bottom so the
    *  dark card background shows through — matching the reference design. */
   const PROVIDER_BRAND_COLORS: Record<string, ProviderBrandColors> = {
+    antigravity: { color1: '#4285F4', color2: '#8AB4F8' },
     auggie: { color1: '#8B8BF8cc', color2: '#8B8BF8' },
     'claude-code': { color1: '#D97757', color2: '#D97757' },
     codex: { color1: '#CBE6FF', color2: '#DDBEFC', isLight: true },
@@ -93,42 +105,33 @@
    * Only the install command is surfaced — users uninstall via their package
    * manager directly when they want to remove a provider.
    */
-  const PROVIDER_METADATA: Record<
-    string,
-    { installCommand: string; loginCommand?: string; docsUrl: string }
-  > = {
+  const PROVIDER_METADATA: Record<string, { installCommand: string; docsUrl: string }> = {
+    antigravity: {
+      installCommand: '',
+      docsUrl: 'https://antigravity.google/docs/ide/extensions/zed',
+    },
     auggie: {
       installCommand: 'npm install -g @augmentcode/auggie',
-      loginCommand: 'auggie login',
       docsUrl: 'https://docs.augmentcode.com/cli/overview',
     },
     'claude-code': {
       installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-      // The Claude Code CLI has no top-level `login` subcommand — auth is under
-      // the `auth` group (`claude auth login/logout/status`).
-      loginCommand: 'claude auth login',
       docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
     },
     codex: {
       installCommand: 'npm i -g @openai/codex',
-      loginCommand: 'codex login',
       docsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
     },
     opencode: {
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
-      loginCommand: 'opencode auth login',
       docsUrl: 'https://opencode.ai/docs#install',
     },
     droid: {
       installCommand: 'curl -fsSL https://app.factory.ai/cli | sh',
-      // The droid CLI has no dedicated login subcommand — running `droid`
-      // starts an interactive session that prompts for login when needed.
-      loginCommand: 'droid',
       docsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
     },
     grok: {
       installCommand: 'npm i -g @xai-official/grok',
-      loginCommand: 'grok login',
       docsUrl: 'https://docs.x.ai/build/overview',
     },
     unsloth: {
@@ -139,7 +142,6 @@
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
-      loginCommand: 'cortex login',
       docsUrl: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
     },
   };
@@ -207,7 +209,6 @@
           authDetails: status?.authDetails,
           docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
           installCommand: meta?.installCommand ?? '',
-          loginCommand: meta?.loginCommand ?? '',
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
@@ -225,12 +226,10 @@
    *  and is the gate for both "clickable to select" and "counts as available". */
   function isProviderReady(p: (typeof visibleProviders)[number]): boolean {
     if (!p.available || p.statusLoading) return false;
-    return p.authenticated !== false;
+    return isProviderAuthenticationReady(p.id, p.authenticated);
   }
 
   const readyProviderIds = $derived(visibleProviders.filter(isProviderReady).map((p) => p.id));
-
-  const hasAnyProvider = $derived(readyProviderIds.length > 0);
 
   /** Which card should render as "selected" — mirrors the provider
    *  resolveOnboardingModel would pick for the common no-override case
@@ -244,7 +243,12 @@
   );
 
   $effect(() => {
-    onAvailabilityChange?.(hasAnyProvider);
+    // An unselected opt-in provider must not unlock Continue or its shortcut.
+    onAvailabilityChange?.(selectedProviderId !== undefined);
+  });
+
+  $effect(() => {
+    onSelectionChange?.(selectedProviderId);
   });
 
   async function handleSelectProvider(providerId: string) {

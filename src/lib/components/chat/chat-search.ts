@@ -14,11 +14,7 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import {
-  getResponseGroupCurrentChildIndex,
-  normalizeResponseGroups,
-  shouldRenderResponseGroupInline,
-} from './response-group-blocks';
+import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,
@@ -82,15 +78,6 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     }
     if (block.type !== 'content_group') return;
     if (block.isStreaming) {
-      const currentChildIndex = getResponseGroupCurrentChildIndex(block);
-      const currentBlock = block.children[currentChildIndex];
-      if (currentBlock) {
-        addText(
-          getContentBlockText(currentBlock),
-          chatSearchBlockPath(blockIndex, currentChildIndex),
-          [],
-        );
-      }
       block.children.forEach((child, childIndex) => {
         if (
           child.type === 'tool_result' &&
@@ -100,6 +87,14 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
             getStandaloneToolResultPresentation(child).searchableText,
             chatSearchBlockPath(blockIndex, childIndex),
             [`group:${path}`],
+          );
+          return;
+        }
+        if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
+          addText(
+            child.text || child.content || '',
+            chatSearchBlockPath(blockIndex, childIndex),
+            [],
           );
         }
       });

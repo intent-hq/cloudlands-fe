@@ -94,7 +94,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Semantic status',
-    states: 'all 10 displayStatus values; absent; unknown',
+    states: 'all 11 displayStatus values; absent; unknown',
     expected:
       'Each canonical value uses normally cased product language in the right column only; absent and unknown values fall back to Not started.',
     coverage: 'semantic-status preview; status presentation tests',
@@ -169,9 +169,9 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Layout',
-    states: 'light; dark; two-column; narrow stack; dense; right flip; bottom clamp; scroll/resize',
+    states: 'light; dark; stacked activity; narrow; dense; right flip; bottom clamp; scroll/resize',
     expected:
-      'Theme follows catalog query; the card uses two columns when space permits, stacks when narrow, stays height-bounded, and clamps to the viewport.',
+      'Theme follows catalog query; activity stays in one stacked flow, remains height-bounded, and clamps to the viewport.',
     coverage: 'dense, narrow, and placement previews; HoverCard tests',
     conflicts: 'The card must not clip beyond collision padding.',
   },
@@ -327,6 +327,7 @@ const statuses = [
   'not_started',
   'idle',
   'complete',
+  'pr_queued',
   'pr_ready',
   'pr_open',
   'pr_merged',
@@ -348,7 +349,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
       (() => {
         const ws = workspace('working', {
           displayStatus: 'in_progress',
-          statusMessage: 'Implementing the approved two-column hover-card polish.',
+          statusMessage: 'Implementing the approved stacked hover-card polish.',
           agentSummary: { agentIds: ['working-implementor', 'working-verifier'] },
           activePullRequest: pr(73, {
             title: 'Polish workspace hover cards',

@@ -7,6 +7,7 @@ import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
 import {
   getPRStatusTooltip,
+  isPRQueued,
   mapWorkspacePRs,
   mergeMonitoredPRs,
   prRepoFromUrl,
@@ -29,6 +30,10 @@ export interface WorkspacePRPresentationRow {
   repo: string | undefined;
   repoContext: string | undefined;
   status: PRInfo['status'];
+  /** Open PR reported by its monitor snapshot as sitting in the merge queue.
+   * The `status` stays `open` (ordering and `data-pr-status` are unchanged);
+   * only `accessibleStateLabel` / `details` say "Queued". */
+  queued: boolean;
   statusIcon: IconDefinition;
   foregroundClass: string;
   backgroundClass: string;
@@ -38,9 +43,18 @@ export interface WorkspacePRPresentationRow {
   monitorOnly: boolean;
 }
 
+/**
+ * PR lifecycle order: rows sort earliest-in-flow first, so the first row is
+ * the least-progressed PR (a draft ahead of an open PR ahead of a merged one).
+ * The workspace card renders only that first row, so the same-status
+ * tie-breaker is user-visible: among PRs in the same state the most recently
+ * updated one wins (`updatedAt` desc, missing timestamps last), then the
+ * higher PR number, then the repo-qualified identity. Merge readiness from a
+ * monitor snapshot does not take part in the ranking.
+ */
 const PR_STATUS_ORDER: Record<PRInfo['status'], number> = {
-  open: 0,
-  draft: 1,
+  draft: 0,
+  open: 1,
   merged: 2,
   closed: 3,
 };
@@ -62,6 +76,7 @@ function compareMissingLast(a: string | undefined, b: string | undefined): numbe
 
 function getPRStatusPresentation(
   status: PRInfo['status'],
+  queued: boolean,
 ): Pick<
   WorkspacePRPresentationRow,
   'statusIcon' | 'foregroundClass' | 'backgroundClass' | 'accessibleStateLabel'
@@ -77,8 +92,8 @@ function getPRStatusPresentation(
   if (status === 'closed') {
     return {
       statusIcon: faCodePullRequest,
-      foregroundClass: 'text-error-foreground',
-      backgroundClass: 'bg-destructive/10',
+      foregroundClass: 'text-danger',
+      backgroundClass: 'bg-danger-background/10',
       accessibleStateLabel: m.workspace_prSection_closed_label(),
     };
   }
@@ -94,14 +109,17 @@ function getPRStatusPresentation(
     statusIcon: faCodePullRequest,
     foregroundClass: 'text-success',
     backgroundClass: 'bg-success/10',
-    accessibleStateLabel: m.workspace_prSection_statusOpen_label(),
+    accessibleStateLabel: queued
+      ? m.workspace_prSection_statusQueued_label()
+      : m.workspace_prSection_statusOpen_label(),
   };
 }
 
 /**
  * Build presentation rows for every PR attributable to a workspace. The pool
  * keeps the existing branch/active fallback and monitor wire semantics, then
- * deduplicates by case-insensitive, repo-qualified GitHub identity.
+ * deduplicates by case-insensitive, repo-qualified GitHub identity. Rows are
+ * sorted earliest-in-flow first (see `PR_STATUS_ORDER`).
  */
 export function buildWorkspacePRPresentationModel({
   workspacePRs,
@@ -165,6 +183,7 @@ export function buildWorkspacePRPresentationModel({
       const repo = pr.crossRepo ?? workspaceRepo;
       const source = sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
       const status = statusOf(pr);
+      const queued = isPRQueued({ status, monitorSnapshot: pr.monitorSnapshot });
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
       return {
         identity: prIdentity(repo, pr.number),
@@ -174,7 +193,8 @@ export function buildWorkspacePRPresentationModel({
         repo,
         repoContext: pr.crossRepo ? (pr.crossRepoDisplay ?? pr.crossRepo) : undefined,
         status,
-        ...getPRStatusPresentation(status),
+        queued,
+        ...getPRStatusPresentation(status, queued),
         details: [getPRStatusTooltip({ ...pr, status }), sourceDetails].filter(Boolean).join('\n'),
         monitorAgentId: pr.monitorAgentId,
         monitorOnly: pr.monitorOnly === true,

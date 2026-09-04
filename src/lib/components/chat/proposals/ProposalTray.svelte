@@ -232,7 +232,7 @@
         {#if onDismiss}
           <Button
             variant="ghost"
-            class="h-auto rounded-(--radius-small) px-1.5 py-1 type-caption font-normal text-error-foreground hover:border-transparent hover:bg-destructive hover:text-destructive-foreground"
+            class="h-auto rounded-(--radius-small) px-1.5 py-1 type-caption font-normal text-danger hover:border-transparent hover:bg-danger hover:text-danger-background"
             title={m.chat_proposalTray_dismiss_tooltip()}
             onclick={() => (confirmingDismiss = true)}
           >
@@ -250,7 +250,6 @@
       >
         <ProposalCard
           proposal={current.proposal}
-          neutralBorder
           suppressLocalDiscard
           initialDraft={loadTrayDraft(storageAgentId, current.proposalId)}
           onDraftChange={(draft) => handleDraftChange(current.proposalId, draft)}

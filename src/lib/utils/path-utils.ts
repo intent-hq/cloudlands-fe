@@ -1,5 +1,3 @@
-
-
 /**
  * Normalizes a path by removing redundant separators and resolving . and ..
  * @param path The path to normalize

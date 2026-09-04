@@ -26,6 +26,7 @@ import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-s
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import type { Note, Workspace, WorkspaceId, WorkspaceTask } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import HudTakeoverOverlay from './HudTakeoverOverlay.svelte';
 import { emitTakeoverTrigger, takeoverBlinkTarget } from './hud-takeover-bus';
@@ -343,6 +344,7 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--muted-foreground) / 0.65)'],
     ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
     ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
+    ['pr_queued', m.hud_takeover_kindPrQueued_label(), 'hsl(var(--ring))'],
     ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
     ['workspace_complete', 'COMPLETE', 'hsl(var(--primary))'],
   ] as const)(
@@ -896,8 +898,12 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     const spec = edges.find((edge) => edge.getAttribute('data-kind') === 'spec')!;
     const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict')!;
     // Dep edges by source palette slot (input order: a=0, b=1).
-    const aToB = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c0)')!;
-    const bToC = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c1)')!;
+    const aToB = edges.find(
+      (edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c0)',
+    )!;
+    const bToC = edges.find(
+      (edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c1)',
+    )!;
     expect(edges).toHaveLength(4);
 
     // Hover B: incoming dep, outgoing dep, and the live conflict highlight;
@@ -1308,9 +1314,7 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
     // FIT makes the whole graph visible: the latched decision must not flip
     // (which would re-key syncAutoPan and snap the manual pan to {0,0}).
     click('hud-takeover-zoom-fit');
-    expect(panTransform()).toBe(
-      `translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`,
-    );
+    expect(panTransform()).toBe(`translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`);
     // Banner timing never flips mid-display either.
     expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
 

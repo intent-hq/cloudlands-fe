@@ -57,7 +57,6 @@ const readyProvider = (): ProviderCardData => ({
   authDetails: 'user@example.com',
   docsUrl: 'https://code.claude.com/docs',
   installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-  loginCommand: 'claude auth login',
   description: '',
 });
 
@@ -88,6 +87,23 @@ beforeEach(() => {
 });
 
 describe('ProviderCard selected-state indicator', () => {
+  it('does not present unknown Antigravity authentication as ready', async () => {
+    const props = baseProps();
+    const provider = {
+      ...readyProvider(),
+      id: 'antigravity',
+      name: 'Antigravity',
+      authenticated: undefined,
+      docsUrl: '',
+    };
+    const result = render(ProviderCard, { props: { ...props, provider, selected: true } });
+    expect(result.getByText('Sign-in status unknown. Refresh to check again.')).toBeTruthy();
+    expect(banner(result.container)).toBeNull();
+    expect(result.queryByText('Connected')).toBeNull();
+    expect(result.queryByText('intentd provider login antigravity')).toBeNull();
+    await fireEvent.click(result.getByText('Antigravity'));
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
   it('renders the full-width SELECTED banner when the ready card is selected', () => {
     const { container } = render(ProviderCard, {
       props: { ...baseProps(), provider: readyProvider(), selected: true },
@@ -163,6 +179,49 @@ describe('ProviderCard needsLogin derivation', () => {
     });
     expect(loginBadge(container)).toBeUndefined();
     expect(container.textContent).toContain('Connected');
+  });
+});
+
+describe('ProviderCard identity line', () => {
+  const identityLine = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('div')).find((el) => el.textContent?.trim().startsWith('as '));
+
+  it('renders the daemon-supplied identity next to the connected state for a ready card', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authDetails: 'dev@example.com · Example Org' },
+        selected: false,
+      },
+    });
+    expect(container.textContent).toContain('Connected');
+    expect(identityLine(container)?.textContent).toContain('dev@example.com · Example Org');
+  });
+
+  it('renders the bare connected state when the daemon sent no identity', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authDetails: undefined },
+        selected: false,
+      },
+    });
+    expect(container.textContent).toContain('Connected');
+    expect(identityLine(container)).toBeUndefined();
+  });
+
+  it('does not render the identity line while the card needs login', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authenticated: false, authDetails: 'dev@example.com' },
+        selected: false,
+      },
+    });
+    expect(container.textContent).toContain('Log in');
+    expect(container.textContent).not.toContain('Connected');
+    expect(identityLine(container)).toBeUndefined();
+    expect(container.textContent).not.toContain('dev@example.com');
   });
 });
 
@@ -278,7 +337,6 @@ describe('ProviderCard auggie link-out click behavior', () => {
     name: 'Auggie',
     docsUrl: AUGGIE_DOCS_URL,
     installCommand: 'npm install -g @augmentcode/auggie',
-    loginCommand: 'auggie login',
     ...overrides,
   });
 

@@ -88,7 +88,7 @@
         </p>
       {/if}
       {#if error}
-        <p id={errorId} class="type-body text-error-foreground" role="alert">{error}</p>
+        <p id={errorId} class="type-body text-danger" role="alert">{error}</p>
       {:else if status}
         <p class={cn('type-body text-info', disabled && 'opacity-60')} role="status">
           {status}

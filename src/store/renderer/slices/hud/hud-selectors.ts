@@ -240,7 +240,7 @@ export interface HudWorkspaceStateBars {
    * disjoint buckets below, which each count a card once).
    */
   waiting: number;
-  /** `pr_open` + `pr_ready`. */
+  /** `pr_open` + `pr_ready` + `pr_queued`. */
   prOpen: number;
   /** `pr_merged`. */
   prMerged: number;
@@ -302,6 +302,7 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
         break;
       case 'pr_open':
       case 'pr_ready':
+      case 'pr_queued':
         bars.prOpen += 1;
         break;
       case 'pr_merged':
@@ -376,7 +377,7 @@ function sinceMs(item: HudAttentionItem): number {
  * exact and `unread` stays excluded). An attention card state
  * (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no other row already
  * covers raises a generic workspace row — the same authoritative-rollup
- * fallback the ATTN counter applies, so a question hold the FE never
+ * fallback the ATTN counter applies, so a pending question set the FE never
  * captured still gets a panel row. Rows for workspaces no longer in the
  * list are dropped.
  */

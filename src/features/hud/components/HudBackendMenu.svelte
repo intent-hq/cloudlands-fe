@@ -162,7 +162,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: hsl(var(--error-foreground));
+    background: hsl(var(--danger));
   }
   .hud-footer-dot-online {
     background: hsl(var(--primary));
@@ -176,7 +176,7 @@
     color: hsl(var(--primary));
   }
   .hud-footer-offline {
-    color: hsl(var(--error-foreground));
+    color: hsl(var(--danger));
     animation: hudblink 1.6s step-end infinite;
   }
   @media (prefers-reduced-motion: reduce) {

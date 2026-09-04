@@ -107,6 +107,19 @@ warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'
 warmImport(() => import('./ProviderSelector.svelte'));
 
 describe('ProviderSelector progressive rendering', () => {
+  it.each([undefined, false, true])(
+    'keeps Antigravity opt-in with auth=%s',
+    async (authenticated) => {
+      mocks.state.current = await buildState({ antigravity: { available: true, authenticated } });
+      const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+      const result = render(ProviderSelector);
+      const row = result.getByText('Google Antigravity').closest('.px-6')!;
+      expect(row.textContent?.includes('Enable')).toBe(authenticated === true);
+      expect(row.querySelector('[role="status"]')).toBeNull();
+      expect(mocks.state.current.providerSettings.enabledProviders.antigravity).toBeUndefined();
+      expect(mocks.state.current.providerSettings.activeProviderId).toBe('auggie');
+    },
+  );
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);

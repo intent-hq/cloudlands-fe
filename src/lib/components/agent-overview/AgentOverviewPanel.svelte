@@ -23,7 +23,6 @@
 
   let { workspaceId, onFocus }: Props = $props();
 
-
   // Create store for graph state — agents are derived from the agent-session slice
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
   const graphState$ = selectGraphState(workspaceId);

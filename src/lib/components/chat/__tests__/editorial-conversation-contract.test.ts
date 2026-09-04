@@ -57,7 +57,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-3!'");
-    expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
       'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
@@ -214,13 +213,9 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
+    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(staticContent).toContain('suppressSpacing: boolean = false,');
-    expect(streamingContent).toContain('suppressSpacing: boolean = false,');
-    expect(staticContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
-    expect(streamingContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
     expect(streamingContent).toContain(
       '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );

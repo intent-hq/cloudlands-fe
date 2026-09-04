@@ -78,7 +78,7 @@
     'hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
     'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border',
     'data-[state=unchecked]:bg-muted data-[state=checked]:border-primary/60 data-[state=checked]:bg-accent',
-    invalid && 'border-destructive-foreground ring-1 ring-destructive-foreground/25',
+    invalid && 'border-danger ring-1 ring-danger/25',
     className,
   )}
   style={`

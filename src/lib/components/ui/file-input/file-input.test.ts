@@ -87,7 +87,7 @@ describe('FileInput', () => {
     expect(getByRole('status').textContent).toContain('workspace-rules.json');
     expect(getByRole('alert').textContent).toContain('invalid');
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(getByRole('alert').className).toContain('text-error-foreground');
+    expect(getByRole('alert').className).toContain('text-danger');
   });
 
   it('renders invalid text and control boundaries with AA semantic contrast', () => {
@@ -100,15 +100,13 @@ describe('FileInput', () => {
       },
     });
     const surface = container.querySelector('[data-slot="file-input-surface"]');
-    expect(surface?.className.split(/\s+/)).toContain('border-destructive-foreground');
-    expect(getByRole('button').className.split(/\s+/)).toContain(
-      'aria-invalid:border-destructive-foreground',
-    );
-    expect(getByRole('alert').className.split(/\s+/)).toContain('text-error-foreground');
+    expect(surface?.className.split(/\s+/)).toContain('border-danger');
+    expect(getByRole('button').className.split(/\s+/)).toContain('aria-invalid:border-danger');
+    expect(getByRole('alert').className.split(/\s+/)).toContain('text-danger');
 
     const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     for (const mode of ['light', 'dark'] as const) {
-      const invalidForeground = themeColor(css, mode, 'destructive-foreground');
+      const invalidForeground = themeColor(css, mode, 'danger');
       for (const surfaceRole of ['background', 'card'] as const) {
         expect(
           contrastRatio(invalidForeground, themeColor(css, mode, surfaceRole)),

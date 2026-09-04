@@ -1,13 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  ChangeStage,
-  type TrackedChange,
-  type CommitInfo,
-} from '$features/file-tracking/types';
+import { describe, it, expect } from 'vitest';
+import { ChangeStage, type TrackedChange, type CommitInfo } from '$features/file-tracking/types';
 import type { AgentChangeGroup, PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import type { PullRequestInfo } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
@@ -32,13 +24,13 @@ import {
   aggregatePRFiles,
   computeTotalStats,
   mapWorkspacePRs,
+  legacyWorkspacePullRequest,
   mergeMonitoredPRs,
   orderPRSectionsForSelection,
   sortPRsByRecency,
   sectionPRs,
   type GitRootPRSource,
   type SectionedPRs,
-  selectPrimaryPr,
   getPRStatusTooltip,
   countOtherPrs,
   prRepoFromUrl,
@@ -126,11 +118,15 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects spaces', () => {
-    expect(getBranchNameValidationError('my branch')).toBe('Branch name contains invalid characters');
+    expect(getBranchNameValidationError('my branch')).toBe(
+      'Branch name contains invalid characters',
+    );
   });
 
   it('rejects tabs', () => {
-    expect(getBranchNameValidationError('feat\ttab')).toBe('Branch name contains invalid characters');
+    expect(getBranchNameValidationError('feat\ttab')).toBe(
+      'Branch name contains invalid characters',
+    );
   });
 
   it('rejects newlines', () => {
@@ -140,7 +136,9 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects backslash', () => {
-    expect(getBranchNameValidationError('feat\\bar')).toBe('Branch name contains invalid characters');
+    expect(getBranchNameValidationError('feat\\bar')).toBe(
+      'Branch name contains invalid characters',
+    );
   });
 
   it('rejects tilde', () => {
@@ -168,8 +166,12 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects at-brace sequence @{', () => {
-    expect(getBranchNameValidationError('feat@{')).toBe('Branch name cannot contain the sequence @{');
-    expect(getBranchNameValidationError('@{upstream}')).toBe('Branch name cannot contain the sequence @{');
+    expect(getBranchNameValidationError('feat@{')).toBe(
+      'Branch name cannot contain the sequence @{',
+    );
+    expect(getBranchNameValidationError('@{upstream}')).toBe(
+      'Branch name cannot contain the sequence @{',
+    );
   });
 
   it('rejects @ as entire branch name', () => {
@@ -191,9 +193,7 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects ending with .lock', () => {
-    expect(getBranchNameValidationError('branch.lock')).toBe(
-      "Branch name cannot end with '.lock'",
-    );
+    expect(getBranchNameValidationError('branch.lock')).toBe("Branch name cannot end with '.lock'");
   });
 
   it('rejects consecutive dots', () => {
@@ -201,15 +201,11 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects starting with slash', () => {
-    expect(getBranchNameValidationError('/branch')).toBe(
-      'Branch name cannot start or end with /',
-    );
+    expect(getBranchNameValidationError('/branch')).toBe('Branch name cannot start or end with /');
   });
 
   it('rejects ending with slash', () => {
-    expect(getBranchNameValidationError('branch/')).toBe(
-      'Branch name cannot start or end with /',
-    );
+    expect(getBranchNameValidationError('branch/')).toBe('Branch name cannot start or end with /');
   });
 
   it('rejects consecutive slashes', () => {
@@ -401,16 +397,12 @@ describe('getUndoTooltip', () => {
 describe('getUndoCommitTooltip', () => {
   it('singular local commit', () => {
     const commits = [makeCommit({ isPushed: false })];
-    expect(getUndoCommitTooltip(commits, 0)).toBe(
-      'Undo commit (bring changes back to staging)',
-    );
+    expect(getUndoCommitTooltip(commits, 0)).toBe('Undo commit (bring changes back to staging)');
   });
 
   it('plural local commits', () => {
     const commits = [makeCommit({ isPushed: false }), makeCommit({ isPushed: false })];
-    expect(getUndoCommitTooltip(commits, 1)).toBe(
-      'Undo 2 commits (bring changes back to staging)',
-    );
+    expect(getUndoCommitTooltip(commits, 1)).toBe('Undo 2 commits (bring changes back to staging)');
   });
 });
 
@@ -597,8 +589,6 @@ describe('toUIFileChange', () => {
   });
 });
 
-
-
 // ─── aggregatePRFiles ──────────────────────────────────────────────────────────
 
 describe('aggregatePRFiles', () => {
@@ -616,8 +606,16 @@ describe('aggregatePRFiles', () => {
 
   it('accumulates additions/deletions across commits for the same file', () => {
     const commits = [
-      makeCommit({ hash: 'a', files: [{ path: 'a.ts', additions: 5, deletions: 2 }], timestamp: 100 }),
-      makeCommit({ hash: 'b', files: [{ path: 'a.ts', additions: 3, deletions: 1 }], timestamp: 200 }),
+      makeCommit({
+        hash: 'a',
+        files: [{ path: 'a.ts', additions: 5, deletions: 2 }],
+        timestamp: 100,
+      }),
+      makeCommit({
+        hash: 'b',
+        files: [{ path: 'a.ts', additions: 3, deletions: 1 }],
+        timestamp: 200,
+      }),
     ];
     const result = aggregatePRFiles(commits);
     expect(result).toHaveLength(1);
@@ -626,13 +624,31 @@ describe('aggregatePRFiles', () => {
 
   it('handles multiple different files across commits', () => {
     const commits = [
-      makeCommit({ hash: 'a', files: [{ path: 'a.ts', additions: 1, deletions: 0 }], timestamp: 100 }),
-      makeCommit({ hash: 'b', files: [{ path: 'b.ts', additions: 2, deletions: 1 }], timestamp: 200 }),
+      makeCommit({
+        hash: 'a',
+        files: [{ path: 'a.ts', additions: 1, deletions: 0 }],
+        timestamp: 100,
+      }),
+      makeCommit({
+        hash: 'b',
+        files: [{ path: 'b.ts', additions: 2, deletions: 1 }],
+        timestamp: 200,
+      }),
     ];
     const result = aggregatePRFiles(commits);
     expect(result).toHaveLength(2);
-    expect(result.find((f) => f.path === 'a.ts')).toEqual({ path: 'a.ts', additions: 1, deletions: 0, staged: false });
-    expect(result.find((f) => f.path === 'b.ts')).toEqual({ path: 'b.ts', additions: 2, deletions: 1, staged: false });
+    expect(result.find((f) => f.path === 'a.ts')).toEqual({
+      path: 'a.ts',
+      additions: 1,
+      deletions: 0,
+      staged: false,
+    });
+    expect(result.find((f) => f.path === 'b.ts')).toEqual({
+      path: 'b.ts',
+      additions: 2,
+      deletions: 1,
+      staged: false,
+    });
   });
 
   it('handles commits with undefined files', () => {
@@ -661,11 +677,13 @@ describe('computeTotalStats', () => {
   });
 
   it('deduplicates paths across unstaged, staged, and commits', () => {
-    const unstaged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } })];
-    const staged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 2, deletions: 1 } })];
-    const commits = [
-      makeCommit({ files: [{ path: 'a.ts', additions: 3, deletions: 0 }] }),
+    const unstaged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } }),
     ];
+    const staged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 2, deletions: 1 } }),
+    ];
+    const commits = [makeCommit({ files: [{ path: 'a.ts', additions: 3, deletions: 0 }] })];
     const result = computeTotalStats(unstaged, staged, commits);
     expect(result.totalFilesChanged).toBe(1); // same file across all
     expect(result.totalAdditions).toBe(6); // 1+2+3
@@ -673,8 +691,12 @@ describe('computeTotalStats', () => {
   });
 
   it('counts unique files across sources', () => {
-    const unstaged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } })];
-    const staged = [makeTrackedChange({ relativePath: 'b.ts', stats: { additions: 1, deletions: 0 } })];
+    const unstaged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } }),
+    ];
+    const staged = [
+      makeTrackedChange({ relativePath: 'b.ts', stats: { additions: 1, deletions: 0 } }),
+    ];
     const commits = [makeCommit({ files: [{ path: 'c.ts', additions: 1, deletions: 0 }] })];
     const result = computeTotalStats(unstaged, staged, commits);
     expect(result.totalFilesChanged).toBe(3);
@@ -772,6 +794,53 @@ describe('mapWorkspacePRs', () => {
   });
 });
 
+// ─── legacyWorkspacePullRequest ────────────────────────────────────────────────
+
+describe('legacyWorkspacePullRequest', () => {
+  const updatedAt = '2026-08-12T00:00:00.000Z';
+
+  it('surfaces a workspace hydrated with only the legacy prNumber/prUrl fields', () => {
+    const pr = legacyWorkspacePullRequest({
+      prNumber: 7,
+      prUrl: 'https://github.com/acme/widgets/pull/7',
+      updatedAt,
+    });
+    expect(pr).toMatchObject({
+      number: 7,
+      url: 'https://github.com/acme/widgets/pull/7',
+      status: PullRequestStatus.Open,
+      updatedAt,
+    });
+    expect(
+      mapWorkspacePRs(
+        undefined,
+        pr,
+        (n, fallback) => fallback ?? String(n),
+        (p) => p.title,
+      ),
+    ).toMatchObject([{ number: 7, url: 'https://github.com/acme/widgets/pull/7', status: 'open' }]);
+  });
+
+  it('honors a daemon-sent legacy prStatus', () => {
+    expect(
+      legacyWorkspacePullRequest({
+        prNumber: 7,
+        prUrl: 'https://github.com/acme/widgets/pull/7',
+        prStatus: PullRequestStatus.Merged,
+        updatedAt,
+      })?.status,
+    ).toBe(PullRequestStatus.Merged);
+  });
+
+  it('returns null when either legacy field is missing', () => {
+    expect(legacyWorkspacePullRequest({ prNumber: 7, updatedAt })).toBeNull();
+    expect(
+      legacyWorkspacePullRequest({ prUrl: 'https://github.com/acme/widgets/pull/7', updatedAt }),
+    ).toBeNull();
+    expect(legacyWorkspacePullRequest({ updatedAt })).toBeNull();
+  });
+});
+
 // ─── prRepoFromUrl ─────────────────────────────────────────────────────────────
 
 describe('prRepoFromUrl', () => {
@@ -838,11 +907,7 @@ describe('mergeMonitoredPRs', () => {
   });
 
   it('appends an unmatched same-repo monitor with agent attribution', () => {
-    const result = mergeMonitoredPRs(
-      [makeBasePR({ number: 7 })],
-      [makeMonitor()],
-      workspaceRepo,
-    );
+    const result = mergeMonitoredPRs([makeBasePR({ number: 7 })], [makeMonitor()], workspaceRepo);
     expect(result).toHaveLength(2);
     expect(result[1]).toMatchObject({
       number: 42,
@@ -904,7 +969,11 @@ describe('mergeMonitoredPRs', () => {
 
   it('attaches the monitor last snapshot to both appended and annotated rows', () => {
     const snapshot = makeSnapshot();
-    const appended = mergeMonitoredPRs([], [makeMonitor({ lastSnapshot: snapshot })], workspaceRepo);
+    const appended = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ lastSnapshot: snapshot })],
+      workspaceRepo,
+    );
     expect(appended[0].monitorSnapshot).toBe(snapshot);
 
     const annotated = mergeMonitoredPRs(
@@ -930,11 +999,7 @@ describe('mergeMonitoredPRs', () => {
   });
 
   it('renders completed monitors without a snapshot verdict as closed (completion covers merged AND closed)', () => {
-    const result = mergeMonitoredPRs(
-      [],
-      [makeMonitor({ state: 'completed' })],
-      workspaceRepo,
-    );
+    const result = mergeMonitoredPRs([], [makeMonitor({ state: 'completed' })], workspaceRepo);
     expect(result).toHaveLength(1);
     expect(result[0].status).toBe('closed');
   });
@@ -976,7 +1041,7 @@ describe('mergeMonitoredPRs', () => {
     expect(result[0].url).toBe('https://github.com/acme/widgets/pull/42');
   });
 
-  it('copies the monitor createdAt/updatedAt onto appended rows for selectPrimaryPr sorting', () => {
+  it('copies the monitor createdAt/updatedAt onto appended rows for recency sorting', () => {
     const result = mergeMonitoredPRs(
       [],
       [makeMonitor({ createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-02T00:00:00Z' })],
@@ -986,41 +1051,17 @@ describe('mergeMonitoredPRs', () => {
     expect(result[0].updatedAt).toBe('2026-08-02T00:00:00Z');
   });
 
-  it('selectPrimaryPr picks the oldest-created of multiple open monitored PRs', () => {
+  it('orders multiple monitored PRs by recency using the copied monitor timestamps', () => {
     const pool = mergeMonitoredPRs(
       [],
       [
-        makeMonitor({ monitorId: 'mon-1', prNumber: 50, createdAt: '2026-08-06T00:00:00Z' }),
-        makeMonitor({ monitorId: 'mon-2', prNumber: 43, createdAt: '2026-08-04T00:00:00Z' }),
-        makeMonitor({ monitorId: 'mon-3', prNumber: 47, createdAt: '2026-08-05T00:00:00Z' }),
+        makeMonitor({ monitorId: 'mon-1', prNumber: 50, updatedAt: '2026-08-06T00:00:00Z' }),
+        makeMonitor({ monitorId: 'mon-2', prNumber: 43, updatedAt: '2026-08-08T00:00:00Z' }),
+        makeMonitor({ monitorId: 'mon-3', prNumber: 47, updatedAt: '2026-08-05T00:00:00Z' }),
       ],
       workspaceRepo,
     );
-    expect(selectPrimaryPr(pool)?.number).toBe(43);
-  });
-
-  it('selectPrimaryPr picks the latest-updated of multiple merged monitored PRs', () => {
-    const pool = mergeMonitoredPRs(
-      [],
-      [
-        makeMonitor({
-          monitorId: 'mon-1',
-          prNumber: 50,
-          state: 'completed',
-          lastSnapshot: makeSnapshot({ state: 'merged' }),
-          updatedAt: '2026-08-06T00:00:00Z',
-        }),
-        makeMonitor({
-          monitorId: 'mon-2',
-          prNumber: 43,
-          state: 'completed',
-          lastSnapshot: makeSnapshot({ state: 'merged' }),
-          updatedAt: '2026-08-08T00:00:00Z',
-        }),
-      ],
-      workspaceRepo,
-    );
-    expect(selectPrimaryPr(pool)?.number).toBe(43);
+    expect(sortPRsByRecency(pool).map((pr) => pr.number)).toEqual([43, 50, 47]);
   });
 
   it('treats all monitors as same-repo when the workspace repo is unknown', () => {
@@ -1048,7 +1089,9 @@ describe('mergeMonitoredPRs', () => {
     expect(result[0].crossRepo).toBe('other/repo');
     expect(result[0].number).toBe(42);
     // Keys collide under prKey (crossRepo#number), so there must be exactly one row.
-    const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    const keys = result.map((pr) =>
+      pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -1085,7 +1128,9 @@ describe('mergeMonitoredPRs', () => {
     const bareRow = result.find((pr) => pr.crossRepo === undefined);
     expect(crossRepoRow?.monitorAgentId).toBe('agent-1');
     expect(bareRow?.monitorAgentId).toBe('agent-2');
-    const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    const keys = result.map((pr) =>
+      pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -1341,13 +1386,7 @@ describe('sectionPRs', () => {
   });
 
   it('dedupes the same PR appearing under two roots on the same repo', () => {
-    const result = sectionPRs(
-      [],
-      [],
-      workspaceRepo,
-      [makeRoot(), makeRoot()],
-      getTitle,
-    );
+    const result = sectionPRs([], [], workspaceRepo, [makeRoot(), makeRoot()], getTitle);
     expect(result.otherRoots).toHaveLength(1);
   });
 
@@ -1400,7 +1439,9 @@ describe('sectionPRs', () => {
       getTitle,
     );
     const all = [...result.own, ...result.otherRoots, ...result.otherTracked];
-    const keys = all.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    const keys = all.map((pr) =>
+      pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -1686,139 +1727,6 @@ describe('sortPRsByRecency', () => {
   });
 });
 
-// ─── selectPrimaryPr (single-PR surface pill) ──────────────────────────────────
-
-describe('selectPrimaryPr', () => {
-  function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
-    return {
-      number: 1,
-      title: 'PR',
-      url: 'https://github.com/acme/widgets/pull/1',
-      htmlUrl: 'https://github.com/acme/widgets/pull/1',
-      status: 'open',
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-02T00:00:00Z',
-      ...overrides,
-    };
-  }
-
-  it('returns undefined for an empty pool', () => {
-    expect(selectPrimaryPr([])).toBeUndefined();
-  });
-
-  it('picks the oldest open PR by createdAt', () => {
-    const prs = [
-      makePR({ number: 2, createdAt: '2026-02-01T00:00:00Z' }),
-      makePR({ number: 1, createdAt: '2026-01-01T00:00:00Z' }),
-      makePR({ number: 3, createdAt: '2026-03-01T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(1);
-  });
-
-  it('treats drafts as unmerged alongside open PRs', () => {
-    const prs = [
-      makePR({ number: 2, status: 'open', createdAt: '2026-02-01T00:00:00Z' }),
-      makePR({ number: 1, status: 'draft', createdAt: '2026-01-01T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(1);
-  });
-
-  it('prefers an unmerged PR over merged and closed ones regardless of age', () => {
-    const prs = [
-      makePR({ number: 1, status: 'merged', createdAt: '2026-01-01T00:00:00Z' }),
-      makePR({ number: 2, status: 'closed', createdAt: '2026-01-02T00:00:00Z' }),
-      makePR({ number: 3, status: 'open', createdAt: '2026-06-01T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(3);
-  });
-
-  it('tiebreaks equal createdAt by ascending PR number', () => {
-    const prs = [
-      makePR({ number: 9, createdAt: '2026-01-01T00:00:00Z' }),
-      makePR({ number: 4, createdAt: '2026-01-01T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(4);
-  });
-
-  it('falls back to the latest merged PR by updatedAt when nothing is unmerged', () => {
-    const prs = [
-      makePR({ number: 1, status: 'merged', updatedAt: '2026-01-05T00:00:00Z' }),
-      makePR({ number: 2, status: 'merged', updatedAt: '2026-03-05T00:00:00Z' }),
-      makePR({ number: 3, status: 'closed', updatedAt: '2026-06-05T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(2);
-  });
-
-  it('tiebreaks equal updatedAt among merged PRs by descending PR number', () => {
-    const prs = [
-      makePR({ number: 4, status: 'merged', updatedAt: '2026-01-05T00:00:00Z' }),
-      makePR({ number: 9, status: 'merged', updatedAt: '2026-01-05T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(9);
-  });
-
-  it('returns the first remaining row when the pool is closed-only', () => {
-    const prs = [
-      makePR({ number: 7, status: 'closed' }),
-      makePR({ number: 8, status: 'closed' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(7);
-  });
-
-  it('sorts unmerged PRs missing createdAt last within the bucket', () => {
-    const prs = [
-      makePR({ number: 1, createdAt: undefined }),
-      makePR({ number: 2, createdAt: '2026-05-01T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(2);
-  });
-
-  it('sorts merged PRs missing updatedAt last within the bucket', () => {
-    const prs = [
-      makePR({ number: 1, status: 'merged', updatedAt: undefined }),
-      makePR({ number: 2, status: 'merged', updatedAt: '2026-01-01T00:00:00Z' }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(2);
-  });
-
-  it('tiebreaks by number when timestamps are missing on both sides', () => {
-    const prs = [
-      makePR({ number: 5, createdAt: undefined }),
-      makePR({ number: 3, createdAt: undefined }),
-    ];
-    expect(selectPrimaryPr(prs)?.number).toBe(3);
-  });
-
-  it('selects from a merged branch-linked + monitored pool (monitored-only rows included)', () => {
-    const monitor: PrMonitorRow = {
-      monitorId: 'mon-1',
-      workspaceId: 'ws-1',
-      agentId: 'agent-1',
-      repo: 'acme/widgets',
-      prNumber: 42,
-      state: 'active',
-      pendingChanges: [],
-      hasPendingChanges: false,
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-02T00:00:00Z',
-      title: 'Monitored PR',
-      url: 'https://github.com/acme/widgets/pull/42',
-    };
-    const pool = mergeMonitoredPRs([], [monitor], 'acme/widgets');
-    expect(selectPrimaryPr(pool)?.number).toBe(42);
-    expect(selectPrimaryPr(pool)?.monitorOnly).toBe(true);
-  });
-
-  it('does not mutate the input array', () => {
-    const prs = [
-      makePR({ number: 2, createdAt: '2026-02-01T00:00:00Z' }),
-      makePR({ number: 1, createdAt: '2026-01-01T00:00:00Z' }),
-    ];
-    selectPrimaryPr(prs);
-    expect(prs.map((pr) => pr.number)).toEqual([2, 1]);
-  });
-});
-
 // ─── getPRStatusTooltip (hover status, PROTOCOL §6.9) ──────────────────────────
 
 describe('getPRStatusTooltip', () => {
@@ -1838,6 +1746,32 @@ describe('getPRStatusTooltip', () => {
     expect(getPRStatusTooltip(makePR({ status: 'draft' }))).toBe('Draft');
     expect(getPRStatusTooltip(makePR({ status: 'merged' }))).toBe('Merged');
     expect(getPRStatusTooltip(makePR({ status: 'closed' }))).toBe('Closed');
+  });
+
+  it('says Queued instead of Open only for an open PR in the merge queue', () => {
+    const queued = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+    );
+    expect(queued.split('\n')[0]).toBe('Queued');
+
+    const notQueued = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot() }),
+    );
+    expect(notQueued.split('\n')[0]).toBe('Open');
+
+    expect(
+      getPRStatusTooltip(
+        makePR({ status: 'draft', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ).split('\n')[0],
+    ).toBe('Draft');
+    expect(
+      getPRStatusTooltip(
+        makePR({
+          status: 'merged',
+          monitorSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }),
+        }),
+      ),
+    ).toBe('Merged');
   });
 
   it('adds a checks line only when the snapshot has checks', () => {
@@ -1992,10 +1926,7 @@ describe('countOtherPrs', () => {
   });
 
   it('falls back to repo-qualified number when URLs are absent', () => {
-    const pool = [
-      makePoolPR({ url: '' }),
-      makePoolPR({ number: 7, url: '' }),
-    ];
+    const pool = [makePoolPR({ url: '' }), makePoolPR({ number: 7, url: '' })];
     const primary = makePoolPR({ url: '' });
     expect(countOtherPrs(pool, primary)).toBe(1);
   });
@@ -2020,8 +1951,8 @@ describe('countOtherPrs', () => {
       [makeMonitor({ url: 'https://github.com/acme/widgets/pull/42' })],
       'acme/widgets',
     );
-    const primaryBefore = selectPrimaryPr(before);
-    const primaryAfter = selectPrimaryPr(after);
+    const primaryBefore = before.find((pr) => pr.number === 42);
+    const primaryAfter = after.find((pr) => pr.number === 42);
     expect(countOtherPrs(after, primaryAfter)).toBe(countOtherPrs(before, primaryBefore));
     expect(countOtherPrs(after, primaryAfter)).toBe(1);
   });
@@ -2058,10 +1989,12 @@ describe('monitorDisplayStatus', () => {
   }
 
   it('reads the last-snapshot state case-insensitively', () => {
-    expect(monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'MERGED' }) })))
-      .toBe('merged');
-    expect(monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'Closed' }) })))
-      .toBe('closed');
+    expect(
+      monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'MERGED' }) })),
+    ).toBe('merged');
+    expect(
+      monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'Closed' }) })),
+    ).toBe('closed');
   });
 
   it('reports draft from the snapshot flag', () => {
@@ -2105,9 +2038,9 @@ describe('monitorPillStatus', () => {
     expect(
       monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'closed' }) })),
     ).toBe(PullRequestStatus.Closed);
-    expect(
-      monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) })),
-    ).toBe(PullRequestStatus.Draft);
+    expect(monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) }))).toBe(
+      PullRequestStatus.Draft,
+    );
     expect(monitorPillStatus(makeMonitor())).toBe(PullRequestStatus.Open);
   });
 });

@@ -25,9 +25,7 @@ import { store as appStore } from '$store/renderer/store';
 import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
-  activeProviderReconciled,
   ensureEnabledIfUnset,
-  hydrateActiveProvider,
   loadEnabledProvidersFromStorage,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -42,6 +40,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import {
+  hydrateDefaultProvider,
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
 } from '$store/renderer/slices/model/model-slice';
@@ -53,13 +52,11 @@ const logger = createLogger('SettingsHydrationService');
 function applyOne(change: AppliedSettingChange): void {
   const { path, value } = change;
   switch (path) {
-    case 'providers.active': {
+    case 'model.defaultProvider': {
+      // The reducer's pending-local-intent guard keeps a newer local pick
+      // over a stale snapshot/echo until the daemon confirms it.
       if (typeof value === 'string' && value.length > 0) {
-        appStore.dispatch(hydrateActiveProvider(value));
-        // Mirror only the provider that survived the pending-local-intent guard.
-        appStore.dispatch(
-          activeProviderReconciled(appStore.state.providerSettings.activeProviderId),
-        );
+        appStore.dispatch(hydrateDefaultProvider(value));
       }
       return;
     }
@@ -191,9 +188,9 @@ function migrateLegacyBackgroundModel(
  * persisted an entry for their default provider (the special case covered
  * it), so after upgrading it resolves disabled until manually re-enabled.
  * When `providers.enabled` hydrates without an entry for the effective
- * default provider (the active provider's model prefix when it is a known
- * catalog row, else `providers.active`), seed it to `true` and persist the map
- * back so the daemon's stored settings are migrated too. When legacy state has
+ * default provider (the default provider's model prefix when it is a known
+ * catalog row, else `model.defaultProvider`), seed it to `true` and persist
+ * the map back so the daemon's stored settings are migrated too. When legacy state has
  * no active provider but exactly one persisted `model.providerDefaults` key,
  * that sole key is the only unambiguous migration candidate. An explicit
  * persisted entry (e.g. a deliberate `false`) always wins — the seed only
@@ -251,7 +248,8 @@ function resolveDefaultProviderCandidate(
 
 function seedDefaultProviderEnablement(): void {
   const state = appStore.state;
-  const { activeProviderId, enabledProviders } = state.providerSettings;
+  const { enabledProviders } = state.providerSettings;
+  const activeProviderId = state.model?.defaultProviderId ?? '';
   const providerModels = state.model?.providerModels ?? {};
   const candidate = resolveDefaultProviderCandidate(activeProviderId, providerModels);
   // Cheap sync gate: only hit the wire when some default-provider candidate
@@ -277,10 +275,9 @@ function seedDefaultProviderEnablement(): void {
   void (async () => {
     try {
       const catalog = await appClient.providers.catalog();
-      const settings = appStore.state.providerSettings;
       const row = (id: string) => catalog.providers.find((entry) => entry.id === id);
       const defaultProviderId = resolveDefaultProviderCandidate(
-        settings.activeProviderId,
+        appStore.state.model?.defaultProviderId ?? '',
         appStore.state.model?.providerModels ?? {},
         catalog.providers.map((entry) => entry.id),
       );

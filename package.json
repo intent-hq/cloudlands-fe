@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.126.0",
+  "version": "2.132.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -91,8 +91,7 @@
     "rebuild:native:force": "node scripts/rebuild-native.js --force",
     "test:service-integration": "vitest run src/features/agent/services/__tests__/*.test.ts src/shared/services/__tests__/*.test.ts",
     "test:launcher-integration": "pnpm run test:agent-launch",
-    "test:bundled-rules": "vitest run src/features/agent/services/__tests__/instruction-service.test.ts src/features/agent/services/__tests__/rules-loading-integration.test.ts src/features/rules/__tests__/end-user-rules-manager.test.ts && vitest run --config tests/integration/vitest.integration.config.ts tests/integration/agent-creation-rules.test.ts",
-    "test:bundled-rules:fallback": "vitest run src/features/agent/services/__tests__/instruction-service.test.ts",
+    "test:bundled-rules": "vitest run src/features/agent/services/__tests__/rules-loading-integration.test.ts src/features/rules/__tests__/end-user-rules-manager.test.ts && vitest run --config tests/integration/vitest.integration.config.ts tests/integration/agent-creation-rules.test.ts",
     "type-check": "tsx scripts/type-check.ts",
     "type-check:quiet": "tsx scripts/type-check.ts --quiet",
     "type-check:validate": "tsx scripts/type-check.ts validate",

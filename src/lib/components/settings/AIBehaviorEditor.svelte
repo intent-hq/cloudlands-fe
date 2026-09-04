@@ -3,7 +3,7 @@
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
   import {
-    selectModelEffortLevels,
+    selectProviderModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
 
@@ -36,12 +36,7 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
-  import {
-    hasExplicitModelPin,
-    buildResetToInheritPayloads,
-  } from './utils/reset-specialists-to-inherit';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -84,10 +79,6 @@
     const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
     return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
-
-  // Show the reset-all button when any specialist pins an explicit
-  // frontmatter model instead of inheriting.
-  const anySpecialistHasExplicitModel = $derived(hasExplicitModelPin($fileSpecialists$));
 
   function getCurrentWorkspacePath(): string | undefined {
     if (!routeWorkspaceId) return undefined;
@@ -193,15 +184,19 @@
   // Sync specialist model value when specialist changes or file specialists
   // change. The picker's selected value is the EXPLICIT frontmatter model
   // only — undefined when inheriting (the daemon resolvedModel preview is
-  // shown via the picker's default-option plumbing instead).
+  // shown via the picker's default-option plumbing instead). The stored
+  // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
+  // compound ids, so the effective codingAgent is recombined for display.
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
-      specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      const codingAgent = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
+      _specialistCodingAgentValue = codingAgent;
+      const explicitModel = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      specialistModelValue =
+        explicitModel && codingAgent && !explicitModel.includes(':')
+          ? `${codingAgent}:${explicitModel}`
+          : explicitModel;
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
@@ -212,18 +207,24 @@
   /**
    * Drop an effort level the given model does not advertise, so switching to
    * a model without that level resets the dropdown to Default instead of
-   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`).
+   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`). The
+   * lookup is provider-scoped: a cross-provider pick consults the resolved
+   * provider's cached catalog, not the active one.
    */
   function effortForModel(
-    compoundModelId: string | undefined,
+    providerId: string | undefined,
+    modelId: string | undefined,
     effort: string | undefined,
   ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectModelEffortLevels.select(appStore.state, compoundModelId);
+    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
     return levels?.includes(effort) ? effort : undefined;
   }
 
-  function handleSpecialistModelChange(compoundModelId: string) {
+  function handleSpecialistModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!currentSpecialist) return;
 
     // Empty string = the inherit ("use global default") option was picked:
@@ -234,7 +235,11 @@
       specialistModelValue = undefined;
       // The effort level now applies to the inherited (daemon-resolved)
       // model — drop it when that model lacks the level.
-      const nextEffort = effortForModel(currentSpecialist.resolvedModel, specialistEffortValue);
+      const nextEffort = effortForModel(
+        currentSpecialist.resolvedProvider,
+        currentSpecialist.resolvedModel,
+        specialistEffortValue,
+      );
       specialistEffortValue = nextEffort;
       if (!isFileBased) return;
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
@@ -272,12 +277,19 @@
       return;
     }
 
-    const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
+    // Writes emit the bare model id only (PROTOCOL §5.11) — the provider
+    // rides the `codingAgent:` key, never a compound `model:` id. Prefer the
+    // resolved triple legs the picker emits (catalog-group attribution for
+    // bare cross-provider picks); fall back to splitting a legacy compound id
+    // (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    const newProvider = resolved.providerId || $defaultProviderId$;
+    const bareModelId = resolved.modelId;
     _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
     // Reset the effort to Default when the newly picked model does not
     // advertise the current level.
-    const nextEffort = effortForModel(compoundModelId, specialistEffortValue);
+    const nextEffort = effortForModel(newProvider || undefined, bareModelId, specialistEffortValue);
     specialistEffortValue = nextEffort;
 
     if (isFileBased) {
@@ -291,7 +303,7 @@
             name: fileSpec.name,
             description: fileSpec.description,
             codingAgent: newProvider,
-            model: compoundModelId,
+            model: bareModelId,
             roleReminder: fileSpec.roleReminder,
             modelOptions: fileSpec.modelOptions,
             reasoningEffort: nextEffort,
@@ -313,7 +325,7 @@
           name: currentSpecialist.name,
           description: currentSpecialist.description,
           codingAgent: newProvider,
-          model: compoundModelId,
+          model: bareModelId,
           roleReminder: currentSpecialist.roleReminder,
           modelOptions: currentSpecialist.modelOptions,
           reasoningEffort: nextEffort,
@@ -393,18 +405,24 @@
     );
   }
 
-  function handleCreateModelChange(compoundModelId: string) {
+  function handleCreateModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     // Empty string = the inherit ("use global default") option was picked.
     if (!compoundModelId) {
       newCodingAgent = undefined;
       newModel = undefined;
-      newEffort = effortForModel($selectedModel, newEffort);
+      newEffort = effortForModel($defaultProviderId$ || undefined, $selectedModel, newEffort);
       return;
     }
-    const { providerId } = parseCompoundModelId(compoundModelId);
-    newCodingAgent = providerId;
+    // Prefer the resolved triple legs the picker emits (catalog-group
+    // attribution for bare cross-provider picks); fall back to splitting a
+    // legacy compound id (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    newCodingAgent = resolved.providerId || $defaultProviderId$;
     newModel = compoundModelId;
-    newEffort = effortForModel(compoundModelId, newEffort);
+    newEffort = effortForModel(newCodingAgent || undefined, resolved.modelId, newEffort);
   }
 
   function handlePromptSave(prompt: string) {
@@ -609,13 +627,16 @@
       newName.trim(),
       selectSpecialists.select(appStore.state).map((specialist) => specialist.id),
     );
+    // `newModel` carries the picker's compound id for display; writes emit
+    // the bare model id only (PROTOCOL §5.11), the provider on codingAgent.
+    const bareNewModel = newModel ? parseCompoundModelId(newModel).modelId : undefined;
     appStore.dispatch(
       saveFileSpecialist({
         id: createdId,
         name: newName.trim(),
         description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
         codingAgent: newCodingAgent,
-        model: newModel,
+        model: bareNewModel,
         reasoningEffort: newEffort,
         behaviorPrompt: newPrompt,
         scope: 'user',
@@ -642,28 +663,6 @@
     newPrompt = m.settings_aiBehavior_newPromptTemplate();
     onDiscard?.();
   }
-
-  /**
-   * Clear the explicit model pin from every file specialist that
-   * has one so they all inherit the global default. Built-ins without an
-   * override file already inherit — no file is created for them. Built-in
-   * overrides that become identical to the bundled defaults once the pin
-   * is cleared are deleted instead of rewritten (monorepo#1450).
-   */
-  function resetAllSpecialistsToInherit() {
-    const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-    const { saves, deletes } = buildResetToInheritPayloads(
-      $fileSpecialists$,
-      bundledSpecialists,
-      getCurrentWorkspacePath,
-    );
-    for (const payload of saves) {
-      appStore.dispatch(saveFileSpecialist(payload));
-    }
-    for (const ref of deletes) {
-      appStore.dispatch(deleteFileSpecialistAction(ref));
-    }
-  }
 </script>
 
 <div
@@ -676,29 +675,16 @@
   {#if activeView.type === 'system-prompt'}
     <div
       data-testid="all-agents-editor-layout"
-      class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
+      class="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0 xl:flex-1"
     >
+      <p class="text-sm text-muted-foreground">
+        {m.settings_agentRules_description()}
+      </p>
       <div
         data-testid="all-agents-prompt-column"
-        class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
+        class="min-h-0 min-w-0 w-full xl:flex xl:flex-1 xl:flex-col"
       >
         <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
-      </div>
-
-      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
-        <p class="text-sm text-muted-foreground">
-          {m.settings_agentRules_description()}
-        </p>
-        <DefaultAgentModelSettings testId="all-agents-default-model-row" />
-        {#if anySpecialistHasExplicitModel}
-          <button
-            type="button"
-            onclick={resetAllSpecialistsToInherit}
-            class="self-start text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            {m.settings_aiBehavior_resetAllSpecialists()}
-          </button>
-        {/if}
       </div>
     </div>
 
@@ -860,7 +846,7 @@
             <button
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
@@ -891,11 +877,11 @@
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
             class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
+              {newPromptIsOverLimit ? 'border-danger' : ''}"></textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
               class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
-                ? 'text-destructive'
+                ? 'text-danger'
                 : 'text-warning'}"
             >
               <span>

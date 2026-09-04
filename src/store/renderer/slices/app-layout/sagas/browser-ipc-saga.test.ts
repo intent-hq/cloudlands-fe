@@ -671,6 +671,45 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  it('persists an owned fit viewport in one store action', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } } },
+        },
+      },
+    };
+
+    await emit(
+      {
+        tabId: 'browser-1',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 1280, height: 800 },
+        viewport: { mode: 'fit' },
+      },
+      'browser:tab-owner-changed',
+    );
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: [
+          'ws-1',
+          'browser-1',
+          'agent-1',
+          { width: 1280, height: 800 },
+          undefined,
+          { mode: 'fit' },
+        ],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('opens an agent tab with the payload emulatedSize persisted on the tab (§5.9)', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
@@ -1340,7 +1379,7 @@ describe('browserIpcSaga', () => {
   // Persisted emulated size (monorepo#2857): the size rides with the owner in
   // both directions — list replies carry it to main for rehydration, and
   // owner-changed events (claim / resizeTab) persist it on the layout tab.
-  it('includes the persisted emulatedSize of owned tabs in list replies (valid sizes only)', async () => {
+  it('includes persisted sizing state of owned tabs in list replies (valid sizes only)', async () => {
     const task = start();
     state = {
       panelLayout: {
@@ -1356,6 +1395,7 @@ describe('browserIpcSaga', () => {
                     title: 'A',
                     ownerAgentId: 'agent-1',
                     emulatedSize: { width: 390, height: 844 },
+                    viewport: { mode: 'custom', width: 390, height: 844 },
                   },
                   {
                     id: 'tab-bad-size',
@@ -1386,6 +1426,7 @@ describe('browserIpcSaga', () => {
           closable: true,
           ownerAgentId: 'agent-1',
           emulatedSize: { width: 390, height: 844 },
+          viewport: { mode: 'custom', width: 390, height: 844 },
         },
         {
           tabId: 'tab-bad-size',

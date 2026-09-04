@@ -1,23 +1,16 @@
-import {
-  describe,
-  it,
-  expect,
-} from "vitest";
-import {
-  selectProviderInUseReason,
-  selectProviderInUseReasons,
-} from "./provider-in-use-selectors";
-import { initialState as specialistsInitialState } from "../specialists/specialists-slice";
-import { initialState as modelInitialState } from "../model/model-slice";
+import { describe, it, expect } from 'vitest';
+import { selectProviderInUseReason, selectProviderInUseReasons } from './provider-in-use-selectors';
+import { initialState as specialistsInitialState } from '../specialists/specialists-slice';
+import { initialState as modelInitialState } from '../model/model-slice';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
   providerCatalogReducer,
-} from "../provider-catalog/provider-catalog-slice";
-import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
-import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import type { FileSpecialist } from "../specialists/specialists-slice";
-import type { StoreState } from "../../types";
+} from '../provider-catalog/provider-catalog-slice';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { FileSpecialist } from '../specialists/specialists-slice';
+import type { StoreState } from '../../types';
 
 const providerCatalog = providerCatalogReducer(
   providerCatalogInitialState,
@@ -27,17 +20,17 @@ const providerCatalog = providerCatalogReducer(
 function fileSpecialist(overrides: Partial<FileSpecialist> & { id: string }): FileSpecialist {
   return {
     name: overrides.id,
-    description: "test specialist",
-    model: "",
-    behaviorPrompt: "prompt",
+    description: 'test specialist',
+    model: '',
+    behaviorPrompt: 'prompt',
     filePath: `/tmp/${overrides.id}.md`,
-    source: "user",
+    source: 'user',
     ...overrides,
   };
 }
 
 function mockState({
-  activeProviderId = "auggie",
+  activeProviderId = 'auggie',
   providerModels = {},
   fileSpecialists = [],
 }: {
@@ -47,114 +40,112 @@ function mockState({
 } = {}): StoreState {
   return {
     providerCatalog,
-    providerSettings: { activeProviderId, enabledProviders: {} },
-    model: { ...modelInitialState, providerModels },
+    providerSettings: { enabledProviders: {} },
+    model: { ...modelInitialState, defaultProviderId: activeProviderId, providerModels },
     specialists: {
       ...specialistsInitialState,
-      fileSpecialists: createCollection("id", fileSpecialists),
+      fileSpecialists: createCollection('id', fileSpecialists),
     },
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: false },
   } as unknown as StoreState;
 }
 
-describe("provider in-use selectors", () => {
-  describe("global default model", () => {
-    it("marks the provider of a compound global model as in use", () => {
+describe('provider in-use selectors', () => {
+  describe('global default model', () => {
+    it('marks the provider of a compound global model as in use', () => {
       const state = mockState({
-        activeProviderId: "opencode",
-        providerModels: { opencode: "opencode:claude-sonnet-4" },
+        activeProviderId: 'opencode',
+        providerModels: { opencode: 'opencode:claude-sonnet-4' },
       });
-      expect(selectProviderInUseReason.select(state, "opencode")).toContain(
-        "opencode:claude-sonnet-4",
+      expect(selectProviderInUseReason.select(state, 'opencode')).toContain(
+        'opencode:claude-sonnet-4',
       );
     });
 
-    it("marks the default provider as in use for a bare global model", () => {
-      const state = mockState({ providerModels: { auggie: "sonnet4.5" } });
-      expect(selectProviderInUseReason.select(state, "auggie")).toContain("sonnet4.5");
-      expect(selectProviderInUseReason.select(state, "codex")).toBeNull();
+    it('marks the default provider as in use for a bare global model', () => {
+      const state = mockState({ providerModels: { auggie: 'sonnet4.5' } });
+      expect(selectProviderInUseReason.select(state, 'auggie')).toContain('sonnet4.5');
+      expect(selectProviderInUseReason.select(state, 'codex')).toBeNull();
     });
   });
 
-  describe("specialist explicit codingAgent", () => {
+  describe('specialist explicit codingAgent', () => {
     it("marks a specialist's pinned coding agent as in use", () => {
       const state = mockState({
         fileSpecialists: [
-          fileSpecialist({ id: "my-spec", name: "My Spec", codingAgent: "claude-code" }),
+          fileSpecialist({ id: 'my-spec', name: 'My Spec', codingAgent: 'claude-code' }),
         ],
       });
-      const reason = selectProviderInUseReason.select(state, "claude-code");
-      expect(reason).toContain("My Spec");
-      expect(reason).toContain("coding agent");
+      const reason = selectProviderInUseReason.select(state, 'claude-code');
+      expect(reason).toContain('My Spec');
+      expect(reason).toContain('coding agent');
     });
   });
 
-  describe("specialist explicit model", () => {
-    it("marks the provider of a specialist compound model as in use", () => {
+  describe('specialist explicit model', () => {
+    it('marks the provider of a specialist compound model as in use', () => {
       const state = mockState({
         fileSpecialists: [
-          fileSpecialist({ id: "my-spec", name: "My Spec", model: "codex:gpt-5.3-codex/high" }),
+          fileSpecialist({ id: 'my-spec', name: 'My Spec', model: 'codex:gpt-5.3-codex/high' }),
         ],
       });
-      const reason = selectProviderInUseReason.select(state, "codex");
-      expect(reason).toContain("My Spec");
-      expect(reason).toContain("codex:gpt-5.3-codex/high");
+      const reason = selectProviderInUseReason.select(state, 'codex');
+      expect(reason).toContain('My Spec');
+      expect(reason).toContain('codex:gpt-5.3-codex/high');
     });
 
-    it("marks the default provider as in use for a bare specialist model", () => {
+    it('marks the default provider as in use for a bare specialist model', () => {
       const state = mockState({
-        fileSpecialists: [
-          fileSpecialist({ id: "my-spec", name: "My Spec", model: "opus4.7" }),
-        ],
+        fileSpecialists: [fileSpecialist({ id: 'my-spec', name: 'My Spec', model: 'opus4.7' })],
       });
-      expect(selectProviderInUseReason.select(state, "auggie")).toContain("My Spec");
+      expect(selectProviderInUseReason.select(state, 'auggie')).toContain('My Spec');
     });
 
-    it("does not pin the default provider for a bare model when a coding agent is set", () => {
+    it('does not pin the default provider for a bare model when a coding agent is set', () => {
       const state = mockState({
         fileSpecialists: [
           fileSpecialist({
-            id: "my-spec",
-            name: "My Spec",
-            model: "sonnet",
-            codingAgent: "claude-code",
+            id: 'my-spec',
+            name: 'My Spec',
+            model: 'sonnet',
+            codingAgent: 'claude-code',
           }),
         ],
       });
-      expect(selectProviderInUseReasons.select(state)["auggie"]).toBeUndefined();
-      expect(selectProviderInUseReason.select(state, "claude-code")).toContain("My Spec");
+      expect(selectProviderInUseReasons.select(state)['auggie']).toBeUndefined();
+      expect(selectProviderInUseReason.select(state, 'claude-code')).toContain('My Spec');
     });
   });
 
-  describe("active-provider fallback does not count as in use", () => {
-    it("does not mark other providers as in use via unpinned specialists", () => {
+  describe('active-provider fallback does not count as in use', () => {
+    it('does not mark other providers as in use via unpinned specialists', () => {
       // Bundled/hardcoded specialists carry no explicit model or codingAgent
       // pin — they follow the active provider and must not block others.
       const state = mockState({
-        activeProviderId: "claude-code",
-        providerModels: { "claude-code": "claude-code:sonnet" },
+        activeProviderId: 'claude-code',
+        providerModels: { 'claude-code': 'claude-code:sonnet' },
       });
-      expect(selectProviderInUseReasons.select(state)["auggie"]).toBeUndefined();
-      expect(selectProviderInUseReason.select(state, "codex")).toBeNull();
+      expect(selectProviderInUseReasons.select(state)['auggie']).toBeUndefined();
+      expect(selectProviderInUseReason.select(state, 'codex')).toBeNull();
     });
 
-    it("ignores file specialists without an explicit model or coding agent", () => {
+    it('ignores file specialists without an explicit model or coding agent', () => {
       const state = mockState({
-        activeProviderId: "codex",
-        providerModels: { codex: "codex:gpt-5.3-codex/high" },
-        fileSpecialists: [fileSpecialist({ id: "unpinned", name: "Unpinned" })],
+        activeProviderId: 'codex',
+        providerModels: { codex: 'codex:gpt-5.3-codex/high' },
+        fileSpecialists: [fileSpecialist({ id: 'unpinned', name: 'Unpinned' })],
       });
-      expect(selectProviderInUseReasons.select(state)["auggie"]).toBeUndefined();
+      expect(selectProviderInUseReasons.select(state)['auggie']).toBeUndefined();
     });
   });
 
-  describe("not in use", () => {
-    it("returns null for providers not referenced anywhere", () => {
-      const state = mockState({ providerModels: { auggie: "auggie:sonnet4.5" } });
-      expect(selectProviderInUseReason.select(state, "opencode")).toBeNull();
-      expect(selectProviderInUseReason.select(state, "droid")).toBeNull();
-      expect(selectProviderInUseReason.select(state, "grok")).toBeNull();
+  describe('not in use', () => {
+    it('returns null for providers not referenced anywhere', () => {
+      const state = mockState({ providerModels: { auggie: 'auggie:sonnet4.5' } });
+      expect(selectProviderInUseReason.select(state, 'opencode')).toBeNull();
+      expect(selectProviderInUseReason.select(state, 'droid')).toBeNull();
+      expect(selectProviderInUseReason.select(state, 'grok')).toBeNull();
     });
   });
 });

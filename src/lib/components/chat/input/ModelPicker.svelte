@@ -59,8 +59,9 @@
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
     selectActiveProviderId,
-    selectEnabledProviderIds,
     selectAvailableEnabledProviderIds,
+    selectIsProviderModelAccessAllowed,
+    selectModelFetchProviderIds,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     getModelsForProvider,
@@ -128,7 +129,11 @@
   }
 
   const activeProviderId$ = selectActiveProviderId();
-  const enabledProviderIds$ = selectEnabledProviderIds();
+  const modelFetchProviderIds$ = selectModelFetchProviderIds();
+  const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
+  function canUseProviderModels(providerId: string): boolean {
+    return normalizeProviderId(providerId) !== 'antigravity' || $antigravityModelsAllowed$;
+  }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
@@ -152,7 +157,15 @@
 
   interface Props {
     selectedModel?: string | null;
-    onModelChange?: (model: string) => void;
+    /**
+     * Called on every user pick. `model` keeps the picked row's raw value for
+     * backward compatibility (bare for the default provider, legacy
+     * `provider:model` otherwise); `pick` carries the resolved triple legs —
+     * the bare model id and its owning provider — so consumers never parse
+     * the model string for a provider. Absent on the "use default" pick
+     * (`model === ''`).
+     */
+    onModelChange?: (model: string, pick?: { providerId: string; modelId: string }) => void;
     /**
      * Optional go/no-go gate invoked before a user-picked model change is
      * applied. Called with the current and target model ids when they differ;
@@ -330,6 +343,7 @@
   const seededProviderModels: Record<string, DropdownOption[]> = {};
   const seededProviderLoading: Record<string, boolean> = {};
   for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
+    if (!canUseProviderModels(pid)) continue;
     seededProviderModels[pid] = toDropdownOptions(entry.models);
     seededProviderLoading[pid] = false;
   }
@@ -374,6 +388,7 @@
   }
 
   async function fetchAllProviderModels(enabledIds: string[]) {
+    enabledIds = enabledIds.filter(canUseProviderModels);
     const key = enabledIds.slice().sort().join(',');
     if (key === lastFetchedProviderIds && allProvidersLoaded) return;
     lastFetchedProviderIds = key;
@@ -456,7 +471,9 @@
   // aren't already covered by the all-providers fetch because the agent's
   // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
   const usesAgentProviderFetch = $derived(
-    effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable,
+    canUseProviderModels(effectiveProviderId) &&
+      effectiveProviderId !== $activeProviderId$ &&
+      !isEffectiveProviderAvailable,
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -464,6 +481,7 @@
   let agentFetchGeneration = 0;
   async function fetchAgentProviderModels(providerId: string) {
     const currentGen = ++agentFetchGeneration;
+    if (!canUseProviderModels(providerId)) return;
     // Hydrate from the session cache (stale-while-revalidate): a cached
     // catalog renders immediately with no loading state — the all-provider
     // fetch prunes disabled providers from allProviderModels, so this path is
@@ -519,7 +537,7 @@
 
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    const providerIds = $hasCheckedOnce$ ? $availableEnabledProviderIds$ : $enabledProviderIds$;
+    const providerIds = $modelFetchProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
@@ -552,7 +570,9 @@
   // Models for the effective provider: the per-agent fetch result when the
   // agent's provider differs from the active one, the global store otherwise.
   const availableModels = $derived(
-    agentProviderLoading
+    !canUseProviderModels(
+      agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
+    ) || agentProviderLoading
       ? []
       : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
   );
@@ -565,9 +585,10 @@
       : $availableModelsProviderId$,
   );
   const isLoadingModels = $derived(
-    agentProviderLoading ||
-      (!hasProviderResult(effectiveProviderId) &&
-        ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded)),
+    canUseProviderModels(effectiveProviderId) &&
+      (agentProviderLoading ||
+        (!hasProviderResult(effectiveProviderId) &&
+          ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded))),
   );
   const loadError = $derived($loadError$);
 
@@ -583,6 +604,7 @@
   let refreshingProviders = $state<Set<string>>(new Set());
 
   async function handleRefreshProvider(providerId: string) {
+    if (!canUseProviderModels(providerId)) return;
     if (refreshingProviders.has(providerId)) return;
     // Epoch at fetch start: a reconnect clear mid-flight makes this response
     // stale for local state as well as for the reducer write-through.
@@ -691,14 +713,41 @@
     }
   });
 
+  // Resolve the provider owning a picked row. Catalog groups carry bare ids
+  // for every provider, so a bare pick is attributed to the loaded group that
+  // contains the row rather than blanket-attributed to the default provider.
+  // A legacy compound prefix (persisted ids) still wins outright; when several
+  // groups own the same bare id — or no loaded group owns it — the default
+  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
+    const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
+    if (legacyProviderId) return { providerId: legacyProviderId, modelId };
+    const matchesIn = (rowProviderId: string, options: { value: string }[] | undefined) =>
+      Boolean(
+        options?.some(
+          (opt) =>
+            normalizeModelIdForMatch(opt.value, rowProviderId) ===
+            normalizeModelIdForMatch(modelId, rowProviderId),
+        ),
+      );
+    const defaultNormalized = normalizeProviderId($defaultProviderId$);
+    if (defaultNormalized && matchesIn(defaultNormalized, allProviderModels[defaultNormalized])) {
+      return { providerId: defaultNormalized, modelId };
+    }
+    for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
+      if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
+    }
+    return { providerId: $defaultProviderId$, modelId };
+  }
+
   async function applyBackendModelUpdate(model: string) {
     if (agentId && workspaceId) {
       try {
-        // Send the picked model's provider explicitly: the parsed compound
-        // prefix, or the effective default provider for bare ids. Without it
-        // the daemon resolves a bare id against the session's current
-        // provider, rejecting cross-provider picks of default-provider models.
-        const pickedProviderId = parseCompoundModelId(model).providerId || undefined;
+        // Send the picked model's provider explicitly: the owning catalog
+        // group's provider (legacy compound prefix wins). Without it the
+        // daemon resolves a bare id against the session's current provider,
+        // rejecting cross-provider picks.
+        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
         const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
@@ -731,6 +780,10 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
+    if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
+      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      return;
+    }
     logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
     logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
     // Update local state before async work so the UI responds immediately.
@@ -749,11 +802,15 @@
       return;
     }
 
-    onModelChange?.(model);
+    // Resolve the pick's triple legs once at the emit boundary: the legacy
+    // compound prefix when present, else the provider whose loaded catalog
+    // group owns the picked bare row.
+    const { providerId: pickedProviderId, modelId: pickedModelId } = resolvePickedTriple(model);
+    onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
     await tick();
 
-    if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+    if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
@@ -783,11 +840,10 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
-  // Catalog row values are shape-dependent — bare for the FE's default
-  // provider, `provider:model` otherwise (prefixModelsForProvider) — while a
-  // session id may be daemon-pinned bare or stored compound, so ids are
-  // compared via normalizeModelIdForMatch (like selectedCatalogOption), not
-  // exact string equality.
+  // Catalog rows now carry bare ids for every provider, while a session id
+  // may be daemon-pinned bare or stored legacy-compound, so ids are compared
+  // via normalizeModelIdForMatch (like selectedCatalogOption), not exact
+  // string equality.
   // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
   // rows (the daemon collapses them to one base row + effortLevels), so on an
   // exact-id miss the base model's label is rendered with the effort suffix
@@ -930,7 +986,9 @@
 
   const triggerProviderId = $derived.by(() => {
     if (localModel && hasExplicitModel) {
-      return parseCompoundModelId(localModel).providerId;
+      // Catalog-ownership attribution so a bare cross-provider selection
+      // shows its own provider's icon, not the default provider's.
+      return resolvePickedTriple(localModel).providerId;
     }
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
@@ -1132,7 +1190,9 @@
       allProviderLoading,
       allProviderErrors,
       allProviderWarnings: $allProviderWarnings$,
-    }),
+    }).filter(
+      (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
+    ),
   );
   let legacyModelsExpanded = $state(false);
   let modelSearchValue = $state('');
@@ -1156,9 +1216,11 @@
   });
 
   // Provider the explicitly selected model belongs to ('' when inheriting).
+  // Catalog rows are bare for every provider, so ownership is resolved from
+  // the loaded groups (legacy compound prefix wins) — not by parsing the id.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
+      ? normalizeProviderId(resolvePickedTriple(localModel).providerId)
       : '',
   );
 
@@ -1222,6 +1284,7 @@
   const isSelectedModelProviderPending = $derived.by(() => {
     const modelProvider = selectedModelProviderId;
     if (!modelProvider) return false;
+    if (!canUseProviderModels(modelProvider)) return false;
     if (hasProviderResult(modelProvider)) return false;
     if (allProviderLoading[modelProvider]) return true;
     // Availability hasn't been probed yet — an empty enabled list is "unknown".
@@ -1248,6 +1311,7 @@
   });
 
   const isSelectedModelUnavailable = $derived.by(() => {
+    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
     if (!allProvidersLoaded) return false;
@@ -1457,6 +1521,7 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
+    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
 
@@ -1565,6 +1630,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
+    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
 
@@ -1838,7 +1904,7 @@
     contentClass={cn(
       'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
       '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
-      showReasoning ? 'w-85 min-h-90 max-h-90 flex flex-col' : 'w-[332px]',
+      showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
     fillContentHeight={showReasoning}

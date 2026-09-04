@@ -1254,8 +1254,8 @@
     </div>
   {:else if error}
     <div class="error-state">
-      <Fa icon={faExclamationTriangle} class="text-error-foreground" />
-      <span class="text-error-foreground text-sm ml-2">{error}</span>
+      <Fa icon={faExclamationTriangle} class="text-danger" />
+      <span class="text-danger text-sm ml-2">{error}</span>
     </div>
   {:else if contentTooLarge}
     <div class="error-state">
@@ -1484,6 +1484,6 @@
   }
 
   .diff-skeleton-line--removed {
-    background: hsl(var(--destructive) / 0.08);
+    background: hsl(var(--danger-background) / 0.08);
   }
 </style>
