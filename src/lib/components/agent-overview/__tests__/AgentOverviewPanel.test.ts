@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GraphState } from '../types';
@@ -133,16 +134,22 @@ const graph: GraphState = {
   maxTime: timestamp,
 };
 
-function renderPanel() {
-  mocks.selectGraphState.mockReturnValue(readable(graph));
-  mocks.selectGraphStateAt.select.mockReturnValue({ ...graph, isLive: false });
+function renderPanel(inputGraph = graph) {
+  mocks.selectGraphState.mockReturnValue(readable(inputGraph));
+  mocks.selectGraphStateAt.select.mockReturnValue({ ...inputGraph, isLive: false });
   const result = render(AgentOverviewPanel, { props: { workspaceId: 'workspace-one' } });
   result.container.firstElementChild?.setAttribute('data-panel-id', 'source-panel');
   return result;
 }
 
-beforeEach(() => mocks.dispatch.mockClear());
-afterEach(cleanup);
+beforeEach(() => {
+  mocks.dispatch.mockClear();
+  mocks.selectGraphStateAt.select.mockClear();
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe('AgentOverviewPanel', () => {
   it('renders graph stats and keeps layer toggles in component state', async () => {
@@ -192,5 +199,36 @@ describe('AgentOverviewPanel', () => {
         openInAdjacentPanel: false,
       }),
     );
+  });
+
+  it('recomputes the historical graph only when playback crosses an event', async () => {
+    const middle = '2026-09-04T01:00:00.000Z';
+    const end = '2026-09-04T02:00:00.000Z';
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    renderPanel({ ...graph, maxTime: end, eventTimes: [timestamp, middle, end] });
+    callbacks.length = 0;
+
+    await fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    await tick();
+    expect(mocks.selectGraphStateAt.select).toHaveBeenCalledOnce();
+
+    const base = performance.now();
+    for (const now of [base + 16, base + 32, base + 48]) {
+      const frameCallbacks = callbacks.splice(0);
+      frameCallbacks.forEach((callback) => callback(now));
+      await tick();
+    }
+    expect(mocks.selectGraphStateAt.select).toHaveBeenCalledOnce();
+
+    const frameCallbacks = callbacks.splice(0);
+    frameCallbacks.forEach((callback) => callback(base + 548));
+    await tick();
+    expect(mocks.selectGraphStateAt.select).toHaveBeenCalledTimes(2);
+    expect(mocks.selectGraphStateAt.select).toHaveBeenLastCalledWith({}, 'workspace-one', middle);
   });
 });

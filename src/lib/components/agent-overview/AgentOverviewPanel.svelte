@@ -3,7 +3,13 @@
   import { Button } from '$lib/components/ui/button';
   import AgentActivityGraph, { type GraphLayers } from './AgentActivityGraph.svelte';
   import TimeScrubber from './TimeScrubber.svelte';
-  import { advancePlaybackCursor, type PlaybackMode, type PlaybackSpeed } from './playback';
+  import {
+    advancePlaybackCursor,
+    playbackRate,
+    snapPlaybackCursor,
+    type PlaybackMode,
+    type PlaybackSpeed,
+  } from './playback';
 
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
@@ -33,10 +39,20 @@
 
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
   const graphState$ = selectGraphState(workspaceId);
+  const eventTimesMs = $derived(
+    ($graphState$.eventTimes ?? [])
+      .map(Date.parse)
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b),
+  );
+  const graphCursor = $derived.by(() => {
+    const cursorMs = Date.parse(cursor || $graphState$.minTime);
+    return new Date(snapPlaybackCursor(eventTimesMs, cursorMs)).toISOString();
+  });
   const displayedGraph = $derived(
     mode === 'live'
       ? $graphState$
-      : selectGraphStateAt.select(appStore.state, workspaceId, cursor || $graphState$.minTime),
+      : selectGraphStateAt.select(appStore.state, workspaceId, graphCursor),
   );
   const taskCount = $derived(
     Object.values(displayedGraph.stats.tasks).reduce((total, count) => total + count, 0),
@@ -100,7 +116,8 @@
     if (mode !== 'playing') return;
     const playbackSpeed = speed;
     const maxTimeMs = Date.parse($graphState$.maxTime);
-    const eventTimes = ($graphState$.eventTimes ?? []).map(Date.parse).filter(Number.isFinite);
+    const eventTimes = eventTimesMs;
+    const rate = playbackRate(eventTimes);
     let currentMs = Date.parse(untrack(() => cursor || $graphState$.minTime));
     let previousFrame = performance.now();
     let frame = 0;
@@ -112,6 +129,7 @@
         playbackSpeed,
         eventTimes,
         maxTimeMs,
+        rate,
       );
       previousFrame = now;
       currentMs = result.cursorMs;
