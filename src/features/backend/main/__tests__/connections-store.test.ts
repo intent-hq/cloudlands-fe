@@ -283,7 +283,7 @@ describe('connections-store', () => {
 
     await expect(
       store.updateMetadata(store.LOCAL_CONNECTION_ID, { label: 'Local', accent: 'blue' }),
-    ).rejects.toThrow(/local/i);
+    ).rejects.toThrow('Only deviceIcon can be updated on the local connection');
     await expect(
       store.updateMetadata('missing', { label: 'Missing', accent: 'blue' }),
     ).rejects.toThrow(/unknown/i);
@@ -374,6 +374,28 @@ describe('connections-store', () => {
         expect.objectContaining({ host: '10.0.0.42' }),
       ]),
     );
+  });
+
+  it('keeps a supplied detected kind across an address edit and clears it when omitted', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add({ ...sampleConn, detectedDeviceKind: 'server' });
+
+    const kept = await store.updateMetadata(original.id, {
+      label: original.label,
+      accent: original.accent,
+      host: '10.0.0.42',
+      port: 9443,
+      detectedDeviceKind: 'macStudio',
+    });
+    expect(kept.detectedDeviceKind).toBe('macStudio');
+
+    const cleared = await store.updateMetadata(original.id, {
+      label: original.label,
+      accent: original.accent,
+      host: '10.0.0.43',
+      port: 9443,
+    });
+    expect(cleared.detectedDeviceKind).toBeNull();
   });
 
   it('deduplicates an updated live identity and preserves the edited record as active', async () => {
