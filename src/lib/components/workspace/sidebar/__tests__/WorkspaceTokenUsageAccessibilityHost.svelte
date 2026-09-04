@@ -104,7 +104,7 @@
             cost: { amount: 0.1, currency: 'USD' },
           },
           humanMessages: 1,
-          agentMessages: 2,
+          agentMessages: 3,
         },
         {
           agentId: 'alpha-01',
@@ -142,7 +142,7 @@
             cacheCreationTokens: 0,
             cost: { amount: 0.1, currency: 'USD' },
           },
-          humanMessages: 1,
+          humanMessages: 2,
           agentMessages: 1,
         },
         {

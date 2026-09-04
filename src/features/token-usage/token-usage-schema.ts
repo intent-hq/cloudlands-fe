@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import type { TokenUsage } from './token-usage-types';
 
-export const TokenUsageCostSchema = z
+const TokenUsageCostSchema = z
   .object({
     amount: z.number().finite(),
     currency: z.string().min(1),
   })
   .passthrough();
 
-export const TokenUsageTotalsSchema = z
+const TokenUsageTotalsSchema = z
   .object({
     inputTokens: z.number().int().nonnegative(),
     outputTokens: z.number().int().nonnegative(),
@@ -19,7 +19,7 @@ export const TokenUsageTotalsSchema = z
   })
   .passthrough();
 
-export const TokenUsageCrossFilterRowSchema = z
+const TokenUsageCrossFilterRowSchema = z
   .object({
     agentId: z.string().min(1),
     model: z.string().min(1),
