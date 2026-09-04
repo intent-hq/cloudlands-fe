@@ -410,6 +410,14 @@ describe('intentd Vite bridge', () => {
     });
   });
 
+  it('accepts a matching daemon.localhost health origin', async () => {
+    const bridge = await setup();
+    const host = `daemon.localhost:${bridge.port}`;
+    const response = await requestHttp(bridge.port, { host, origin: `http://${host}` });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).ok).toBe(true);
+  });
+
   it('waits for the configured warm-up import crawl before reporting health', async () => {
     let finishWarmup;
     const warmupFinished = new Promise((resolve) => {
