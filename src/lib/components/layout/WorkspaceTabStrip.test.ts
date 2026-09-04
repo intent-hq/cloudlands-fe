@@ -892,6 +892,37 @@ describe('WorkspaceTabStrip', () => {
     expect(strip.className).not.toMatch(/(?:^|\s)mr-1(?:\s|$)/);
   });
 
+  it('recomputes overflow when a closing tab reopens before its outro ends', async () => {
+    const resizeCallbacks: Array<() => void> = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resizeCallbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    render(WorkspaceTabStrip);
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
+    Object.defineProperties(strip, {
+      scrollWidth: { value: 300, configurable: true },
+      clientWidth: { value: 300, configurable: true },
+    });
+    mocks.tabOrder = ['ws-1', 'ws-2'];
+    mocks.stateListeners.forEach((listener) => listener({ tabState: { currentTabId: 'ws-2' } }));
+
+    Object.defineProperty(strip, 'scrollWidth', { value: 500, configurable: true });
+    mocks.tabOrder = ['ws-1', 'ws-2', 'ws-3'];
+    mocks.stateListeners.forEach((listener) => listener({ tabState: { currentTabId: 'ws-3' } }));
+    resizeCallbacks.forEach((callback) => callback());
+
+    await waitFor(() => expect(strip.className).toMatch(/(?:^|\s)mr-1(?:\s|$)/));
+  });
+
   it('scrolls a newly active final tab fully inside the strip', async () => {
     const { rerender } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
     const strip = screen.getByRole('tablist', {

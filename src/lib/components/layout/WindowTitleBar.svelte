@@ -64,6 +64,7 @@
   let { workspaceId }: Props = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
+  let prefersReducedMotion = $state(false);
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
       ? (page.params.id ?? null)
@@ -220,6 +221,10 @@
   let hasMounted = false;
 
   onMount(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
+    updateMotionPreference();
+    motionQuery.addEventListener('change', updateMotionPreference);
     activeStreamsTracker.startPolling();
     const unsubscribeStreams = activeStreamsTracker.subscribe(() => {
       activeStreamsVersion++;
@@ -231,6 +236,7 @@
     hasMounted = true;
 
     return () => {
+      motionQuery.removeEventListener('change', updateMotionPreference);
       unsubscribeStreams();
     };
   });
@@ -379,7 +385,7 @@
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
         style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
-        style:transition={activeTabTracking
+        style:transition={activeTabTracking || prefersReducedMotion
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask

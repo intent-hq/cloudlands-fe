@@ -40,6 +40,9 @@ type RetainedTabOutro = Pick<
 const preparedTabOutros = new WeakMap<HTMLElement, PreparedTabOutro>();
 const preparedTabOutroRegistrations = new WeakMap<HTMLElement, PreparedTabOutroRegistration>();
 const retainedTabOutros = new WeakMap<HTMLElement, RetainedTabOutro>();
+const WORKSPACE_TAB_MAX_RESERVE_STEP_PX = 5.5;
+const WORKSPACE_TAB_MAX_LAUNCHER_STEP_PX = 2.5;
+export const WORKSPACE_TAB_MAX_SCROLL_STEP_PX = 7.5;
 
 export function prepareTabOutros(strip: HTMLElement | null, workspaceIds: string[]) {
   if (!strip) return;
@@ -232,6 +235,12 @@ export function workspaceTabLifecycleMotion(
       return `${slotTransition.css?.(slotProgress, 1 - slotProgress) ?? ''}; max-width: ${slotProgress * naturalWidth}px`;
     },
     tick: (progress: number) => {
+      const previousSlot = direction === 'outro' ? node.previousElementSibling : null;
+      const previousSlotRight =
+        previousSlot instanceof HTMLElement ? previousSlot.getBoundingClientRect().right : null;
+      const nodeLeft = previousSlotRight === null ? null : node.getBoundingClientRect().left;
+      const launcherLeft =
+        controls && tracksLauncher ? launcher?.getBoundingClientRect().left : undefined;
       const slotProgress = getSlotProgress(progress);
       const releaseProgress = releasesReserve
         ? progress < 0.85
@@ -241,7 +250,10 @@ export function workspaceTabLifecycleMotion(
       if (strip && pinnedScrollLeft !== null) {
         if (preparedOutro?.managesGroup && preparedGroup) {
           const desiredReserve = releaseProgress * preparedGroup.reserve;
-          appliedReserve += Math.min(5.5, Math.max(-5.5, desiredReserve - appliedReserve));
+          appliedReserve += Math.min(
+            WORKSPACE_TAB_MAX_RESERVE_STEP_PX,
+            Math.max(-WORKSPACE_TAB_MAX_RESERVE_STEP_PX, desiredReserve - appliedReserve),
+          );
           const reserve = appliedReserve;
           const targetScrollLeft = preparedGroup.willOverflow
             ? Math.max(0, pinnedScrollLeft - preparedGroup.removedFootprint)
@@ -249,7 +261,10 @@ export function workspaceTabLifecycleMotion(
           const desiredScrollLeft =
             targetScrollLeft + releaseProgress * (pinnedScrollLeft - targetScrollLeft);
           appliedScrollLeft ??= desiredScrollLeft;
-          appliedScrollLeft += Math.min(7.5, Math.max(-7.5, desiredScrollLeft - appliedScrollLeft));
+          appliedScrollLeft += Math.min(
+            WORKSPACE_TAB_MAX_SCROLL_STEP_PX,
+            Math.max(-WORKSPACE_TAB_MAX_SCROLL_STEP_PX, desiredScrollLeft - appliedScrollLeft),
+          );
           strip.style.paddingRight = `${preparedGroup.paddingRight + reserve}px`;
           strip.scrollLeft = appliedScrollLeft;
           if (reserve > 0.01) {
@@ -278,21 +293,26 @@ export function workspaceTabLifecycleMotion(
       if ((slotProgress > 0 && slotProgress < 1) || direction === 'outro')
         node.style.overflow = 'hidden';
       else node.style.removeProperty('overflow');
-      const previousSlot = direction === 'outro' ? node.previousElementSibling : null;
-      if (previousSlot instanceof HTMLElement) {
-        const targetLeft = previousSlot.getBoundingClientRect().right + (preparedGroup?.gap ?? 0);
-        appliedSlotOffset += targetLeft - node.getBoundingClientRect().left;
+      if (previousSlotRight !== null && nodeLeft !== null) {
+        const targetLeft =
+          previousSlotRight +
+          (preparedGroup?.gap ?? 0) +
+          ((appliedScrollLeft ?? 0) > 0.5 ? WORKSPACE_TAB_MAX_RESERVE_STEP_PX : 0);
+        appliedSlotOffset += targetLeft - nodeLeft;
         node.style.translate = `${appliedSlotOffset}px 0`;
       }
       if (controls && tracksLauncher) {
         const desiredOffset = slotProgress * launcherOffset;
-        const currentLeft = launcher?.getBoundingClientRect().left;
+        const currentLeft = launcherLeft;
         if (currentLeft != null && previousLauncherLeft != null && progress > 0) {
           const desiredLeft =
             launcherTargetLeft !== null && launcherStartLeft !== null
               ? launcherTargetLeft + releaseProgress * (launcherStartLeft - launcherTargetLeft)
               : currentLeft + desiredOffset - appliedLauncherOffset;
-          const delta = Math.min(0, Math.max(-7.5, desiredLeft - previousLauncherLeft));
+          const delta = Math.min(
+            0,
+            Math.max(-WORKSPACE_TAB_MAX_LAUNCHER_STEP_PX, desiredLeft - previousLauncherLeft),
+          );
           previousLauncherLeft += delta;
           appliedLauncherOffset = releasesLauncher
             ? previousLauncherLeft - currentLeft + appliedLauncherOffset
@@ -315,11 +335,10 @@ export function workspaceTabLifecycleMotion(
       }
       onFrame(
         releasesReserve &&
-          releaseProgress < 1 &&
           preparedOutro?.managesGroup &&
           preparedGroup &&
           !preparedGroup.willOverflow
-          ? false
+          ? (appliedScrollLeft ?? 0) > 0.5
           : undefined,
       );
     },

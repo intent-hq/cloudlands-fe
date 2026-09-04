@@ -1,11 +1,14 @@
 import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
 import sharp from 'sharp';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
+import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';
 import {
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
   WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
   WORKSPACE_TAB_MOTION_DURATION_MS,
 } from './titlebar-geometry';
+
+const WORKSPACE_TAB_SCROLL_TRACE_TOLERANCE_PX = Math.ceil(WORKSPACE_TAB_MAX_SCROLL_STEP_PX);
 
 async function expectVisibleThroughAncestorClipping(target: Locator) {
   const result = await target.evaluate((element) => {
@@ -190,7 +193,7 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
         scrollLeft: number | null;
         scrollWidth: number | null;
         clientWidth: number | null;
-        overflowing: boolean;
+        hasOverflow: boolean;
         fadesLeft: boolean;
         stripMaskImage: string | null;
         slotOverflow: string | null;
@@ -237,7 +240,7 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
           scrollLeft: strip?.scrollLeft ?? null,
           scrollWidth: strip?.scrollWidth ?? null,
           clientWidth: strip?.clientWidth ?? null,
-          overflowing: strip?.classList.contains('flex-1') ?? false,
+          hasOverflow: strip ? strip.scrollWidth > strip.clientWidth : false,
           fadesLeft: strip?.dataset.fadeLeft === 'true',
           stripMaskImage: strip ? getComputedStyle(strip).maskImage : null,
           slotOverflow: motion ? getComputedStyle(motion).overflow : null,
@@ -603,12 +606,12 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   expect(
     Math.max(...closingLauncher) - Math.min(...closingLauncher),
     JSON.stringify(
-      closingFrames.map(({ width, launcherLeft, scrollWidth, clientWidth, overflowing }) => ({
+      closingFrames.map(({ width, launcherLeft, scrollWidth, clientWidth, hasOverflow }) => ({
         width,
         launcherLeft,
         scrollWidth,
         clientWidth,
-        overflowing,
+        hasOverflow,
       })),
     ),
   ).toBeGreaterThan(8);
@@ -686,9 +689,13 @@ test('closes the active rightmost tab without reversing an overflowing strip', a
   expect(visual.some((frame) => frame.visualOpacity > 0 && frame.visualOpacity < 1)).toBe(true);
   expect(countMotionReversals(scroll), JSON.stringify(scroll)).toBe(0);
   expect(
+    scroll.slice(1).every((value, index) => value <= scroll[index] + 0.5),
+    JSON.stringify(scroll),
+  ).toBe(true);
+  expect(
     Math.max(...scroll.slice(1).map((value, index) => Math.abs(value - scroll[index]))),
     JSON.stringify(frames),
-  ).toBeLessThanOrEqual(8);
+  ).toBeLessThanOrEqual(WORKSPACE_TAB_SCROLL_TRACE_TOLERANCE_PX);
   expect(scroll.at(-1), JSON.stringify(frames.slice(-8))).toBeLessThanOrEqual(1);
   expect(Math.max(...scrollWidths) - scrollWidths[0]).toBeLessThanOrEqual(1);
   expect(scrollWidths.at(-1), JSON.stringify(frames.slice(-8))).toBe(frames.at(-1)?.clientWidth);
@@ -813,6 +820,10 @@ test('removes tab lifecycle motion when reduced motion is preferred', async ({ m
     props: { initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta'], interactive: true },
   });
   await page.waitForTimeout(50);
+  await expect(component.locator('[data-active-tab-border-mask]')).toHaveCSS(
+    'transition-property',
+    'none',
+  );
 
   const openingFrames = await captureTabMotion(
     component.locator('[data-open-tab]'),

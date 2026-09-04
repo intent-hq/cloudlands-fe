@@ -95,6 +95,7 @@
   const pointerOpenEligibleWorkspaceHoverCardIds = new Set<string>();
   let observedTabOrder = selectWorkspaceTabOrder.select(appStore.state);
   let pendingRemovedTabIds: string[] = [];
+  const pendingOutroWorkspaceIds = new Set<string>();
   let pendingRemovalResetQueued = false;
 
   const workspaceById = $derived(
@@ -208,10 +209,21 @@
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
     const unsubscribeTabState = appStore.getReadableState().subscribe((state) => {
       const nextTabOrder = selectWorkspaceTabOrder.select(state);
+      const previousTabIds = new Set(observedTabOrder);
       const nextTabIds = new Set(nextTabOrder);
       const removedTabIds = observedTabOrder.filter((workspaceId) => !nextTabIds.has(workspaceId));
+      const reappearedTabIds = nextTabOrder.filter(
+        (workspaceId) =>
+          !previousTabIds.has(workspaceId) && pendingOutroWorkspaceIds.has(workspaceId),
+      );
       observedTabOrder = nextTabOrder;
+      if (reappearedTabIds.length > 0) {
+        reappearedTabIds.forEach((workspaceId) => pendingOutroWorkspaceIds.delete(workspaceId));
+        pendingOutroOverflow = null;
+        refreshOverflow();
+      }
       if (removedTabIds.length === 0) return;
+      removedTabIds.forEach((workspaceId) => pendingOutroWorkspaceIds.add(workspaceId));
       pendingRemovedTabIds = Array.from(new Set([...pendingRemovedTabIds, ...removedTabIds]));
       pendingOutroOverflow = prepareTabOutros(stripElement, pendingRemovedTabIds) ?? null;
       if (!pendingRemovalResetQueued) {
@@ -862,11 +874,16 @@
   }
 
   function handleTabIntroEnd(workspaceId: string) {
+    if (pendingOutroWorkspaceIds.delete(workspaceId)) {
+      pendingOutroOverflow = null;
+      refreshOverflow();
+    }
     if (workspaceId !== visualActiveWorkspaceId) return;
     activeTabBoundsPollers.forEach((poll) => poll());
   }
 
-  function handleTabOutroEnd() {
+  function handleTabOutroEnd(workspaceId: string) {
+    pendingOutroWorkspaceIds.delete(workspaceId);
     pendingOutroOverflow = null;
     activeTabBoundsPollers.forEach((poll) => poll());
     requestAnimationFrame(() => activeTabBoundsPollers.forEach((poll) => poll()));
@@ -944,7 +961,7 @@
           },
         }}
         onintroend={() => handleTabIntroEnd(workspaceId)}
-        onoutroend={handleTabOutroEnd}
+        onoutroend={() => handleTabOutroEnd(workspaceId)}
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
