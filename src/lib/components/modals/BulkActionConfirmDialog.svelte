@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { scrollFade } from '$lib/actions/scroll-fade';
   import { Button } from '$lib/components/ui/button';
   import type { ButtonVariant } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -162,7 +163,7 @@
       {/if}
 
       {#if workspaces.length > 0}
-        <div role="list" class="max-h-56 w-full min-w-0 overflow-y-auto">
+        <div role="list" class="max-h-56 w-full min-w-0 overflow-y-auto" use:scrollFade>
           {#each workspaces as workspace (workspace.id)}
             {@const statusState = resolveWorkspaceStatusState(workspace)}
             {@const statusPresentation = getWorkspaceStatusPresentation(statusState)}
