@@ -243,7 +243,7 @@ test('keeps the agent actions menu compact at desktop width', async ({ mount, pa
   await trigger.click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button', { name: 'Copy Absolute Path' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: /Open in/ })).toBeVisible();
 
   const geometry = await menu.evaluate((node) => {
     const box = node.getBoundingClientRect();
