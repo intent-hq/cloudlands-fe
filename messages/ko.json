@@ -6035,11 +6035,6 @@
   "workspace_contextPanel_noSearchResults_label": "검색과 일치하는 컨텍스트가 없습니다.",
   "workspace_sidebarSearch_clear_ariaLabel": "검색 지우기",
   "layout_allCard_archived_label": "보관됨",
-  "providers_antigravity_setup": "agy와 별도로 공식 ACP 서버를 설치하세요. agy_acp_server.par와 localharness_external을 같은 폴더에 두세요. 실행 파일 경로를 서버 또는 antigravity-acp 실행기로 설정하세요.",
-  "providers_antigravity_summary": "agy와 별도로 공식 ACP 서버가 필요합니다. Apple Silicon 기반 macOS에서 개인 Google 계정 로그인으로 검증했습니다. 토큰 사용량은 보고되지 않습니다.",
-  "providers_antigravity_limits": "Apple Silicon 기반 macOS와 개인 Google 계정으로 검증했습니다. 이 ACP 빌드는 토큰 사용량을 보고하지 않습니다. 데이터가 없다고 사용량이 0인 것은 아닙니다.",
-  "providers_antigravity_loginHost": "데몬 호스트의 터미널에서 로그인하세요:",
-  "providers_antigravity_missing": "공식 ACP 서버를 찾지 못했습니다",
   "providers_antigravity_authUnknown": "로그인 상태를 알 수 없습니다. 새로고침하여 다시 확인하세요.",
   "providers_antigravity_discoveryUnavailable": "프로바이더를 검색할 수 없습니다. 데몬에 다시 연결한 후 재시도하세요."
 }

@@ -38,7 +38,6 @@
     authDetails: string | undefined;
     docsUrl: string;
     installCommand: string;
-    loginCommand: string;
     /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
      *  rendered as copyable guidance when the provider needs login. */
     loginCommandHint?: string;
@@ -231,12 +230,6 @@
       {#if provider.description}
         <p class="text-xs opacity-70 leading-snug pb-4">
           {provider.description}
-        </p>
-      {/if}
-      {#if provider.id === 'antigravity' && (needsLogin || authUnknown)}
-        <p class="text-xs pb-3">
-          {m.providers_antigravity_loginHost()}
-          <code class="break-all">{provider.loginCommand}</code>
         </p>
       {/if}
 

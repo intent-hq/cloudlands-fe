@@ -530,30 +530,6 @@
                       {provider.name}
                     </span>
                   </div>
-                  {#if provider.id === 'antigravity'}
-                    <p class="max-w-xl text-xs text-muted-foreground">
-                      {m.providers_antigravity_setup()}
-                    </p>
-                    <p class="max-w-xl text-xs text-muted-foreground">
-                      {m.providers_antigravity_limits()}
-                    </p>
-                    <p class="text-xs text-muted-foreground">
-                      {m.providers_antigravity_loginHost()}
-                      <!-- i18n-ignore: terminal command, not translatable -->
-                      <code>intentd provider login antigravity</code>
-                    </p>
-                    {#if !provider.statusPending}
-                      <p class="text-xs text-muted-foreground" role="status">
-                        {!provider.available
-                          ? m.providers_antigravity_missing()
-                          : provider.authenticated === false
-                            ? m.onboarding_providerCard_logIn_label()
-                            : provider.authenticated === undefined
-                              ? m.providers_antigravity_authUnknown()
-                              : m.onboarding_providerCard_connected_label()}
-                      </p>
-                    {/if}
-                  {/if}
                 </div>
 
                 <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
