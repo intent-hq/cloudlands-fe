@@ -233,12 +233,6 @@
           {provider.description}
         </p>
       {/if}
-      {#if provider.id === 'antigravity' && (needsLogin || authUnknown)}
-        <p class="text-xs pb-3">
-          {m.providers_antigravity_loginHost()}
-          <code class="break-all">{provider.loginCommand}</code>
-        </p>
-      {/if}
 
       <div class="text-xs flex items-center gap-1.5">
         {#if checking}

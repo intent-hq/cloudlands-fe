@@ -22,7 +22,6 @@
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
   import { stableShuffleOrder, type StableShuffleCache } from '../utils/stable-shuffle-order';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
-  import { m } from '$shared/paraglide/messages.js';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -229,10 +228,7 @@
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
-          description:
-            p.id === 'antigravity'
-              ? m.providers_antigravity_summary()
-              : (PROVIDER_DESCRIPTIONS[p.id] ?? ''),
+          description: PROVIDER_DESCRIPTIONS[p.id] ?? '',
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,

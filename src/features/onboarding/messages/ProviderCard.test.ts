@@ -100,7 +100,6 @@ describe('ProviderCard selected-state indicator', () => {
     };
     const result = render(ProviderCard, { props: { ...props, provider, selected: true } });
     expect(result.getByText('Sign-in status unknown. Refresh to check again.')).toBeTruthy();
-    expect(result.getByText('intentd provider login antigravity')).toBeTruthy();
     expect(banner(result.container)).toBeNull();
     expect(result.queryByText('Connected')).toBeNull();
     await fireEvent.click(result.getByText('Antigravity'));

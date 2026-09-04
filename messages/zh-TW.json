@@ -6035,11 +6035,6 @@
   "workspace_contextPanel_noSearchResults_label": "沒有符合搜尋條件的內容。",
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜尋",
   "layout_allCard_archived_label": "已歸檔",
-  "providers_antigravity_setup": "請在 agy 之外另行安裝官方 ACP 伺服器。將 agy_acp_server.par 和 localharness_external 放在同一資料夾中。將執行檔路徑設為伺服器或 antigravity-acp 啟動器。",
-  "providers_antigravity_summary": "需要另行安裝官方 ACP 伺服器，不能以 agy 替代。已在 Apple Silicon macOS 上透過個人 Google 帳戶登入驗證。不回報 token 使用量。",
-  "providers_antigravity_limits": "已在 Apple Silicon macOS 上使用個人 Google 帳戶驗證。此 ACP 版本不回報 token 使用量。缺少使用量資料不代表使用量為零。",
-  "providers_antigravity_loginHost": "請在常駐程式主機的終端機中登入：",
-  "providers_antigravity_missing": "未偵測到官方 ACP 伺服器",
   "providers_antigravity_authUnknown": "登入狀態未知。請重新整理以再次檢查。",
   "providers_antigravity_discoveryUnavailable": "無法探索供應商。請重新連線至常駐程式後再試。"
 }
