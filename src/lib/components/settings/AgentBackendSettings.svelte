@@ -524,8 +524,11 @@
         settingsError = '';
         value = acpHeapQueuedMb;
         acpHeapQueuedMb = null;
-        if (value === null && acpHeapInput === sentInput) {
-          acpHeapInput = String(acpHeapMb);
+        if (value === null) {
+          // Settled: the target follows what the daemon acknowledged, so a
+          // differing ack does not make re-entering the requested value a no-op.
+          acpHeapTargetMb = acpHeapMb;
+          if (acpHeapInput === sentInput) acpHeapInput = String(acpHeapMb);
         }
       }
     } catch (error) {

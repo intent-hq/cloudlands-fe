@@ -867,6 +867,16 @@ describe('AgentBackendSettings — ACP Node heap limit', () => {
     await waitFor(() =>
       expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('20000'),
     );
+
+    // Re-entering the value the daemon did not honour must still be sent — the
+    // committed state is 20000 now, so 20480 is a change, not a no-op.
+    await fireEvent.input(input, { target: { value: '20480' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: ACP_HEAP_PATH, value: 20480 },
+    ]);
   });
 
   it('shows a configured cap outside the catalog range instead of clamping it down', async () => {
