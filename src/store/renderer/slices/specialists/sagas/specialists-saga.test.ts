@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   subscription: undefined as ((defs: any[]) => void) | undefined,
   unsubscribe: vi.fn(),
   toastError: vi.fn(),
+  loggerError: vi.fn(),
+  loggerWarn: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -27,6 +29,7 @@ vi.mock('$lib/client', () => ({
   },
 }));
 vi.mock('$lib/constants/specialists', () => ({
+  GITHUB_DEPENDENT_SPECIALIST_IDS: new Set<string>(),
   SPECIALISTS: [
     {
       id: 'builtin',
@@ -39,10 +42,17 @@ vi.mock('$lib/constants/specialists', () => ({
 }));
 vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 vi.mock('$lib/components/ui/toast', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ error: mocks.loggerError, warn: mocks.loggerWarn }),
+}));
 
 import { settingsChanged } from '../../settings-events/settings-events-slice';
+import type { StoreState } from '../../../types';
+import { selectSpecialists } from '../specialists-selectors';
 import {
   deleteFileSpecialist,
+  initialState,
+  refetchSpecialistsRequested,
   saveFileSpecialist,
   setBundledSpecialists,
   setBundledSpecialistsLoaded,
@@ -50,6 +60,7 @@ import {
   setFileSpecialists,
   setFileSpecialistsLoaded,
   setOverridesLoaded,
+  specialistsReducer,
 } from '../specialists-slice';
 import { specialistsSaga } from './specialists-saga';
 
@@ -231,7 +242,7 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
-  it('falls back to the hardcoded set only on a fully empty daemon list', async () => {
+  it('falls back to the hardcoded set on an empty initial load', async () => {
     const dispatch = vi.fn();
     const task = runSaga(
       { channel: stdChannel(), dispatch, getState: () => sagaState() },
@@ -244,6 +255,8 @@ describe('specialistsSaga', () => {
       ([action]) => action.type === setBundledSpecialists.type,
     )?.[0];
     expect(bundledAction.payload[0].map((s: { id: string }) => s.id)).toEqual(['builtin']);
+    expect(dispatch).toHaveBeenCalledWith(setBundledSpecialistsLoaded(true));
+    expect(dispatch).toHaveBeenCalledWith(setFileSpecialistsLoaded(true));
     task.cancel();
     await task.toPromise();
   });
@@ -431,6 +444,158 @@ describe('specialistsSaga', () => {
     expect(mocks.toastError).toHaveBeenCalledTimes(1);
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('explicit refetch requests', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('replaces prior specialists with the authoritative list', async () => {
+      vi.useFakeTimers();
+      mocks.list.mockResolvedValue([
+        {
+          id: 'fresh-bundled',
+          name: 'Fresh Bundled',
+          description: 'Bundled from daemon',
+          behaviorPrompt: 'Coordinate.',
+          source: 'bundled',
+        },
+        fileDef('fresh-file'),
+      ]);
+      let state = specialistsReducer(
+        initialState,
+        setFileSpecialists([mappedFileDef('stale-file')]),
+      );
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        state = specialistsReducer(state, action);
+      });
+      const getState = () =>
+        ({ specialists: state, githubAuth: { isAuthenticated: true } }) as unknown as StoreState;
+      const task = runSaga({ channel, dispatch, getState }, specialistsSaga);
+
+      channel.put(refetchSpecialistsRequested());
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(mocks.list.mock.calls).toEqual([[]]);
+      expect(selectSpecialists.select(getState()).map(({ id }) => id)).toEqual([
+        'fresh-bundled',
+        'fresh-file',
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('keeps the last-known-good state and logs when the refetch fails', async () => {
+      vi.useFakeTimers();
+      const error = new Error('list unavailable');
+      mocks.list.mockRejectedValue(error);
+      let state = {
+        ...specialistsReducer(initialState, setFileSpecialists([mappedFileDef('existing')])),
+        overridesLoaded: true,
+        customSpecialistsLoaded: true,
+        fileSpecialistsLoaded: true,
+        bundledSpecialistsLoaded: true,
+      };
+      const priorState = state;
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        state = specialistsReducer(state, action);
+      });
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ specialists: state }) },
+        specialistsSaga,
+      );
+
+      channel.put(refetchSpecialistsRequested());
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(state).toBe(priorState);
+      expect(state.fileSpecialistsLoaded).toBe(true);
+      expect(mocks.loggerError).toHaveBeenCalledWith('Failed to refetch specialist list', error);
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('keeps the loaded roster and flags when a refetch resolves to an empty list', async () => {
+      vi.useFakeTimers();
+      mocks.list.mockResolvedValue([]);
+      let state = initialState;
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        state = specialistsReducer(state, action);
+      });
+      const getState = () => ({ specialists: state }) as unknown as StoreState;
+      const task = runSaga({ channel, dispatch, getState }, specialistsSaga);
+      await settle();
+
+      mocks.subscription?.([
+        {
+          id: 'loaded-bundled',
+          name: 'Loaded Bundled',
+          description: 'Bundled from daemon',
+          behaviorPrompt: 'Coordinate.',
+          source: 'bundled',
+        },
+        fileDef('loaded-file'),
+      ]);
+      await settle();
+      const priorState = state;
+
+      channel.put(refetchSpecialistsRequested());
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(mocks.list.mock.calls).toEqual([[]]);
+      expect(state).toBe(priorState);
+      expect(state.bundledSpecialists.map(({ id }) => id)).toEqual(['loaded-bundled']);
+      expect(selectSpecialists.select(getState()).map(({ id }) => id)).toEqual([
+        'loaded-bundled',
+        'loaded-file',
+      ]);
+      expect(state.bundledSpecialistsLoaded).toBe(true);
+      expect(state.customSpecialistsLoaded).toBe(true);
+      expect(state.fileSpecialistsLoaded).toBe(true);
+      expect(mocks.loggerWarn).toHaveBeenCalledWith(
+        'Ignoring empty specialist list after initial load',
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('coalesces rapid and in-flight requests into one leading and one trailing refetch', async () => {
+      vi.useFakeTimers();
+      const resolvers: Array<(defs: any[]) => void> = [];
+      mocks.list.mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+
+      channel.put(refetchSpecialistsRequested());
+      channel.put(refetchSpecialistsRequested());
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+
+      channel.put(refetchSpecialistsRequested());
+      channel.put(refetchSpecialistsRequested());
+      await vi.advanceTimersByTimeAsync(300);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+
+      resolvers[0]!([fileDef('first')]);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      resolvers[1]!([fileDef('second')]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const fileActions = dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === setFileSpecialists.type);
+      expect(fileActions).toEqual([
+        setFileSpecialists([mappedFileDef('first')]),
+        setFileSpecialists([mappedFileDef('second')]),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 
   describe('settings-driven refetch (monorepo#1925)', () => {
