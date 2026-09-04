@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, Note } from '$shared/types';
 
 const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
 
@@ -6944,6 +6944,128 @@ describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', 
     const task = getItem(state.workspaceTasks.byWorkspaceId[TASK_WS].tasks as never, 'note-t1') as
       { status: string } | undefined;
     expect(task?.status).toBe('in_progress');
+  });
+
+  // intent#4362: the context sidebar (NotesPanel) renders task icons from
+  // `note.metadata.task.status` on the workspace-notes slice, so a
+  // `task:status-changed` edge must land there too — not only on the
+  // workspace-tasks slice — or the row icon stays stale until the note is
+  // opened and refetched.
+  it('applies task:status-changed onto the workspace-notes slice so sidebar task icons update live', async () => {
+    const NOTES_WS = 'ws-task-notes-icon';
+    const { ContentType, NoteVisibility } = await import('$shared/types');
+    const { loadWorkspaceNotesSucceeded } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const { selectNoteById } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-selectors');
+    const taskNote = {
+      id: 'task-note-icon-1',
+      workspaceId: NOTES_WS,
+      title: 'Task icon',
+      content: '',
+      contentType: ContentType.Markdown,
+      tags: [],
+      isPinned: false,
+      isArchived: false,
+      visibility: NoteVisibility.Private,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      metadata: { task: { status: 'not_started' } },
+    } as unknown as Note;
+    appStore.dispatch(loadWorkspaceNotesSucceeded([NOTES_WS], { [NOTES_WS]: [taskNote] }));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-notes-icon-1',
+          workspaceId: NOTES_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:status-changed',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId: 'task-note-icon-1',
+            noteTitle: 'Task icon',
+            previousStatus: 'not_started',
+            newStatus: 'in_progress',
+            changedAt: '2026-01-02T00:00:00.000Z',
+          },
+        },
+      },
+    });
+
+    expect(
+      selectNoteById.select(appStore.state, NOTES_WS, 'task-note-icon-1')?.metadata?.task?.status,
+    ).toBe('in_progress');
+  });
+
+  it('a burst of task:status-changed events lands every status on the workspace-notes slice', async () => {
+    const BURST_WS = 'ws-task-notes-burst';
+    const { ContentType, NoteVisibility } = await import('$shared/types');
+    const { loadWorkspaceNotesSucceeded } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const { selectNoteById } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-selectors');
+    const mkTaskNote = (id: string) =>
+      ({
+        id,
+        workspaceId: BURST_WS,
+        title: id,
+        content: '',
+        contentType: ContentType.Markdown,
+        tags: [],
+        isPinned: false,
+        isArchived: false,
+        visibility: NoteVisibility.Private,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        metadata: { task: { status: 'not_started' } },
+      }) as unknown as Note;
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([BURST_WS], {
+        [BURST_WS]: [mkTaskNote('burst-a'), mkTaskNote('burst-b'), mkTaskNote('burst-c')],
+      }),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const edges: Array<[string, string]> = [
+      ['burst-a', 'in_progress'],
+      ['burst-b', 'complete'],
+      ['burst-a', 'complete'],
+      ['burst-c', 'blocked'],
+    ];
+    for (const [noteId, newStatus] of edges) {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: `evt-${noteId}-${newStatus}`,
+            workspaceId: BURST_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'task:status-changed',
+            actor: { type: 'agent', id: AGENT },
+            data: {
+              noteId,
+              noteTitle: noteId,
+              previousStatus: 'not_started',
+              newStatus,
+              changedAt: '2026-01-02T00:00:00.000Z',
+            },
+          },
+        },
+      });
+    }
+
+    const statusOf = (id: string) =>
+      selectNoteById.select(appStore.state, BURST_WS, id)?.metadata?.task?.status;
+    expect(statusOf('burst-a')).toBe('complete');
+    expect(statusOf('burst-b')).toBe('complete');
+    expect(statusOf('burst-c')).toBe('blocked');
   });
 
   it('drops task:status-changed events lacking a workspaceId envelope', async () => {
