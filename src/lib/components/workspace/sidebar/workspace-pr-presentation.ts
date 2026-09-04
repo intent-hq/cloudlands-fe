@@ -86,8 +86,8 @@ function getPRStatusPresentation(
   if (status === 'closed') {
     return {
       statusIcon: faCodePullRequest,
-      foregroundClass: 'text-error-foreground',
-      backgroundClass: 'bg-destructive/10',
+      foregroundClass: 'text-danger',
+      backgroundClass: 'bg-danger-background/10',
       accessibleStateLabel: m.workspace_prSection_closed_label(),
     };
   }

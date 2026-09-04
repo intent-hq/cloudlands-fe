@@ -15,7 +15,7 @@ token vocabulary in a component, feature stylesheet, or theme adapter.
 | Secondary action       | `--secondary`, `bg-secondary`, `text-secondary-foreground` | Secondary button         | Raw neutral palette            |
 | Selected/hovered UI    | `--accent`, `bg-accent`, `text-accent-foreground`          | Active row               | Hard-coded alpha colors        |
 | Low-emphasis UI        | `--muted`, `bg-muted`, `text-muted-foreground`             | Supporting text          | `text-gray-*`                  |
-| Destructive state      | `--destructive`, `text-destructive-foreground`             | Delete/error             | `red-*`                        |
+| Danger state           | `--danger`, `--danger-background`, `text-danger`           | Delete/error             | `red-*`                        |
 | Informational state    | `--info`, `text-info`                                      | Saving/help state        | `blue-*`                       |
 | Success state          | `--success`, `text-success`                                | Saved/complete state     | `green-*`                      |
 | Warning state          | `--warning`, `text-warning`                                | Unsaved/caution state    | `amber-*`, `yellow-*`          |

@@ -890,7 +890,7 @@
             <button
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
@@ -921,11 +921,11 @@
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
             class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
+              {newPromptIsOverLimit ? 'border-danger' : ''}"></textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
               class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
-                ? 'text-destructive'
+                ? 'text-danger'
                 : 'text-warning'}"
             >
               <span>

@@ -446,7 +446,7 @@
 <div class="flex flex-col gap-6">
   {#if checkError}
     <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
-      <p class="text-sm text-error-foreground">{checkError}</p>
+      <p class="text-sm text-danger">{checkError}</p>
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"

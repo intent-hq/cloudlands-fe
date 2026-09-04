@@ -456,7 +456,7 @@
             <div class="px-3 py-2 space-y-1.5">
               <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-                <span class="text-error-foreground font-medium"
+                <span class="text-danger font-medium"
                   >{m.layout_daemonStatus_notRunning_label()}</span
                 >
               </div>
@@ -747,7 +747,7 @@
 
                 <!-- Stop action -->
                 <button
-                  class="w-full text-left text-xs text-error-foreground hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  class="w-full text-left text-xs text-danger hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   disabled={$unslothStopping$}
                   onclick={() => {
                     dropdownOpen = false;

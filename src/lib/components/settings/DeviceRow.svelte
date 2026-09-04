@@ -535,7 +535,7 @@
   </div>
 
   {#if connectionError}
-    <p class="px-4 pb-3 text-sm text-error-foreground sm:px-5" role="alert">
+    <p class="px-4 pb-3 text-sm text-danger sm:px-5" role="alert">
       {m.settings_devices_connectFailed_error()}
     </p>
   {/if}
@@ -560,7 +560,7 @@
               disabled={busy !== null}
               aria-invalid={nameInvalid || undefined}
             />
-            {#if nameInvalid}<p class="text-xs text-error-foreground">
+            {#if nameInvalid}<p class="text-xs text-danger">
                 {m.settings_devices_nameRequired_error()}
               </p>{/if}
           </div>
@@ -573,7 +573,7 @@
                 disabled={busy !== null}
                 aria-invalid={hostInvalid || undefined}
               />
-              {#if hostInvalid}<p class="text-xs text-error-foreground">
+              {#if hostInvalid}<p class="text-xs text-danger">
                   {m.settings_devices_hostRequired_error()}
                 </p>{/if}
             </div>
@@ -587,7 +587,7 @@
                 disabled={busy !== null}
                 aria-invalid={portInvalid || undefined}
               />
-              {#if portInvalid}<p class="text-xs text-error-foreground">
+              {#if portInvalid}<p class="text-xs text-danger">
                   {m.settings_devices_portInvalid_error()}
                 </p>{/if}
             </div>
@@ -784,7 +784,7 @@
       {:else if feedback && feedbackOperation === 'update'}
         <p
           class={feedback.kind === 'error'
-            ? 'text-sm text-error-foreground'
+            ? 'text-sm text-danger'
             : feedback.kind === 'success'
               ? 'text-sm text-success-foreground'
               : 'text-sm text-muted-foreground'}
@@ -806,7 +806,7 @@
           {#if feedback && feedbackOperation === 'test'}
             <p
               class={feedback.kind === 'error'
-                ? 'text-right text-sm text-error-foreground'
+                ? 'text-right text-sm text-danger'
                 : feedback.kind === 'success'
                   ? 'text-right text-sm text-success'
                   : 'text-right text-sm text-muted-foreground'}

@@ -56,7 +56,7 @@
       </p>
     {:else if $error}
       <p
-        class="text-xs text-error-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mt-3"
+        class="text-xs text-danger bg-danger-background/10 border border-danger/20 rounded-md px-3 py-2 mt-3"
         role="alert"
       >
         {m.settings_legacyImport_importFailed_error({ error: $error })}

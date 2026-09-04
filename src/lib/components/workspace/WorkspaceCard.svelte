@@ -856,7 +856,7 @@
             >
             <span class="tabular-nums">
               <span class="text-success">+{stats.files.additions}</span>
-              <span class="ml-1 text-error-foreground">-{stats.files.deletions}</span>
+              <span class="ml-1 text-danger">-{stats.files.deletions}</span>
             </span>
           </div>
         {/if}
