@@ -52,10 +52,12 @@
  *      workspaces only) — task notes are plain notes, so a created/deleted
  *      task note changes the BE-owned `task.list` stats rollup without a
  *      `task:status-changed` edge.
- *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on the
- *      workspace-tasks slice so a task ticked complete/in-progress by an agent
- *      or a sibling client updates the tasks pane / progress card without a
- *      workspace reload. The event payload is self-sufficient
+ *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on BOTH the
+ *      workspace-tasks slice (tasks pane / progress card) and the
+ *      workspace-notes slice (the context sidebar's per-row task icon reads
+ *      `note.metadata.task.status`) so a task ticked complete/in-progress by
+ *      an agent or a sibling client updates live without a workspace reload
+ *      or opening the note. The event payload is self-sufficient
  *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
  *      directly without a follow-up fetch.
  *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
@@ -195,6 +197,7 @@ import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
 import { toLockRecord } from '$features/file-tracking/file-tracking.client';
@@ -2134,8 +2137,12 @@ function handleTaskCreatedEvent(workspaceId: string): void {
  * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
  * mints the FE-canonical status word (`not_started` | `in_progress` |
  * `complete` | ...) via `status_word` in `intent-services`, so no mapping is
- * needed. The workspace-tasks reducer's own guard makes this a no-op if the
- * workspace is not initialized or the task/status is unknown/unchanged.
+ * needed. Each reducer's own guard makes this a no-op if its workspace is not
+ * initialized or the task/status is unknown/unchanged. The workspace-notes
+ * dispatch mirrors the local write path in `tasks-write-service` — the
+ * context sidebar renders its row icon from `note.metadata.task.status`, so
+ * without it a status change from another client/agent stayed stale until
+ * the note was opened (intent#4362).
  */
 function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -2143,6 +2150,7 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const noteId = data.noteId;
   const newStatus = data.newStatus;
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
+  appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
   appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
