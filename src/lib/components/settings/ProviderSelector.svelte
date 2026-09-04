@@ -65,6 +65,7 @@
   import Button from '../ui/button/button.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
@@ -493,9 +494,9 @@
             {@const canDisable = canManageEnablement && !isActive && isEnabled}
             {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
             {@const needsLogin = provider.available && provider.authenticated === false}
-            {@const canLogIn = needsLogin && provider.loginDocsUrl}
+            {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
             {@const canSetDefault = provider.available && !isActive && isReady}
-            {@const canInstall = !provider.available}
+            {@const canInstall = provider.id !== 'antigravity' && !provider.available}
             {@const hasPiAdapterWarning =
               !provider.statusPending &&
               provider.id === 'pi' &&
@@ -838,6 +839,9 @@
                   </div>
                 </div>
               </div>
+              {#if provider.id === 'antigravity'}
+                <AntigravityConnect ready={isReady} />
+              {/if}
             </div>
           {/each}
         </div>
