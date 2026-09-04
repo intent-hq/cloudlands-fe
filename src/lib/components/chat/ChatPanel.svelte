@@ -6564,9 +6564,15 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
-                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
+                editorClassName={isChiefWorkspace
+                  ? 'w-full px-3!'
+                  : 'regular-composer-content-inset w-full'}
+                contentInsetClassName={isChiefWorkspace
+                  ? 'w-full px-3'
+                  : 'regular-composer-content-inset w-full'}
+                actionBarEndClassName={isChiefWorkspace
+                  ? 'pr-3!'
+                  : 'regular-composer-content-inset'}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -6588,6 +6594,11 @@
   .regular-chat-content-inset {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+
+  :global(.regular-composer-content-inset) {
+    padding-right: 1rem !important;
+    padding-left: 1rem !important;
   }
 
   .workspace-setup-card-alignment {
@@ -6612,6 +6623,11 @@
     .regular-chat-content-inset {
       padding-left: 3.1rem;
       padding-right: 3.1rem;
+    }
+
+    :global(.regular-composer-content-inset) {
+      padding-right: 1.5rem !important;
+      padding-left: 1.5rem !important;
     }
   }
 

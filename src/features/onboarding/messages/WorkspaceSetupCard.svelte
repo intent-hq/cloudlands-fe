@@ -228,6 +228,7 @@
         {/if}
         <span
           class="{CHAT_OPERATIONAL_SUMMARY_TONE_CLASS} relative z-10 mt-1 flex size-[var(--operational-leading-slot-size)] shrink-0 items-center justify-start"
+          data-testid="workspace-setup-step-icon"
         >
           <Fa {icon} size={14} class={iconClass} />
         </span>

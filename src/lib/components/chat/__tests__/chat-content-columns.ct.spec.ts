@@ -158,6 +158,22 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
       'padding-bottom',
       expectedComposerInset,
     );
+    await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
+      'padding-left',
+      expectedComposerInset,
+    );
+    await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
+      'padding-right',
+      expectedComposerInset,
+    );
+    await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
+      'padding-left',
+      expectedComposerInset,
+    );
+    await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
+      'padding-right',
+      expectedComposerInset,
+    );
 
     if (width < 640) {
       const [avatarBox, titleBox, iconBox, summaryBox] = await Promise.all([
@@ -186,6 +202,29 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
         'padding-right',
         expectedLeftInset,
       );
+    }
+  });
+}
+
+for (const { width, label } of transcriptInsetCases) {
+  test(`aligns the workspace setup card ${label}`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    const component = await mount(ChatPanelOperationalGeometryHost, {
+      props: { theme: 'light', zoom: 1, width, setupCardOnly: true },
+    });
+
+    const [headerTitleBox, setupTitleBox, iconBox] = await Promise.all([
+      component.locator('[data-panel-header-title]').boundingBox(),
+      component.getByRole('heading', { name: 'Workspace ready to go!' }).boundingBox(),
+      component.getByTestId('workspace-setup-step-icon').first().locator('svg').boundingBox(),
+    ]);
+
+    expect(headerTitleBox).not.toBeNull();
+    expect(setupTitleBox).not.toBeNull();
+    expect(iconBox).not.toBeNull();
+    expect(Math.abs(setupTitleBox!.x - iconBox!.x)).toBeLessThanOrEqual(1);
+    if (width < 640) {
+      expect(Math.abs(headerTitleBox!.x - setupTitleBox!.x)).toBeLessThanOrEqual(1);
     }
   });
 }
