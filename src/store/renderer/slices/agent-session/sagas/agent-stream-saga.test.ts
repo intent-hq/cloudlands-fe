@@ -135,6 +135,7 @@ describe('agentStreamSaga', () => {
         assistantMessageId: 'msg-1',
         assistantAppMessageId: 'app-1',
         stopReason: 'interrupted',
+        interruptReason: 'user_stop',
         contentBlocks: [
           { type: 'text', text: 'hello world' },
           {
@@ -168,7 +169,7 @@ describe('agentStreamSaga', () => {
         appMessageId: 'app-1',
         isStreaming: false,
         streamingComplete: true,
-        metadata: { interrupted: true, stopReason: 'interrupted' },
+        metadata: { interrupted: true, stopReason: 'interrupted', interruptReason: 'user_stop' },
       }),
     );
     const messageUpdates = run.dispatch.mock.calls
@@ -188,6 +189,85 @@ describe('agentStreamSaga', () => {
         blockCount: 3,
       }),
     );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('stamps interruptReason + interruptedBy (PROTOCOL §7.2) on a user preemption so the live row mirrors the persisted one', async () => {
+    const run = harness();
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'started', assistantMessageId: 'msg-pu', assistantAppMessageId: 'app-pu',
+      timestamp: 1, contentBlocks: [{ type: 'text', text: '' }],
+    }));
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'complete', assistantMessageId: 'msg-pu', assistantAppMessageId: 'app-pu',
+      stopReason: 'interrupted', interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'user' }, contentBlocks: [{ type: 'text', text: 'partial' }],
+    }));
+    await settle();
+
+    expect(run.messages()[0]).toEqual(expect.objectContaining({
+      id: 'msg-pu', isStreaming: false, streamingComplete: true,
+      metadata: {
+        interrupted: true, stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message', interruptedBy: { kind: 'user' },
+      },
+    }));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('stamps interruptedBy agent attribution (PROTOCOL §7.2) on an agent preemption', async () => {
+    const run = harness();
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'started', assistantMessageId: 'msg-pa', assistantAppMessageId: 'app-pa',
+      timestamp: 1, contentBlocks: [{ type: 'text', text: '' }],
+    }));
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'complete', assistantMessageId: 'msg-pa', assistantAppMessageId: 'app-pa',
+      stopReason: 'interrupted', interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+      contentBlocks: [{ type: 'text', text: 'partial' }],
+    }));
+    await settle();
+
+    expect(run.messages()[0]).toEqual(expect.objectContaining({
+      id: 'msg-pa', isStreaming: false, streamingComplete: true,
+      metadata: {
+        interrupted: true, stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+      },
+    }));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not stamp interruptReason/interruptedBy on a normal completion', async () => {
+    const run = harness();
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'started', assistantMessageId: 'msg-ok', assistantAppMessageId: 'app-ok',
+      timestamp: 1, contentBlocks: [{ type: 'text', text: '' }],
+    }));
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'complete', assistantMessageId: 'msg-ok', assistantAppMessageId: 'app-ok',
+      contentBlocks: [{ type: 'text', text: 'done' }],
+    }));
+    await settle();
+
+    const message = run.messages()[0];
+    expect(message).toEqual(expect.objectContaining({
+      id: 'msg-ok', isStreaming: false, streamingComplete: true,
+    }));
+    expect(message?.metadata?.interrupted).toBeUndefined();
+    expect(message?.metadata?.interruptReason).toBeUndefined();
+    expect(message?.metadata?.interruptedBy).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });
