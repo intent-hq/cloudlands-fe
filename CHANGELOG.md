@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.133.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.132.0...v2.133.0) (2026-09-04)
+
+
+### 🚀 Features
+
+* **tooltip:** GitHub issue/PR hover cards in the link tooltip ([#2153](https://github.com/intent-hq/cloudlands-fe/issues/2153)) ([922a2c4](https://github.com/intent-hq/cloudlands-fe/commit/922a2c42de16fb165e7d5206fb4673184ce7f9d1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.18 ([#2168](https://github.com/intent-hq/cloudlands-fe/issues/2168)) ([edb5fc3](https://github.com/intent-hq/cloudlands-fe/commit/edb5fc32193a53f9771465c1a34658c833a08772))
+* **ct:** isolate the zoom-200% geometry spec and record CDP lifecycle on mount flakes ([#2158](https://github.com/intent-hq/cloudlands-fe/issues/2158)) ([119d3ef](https://github.com/intent-hq/cloudlands-fe/commit/119d3ef7de8c81fa7043a55ebf5c9c118c518328))
+* **settings:** describe claude-code path override truthfully and keep picked symlinks unresolved ([#2162](https://github.com/intent-hq/cloudlands-fe/issues/2162)) ([130eee0](https://github.com/intent-hq/cloudlands-fe/commit/130eee0bee52d34c9537d0801e62423ef92016fd))
+* **stream:** carry interruptReason/interruptedBy through live stream:end ([#2155](https://github.com/intent-hq/cloudlands-fe/issues/2155)) ([ce42abb](https://github.com/intent-hq/cloudlands-fe/commit/ce42abb755ad839ec3d9d15c9a6c44945c110866))
+
 ## [2.132.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.131.0...v2.132.0) (2026-09-04)
 
 
