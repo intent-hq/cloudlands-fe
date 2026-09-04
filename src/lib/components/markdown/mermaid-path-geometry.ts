@@ -394,10 +394,12 @@ export function repairFlowchartNodeOutlines(svg: SVGSVGElement) {
   }
 }
 
-export function alignFlowchartMarkerTips(svg: SVGSVGElement) {
+export function alignMermaidOpenArrowheads(svg: SVGSVGElement) {
   for (const marker of svg.querySelectorAll<SVGMarkerElement>('marker')) {
     const markerPath = marker.querySelector<SVGPathElement>('path');
-    const endMarker = marker.id.includes('pointEnd') || marker.id.includes('barbEnd');
+    const sharedMarker = marker.id.endsWith('-arrowhead');
+    const endMarker =
+      marker.id.includes('pointEnd') || marker.id.includes('barbEnd') || sharedMarker;
     const startMarker = marker.id.includes('pointStart');
     if (!markerPath || (!endMarker && !startMarker)) continue;
     marker.setAttribute('viewBox', `0 0 ${COMPACT_ARROW_SIZE} ${COMPACT_ARROW_SIZE}`);
@@ -405,15 +407,16 @@ export function alignFlowchartMarkerTips(svg: SVGSVGElement) {
     marker.setAttribute('markerHeight', String(COMPACT_ARROW_SIZE));
     marker.setAttribute('refX', endMarker ? '6.5' : '0.5');
     marker.setAttribute('refY', '3.5');
-    marker.setAttribute('orient', 'auto');
+    marker.setAttribute('orient', sharedMarker ? 'auto-start-reverse' : 'auto');
     marker.setAttribute('markerUnits', 'userSpaceOnUse');
+    marker.dataset.diagramChevron = 'true';
     markerPath.setAttribute(
       'd',
-      endMarker ? 'M 0.75 1 L 6.5 3.5 L 0.75 6 z' : 'M 6.25 1 L 0.5 3.5 L 6.25 6 z',
+      endMarker ? 'M 3.5 0.5 L 6.5 3.5 L 3.5 6.5' : 'M 3.5 0.5 L 0.5 3.5 L 3.5 6.5',
     );
-    markerPath.setAttribute('fill', 'context-stroke');
+    markerPath.setAttribute('fill', 'none');
     markerPath.setAttribute('stroke', 'context-stroke');
-    markerPath.setAttribute('stroke-width', '0.75');
+    markerPath.setAttribute('stroke-width', '1');
     markerPath.setAttribute('stroke-linecap', 'round');
     markerPath.setAttribute('stroke-linejoin', 'round');
     markerPath.setAttribute('vector-effect', 'non-scaling-stroke');

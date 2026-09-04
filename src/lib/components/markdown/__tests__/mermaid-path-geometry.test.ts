@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alignMermaidOpenArrowheads,
   buildRoundedOrthogonalPath,
   buildFlowchartDecisionBranchPoints,
   buildFlowchartDecisionReturnPoints,
@@ -13,6 +14,40 @@ import {
 } from '../mermaid-path-geometry';
 
 describe('Mermaid path terminal geometry', () => {
+  it('replaces directional wedges with compact open chevrons', () => {
+    document.body.innerHTML = `<svg><defs>
+      <marker id="diagram-pointEnd"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
+      <marker id="diagram-pointStart"><path d="M 10 0 L 0 5 L 10 10 z" /></marker>
+    </defs></svg>`;
+    const svg = document.querySelector('svg') as unknown as SVGSVGElement;
+
+    alignMermaidOpenArrowheads(svg);
+
+    const markers = [...svg.querySelectorAll<SVGMarkerElement>('marker')];
+    expect(markers.map((marker) => marker.dataset.diagramChevron)).toEqual(['true', 'true']);
+    expect(markers.map((marker) => marker.querySelector('path')?.getAttribute('fill'))).toEqual([
+      'none',
+      'none',
+    ]);
+    expect(markers.map((marker) => marker.querySelector('path')?.getAttribute('d'))).toEqual([
+      'M 3.5 0.5 L 6.5 3.5 L 3.5 6.5',
+      'M 3.5 0.5 L 0.5 3.5 L 3.5 6.5',
+    ]);
+    expect(
+      markers.every((marker) => {
+        const values = marker
+          .querySelector('path')!
+          .getAttribute('d')!
+          .match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)!
+          .map(Number);
+        const [x1, y1, tipX, tipY, x2, y2] = values;
+        const first = { x: x1 - tipX, y: y1 - tipY };
+        const second = { x: x2 - tipX, y: y2 - tipY };
+        return Math.abs(first.x * second.x + first.y * second.y) < 0.001;
+      }),
+    ).toBe(true);
+  });
+
   it('preserves rounded corners while replacing the final endpoint', () => {
     const path = 'M 4 6 L 20 6 Q 26 6 26 12 L 26 30';
 

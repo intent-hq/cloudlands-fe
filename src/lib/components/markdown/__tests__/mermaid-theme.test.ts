@@ -59,16 +59,20 @@ describe('Mermaid design-system theme', () => {
     });
     expect(config.sequence).toMatchObject({ actorMargin: 40, messageMargin: 24 });
     expect(theme).toMatchObject({
+      background: 'hsl(0 0% 100%)',
       primaryColor: 'hsl(0 0% 96%)',
       primaryTextColor: 'hsl(0 0% 8%)',
       primaryBorderColor: 'hsl(0 0% 96%)',
       lineColor: 'rgb(118 124 132)',
       arrowheadColor: 'rgb(118 124 132)',
       edgeLabelBackground: 'hsl(0 0% 100%)',
+      clusterBkg: 'hsl(0 0% 100%)',
       actorBkg: 'hsl(0 0% 96%)',
       noteBkgColor: 'hsl(145 30% 90%)',
       noteTextColor: 'hsl(145 50% 20%)',
       stateBkg: 'hsl(0 0% 96%)',
+      compositeBackground: 'hsl(0 0% 100%)',
+      compositeTitleBackground: 'hsl(0 0% 100%)',
       classText: 'hsl(0 0% 8%)',
     });
   });

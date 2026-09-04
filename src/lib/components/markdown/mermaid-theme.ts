@@ -41,7 +41,6 @@ function readPixelSize(styles: TokenStyle, name: string, fallbackName?: string):
 }
 
 export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): MermaidConfig {
-  const background = readColor(styles, '--background');
   const foreground = readColor(styles, '--foreground');
   const cardForeground = readColor(styles, '--card-foreground');
   const muted = readColor(styles, '--muted');
@@ -88,14 +87,14 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       padding: 8,
     },
     themeVariables: {
-      background,
+      background: canvas,
       primaryColor: nodeSurface,
       primaryTextColor: cardForeground,
       primaryBorderColor: nodeSurface,
       secondaryColor: muted,
       secondaryTextColor: foreground,
       secondaryBorderColor: muted,
-      tertiaryColor: background,
+      tertiaryColor: canvas,
       tertiaryTextColor: foreground,
       tertiaryBorderColor: border,
       lineColor: connector,
@@ -105,7 +104,7 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       nodeBkg: nodeSurface,
       nodeBorder: nodeSurface,
       nodeTextColor: cardForeground,
-      clusterBkg: muted,
+      clusterBkg: canvas,
       clusterBorder: border,
       defaultLinkColor: connector,
       edgeLabelBackground: canvas,
@@ -130,8 +129,8 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       stateBkg: nodeSurface,
       stateLabelColor: cardForeground,
       labelBackgroundColor: canvas,
-      compositeBackground: muted,
-      compositeTitleBackground: muted,
+      compositeBackground: canvas,
+      compositeTitleBackground: canvas,
       compositeBorder: border,
       classText: cardForeground,
       fillType0: nodeSurface,

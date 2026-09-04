@@ -115,9 +115,10 @@ describe('custom diagram visual contract', () => {
     expect(
       [...container.querySelectorAll('marker path')].every(
         (marker) =>
-          marker.getAttribute('stroke-width') === '0.75' &&
-          marker.getAttribute('fill') === 'context-stroke' &&
-          marker.getAttribute('stroke') === 'context-stroke',
+          marker.getAttribute('stroke-width') === '1' &&
+          marker.getAttribute('fill') === 'none' &&
+          marker.getAttribute('stroke') === 'context-stroke' &&
+          marker.getAttribute('d') === 'M 3.5 0.5 L 6.5 3.5 L 3.5 6.5',
       ),
     ).toBe(true);
     expect(container.querySelectorAll('.edge-label-leader')).toHaveLength(0);

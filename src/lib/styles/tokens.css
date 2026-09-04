@@ -248,8 +248,9 @@
   --font-code: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   --font-editorial:
     'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
-  --diagram-canvas: hsl(var(--background));
-  --diagram-label-surface: var(--diagram-canvas);
+  --diagram-host-surface: hsl(var(--app-background));
+  --diagram-canvas: var(--diagram-host-surface);
+  --diagram-label-surface: var(--diagram-host-surface);
   --diagram-node-surface: hsl(var(--sidebar));
   --diagram-node-hover-surface: color-mix(
     in srgb,

@@ -70,6 +70,88 @@ test('renders all 32 diagram cases together without the dense review shell', asy
   await expect(page.locator('[data-review-comparison], [data-review-diagnostics]')).toHaveCount(0);
   await expect(page.getByRole('searchbox')).toHaveCount(0);
   await expect(page.locator('.view-switcher, .case-groups, .case-groups details')).toHaveCount(0);
+
+  const targetedSurface = await page.locator('#mermaid-flow').evaluate((diagramCase) => ({
+    host: getComputedStyle(diagramCase).backgroundColor,
+    canvas: getComputedStyle(diagramCase.querySelector('.mermaid-svg > svg')!).backgroundColor,
+  }));
+  expect(targetedSurface.canvas).toBe(targetedSurface.host);
+});
+
+test('uses open chevrons for directed routes while preserving semantic markers', async ({
+  page,
+}) => {
+  await openSandbox(page, 'state=mermaid-flow&theme=light&width=960&motion=reduced');
+
+  const markers = await page.evaluate(() => {
+    const markerFor = (path: Element, attribute: 'marker-start' | 'marker-end') => {
+      const reference = path.getAttribute(attribute) ?? '';
+      const markerId = reference.match(/#([^)'"]+)/)?.[1] ?? '';
+      return document.querySelector<SVGMarkerElement>(`marker[id="${CSS.escape(markerId)}"]`);
+    };
+    const directed = [...document.querySelectorAll('.mermaid-svg [marker-end]')]
+      .flatMap((path) => {
+        const marker = markerFor(path, 'marker-end');
+        return marker?.dataset.diagramChevron === 'true' ? [{ path, marker }] : [];
+      })
+      .concat(
+        [...document.querySelectorAll('.diagram-edge [marker-end]')].flatMap((path) => {
+          const marker = markerFor(path, 'marker-end');
+          return marker ? [{ path, marker }] : [];
+        }),
+      );
+    const hasRightAngleWings = (shape: SVGPathElement) => {
+      const values = shape
+        .getAttribute('d')
+        ?.match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)
+        ?.map(Number);
+      if (!values || values.length !== 6) return false;
+      const [x1, y1, tipX, tipY, x2, y2] = values;
+      const first = { x: x1 - tipX, y: y1 - tipY };
+      const second = { x: x2 - tipX, y: y2 - tipY };
+      return (
+        Math.abs(first.x * second.x + first.y * second.y) < 0.001 &&
+        Math.abs(Math.hypot(first.x, first.y) - Math.hypot(second.x, second.y)) < 0.001
+      );
+    };
+    const failures = directed.flatMap(({ path, marker }) => {
+      const shape = marker.querySelector<SVGPathElement>('path');
+      const style = shape && getComputedStyle(shape);
+      const pathStyle = getComputedStyle(path);
+      return shape &&
+        shape.getAttribute('fill') === 'none' &&
+        style?.fill === 'none' &&
+        shape.getAttribute('stroke') === 'context-stroke' &&
+        style.strokeLinecap === 'round' &&
+        style.strokeLinejoin === 'round' &&
+        hasRightAngleWings(shape) &&
+        Number(marker.getAttribute('markerWidth')) / Number.parseFloat(pathStyle.strokeWidth) >= 4
+        ? []
+        : [marker.id];
+    });
+    const classMarkers = [...document.querySelectorAll('#mermaid-class [marker-start]')].map(
+      (path) => {
+        const marker = markerFor(path, 'marker-start');
+        const shape = marker?.querySelector<SVGPathElement>('path');
+        return { id: marker?.id ?? '', fill: shape ? getComputedStyle(shape).fill : '' };
+      },
+    );
+    return {
+      count: directed.length,
+      failures,
+      inheritanceOpen: classMarkers.some(
+        ({ id, fill }) => id.includes('extensionStart') && fill === 'rgba(0, 0, 0, 0)',
+      ),
+      compositionFilled: classMarkers.some(
+        ({ id, fill }) => id.includes('compositionStart') && fill !== 'rgba(0, 0, 0, 0)',
+      ),
+    };
+  });
+
+  expect(markers.count).toBeGreaterThan(50);
+  expect(markers.failures).toEqual([]);
+  expect(markers.inheritanceOpen).toBe(true);
+  expect(markers.compositionFilled).toBe(true);
 });
 
 test('uses the direct state as a stable initial scroll target without hiding cases', async ({
@@ -399,7 +481,6 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
       await walkthrough.locator('[data-diagram-step-index="1"]').click();
 
       const geometry = await page.evaluate(() => {
-        const transparent = 'rgba(0, 0, 0, 0)';
         const intersects = (a: DOMRect, b: DOMRect, padding = 0) =>
           a.left < b.right + padding &&
           a.right > b.left - padding &&
@@ -429,11 +510,28 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
           });
           return new Set(directions).size <= 1;
         };
-        const backgrounds = [
-          ...document.querySelectorAll(
-            '#mermaid-long-labels .diagram-stage, #mermaid-long-labels .mermaid-svg, #mermaid-long-labels .mermaid-svg > svg, #mermaid-cycle-fanout .diagram-stage, #mermaid-cycle-fanout .mermaid-svg, #mermaid-cycle-fanout .mermaid-svg > svg, #custom-walkthrough .diagram-stage, #custom-walkthrough .diagram-scroll-container, #custom-walkthrough .diagram-content, #custom-walkthrough .diagram-svg-layer',
-          ),
-        ].map((element) => getComputedStyle(element).backgroundColor);
+        const surfaceFailures = [
+          ['#mermaid-state', '.mermaid-svg > svg', 'backgroundColor'],
+          ['#mermaid-state', '.edgeLabel rect.background', 'fill'],
+          ['#mermaid-nested-groups', '.mermaid-svg > svg', 'backgroundColor'],
+          ['#mermaid-nested-groups', '.cluster > rect', 'fill'],
+          ['#custom-bindings', '.diagram-svg-layer', 'backgroundColor'],
+          ['#custom-bindings', '.edge-label-html', 'backgroundColor'],
+          ['#custom-walkthrough', '.diagram-svg-layer', 'backgroundColor'],
+          ['#custom-walkthrough', '.edge-label-html', 'backgroundColor'],
+        ].flatMap(([rootSelector, targetSelector, property]) => {
+          const root = document.querySelector<HTMLElement>(rootSelector)!;
+          const probe = document.createElement('span');
+          probe.style.background = 'var(--diagram-host-surface)';
+          root.append(probe);
+          const surface = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const targets = [...root.querySelectorAll(targetSelector)];
+          return targets.length > 0 &&
+            targets.every((target) => getComputedStyle(target)[property as 'fill'] === surface)
+            ? []
+            : [`${rootSelector} ${targetSelector}`];
+        });
 
         const longRoot = document.querySelector('#mermaid-long-labels')!;
         const longSvg = longRoot.querySelector<SVGSVGElement>('.mermaid-svg > svg')!;
@@ -554,7 +652,7 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
         const footer = customRoot.querySelector('.diagram-footer')!.getBoundingClientRect();
 
         return {
-          backgroundsTransparent: backgrounds.every((background) => background === transparent),
+          surfaceFailures,
           longOutlines,
           cyclePaths,
           labelDistances: labels.map((label) => label.routeDistance),
@@ -577,7 +675,7 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
           footerClearance: footer.top - content.bottom,
         };
       });
-      expect(geometry.backgroundsTransparent, `${colorTheme}/${width} backgrounds`).toBe(true);
+      expect(geometry.surfaceFailures, `${colorTheme}/${width} surfaces`).toEqual([]);
       expect(geometry.longOutlines.length, `${colorTheme}/${width} long boxes`).toBeGreaterThan(0);
       expect(
         geometry.longOutlines.every(

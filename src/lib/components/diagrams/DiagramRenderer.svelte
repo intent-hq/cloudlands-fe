@@ -902,10 +902,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -922,10 +922,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -941,10 +941,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -960,10 +960,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -979,10 +979,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -998,10 +998,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -1017,10 +1017,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -1036,10 +1036,10 @@
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
-                fill="context-stroke"
+                d="M 3.5 0.5 L 6.5 3.5 L 3.5 6.5"
+                fill="none"
                 stroke="context-stroke"
-                stroke-width="0.75"
+                stroke-width="1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -1258,7 +1258,7 @@
 
   .diagram-svg-layer {
     display: block;
-    background: transparent;
+    background: var(--diagram-canvas);
   }
 
   .diagram-footer {

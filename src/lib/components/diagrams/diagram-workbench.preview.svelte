@@ -230,7 +230,7 @@
     padding: 2rem 0 2.75rem;
   }
   .diagram-case.is-targeted {
-    background: hsl(var(--primary) / 0.025);
+    background: var(--diagram-host-surface);
     padding-left: clamp(0.75rem, 2vw, 1.25rem);
   }
   .case-header {

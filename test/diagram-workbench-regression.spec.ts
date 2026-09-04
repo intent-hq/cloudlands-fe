@@ -253,9 +253,11 @@ async function expectOpaqueStateLabelPaint(page: Page) {
   const state = page.locator('#mermaid-state');
   await state.scrollIntoViewIfNeeded();
   const result = await state.evaluate((root) => {
-    const canvasColor = getComputedStyle(
-      root.closest('[data-testid="catalog-shell"]')!,
-    ).backgroundColor;
+    const probe = document.createElement('span');
+    probe.style.background = 'var(--diagram-canvas)';
+    root.append(probe);
+    const canvasColor = getComputedStyle(probe).backgroundColor;
+    probe.remove();
     const failures: string[] = [];
     let paintedOverlapCount = 0;
     const labels = [...root.querySelectorAll<SVGGElement>('g.edgeLabel')].filter((label) =>
@@ -503,15 +505,11 @@ async function expectTerminalArrowGeometry(
     expect(edge.markerRatio, `${state}/${edge.key} proportional marker`).toBeGreaterThanOrEqual(4);
     expect(edge.markerRatio, `${state}/${edge.key} proportional marker`).toBeLessThanOrEqual(7);
     expect(edge.markerContained, `${state}/${edge.key} marker containment`).toBe(true);
-    expect(edge.markerFillAttribute, `${state}/${edge.key} marker fill inheritance`).toBe(
-      'context-stroke',
-    );
+    expect(edge.markerFillAttribute, `${state}/${edge.key} open marker interior`).toBe('none');
     expect(edge.markerStrokeAttribute, `${state}/${edge.key} marker stroke inheritance`).toBe(
       'context-stroke',
     );
-    expect([edge.pathStroke, 'context-stroke'], `${state}/${edge.key} marker fill`).toContain(
-      edge.markerFill,
-    );
+    expect(edge.markerFill, `${state}/${edge.key} open marker fill`).toBe('none');
     expect([edge.pathStroke, 'context-stroke'], `${state}/${edge.key} marker stroke`).toContain(
       edge.markerStroke,
     );

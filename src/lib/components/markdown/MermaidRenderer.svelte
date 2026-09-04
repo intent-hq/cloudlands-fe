@@ -25,7 +25,7 @@
   import { splitSemanticLabel } from '$lib/components/diagrams/diagram-label-wrap';
   import type { SvgBounds } from './mermaid-state-layout';
   import {
-    alignFlowchartMarkerTips,
+    alignMermaidOpenArrowheads,
     attachStateTerminalArrowheads,
     measuredClusterHeaderHeight,
     placeStateLabelsOnFinalRoutes,
@@ -755,6 +755,7 @@ ${verticalSource}`;
     if (!svg || typeof svg.getBBox !== 'function') return false;
     delete svg.dataset.layoutSettled;
     replaceSequenceActorFigures(svg);
+    alignMermaidOpenArrowheads(svg);
     if (svg.getAttribute('aria-roledescription') === 'sequence') {
       addMermaidLabelKnockouts(svg);
       setReadableMermaidWidth(svg, svg.viewBox.baseVal.width);
@@ -805,7 +806,7 @@ ${verticalSource}`;
     }
     const classBounds = repairClassDiagramGeometry(svg);
     roundOrthogonalBends(svg);
-    alignFlowchartMarkerTips(svg);
+    alignMermaidOpenArrowheads(svg);
     attachStateTerminalArrowheads(svg);
     placeStateLabelsOnFinalRoutes(svg, narrowLayout);
     await new Promise<void>((resolve) =>
@@ -815,7 +816,7 @@ ${verticalSource}`;
     recenterStateLabels(svg);
     routeFlowchartDecisionBranches(svg);
     roundOrthogonalBends(svg);
-    alignFlowchartMarkerTips(svg);
+    alignMermaidOpenArrowheads(svg);
     if (svg.querySelector('g.cluster')) positionCompactGroupedEdgeLabels(svg);
     const measuredBounds = svg.getBBox();
     const extraBounds = [classBounds, compactFlowchartBounds].filter(
@@ -874,7 +875,7 @@ ${verticalSource}`;
     if (generation !== renderGeneration) return false;
     if (!compactLayout && svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       routeFlowchartFeedbackLane(svg, true);
-      alignFlowchartMarkerTips(svg);
+      alignMermaidOpenArrowheads(svg);
       const finalBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(finalBounds.width + padding * 2);
       height = Math.ceil(finalBounds.height + padding * 2);
@@ -892,7 +893,7 @@ ${verticalSource}`;
       snapFlowchartPorts(svg);
       snapFlowchartFeedbackPorts(svg);
       routeGroupedReturnEdges(svg);
-      alignFlowchartMarkerTips(svg);
+      alignMermaidOpenArrowheads(svg);
       if (compactLayout && svg.querySelector('g.cluster')) positionCompactGroupedEdgeLabels(svg);
     }
     if (compactLayout) {
@@ -905,7 +906,7 @@ ${verticalSource}`;
       snapFlowchartFeedbackPorts(svg);
       routeFlowchartClientRequestLane(svg);
       roundOrthogonalBends(svg);
-      alignFlowchartMarkerTips(svg);
+      alignMermaidOpenArrowheads(svg);
       const finalBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(finalBounds.width + padding * 2);
       height = Math.ceil(finalBounds.height + padding * 2);
@@ -1161,7 +1162,7 @@ ${verticalSource}`;
   onKeydown={handleFullscreenKeydown}
 >
   <div
-    class="h-[90vh] w-[90vw] overflow-hidden rounded-lg bg-background shadow-2xl"
+    class="fullscreen-surface h-[90vh] w-[90vw] overflow-hidden rounded-lg shadow-2xl"
     data-media-lightbox-content
   >
     <ZoomPanViewport bind:this={zoomPanViewport}>
@@ -1265,6 +1266,10 @@ ${verticalSource}`;
     overflow: hidden;
   }
 
+  .fullscreen-surface {
+    background: var(--diagram-host-surface);
+  }
+
   .fullscreen-diagram :global(svg) {
     max-width: 100%;
     max-height: 100%;
@@ -1276,7 +1281,7 @@ ${verticalSource}`;
   .mermaid-presentation :global(svg) {
     font-family: var(--mermaid-font-family) !important;
     font-size: var(--mermaid-root-font-size, var(--text-caption-size)) !important;
-    background: transparent !important;
+    background: var(--diagram-canvas) !important;
     overflow: visible;
   }
 
@@ -1353,10 +1358,10 @@ ${verticalSource}`;
     ry: var(--diagram-node-radius) !important;
   }
 
-  .mermaid-presentation :global(marker path) {
-    fill: var(--diagram-connector) !important;
+  .mermaid-presentation :global(marker[data-diagram-chevron='true'] path) {
+    fill: none !important;
     stroke: var(--diagram-connector) !important;
-    stroke-width: 0.75px !important;
+    stroke-width: 1px !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
   }
