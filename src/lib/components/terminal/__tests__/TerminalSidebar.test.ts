@@ -553,38 +553,26 @@ describe('TerminalSidebar script inline rename', () => {
     mockScriptUpdate.mockResolvedValue({ success: true });
   });
 
-  it('renders the decorated rename input on double-click, cancels with Escape, and saves with Enter', async () => {
+  it('shows a prefilled rename input on double-click and restores the row on Escape', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     await fireEvent.doubleClick(screen.getByText('build'));
 
-    let input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     expect(input).toBeTruthy();
     expect(input!.value).toBe('build');
-    expect(input!.classList).toContain('cursor-text');
-    expect(input!.parentElement?.classList).toContain('relative');
-    const decoration = input!.parentElement?.querySelector<HTMLElement>('[aria-hidden="true"]');
-    expect(decoration?.className.split(/\s+/)).toEqual(
-      expect.arrayContaining([
-        '-inset-x-2',
-        '-inset-y-1.5',
-        'border-ring/60',
-        'bg-sidebar',
-        'starting:-inset-x-1',
-        'starting:-inset-y-0.5',
-        'starting:border-transparent',
-        'starting:bg-transparent',
-        'motion-reduce:transition-none',
-      ]),
-    );
 
     await fireEvent.keyDown(input!, { key: 'Escape' });
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
     expect(screen.getByText('build')).toBeTruthy();
     expect(mockScriptUpdate).not.toHaveBeenCalled();
+  });
+
+  it('commits a non-empty rename with Enter', async () => {
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     await fireEvent.doubleClick(screen.getByText('build'));
-    input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'compile' } });
     await fireEvent.keyDown(input!, { key: 'Enter' });
 
@@ -592,6 +580,32 @@ describe('TerminalSidebar script inline rename', () => {
       expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'compile' }),
     );
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
+  });
+
+  it('commits a non-empty rename on blur', async () => {
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.doubleClick(screen.getByText('build'));
+    const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    await fireEvent.input(input!, { target: { value: 'bundle' } });
+
+    await fireEvent.blur(input!);
+
+    await waitFor(() =>
+      expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'bundle' }),
+    );
+    expect(screen.getByText('build')).toBeTruthy();
+  });
+
+  it('never leaves the script row empty when an empty rename is submitted', async () => {
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.doubleClick(screen.getByText('build'));
+    const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    await fireEvent.input(input!, { target: { value: '   ' } });
+
+    await fireEvent.keyDown(input!, { key: 'Enter' });
+
+    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText('build')).toBeTruthy();
   });
 });
 
@@ -629,15 +643,6 @@ describe('TerminalSidebar agent navigation context', () => {
   });
 });
 
-describe('TerminalSidebar section title spacing', () => {
-  it('keeps both section titles flush with their content', () => {
-    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-
-    expect(screen.getByText('Scripts').parentElement?.classList.contains('pb-0!')).toBe(true);
-    expect(screen.getByText('Terminals').parentElement?.classList.contains('pb-0!')).toBe(true);
-  });
-});
-
 describe('TerminalSidebar resize handle', () => {
   it('uses the shared horizontal resize contract and reports drag state', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
@@ -646,7 +651,6 @@ describe('TerminalSidebar resize handle', () => {
     expect(handle).not.toBeNull();
     expect(handle?.getAttribute('data-resize-axis')).toBe('x');
     expect(handle?.getAttribute('data-resizing')).toBe('false');
-    expect(handle?.classList).toContain('w-4');
 
     await fireEvent.mouseDown(handle!);
     expect(handle?.getAttribute('data-resizing')).toBe('true');

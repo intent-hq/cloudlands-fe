@@ -1100,8 +1100,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     </div>
                   {/snippet}
                   {#snippet children()}
-                    {#if editingScriptId === script.id}
-                      <div class="relative flex w-full min-w-0 items-center">
+                    <div
+                      class={editingScriptId === script.id
+                        ? 'relative flex w-full min-w-0 items-center'
+                        : 'pointer-events-none absolute'}
+                    >
+                      {#if editingScriptId === script.id}
                         <input
                           type="text"
                           data-edit-script={script.id}
@@ -1112,12 +1116,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                           placeholder={m.terminal_quakeOverlay_name_placeholder()}
                           class="relative z-10 w-full cursor-text border-none bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
                         />
-                        <span
-                          aria-hidden="true"
-                          class="pointer-events-none absolute z-0 -inset-x-2 -inset-y-1.5 rounded-(--radius-small) border border-ring/60 bg-sidebar transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) starting:-inset-x-1 starting:-inset-y-0.5 starting:border-transparent starting:bg-transparent motion-reduce:transition-none"
-                        ></span>
-                      </div>
-                    {/if}
+                      {/if}
+                      <span
+                        aria-hidden="true"
+                        data-script-rename-decoration={script.id}
+                        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptId ===
+                        script.id
+                          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+                          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                      ></span>
+                    </div>
                   {/snippet}
                 </ListItem>
               </div>
@@ -1314,3 +1322,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     ></div>
   {/if}
 </div>
+
+<style>
+  @media (prefers-reduced-motion: reduce) {
+    [data-script-rename-decoration] {
+      transition-duration: 0s !important;
+    }
+  }
+</style>
