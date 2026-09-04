@@ -102,7 +102,7 @@
     />
     <span class="github-link-card-ref">{owner}/{repo} #{number}</span>
     {#if stateStyle}
-      <Badge variant={stateStyle.badge} class="ml-auto h-4 px-1.5 text-[10px]">
+      <Badge variant={stateStyle.badge} class="github-link-card-badge ml-auto h-4 px-1.5">
         {stateStyle.label}
       </Badge>
     {/if}

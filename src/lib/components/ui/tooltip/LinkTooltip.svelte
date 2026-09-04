@@ -61,8 +61,8 @@
       class:link-tooltip--below={placeBelow}
       style={tooltipStyle}
       role="tooltip"
-      bind:clientWidth={tooltipWidth}
-      bind:clientHeight={tooltipHeight}
+      bind:offsetWidth={tooltipWidth}
+      bind:offsetHeight={tooltipHeight}
     >
       {#if cardPreview}
         <GitHubLinkCard url={tooltip.url} preview={cardPreview} />
@@ -137,6 +137,11 @@
     white-space: nowrap;
   }
 
+  :global(.github-link-card-header .github-link-card-badge) {
+    font-size: 10px;
+    line-height: 1;
+  }
+
   :global(.github-link-card-title) {
     font-weight: 500;
     line-height: 1.35;
@@ -159,7 +164,7 @@
   }
 
   :global(.github-link-card-branches) {
-    font-family: var(--font-mono);
+    font-family: var(--font-code);
     font-size: 10px;
   }
 

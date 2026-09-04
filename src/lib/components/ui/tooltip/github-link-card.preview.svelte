@@ -136,7 +136,7 @@
 <!-- Mounted (hidden) so the shared `.link-tooltip` styles are present for the inline render. -->
 <LinkTooltip />
 
-<article class="grid max-w-[480px] gap-3" data-preview-scenario={label}>
+<article class="grid max-w-md gap-3" data-preview-scenario={label}>
   <div>
     <h3 class="text-sm font-semibold">{label}</h3>
     <p class="text-xs leading-5 text-muted-foreground">{expected}</p>
