@@ -4,16 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 const sourceRoot = path.resolve(process.cwd(), 'src');
 const ignoredSegments = ['/__tests__/', '.test.ts', '.spec.ts'];
-const explicitExceptions = new Map([
-  [
-    'src/lib/components/ui/tooltip/TooltipRich.svelte',
-    'The error variant defines one solid bg-destructive map for its text, border, and icon.',
-  ],
-  [
-    'src/lib/components/ui/slider/slider.svelte',
-    'The token draws invalid control boundaries and the thumb; it is not text or an icon.',
-  ],
-]);
+const obsoleteRoles = [
+  'destructive',
+  ['destructive', 'foreground'].join('-'),
+  ['error', 'foreground'].join('-'),
+];
 
 function productionSources(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -26,39 +21,18 @@ function productionSources(directory: string): string[] {
   });
 }
 
-function approvedUtilityContext(line: string, variant = ''): boolean {
-  const prefix = variant ? `${variant}:` : '';
-  return new RegExp(`(?:^|[\\s'"\\x60])${prefix}bg-destructive(?:$|[\\s'"\\x60])`).test(line);
-}
-
-describe('destructive foreground usage contract', () => {
-  it('reserves destructive-foreground content for solid destructive backgrounds', () => {
+describe('danger color usage contract', () => {
+  it('keeps obsolete color roles out of production styling', () => {
     const violations: string[] = [];
+    const utilityPrefixes = '(?:bg|text|border|ring|outline|fill|stroke|accent)';
     for (const file of productionSources(sourceRoot)) {
-      if (file === 'src/lib/styles/tokens.css' || explicitExceptions.has(file)) continue;
-      const lines = fs.readFileSync(path.resolve(process.cwd(), file), 'utf8').split('\n');
-      lines.forEach((line, index) => {
-        for (const match of line.matchAll(
-          /(?:(hover|focus|focus-visible|active|disabled):)?text-destructive-foreground\b/g,
-        )) {
-          if (!approvedUtilityContext(line, match[1] ?? '')) {
-            violations.push(`${file}:${index + 1} ${match[0]}`);
-          }
-        }
-        if (line.includes('var(--destructive-foreground)')) {
-          violations.push(`${file}:${index + 1} raw destructive foreground`);
-        }
-      });
+      const source = fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
+      for (const role of obsoleteRoles) {
+        const utility = new RegExp(`${utilityPrefixes}-${role}(?:\\b|/)`);
+        const customProperty = new RegExp(`var\\(--${role}(?:\\)|\\s|/)`);
+        if (utility.test(source) || customProperty.test(source)) violations.push(file);
+      }
     }
-    expect(violations, violations.join('\n')).toEqual([]);
-  });
-
-  it('keeps every explicit exception narrow and documented', () => {
-    for (const [file, reason] of explicitExceptions) {
-      expect(reason.length).toBeGreaterThan(40);
-      expect(fs.readFileSync(path.resolve(process.cwd(), file), 'utf8')).toContain(
-        'destructive-foreground',
-      );
-    }
+    expect([...new Set(violations)], violations.join('\n')).toEqual([]);
   });
 });

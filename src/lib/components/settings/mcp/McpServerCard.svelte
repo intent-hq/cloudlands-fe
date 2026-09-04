@@ -107,7 +107,7 @@
       value: 'delete',
       label: m.settings_mcp_action_delete(),
       icon: faTrash,
-      class: 'text-error-foreground',
+      class: 'text-danger',
     },
   ]);
 

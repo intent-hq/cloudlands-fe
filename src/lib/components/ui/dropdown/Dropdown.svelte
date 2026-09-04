@@ -418,7 +418,17 @@
     const isInsideContent =
       (portalContentRef?.contains(target) ?? false) ||
       (inlineContentRef?.contains(target) ?? false);
-    if (!isInsideContainer && !isInsideContent) {
+    // Nested controls can portal their popup outside our clipped content.
+    // Only treat popups owned by controls in THIS dropdown as inside.
+    const content = portalContentRef ?? inlineContentRef;
+    const isInsideOwnedPopup = Array.from(content?.querySelectorAll('[aria-controls]') ?? []).some(
+      (control) =>
+        control
+          .getAttribute('aria-controls')
+          ?.split(/\s+/)
+          .some((id) => document.getElementById(id)?.contains(target)),
+    );
+    if (!isInsideContainer && !isInsideContent && !isInsideOwnedPopup) {
       handleClose();
     }
   }
@@ -482,6 +492,7 @@
         e.preventDefault();
         e.stopPropagation();
         handleClose();
+        triggerRef?.focus();
         break;
     }
   }

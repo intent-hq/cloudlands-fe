@@ -1092,7 +1092,7 @@
             <div
               bind:this={statusElement}
               class={isFailed
-                ? 'type-caption text-error-foreground focus:outline-none'
+                ? 'type-caption text-danger focus:outline-none'
                 : 'type-caption text-muted-foreground focus:outline-none'}
               role="status"
               aria-live={isFailed ? 'assertive' : 'polite'}
@@ -1362,7 +1362,7 @@
           class={isApplied
             ? 'type-caption border-t border-success/30 bg-success/10 px-3 py-2 text-success focus:outline-none'
             : isFailed
-              ? 'type-caption border-t border-border px-3 py-2 text-error-foreground focus:outline-none'
+              ? 'type-caption border-t border-border px-3 py-2 text-danger focus:outline-none'
               : 'type-caption border-t border-border px-3 py-2 text-muted-foreground focus:outline-none'}
           role="status"
           aria-live={isFailed ? 'assertive' : 'polite'}

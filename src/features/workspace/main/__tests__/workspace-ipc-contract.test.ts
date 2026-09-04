@@ -51,9 +51,6 @@ vi.mock('../../../../store/main/slices/workspace-events/workspace-events-slice',
   emitWorkspaceEvent: vi.fn((payload) => ({ type: 'workspace/emitEvent', payload })),
 }));
 vi.mock('../../../terminal/main/terminal.ipc', () => ({ cleanupWorkspaceTerminals: vi.fn() }));
-vi.mock('../../../agent/main/instruction-service', () => ({
-  InstructionService: { getInstance: vi.fn(() => ({ warmCache: vi.fn() })) },
-}));
 vi.mock('../../../../shared/git/git-env', () => ({ execAsync: vi.fn() }));
 vi.mock('../../../notifications/main/notification.service', () => ({
   getNotificationService: vi.fn(() => ({ start: vi.fn() })),

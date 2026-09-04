@@ -13,7 +13,7 @@ import { mapEventToFeedEntry } from '../hud-feed-mapper';
 import type { WorkspaceEvent } from '$features/events/types';
 
 const WARNING = 'hsl(var(--warning))';
-const RED = 'hsl(var(--error-foreground))';
+const RED = 'hsl(var(--danger))';
 const GREEN = 'hsl(var(--primary))';
 const GREY = 'hsl(var(--muted-foreground) / 0.65)';
 const BLUE = 'hsl(var(--ring))';

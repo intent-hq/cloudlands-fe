@@ -48,8 +48,8 @@ describe('Button', () => {
     expect(secondaryButton).not.toContain('hover:border-primary');
     const destructiveButton = buttonVariants({ variant: 'destructive' });
     expect(destructiveButton).toContain('bg-card');
-    expect(destructiveButton).toContain('hover:bg-destructive');
-    expect(destructiveButton.split(/\s+/)).not.toContain('bg-destructive');
+    expect(destructiveButton).toContain('hover:bg-danger');
+    expect(destructiveButton.split(/\s+/)).not.toContain('bg-danger');
     const compatibility = buttonVariants({ variant: 'neumorphic' });
     expect(compatibility).toContain('border-border');
     expect(compatibility).toContain('bg-card');

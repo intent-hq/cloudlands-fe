@@ -332,8 +332,10 @@ describe('NewSpaceModal model-picker composition', () => {
     await fireEvent.click(pickerTrigger(team));
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
-    const listboxes = within(dialog).getAllByRole('listbox');
-    const reasoningListbox = listboxes[listboxes.length - 1];
+    const reasoningPopup = document.getElementById(
+      reasoningTrigger.getAttribute('aria-controls')!,
+    )!;
+    const reasoningListbox = within(reasoningPopup).getByRole('listbox');
     await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
       pointerType: 'mouse',
     });
@@ -437,11 +439,11 @@ describe('NewSpaceModal model-picker composition', () => {
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
-    await waitFor(() => expect(within(dialog).getAllByRole('listbox')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(2));
     const persistedCount = persistedStates().length;
 
     await fireEvent.keyDown(reasoningTrigger, { key: 'ArrowDown' });
-    expect(within(dialog).getAllByRole('listbox')).toHaveLength(2);
+    expect(screen.getAllByRole('listbox')).toHaveLength(2);
     await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
 
     await waitFor(() => {

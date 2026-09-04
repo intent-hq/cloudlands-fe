@@ -19,7 +19,7 @@ describe('Badge', () => {
     expect(source.match(/export type BadgeVariant\b/g)).toHaveLength(1);
     expect(source.match(/export type BadgeProps\b/g)).toHaveLength(1);
     expect(badgeVariants({ variant: 'secondary' })).toContain('bg-muted');
-    expect(badgeVariants({ variant: 'destructive' })).toContain('text-destructive');
+    expect(badgeVariants({ variant: 'destructive' })).toContain('text-danger');
     expect(badgeVariants({ variant: 'destructive' })).not.toContain('text-white');
     expect(badgeVariants({ variant: 'success' })).toContain('before:bg-success');
     expect(badgeVariants({ variant: 'info' })).toContain('before:bg-info');

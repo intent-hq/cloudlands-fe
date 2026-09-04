@@ -554,10 +554,7 @@
           githubUrlInput = `${githubInfo.owner}/${githubInfo.repo}`;
           // Pass an empty search term: the open-time pre-fill must not filter
           // the Recent list — only actual typing should (see handleGitHubInputChange).
-          handleInputChange(
-            `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
-            '',
-          );
+          handleInputChange(`https://github.com/${githubInfo.owner}/${githubInfo.repo}`, '');
         }
       }
     } else {
@@ -1653,7 +1650,7 @@
           <!-- Validation error for project name -->
           {#if newRepoNameError}
             <div class="mt-2 px-1">
-              <span class="text-sm text-error-foreground">{newRepoNameError}</span>
+              <span class="text-sm text-danger">{newRepoNameError}</span>
             </div>
           {:else if newRepoFullPath}
             <!-- Full path preview + status message + action button -->
@@ -1733,7 +1730,7 @@
                     e.preventDefault();
                     handleRemoveRemoteSetup(setup.id);
                   }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-error-foreground hover:bg-destructive/10"
+                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
                   title={m.workspace_repoSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />

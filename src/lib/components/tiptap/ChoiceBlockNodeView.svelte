@@ -46,7 +46,7 @@
   <!-- Delete button - only visible on hover -->
   {#if isHovered}
     <button
-      class="absolute top-2 right-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-error-foreground transition-colors"
+      class="absolute top-2 right-2 p-1 rounded hover:bg-danger-background/10 text-muted-foreground hover:text-danger transition-colors"
       onclick={handleDelete}
       onkeydown={handleKeyDown}
       aria-label={m.tiptap_choiceBlock_delete_label()}

@@ -64,7 +64,6 @@ const notInstalledProvider = (): ProviderCardData => ({
   authDetails: undefined,
   docsUrl: 'https://opencode.ai/docs',
   installCommand: 'npm install -g opencode-ai',
-  loginCommand: 'opencode auth login',
   description: '',
   hasNpxFallback: false,
 });

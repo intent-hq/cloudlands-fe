@@ -170,6 +170,84 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
   });
 }
 
+/**
+ * How long a successful `system.requestUpdate` keeps marking a backend's
+ * `backend:status` payloads with `daemonUpdateDisconnectedAt` when no
+ * reconnect completes the restart (sitter never restarted, socket never
+ * dropped).
+ */
+export const DAEMON_UPDATE_PENDING_TTL_MS = 5 * 60_000;
+
+/**
+ * Additive `backend:status` marker: the drop is caused by a requested update.
+ * Carries the epoch ms of the FIRST drop main observed for the backend, so
+ * every window of that backend (including one opened mid-outage) shares the
+ * same countdown deadline.
+ */
+interface DaemonUpdateMarker {
+  daemonUpdateDisconnectedAt?: number;
+}
+
+// Backends with a user-requested daemon update in flight: `Date.now()` of the
+// successful `system.requestUpdate`, keyed by backend id. Main is the only
+// process that knows this for every window of a backend, so every
+// `backend:status` payload for the id carries `daemonUpdateDisconnectedAt`
+// once the client dropped and while the entry is fresh — the renderer shows
+// an "updating" dialog instead of the connection-loss overlay when the sitter
+// restarts the daemon.
+const pendingDaemonUpdates = new Map<string, number>();
+// Ids whose client reported a non-connected status since the request, with
+// the `Date.now()` of that first drop: the next `connected` for such an id
+// means the restart completed and the entry is dropped. A `connected` without
+// a prior drop is not a completed restart.
+const pendingDaemonUpdateDrops = new Map<string, number>();
+
+function clearPendingDaemonUpdate(id: string): void {
+  pendingDaemonUpdates.delete(id);
+  pendingDaemonUpdateDrops.delete(id);
+}
+
+function isDaemonUpdatePending(id: string): boolean {
+  const requestedAt = pendingDaemonUpdates.get(id);
+  if (requestedAt === undefined) return false;
+  if (Date.now() - requestedAt >= DAEMON_UPDATE_PENDING_TTL_MS) {
+    clearPendingDaemonUpdate(id);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Marker fields to spread into a `backend:status` payload for `id`: empty
+ * unless an update is pending AND the client has dropped since the request.
+ */
+function daemonUpdateMarker(id: string): DaemonUpdateMarker {
+  if (!isDaemonUpdatePending(id)) return {};
+  const disconnectedAt = pendingDaemonUpdateDrops.get(id);
+  return disconnectedAt === undefined ? {} : { daemonUpdateDisconnectedAt: disconnectedAt };
+}
+
+/**
+ * Track a status transition for a pending update: the first non-connected
+ * status records the drop time, and a `connected` after a recorded drop
+ * completes the restart and clears the entry (so that connected broadcast and
+ * everything after it no longer carry the marker).
+ */
+function notePendingDaemonUpdateStatus(id: string, status: ConnectionStatus): void {
+  if (!isDaemonUpdatePending(id)) return;
+  if (status !== 'connected') {
+    if (!pendingDaemonUpdateDrops.has(id)) pendingDaemonUpdateDrops.set(id, Date.now());
+    return;
+  }
+  if (pendingDaemonUpdateDrops.has(id)) clearPendingDaemonUpdate(id);
+}
+
+/** @internal Test seam: forget every pending daemon update. */
+export function __resetPendingDaemonUpdatesForTesting(): void {
+  pendingDaemonUpdates.clear();
+  pendingDaemonUpdateDrops.clear();
+}
+
 /** @internal Test seam: clear the per-connection daemon-build log dedupe. */
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
@@ -678,6 +756,8 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
   }
   try {
     await target.request('system.requestUpdate');
+    pendingDaemonUpdates.set(id, Date.now());
+    pendingDaemonUpdateDrops.delete(id);
     return { ok: true };
   } catch (error) {
     if (error instanceof JsonRpcError && error.rpcCode === -32601) {
@@ -734,6 +814,9 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   backendClients.delete(id);
   connectedDaemonVersions.delete(id);
+  // A user-driven dispose ends any update-caused outage as far as the UI is
+  // concerned: the rebuilt client's first status must not carry the marker.
+  clearPendingDaemonUpdate(id);
   clearBackendFailureState(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
@@ -827,6 +910,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
                 instance.getConnectedVia(),
               ),
               reconnectAttempts: instance.getReconnectAttempts(),
+              ...daemonUpdateMarker(id),
             },
             id,
           );
@@ -845,6 +929,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   instance.on('status', (status: ConnectionStatus) => {
     if (status !== 'connected') connectedDaemonVersions.delete(id);
+    notePendingDaemonUpdateStatus(id, status);
     broadcast(
       BACKEND.STATUS,
       {
@@ -855,6 +940,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
       },
       id,
     );
@@ -862,6 +948,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     refreshConnectionsForStatusChange();
   });
   instance.on('reconnected', () => {
+    notePendingDaemonUpdateStatus(id, 'connected');
     broadcast(
       BACKEND.STATUS,
       {
@@ -873,6 +960,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
       },
       id,
     );
@@ -1405,6 +1493,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
         );
@@ -1927,6 +2016,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
       );
@@ -2001,6 +2091,8 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
+      // Unscoped broadcast: deliberately carries no daemon-update marker,
+      // which is a LOCAL-client fact and must not reach remote windows.
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
         transport: formatTransportInfo(
@@ -2211,12 +2303,14 @@ export function registerBackendHandlers(): void {
         reconnectAttempts: client.getReconnectAttempts(),
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
+        ...daemonUpdateMarker(backendId),
       };
     }
     return {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      ...daemonUpdateMarker(backendId),
     };
   });
 
@@ -2252,6 +2346,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
     );
@@ -2279,6 +2374,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
     );
@@ -2517,6 +2613,7 @@ function registerConnectionsHandlers(): void {
                   rebuilt.getConnectedVia(),
                 ),
                 reconnectAttempts: rebuilt.getReconnectAttempts(),
+                ...daemonUpdateMarker(connection.id),
               },
               connection.id,
             );

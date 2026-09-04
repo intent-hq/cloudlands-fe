@@ -489,9 +489,9 @@ describe('shouldDeferTranscriptReveal', () => {
   });
 
   it('defers while only the utility-footer gate holds', () => {
-    expect(
-      shouldDeferTranscriptReveal({ ...armedReView, awaitingSwitchBackSnapshot: false }),
-    ).toBe(true);
+    expect(shouldDeferTranscriptReveal({ ...armedReView, awaitingSwitchBackSnapshot: false })).toBe(
+      true,
+    );
   });
 
   it('never defers when neither gate is armed', () => {
@@ -607,25 +607,23 @@ describe('isUtilityFooterReady', () => {
 
 describe('deriveQueuedMessagesVisibility', () => {
   it('hides the queue while the wizard is expanded, even when non-empty', () => {
-    // heldForQuestions is normalized to false alongside showQueue so consumers
-    // reading the flag alone never hint at a hidden queue.
     expect(
       deriveQueuedMessagesVisibility({
         queueLength: 3,
         hasPendingQuestions: true,
         questionWizardCollapsed: false,
       }),
-    ).toEqual({ showQueue: false, heldForQuestions: false });
+    ).toEqual({ showQueue: false });
   });
 
-  it('shows the queue as held while the wizard is Ignore-collapsed', () => {
+  it('shows the queue while the wizard is Ignore-collapsed', () => {
     expect(
       deriveQueuedMessagesVisibility({
         queueLength: 2,
         hasPendingQuestions: true,
         questionWizardCollapsed: true,
       }),
-    ).toEqual({ showQueue: true, heldForQuestions: true });
+    ).toEqual({ showQueue: true });
   });
 
   it('keeps current behavior with no pending questions', () => {
@@ -635,20 +633,14 @@ describe('deriveQueuedMessagesVisibility', () => {
         hasPendingQuestions: false,
         questionWizardCollapsed: false,
       }),
-    ).toEqual({ showQueue: true, heldForQuestions: false });
-  });
-
-  it('clears the held hint when the hold releases (questions answered or dismissed)', () => {
-    // The daemon drains the parked queue on release; until the shrunk
-    // agent:queue:updated lands the queue may still be non-empty, but the
-    // hint must already be gone because pendingQuestions derives false.
+    ).toEqual({ showQueue: true });
     expect(
       deriveQueuedMessagesVisibility({
         queueLength: 2,
         hasPendingQuestions: false,
         questionWizardCollapsed: true,
       }),
-    ).toEqual({ showQueue: true, heldForQuestions: false });
+    ).toEqual({ showQueue: true });
   });
 
   it('never shows an empty queue', () => {
@@ -658,13 +650,13 @@ describe('deriveQueuedMessagesVisibility', () => {
         hasPendingQuestions: true,
         questionWizardCollapsed: true,
       }),
-    ).toEqual({ showQueue: false, heldForQuestions: false });
+    ).toEqual({ showQueue: false });
     expect(
       deriveQueuedMessagesVisibility({
         queueLength: 0,
         hasPendingQuestions: false,
         questionWizardCollapsed: false,
       }),
-    ).toEqual({ showQueue: false, heldForQuestions: false });
+    ).toEqual({ showQueue: false });
   });
 });

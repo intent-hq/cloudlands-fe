@@ -558,7 +558,7 @@
   <div class="flex-1 min-h-0 overflow-hidden">
     {#if $feError$}
       <div class="flex flex-col items-center gap-2 px-3 py-6 text-center">
-        <p class="text-xs text-error-foreground">{$feError$}</p>
+        <p class="text-xs text-danger">{$feError$}</p>
         <Button variant="outline" size="xs" onclick={retryInitialization}
           >{m.fileExplorer_treeView_retry_label()}</Button
         >
