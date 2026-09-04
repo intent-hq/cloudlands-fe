@@ -251,6 +251,28 @@ describe('Mermaid path terminal geometry', () => {
     ]);
   });
 
+  it('keeps a compact feedback lane close to its painted routes', () => {
+    const points = buildFlowchartFeedbackLanePoints(
+      { x: -36, y: 568, width: 72, height: 42 },
+      { x: -41, y: 142, width: 82, height: 42 },
+      [
+        { x: -83, y: 42, width: 177, height: 526 },
+        { x: -52, y: 0, width: 104, height: 610 },
+      ],
+      true,
+    );
+
+    expect(points).toEqual([
+      { x: 36, y: 589 },
+      { x: 64, y: 589 },
+      { x: 64, y: 622 },
+      { x: -95, y: 622 },
+      { x: -95, y: 196 },
+      { x: 0, y: 196 },
+      { x: 0, y: 184.25 },
+    ]);
+  });
+
   it('builds grouped return routes on an external lane with side-center ports', () => {
     expect(
       buildGroupedReturnLanePoints(

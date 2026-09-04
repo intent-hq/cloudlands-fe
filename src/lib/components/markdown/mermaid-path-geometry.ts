@@ -79,10 +79,14 @@ export function buildFlowchartFeedbackLanePoints(
   source: Bounds,
   target: Bounds,
   occupied: Bounds[],
+  compact = false,
 ): Point[] {
-  const outerRight = Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + 28;
-  const outerLeft = Math.min(...occupied.map((bounds) => bounds.x)) - 28;
-  const outerBottom = Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + 28;
+  const outerRight = compact
+    ? source.x + source.width + 28
+    : Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + 28;
+  const outerLeft = Math.min(...occupied.map((bounds) => bounds.x)) - (compact ? 12 : 28);
+  const outerBottom =
+    Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + (compact ? 12 : 28);
   const sourceY = source.y + source.height / 2;
   const targetX = target.x + target.width / 2;
   return [
@@ -540,10 +544,12 @@ export function routeFlowchartFeedbackLane(svg: SVGSVGElement, force = false) {
   const otherPathBounds = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')]
     .filter((path) => path !== feedback.path)
     .map((path) => path.getBBox());
-  const points = buildFlowchartFeedbackLanePoints(source, target, [
-    ...nodeBounds,
-    ...otherPathBounds,
-  ]);
+  const points = buildFlowchartFeedbackLanePoints(
+    source,
+    target,
+    [...nodeBounds, ...otherPathBounds],
+    feedback.path.dataset.compactFlowchart === 'true',
+  );
   feedback.path.setAttribute(
     'd',
     points.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(''),

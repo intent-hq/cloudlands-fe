@@ -838,8 +838,17 @@ ${verticalSource}`;
         })
       : baseBounds;
     if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return;
+    const flowchart = svg.getAttribute('aria-roledescription') === 'flowchart-v2';
     const groupedFlowchart = Boolean(svg.querySelector('g.cluster'));
-    const padding = groupedFlowchart ? 24 : compactLayout ? (normalizedState ? 10 : 8) : 10;
+    const padding = flowchart
+      ? 28
+      : groupedFlowchart
+        ? 24
+        : compactLayout
+          ? normalizedState
+            ? 10
+            : 8
+          : 10;
     let width = Math.ceil(bounds.width + padding * 2);
     let height = Math.ceil(bounds.height + padding * 2);
     svg.setAttribute('viewBox', `${bounds.x - padding} ${bounds.y - padding} ${width} ${height}`);
@@ -906,7 +915,7 @@ ${verticalSource}`;
       svg.setAttribute('height', String(height));
       setReadableMermaidWidth(svg, width);
     }
-    if (normalizedState || groupedFlowchart) {
+    if (normalizedState || groupedFlowchart || (compactLayout && flowchart)) {
       svg.style.setProperty('--mermaid-readable-width', '0px');
       svg.style.setProperty('max-width', '100%');
     }

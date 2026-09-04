@@ -577,14 +577,25 @@ for (const appearance of appearances) {
           const labels = [...svg.querySelectorAll<SVGGElement>('g.edgeLabel')].filter((label) =>
             label.textContent?.trim(),
           );
-          const frame = svg.getBoundingClientRect();
+          const frame = svg.closest<HTMLElement>('.mermaid-presentation')!.getBoundingClientRect();
+          const canvasMargin = 16;
+          if (
+            nodes.some(
+              ({ bounds }) =>
+                bounds.left < frame.left + canvasMargin ||
+                bounds.right > frame.right - canvasMargin ||
+                bounds.top < frame.top + canvasMargin ||
+                bounds.bottom > frame.bottom - canvasMargin,
+            )
+          )
+            violations.push('node leaves painted canvas');
           for (let left = 0; left < labels.length; left += 1) {
             const a = labels[left].getBoundingClientRect();
             if (
-              a.left < frame.left + 5 ||
-              a.right > frame.right - 5 ||
-              a.top < frame.top + 5 ||
-              a.bottom > frame.bottom - 5
+              a.left < frame.left + canvasMargin ||
+              a.right > frame.right - canvasMargin ||
+              a.top < frame.top + canvasMargin ||
+              a.bottom > frame.bottom - canvasMargin
             )
               violations.push(`${labels[left].textContent?.trim()} leaves frame`);
             for (let right = left + 1; right < labels.length; right += 1) {
@@ -602,15 +613,20 @@ for (const appearance of appearances) {
           if (
             paths.some((path) => {
               const matrix = path.getScreenCTM()!;
+              const markerBleed = path.hasAttribute('marker-end') ? 4 : 0;
+              const paintBleed = Math.max(
+                Number.parseFloat(getComputedStyle(path).strokeWidth) / 2,
+                markerBleed,
+              );
               return Array.from({ length: 121 }, (_, index) => {
                 const point = path.getPointAtLength((path.getTotalLength() * index) / 120);
                 return new DOMPoint(point.x, point.y).matrixTransform(matrix);
               }).some(
                 (point) =>
-                  point.x < frame.left + 5 ||
-                  point.x > frame.right - 5 ||
-                  point.y < frame.top + 5 ||
-                  point.y > frame.bottom - 5,
+                  point.x < frame.left + canvasMargin + paintBleed ||
+                  point.x > frame.right - canvasMargin - paintBleed ||
+                  point.y < frame.top + canvasMargin + paintBleed ||
+                  point.y > frame.bottom - canvasMargin - paintBleed,
               );
             })
           )
