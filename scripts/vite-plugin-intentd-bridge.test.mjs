@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BRIDGE_PATH,
   intentdBridgePlugin,
+  isLoopbackHostname,
+  isSameLoopbackOrigin,
   resolveIntentdSocketPath,
 } from './vite-plugin-intentd-bridge.mjs';
 
@@ -208,19 +210,74 @@ describe('intentd Vite bridge', () => {
     );
   });
 
-  it('resolves socket overrides before platform defaults', () => {
-    expect(resolveIntentdSocketPath({ INTENTD_SOCKET: '/run/custom.sock' }, 'linux')).toBe(
+  it('resolves trimmed socket overrides before platform defaults', () => {
+    expect(resolveIntentdSocketPath({ INTENTD_SOCKET: ' /run/custom.sock ' }, 'linux')).toBe(
       '/run/custom.sock',
     );
-    expect(resolveIntentdSocketPath({ INTENTD_DATA_DIR: '/var/lib/intentd-dev' }, 'linux')).toBe(
+    expect(resolveIntentdSocketPath({ INTENTD_DATA_DIR: ' /var/lib/intentd-dev ' }, 'linux')).toBe(
       '/var/lib/intentd-dev/intentd.sock',
     );
+  });
+
+  it('follows the documented Linux XDG data directory contract', () => {
+    expect(
+      resolveIntentdSocketPath({ HOME: '/home/dev', XDG_DATA_HOME: '.dev/data' }, 'linux'),
+    ).toBe('/home/dev/.local/share/intentd/intentd.sock');
+    expect(
+      resolveIntentdSocketPath({ HOME: '/home/dev', XDG_DATA_HOME: ' /srv/intent-data ' }, 'linux'),
+    ).toBe('/srv/intent-data/intentd/intentd.sock');
+  });
+
+  it('keeps the documented darwin default independent of XDG_DATA_HOME', () => {
     expect(resolveIntentdSocketPath({ HOME: '/Users/dev' }, 'darwin')).toBe(
       '/Users/dev/Library/Application Support/intentd/intentd.sock',
     );
+    expect(
+      resolveIntentdSocketPath({ HOME: '/Users/dev', XDG_DATA_HOME: '/tmp/xdg' }, 'darwin'),
+    ).toBe('/Users/dev/Library/Application Support/intentd/intentd.sock');
+  });
+
+  it('uses the documented Linux home fallback when XDG_DATA_HOME is absent', () => {
     expect(resolveIntentdSocketPath({ HOME: '/home/dev' }, 'linux')).toBe(
       '/home/dev/.local/share/intentd/intentd.sock',
     );
+  });
+
+  it.each([
+    'localhost',
+    'daemon.localhost',
+    'foo.bar.localhost',
+    '127.0.0.1',
+    '127.255.255.255',
+    '::1',
+    '[::1]',
+  ])('recognizes %s as a loopback hostname', (hostname) => {
+    expect(isLoopbackHostname(hostname)).toBe(true);
+  });
+
+  it.each(['localhost.evil.com', 'evil-localhost', 'example.com'])(
+    'rejects %s as a loopback hostname',
+    (hostname) => {
+      expect(isLoopbackHostname(hostname)).toBe(false);
+    },
+  );
+
+  it.each([
+    ['http://daemon.localhost:5173', 'daemon.localhost:5173'],
+    ['https://foo.bar.localhost:5173', 'foo.bar.localhost:5173'],
+    ['http://127.0.0.1:5173', '127.0.0.1:5173'],
+    ['http://[::1]:5173', '[::1]:5173'],
+  ])('accepts matching loopback origin %s', (origin, host) => {
+    expect(isSameLoopbackOrigin(origin, host)).toBe(true);
+  });
+
+  it.each([
+    ['http://localhost.evil.com:5173', 'localhost.evil.com:5173'],
+    ['http://evil-localhost:5173', 'evil-localhost:5173'],
+    ['http://example.com:5173', 'example.com:5173'],
+    ['http://daemon.localhost:5173', 'localhost:5173'],
+  ])('rejects non-loopback or mismatched origin %s', (origin, host) => {
+    expect(isSameLoopbackOrigin(origin, host)).toBe(false);
   });
 
   it('round-trips one WebSocket message as one daemon line', async () => {

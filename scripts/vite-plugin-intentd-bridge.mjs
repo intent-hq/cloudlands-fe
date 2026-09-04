@@ -1,5 +1,8 @@
+// Keep socket resolution aligned with src/features/backend/main/intentd-data-dir.ts,
+// the source of truth for the FE's mirror of the daemon's platform defaults.
 import crypto from 'node:crypto';
 import net from 'node:net';
+import path from 'node:path';
 
 export const BRIDGE_PATH = '/intentd/ws';
 export const MAX_MESSAGE_BYTES = 40 * 1024 * 1024;
@@ -14,13 +17,17 @@ const OP_PING = 0x9;
 const OP_PONG = 0xa;
 
 export function resolveIntentdSocketPath(env = process.env, platform = process.platform) {
-  if (env.INTENTD_SOCKET) return env.INTENTD_SOCKET;
-  if (env.INTENTD_DATA_DIR) return `${env.INTENTD_DATA_DIR}/intentd.sock`;
+  const socketPath = env.INTENTD_SOCKET?.trim();
+  if (socketPath) return socketPath;
+  const dataDir = env.INTENTD_DATA_DIR?.trim();
+  if (dataDir) return `${dataDir}/intentd.sock`;
   const home = env.HOME || env.USERPROFILE || '';
   if (platform === 'darwin') {
     return `${home}/Library/Application Support/intentd/intentd.sock`;
   }
-  const dataHome = env.XDG_DATA_HOME || `${home}/.local/share`;
+  const xdgDataHome = env.XDG_DATA_HOME?.trim();
+  const dataHome =
+    xdgDataHome && path.isAbsolute(xdgDataHome) ? xdgDataHome : `${home}/.local/share`;
   return `${dataHome}/intentd/intentd.sock`;
 }
 
@@ -28,7 +35,12 @@ export function isLoopbackHostname(hostname) {
   const host = String(hostname)
     .replace(/^\[|\]$/g, '')
     .toLowerCase();
-  return host === 'localhost' || host === '::1' || /^127(?:\.[0-9]{1,3}){3}$/.test(host);
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '::1' ||
+    /^127(?:\.[0-9]{1,3}){3}$/.test(host)
+  );
 }
 
 export function isSameLoopbackOrigin(origin, host) {
