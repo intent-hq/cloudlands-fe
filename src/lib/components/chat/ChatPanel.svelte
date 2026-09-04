@@ -5329,7 +5329,7 @@
 
 <div
   bind:this={panelElement}
-  class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
@@ -5413,6 +5413,7 @@
           class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
             ? 'px-0'
             : 'px-4 sm:px-6'}"
+          class:regular-chat-content-inset={!isChiefWorkspace}
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -5456,6 +5457,7 @@
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+        class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-transcript-inner"
       >
         <!-- Task Assignment Pill -->
@@ -5535,7 +5537,7 @@
           />
         {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
           <!-- Initial workspace agent with no prompt, hydration settled — show setup card only, no skeletons (a loading transcript falls through to the skeleton branch below) -->
-          <div class="pt-16 pb-6">
+          <div class="workspace-setup-card-alignment pt-16 pb-6">
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
                 onboardingContext.projectPath?.split('/').pop() ||
@@ -5579,7 +5581,7 @@
               <!-- No animation - parent already showed optimistic message, but we need to keep showing it -->
               <div class="w-full">
                 {#if isInitialWorkspaceAgent && onboardingContext}
-                  <div class="pt-16 pb-6">
+                  <div class="workspace-setup-card-alignment pt-16 pb-6">
                     <WorkspaceSetupCard
                       repoName={onboardingContext.projectName ||
                         onboardingContext.projectPath?.split('/').pop() ||
@@ -5691,7 +5693,7 @@
               <!-- NOTE: Removed in:fly transition to debug duplicate flash issue -->
               <div class="w-full">
                 {#if isInitialWorkspaceAgent && onboardingContext}
-                  <div class="pt-16 pb-6">
+                  <div class="workspace-setup-card-alignment pt-16 pb-6">
                     <WorkspaceSetupCard
                       repoName={onboardingContext.projectName ||
                         onboardingContext.projectPath?.split('/').pop() ||
@@ -5855,7 +5857,7 @@
                    falsely signals the beginning of the conversation; the
                    older-history loading affordance below renders instead. -->
               {#if isInitialWorkspaceAgent && onboardingContext && conversationStartLoaded}
-                <div class="pt-16 pb-6">
+                <div class="workspace-setup-card-alignment pt-16 pb-6">
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
@@ -6561,9 +6563,15 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
-                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
+                editorClassName={isChiefWorkspace
+                  ? 'w-full px-3!'
+                  : 'regular-composer-content-inset w-full'}
+                contentInsetClassName={isChiefWorkspace
+                  ? 'w-full px-3'
+                  : 'regular-composer-content-inset w-full'}
+                actionBarEndClassName={isChiefWorkspace
+                  ? 'pr-3!'
+                  : 'regular-composer-content-inset'}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -6578,6 +6586,50 @@
 </div>
 
 <style>
+  .chat-panel-container {
+    container: chat-panel / inline-size;
+  }
+
+  .regular-chat-content-inset {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  :global(.regular-composer-content-inset) {
+    padding-right: 1rem !important;
+    padding-left: 1rem !important;
+  }
+
+  .workspace-setup-card-alignment {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+    margin-left: -0.5rem;
+    text-align: left;
+  }
+
+  @container chat-panel (max-width: 639.98px) {
+    .regular-chat-content-inset {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
+    }
+
+    .workspace-setup-card-alignment {
+      margin-left: 1.5rem;
+    }
+  }
+
+  @container chat-panel (min-width: 640px) {
+    .regular-chat-content-inset {
+      padding-left: 3.1rem;
+      padding-right: 3.1rem;
+    }
+
+    :global(.regular-composer-content-inset) {
+      padding-right: 1.5rem !important;
+      padding-left: 1.5rem !important;
+    }
+  }
+
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
@@ -6670,7 +6722,7 @@
     padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
   }
 
-  @media (min-width: 640px) {
+  @container chat-panel (min-width: 640px) {
     .conversation-composer {
       --composer-lane-inset-x: 1.5rem;
       --composer-lane-inset-bottom: 1.5rem;

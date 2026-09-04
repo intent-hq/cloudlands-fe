@@ -220,7 +220,8 @@ for (const theme of ['light', 'dark'] as const) {
             expect(row.cardEdges).toEqual(row.rowEdges);
             expect(row.leadingCenter[1]).toBeCloseTo(row.rowCenter, 1);
             expect(row.iconCenter[1]).toBeCloseTo(row.rowCenter, 1);
-            expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(36 * zoom, 1);
+            const labelInset = width === 320 ? 32 : 36;
+            expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(labelInset * zoom, 1);
             expect(row.insets[2] - row.insets[1]).toBeCloseTo(0, 1);
             expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
             expect(row.margins).toEqual([
