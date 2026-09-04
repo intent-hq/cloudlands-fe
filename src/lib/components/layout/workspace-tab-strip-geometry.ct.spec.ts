@@ -4,6 +4,7 @@ import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.pre
 import {
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
   WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+  WORKSPACE_TAB_MOTION_DURATION_MS,
 } from './titlebar-geometry';
 
 async function expectVisibleThroughAncestorClipping(target: Locator) {
@@ -183,28 +184,64 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
       const frames: Array<{
         width: number | null;
         activeId: string | null;
+        visualY: number | null;
+        visualOpacity: number | null;
+        launcherLeft: number | null;
+        scrollLeft: number | null;
+        scrollWidth: number | null;
+        clientWidth: number | null;
+        overflowing: boolean;
+        fadesLeft: boolean;
+        stripMaskImage: string | null;
+        slotOverflow: string | null;
+        tabRects: Array<[string, { left: number; width: number }]>;
         maskLeftDelta: number | null;
         maskWidthDelta: number | null;
+        maskTransitionDuration: string | null;
       }> = [];
       (button as HTMLButtonElement).click();
-      for (let index = 0; index < 40; index += 1) {
+      for (let index = 0; index < 60; index += 1) {
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         const motion = document.querySelector<HTMLElement>(`[data-workspace-tab-motion="${id}"]`);
         const active = document.querySelector<HTMLElement>(
           '[data-workspace-tab][data-active="true"]',
         );
+        const visual = document.querySelector<HTMLElement>(`[data-workspace-tab-visual="${id}"]`);
+        const launcher = document.querySelector<HTMLElement>('[data-preview-launcher]');
         const mask = document.querySelector<HTMLElement>('[data-active-tab-border-mask]');
         const strip = document.querySelector<HTMLElement>('[data-workspace-tab-strip]');
         const activeRect = active?.getBoundingClientRect();
+        const visualRect = visual?.getBoundingClientRect();
+        const launcherRect = launcher?.getBoundingClientRect();
         const maskRect = mask?.getBoundingClientRect();
         const stripRect = strip?.getBoundingClientRect();
         const expectedMaskLeft =
           activeRect && stripRect ? Math.max(activeRect.left, stripRect.left) : null;
         const expectedMaskRight =
           activeRect && stripRect ? Math.min(activeRect.right, stripRect.right) : null;
+        const tabRects = Array.from(
+          document.querySelectorAll<HTMLElement>('[data-workspace-tab]'),
+        ).map((tab) => {
+          const rect = tab.getBoundingClientRect();
+          return [tab.dataset.workspaceTab ?? '', { left: rect.left, width: rect.width }] as [
+            string,
+            { left: number; width: number },
+          ];
+        });
         frames.push({
           width: motion?.getBoundingClientRect().width ?? null,
           activeId: active?.dataset.workspaceTab ?? null,
+          visualY: visualRect?.y ?? null,
+          visualOpacity: visual ? Number.parseFloat(getComputedStyle(visual).opacity) : null,
+          launcherLeft: launcherRect?.left ?? null,
+          scrollLeft: strip?.scrollLeft ?? null,
+          scrollWidth: strip?.scrollWidth ?? null,
+          clientWidth: strip?.clientWidth ?? null,
+          overflowing: strip?.classList.contains('flex-1') ?? false,
+          fadesLeft: strip?.dataset.fadeLeft === 'true',
+          stripMaskImage: strip ? getComputedStyle(strip).maskImage : null,
+          slotOverflow: motion ? getComputedStyle(motion).overflow : null,
+          tabRects,
           maskLeftDelta:
             maskRect && expectedMaskLeft !== null
               ? Math.abs(maskRect.left - expectedMaskLeft)
@@ -213,12 +250,26 @@ async function captureTabMotion(control: Locator, workspaceId: string) {
             maskRect && expectedMaskLeft !== null && expectedMaskRight !== null
               ? Math.abs(maskRect.width - (expectedMaskRight - expectedMaskLeft))
               : null,
+          maskTransitionDuration: mask ? getComputedStyle(mask).transitionDuration : null,
         });
       }
       return frames;
     },
     { id: workspaceId },
   );
+}
+
+function countMotionReversals(values: number[]): number {
+  let direction = 0;
+  let reversals = 0;
+  for (let index = 1; index < values.length; index += 1) {
+    const delta = values[index] - values[index - 1];
+    if (Math.abs(delta) < 2) continue;
+    const nextDirection = Math.sign(delta);
+    if (direction !== 0 && nextDirection !== direction) reversals += 1;
+    direction = nextDirection;
+  }
+  return reversals;
 }
 
 async function getBorderMaskFadeStops(component: Locator) {
@@ -438,6 +489,12 @@ test('renders both flare strokes on the panel border rows at 1x and 2x', async (
   const component = await mount(WorkspaceTabStripGeometryPreview, {
     props: { activeWorkspaceId: 'geometry-beta' },
   });
+  await component.locator('.workspace-controls').evaluate((controls) => {
+    const element = controls as HTMLElement;
+    element.style.width = '650px';
+    element.style.flex = 'none';
+  });
+  await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
   await component.evaluate((root) => {
     (root as HTMLElement).style.setProperty('--sidebar', '0 0% 100%');
     (root as HTMLElement).style.setProperty('--border', '0 0% 0%');
@@ -450,6 +507,7 @@ test('renders both flare strokes on the panel border rows at 1x and 2x', async (
       (root as HTMLElement).style.transform = `scale(${value})`;
       (root as HTMLElement).style.transformOrigin = 'top left';
     }, zoom);
+    await page.waitForTimeout(200);
     const geometry = await getFlareEndpointGeometry(component);
     expect(Math.abs(geometry.leadingStart.x - geometry.tabLeftBorderCenter)).toBeLessThanOrEqual(
       0.5,
@@ -469,6 +527,11 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   const component = await mount(WorkspaceTabStripGeometryPreview, {
     props: { initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta'], interactive: true },
   });
+  await component.locator('.workspace-controls').evaluate((controls) => {
+    const element = controls as HTMLElement;
+    element.style.width = '650px';
+    element.style.flex = 'none';
+  });
   const tab = component.locator('[data-workspace-tab-motion="geometry-gamma"]');
   const naturalWidth = await component
     .locator('[data-workspace-tab-motion="geometry-beta"]')
@@ -487,6 +550,22 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   expect(
     openingFrames.some(({ width }) => width !== null && width > 0 && width < naturalWidth),
   ).toBe(true);
+  const openingVisual = openingFrames.flatMap(({ visualY, visualOpacity }) =>
+    visualY === null || visualOpacity === null ? [] : [{ visualY, visualOpacity }],
+  );
+  expect(openingVisual.some((frame) => frame.visualY > openingVisual.at(-1)!.visualY + 1)).toBe(
+    true,
+  );
+  expect(openingVisual.some((frame) => frame.visualOpacity > 0 && frame.visualOpacity < 1)).toBe(
+    true,
+  );
+  const openingLauncher = openingFrames.flatMap((frame) =>
+    frame.launcherLeft === null ? [] : [frame.launcherLeft],
+  );
+  expect(Math.max(...openingLauncher) - Math.min(...openingLauncher)).toBeGreaterThan(8);
+  expect(
+    Math.min(...openingLauncher.slice(1).map((value, index) => value - openingLauncher[index])),
+  ).toBeGreaterThan(-8);
   expect(
     openingFrames.some(
       ({ width, activeId, maskLeftDelta, maskWidthDelta }) =>
@@ -502,6 +581,7 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   ).toBe(true);
   await expect(tab).toHaveCount(1);
   expect(await tab.evaluate((element) => element.getBoundingClientRect().width)).toBe(naturalWidth);
+  await component.page().waitForTimeout(50);
 
   const closingFrames = await captureTabMotion(
     component.locator('[data-workspace-tab="geometry-gamma"] [data-workspace-tab-close]'),
@@ -510,16 +590,257 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   expect(
     closingFrames.some(({ width }) => width !== null && width > 0 && width < naturalWidth),
   ).toBe(true);
+  const closingVisual = closingFrames.flatMap(({ visualY, visualOpacity }) =>
+    visualY === null || visualOpacity === null ? [] : [{ visualY, visualOpacity }],
+  );
+  expect(closingVisual.some((frame) => frame.visualY > closingVisual[0].visualY + 1)).toBe(true);
+  expect(closingVisual.some((frame) => frame.visualOpacity > 0 && frame.visualOpacity < 1)).toBe(
+    true,
+  );
+  const closingLauncher = closingFrames.flatMap((frame) =>
+    frame.launcherLeft === null ? [] : [frame.launcherLeft],
+  );
+  expect(
+    Math.max(...closingLauncher) - Math.min(...closingLauncher),
+    JSON.stringify(
+      closingFrames.map(({ width, launcherLeft, scrollWidth, clientWidth, overflowing }) => ({
+        width,
+        launcherLeft,
+        scrollWidth,
+        clientWidth,
+        overflowing,
+      })),
+    ),
+  ).toBeGreaterThan(8);
+  expect(
+    Math.max(...closingLauncher.slice(1).map((value, index) => value - closingLauncher[index])),
+  ).toBeLessThan(8);
+  const closingScroll = closingFrames.flatMap((frame) =>
+    frame.scrollLeft === null ? [] : [frame.scrollLeft],
+  );
+  expect(countMotionReversals(closingScroll)).toBe(0);
   expect(closingFrames.some(({ width }) => width === null)).toBe(true);
   expect(
     closingFrames.some(
       ({ width, activeId }) =>
-        width !== null && width > 0 && width < naturalWidth && activeId === 'geometry-gamma',
+        width !== null &&
+        width > 0 &&
+        width < naturalWidth &&
+        activeId !== null &&
+        activeId !== 'geometry-gamma',
     ),
   ).toBe(true);
   await expect(tab).toHaveCount(0);
 
   await expectMaskAttachedToActiveTab(component);
+});
+
+test('closes the active rightmost tab without reversing an overflowing strip', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: {
+      initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta', 'geometry-gamma'],
+      activeWorkspaceId: 'geometry-gamma',
+      interactive: true,
+    },
+  });
+  await component.locator('.workspace-controls').evaluate((controls) => {
+    const element = controls as HTMLElement;
+    element.style.width = '490px';
+    element.style.flex = 'none';
+  });
+  await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+  await component.locator('[data-workspace-tab-strip]').evaluate((strip) => {
+    strip.scrollLeft = strip.scrollWidth;
+    strip.dispatchEvent(new Event('scroll'));
+  });
+  await page.waitForTimeout(50);
+
+  const frames = await captureTabMotion(
+    component.locator('[data-workspace-tab="geometry-gamma"] [data-workspace-tab-close]'),
+    'geometry-gamma',
+  );
+  const widths = frames.flatMap((frame) => (frame.width === null ? [] : [frame.width]));
+  const visual = frames.flatMap(({ visualY, visualOpacity }) =>
+    visualY === null || visualOpacity === null ? [] : [{ visualY, visualOpacity }],
+  );
+  const scroll = frames.flatMap((frame) => (frame.scrollLeft === null ? [] : [frame.scrollLeft]));
+  const scrollWidths = frames.flatMap((frame) =>
+    frame.scrollWidth === null ? [] : [frame.scrollWidth],
+  );
+  const launcher = frames.flatMap((frame) =>
+    frame.launcherLeft === null ? [] : [frame.launcherLeft],
+  );
+  const targetGaps = frames.flatMap(({ tabRects }) => {
+    const targetIndex = tabRects.findIndex(([id]) => id === 'geometry-gamma');
+    if (targetIndex < 1) return [];
+    const previous = tabRects[targetIndex - 1][1];
+    return [tabRects[targetIndex][1].left - previous.left - previous.width];
+  });
+
+  expect(widths.some((width) => width > 1 && width < 159)).toBe(true);
+  expect(visual.some((frame) => frame.visualY > visual[0].visualY + 1)).toBe(true);
+  expect(visual.some((frame) => frame.visualOpacity > 0 && frame.visualOpacity < 1)).toBe(true);
+  expect(countMotionReversals(scroll), JSON.stringify(scroll)).toBe(0);
+  expect(
+    Math.max(...scroll.slice(1).map((value, index) => Math.abs(value - scroll[index]))),
+    JSON.stringify(frames),
+  ).toBeLessThanOrEqual(8);
+  expect(scroll.at(-1), JSON.stringify(frames.slice(-8))).toBeLessThanOrEqual(1);
+  expect(Math.max(...scrollWidths) - scrollWidths[0]).toBeLessThanOrEqual(1);
+  expect(scrollWidths.at(-1), JSON.stringify(frames.slice(-8))).toBe(frames.at(-1)?.clientWidth);
+  expect(
+    Math.max(...launcher.slice(1).map((value, index) => Math.abs(value - launcher[index]))),
+    JSON.stringify(frames.slice(-12)),
+  ).toBeLessThanOrEqual(8);
+  expect(countMotionReversals(launcher), JSON.stringify(launcher)).toBe(0);
+  expect(Math.min(...targetGaps), JSON.stringify(targetGaps)).toBeGreaterThanOrEqual(-1);
+  expect(
+    frames
+      .filter((frame) => (frame.scrollLeft ?? 0) > 0.5)
+      .every((frame) => frame.fadesLeft && frame.stripMaskImage !== 'none'),
+    JSON.stringify(
+      frames.map(({ scrollLeft, fadesLeft, stripMaskImage }) => ({
+        scrollLeft,
+        fadesLeft,
+        stripMaskImage,
+      })),
+    ),
+  ).toBe(true);
+  const trackedMaskFrames = frames.filter(
+    (frame) =>
+      frame.width !== null &&
+      frame.width > 1 &&
+      frame.width < 159 &&
+      frame.maskLeftDelta !== null &&
+      frame.maskWidthDelta !== null,
+  );
+  expect(trackedMaskFrames.every((frame) => frame.maskTransitionDuration === '0s')).toBe(true);
+  expect(
+    trackedMaskFrames.every(
+      (frame) => Math.abs(frame.maskLeftDelta!) < 1 && Math.abs(frame.maskWidthDelta!) < 1,
+    ),
+  ).toBe(true);
+  const settledMaskFrames = frames.filter(
+    (frame) => frame.maskLeftDelta !== null && frame.maskWidthDelta !== null,
+  );
+  expect(
+    settledMaskFrames
+      .slice(-8)
+      .every((frame) => Math.abs(frame.maskLeftDelta!) < 1 && Math.abs(frame.maskWidthDelta!) < 1),
+  ).toBe(true);
+});
+
+test('closes an active middle tab with monotonic neighbor and launcher motion', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: {
+      initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta', 'geometry-gamma'],
+      activeWorkspaceId: 'geometry-beta',
+      interactive: true,
+    },
+  });
+  await component.locator('.workspace-controls').evaluate((controls) => {
+    const element = controls as HTMLElement;
+    element.style.width = '650px';
+    element.style.flex = 'none';
+  });
+  await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+
+  const frames = await captureTabMotion(
+    component.locator('[data-workspace-tab="geometry-beta"] [data-workspace-tab-close]'),
+    'geometry-beta',
+  );
+  const gammaLeft = frames.flatMap((frame) => {
+    const rect = frame.tabRects.find(([id]) => id === 'geometry-gamma')?.[1];
+    return rect ? [rect.left] : [];
+  });
+  const launcher = frames.flatMap((frame) =>
+    frame.launcherLeft === null ? [] : [frame.launcherLeft],
+  );
+  const visual = frames.flatMap(({ visualY, visualOpacity }) =>
+    visualY === null || visualOpacity === null ? [] : [{ visualY, visualOpacity }],
+  );
+  const targetGaps = frames.flatMap(({ tabRects }) => {
+    const targetIndex = tabRects.findIndex(([id]) => id === 'geometry-beta');
+    if (targetIndex < 1) return [];
+    const previous = tabRects[targetIndex - 1][1];
+    return [tabRects[targetIndex][1].left - previous.left - previous.width];
+  });
+
+  expect(Math.max(...gammaLeft) - Math.min(...gammaLeft)).toBeGreaterThan(5);
+  expect(countMotionReversals(gammaLeft)).toBe(0);
+  expect(Math.min(...targetGaps), JSON.stringify(targetGaps)).toBeGreaterThanOrEqual(-1);
+  expect(Math.max(...launcher) - Math.min(...launcher)).toBeGreaterThan(100);
+  expect(
+    Math.max(...launcher.slice(1).map((value, index) => value - launcher[index])),
+  ).toBeLessThan(8);
+  const removalIndex = frames.findIndex((frame) => frame.width === null);
+  const postRemovalLauncher = frames
+    .slice(removalIndex)
+    .flatMap((frame) => (frame.launcherLeft === null ? [] : [frame.launcherLeft]));
+  expect(Math.max(...postRemovalLauncher) - Math.min(...postRemovalLauncher)).toBeLessThan(3);
+  expect(visual.some((frame) => frame.visualY > visual[0].visualY + 1)).toBe(true);
+  expect(visual.some((frame) => frame.visualOpacity > 0 && frame.visualOpacity < 1)).toBe(true);
+  expect(
+    frames
+      .filter((frame) => frame.width !== null && frame.width > 1 && frame.width < 159)
+      .every((frame) => frame.slotOverflow === 'hidden'),
+  ).toBe(true);
+  expect(
+    frames.some(
+      (frame) =>
+        frame.width !== null &&
+        frame.width > 1 &&
+        frame.width < 159 &&
+        frame.activeId !== null &&
+        frame.activeId !== 'geometry-beta',
+    ),
+    JSON.stringify(frames.map(({ width, activeId }) => ({ width, activeId }))),
+  ).toBe(true);
+  await expectMaskAttachedToActiveTab(component);
+});
+
+test('removes tab lifecycle motion when reduced motion is preferred', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceTabStripGeometryPreview, {
+    props: { initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta'], interactive: true },
+  });
+  await page.waitForTimeout(50);
+
+  const openingFrames = await captureTabMotion(
+    component.locator('[data-open-tab]'),
+    'geometry-gamma',
+  );
+  expect(
+    openingFrames.some((frame) => frame.width !== null && frame.width > 1 && frame.width < 159),
+  ).toBe(false);
+  expect(
+    openingFrames.some(
+      (frame) => frame.visualOpacity !== null && frame.visualOpacity > 0 && frame.visualOpacity < 1,
+    ),
+  ).toBe(false);
+
+  const closingFrames = await captureTabMotion(
+    component.locator('[data-workspace-tab="geometry-gamma"] [data-workspace-tab-close]'),
+    'geometry-gamma',
+  );
+  expect(
+    closingFrames.some((frame) => frame.width !== null && frame.width > 1 && frame.width < 159),
+  ).toBe(false);
+  await expect(component.locator('[data-workspace-tab-motion="geometry-gamma"]')).toHaveCount(0);
+  expect(
+    closingFrames
+      .filter((frame) => frame.maskLeftDelta !== null && frame.maskWidthDelta !== null)
+      .slice(-8)
+      .every((frame) => Math.abs(frame.maskLeftDelta!) < 1 && Math.abs(frame.maskWidthDelta!) < 1),
+  ).toBe(true);
 });
 
 test('matches the closed-sidebar logo gap to the tab gap while the flare stays visible', async ({

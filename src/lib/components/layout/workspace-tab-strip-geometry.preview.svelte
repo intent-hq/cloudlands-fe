@@ -103,13 +103,21 @@
       </div>
       <div class="workspace-controls" data-titlebar-workspace-controls>
         <WorkspaceTabStrip
-          {activeWorkspaceId}
+          activeWorkspaceId={interactive ? undefined : activeWorkspaceId}
           {leadingInsetPx}
           {scrollerMarginLeftPx}
           horizontalPositionTrackingKey={leadingInsetPx + scrollerMarginLeftPx}
           onActiveTabBoundsChange={(bounds) => (activeTabBounds = bounds)}
           onActiveTabTrackingChange={(tracking) => (activeTabTracking = tracking)}
         />
+        <div
+          class="preview-launcher"
+          data-preview-launcher
+          aria-hidden="true"
+          style:translate="var(--workspace-tab-launcher-offset, 0px) 0"
+        >
+          +
+        </div>
       </div>
       <div class="drag-handle"></div>
     </div>
@@ -215,6 +223,14 @@
     align-self: flex-end;
     align-items: center;
     gap: 4px;
+  }
+
+  .preview-launcher {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    place-items: center;
   }
 
   .drag-handle {

@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { onMount } from 'svelte';
+  import { flushSync, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
@@ -52,7 +52,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
-  import { resize } from './size-transition';
+  import { prepareTabOutro, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_BORDER_WIDTH_PX,
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -103,8 +103,6 @@
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
   );
-  // Persisted tab IDs are available before workspace metadata hydrates. Keep
-  // them in the strip so inactive tabs do not disappear during refresh.
   const visibleTabIds = $derived($workspaceTabOrder$);
 
   interface WorkspaceTabDragSession {
@@ -130,7 +128,6 @@
   let pendingDragPointer: WorkspaceTabPointerGrab | null = null;
   let dragClientX = $state(0);
   let proposedTabOrder = $state<string[] | null>(null);
-  let closingActiveWorkspaceId = $state<string | null>(null);
   let lifecycleMotionReady = $state(false);
   let prefersReducedMotion = $state(false);
   let suppressClickWorkspaceId: string | null = null;
@@ -138,18 +135,20 @@
   const selectedWorkspaceId = $derived(
     activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId,
   );
-  const visualActiveWorkspaceId = $derived(closingActiveWorkspaceId ?? selectedWorkspaceId);
+  const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
   const workspaceTabMotionDuration = $derived(
     prefersReducedMotion ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
   );
+  let refreshOverflow = () => {};
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
   let stripElement = $state<HTMLDivElement | null>(null);
   let isOverflowing = $state(false);
+  let pendingOutroOverflow = $state<boolean | null>(null);
   let hasHiddenTabsLeft = $state(false);
   let hasHiddenTabsRight = $state(false);
   const workspaceTabMaskImage = $derived.by(() => {
-    if (!isOverflowing) return 'none';
+    if (!hasHiddenTabsLeft && !hasHiddenTabsRight) return 'none';
     const leftStops = hasHiddenTabsLeft
       ? `transparent ${WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX}px, black ${WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX}px`
       : 'black 0';
@@ -166,13 +165,9 @@
   const leadingFlareStrokePath = `M ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 1 ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX}`;
   const trailingFlareFillPath = `M ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX} H 0 V ${WORKSPACE_TAB_FLARE_INNER_PX} H ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 0 ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX} Z`;
   const trailingFlareStrokePath = `M ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 0 ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX}`;
-  // Active tab bounds drive the parent border mask that hides the sidebar
-  // border under the active tab. Svelte's animate:flip moves tabs via CSS
-  // transform, which ResizeObserver does not fire on, so during the flip the
-  // mask stays put while the tab slides. Poll via rAF for the full layout
-  // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
   const activeTabBoundsReporters = new Set<() => void>();
+  const activeTabBoundsControllers = new Map<string, (active: boolean) => void>();
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
   let dragTracking = false;
@@ -209,8 +204,11 @@
   });
 
   function reportActiveTabTracking() {
-    onActiveTabTrackingChange?.(layoutTracking || dragTracking || scrollTracking);
+    const tracking = layoutTracking || dragTracking || scrollTracking;
+    flushSync(() => onActiveTabTrackingChange?.(tracking));
   }
+  const emitActiveTabBounds = (bounds: WorkspaceTabBorderMaskBounds | null) =>
+    flushSync(() => onActiveTabBoundsChange?.(bounds));
 
   onMount(() => {
     activeStreamsTracker.startPolling();
@@ -263,7 +261,7 @@
     if (!strip) return;
     void renderedTabOrder;
     const updateOverflow = () => {
-      isOverflowing = strip.scrollWidth > strip.clientWidth;
+      isOverflowing = pendingOutroOverflow ?? strip.scrollWidth > strip.clientWidth;
       const fadeState = getWorkspaceTabScrollFadeState(
         strip.scrollLeft,
         strip.scrollWidth,
@@ -273,6 +271,7 @@
       hasHiddenTabsRight = fadeState.right;
       activeTabBoundsReporters.forEach((report) => report());
     };
+    refreshOverflow = updateOverflow;
     updateOverflow();
     const observer = new ResizeObserver(updateOverflow);
     observer.observe(strip);
@@ -280,6 +279,7 @@
     return () => {
       observer.disconnect();
       strip.removeEventListener('scroll', updateOverflow);
+      if (refreshOverflow === updateOverflow) refreshOverflow = () => {};
     };
   });
 
@@ -297,12 +297,13 @@
       frame = null;
       if (cancelled) return;
       startedAt ??= timestamp;
-      activeTabBoundsPollers.forEach((poll) => poll());
+      activeTabBoundsReporters.forEach((report) => report());
       if (timestamp - startedAt < trackingDuration) {
         frame = requestAnimationFrame(tick);
       } else {
         layoutTracking = false;
         reportActiveTabTracking();
+        activeTabBoundsPollers.forEach((poll) => poll());
       }
     };
     frame = requestAnimationFrame(tick);
@@ -360,10 +361,7 @@
     let scrollTrackingTimeout: ReturnType<typeof setTimeout> | null = null;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    // Batched read phase: measure everything against one clean layout,
-    // compute the clamp delta, then hand the scrollLeft mutation and the
-    // bounds report to the write phase — no interleaved read/write reflows.
-    const runFrame = () => {
+    const runFrame = (allowClamp = true) => {
       readPending = false;
       const shouldClamp = clampQueued;
       clampQueued = false;
@@ -374,7 +372,14 @@
       const stripRect = strip?.getBoundingClientRect() ?? null;
       let scrollDelta = 0;
       let scrollTarget: number | null = null;
-      if (shouldClamp && strip && stripRect && !draggedWorkspaceId) {
+      if (
+        allowClamp &&
+        shouldClamp &&
+        strip &&
+        stripRect &&
+        !draggedWorkspaceId &&
+        !layoutTracking
+      ) {
         if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
           scrollDelta = tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
         } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
@@ -388,14 +393,13 @@
         : undefined;
 
       if (writePending) cancelWrite?.();
-      writePending = true;
-      cancelWrite = scheduleLayoutWrite(() => {
+      const writeBounds = () => {
         writePending = false;
         if (!active) return;
         if (scrollTarget !== null && strip) strip.scrollLeft = scrollTarget;
         if (!titlebarRect || !stripRect) return;
         if (scrollTarget === null) {
-          onActiveTabBoundsChange?.(
+          emitActiveTabBounds(
             getClippedWorkspaceTabBorderMaskBounds(
               tabRect,
               stripRect,
@@ -405,15 +409,12 @@
           );
           return;
         }
-        // A clamp moved the strip, so the read-phase rects are stale and
-        // scrollLeft may have been boundary-clamped — re-measure. This is
-        // the one remaining forced read, and it only runs when the active
-        // tab was actually scrolled into view (at most once per switch).
+        // A clamp moved the strip, so re-measure the boundary-clamped position.
         const movedTabRect = node.getBoundingClientRect();
         const movedTitlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect();
         const movedStripRect = strip?.getBoundingClientRect();
         if (!movedTitlebarRect || !movedStripRect) return;
-        onActiveTabBoundsChange?.(
+        emitActiveTabBounds(
           getClippedWorkspaceTabBorderMaskBounds(
             movedTabRect,
             movedStripRect,
@@ -427,16 +428,21 @@
               : undefined,
           ),
         );
-      });
+      };
+      if (!allowClamp) return writeBounds();
+      writePending = true;
+      cancelWrite = scheduleLayoutWrite(writeBounds);
     };
 
-    // The pending flags (not the cancel handles) gate re-scheduling: with a
-    // synchronously-invoking rAF stub the task runs before the handle
-    // assignment, so a handle-based gate would deadlock.
+    const reportVisibleActiveBounds = () => {
+      clampQueued = false;
+      runFrame(false);
+    };
+
     const schedule = () => {
       if (readPending) return;
       readPending = true;
-      cancelRead = scheduleLayoutRead(runFrame);
+      cancelRead = scheduleLayoutRead(() => runFrame());
     };
 
     const scheduleClampAndReport = () => {
@@ -444,8 +450,6 @@
       schedule();
     };
 
-    // User scrolling must not be fought by the active-tab clamp: scroll only
-    // refreshes the reported bounds so the titlebar mask keeps tracking.
     const scheduleBoundsReport = () => {
       if (!active) return;
       scrollTracking = true;
@@ -464,16 +468,23 @@
     window.addEventListener('resize', scheduleClampAndReport);
     strip?.addEventListener('scroll', scheduleBoundsReport);
     activeTabBoundsPollers.add(scheduleClampAndReport);
-    activeTabBoundsReporters.add(scheduleBoundsReport);
+    activeTabBoundsReporters.add(reportVisibleActiveBounds);
     scheduleClampAndReport();
 
+    const setActive = (nextIsActive: boolean) => {
+      const wasActive = active;
+      active = nextIsActive;
+      node.dataset.active = String(nextIsActive);
+      if (active) {
+        reportVisibleActiveBounds();
+        scheduleClampAndReport();
+      } else if (wasActive) emitActiveTabBounds(null);
+    };
+    const workspaceId = node.dataset.workspaceTab;
+    if (workspaceId) activeTabBoundsControllers.set(workspaceId, setActive);
+
     return {
-      update(nextIsActive: boolean) {
-        const wasActive = active;
-        active = nextIsActive;
-        if (active) scheduleClampAndReport();
-        else if (wasActive) onActiveTabBoundsChange?.(null);
-      },
+      update: setActive,
       destroy() {
         if (scrollTrackingTimeout !== null) clearTimeout(scrollTrackingTimeout);
         if (active && scrollTracking) {
@@ -483,11 +494,14 @@
         cancelRead?.();
         cancelWrite?.();
         activeTabBoundsPollers.delete(scheduleClampAndReport);
-        activeTabBoundsReporters.delete(scheduleBoundsReport);
+        activeTabBoundsReporters.delete(reportVisibleActiveBounds);
         resizeObserver.disconnect();
         window.removeEventListener('resize', scheduleClampAndReport);
         strip?.removeEventListener('scroll', scheduleBoundsReport);
-        if (active) onActiveTabBoundsChange?.(null);
+        if (workspaceId && activeTabBoundsControllers.get(workspaceId) === setActive) {
+          activeTabBoundsControllers.delete(workspaceId);
+        }
+        if (active) emitActiveTabBounds(null);
       },
     };
   }
@@ -519,11 +533,15 @@
   function closeWorkspace(workspaceId: string, event?: Event) {
     event?.stopPropagation();
     const wasCurrent = selectedWorkspaceId === workspaceId;
-    if (wasCurrent) closingActiveWorkspaceId = workspaceId;
+    pendingOutroOverflow = prepareTabOutro(stripElement, workspaceId) ?? null;
     appStore.dispatch(closeWorkspaceTab(workspaceId));
     if (!wasCurrent) return;
 
     const nextWorkspaceId = selectCurrentWorkspaceTabId.select(appStore.state);
+    layoutTracking = true;
+    reportActiveTabTracking();
+    activeTabBoundsControllers.get(workspaceId)?.(false);
+    if (nextWorkspaceId) activeTabBoundsControllers.get(nextWorkspaceId)?.(true);
     void goto(
       nextWorkspaceId
         ? `/workspace/${nextWorkspaceId}`
@@ -533,12 +551,19 @@
 
   function closeWorkspaceTabs(workspaceIds: string[], focusWorkspaceId?: string) {
     if (workspaceIds.length === 0) return;
-    if (selectedWorkspaceId && workspaceIds.includes(selectedWorkspaceId)) {
-      closingActiveWorkspaceId = selectedWorkspaceId;
-    }
+    const closingWorkspaceId =
+      selectedWorkspaceId && workspaceIds.includes(selectedWorkspaceId)
+        ? selectedWorkspaceId
+        : null;
     if (focusWorkspaceId) appStore.dispatch(openWorkspaceTab(focusWorkspaceId));
     workspaceIds.forEach((workspaceId) => appStore.dispatch(closeWorkspaceTab(workspaceId)));
     const nextWorkspaceId = focusWorkspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state);
+    if (closingWorkspaceId) {
+      layoutTracking = true;
+      reportActiveTabTracking();
+      activeTabBoundsControllers.get(closingWorkspaceId)?.(false);
+      if (nextWorkspaceId) activeTabBoundsControllers.get(nextWorkspaceId)?.(true);
+    }
     void goto(
       nextWorkspaceId
         ? `/workspace/${nextWorkspaceId}`
@@ -701,7 +726,7 @@
   function startPointerDrag(pointerGrab: WorkspaceTabPointerGrab, clientX: number) {
     const rect = pointerGrab.surface.getBoundingClientRect();
     const originalOrder = [...visibleTabIds];
-    draggedWorkspaceId = pointerGrab.workspaceId;
+    flushSync(() => (draggedWorkspaceId = pointerGrab.workspaceId));
     dragClientX = clientX;
     proposedTabOrder = originalOrder;
     dragSession = {
@@ -832,36 +857,31 @@
     activeTabBoundsPollers.forEach((poll) => poll());
   }
 
-  function handleTabOutroEnd(workspaceId: string) {
-    if (closingActiveWorkspaceId !== workspaceId) return;
-    closingActiveWorkspaceId = null;
+  function handleTabOutroEnd() {
+    pendingOutroOverflow = null;
+    activeTabBoundsPollers.forEach((poll) => poll());
+    requestAnimationFrame(() => activeTabBoundsPollers.forEach((poll) => poll()));
   }
 </script>
 
 <svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
-  <!-- The open scroller starts 12px after the workspace panel curve. While content
-       is hidden on the left, a 16px transparent lead-in moves the effective
-       clip/fade start to 28px after the curve without moving the first tab at
-       rest. The closed scroller moves left so the visible logo-to-flare gap
+  <!-- The open scroller starts 12px after the panel curve. A 16px transparent lead-in
+       moves the active left fade past it without moving the first tab.
+       The closed scroller moves left so the visible logo-to-flare gap
        matches the tab gap floor. Its 6px padding keeps the leading flare fully
        inside the scrollport, so the clip and fade still move with the first tab.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
        (plus the parent's gap-1) keeps 8px of clearance before the "+".
-       The 2px bottom padding contains the dropped active-tab flares inside
-       the scrollport; the matching negative margin preserves the strip's
-       existing 32px titlebar footprint while preventing vertical overflow.
-       data-app-region-clip: tabs scrolled out of this container must not carve
-       no-drag holes in the titlebar drag strip (unclipped-geometry carving,
-       intent-hq/monorepo#2400; rules in app.css). -->
+       Scrolled-out tabs must not carve no-drag holes (intent-hq/monorepo#2400). -->
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left] motion-reduce:transition-none',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
@@ -897,15 +917,25 @@
           duration: isDragged ? 0 : workspaceTabMotionDuration,
           easing: workspaceTabMotionEasing,
         }}
-        transition:resize={{
-          axis: 'x',
+        in:workspaceTabLifecycleMotion={{
           duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
           easing: workspaceTabMotionEasing,
-          fade: true,
-          clip: false,
+          phase: 'intro',
+          onFrame: () => refreshOverflow(),
+        }}
+        out:workspaceTabLifecycleMotion={{
+          duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
+          easing: workspaceTabMotionEasing,
+          phase: 'outro',
+          onFrame: (overflow) => {
+            flushSync(() => {
+              pendingOutroOverflow = overflow ?? pendingOutroOverflow;
+              refreshOverflow();
+            });
+          },
         }}
         onintroend={() => handleTabIntroEnd(workspaceId)}
-        onoutroend={() => handleTabOutroEnd(workspaceId)}
+        onoutroend={handleTabOutroEnd}
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
@@ -932,6 +962,7 @@
                 : 'relative cursor-pointer',
             )}
             data-workspace-tab={workspaceId}
+            data-workspace-tab-visual={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
             style:left={isDragged && dragSession
@@ -1076,6 +1107,7 @@
                 : 'rounded-md border-transparent text-muted-foreground',
             )}
             data-workspace-tab={workspaceId}
+            data-workspace-tab-visual={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
             style:border-radius={isCurrent
