@@ -68,9 +68,11 @@ for (const theme of ['light', 'dark'] as const) {
       expect(box?.height).toBe(128 * zoom);
       const colors = await root.evaluate((node) => ({
         color: getComputedStyle(node).color,
+        contain: getComputedStyle(node).contain,
         stroke: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
       }));
       expect(colors.stroke).toBe(colors.color);
+      expect(colors.contain).toBe('content');
     });
   }
 }

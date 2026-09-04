@@ -153,7 +153,17 @@ describe('IntentMarkLoader', () => {
       expect(morphs).toHaveLength(5);
       expect(morphs.every(({ frames }) => frames[0].d && frames[1].d)).toBe(true);
       completeTransition();
-      expect(liveLoops(root)).toHaveLength(5);
+      const loops = liveLoops(root);
+      expect(loops).toHaveLength(5);
+      expect(
+        loops.every(({ frames }) =>
+          frames.every((frame) =>
+            Object.keys(frame).every((property) =>
+              ['offset', 'opacity', 'transform'].includes(property),
+            ),
+          ),
+        ),
+      ).toBe(true);
       expect(root.dataset.motionState).toBe('playing');
     },
   );
@@ -242,7 +252,7 @@ describe('IntentMarkLoader', () => {
     expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
   });
 
-  it('maps Bloom to the approved 61-frame source timeline without a JS frame loop', () => {
+  it('samples Bloom sparsely with compositor properties and no JS frame loop', () => {
     expect(intentMarkMotionTiming).toMatchObject({
       settleMs: 160,
       bloomMs: 61_000 / 30,
@@ -252,8 +262,17 @@ describe('IntentMarkLoader', () => {
     render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
     completeTransition();
     const loops = records.slice(-5);
-    expect(loops.every(({ frames }) => frames.length === 63)).toBe(true);
+    expect(loops.every(({ frames }) => frames.length === 11)).toBe(true);
     expect(loops.every(({ options }) => options.duration === 61_000 / 30)).toBe(true);
-    expect(loops.every(({ frames }) => frames.at(-1)?.opacity === 0)).toBe(true);
+    expect(
+      loops.every(({ frames }) =>
+        frames.every(
+          ({ d, strokeWidth, transformOrigin }) => !d && !strokeWidth && !transformOrigin,
+        ),
+      ),
+    ).toBe(true);
+    const paths = loops.map(({ target }) => target as SVGPathElement);
+    expect(paths.every((path) => path.style.strokeWidth === '18.45088')).toBe(true);
+    expect(paths.every((path) => path.style.transformOrigin === '128px 101px')).toBe(true);
   });
 });
