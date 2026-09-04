@@ -8,6 +8,7 @@ import {
   parseWorkspaceFileRequest,
   parseWorkspaceMediaBackendHint,
   withWorkspaceMediaBackendHint,
+  withoutWorkspaceMediaBackendHint,
 } from './utils/workspace-file-url';
 import { isTrustedRendererUrl } from './ipc-authorization';
 import {
@@ -339,8 +340,9 @@ export function setupAppProtocolHandler() {
  * A URL already hinted with another backend (e.g. authored in markdown) is
  * redirected with the hint overwritten to the requester's backend. Requests
  * without a window (no webContentsId, or a webContents that is not a
- * BrowserWindow) and URLs hinted with the requester's own backend pass
- * through untouched.
+ * BrowserWindow) have any existing hint stripped instead, so the stamp here
+ * is the only source of a hint the handlers accept; unhinted ones and URLs
+ * hinted with the requester's own backend pass through untouched.
  */
 export function setupWorkspaceMediaBackendHinting() {
   session.defaultSession.webRequest.onBeforeRequest(
@@ -356,12 +358,12 @@ export function workspaceMediaBackendRedirect(
   url: string,
   webContentsId: number | undefined,
 ): { redirectURL?: string } {
-  if (webContentsId === undefined) return {};
-  const contents = webContents.fromId(webContentsId);
+  const contents = webContentsId === undefined ? null : webContents.fromId(webContentsId);
   const window =
     contents && !contents.isDestroyed() ? BrowserWindow.fromWebContents(contents) : null;
-  if (!window) return {};
-  const redirectURL = withWorkspaceMediaBackendHint(url, getBackendIdForWindow(window));
+  const redirectURL = window
+    ? withWorkspaceMediaBackendHint(url, getBackendIdForWindow(window))
+    : withoutWorkspaceMediaBackendHint(url);
   return redirectURL ? { redirectURL } : {};
 }
 

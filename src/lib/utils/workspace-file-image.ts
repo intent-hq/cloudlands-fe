@@ -210,7 +210,7 @@ const SHORT_FORM_INTENT_FILE_RE = /^intent:\/\/[^/?#]+\/file\//;
  * Mirrors `WORKSPACE_FILE_VERSION_PARAM` in the main-process
  * `workspace-file-url.ts`, which accepts it alongside the `backend=` hint.
  */
-export const WORKSPACE_FILE_VERSION_PARAM = 'v';
+const WORKSPACE_FILE_VERSION_PARAM = 'v';
 
 let versionSequence = 0;
 

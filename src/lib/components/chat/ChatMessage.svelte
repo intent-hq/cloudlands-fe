@@ -50,6 +50,7 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
+  import { onBackendReconnected } from '$lib/client/live/backend-transport';
   import { isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
@@ -825,6 +826,15 @@
   // keep the placeholder here (no resolve/fail loop), while the evicted
   // module cache lets the next render elsewhere retry.
   let failedReferenceImages = $state<Record<string, true>>({});
+  // A backend drop fails every thumbnail read closed (no retry window), so
+  // once the window's backend reconnects, forget the failures and let the
+  // resolve effect below fetch those attachments again.
+  $effect(() =>
+    onBackendReconnected(() => {
+      if (Object.keys(failedReferenceImages).length === 0) return;
+      failedReferenceImages = {};
+    }),
+  );
   $effect(() => {
     const wsId = getOwningWorkspaceId();
     if (!wsId) return;

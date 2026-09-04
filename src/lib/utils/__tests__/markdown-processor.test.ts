@@ -307,8 +307,9 @@ Some additional notes here.
       ].join('\n\n');
       const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
 
-      expect(html).toContain('src="workspace-file://workspace-1/docs/short.png"');
-      expect(html).toContain('src="workspace-file://workspace-1/docs/long.png"');
+      // Image sources carry a cache-busting `?v=` token after the path.
+      expect(html).toMatch(/src="workspace-file:\/\/workspace-1\/docs\/short\.png\?v=[^"&]+"/);
+      expect(html).toMatch(/src="workspace-file:\/\/workspace-1\/docs\/long\.png\?v=[^"&]+"/);
     });
 
     it('should preserve workspace asset image sources', async () => {

@@ -8,8 +8,10 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
 
 const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
 
@@ -54,7 +56,7 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
-import { resolveAttachmentImageUrl } from '../attachment-image-url';
+import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from '../attachment-image-url';
 
 function userMessage(): AgentMessage {
   return {
@@ -218,7 +220,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
 
 describe('ChatMessage attachment-reference thumbnails', () => {
   const originalInvoke = window.electronAPI!.invoke;
-  const workspace = { id: 'ws-thumb' } as any;
+  const workspace = createMockWorkspace({ id: WorkspaceId('ws-thumb') });
 
   // PROTOCOL §5.9 `file.getAttachmentInfo` result for the referenced row.
   const attachmentInfo = {
@@ -285,6 +287,44 @@ describe('ChatMessage attachment-reference thumbnails', () => {
     await expect(resolveAttachmentImageUrl('ws-thumb', 'att-thumb-1')).resolves.toBe(url);
     expect(getAttachmentInfo).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
+  });
+
+  it('re-resolves a failed thumbnail once the backend reconnects', async () => {
+    const getAttachmentInfo = vi.fn(() => ({ ok: true, result: attachmentInfo }));
+    registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, () => getAttachmentInfo());
+    const statusHandlers: Array<(payload: unknown) => void> = (
+      window.electronAPI as any
+    )._getRegisteredHandlers(IPC_CHANNELS.BACKEND.STATUS);
+    statusHandlers.length = 0;
+    // Start from an empty module cache (the previous test re-cached the URL).
+    evictAttachmentImageUrl('ws-thumb', 'att-thumb-1');
+
+    render(ChatMessage, { props: { message: referenceMessage(), workspace } });
+
+    const img = await screen.findByRole('img', { name: /attached image/i });
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+    // The owning backend dropped: the hinted read fails closed and the
+    // thumbnail parks on the placeholder without a resolve/fail loop.
+    await fireEvent.error(img);
+    await waitFor(() => expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy());
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+    // A plain (non-reconnect) status broadcast changes nothing.
+    for (const handler of [...statusHandlers]) handler({ status: 'connected' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
+
+    // The `reconnected` marker (backend.ipc.ts RESUB-1) clears the failure:
+    // the still-mounted message re-resolves and renders the thumbnail again.
+    for (const handler of [...statusHandlers]) handler({ status: 'connected', reconnected: true });
+    const restored = await screen.findByRole('img', { name: /attached image/i });
+    expect(restored.getAttribute('src')).toBe(
+      'workspace-file://ws-thumb/.intent/attachments/att-thumb-1/shot.png',
+    );
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('chat-message-image-placeholder')).toBeNull();
   });
 });
 

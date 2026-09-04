@@ -82,6 +82,7 @@ import {
   parseWorkspaceFileRequest,
   parseWorkspaceMediaBackendHint,
   withWorkspaceMediaBackendHint,
+  withoutWorkspaceMediaBackendHint,
   workspaceFileMimeTypeForPath,
 } from '../utils/workspace-file-url';
 import {
@@ -310,6 +311,47 @@ describe('parseWorkspaceMediaBackendHint', () => {
       expect(parseWorkspaceMediaBackendHint(query)).toMatchObject({ ok: false });
     }
   });
+
+  it('rejects empty pairs and bare keys that URLSearchParams would silently drop', () => {
+    for (const query of [
+      '?',
+      '?&',
+      '?&backend=local',
+      '?backend=local&',
+      '?backend=local&&v=m1abc-2',
+      '?backend',
+      '?backend=local&v',
+      '?=local',
+      'backend=local',
+    ]) {
+      expect(parseWorkspaceMediaBackendHint(query)).toMatchObject({ ok: false });
+    }
+  });
+});
+
+describe('withoutWorkspaceMediaBackendHint', () => {
+  it('strips the hint from both schemes, keeping a cache-busting token', () => {
+    expect(withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a%20b.png?backend=x')).toBe(
+      'workspace-file://ws-1/a%20b.png',
+    );
+    expect(withoutWorkspaceMediaBackendHint('workspace-asset://ws-1/asset-1?backend=local')).toBe(
+      'workspace-asset://ws-1/asset-1',
+    );
+    expect(
+      withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?v=m1abc-2&backend=x'),
+    ).toBe('workspace-file://ws-1/a.png?v=m1abc-2');
+    expect(
+      withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?backend=x&v=m1abc-2'),
+    ).toBe('workspace-file://ws-1/a.png?v=m1abc-2');
+  });
+
+  it('leaves unhinted, fragment, other-scheme, and unknown-query URLs alone', () => {
+    expect(withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a.png')).toBeNull();
+    expect(withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?v=m1abc-2')).toBeNull();
+    expect(withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?backend=x#f')).toBeNull();
+    expect(withoutWorkspaceMediaBackendHint('https://ws-1/a.png?backend=x')).toBeNull();
+    expect(withoutWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?x=1')).toBeNull();
+  });
 });
 
 describe('withWorkspaceMediaBackendHint', () => {
@@ -385,9 +427,10 @@ describe('workspaceMediaBackendRedirect', () => {
     });
   });
 
-  it('passes through when there is no window to attribute the request to', () => {
+  it('passes an unhinted URL through when there is no window to attribute the request to', () => {
     expect(workspaceMediaBackendRedirect('workspace-file://ws-1/a.png', undefined)).toEqual({});
     expect(workspaceMediaBackendRedirect('workspace-file://ws-1/a.png', 99)).toEqual({});
+    expect(workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?v=m1abc-2', 99)).toEqual({});
   });
 
   it('never re-stamps a URL already hinted with the requester backend (no redirect loop)', () => {
@@ -423,10 +466,16 @@ describe('workspaceMediaBackendRedirect', () => {
     expect(workspaceMediaBackendRedirect(first.redirectURL!, 42)).toEqual({});
   });
 
-  it('passes a foreign hint through when there is no window to attribute the request to', () => {
+  it('strips an existing hint when there is no window to attribute the request to', () => {
     expect(
       workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?backend=conn-other', undefined),
-    ).toEqual({});
+    ).toEqual({ redirectURL: 'workspace-file://ws-1/a.png' });
+    const stripped = workspaceMediaBackendRedirect(
+      'workspace-asset://ws-1/asset-1?v=m1abc-2&backend=conn-other',
+      99,
+    );
+    expect(stripped).toEqual({ redirectURL: 'workspace-asset://ws-1/asset-1?v=m1abc-2' });
+    expect(workspaceMediaBackendRedirect(stripped.redirectURL!, 99)).toEqual({});
   });
 
   it('stamps a cache-busted URL exactly once, preserving the token', () => {

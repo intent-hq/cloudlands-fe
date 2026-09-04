@@ -43,7 +43,7 @@ export function workspaceFileMimeTypeForPath(filePath: string): string | null {
  * workspace id that exists on two backends is served by the backend of the
  * window that issued the fetch.
  */
-export const WORKSPACE_MEDIA_BACKEND_PARAM = 'backend';
+const WORKSPACE_MEDIA_BACKEND_PARAM = 'backend';
 
 /**
  * Cache-busting query parameter the renderer stamps on `workspace-file://`
@@ -51,12 +51,18 @@ export const WORKSPACE_MEDIA_BACKEND_PARAM = 'backend';
  * is fetched again instead of served from Chromium's image cache. The token is
  * opaque to the handler and never reaches the daemon `path` param.
  */
-export const WORKSPACE_FILE_VERSION_PARAM = 'v';
+const WORKSPACE_FILE_VERSION_PARAM = 'v';
 
 /** Connection ids are `local` or a UUID; anything else in the hint is rejected. */
 const BACKEND_ID_RE = /^[A-Za-z0-9._-]+$/;
 /** Version tokens are opaque but must be URL-safe (no reserved characters). */
 const VERSION_TOKEN_RE = /^[A-Za-z0-9._-]+$/;
+/**
+ * Raw shape of an accepted query string: `?key=value` pairs joined by single
+ * `&`s. Checked before `URLSearchParams`, which silently drops empty pairs
+ * (`?&backend=x`, `?backend=x&`) and would otherwise let them through.
+ */
+const QUERY_SHAPE_RE = /^\?[^&=]+=[^&=]+(?:&[^&=]+=[^&=]+)*$/;
 
 const WORKSPACE_MEDIA_PROTOCOLS = new Set(['workspace-file:', 'workspace-asset:']);
 
@@ -73,6 +79,7 @@ export type WorkspaceMediaBackendHint =
  */
 export function parseWorkspaceMediaBackendHint(search: string): WorkspaceMediaBackendHint {
   if (!search) return { ok: true, backendId: null };
+  if (!QUERY_SHAPE_RE.test(search)) return { ok: false, reason: 'unexpected query string' };
   const params = new URLSearchParams(search);
   const entries = [...params.entries()];
   const keys = entries.map(([key]) => key);
@@ -128,6 +135,31 @@ export function withWorkspaceMediaBackendHint(rawUrl: string, backendId: string)
   const versionParam =
     version === null ? '' : `${WORKSPACE_FILE_VERSION_PARAM}=${encodeURIComponent(version)}&`;
   return `${rawUrl.slice(0, rawUrl.indexOf('?'))}?${versionParam}${hintParam}`;
+}
+
+/**
+ * The redirect target that strips an existing `backend=` hint from a
+ * workspace media URL (keeping a `?v=` token), or null when there is nothing
+ * to strip: not a workspace media scheme, a fragment, an unrecognised query
+ * string, or no hint. Applied to requests that cannot be attributed to a
+ * window, so a hint authored in markdown never reaches the handlers — the
+ * main-process stamp is the only accepted source of a hint.
+ */
+export function withoutWorkspaceMediaBackendHint(rawUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!WORKSPACE_MEDIA_PROTOCOLS.has(url.protocol) || url.hash) return null;
+  const hint = parseWorkspaceMediaBackendHint(url.search);
+  if (!hint.ok || hint.backendId === null) return null;
+  const base = rawUrl.slice(0, rawUrl.indexOf('?'));
+  const version = url.searchParams.get(WORKSPACE_FILE_VERSION_PARAM);
+  return version === null
+    ? base
+    : `${base}?${WORKSPACE_FILE_VERSION_PARAM}=${encodeURIComponent(version)}`;
 }
 
 export type WorkspaceFileRequest =

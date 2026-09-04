@@ -469,8 +469,10 @@ export async function processMarkdownToHTML(
     /**
      * Cache-busting token appended as `?v=` to rewritten workspace-file image
      * URLs. Defaults to a fresh token per call so a regenerated file renders
-     * its current bytes; pass a stable token to keep one render's image URLs
-     * identical across re-processing (e.g. streaming ticks).
+     * its current bytes. Long-lived callers that re-process the same document
+     * (editors, comments, streaming viewers) should pass one token per
+     * instance (`createWorkspaceFileVersion()` at init) so re-processing keeps
+     * identical image URLs instead of re-fetching every image per update.
      */
     workspaceFileVersion?: string;
   } = {},
