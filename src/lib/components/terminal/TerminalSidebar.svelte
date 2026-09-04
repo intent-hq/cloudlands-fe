@@ -1099,20 +1099,26 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       ></div>
                     </div>
                   {/snippet}
-                  {#if editingScriptId === script.id}
-                    {#snippet children()}
-                      <input
-                        type="text"
-                        data-edit-script={script.id}
-                        bind:value={editingScriptName}
-                        onblur={finishEditingScript}
-                        onkeydown={handleEditScriptKeydown}
-                        onclick={(e) => e.stopPropagation()}
-                        placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                        class="w-full p-0 border-none bg-transparent text-sm outline-none focus:outline-none! focus:ring-0!"
-                      />
-                    {/snippet}
-                  {/if}
+                  {#snippet children()}
+                    {#if editingScriptId === script.id}
+                      <div class="relative flex w-full min-w-0 items-center">
+                        <input
+                          type="text"
+                          data-edit-script={script.id}
+                          bind:value={editingScriptName}
+                          onblur={finishEditingScript}
+                          onkeydown={handleEditScriptKeydown}
+                          onclick={(e) => e.stopPropagation()}
+                          placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                          class="relative z-10 w-full cursor-text border-none bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
+                        />
+                        <span
+                          aria-hidden="true"
+                          class="pointer-events-none absolute z-0 -inset-x-2 -inset-y-1.5 rounded-(--radius-small) border border-ring/60 bg-sidebar transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none"
+                        ></span>
+                      </div>
+                    {/if}
+                  {/snippet}
                 </ListItem>
               </div>
             {/each}

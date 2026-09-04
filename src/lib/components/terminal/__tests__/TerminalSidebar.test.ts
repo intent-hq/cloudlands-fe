@@ -535,6 +535,62 @@ describe('TerminalSidebar context menu Escape handling', () => {
   });
 });
 
+describe('TerminalSidebar script inline rename', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scriptEntries.value = [
+      {
+        id: 'script-1',
+        name: 'build',
+        command: 'npm run build',
+        mode: 'command',
+        category: 'build',
+        source: 'user',
+        runtime: { status: 'idle', exitCode: null },
+      },
+    ] as any[];
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+    mockScriptUpdate.mockResolvedValue({ success: true });
+  });
+
+  it('renders the decorated rename input on double-click, cancels with Escape, and saves with Enter', async () => {
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.doubleClick(screen.getByText('build'));
+
+    let input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    expect(input).toBeTruthy();
+    expect(input!.value).toBe('build');
+    expect(input!.classList).toContain('cursor-text');
+    expect(input!.parentElement?.classList).toContain('relative');
+    const decoration = input!.parentElement?.querySelector<HTMLElement>('[aria-hidden="true"]');
+    expect(decoration?.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        '-inset-x-2',
+        '-inset-y-1.5',
+        'border-ring/60',
+        'bg-sidebar',
+        'motion-reduce:transition-none',
+      ]),
+    );
+
+    await fireEvent.keyDown(input!, { key: 'Escape' });
+    expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
+    expect(screen.getByText('build')).toBeTruthy();
+    expect(mockScriptUpdate).not.toHaveBeenCalled();
+
+    await fireEvent.doubleClick(screen.getByText('build'));
+    input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    await fireEvent.input(input!, { target: { value: 'compile' } });
+    await fireEvent.keyDown(input!, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'compile' }),
+    );
+    expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
+  });
+});
+
 describe('TerminalSidebar agent navigation context', () => {
   it.each([
     ['unmodified', {}, false],
