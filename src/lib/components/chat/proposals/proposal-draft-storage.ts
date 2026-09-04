@@ -66,6 +66,9 @@ function pruneStaleEntries(skipKey: string): void {
       safeLocalStorage.removeItem(key);
     }
   }
+  for (const key of safeLocalStorage.keysWithPrefix(LEGACY_KEY_PREFIX)) {
+    safeLocalStorage.removeItem(key);
+  }
 }
 
 export function loadProposalDraft(agentId: string, proposalId: string): ProposalCardDraft | null {
@@ -109,4 +112,5 @@ export function saveProposalDraft(
 
 export function clearProposalDraft(agentId: string, proposalId: string): void {
   safeLocalStorage.removeItem(draftKey(agentId, proposalId));
+  safeLocalStorage.removeItem(draftKey(agentId, proposalId, LEGACY_KEY_PREFIX));
 }

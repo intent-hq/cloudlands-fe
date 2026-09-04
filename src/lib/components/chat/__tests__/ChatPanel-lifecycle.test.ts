@@ -367,10 +367,12 @@ let nextFrameId: number;
 class MockChatIntersectionObserver {
   static instances: MockChatIntersectionObserver[] = [];
   callback: IntersectionObserverCallback;
+  options?: IntersectionObserverInit;
   observed = new Set<Element>();
 
-  constructor(callback: IntersectionObserverCallback) {
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
     this.callback = callback;
+    this.options = options;
     MockChatIntersectionObserver.instances.push(this);
   }
 
@@ -1872,13 +1874,15 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     await tick();
 
-    const observer = MockChatIntersectionObserver.instances.find((candidate) =>
-      candidate.observed.has(card),
+    const shell = message?.closest('[data-lazy-turn-key]');
+    expect(shell).not.toBeNull();
+    const observer = MockChatIntersectionObserver.instances.find(
+      (candidate) => candidate.options?.threshold === 0.01 && candidate.observed.has(shell!),
     );
     expect(observer).toBeDefined();
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
 
-    observer?.fire([{ target: card, isIntersecting: false }]);
+    observer?.fire([{ target: shell!, isIntersecting: false }]);
     await tick();
     expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
 
@@ -1886,7 +1890,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(frames.length).toBeGreaterThan(0);
 
-    observer?.fire([{ target: card, isIntersecting: true }]);
+    observer?.fire([{ target: shell!, isIntersecting: true }]);
     await tick();
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
   });

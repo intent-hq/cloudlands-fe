@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
@@ -35,9 +35,10 @@
   let { agentId, workspaceId, messageId, proposal }: Props = $props();
   const proposalId = $derived(pendingProposalKeyOf(proposal));
   const localProposalId = $derived(getProposalId(proposal));
-  const initialDraft = $derived(loadProposalDraft(agentId, proposalId));
   const agentSession$ = $derived(selectAgentSession(agentId));
   const lifecycleMap$ = selectProposalLifecycleMap();
+  let initialDraft = $state<ProposalCardDraft | null>(null);
+  let initialDraftLoaded = $state(false);
   let confirmingDismiss = $state(false);
   let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingDraft: ProposalCardDraft | null = null;
@@ -51,11 +52,20 @@
   const lifecycleEntry = $derived(
     getProposalLifecycleEntry($lifecycleMap$, agentId, proposalId, proposal),
   );
-  const isApplied = $derived(lifecycleEntry?.status === 'applied');
-  const isDismissed = $derived(lifecycleEntry?.status === 'dismissed');
+  const localOutcome = $derived(
+    lifecycleEntry?.status === 'applied' || lifecycleEntry?.status === 'dismissed'
+      ? lifecycleEntry.status
+      : undefined,
+  );
+  const outcome = $derived(
+    localOutcome ?? $agentSession$?.metadata?.proposalResolutions?.[proposalId],
+  );
+  const isApplied = $derived(outcome === 'applied');
+  const isDismissed = $derived(outcome === 'dismissed');
   const isPending = $derived(Boolean(matchingRef) && !isApplied && !isDismissed);
   const canUndo = $derived(
-    isApplied && (proposal.kind === 'settings-change' || proposal.kind === 'specialist-edit'),
+    lifecycleEntry?.status === 'applied' &&
+      (proposal.kind === 'settings-change' || proposal.kind === 'specialist-edit'),
   );
   const createdWorkspaceId = $derived(lifecycleEntry?.result?.workspaceId);
 
@@ -101,21 +111,27 @@
     });
   });
 
+  onMount(() => {
+    initialDraft = loadProposalDraft(agentId, proposalId);
+    initialDraftLoaded = true;
+  });
   onDestroy(flushDraft);
 </script>
 
 {#if isPending || isApplied || isDismissed}
   <div class="my-4 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}" data-inline-proposal>
     {#if isPending}
-      <ProposalCard
-        {proposal}
-        suppressLocalDiscard
-        {initialDraft}
-        onDraftChange={handleDraftChange}
-        onApply={(detail) => applyProposal(agentId, detail)}
-        onDiscard={() => (confirmingDismiss = true)}
-        onUndo={undoProposal}
-      />
+      {#if initialDraftLoaded}
+        <ProposalCard
+          {proposal}
+          suppressLocalDiscard
+          {initialDraft}
+          onDraftChange={handleDraftChange}
+          onApply={(detail) => applyProposal(agentId, detail)}
+          onDiscard={() => (confirmingDismiss = true)}
+          onUndo={undoProposal}
+        />
+      {/if}
     {:else}
       <section
         class="flex min-w-0 w-full items-center gap-3 rounded-(--radius-medium) border border-border bg-card px-3 py-2.5"

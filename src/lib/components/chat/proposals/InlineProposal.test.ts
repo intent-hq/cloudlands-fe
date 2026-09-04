@@ -7,6 +7,7 @@ import type { Proposal } from '$shared/types/proposal';
 
 const state = vi.hoisted(() => ({
   pendingProposals: [] as Array<{ proposalId: string; messageId: string }>,
+  proposalResolutions: {} as Record<string, 'applied' | 'dismissed'>,
   lifecycle: {} as Record<
     string,
     {
@@ -42,7 +43,12 @@ function readable<T>(value: () => T) {
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: vi.fn(() =>
-    readable(() => ({ metadata: { pendingProposals: state.pendingProposals } })),
+    readable(() => ({
+      metadata: {
+        pendingProposals: state.pendingProposals,
+        proposalResolutions: state.proposalResolutions,
+      },
+    })),
   ),
 }));
 vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors', () => ({
@@ -120,6 +126,7 @@ vi.mock(
 );
 
 import InlineProposal from './InlineProposal.svelte';
+import { getProposalId } from './proposal-id';
 
 const AGENT_ID = 'agent-inline';
 const WORKSPACE_ID = 'workspace-inline';
@@ -150,6 +157,7 @@ function renderProposal(proposal: Proposal, messageId = 'message-inline') {
 
 beforeEach(() => {
   state.pendingProposals = [];
+  state.proposalResolutions = {};
   state.lifecycle = {};
   state.cardStatus = 'idle';
   state.cardError = null;
@@ -214,6 +222,41 @@ describe('InlineProposal', () => {
 
     expect(screen.getByText('Dismissed.')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('renders a daemon-resolved outcome without a local lifecycle entry', () => {
+    const proposal = makeBulkProposal('tool-daemon-dismissed');
+    state.proposalResolutions = { 'tool-daemon-dismissed': 'dismissed' };
+    renderProposal(proposal);
+
+    expect(screen.getByText('Dismissed.')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('keeps title-keyed proposals agent-scoped and reconciles apply under the title', async () => {
+    const title = 'Create title-keyed workspace';
+    const proposal: Proposal = {
+      kind: 'workspace-create',
+      payload: { operation: 'workspace.create', params: {} },
+      preview: { title, applyLabel: 'Create workspace' },
+    };
+    state.pendingProposals = [{ proposalId: title, messageId: 'message-inline' }];
+    state.lifecycle = { [`agent-other::${title}`]: { status: 'dismissed', completedAt: 10 } };
+    const view = renderProposal(proposal);
+
+    expect(screen.queryByText('Dismissed.')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /^Create workspace/ }));
+    expect(actionMocks.applyWorkspace).toHaveBeenCalledWith(expect.objectContaining({ proposal }));
+
+    view.unmount();
+    state.lifecycle = { [getProposalId(proposal)]: { status: 'applied', completedAt: 20 } };
+    renderProposal(proposal);
+    await vi.waitFor(() => {
+      expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
+        proposalId: title,
+        outcome: 'applied',
+      });
+    });
   });
 
   it('keeps a failed pending proposal interactive and routes Retry through Apply', async () => {

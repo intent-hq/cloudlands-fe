@@ -3369,9 +3369,9 @@
     );
   }
 
-  // Watch pending inline cards against the transcript viewport. A virtualized
-  // off-screen card falls back to its persistent LazyTurn shell, so the hint
-  // remains available even while the card itself is dehydrated.
+  // Watch pending turns against the transcript viewport. The persistent
+  // LazyTurn shell survives content hydration changes, so observation does
+  // not go stale when a card is replaced by a placeholder and restored.
   $effect(() => {
     const refs = pendingProposalRefs;
     const root = scrollContainer;
@@ -3396,16 +3396,14 @@
         const message = root.querySelector<HTMLElement>(
           `[data-message-id="${CSS.escape(ref.messageId)}"]`,
         );
-        let target: HTMLElement | null = null;
-        if (message) target = findPendingProposalCard(message, ref, claimed);
-        if (!target && !message) {
+        let target = message?.closest<HTMLElement>('[data-lazy-turn-key]') ?? null;
+        if (!target) {
           const turnKey = messageIdToTurnKey.get(ref.messageId);
-          if (turnKey) {
-            target = root.querySelector<HTMLElement>(
-              `[data-lazy-turn-key="${CSS.escape(turnKey)}"]`,
-            );
-          }
+          target = turnKey
+            ? root.querySelector<HTMLElement>(`[data-lazy-turn-key="${CSS.escape(turnKey)}"]`)
+            : null;
         }
+        if (!target && message) target = findPendingProposalCard(message, ref, claimed);
         if (!target) {
           const recoveredEntry = recovered?.[ref.messageId];
           if (

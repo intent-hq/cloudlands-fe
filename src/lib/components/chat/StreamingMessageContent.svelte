@@ -715,8 +715,8 @@
   reasoningHistory = false,
   searchPath: string | undefined = undefined,
 )}
-  {#if getProposalFromBlock(block) !== null}
-    {@const proposal = getProposalFromBlock(block)}
+  {@const proposal = getProposalFromBlock(block)}
+  {#if proposal !== null}
     {#if proposal && agentId && workspaceId && messageId}
       <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
     {/if}
