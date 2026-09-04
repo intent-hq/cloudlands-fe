@@ -63,7 +63,7 @@ function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
 }
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
-function normalizeAgent(raw: Record<string, unknown>): AgentSession {
+export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const now = new Date().toISOString();
   const id = String(raw.id ?? '');
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;

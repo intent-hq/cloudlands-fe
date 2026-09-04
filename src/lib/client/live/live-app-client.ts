@@ -40,6 +40,7 @@ import { LiveServerClient } from './live-server-client';
 import { LiveTasksClient } from './live-tasks-client';
 import { LiveTerminalsClient } from './live-terminals-client';
 import { LiveWorkspacesClient } from './live-workspaces-client';
+import { LiveWorkspaceDraftsClient } from './live-workspace-drafts-client';
 
 export class LiveAppClient implements AppClient {
   // All domains are now live.
@@ -68,4 +69,5 @@ export class LiveAppClient implements AppClient {
   readonly system = new LiveSystemClient();
   readonly server = new LiveServerClient();
   readonly drafts = new LiveDraftsClient();
+  readonly workspaceDrafts = new LiveWorkspaceDraftsClient();
 }

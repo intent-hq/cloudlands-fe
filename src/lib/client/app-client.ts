@@ -2237,6 +2237,37 @@ export interface DraftsClient {
   clear(workspaceId: string, agentId: string): Promise<{ ok: true }>;
 }
 
+export type WorkspaceDraftCreateRequest = import('$shared/types').WorkspaceDraftCreateInput;
+export type WorkspaceDraftUpdatePatch = import('$shared/types').WorkspaceDraftUpdatePatch;
+
+export interface WorkspaceDraftPromotionResult {
+  draft: import('$shared/types').WorkspaceDraft;
+  workspace: Workspace;
+  initialAgent?: AgentSession;
+}
+
+/** Durable pre-workspace drafts (`workspaceDraft.*`, PROTOCOL §5.1.1). */
+export interface WorkspaceDraftsClient {
+  create(request?: WorkspaceDraftCreateRequest): Promise<import('$shared/types').WorkspaceDraft>;
+  get(id: string): Promise<import('$shared/types').WorkspaceDraft | null>;
+  list(): Promise<import('$shared/types').WorkspaceDraft[]>;
+  update(
+    id: string,
+    expectedRevision: number,
+    patch: WorkspaceDraftUpdatePatch,
+  ): Promise<import('$shared/types').WorkspaceDraft>;
+  promote(
+    id: string,
+    expectedRevision: number,
+    initialAgent?: CreateWorkspaceRequest['initialAgent'],
+  ): Promise<WorkspaceDraftPromotionResult>;
+  markDelivery(
+    id: string,
+    delivery: import('$shared/types').DraftDelivery,
+  ): Promise<import('$shared/types').WorkspaceDraft>;
+  delete(id: string): Promise<{ deleted: boolean }>;
+}
+
 /** The aggregate seam exposing every backend domain to the renderer. */
 export interface AppClient {
   workspaces: WorkspacesClient;
@@ -2263,4 +2294,5 @@ export interface AppClient {
   server: ServerClient;
   events: EventsClient;
   drafts: DraftsClient;
+  workspaceDrafts: WorkspaceDraftsClient;
 }

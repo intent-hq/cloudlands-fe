@@ -190,6 +190,8 @@ export type {
   SetupResult,
   WorkspaceDraft,
   WorkspaceDraftConfig,
+  WorkspaceDraftCreateInput,
+  WorkspaceDraftUpdatePatch,
 } from './types/workspace-draft';
 
 // ============================================================================

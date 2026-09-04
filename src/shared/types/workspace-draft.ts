@@ -35,6 +35,17 @@ export interface WorkspaceDraftConfig {
   [key: string]: unknown;
 }
 
+export interface WorkspaceDraftCreateInput {
+  title?: string;
+  intentText?: string;
+  source?: DraftSource | null;
+  contextLinks?: ContextLink[];
+  attachments?: unknown[];
+  config?: WorkspaceDraftConfig;
+}
+
+export type WorkspaceDraftUpdatePatch = WorkspaceDraftCreateInput;
+
 /** Daemon-owned `workspaceDraft.*` resource, reproduced without renderer defaults. */
 export interface WorkspaceDraft {
   id: string;

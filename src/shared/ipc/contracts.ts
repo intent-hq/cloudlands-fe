@@ -15,7 +15,14 @@
 
 /* eslint-disable @typescript-eslint/no-namespace */
 import type { AgentId, WorkspaceId, MessageId } from '../types/branded-ids';
-import type { AgentSession } from '../types';
+import type {
+  AgentSession,
+  CreateWorkspaceRequest,
+  Workspace,
+  WorkspaceDraft,
+  WorkspaceDraftCreateInput,
+  WorkspaceDraftUpdatePatch,
+} from '../types';
 
 /**
  * Base response type for all IPC calls
@@ -122,6 +129,44 @@ export namespace AgentIpc {
     success: boolean;
     modelId?: string;
     error?: string;
+  }
+}
+
+export namespace WorkspaceDraftIpc {
+  export type CreateRequest = WorkspaceDraftCreateInput;
+  export type CreateResponse = WorkspaceDraft;
+  export interface GetRequest {
+    id: string;
+  }
+  export type GetResponse = WorkspaceDraft | null;
+  export type ListRequest = Record<string, never>;
+  export type ListResponse = WorkspaceDraft[];
+  export interface UpdateRequest {
+    id: string;
+    expectedRevision: number;
+    patch: WorkspaceDraftUpdatePatch;
+  }
+  export type UpdateResponse = WorkspaceDraft;
+  export interface PromoteRequest {
+    id: string;
+    expectedRevision: number;
+    initialAgent?: CreateWorkspaceRequest['initialAgent'];
+  }
+  export interface PromoteResponse {
+    draft: WorkspaceDraft;
+    workspace: Workspace;
+    initialAgent?: AgentSession;
+  }
+  export interface MarkDeliveryRequest {
+    id: string;
+    delivery: WorkspaceDraft['delivery'];
+  }
+  export type MarkDeliveryResponse = WorkspaceDraft;
+  export interface DeleteRequest {
+    id: string;
+  }
+  export interface DeleteResponse {
+    deleted: boolean;
   }
 }
 
@@ -276,6 +321,16 @@ export namespace TerminalIpc {
  * Enables type-safe invoke calls with full IntelliSense support
  */
 export interface IpcContractMap {
+  'workspaceDraft.create': [WorkspaceDraftIpc.CreateRequest, WorkspaceDraftIpc.CreateResponse];
+  'workspaceDraft.get': [WorkspaceDraftIpc.GetRequest, WorkspaceDraftIpc.GetResponse];
+  'workspaceDraft.list': [WorkspaceDraftIpc.ListRequest, WorkspaceDraftIpc.ListResponse];
+  'workspaceDraft.update': [WorkspaceDraftIpc.UpdateRequest, WorkspaceDraftIpc.UpdateResponse];
+  'workspaceDraft.promote': [WorkspaceDraftIpc.PromoteRequest, WorkspaceDraftIpc.PromoteResponse];
+  'workspaceDraft.markDelivery': [
+    WorkspaceDraftIpc.MarkDeliveryRequest,
+    WorkspaceDraftIpc.MarkDeliveryResponse,
+  ];
+  'workspaceDraft.delete': [WorkspaceDraftIpc.DeleteRequest, WorkspaceDraftIpc.DeleteResponse];
   'agent:create': [AgentIpc.CreateRequest, AgentIpc.CreateResponse];
   'agent:get': [AgentIpc.GetRequest, AgentIpc.GetResponse];
   'agent:send-message': [AgentIpc.SendMessageRequest, AgentIpc.SendMessageResponse];

@@ -139,6 +139,60 @@ const SessionIdSchema = z.string().min(1, 'Session ID is required');
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MessageIdSchema = z.string().min(1, 'Message ID is required');
 
+const WorkspaceDraftIdSchema = z.string().min(1, 'Draft ID is required');
+const WorkspaceDraftSourceSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('local'),
+    path: z.string().min(1),
+    branch: z.string().optional(),
+    isolation: z.enum(['worktree', 'in-place']),
+  }),
+  z.object({
+    kind: z.literal('github'),
+    url: z.string().url(),
+    owner: z.string().min(1),
+    name: z.string().min(1),
+    branch: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('newFolder'),
+    parentPath: z.string().min(1),
+    name: z.string().min(1),
+  }),
+]);
+const WorkspaceDraftFieldsSchema = z.object({
+  title: z.string().optional(),
+  intentText: z.string().optional(),
+  source: WorkspaceDraftSourceSchema.nullable().optional(),
+  contextLinks: z.array(z.unknown()).optional(),
+  attachments: z.array(z.unknown()).optional(),
+  config: z.record(z.unknown()).optional(),
+});
+const WorkspaceDraftDeliverySchema = z.object({
+  state: z.enum(['none', 'pending', 'sent', 'unknown']),
+  messageId: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const WorkspaceDraftCreateSchema = WorkspaceDraftFieldsSchema;
+export const WorkspaceDraftGetSchema = z.object({ id: WorkspaceDraftIdSchema });
+export const WorkspaceDraftListSchema = z.object({}).strict();
+export const WorkspaceDraftUpdateSchema = z.object({
+  id: WorkspaceDraftIdSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  patch: WorkspaceDraftFieldsSchema,
+});
+export const WorkspaceDraftPromoteSchema = z.object({
+  id: WorkspaceDraftIdSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  initialAgent: z.record(z.unknown()).optional(),
+});
+export const WorkspaceDraftMarkDeliverySchema = z.object({
+  id: WorkspaceDraftIdSchema,
+  delivery: WorkspaceDraftDeliverySchema,
+});
+export const WorkspaceDraftDeleteSchema = z.object({ id: WorkspaceDraftIdSchema });
+
 // ============================================================================
 // Workspace Schemas
 // ============================================================================

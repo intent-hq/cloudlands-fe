@@ -123,6 +123,8 @@ export async function redeemStagedAttachments(
 export interface HeldFirstMessage {
   workspaceId: string;
   agentId?: string;
+  /** Stable client message id used to reconcile an uncertain send after restart. */
+  messageId?: string;
   content: string;
   imageBlocks: ImageBlock[];
   contextReferences: unknown[];
@@ -131,6 +133,10 @@ export interface HeldFirstMessage {
 export interface SendHeldFirstMessageResult {
   /** False when the daemon rejected the send or the request failed. */
   sent: boolean;
+  /** The stable id supplied on the wire, when one was supplied. */
+  messageId?: string;
+  /** True when a transport failure means the daemon may have accepted the send. */
+  deliveryUnknown?: boolean;
   /**
    * Human-readable failure reason for the banner (daemon `error` string /
    * structured `data.detail` / non-generic message), when available.
@@ -191,6 +197,7 @@ export async function sendHeldFirstMessage(
       JSON.stringify({
         agentId: pending.agentId,
         workspaceId: pending.workspaceId,
+        messageId: pending.messageId,
         content: pending.content,
         imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
         fileBlocks: fileBlocks.length > 0 ? fileBlocks : undefined,
@@ -210,8 +217,16 @@ export async function sendHeldFirstMessage(
       const error = typeof result.error === 'string' ? result.error.trim() : '';
       return { sent: false, errorDetail: error.length > 0 ? error : undefined };
     }
-    return { sent: true };
+    return { sent: true, ...(pending.messageId ? { messageId: pending.messageId } : {}) };
   } catch (error) {
-    return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+    const deliveryUnknown =
+      !error ||
+      typeof error !== 'object' ||
+      typeof (error as { rpcCode?: unknown }).rpcCode !== 'number';
+    return {
+      sent: false,
+      errorDetail: extractPlacementErrorDetail(error),
+      ...(deliveryUnknown ? { deliveryUnknown: true } : {}),
+    };
   }
 }

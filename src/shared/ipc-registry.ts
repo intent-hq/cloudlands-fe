@@ -64,6 +64,19 @@ export const IPC_CHANNELS = {
     GET_TASKS: 'workspace:get-tasks',
   },
 
+  WORKSPACE_DRAFT: {
+    CREATE: 'workspaceDraft.create',
+    GET: 'workspaceDraft.get',
+    LIST: 'workspaceDraft.list',
+    UPDATE: 'workspaceDraft.update',
+    PROMOTE: 'workspaceDraft.promote',
+    MARK_DELIVERY: 'workspaceDraft.markDelivery',
+    DELETE: 'workspaceDraft.delete',
+    UPDATED: 'workspace-draft:updated',
+    PROMOTED: 'workspace-draft:promoted',
+    DELETED: 'workspace-draft:deleted',
+  },
+
   // Agent Management
   AGENT: {
     LOAD_INITIAL_CONFIG: 'agent:load-initial-config',
@@ -950,6 +963,9 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  'workspace-draft:updated',
+  'workspace-draft:promoted',
+  'workspace-draft:deleted',
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',

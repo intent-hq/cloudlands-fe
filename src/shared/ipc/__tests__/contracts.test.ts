@@ -5,7 +5,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { AgentIpc, WorkspaceIpc, FileIpc, TerminalIpc, IpcResponse } from '../contracts';
+import type {
+  AgentIpc,
+  WorkspaceIpc,
+  WorkspaceDraftIpc,
+  FileIpc,
+  TerminalIpc,
+  IpcResponse,
+} from '../contracts';
 import {
   AgentCancelSubscriptionsRequestSchema,
   AgentCreateRequestSchema,
@@ -19,12 +26,73 @@ import {
   TerminalCreateRequestSchema,
   TerminalWriteRequestSchema,
   PrMonitorFlushRequestSchema,
+  WorkspaceDraftCreateRequestSchema,
+  WorkspaceDraftGetRequestSchema,
+  WorkspaceDraftListRequestSchema,
+  WorkspaceDraftUpdateRequestSchema,
+  WorkspaceDraftPromoteRequestSchema,
+  WorkspaceDraftMarkDeliveryRequestSchema,
+  WorkspaceDraftDeleteRequestSchema,
   validateIpcRequest,
   tryValidateIpcRequest,
 } from '../request-validation';
 import { AgentId, WorkspaceId } from '../../types/branded-ids';
 
 describe('IPC Contracts', () => {
+  describe('Workspace draft IPC contracts', () => {
+    it('validates all seven protocol request shapes', () => {
+      const create: WorkspaceDraftIpc.CreateRequest = {
+        intentText: 'Build it',
+        source: { kind: 'newFolder', parentPath: '/tmp', name: 'demo' },
+      };
+      const update: WorkspaceDraftIpc.UpdateRequest = {
+        id: 'draft-1',
+        expectedRevision: 2,
+        patch: { title: 'Demo' },
+      };
+      const promote: WorkspaceDraftIpc.PromoteRequest = {
+        id: 'draft-1',
+        expectedRevision: 3,
+        initialAgent: { prompt: '', specialist: 'spec-writer' },
+      };
+
+      expect(WorkspaceDraftCreateRequestSchema.parse(create)).toEqual(create);
+      expect(WorkspaceDraftGetRequestSchema.parse({ id: 'draft-1' })).toEqual({ id: 'draft-1' });
+      expect(WorkspaceDraftListRequestSchema.parse({})).toEqual({});
+      expect(WorkspaceDraftUpdateRequestSchema.parse(update)).toEqual(update);
+      expect(WorkspaceDraftPromoteRequestSchema.parse(promote)).toEqual(promote);
+      expect(
+        WorkspaceDraftMarkDeliveryRequestSchema.parse({
+          id: 'draft-1',
+          delivery: { state: 'unknown', messageId: 'message-1', error: 'timeout' },
+        }),
+      ).toEqual({
+        id: 'draft-1',
+        delivery: { state: 'unknown', messageId: 'message-1', error: 'timeout' },
+      });
+      expect(WorkspaceDraftDeleteRequestSchema.parse({ id: 'draft-1' })).toEqual({
+        id: 'draft-1',
+      });
+    });
+
+    it('rejects stale or malformed request fields at the IPC boundary', () => {
+      expect(() =>
+        validateIpcRequest('workspaceDraft.update', {
+          id: 'draft-1',
+          expectedRevision: -1,
+          patch: {},
+        }),
+      ).toThrow();
+      expect(() => validateIpcRequest('workspaceDraft.list', { extra: true })).toThrow();
+      expect(() =>
+        validateIpcRequest('workspaceDraft.markDelivery', {
+          id: 'draft-1',
+          delivery: { state: 'maybe' },
+        }),
+      ).toThrow();
+    });
+  });
+
   describe('Agent IPC Contracts', () => {
     it('should validate agent create request', () => {
       const request: AgentIpc.CreateRequest = {
