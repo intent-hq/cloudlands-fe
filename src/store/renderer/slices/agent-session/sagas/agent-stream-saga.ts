@@ -7,7 +7,7 @@ import {
   streamTurnCorrelation,
 } from '$lib/utils/stream-lifecycle-telemetry';
 import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, MessageMetadata } from '$shared/types';
 import { streamCompleted, streamTimedOut } from '../../chat-state/chat-state-slice';
 import { selectChatAgentState } from '../../chat-state/chat-state-selectors';
 import {
@@ -35,12 +35,25 @@ function isStreamUpdateAction(
   );
 }
 
+/**
+ * Interrupted-row metadata for a terminal `complete` carrying
+ * `stopReason: "interrupted"` (PROTOCOL §7.2): the `interrupted` marker plus
+ * the wire's `interruptReason` / `interruptedBy` when present, so the live
+ * Stopped label resolves to the same reason-specific variant the persisted
+ * row renders after a reload. Absent wire fields stay absent — never `null`.
+ */
 function interruptedMetadata(
   payload: AgentStreamUpdatePayload,
-): { interrupted: true; stopReason: string } | undefined {
-  return payload.eventType === 'complete' && payload.stopReason === 'interrupted'
-    ? { interrupted: true, stopReason: payload.stopReason }
-    : undefined;
+):
+  | Pick<MessageMetadata, 'interrupted' | 'stopReason' | 'interruptReason' | 'interruptedBy'>
+  | undefined {
+  if (payload.eventType !== 'complete' || payload.stopReason !== 'interrupted') return undefined;
+  return {
+    interrupted: true,
+    stopReason: payload.stopReason,
+    ...(payload.interruptReason ? { interruptReason: payload.interruptReason } : {}),
+    ...(payload.interruptedBy ? { interruptedBy: payload.interruptedBy } : {}),
+  };
 }
 
 /**

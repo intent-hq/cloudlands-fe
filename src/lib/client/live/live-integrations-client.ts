@@ -14,6 +14,9 @@ import type {
   AppClient,
   GitHubBranchListing,
   GitHubCachedBranchListing,
+  GitHubIssueDetails,
+  GitHubPullRequestDetails,
+  GitHubPullRequestState,
   GitHubRepoConfigResult,
   IntegrationsClient,
   SubscriptionHandler,
@@ -35,6 +38,48 @@ interface GithubGetUserResult {
 /** Shared `authenticated` probe shape of `linear.authStatus` / `sentry.authStatus`. */
 interface IntegrationAuthStatus {
   authenticated?: boolean;
+}
+
+/** Daemon `GithubUser` (§5.27 DTO schemas) — derived identity only. */
+interface GithubUserWire {
+  login: string;
+}
+
+/** Daemon `GithubPullRequest` (§5.27 DTO schemas — subset the preview consumes). */
+interface GithubPullWire {
+  number: number;
+  title: string;
+  state: string;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  user: GithubUserWire;
+  headRef: string;
+  baseRef: string;
+  merged: boolean;
+  draft: boolean;
+}
+
+/** Daemon `GithubIssue` (§5.27 DTO schemas — subset the preview consumes). */
+interface GithubIssueWire {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  user: GithubUserWire;
+}
+
+/**
+ * Collapse the wire's `state` + `merged` + `draft` into the FE's single state.
+ * GitHub keeps `draft: true` on a closed draft PR, so `closed` wins over `draft`.
+ */
+function pullRequestState(pull: GithubPullWire): GitHubPullRequestState {
+  if (pull.merged === true) return 'merged';
+  if (pull.state === 'closed') return 'closed';
+  if (pull.draft === true) return 'draft';
+  return 'open';
 }
 
 export class LiveIntegrationsClient implements IntegrationsClient {
@@ -155,6 +200,63 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       });
     }
     return { config, exists: result?.exists === true };
+  }
+
+  /**
+   * `github.pulls.get` (§5.27) — one PR for the link hover card. Failures
+   * PROPAGATE (and a `pull: null` result throws) so the card renders its
+   * URL-only fallback instead of a fabricated preview.
+   */
+  async githubPullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GitHubPullRequestDetails> {
+    const result = await backendRequest<{ pull?: GithubPullWire | null }>('github.pulls.get', {
+      owner,
+      repo,
+      number,
+    });
+    const pull = result?.pull;
+    if (!pull) throw new Error(`Pull request ${owner}/${repo}#${number} not found`);
+    return {
+      owner,
+      repo,
+      number: pull.number,
+      title: pull.title,
+      state: pullRequestState(pull),
+      author: pull.user.login,
+      createdAt: pull.createdAt,
+      updatedAt: pull.updatedAt,
+      url: pull.htmlUrl,
+      headRef: pull.headRef,
+      baseRef: pull.baseRef,
+    };
+  }
+
+  /**
+   * `github.issues.get` (§5.27) — one issue for the link hover card. Same
+   * propagate-failures contract as `githubPullRequest`.
+   */
+  async githubIssue(owner: string, repo: string, number: number): Promise<GitHubIssueDetails> {
+    const result = await backendRequest<{ issue?: GithubIssueWire | null }>('github.issues.get', {
+      owner,
+      repo,
+      number,
+    });
+    const issue = result?.issue;
+    if (!issue) throw new Error(`Issue ${owner}/${repo}#${number} not found`);
+    return {
+      owner,
+      repo,
+      number: issue.number,
+      title: issue.title,
+      state: issue.state,
+      author: issue.user.login,
+      createdAt: issue.createdAt,
+      updatedAt: issue.updatedAt,
+      url: issue.htmlUrl,
+    };
   }
 
   async linearIssues(): Promise<LinearIssueResult[]> {

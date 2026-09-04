@@ -1,0 +1,5 @@
+# Commits to skip in `git blame` (GitHub honors this file automatically).
+# Opt in locally with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# ci: enforce prettier formatting in PR checks (#2142) — repo-wide Prettier reformat
+0a992dcc41ca84b33bfd5761fbfcbf4af4e6f2d3

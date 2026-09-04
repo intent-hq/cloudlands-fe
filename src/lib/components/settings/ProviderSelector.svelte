@@ -100,6 +100,9 @@
   let resolvedPaths = $state<Record<string, string>>({});
   // Secondary-binary resolved paths for dual-binary providers (unsloth CLI)
   let secondaryResolvedPaths = $state<Record<string, string>>({});
+  // Pinned npx package spec for npx-only providers (claude-code, pi), whose
+  // resolved path is the npx binary rather than the adapter itself.
+  let npxPackages = $state<Record<string, string>>({});
   // Path dropdowns are controlled from each provider's overflow menu.
   let pathConfigOpen = $state<Record<string, boolean>>({});
 
@@ -295,6 +298,7 @@
         data?: {
           paths: Record<string, string | null>;
           secondaryPaths: Record<string, string | null>;
+          npxPackages?: Record<string, string>;
         };
       }>(PROVIDERS_CHANNELS.GET_PATHS);
       if (pathsResult?.success && pathsResult.data) {
@@ -308,6 +312,7 @@
           if (path) secondary[providerId] = path;
         }
         secondaryResolvedPaths = secondary;
+        npxPackages = pathsResult.data.npxPackages ?? {};
       }
     } catch (err) {
       logger.error('Failed to load provider paths', { error: err });
@@ -599,6 +604,7 @@
                           runtimeResolvedPath={provider.id === 'unsloth'
                             ? resolvedPaths[provider.id]
                             : undefined}
+                          npxPackage={npxPackages[provider.id]}
                           isInstalled={provider.available}
                           onPathChange={(path) => handlePathChange(provider.id, path)}
                           bind:open={pathConfigOpen[provider.id]}

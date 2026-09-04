@@ -93,6 +93,8 @@ corepack pnpm run test:unit     # Vitest suite
 corepack pnpm run test:playwright
 ```
 
+`.git-blame-ignore-revs` lists the repo-wide Prettier reformat commit so `git blame` skips it (GitHub honors it automatically; opt in locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
+
 ## Fast UI preview loop
 
 Use `dev:ui` for component-only work. It skips Electron, native helpers, the daemon,
