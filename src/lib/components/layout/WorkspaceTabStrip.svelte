@@ -51,18 +51,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
   import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
-    WORKSPACE_TAB_BORDER_WIDTH_PX,
     WORKSPACE_TAB_CORNER_RADIUS_PX,
     WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
-    WORKSPACE_TAB_FLARE_BOTTOM_PX,
-    WORKSPACE_TAB_FLARE_INNER_PX,
-    WORKSPACE_TAB_FLARE_OFFSET_PX,
-    WORKSPACE_TAB_FLARE_OUTER_PX,
-    WORKSPACE_TAB_FLARE_RADIUS_PX,
-    WORKSPACE_TAB_FLARE_SIZE_PX,
     WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
@@ -164,10 +158,6 @@
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
-  const leadingFlareFillPath = `M 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} H ${WORKSPACE_TAB_FLARE_SIZE_PX} V ${WORKSPACE_TAB_FLARE_INNER_PX} H ${WORKSPACE_TAB_FLARE_OUTER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 1 ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX} Z`;
-  const leadingFlareStrokePath = `M ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 1 ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX}`;
-  const trailingFlareFillPath = `M ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX} H 0 V ${WORKSPACE_TAB_FLARE_INNER_PX} H ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 0 ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX} Z`;
-  const trailingFlareStrokePath = `M ${WORKSPACE_TAB_FLARE_INNER_PX} ${WORKSPACE_TAB_FLARE_INNER_PX} A ${WORKSPACE_TAB_FLARE_RADIUS_PX} ${WORKSPACE_TAB_FLARE_RADIUS_PX} 0 0 0 ${WORKSPACE_TAB_FLARE_OUTER_PX} ${WORKSPACE_TAB_FLARE_OUTER_PX}`;
   const activeTabBoundsPollers = new Set<() => void>();
   const activeTabBoundsReporters = new Set<() => void>();
   const activeTabBoundsControllers = new Map<string, (active: boolean) => void>();
@@ -1003,54 +993,16 @@
             onmouseleave={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
-            <!-- The canvas contains the shared corner radius plus both half-stroke edges.
-                 Its arc starts on the tab border centre and ends on the title-bar border centre. -->
-            <svg
-              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
-              style:left={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
-              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
-              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:opacity={isCurrent ? 1 : 0}
-              style:transition-duration={isDragged
-                ? '0ms'
-                : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
-              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
-              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
-              aria-hidden="true"
-              data-workspace-tab-leading-flare
-            >
-              <path d={leadingFlareFillPath} fill="currentColor" />
-              <path
-                class="stroke-border"
-                d={leadingFlareStrokePath}
-                fill="none"
-                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
-              />
-            </svg>
-            <svg
-              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
-              style:right={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
-              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
-              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:opacity={isCurrent ? 1 : 0}
-              style:transition-duration={isDragged
-                ? '0ms'
-                : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
-              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
-              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
-              aria-hidden="true"
-              data-workspace-tab-trailing-flare
-            >
-              <path d={trailingFlareFillPath} fill="currentColor" />
-              <path
-                class="stroke-border"
-                d={trailingFlareStrokePath}
-                fill="none"
-                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
-              />
-            </svg>
+            <WorkspaceTabFlare
+              side="leading"
+              visible={isCurrent}
+              durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
+            />
+            <WorkspaceTabFlare
+              side="trailing"
+              visible={isCurrent}
+              durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
+            />
             <TooltipRich
               side="bottom"
               align="start"
@@ -1139,48 +1091,16 @@
             role="presentation"
             oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           >
-            <svg
-              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
-              style:left={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
-              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
-              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:opacity={isCurrent ? 1 : 0}
-              style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
-              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
-              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
-              aria-hidden="true"
-              data-workspace-tab-leading-flare
-            >
-              <path d={leadingFlareFillPath} fill="currentColor" />
-              <path
-                class="stroke-border"
-                d={leadingFlareStrokePath}
-                fill="none"
-                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
-              />
-            </svg>
-            <svg
-              class="pointer-events-none absolute overflow-visible text-sidebar transition-opacity motion-reduce:transition-none"
-              style:right={`${-WORKSPACE_TAB_FLARE_OFFSET_PX}px`}
-              style:bottom={`${WORKSPACE_TAB_FLARE_BOTTOM_PX}px`}
-              style:width={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:height={`${WORKSPACE_TAB_FLARE_SIZE_PX}px`}
-              style:opacity={isCurrent ? 1 : 0}
-              style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
-              style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
-              viewBox={`0 0 ${WORKSPACE_TAB_FLARE_SIZE_PX} ${WORKSPACE_TAB_FLARE_SIZE_PX}`}
-              aria-hidden="true"
-              data-workspace-tab-trailing-flare
-            >
-              <path d={trailingFlareFillPath} fill="currentColor" />
-              <path
-                class="stroke-border"
-                d={trailingFlareStrokePath}
-                fill="none"
-                stroke-width={WORKSPACE_TAB_BORDER_WIDTH_PX}
-              />
-            </svg>
+            <WorkspaceTabFlare
+              side="leading"
+              visible={isCurrent}
+              durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
+            />
+            <WorkspaceTabFlare
+              side="trailing"
+              visible={isCurrent}
+              durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
+            />
             <button
               type="button"
               use:registerTabButton={workspaceId}
