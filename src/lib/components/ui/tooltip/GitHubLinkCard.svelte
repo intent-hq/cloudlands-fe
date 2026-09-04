@@ -12,8 +12,8 @@
     faCodePullRequest,
     type IconDefinition,
   } from '$lib/icons/phosphor-icons';
+  import type { ComponentProps } from 'svelte';
   import { Badge } from '$lib/components/ui/badge';
-  import type { BadgeVariant } from '$lib/components/ui/badge/badge.variants';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -35,7 +35,7 @@
   interface StateStyle {
     icon: IconDefinition;
     iconClass: string;
-    badge: BadgeVariant;
+    badge: ComponentProps<typeof Badge>['variant'];
     label: string;
   }
 
