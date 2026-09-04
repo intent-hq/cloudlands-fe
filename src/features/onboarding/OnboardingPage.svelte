@@ -688,6 +688,7 @@
     if (onboardingTestPromptRunning) return;
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
+    if (!providerId) return;
     if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;

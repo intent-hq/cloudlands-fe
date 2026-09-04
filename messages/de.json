@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "Branch-Name in die Zwischenablage kopiert",
   "workspace_sidebarHeader_branchCopyFailed_error": "Branch-Name konnte nicht kopiert werden",
   "workspace_sidebarHeader_status_ariaLabel": "Arbeitsbereich-Status",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "Pull Requests ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "Im Browser öffnen",
   "workspace_skills_title": "Skills",
   "workspace_devScripts_actionFailed_error": "{name} konnte nicht ausgeführt werden: {error}",
@@ -6046,5 +6047,12 @@
   "chat_taskProgress_list_ariaLabel": "Agentenaufgaben",
   "chat_taskProgress_completed_one": "1 Aufgabe abgeschlossen",
   "chat_taskProgress_completed_many": "{count} Aufgaben abgeschlossen",
-  "chat_taskProgress_task_ariaLabel": "{title}, Status: {status}"
+  "chat_taskProgress_task_ariaLabel": "{title}, Status: {status}",
+  "providers_antigravity_setup": "Installieren Sie den offiziellen ACP-Server getrennt von agy. Belassen Sie agy_acp_server.par und localharness_external im selben Ordner. Geben Sie als Programmpfad den Server oder einen antigravity-acp-Starter an.",
+  "providers_antigravity_summary": "Erfordert den offiziellen ACP-Server, getrennt von agy. Mit persönlicher Google-Anmeldung unter macOS auf Apple Silicon geprüft. Der Tokenverbrauch wird nicht gemeldet.",
+  "providers_antigravity_limits": "Mit persönlicher Google-Anmeldung unter macOS auf Apple Silicon geprüft. Diese ACP-Version meldet keinen Tokenverbrauch. Fehlende Verbrauchsdaten bedeuten nicht null.",
+  "providers_antigravity_loginHost": "Melden Sie sich in einem Terminal auf dem Daemon-Host an:",
+  "providers_antigravity_missing": "Offizieller ACP-Server nicht erkannt",
+  "providers_antigravity_authUnknown": "Anmeldestatus unbekannt. Aktualisieren Sie den Status, um erneut zu prüfen.",
+  "providers_antigravity_discoveryUnavailable": "Die Anbietererkennung ist nicht verfügbar. Verbinden Sie sich erneut mit dem Daemon und versuchen Sie es noch einmal."
 }

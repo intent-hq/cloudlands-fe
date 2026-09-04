@@ -237,6 +237,12 @@
   let paneStackMenuOpen = $state(false);
   let panelActionsMenuOpen = $state({ tabBar: false, compact: false });
 
+  $effect(() => {
+    void activeTabId;
+    panelActionsMenuOpen.tabBar = false;
+    panelActionsMenuOpen.compact = false;
+  });
+
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
   let renameInputRef = $state<HTMLInputElement | null>(null);
@@ -1182,7 +1188,7 @@
     bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
-    contentClass="panel-actions-menu-content w-max [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
+    contentClass="panel-actions-menu-content w-72 [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}

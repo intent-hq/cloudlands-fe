@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "分支名称已复制到剪贴板",
   "workspace_sidebarHeader_branchCopyFailed_error": "复制分支名称失败",
   "workspace_sidebarHeader_status_ariaLabel": "工作区状态",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "拉取请求（{count}）",
   "workspace_sidebar_openInBrowser_tooltip": "在浏览器中打开",
   "workspace_skills_title": "技能",
   "workspace_devScripts_actionFailed_error": "无法运行 {name}：{error}",
@@ -6046,5 +6047,12 @@
   "chat_taskProgress_list_ariaLabel": "代理任务",
   "chat_taskProgress_completed_one": "已完成 1 项任务",
   "chat_taskProgress_completed_many": "已完成 {count} 项任务",
-  "chat_taskProgress_task_ariaLabel": "{status}：{title}"
+  "chat_taskProgress_task_ariaLabel": "{status}：{title}",
+  "providers_antigravity_setup": "请在 agy 之外单独安装官方 ACP 服务器。将 agy_acp_server.par 和 localharness_external 放在同一文件夹中。将可执行文件路径设为服务器或 antigravity-acp 启动器。",
+  "providers_antigravity_summary": "需要单独安装官方 ACP 服务器，不能用 agy 替代。已在 Apple Silicon macOS 上通过个人 Google 账号登录验证。不报告 token 使用量。",
+  "providers_antigravity_limits": "已在 Apple Silicon macOS 上使用个人 Google 账号验证。此 ACP 版本不报告 token 使用量。缺少使用量数据不代表使用量为零。",
+  "providers_antigravity_loginHost": "请在守护进程主机的终端中登录：",
+  "providers_antigravity_missing": "未检测到官方 ACP 服务器",
+  "providers_antigravity_authUnknown": "登录状态未知。请刷新以重新检查。",
+  "providers_antigravity_discoveryUnavailable": "无法发现提供商。请重新连接守护进程后再试。"
 }

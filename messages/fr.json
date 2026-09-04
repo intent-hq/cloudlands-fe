@@ -1683,6 +1683,7 @@
   "workspace_sidebarHeader_branchCopied_toast": "Nom de branche copié dans le presse-papiers",
   "workspace_sidebarHeader_branchCopyFailed_error": "Impossible de copier le nom de branche",
   "workspace_sidebarHeader_status_ariaLabel": "Statut de l'espace de travail",
+  "workspace_sidebarPrDropdown_trigger_ariaLabel": "Pull requests ({count})",
   "workspace_sidebar_openInBrowser_tooltip": "Ouvrir dans le navigateur",
   "workspace_skills_title": "Compétences",
   "workspace_devScripts_actionFailed_error": "Impossible d’exécuter {name} : {error}",
@@ -6046,5 +6047,12 @@
   "chat_taskProgress_list_ariaLabel": "Tâches de l’agent",
   "chat_taskProgress_completed_one": "1 tâche terminée",
   "chat_taskProgress_completed_many": "{count} tâches terminées",
-  "chat_taskProgress_task_ariaLabel": "{status} : {title}"
+  "chat_taskProgress_task_ariaLabel": "{status} : {title}",
+  "providers_antigravity_setup": "Installez le serveur ACP officiel séparément de agy. Conservez agy_acp_server.par et localharness_external dans le même dossier. Indiquez le chemin du serveur ou d’un lanceur antigravity-acp.",
+  "providers_antigravity_summary": "Nécessite le serveur ACP officiel, distinct de agy. Vérifié avec un compte Google personnel sur macOS avec Apple Silicon. L’utilisation des tokens n’est pas communiquée.",
+  "providers_antigravity_limits": "Vérifié sur macOS avec Apple Silicon et un compte Google personnel. Cette version ACP ne communique pas l’utilisation des tokens. L’absence de données ne signifie pas une utilisation nulle.",
+  "providers_antigravity_loginHost": "Connectez-vous depuis un terminal sur l’hôte du daemon :",
+  "providers_antigravity_missing": "Serveur ACP officiel non détecté",
+  "providers_antigravity_authUnknown": "État de connexion inconnu. Actualisez pour vérifier à nouveau.",
+  "providers_antigravity_discoveryUnavailable": "La détection des fournisseurs est indisponible. Reconnectez-vous au daemon et réessayez."
 }

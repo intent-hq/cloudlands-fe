@@ -467,9 +467,10 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
  * retired or rewritten as a statically-resolvable invoke.
  */
 const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
-  // provider-models.client.ts dispatches the 9 uniform `<provider>:get-models`
+  // provider-models.client.ts dispatches the uniform `<provider>:get-models`
   // channels through its PROVIDER_MODEL_CHANNELS map; the concrete channel is
   // selected at runtime by providerId, so the scanner cannot see them.
+  ['antigravity:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['auggie:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   [
     'claude-code:get-models',
