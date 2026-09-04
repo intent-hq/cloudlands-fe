@@ -172,7 +172,7 @@ describe('InlineProposal', () => {
       expect.objectContaining({ proposal, selectedBulkItemIds: [] }),
     );
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
     expect(actionMocks.resolve).not.toHaveBeenCalled();
     await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
     expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
