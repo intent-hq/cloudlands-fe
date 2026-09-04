@@ -19,7 +19,7 @@ describe('agent activity graph preview fixtures', () => {
 
     expect(countNodes(graph, 'agent')).toBe(5);
     expect(countNodes(graph, 'task')).toBe(3);
-    expect(countNodes(graph, 'file')).toBe(8);
+    expect(countNodes(graph, 'file')).toBe(9);
     expect(countNodes(graph, 'note')).toBe(3);
     expect(graph.stats.tasks).toMatchObject({ in_progress: 1, complete: 1, not_started: 1 });
     expect(graph.edges.filter(({ type }) => type === 'message')).toHaveLength(2);
@@ -33,6 +33,11 @@ describe('agent activity graph preview fixtures', () => {
       ),
     ).toBe(true);
     expect(graph.edges.some(({ timestamp }) => now - Date.parse(timestamp) < 5_000)).toBe(true);
+    expect(
+      graph.nodes.some(
+        (node) => node.type === 'file' && node.path.startsWith('/tmp/') && node.isExternal,
+      ),
+    ).toBe(true);
   });
 
   it('builds a busy state with eight agents, six tasks, and twenty-five resources', () => {
@@ -70,5 +75,10 @@ describe('agent activity graph preview fixtures', () => {
     expect(middle.nodes.length).toBeLessThan(live.nodes.length);
     expect(live.eventTimes).toHaveLength(16);
     expect(Date.parse(live.maxTime) - Date.parse(live.minTime)).toBe(10 * 60_000);
+    expect(
+      live.nodes.some(
+        (node) => node.type === 'file' && node.path.startsWith('/tmp/') && node.isExternal,
+      ),
+    ).toBe(true);
   });
 });

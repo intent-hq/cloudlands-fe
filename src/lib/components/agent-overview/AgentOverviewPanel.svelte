@@ -233,6 +233,10 @@
             ></span
           >
           <span class="flex items-center gap-2"
+            ><i class="h-2.5 w-5 rounded-full border border-dashed border-border bg-card"
+            ></i>{m.agentOverview_toolbar_externalFile_label()}</span
+          >
+          <span class="flex items-center gap-2"
             ><i class="w-5 border-t border-muted-foreground"
             ></i>{m.agentOverview_toolbar_delegation_label()}</span
           >

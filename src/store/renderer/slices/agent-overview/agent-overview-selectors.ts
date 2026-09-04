@@ -36,12 +36,14 @@ import {
   extractNoteChangesFromMessages,
   extractTaskChangesFromMessages,
   extractDelegationBatchMap,
+  isExternalFilePath,
 } from '$lib/components/agent-overview/graph-helpers';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AgentSession, Note, TaskStatus, WorkspaceTask } from '$shared/types';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import { selectWorkspaceTasks } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
 import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
 // ============================================================================
 // Private graph derivation helpers
@@ -82,6 +84,10 @@ export const selectGraphStateAt = store.createSelector(
     const currentTime = requestedTime ?? deriveCurrentTime(events);
     const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
     const tasks = selectWorkspaceTasks.select(state, workspaceId);
+    const workspace = selectWorkspaceById.select(state, workspaceId);
+    const rootPaths = [workspace?.path, workspace?.worktreePath].filter(
+      (path): path is string => typeof path === 'string' && path.length > 0,
+    );
 
     const agents: Record<string, AgentSession> = {};
     for (const session of selectAllWorkspaceAgents.select(state, workspaceId)) {
@@ -117,6 +123,7 @@ export const selectGraphStateAt = store.createSelector(
       currentTime,
       requestedTime === null,
       fileChanges,
+      rootPaths,
       state,
       notesMap,
       tasks,
@@ -140,6 +147,7 @@ function computeGraphState(
   currentTime: string,
   isLive: boolean,
   fileChanges: FileLineChange[],
+  rootPaths: string[],
   state: StoreState,
   notesMap?: Map<string, Note>,
   tasks: WorkspaceTask[] = [],
@@ -345,6 +353,7 @@ function computeGraphState(
       edgeSet,
       pendingEdges,
       currentTime,
+      rootPaths,
     );
 
     // STEP 3.5: Create note nodes from agent's chat history
@@ -391,6 +400,7 @@ function computeGraphState(
     nodes,
     edgeSet,
     pendingEdges,
+    rootPaths,
   );
 
   // The latest session snapshot can describe a live wait even when its event is
@@ -435,6 +445,7 @@ function computeGraphState(
     isLive,
     currentTime,
     state,
+    rootPaths,
   );
 
   // STEP 5: Create edges where both nodes exist
@@ -553,6 +564,7 @@ function createFileNodesAndEdges(
   edgeSet: Set<string>,
   pendingEdges: PendingEdge[],
   currentTime: string,
+  rootPaths: string[],
 ) {
   for (const fc of fileChangesToProcess) {
     const filePath = fc.path;
@@ -568,6 +580,7 @@ function createFileNodesAndEdges(
         type: 'file',
         path: filePath,
         fileName: filePath.split('/').pop() || '',
+        isExternal: isExternalFilePath(filePath, rootPaths),
         lastAction: fc.type === 'delete' ? 'delete' : isRead ? 'read' : 'write',
         lastActionTimestamp: fc.timestamp || currentTime,
         x: 0,
@@ -741,6 +754,7 @@ function processVisibleEvents(
   nodes: GraphNode[],
   edgeSet: Set<string>,
   pendingEdges: PendingEdge[],
+  rootPaths: string[],
 ) {
   for (const event of visibleEvents) {
     const eventTime = new Date(event.timestamp).getTime();
@@ -777,6 +791,7 @@ function processVisibleEvents(
           type: 'file',
           path: event.targetId,
           fileName: event.targetName || event.targetId.split('/').pop() || '',
+          isExternal: isExternalFilePath(event.targetId, rootPaths),
           lastAction: event.type === 'file-write' ? 'write' : 'read',
           lastActionTimestamp: event.timestamp,
           x: 0,
@@ -933,6 +948,7 @@ function createFallbackFileNodes(
   currentTime: string,
 
   state: StoreState,
+  rootPaths: string[],
 ) {
   const hasFileNodes = nodes.some((n) => n.type === 'file');
   if (hasFileNodes || fileChanges.length === 0) return;
@@ -960,6 +976,7 @@ function createFallbackFileNodes(
         type: 'file',
         path: filePath,
         fileName: filePath.split('/').pop() || '',
+        isExternal: isExternalFilePath(filePath, rootPaths),
         lastAction: fc.action?.toLowerCase() === 'delete' ? 'delete' : 'write',
         lastActionTimestamp: currentTime,
         x: 0,

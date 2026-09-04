@@ -53,6 +53,7 @@ function file(index: number): FileNode {
     type: 'file',
     path: `src/file-${index}.ts`,
     fileName: `file-${index}.ts`,
+    isExternal: false,
     lastAction: 'read',
     lastActionTimestamp: new Date(Date.parse(timestamp) + index).toISOString(),
     x: 100 + index * 20,

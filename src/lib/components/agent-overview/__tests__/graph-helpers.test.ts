@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { AgentStatus, type AgentSession } from '$shared/types';
-import { convertToInteractionEvent, getNodeStatus, getStreamingState } from '../graph-helpers';
+import {
+  convertToInteractionEvent,
+  getNodeStatus,
+  getStreamingState,
+  isExternalFilePath,
+} from '../graph-helpers';
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -25,6 +30,31 @@ const staleStreamingAssistant = {
 };
 
 describe('agent overview graph helpers', () => {
+  describe('isExternalFilePath', () => {
+    const roots = ['/repo'];
+
+    it.each([
+      ['src/internal.ts', false],
+      ['/repo', false],
+      ['/repo/src/internal.ts', false],
+      ['/repo-x/file.ts', true],
+      ['/tmp/file.ts', true],
+      ['../outside.ts', true],
+      ['src/../../outside.ts', true],
+    ])('classifies %s', (filePath, expected) => {
+      expect(isExternalFilePath(filePath, roots)).toBe(expected);
+    });
+
+    it('treats trailing slashes on roots equivalently', () => {
+      expect(isExternalFilePath('/repo/src/internal.ts', ['/repo/'])).toBe(false);
+    });
+
+    it('marks nothing external without a workspace root', () => {
+      expect(isExternalFilePath('/tmp/file.ts', [])).toBe(false);
+      expect(isExternalFilePath('../outside.ts', [])).toBe(false);
+    });
+  });
+
   it('trusts explicit idle status over stale assistant streaming metadata', () => {
     const session = makeSession({
       status: 'idle' as any,

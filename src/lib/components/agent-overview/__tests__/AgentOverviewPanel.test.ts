@@ -69,6 +69,7 @@ const graph: GraphState = {
       type: 'file',
       path: 'src/one.ts',
       fileName: 'one.ts',
+      isExternal: false,
       lastAction: 'read',
       lastActionTimestamp: timestamp,
       x: 100,

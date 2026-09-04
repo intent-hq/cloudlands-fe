@@ -20,6 +20,47 @@ import {
 import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 
 // ============================================================================
+// Path Classification
+// ============================================================================
+
+function normalizePosixPath(value: string): string {
+  const isAbsolute = value.startsWith('/');
+  const segments: string[] = [];
+
+  for (const segment of value.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length > 0 && segments.at(-1) !== '..') {
+        segments.pop();
+      } else if (!isAbsolute) {
+        segments.push(segment);
+      }
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  if (isAbsolute) return `/${segments.join('/')}`;
+  return segments.join('/') || '.';
+}
+
+export function isExternalFilePath(filePath: string, rootPaths: string[]): boolean {
+  const roots = rootPaths.filter(Boolean).map(normalizePosixPath);
+  if (roots.length === 0) return false;
+
+  const normalizedPath = normalizePosixPath(filePath);
+  if (!filePath.startsWith('/')) {
+    return normalizedPath === '..' || normalizedPath.startsWith('../');
+  }
+
+  return !roots.some(
+    (root) =>
+      normalizedPath === root ||
+      (root === '/' ? normalizedPath.startsWith('/') : normalizedPath.startsWith(`${root}/`)),
+  );
+}
+
+// ============================================================================
 // Status Mapping
 // ============================================================================
 

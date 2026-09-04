@@ -31,6 +31,7 @@
   import TimeScrubber from './TimeScrubber.svelte';
   import { advancePlaybackCursor, type PlaybackMode, type PlaybackSpeed } from './playback';
   import { buildReplayGraph } from './__fixtures__/agent-activity-graph.fixtures';
+  import { m } from '$shared/paraglide/messages.js';
 
   let { graph, replayEnd }: { graph: GraphState; replayEnd?: number } = $props();
   let mode = $state<PlaybackMode>('live');
@@ -99,6 +100,13 @@
 </script>
 
 <div class="relative h-[720px] min-h-[600px] w-full overflow-hidden rounded-md" data-graph-preview>
+  <span
+    class="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2 rounded-md border border-border bg-card/95 px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground shadow-sm backdrop-blur"
+    data-external-file-legend
+  >
+    <i class="h-2.5 w-5 rounded-full border border-dashed border-border bg-card"></i>
+    {m.agentOverview_toolbar_externalFile_label()}
+  </span>
   <AgentActivityGraph
     graph={displayedGraph}
     layers={{ files: true, notes: true, messages: true }}

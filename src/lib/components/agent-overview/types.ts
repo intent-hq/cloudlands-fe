@@ -54,6 +54,7 @@ export interface FileNode extends BaseNode {
   type: 'file';
   path: string;
   fileName: string;
+  isExternal: boolean;
   lastAction: 'read' | 'write' | 'create' | 'delete' | 'modify';
   lastActionTimestamp: string;
 }

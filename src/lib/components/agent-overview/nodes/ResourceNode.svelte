@@ -1,8 +1,9 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faFile } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowUpRightFromSquare, faFile } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatInteger } from '$lib/i18n/format';
+  import { m } from '$shared/paraglide/messages.js';
   import type { FileNode, NoteNode } from '../types';
   import {
     activityMotion,
@@ -50,6 +51,18 @@
   }: Props = $props();
 
   const label = $derived(node.type === 'file' ? node.fileName : node.title);
+  const externalParent = $derived.by(() => {
+    if (node.type !== 'file' || !node.isExternal) return '';
+    const parent = node.path.slice(0, node.path.lastIndexOf('/'));
+    const segment = parent.split('/').filter(Boolean)[0];
+    return node.path.startsWith('/') ? `/${segment || ''}/…` : `${segment || '..'}/…`;
+  });
+  const tooltip = $derived(node.type === 'file' && node.isExternal ? node.path : undefined);
+  const ariaLabel = $derived(
+    node.type === 'file' && node.isExternal
+      ? m.agentOverview_resourceNode_external_ariaLabel({ name: node.fileName, path: node.path })
+      : undefined,
+  );
   const brightness = $derived(resourceBrightness(node.lastActionTimestamp));
   const cooldownRemaining = $derived(resourceCooldownRemaining(node.lastActionTimestamp));
 </script>
@@ -68,11 +81,15 @@
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
   class="resource-node flex h-8 w-[180px] touch-none items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+  class:border-dashed={node.type === 'file' && node.isExternal}
   data-graph-node
   data-node-id={node.id}
+  data-external={node.type === 'file' && node.isExternal}
   data-active={isActive}
   data-access={access}
   data-last-activity-at={lastActivityAt}
+  title={tooltip}
+  aria-label={ariaLabel}
   style:--resource-brightness={brightness}
   style:--resource-cooldown={`${cooldownRemaining}ms`}
   {...events}
@@ -80,7 +97,17 @@
   <span class="shrink-0 text-subtle"
     ><Fa icon={node.type === 'file' ? faFile : faNote} size="xs" /></span
   >
-  <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{label}</span>
+  {#if node.type === 'file' && node.isExternal}
+    <span class="shrink-0 text-subtle" aria-hidden="true"
+      ><Fa icon={faArrowUpRightFromSquare} size="xs" /></span
+    >
+  {/if}
+  <span class="min-w-0 flex flex-1 items-baseline gap-1 overflow-hidden font-mono text-[11px]">
+    <span class="truncate text-foreground">{label}</span>
+    {#if externalParent}
+      <span class="shrink-0 text-[9px] text-muted-foreground">{externalParent}</span>
+    {/if}
+  </span>
   {#if access === 'write'}
     <span
       class="write-count shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground"

@@ -49,13 +49,20 @@ function task(id: string, title: string, state: TaskStatus, dependsOn: string[] 
   return { ...physics, id: `task:${id}`, type: 'task', taskId: id, title, state, dependsOn };
 }
 
-function file(path: string, action: FileNode['lastAction'], now: number, ageMs: number): FileNode {
+function file(
+  path: string,
+  action: FileNode['lastAction'],
+  now: number,
+  ageMs: number,
+  isExternal = false,
+): FileNode {
   return {
     ...physics,
     id: `file:${path}`,
     type: 'file',
     path,
     fileName: path.split('/').at(-1) ?? path,
+    isExternal,
     lastAction: action,
     lastActionTimestamp: timestamp(now, -ageMs),
   };
@@ -252,6 +259,7 @@ export function buildConstellationGraph(now = Date.now()): GraphState {
     ),
     file('messages/en.json', 'read', now, 8_000),
     file('docs/fe/DEVELOPER_GUIDE.md', 'read', now, 12_000),
+    file('/tmp/constellation-preview.png', 'read', now, 1_400, true),
   ];
   const notes = [
     note('spec', 'Interactive graph specification', 'read', now),
@@ -266,6 +274,7 @@ export function buildConstellationGraph(now = Date.now()): GraphState {
     'canvas',
     'preview',
     'verifier',
+    'coordinator',
     'coordinator',
   ];
   const edges: GraphEdge[] = [
@@ -466,8 +475,11 @@ export function buildReplayGraph(endTime = Date.now(), cursorTime = endTime): Gr
       owner: 2,
     },
     { path: 'messages/en.json', time: at(530_000), owner: 2 },
+    { path: '/tmp/replay-frame.png', time: at(470_000), owner: 2, isExternal: true },
   ].filter(({ time }) => visible(time));
-  const fileNodes = resources.map(({ path, time }) => file(path, 'write', endTime, endTime - time));
+  const fileNodes = resources.map(({ path, time, isExternal }) =>
+    file(path, 'write', endTime, endTime - time, isExternal),
+  );
   const timed = (edge: GraphEdge, time: number): GraphEdge => ({
     ...edge,
     timestamp: timestamp(time),

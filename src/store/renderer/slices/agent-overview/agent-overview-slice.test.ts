@@ -59,6 +59,11 @@ function makeOverviewState(
     taskAgentAssociations: {
       byWorkspaceId: { [WS]: { byNoteId: taskAssociations } },
     },
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WS, path: '/repo', worktreePath: '/repo/worktree' },
+      ] as any[]),
+    },
     workspaceEvents: {
       byWorkspaceId:
         workspaceEvents.length > 0 ? { [WS]: { events: workspaceEvents, loading: false } } : {},
@@ -144,6 +149,29 @@ describe('selectGraphState', () => {
         filePath: 'src/actual.ts',
         count: 1,
       }),
+    );
+  });
+
+  it('marks event-derived files outside workspace roots as external', () => {
+    const graph = selectGraphState.select(
+      makeOverviewState(makeSession('a1'), [
+        makeWorkspaceEvent({
+          id: 'external-file',
+          data: { path: '/tmp/capture.jpg', action: 'read' },
+        }),
+        makeWorkspaceEvent({
+          id: 'internal-file',
+          data: { path: 'src/internal.ts', relativePath: 'src/internal.ts', action: 'read' },
+        }),
+      ]),
+      WS,
+    );
+
+    expect(graph.nodes).toContainEqual(
+      expect.objectContaining({ type: 'file', path: '/tmp/capture.jpg', isExternal: true }),
+    );
+    expect(graph.nodes).toContainEqual(
+      expect.objectContaining({ type: 'file', path: 'src/internal.ts', isExternal: false }),
     );
   });
 
