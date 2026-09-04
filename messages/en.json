@@ -2176,8 +2176,6 @@
   "chat_queuedMessages_sendNow_tooltip": "Send now (interrupts current stream)",
   "chat_queuedMessages_remove_tooltip": "Remove",
   "chat_queuedMessages_edit_tooltip": "Edit",
-  "chat_queuedMessages_heldForQuestionsHint_one": "1 message waiting — held until you answer or dismiss the agent's questions",
-  "chat_queuedMessages_heldForQuestionsHint_many": "{count} messages waiting — held until you answer or dismiss the agent's questions",
   "chat_backgroundHooks_row_ariaLabel": "Background hooks",
   "chat_backgroundHooks_running_label": "Running",
   "chat_backgroundHooks_runNow_label": "Run now",

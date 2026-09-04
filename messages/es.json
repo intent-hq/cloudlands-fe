@@ -2175,8 +2175,6 @@
   "chat_queuedMessages_sendNow_tooltip": "Enviar ahora (interrumpe la transmisión actual)",
   "chat_queuedMessages_remove_tooltip": "Quitar",
   "chat_queuedMessages_edit_tooltip": "Editar",
-  "chat_queuedMessages_heldForQuestionsHint_one": "1 mensaje en espera — retenido hasta que respondas o descartes las preguntas del agente",
-  "chat_queuedMessages_heldForQuestionsHint_many": "{count} mensajes en espera — retenidos hasta que respondas o descartes las preguntas del agente",
   "chat_backgroundHooks_row_ariaLabel": "Hooks en segundo plano",
   "chat_backgroundHooks_running_label": "En ejecución",
   "chat_backgroundHooks_runNow_label": "Ejecutar ahora",

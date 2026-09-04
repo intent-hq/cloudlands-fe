@@ -2175,8 +2175,6 @@
   "chat_queuedMessages_sendNow_tooltip": "지금 보내기(현재 스트림 중단)",
   "chat_queuedMessages_remove_tooltip": "제거",
   "chat_queuedMessages_edit_tooltip": "편집",
-  "chat_queuedMessages_heldForQuestionsHint_one": "메시지 1개 대기 중 — 에이전트의 질문에 답변하거나 닫을 때까지 보류됩니다",
-  "chat_queuedMessages_heldForQuestionsHint_many": "메시지 {count}개 대기 중 — 에이전트의 질문에 답변하거나 닫을 때까지 보류됩니다",
   "chat_backgroundHooks_row_ariaLabel": "백그라운드 훅",
   "chat_backgroundHooks_running_label": "실행 중",
   "chat_backgroundHooks_runNow_label": "지금 실행",

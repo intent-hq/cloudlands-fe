@@ -2175,8 +2175,6 @@
   "chat_queuedMessages_sendNow_tooltip": "立即发送（中断当前流式输出）",
   "chat_queuedMessages_remove_tooltip": "移除",
   "chat_queuedMessages_edit_tooltip": "编辑",
-  "chat_queuedMessages_heldForQuestionsHint_one": "1 条消息等待中 — 在您回答或关闭智能体的问题之前将被暂缓发送",
-  "chat_queuedMessages_heldForQuestionsHint_many": "{count} 条消息等待中 — 在您回答或关闭智能体的问题之前将被暂缓发送",
   "chat_backgroundHooks_row_ariaLabel": "后台钩子",
   "chat_backgroundHooks_running_label": "运行中",
   "chat_backgroundHooks_runNow_label": "立即运行",

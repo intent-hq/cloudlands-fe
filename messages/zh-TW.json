@@ -2175,8 +2175,6 @@
   "chat_queuedMessages_sendNow_tooltip": "立即傳送（中斷當前流式輸出）",
   "chat_queuedMessages_remove_tooltip": "移除",
   "chat_queuedMessages_edit_tooltip": "編輯",
-  "chat_queuedMessages_heldForQuestionsHint_one": "1 則訊息等待中 — 在您回答或關閉代理程式的問題之前將暫緩傳送",
-  "chat_queuedMessages_heldForQuestionsHint_many": "{count} 則訊息等待中 — 在您回答或關閉代理程式的問題之前將暫緩傳送",
   "chat_backgroundHooks_row_ariaLabel": "背景鉤子",
   "chat_backgroundHooks_running_label": "執行中",
   "chat_backgroundHooks_runNow_label": "立即執行",
