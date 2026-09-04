@@ -319,9 +319,23 @@ describe('AIBehaviorEditor workspace ownership', () => {
 describe('AIBehaviorEditor global instructions layout', () => {
   afterEach(() => {
     cleanup();
+    mocks.fileSpecialists$.set([]);
   });
 
   it('renders no default model picker in the system-prompt view', async () => {
+    // A pinned specialist would surface "Reset all to default" if the editor
+    // still hosted it, so the absence assertion below is meaningful.
+    mocks.fileSpecialists$.set([
+      {
+        id: 'custom-reviewer',
+        name: 'Reviewer',
+        description: 'Reviews tasks',
+        codingAgent: 'codex',
+        model: 'codex:gpt-5.3-codex',
+        behaviorPrompt: 'Review carefully',
+        source: 'user',
+      },
+    ]);
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
     await within(screen.getByTestId('all-agents-prompt-column')).findByRole('textbox');
