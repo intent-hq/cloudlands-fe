@@ -986,6 +986,21 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('forces context hydration after the workspace was initialized', async () => {
+    const run = start();
+    run.channel.put(initContextForWorkspace(WS));
+    await settle();
+    run.channel.put(initContextForWorkspace(WS, true));
+    await settle();
+
+    expect(mocks.workspaces.getContext.mock.calls).toEqual([[WS], [WS]]);
+    expect(run.actions).toEqual([
+      { type: 'context/hydrateContextItems', payload: [WS, []] },
+      { type: 'context/hydrateContextItems', payload: [WS, []] },
+    ]);
+    await stop(run.task);
+  });
+
   it('reports PR refresh success and maps only the branch lookup payload', async () => {
     const current = state();
     current.workspace.workspaces = createCollection('id', [

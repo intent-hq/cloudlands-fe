@@ -83,6 +83,24 @@ describe('PanelContentRenderer async boundary', () => {
     expect(loader).toHaveBeenCalledOnce();
   });
 
+  it('mounts an inactive owned browser while leaving an inactive unowned browser dormant', async () => {
+    const loader = vi.fn(async () => ({ default: AsyncPanelContent }));
+    register('browser', loader);
+    const unowned = render(PanelContentRenderer, { props: props('browser', false) });
+    const owned = render(PanelContentRenderer, {
+      props: {
+        ...props('browser', false),
+        tab: { ...tab('browser'), ownerAgentId: 'agent-1' } as PanelTab,
+      },
+    });
+
+    await waitFor(() =>
+      expect(owned.container.querySelector('[data-testid="async-panel-content"]')).toBeTruthy(),
+    );
+    expect(unowned.container.querySelector('[data-testid="async-panel-content"]')).toBeNull();
+    expect(loader).toHaveBeenCalledOnce();
+  });
+
   it('recovers an initially unknown type after registration and retry', async () => {
     const type = 'async-unknown';
     render(PanelContentRenderer, { props: props(type) });

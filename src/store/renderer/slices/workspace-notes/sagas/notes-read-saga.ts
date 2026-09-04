@@ -5,7 +5,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  takeLeadingByWorkspace,
+  takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
@@ -115,7 +115,11 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
 }
 
 export function* notesReadSaga() {
-  yield* takeLeadingByWorkspace(workspaceNotesHydrationRequested, hydrateWorkspaceNotesWorker);
+  yield* takeLatestByContext(
+    workspaceNotesHydrationRequested,
+    (action) => ({ context: action.payload[0], generation: action.payload[1] }),
+    hydrateWorkspaceNotesWorker,
+  );
   // Per-note single-flight with trailing coalesce: events for different notes
   // run concurrently (a global takeLeading would drop a second note's event
   // while the first is fetching), while a burst of events for one note

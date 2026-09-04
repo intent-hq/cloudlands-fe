@@ -260,6 +260,33 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
+  it('cancels stale hydration when a fresh generation arrives in flight', async () => {
+    const first = deferred<Note[]>();
+    const fresh = note('fresh');
+    const list = vi
+      .spyOn(appClient.notes, 'list')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce([fresh]);
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
+    const run = harness();
+
+    run.channel.put(workspaceNotesHydrationRequested(WS, 1, false));
+    await settle();
+    run.channel.put(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+
+    expect(list.mock.calls).toEqual([
+      [WS, { projection: 'slim' }],
+      [WS, { projection: 'slim' }],
+    ]);
+    expect(run.actions).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [fresh] })]);
+    first.resolve([note('stale')]);
+    await settle();
+    expect(run.actions).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [fresh] })]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('maps a hydration rejection to the exact workspace failure action', async () => {
     const list = vi.spyOn(appClient.notes, 'list').mockRejectedValue(new Error('offline'));
     vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));

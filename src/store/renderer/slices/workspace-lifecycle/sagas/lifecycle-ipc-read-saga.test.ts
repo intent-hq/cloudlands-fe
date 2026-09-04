@@ -25,6 +25,7 @@ import { loadGithubRepos } from '../../github-repos/github-repos-slice';
 import { loadKnownRepos } from '../../known-repos/known-repos-slice';
 import { initialState as initialConnectionsState } from '../../connections/connections-slice';
 import { initialState as initialPanelLayoutState } from '../../panel-layout/panel-layout-slice';
+import { prStatusRefreshCompleted } from '../../pr-status/pr-status-slice';
 import { initialState as initialSidebarNavState } from '../../sidebar-nav/sidebar-nav-slice';
 import {
   initialState as initialWorkspaceState,
@@ -112,15 +113,21 @@ function workspaceMountFanOut(
   ];
 }
 
-function workspaceDeferredFanOut(workspaceId: string): ObservedAction[] {
+function workspaceDeferredFanOut(workspaceId: string, force = false): ObservedAction[] {
   return [
     { type: 'workspaceEvents/loadEventsRequested', payload: [workspaceId] },
     { type: 'scripts/refreshScripts', payload: [workspaceId] },
     { type: 'skills/loadSkillsRequested', payload: [workspaceId] },
-    { type: 'prStatus/refreshRequested', payload: [workspaceId, false, false] },
+    { type: 'prStatus/refreshRequested', payload: [workspaceId, force, false] },
     { type: 'changes/loadWorkspaceDataRequested', payload: [workspaceId] },
-    { type: 'fileExplorer/hydrateFileExplorerRequested', payload: [workspaceId] },
-    { type: 'context/initContextForWorkspace', payload: [workspaceId] },
+    {
+      type: 'fileExplorer/hydrateFileExplorerRequested',
+      payload: force ? [workspaceId, true] : [workspaceId],
+    },
+    {
+      type: 'context/initContextForWorkspace',
+      payload: force ? [workspaceId, true] : [workspaceId],
+    },
   ];
 }
 
@@ -388,6 +395,28 @@ describe('lifecycleIpcReadSaga', () => {
     await stop(run.task);
   });
 
+  it('retires unresolved worktree hydration for a real pathless workspace', async () => {
+    const run = start(state([workspace(WS)]));
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.actions.length = 0;
+
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS * 2);
+    await settle();
+    run.send(setWorkspaceEntity(workspace(WS, '/repo/worktrees/too-late')));
+    await settle();
+
+    expect(
+      run.actions.filter(
+        (action) =>
+          action.type === 'skills/loadSkillsRequested' ||
+          action.type === 'fileExplorer/hydrateFileExplorerRequested',
+      ),
+    ).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+    await stop(run.task);
+  });
+
   it.each(['before', 'after'] as const)(
     'dispatches worktree-dependent hydration exactly once when a real path resolves %s fallback',
     async (timing) => {
@@ -504,8 +533,45 @@ describe('lifecycleIpcReadSaga', () => {
 
     expect(run.actions).toEqual(workspaceMountFanOut(WS, 2, true));
     expect(vi.getTimerCount()).toBe(1);
+    run.actions.length = 0;
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
+    await settle();
+    expect(run.actions).toEqual(workspaceDeferredFanOut(WS, true));
     await stop(run.task);
   });
+
+  it.each([true, false])(
+    'settles object-shaped PR status completion success=%s',
+    async (success) => {
+      vi.useRealTimers();
+      const measureName = 'intent:workspace-hydration:prStatus:dispatch-to-settle';
+      performance.clearMeasures(measureName);
+      const current = state();
+      current.panelLayout = {
+        ...initialPanelLayoutState,
+        byWorkspaceId: {
+          [WS]: {
+            panels: {
+              panel: {
+                activeTabId: 'overview',
+                tabs: [{ id: 'overview', type: 'overview', title: 'Overview', closable: true }],
+              },
+            },
+          },
+        },
+      } as never;
+      const run = start(current);
+      run.channel.put(workspaceMounted(WS));
+      await settle();
+
+      run.channel.put(prStatusRefreshCompleted(WS, success, success ? undefined : 'failed'));
+      await settle();
+
+      expect(performance.getEntriesByName(measureName)).toHaveLength(1);
+      performance.clearMeasures(measureName);
+      await stop(run.task);
+    },
+  );
 
   it('hydrates the first workspace visit and coalesces a revisit in the same session', async () => {
     const run = startHydrationHarness();

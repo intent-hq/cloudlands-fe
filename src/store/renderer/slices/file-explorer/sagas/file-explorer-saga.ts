@@ -195,9 +195,9 @@ function* initializeExplorer(action: ReturnType<typeof initializeFileExplorer>) 
   yield* call(loadAgentFileEdits, wsId);
 }
 
-function* hydrateExplorer(wsId: string) {
+function* hydrateExplorer(wsId: string, force = false) {
   const existing = yield* selectFileExplorerState.effect(wsId);
-  if (existing.isInitialized || existing.isLoading) return;
+  if ((!force && existing.isInitialized) || existing.isLoading) return;
   yield* put(setFileExplorerLoading(wsId, true));
   let completed = false;
   try {
@@ -388,10 +388,10 @@ function* refreshExplorerWorker(action: ReturnType<typeof refreshFileExplorer>) 
 }
 
 function* hydrateExplorerWorker(action: ReturnType<typeof hydrateFileExplorerRequested>) {
-  const [wsId] = action.payload;
+  const [wsId, force] = action.payload;
   if (!wsId) return;
   yield* race({
-    hydrate: call(hydrateExplorer, wsId),
+    hydrate: call(hydrateExplorer, wsId, force),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
   });
 }

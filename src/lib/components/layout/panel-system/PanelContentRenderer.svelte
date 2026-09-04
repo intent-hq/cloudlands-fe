@@ -13,6 +13,7 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { tabTypeRegistry, type TabTypeComponent } from '$features/layout/tab-types/registry';
   import { Button } from '$lib/components/ui/button';
+  import { isAlwaysMountedTab } from './panel-tab-cache';
 
   interface Props {
     tab: PanelTab;
@@ -47,6 +48,7 @@
   $effect(() => {
     const type = tab.type;
     const active = isActive;
+    const shouldMount = active || isAlwaysMountedTab(tab);
     const attempt = renderAttempt;
     const definition = tabTypeDef;
     let cancelled = false;
@@ -56,17 +58,29 @@
       TabComponent = undefined;
       loadFailed = false;
     }
-    if (!definition || (renderedType === type && TabComponent) || !active) return;
+    if (!definition || (renderedType === type && TabComponent) || !shouldMount) return;
 
     loadFailed = false;
     void tabTypeRegistry.loadComponent(type).then(
       (component) => {
-        if (cancelled || !isActive || tab.type !== type || renderAttempt !== attempt) return;
+        if (
+          cancelled ||
+          (!isActive && !isAlwaysMountedTab(tab)) ||
+          tab.type !== type ||
+          renderAttempt !== attempt
+        )
+          return;
         renderedType = type;
         TabComponent = component;
       },
       () => {
-        if (cancelled || !isActive || tab.type !== type || renderAttempt !== attempt) return;
+        if (
+          cancelled ||
+          (!isActive && !isAlwaysMountedTab(tab)) ||
+          tab.type !== type ||
+          renderAttempt !== attempt
+        )
+          return;
         loadFailed = true;
       },
     );

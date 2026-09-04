@@ -47,7 +47,10 @@ function isTailContentOnlyUpdate(
   const lastIndex = current.length - 1;
   if (previous[lastIndex] === current[lastIndex]) return false;
   if (!sameTailStructure(previous[lastIndex], current[lastIndex])) return false;
-  return lastIndex === 0 || previous[lastIndex - 1] === current[lastIndex - 1];
+  for (let index = 0; index < lastIndex; index++) {
+    if (previous[index] !== current[index]) return false;
+  }
+  return true;
 }
 
 function rebuildStructure(

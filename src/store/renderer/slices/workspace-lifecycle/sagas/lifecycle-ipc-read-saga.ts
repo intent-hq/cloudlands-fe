@@ -7,6 +7,7 @@ import {
   delay,
   fork,
   put,
+  race,
   take,
   takeEvery,
   takeLeading,
@@ -290,11 +291,15 @@ function* waitForResolvedWorkspacePath(
   while (coordinator.generations.get(workspaceId) === generation) {
     const workspace = yield* selectWorkspaceById.effect(workspaceId);
     if (workspace && workspaceHasResolvedPath(workspace)) return true;
-    const action = yield* take(
-      (candidate: ObservedHydrationAction) =>
-        isWorkspaceEntityResolution(candidate, workspaceId) ||
-        isHydrationPathWaitInvalidated(candidate, workspaceId, branch, generation),
-    );
+    const { action } = yield* race({
+      action: take(
+        (candidate: ObservedHydrationAction) =>
+          isWorkspaceEntityResolution(candidate, workspaceId) ||
+          isHydrationPathWaitInvalidated(candidate, workspaceId, branch, generation),
+      ),
+      timeout: delay(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS),
+    });
+    if (!action) return false;
     if (isHydrationPathWaitInvalidated(action, workspaceId, branch, generation)) return false;
   }
   return false;
@@ -339,10 +344,16 @@ function* dispatchHydrationBranch(
       yield* put(hydrateTerminalsRequested(workspaceId));
       break;
     case 'fileExplorer':
-      yield* put(hydrateFileExplorerRequested(workspaceId));
+      yield* put(
+        force
+          ? hydrateFileExplorerRequested(workspaceId, true)
+          : hydrateFileExplorerRequested(workspaceId),
+      );
       break;
     case 'context':
-      yield* put(initContextForWorkspace(workspaceId));
+      yield* put(
+        force ? initContextForWorkspace(workspaceId, true) : initContextForWorkspace(workspaceId),
+      );
       break;
     case 'taskAgentLinks':
       yield* put(hydrateTaskAgentAssociationsRequested(workspaceId));
@@ -445,9 +456,21 @@ function* settleHydrationBranch(
   action: { type: string; payload?: unknown },
 ): SagaGenerator<void> {
   const payload = action.payload;
-  if (!Array.isArray(payload)) return;
-  const first = payload[0];
-  const workspaceId = Array.isArray(first) ? first[0] : first;
+  const tuplePayload = Array.isArray(payload) ? payload : null;
+  const prStatusPayload =
+    action.type === prStatusRefreshCompleted.type &&
+    payload != null &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload)
+      ? (payload as { wsId?: unknown; success?: unknown })
+      : null;
+  const first = tuplePayload?.[0];
+  const workspaceId =
+    typeof prStatusPayload?.wsId === 'string'
+      ? prStatusPayload.wsId
+      : Array.isArray(first)
+        ? first[0]
+        : first;
   if (typeof workspaceId !== 'string') return;
   const failureTypes = new Set([
     loadWorkspaceTasksFailed.type,
@@ -476,11 +499,11 @@ function* settleHydrationBranch(
   };
   const branch = mappings[action.type];
   if (!branch) return;
-  if (action.type === setFileExplorerLoading.type && payload[1] !== false) return;
-  if (action.type === setFileExplorerError.type && payload[1] == null) return;
+  if (action.type === setFileExplorerLoading.type && tuplePayload?.[1] !== false) return;
+  if (action.type === setFileExplorerError.type && tuplePayload?.[1] == null) return;
   const failed =
     failureTypes.has(action.type) ||
-    (action.type === prStatusRefreshCompleted.type && payload[1] === false) ||
+    (action.type === prStatusRefreshCompleted.type && prStatusPayload?.success === false) ||
     action.type === setFileExplorerError.type;
   scheduler.settle(workspaceId, branch, failed ? 'failure' : 'success');
 }

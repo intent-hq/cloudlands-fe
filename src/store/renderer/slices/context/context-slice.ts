@@ -36,7 +36,7 @@ export { getWorkspaceState };
 // ============================================================================
 
 /** Trigger: initialize context for a workspace (loads from localStorage via saga) */
-export const initContextForWorkspace = createAction<[workspaceId: string]>(
+export const initContextForWorkspace = createAction<[workspaceId: string, force?: boolean]>(
   'context/initContextForWorkspace',
 );
 
