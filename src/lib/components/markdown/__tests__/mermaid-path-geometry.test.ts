@@ -48,6 +48,18 @@ describe('Mermaid path terminal geometry', () => {
     ).toBe(true);
   });
 
+  it('preserves directed route terminals while aligning arrowheads', () => {
+    document.body.innerHTML = `<svg><defs>
+      <marker id="diagram-pointEnd"><path /></marker>
+    </defs><path id="route" d="M0,0L20,0" marker-end="url(#diagram-pointEnd)" /></svg>`;
+    const svg = document.querySelector('svg') as unknown as SVGSVGElement;
+    const route = svg.querySelector<SVGPathElement>('#route')!;
+
+    alignMermaidOpenArrowheads(svg);
+
+    expect(route.getAttribute('d')).toBe('M0,0L20,0');
+  });
+
   it('preserves rounded corners while replacing the final endpoint', () => {
     const path = 'M 4 6 L 20 6 Q 26 6 26 12 L 26 30';
 

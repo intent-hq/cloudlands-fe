@@ -4,6 +4,7 @@
    */
   import { untrack } from 'svelte';
   import type { ComputedEdge } from './types';
+  import { buildRoundedOrthogonalPath } from './layout-engine';
 
   interface Props {
     edge: ComputedEdge;
@@ -11,6 +12,8 @@
     highlighted?: boolean;
     /** Unique scope for SVG marker IDs to avoid cross-diagram conflicts */
     markerScope?: string;
+    /** Diagram-space inset that keeps the painted arrow tip away from its target. */
+    terminalGap?: number;
     onmotionchange?: (edgeId: string, moving: boolean) => void;
   }
 
@@ -19,6 +22,7 @@
     dimmed = false,
     highlighted = false,
     markerScope = '',
+    terminalGap = 0,
     onmotionchange,
   }: Props = $props();
   let displayedPath = $state('');
@@ -27,6 +31,18 @@
   let previousTargetPath = '';
   let previousEdgeReference: ComputedEdge | undefined;
   let previousEdgeId = '';
+
+  function insetTerminal(points: { x: number; y: number }[], gap: number) {
+    if (points.length < 2 || gap <= 0) return points;
+    const next = points.map((point) => ({ ...point }));
+    const terminal = next.at(-1)!;
+    const previous = next.at(-2)!;
+    const length = Math.hypot(terminal.x - previous.x, terminal.y - previous.y);
+    if (length <= gap) return points;
+    terminal.x -= ((terminal.x - previous.x) / length) * gap;
+    terminal.y -= ((terminal.y - previous.y) / length) * gap;
+    return next;
+  }
 
   function reportMotion(moving: boolean) {
     untrack(() => onmotionchange?.(edge.id, moving));
@@ -78,8 +94,8 @@
   }
 
   $effect(() => {
-    const targetPath = edge.path;
-    const targetPoints = edge.points ?? [];
+    const targetPoints = insetTerminal(edge.points ?? [], terminalGap);
+    const targetPath = terminalGap > 0 ? buildRoundedOrthogonalPath(targetPoints) : edge.path;
     const reduced =
       typeof document === 'undefined' ||
       document.documentElement.classList.contains('catalog-reduced-motion') ||

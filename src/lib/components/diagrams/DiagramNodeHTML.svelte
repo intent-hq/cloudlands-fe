@@ -93,6 +93,7 @@
   let nodePaddingY = $derived(usesDefaultStyle ? 7 : styleConfig.paddingY);
   let nodeContentGap = $derived(usesDefaultStyle ? 2 : styleConfig.gap);
   let nodeKindFontSize = $derived(usesDefaultStyle ? 11 : styleConfig.kindFontSize);
+  let isStoreNode = $derived(['db', 'store', 'data_store'].includes(node.kind ?? ''));
   let filenameUnits = $derived(semanticFilenameUnits(node.label));
   let bindingLabel = $derived.by(() => {
     const binding = getBinding();
@@ -145,6 +146,7 @@
   data-default-style={usesDefaultStyle}
   data-state-highlighted={highlighted}
   data-dimmed={dimmed}
+  data-store-node={isStoreNode}
   aria-label={bindingLabel}
   style="
     --label-font-size: {styleConfig.labelFontSize}px;
@@ -227,6 +229,27 @@
     background: var(--diagram-node-hover-surface);
   }
 
+  .diagram-node-html[data-store-node='true'] {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: 50% / 10px;
+  }
+
+  .diagram-node-html[data-store-node='true']::before {
+    position: absolute;
+    z-index: 0;
+    top: 1px;
+    left: 1px;
+    width: calc(100% - 2px);
+    height: 18px;
+    border: 1px solid var(--diagram-canvas);
+    border-radius: 50%;
+    box-sizing: border-box;
+    content: '';
+    pointer-events: none;
+  }
+
   .diagram-node-html.node-clickable:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
@@ -257,7 +280,6 @@
 
   .node-highlighted,
   .node-active {
-    border-color: color-mix(in srgb, var(--diagram-accent) 70%, hsl(var(--border)));
     background: var(--diagram-accent);
     color: var(--diagram-accent-foreground);
   }
@@ -297,15 +319,11 @@
 
   /* State-level highlighting (from DiagramState.highlightedNodes) */
   .diagram-node-html.node-state-highlighted {
-    border: 1px solid color-mix(in srgb, var(--diagram-accent) 76%, hsl(var(--border)));
+    border: 0;
     background: color-mix(in srgb, var(--diagram-accent) 12%, var(--diagram-node-surface));
     color: var(--diagram-node-title);
     outline: none;
     box-shadow: none;
-  }
-
-  .diagram-node-html.node-state-highlighted.node-clickable:hover {
-    border-color: color-mix(in srgb, var(--diagram-accent) 76%, hsl(var(--border)));
   }
 
   .diagram-node-html.node-state-highlighted.node-clickable:focus-visible {
@@ -324,6 +342,17 @@
     padding: var(--padding-y) var(--padding-x);
     box-sizing: border-box;
     gap: 8px;
+  }
+
+  .diagram-node-html[data-store-node='true'] .node-content {
+    position: relative;
+    z-index: 1;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .diagram-node-html[data-store-node='true'] .node-copy {
+    flex: 0 1 auto;
   }
 
   .node-icon {

@@ -26,11 +26,13 @@
   import type { SvgBounds } from './mermaid-state-layout';
   import {
     alignMermaidOpenArrowheads,
+    applyMermaidTerminalGaps,
     attachStateTerminalArrowheads,
     measuredClusterHeaderHeight,
     placeStateLabelsOnFinalRoutes,
     positionCompactGroupedEdgeLabels,
     reflowCompactFlowchart,
+    refineMermaidCylinderNodes,
     repairFlowchartNodeOutlines,
     reserveFlowchartClusterHeaderBands,
     routeFlowchartClientRequestLane,
@@ -73,6 +75,8 @@
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
   let rendererElement: HTMLDivElement | undefined = $state();
   let actorIconTemplateElement: HTMLSpanElement | undefined = $state();
+  let fullscreenDiagramElement: HTMLDivElement | undefined = $state();
+  let terminalGapFrame: number | undefined;
   let themeRevision = $state(0);
   let compactLayout = $state(false);
   let narrowLayout = $state(false);
@@ -769,6 +773,7 @@ ${verticalSource}`;
     padMermaidEdgeLabels(svg);
     addMermaidLabelKnockouts(svg);
     reserveFlowchartClusterHeaderBands(svg);
+    refineMermaidCylinderNodes(svg);
     repairFlowchartNodeOutlines(svg);
     if (compactLayout) {
       reflowCompactFlowchart(svg, false);
@@ -923,6 +928,7 @@ ${verticalSource}`;
       svg.style.setProperty('max-width', '100%');
     }
     if (normalizedState) attachStateTerminalArrowheads(svg);
+    applyMermaidTerminalGaps(svg);
     await new Promise<void>((resolve) => setTimeout(resolve, 120));
     if (generation !== renderGeneration || fit !== fitGeneration) return false;
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
@@ -939,6 +945,7 @@ ${verticalSource}`;
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       if (generation !== renderGeneration || fit !== fitGeneration) return false;
     }
+    applyMermaidTerminalGaps(svg);
     svg.dataset.layoutSettled = 'true';
     return true;
   }
@@ -1038,6 +1045,15 @@ ${verticalSource}`;
     if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
   }
 
+  function refreshFullscreenTerminalGaps() {
+    if (terminalGapFrame !== undefined) cancelAnimationFrame(terminalGapFrame);
+    terminalGapFrame = requestAnimationFrame(() => {
+      terminalGapFrame = undefined;
+      const svg = fullscreenDiagramElement?.querySelector<SVGSVGElement>('svg');
+      if (svg) applyMermaidTerminalGaps(svg);
+    });
+  }
+
   onMount(() => {
     mounted = true;
     const resizeObserver =
@@ -1048,6 +1064,8 @@ ${verticalSource}`;
             narrowLayout = narrowLayout
               ? entry.contentRect.width < 440
               : entry.contentRect.width <= 420;
+            const svg = rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg');
+            if (svg?.dataset.layoutSettled === 'true') applyMermaidTerminalGaps(svg);
           });
     if (rendererElement && resizeObserver) {
       compactLayout = rendererElement.clientWidth <= 620;
@@ -1064,6 +1082,7 @@ ${verticalSource}`;
     return () => {
       observer.disconnect();
       resizeObserver?.disconnect();
+      if (terminalGapFrame !== undefined) cancelAnimationFrame(terminalGapFrame);
       renderGeneration += 1;
     };
   });
@@ -1165,8 +1184,9 @@ ${verticalSource}`;
     class="fullscreen-surface h-[90vh] w-[90vw] overflow-hidden rounded-lg shadow-2xl"
     data-media-lightbox-content
   >
-    <ZoomPanViewport bind:this={zoomPanViewport}>
+    <ZoomPanViewport bind:this={zoomPanViewport} onScaleChange={refreshFullscreenTerminalGaps}>
       <div
+        bind:this={fullscreenDiagramElement}
         class="fullscreen-diagram mermaid-presentation"
         style="--mermaid-font-family: var(--font-ui)"
       >
@@ -1335,6 +1355,14 @@ ${verticalSource}`;
     pointer-events: none;
   }
 
+  .mermaid-presentation :global(.node > .diagram-cylinder-rim) {
+    fill: none !important;
+    stroke: var(--diagram-canvas) !important;
+    stroke-width: 1px !important;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
   .mermaid-presentation :global(.classDiagram .class-box-outline) {
     fill: var(--diagram-node-surface) !important;
     stroke: none !important;
@@ -1403,13 +1431,15 @@ ${verticalSource}`;
   .mermaid-presentation :global(.group-label) {
     font-family: var(--font-ui) !important;
     font-weight: 500 !important;
+    color: var(--diagram-metadata) !important;
+    fill: var(--diagram-metadata) !important;
   }
 
   .mermaid-presentation :global(.node.active rect),
   .mermaid-presentation :global(.node.current rect),
   .mermaid-presentation :global(.node.selected rect) {
     fill: var(--diagram-accent) !important;
-    stroke: color-mix(in srgb, var(--diagram-accent) 76%, var(--diagram-node-outline)) !important;
+    stroke: none !important;
   }
 
   .mermaid-presentation :global(.node.active .nodeLabel),

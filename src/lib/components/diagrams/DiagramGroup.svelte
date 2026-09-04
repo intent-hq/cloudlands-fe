@@ -44,7 +44,13 @@
   <rect x={group.x} y={group.y} width={group.width} height={group.height} class="group-bg" />
 
   <!-- Group label -->
-  <text x={group.x + 14} y={group.y + 26} class="group-label">
+  <text
+    x={group.x + group.width / 2}
+    y={group.y + 17}
+    text-anchor="middle"
+    dominant-baseline="middle"
+    class="group-label"
+  >
     {group.label}
   </text>
 </g>

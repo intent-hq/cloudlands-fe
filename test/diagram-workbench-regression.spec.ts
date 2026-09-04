@@ -144,8 +144,14 @@ async function expectClientRequestLane(page: Page, identity: string) {
   expect(result.boundaryGap, `${identity} boundary clearance`).toBeGreaterThanOrEqual(8);
   expect(result.bendGap, `${identity} bend clearance`).toBeGreaterThanOrEqual(6);
   expect(result.startDistance, `${identity} request source port`).toBeLessThanOrEqual(1);
-  expect(result.endDistance, `${identity} request target port`).toBeLessThanOrEqual(1);
-  expect(result.returnDistance, `${identity} return target port`).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(result.endDistance - 0.5 - 5),
+    `${identity} request target gap`,
+  ).toBeLessThanOrEqual(0.35);
+  expect(
+    Math.abs(result.returnDistance - 0.5 - 5),
+    `${identity} return target gap`,
+  ).toBeLessThanOrEqual(0.35);
   expect(result.routeOwnsLabel, `${identity} request label ownership`).toBe(true);
   expect(result.overlapsOtherText, `${identity} request text collision`).toBe(false);
   expect(result.surfaceOpacity, `${identity} request surface opacity`).toBe('1');
@@ -326,7 +332,7 @@ async function expectOpaqueStateLabelPaint(page: Page) {
 
 async function expectTerminalArrowGeometry(
   page: Page,
-  state: 'mermaid-state' | 'custom-state-machine',
+  state: string,
   expectedTargets: Record<string, string>,
 ) {
   const root = page.locator(`#${state}`);
@@ -451,12 +457,15 @@ async function expectTerminalArrowGeometry(
         });
         const pathStyle = getComputedStyle(path);
         const markerStyle = markerPath && getComputedStyle(markerPath);
+        const markerTipRadius = Number.parseFloat(markerStyle?.strokeWidth ?? '0') / 2;
         const strokeWidth = Number.parseFloat(pathStyle.strokeWidth);
         return {
           key,
           expectedTarget,
           closestTarget,
-          boundaryDistance: targetBounds ? signedBoundaryDistance(tip, targetBounds) : null,
+          boundaryDistance: targetBounds
+            ? signedBoundaryDistance(tip, targetBounds) - markerTipRadius
+            : null,
           inwardDot,
           markerJoinDistance,
           tipToTerminal: Math.hypot(tip.x - terminalScreen.x, tip.y - terminalScreen.y),
@@ -490,10 +499,9 @@ async function expectTerminalArrowGeometry(
   for (const edge of result) {
     expect(edge.closestTarget, `${state}/${edge.key} target`).toBe(edge.expectedTarget);
     expect(
-      Math.abs(edge.boundaryDistance ?? Infinity),
-      `${state}/${edge.key} boundary`,
-    ).toBeLessThanOrEqual(1);
-    expect(edge.boundaryDistance, `${state}/${edge.key} penetration`).toBeGreaterThanOrEqual(-1);
+      Math.abs((edge.boundaryDistance ?? Infinity) - 5),
+      `${state}/${edge.key} painted terminal gap`,
+    ).toBeLessThanOrEqual(0.35);
     expect(edge.inwardDot, `${state}/${edge.key} inward tangent`).toBeGreaterThan(0);
     expect(edge.markerJoinDistance, `${state}/${edge.key} shaft continuity`).toBeLessThanOrEqual(
       0.1,
@@ -518,6 +526,161 @@ async function expectTerminalArrowGeometry(
     expect(edge.markerLinecap, `${state}/${edge.key} marker cap`).toBe('round');
     expect(edge.markerLinejoin, `${state}/${edge.key} marker join`).toBe('round');
   }
+}
+
+async function expectRunningToolClearance(page: Page, context: string) {
+  const result = await page
+    .locator('#mermaid-state svg[data-layout-settled=true]')
+    .evaluate((svg) => {
+      const label = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].find(
+        (candidate) => candidate.textContent?.replace(/\s+/g, ' ').trim() === 'Tool starts',
+      )!;
+      const path = svg.querySelector<SVGPathElement>(`#${CSS.escape(label.dataset.routePathId!)}`)!;
+      const surface = label.querySelector<SVGGraphicsElement>('rect.background')!;
+      const values = path.dataset.labelSegment!.match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)!.map(Number);
+      const matrix = path.getScreenCTM()!;
+      const first = new DOMPoint(values[0], values[1]).matrixTransform(matrix);
+      const last = new DOMPoint(values[2], values[3]).matrixTransform(matrix);
+      const bounds = surface.getBoundingClientRect();
+      const vertical = Math.abs(first.x - last.x) < Math.abs(first.y - last.y);
+      return {
+        settled: Boolean(label.dataset.finalPathCenter),
+        before: vertical
+          ? bounds.top - Math.min(first.y, last.y)
+          : bounds.left - Math.min(first.x, last.x),
+        after: vertical
+          ? Math.max(first.y, last.y) - bounds.bottom
+          : Math.max(first.x, last.x) - bounds.right,
+      };
+    });
+  expect(result.settled, `${context} final label placement`).toBe(true);
+  expect(result.before, `${context} visible segment after turn`).toBeGreaterThanOrEqual(7.75);
+  expect(result.after, `${context} visible outgoing stub`).toBeGreaterThanOrEqual(7.75);
+}
+
+async function expectStoreNodeGeometry(
+  page: Page,
+  state: 'mermaid-nested-groups' | 'custom-data-flow',
+  context: string,
+) {
+  const result = await page.locator(`#${state}`).evaluate((root, renderedState) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--diagram-canvas)';
+    root.append(probe);
+    const canvas = getComputedStyle(probe).color;
+    probe.remove();
+    if (renderedState === 'custom-data-flow') {
+      const body = [...root.querySelectorAll<HTMLElement>('.diagram-node-html')].find((node) =>
+        node.textContent?.includes('Capture evidence'),
+      )!;
+      const copy = body.querySelector<HTMLElement>('.node-copy')!;
+      const path = root.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="d4"] path')!;
+      const terminal = path
+        .getPointAtLength(path.getTotalLength())
+        .matrixTransform(path.getScreenCTM()!);
+      const bounds = body.getBoundingClientRect();
+      const copyBounds = copy.getBoundingClientRect();
+      const markerId = path.getAttribute('marker-end')!.match(/#([^)]+)/)![1];
+      const marker = root.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
+      const markerStroke = Number.parseFloat(
+        getComputedStyle(marker.querySelector<SVGPathElement>('path')!).strokeWidth,
+      );
+      const boundaryDistance = Math.hypot(
+        Math.max(bounds.left - terminal.x, 0, terminal.x - bounds.right),
+        Math.max(bounds.top - terminal.y, 0, terminal.y - bounds.bottom),
+      );
+      return {
+        aspect: bounds.width / bounds.height,
+        topGap: copyBounds.top - bounds.top,
+        bottomGap: bounds.bottom - copyBounds.bottom,
+        clipped:
+          copyBounds.left < bounds.left ||
+          copyBounds.right > bounds.right ||
+          copyBounds.top < bounds.top ||
+          copyBounds.bottom > bounds.bottom,
+        perimeterClear: [...root.querySelectorAll<HTMLElement>('.diagram-node-html')].every(
+          (node) => getComputedStyle(node).borderWidth === '0px',
+        ),
+        canvas,
+        rim: getComputedStyle(body, '::before').borderTopColor,
+        fill: getComputedStyle(body).backgroundColor,
+        peerFill: getComputedStyle(
+          [...root.querySelectorAll<HTMLElement>('.diagram-node-html')].find(
+            (candidate) => candidate !== body,
+          )!,
+        ).backgroundColor,
+        paintedGap: boundaryDistance - markerStroke / 2,
+      };
+    }
+    const svg = root.querySelector<SVGSVGElement>('svg[data-layout-settled=true]')!;
+    const node = [...svg.querySelectorAll<SVGGElement>('g.node')].find(
+      (candidate) => candidate.textContent?.trim() === 'Store',
+    )!;
+    const body = node.querySelector<SVGPathElement>('[data-diagram-cylinder="true"]')!;
+    const rim = node.querySelector<SVGPathElement>('.diagram-cylinder-rim')!;
+    const label = node.querySelector<SVGGElement>(':scope > .label')!;
+    const path = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path[marker-end]')].find(
+      (candidate) => candidate.dataset.terminalTarget === node.id,
+    )!;
+    const bounds = body.getBoundingClientRect();
+    const labelBounds = label.getBoundingClientRect();
+    const terminal = path
+      .getPointAtLength(path.getTotalLength())
+      .matrixTransform(path.getScreenCTM()!);
+    const radiusX = bounds.width / 2;
+    const radiusY = bounds.height * Number(body.dataset.cylinderRimRatio);
+    const centerX = bounds.left + radiusX;
+    const boundary = Array.from({ length: 1025 }, (_, index) => {
+      const angle = Math.PI + (Math.PI * index) / 1024;
+      return {
+        x: centerX + Math.cos(angle) * radiusX,
+        y: bounds.top + radiusY + Math.sin(angle) * radiusY,
+      };
+    });
+    const markerRef = path.getAttribute('marker-end')!.match(/#([^)]+)/)![1];
+    const markerPath = svg.querySelector<SVGPathElement>(`#${CSS.escape(markerRef)} path`)!;
+    const markerStroke = Number.parseFloat(getComputedStyle(markerPath).strokeWidth);
+    const peer = [...svg.querySelectorAll<SVGGElement>('g.node')]
+      .find((candidate) => candidate !== node)!
+      .querySelector<SVGGraphicsElement>(':scope > .label-container')!;
+    return {
+      aspect: bounds.width / bounds.height,
+      topGap: labelBounds.top - bounds.top,
+      bottomGap: bounds.bottom - labelBounds.bottom,
+      clipped:
+        labelBounds.left < bounds.left ||
+        labelBounds.right > bounds.right ||
+        labelBounds.top < bounds.top ||
+        labelBounds.bottom > bounds.bottom,
+      perimeterClear: [
+        ...svg.querySelectorAll<SVGGraphicsElement>('g.node > .label-container'),
+      ].every((shape) => getComputedStyle(shape).stroke === 'none'),
+      canvas,
+      rim: getComputedStyle(rim).stroke,
+      fill: getComputedStyle(body).fill,
+      peerFill: getComputedStyle(peer).fill,
+      paintedGap:
+        Math.min(
+          ...boundary.map((point) => Math.hypot(point.x - terminal.x, point.y - terminal.y)),
+        ) -
+        markerStroke / 2,
+    };
+  }, state);
+  expect(result.aspect, `${context} wide cylinder`).toBeGreaterThanOrEqual(1.4);
+  expect(result.aspect, `${context} stable cylinder`).toBeLessThanOrEqual(2.2);
+  expect(result.topGap, `${context} top text space`).toBeGreaterThanOrEqual(8);
+  expect(result.bottomGap, `${context} bottom text space`).toBeGreaterThanOrEqual(8);
+  expect(
+    Math.abs(result.topGap - result.bottomGap),
+    `${context} optical centering`,
+  ).toBeLessThanOrEqual(2);
+  expect(result.clipped, `${context} label containment`).toBe(false);
+  expect(result.perimeterClear, `${context} borderless nodes`).toBe(true);
+  expect(result.rim, `${context} canvas rim`).toBe(result.canvas);
+  expect(result.fill, `${context} normal node fill`).toBe(result.peerFill);
+  expect(Math.abs(result.paintedGap - 5), `${context} painted terminal gap`).toBeLessThanOrEqual(
+    0.35,
+  );
 }
 
 async function expectMermaidClassGeometry(page: Page, context: string) {
@@ -982,11 +1145,18 @@ for (const appearance of [
       await expect(colorTheme).toContainText(appearance.colorTheme);
       await expect(renderer).toHaveAttribute('data-render-settled', 'true');
       await expectClientRequestLane(page, `${appearance.name}/${width}/mermaid-nested-groups`);
+      await expectStoreNodeGeometry(
+        page,
+        'mermaid-nested-groups',
+        `${appearance.name}/${width}/mermaid-nested-groups`,
+      );
     });
   }
 }
 
-test('terminal arrow tips attach to the correct target boundary', async ({ page }) => {
+test('terminal arrow tips keep an exact five-pixel gap from the correct target', async ({
+  page,
+}) => {
   test.setTimeout(900_000);
   const mermaidTargets = {
     '0': 'Idle',
@@ -1028,6 +1198,7 @@ test('terminal arrow tips attach to the correct target boundary', async ({ page 
       await expect(async () => {
         await expectTerminalArrowGeometry(page, 'mermaid-state', mermaidTargets);
       }).toPass({ timeout: 10_000 });
+      await expectRunningToolClearance(page, `${appearance.colorTheme}/${width}/mermaid-state`);
 
       await openState(page, 'custom-state-machine', width, appearance.mode);
       await expect(async () => {
@@ -1036,6 +1207,32 @@ test('terminal arrow tips attach to the correct target boundary', async ({ page 
     }
   }
 });
+
+for (const appearance of [
+  { name: 'light', mode: 'light' as const, colorTheme: 'Default' },
+  { name: 'dark', mode: 'dark' as const, colorTheme: 'Default' },
+  { name: 'nord', mode: 'light' as const, colorTheme: 'Nord' },
+]) {
+  for (const width of [320, 960] as const) {
+    test(`keeps the custom Store borderless and balanced in ${appearance.name} at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(120_000);
+      await openState(page, 'custom-data-flow', width, appearance.mode);
+      const colorTheme = page.getByRole('button', { name: /Color theme/ });
+      if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
+        await colorTheme.click();
+        await page.getByRole('option', { name: appearance.colorTheme, exact: true }).click();
+      }
+      await expect(colorTheme).toContainText(appearance.colorTheme);
+      await expectStoreNodeGeometry(
+        page,
+        'custom-data-flow',
+        `${appearance.name}/${width}/custom-data-flow`,
+      );
+    });
+  }
+}
 
 test('keeps Mermaid class members and relations inside repaired geometry', async ({ page }) => {
   test.setTimeout(240_000);
@@ -1490,7 +1687,7 @@ test('uses one continuous centered-port route for the dense primary request', as
   });
   expect(geometry.moveCommands).toBe(1);
   expect(geometry.sourceDistance).toBeLessThanOrEqual(1);
-  expect(geometry.targetDistance).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.targetDistance - 0.5 - 5)).toBeLessThanOrEqual(0.35);
   expect(geometry.sourcePerpendicular).toBeLessThanOrEqual(0.5);
   expect(geometry.targetPerpendicular).toBeLessThanOrEqual(0.5);
   expect(geometry.noScrollbar).toBe(true);
@@ -1549,7 +1746,10 @@ test('centers the topology stress self-loop on exact cardinal ports', async ({ p
       });
       const label = `${appearance.colorTheme}/${appearance.mode}/${width}`;
       expect(geometry.sourceDistance, `${label} source midpoint`).toBeLessThanOrEqual(1);
-      expect(geometry.targetDistance, `${label} target midpoint`).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(geometry.targetDistance - 0.5 - 5),
+        `${label} target gap`,
+      ).toBeLessThanOrEqual(0.35);
       expect(geometry.sourcePerpendicular, `${label} source tangent`).toBeLessThanOrEqual(0.5);
       expect(geometry.targetPerpendicular, `${label} target tangent`).toBeLessThanOrEqual(0.5);
       expect(geometry.routeOutside, `${label} outside route`).toBe(true);

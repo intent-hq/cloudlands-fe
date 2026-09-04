@@ -7,7 +7,7 @@ import {
   DIAGRAM_WORKBENCH_CASES,
   type DiagramWorkbenchState,
 } from '../diagram-workbench.preview-fixtures';
-import { computeLayout } from '../layout-engine';
+import { computeLayout, measureEdgeLabel } from '../layout-engine';
 import { getDiagramNodeIcon } from '../diagram-node-icons';
 
 function customDiagram(state: DiagramWorkbenchState) {
@@ -151,6 +151,12 @@ describe('custom diagram visual contract', () => {
       Number(label?.getAttribute('x')) + Number(translateX) + Number(label?.getAttribute('width')),
     ).toBeLessThanOrEqual(Number(svg?.getAttribute('width')));
     expect(Number(label?.getAttribute('y')) + Number(translateY)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('limits edge-label geometry to three lines without misclassifying exact fits', () => {
+    expect(measureEdgeLabel('short')).toMatchObject({ lines: 1, height: 28 });
+    expect(measureEdgeLabel('one\ntwo\nthree')).toMatchObject({ lines: 3, height: 64 });
+    expect(measureEdgeLabel('one\ntwo\nthree\nfour')).toMatchObject({ lines: 4, height: 64 });
   });
 
   it('anchors grouped labels to their route without crossing group headings', async () => {

@@ -73,6 +73,7 @@ describe('Mermaid design-system theme', () => {
       stateBkg: 'hsl(0 0% 96%)',
       compositeBackground: 'hsl(0 0% 100%)',
       compositeTitleBackground: 'hsl(0 0% 100%)',
+      transitionLabelColor: 'hsl(210 8% 35%)',
       classText: 'hsl(0 0% 8%)',
     });
   });

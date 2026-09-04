@@ -345,11 +345,16 @@ test('keeps custom routes, labels, markers, and group headings precise', async (
           borderWidth: getComputedStyle(label.querySelector('.edge-label-html')!).borderWidth,
         };
       }),
-      groupInsets: [...root.querySelectorAll('.diagram-group')].map((group) => {
+      groupLabels: [...root.querySelectorAll('.diagram-group')].map((group) => {
         const outline = group.querySelector('.group-bg')!.getBoundingClientRect();
         const label = group.querySelector('.group-label')!.getBoundingClientRect();
         const scale = Math.abs((group as SVGGElement).getScreenCTM()?.a ?? 1);
-        return (label.top - outline.top) / scale;
+        return {
+          horizontalOffset: Math.abs((label.left + label.right - outline.left - outline.right) / 2),
+          verticalImbalance: Math.abs(
+            label.top - outline.top - (outline.top + 34 * scale - label.bottom),
+          ),
+        };
       }),
       insideViewport: (() => {
         const viewport = root.querySelector('.diagram-scroll-container')!.getBoundingClientRect();
@@ -372,7 +377,8 @@ test('keeps custom routes, labels, markers, and group headings precise', async (
   expect(geometry.markerWidths.every((width) => width === '1')).toBe(true);
   expect(geometry.labelConnections.every(({ pathDistance }) => pathDistance <= 1)).toBe(true);
   expect(geometry.labelConnections.every(({ borderWidth }) => borderWidth === '0px')).toBe(true);
-  expect(geometry.groupInsets.every((inset) => inset >= 12)).toBe(true);
+  expect(geometry.groupLabels.every(({ horizontalOffset }) => horizontalOffset <= 1)).toBe(true);
+  expect(geometry.groupLabels.every(({ verticalImbalance }) => verticalImbalance <= 1)).toBe(true);
   expect(geometry.insideViewport).toBe(true);
 
   await openSandbox(page, 'state=custom-state-machine&theme=dark&width=960&motion=reduced');
@@ -445,7 +451,10 @@ test('keeps the named dashed return routes continuous on cardinal ports', async 
   });
   for (const route of routes) {
     expect(route.sourceDistance, `${route.edgeId} source port`).toBeLessThanOrEqual(1);
-    expect(route.targetDistance, `${route.edgeId} target port`).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(route.targetDistance - 0.5 - 5),
+      `${route.edgeId} painted target gap`,
+    ).toBeLessThanOrEqual(0.35);
     expect(route.marker).toContain('arrowhead');
     expect(route.dash).not.toBe('none');
   }

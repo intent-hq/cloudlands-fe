@@ -1,10 +1,20 @@
 const ORTHOGONAL_CORNER_RADIUS = 6;
 const MAX_TERMINAL_CORRECTION = 4;
 const COMPACT_ARROW_SIZE = 7;
+const LABEL_TURN_CLEARANCE_CSS = 8;
 
 type Point = { x: number; y: number };
 type Bounds = Point & { width: number; height: number };
 type Segment = { start: Point; end: Point };
+
+function segmentCssScale(path: SVGGraphicsElement, start: Point, end: Point) {
+  const matrix = path.getScreenCTM();
+  const localLength = Math.hypot(end.x - start.x, end.y - start.y);
+  if (!matrix || localLength <= 0) return 1;
+  const screenStart = new DOMPoint(start.x, start.y).matrixTransform(matrix);
+  const screenEnd = new DOMPoint(end.x, end.y).matrixTransform(matrix);
+  return Math.hypot(screenEnd.x - screenStart.x, screenEnd.y - screenStart.y) / localLength || 1;
+}
 
 export function measuredClusterHeaderHeight(titleHeight: number) {
   return Math.ceil(Math.max(titleHeight, 18)) + 48;
@@ -225,6 +235,85 @@ function rayBoundsEntry(origin: Point, direction: Point, bounds: Bounds): Point 
   return { x: origin.x + direction.x * near, y: origin.y + direction.y * near };
 }
 
+function distanceToBounds(point: Point, bounds: Bounds) {
+  return Math.hypot(
+    Math.max(bounds.x - point.x, 0, point.x - bounds.x - bounds.width),
+    Math.max(bounds.y - point.y, 0, point.y - bounds.y - bounds.height),
+  );
+}
+
+function distanceToSegment(point: Point, start: Point, end: Point) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const progress = lengthSquared
+    ? Math.max(
+        0,
+        Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared),
+      )
+    : 0;
+  return Math.hypot(point.x - start.x - dx * progress, point.y - start.y - dy * progress);
+}
+
+function cylinderBoundary(bounds: Bounds, shape: SVGGraphicsElement) {
+  const ratio = Number.parseFloat(shape.dataset.cylinderRimRatio ?? '0.14');
+  const rim = Math.max(1, Math.min(bounds.height / 2, bounds.height * ratio));
+  const centerX = bounds.x + bounds.width / 2;
+  const radiusX = bounds.width / 2;
+  const points: Point[] = [];
+  for (let index = 0; index <= 32; index += 1) {
+    const angle = Math.PI + (Math.PI * index) / 32;
+    points.push({
+      x: centerX + Math.cos(angle) * radiusX,
+      y: bounds.y + rim + Math.sin(angle) * rim,
+    });
+  }
+  points.push({ x: bounds.x + bounds.width, y: bounds.y + bounds.height - rim });
+  for (let index = 0; index <= 32; index += 1) {
+    const angle = (Math.PI * index) / 32;
+    points.push({
+      x: centerX + Math.cos(angle) * radiusX,
+      y: bounds.y + bounds.height - rim + Math.sin(angle) * rim,
+    });
+  }
+  points.push({ x: bounds.x, y: bounds.y + rim });
+  return points;
+}
+
+function distanceToShape(point: Point, bounds: Bounds, shape: SVGGraphicsElement) {
+  if (shape.dataset.diagramCylinder !== 'true') return distanceToBounds(point, bounds);
+  const boundary = cylinderBoundary(bounds, shape);
+  return Math.min(
+    ...boundary.slice(1).map((end, index) => distanceToSegment(point, boundary[index], end)),
+  );
+}
+
+function rayShapeEntry(origin: Point, direction: Point, bounds: Bounds, shape: SVGGraphicsElement) {
+  const boundsEntry = rayBoundsEntry(origin, direction, bounds);
+  if (!boundsEntry || shape.dataset.diagramCylinder !== 'true') return boundsEntry;
+  const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  let near = Math.hypot(boundsEntry.x - origin.x, boundsEntry.y - origin.y);
+  let far = (center.x - origin.x) * direction.x + (center.y - origin.y) * direction.y;
+  const ratio = Number.parseFloat(shape.dataset.cylinderRimRatio ?? '0.14');
+  const rim = Math.max(1, Math.min(bounds.height / 2, bounds.height * ratio));
+  const inside = (distance: number) => {
+    const point = { x: origin.x + direction.x * distance, y: origin.y + direction.y * distance };
+    if (point.y >= bounds.y + rim && point.y <= bounds.y + bounds.height - rim) {
+      return point.x >= bounds.x && point.x <= bounds.x + bounds.width;
+    }
+    const capY = point.y < bounds.y + rim ? bounds.y + rim : bounds.y + bounds.height - rim;
+    const normalizedX = (point.x - center.x) / (bounds.width / 2);
+    const normalizedY = (point.y - capY) / rim;
+    return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
+  };
+  for (let iteration = 0; iteration < 24; iteration += 1) {
+    const middle = (near + far) / 2;
+    if (inside(middle)) far = middle;
+    else near = middle;
+  }
+  return { x: origin.x + direction.x * far, y: origin.y + direction.y * far };
+}
+
 export function attachStateTerminalArrowheads(svg: SVGSVGElement) {
   if (!svg.classList.contains('statediagram')) return;
   const targets = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
@@ -246,6 +335,7 @@ export function attachStateTerminalArrowheads(svg: SVGSVGElement) {
       y: (terminal.y - tangentPoint.y) / tangentLength,
     };
     const origin = { x: terminal.x - direction.x * 256, y: terminal.y - direction.y * 256 };
+    const knownTarget = path.dataset.terminalTarget;
     const candidates = targets.flatMap(({ node, shape }) => {
       const rawBounds = clientBoundsInPathSpace(shape, path);
       if (!rawBounds) return [];
@@ -256,7 +346,7 @@ export function attachStateTerminalArrowheads(svg: SVGSVGElement) {
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
       const pointsInward =
         direction.x * (center.x - intersection.x) + direction.y * (center.y - intersection.y) > 0;
-      return pointsInward && correction <= MAX_TERMINAL_CORRECTION
+      return pointsInward && (node.id === knownTarget || correction <= MAX_TERMINAL_CORRECTION)
         ? [{ node, intersection, correction }]
         : [];
     });
@@ -266,6 +356,107 @@ export function attachStateTerminalArrowheads(svg: SVGSVGElement) {
     if (!repaired) continue;
     path.setAttribute('d', repaired);
     path.dataset.terminalTarget = target.node.id;
+  }
+}
+
+function markerForPath(svg: SVGSVGElement, path: SVGPathElement) {
+  const reference = path.getAttribute('marker-end') ?? '';
+  const markerId = reference.match(/#([^)'"]+)/)?.[1];
+  return markerId
+    ? svg.querySelector<SVGMarkerElement>(`marker[id="${CSS.escape(markerId)}"]`)
+    : null;
+}
+
+/** Keep the visible chevron tip exactly `cssGap` screen pixels before its target boundary. */
+export function applyMermaidTerminalGaps(svg: SVGSVGElement, cssGap = 5) {
+  const targets = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
+    const shape = shapeForNode(node);
+    return shape ? [{ node, shape }] : [];
+  });
+
+  for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path[marker-end]')) {
+    if (markerForPath(svg, path)?.dataset.diagramChevron !== 'true') continue;
+    const length = path.getTotalLength();
+    if (length < 0.25) continue;
+    const terminal = path.getPointAtLength(length);
+    const tangentPoint = path.getPointAtLength(Math.max(0, length - 0.1));
+    const matrix = path.getScreenCTM();
+    if (!matrix) continue;
+    const terminalScreen = new DOMPoint(terminal.x, terminal.y).matrixTransform(matrix);
+    const tangentScreen = new DOMPoint(tangentPoint.x, tangentPoint.y).matrixTransform(matrix);
+    const screenLength = Math.hypot(
+      terminalScreen.x - tangentScreen.x,
+      terminalScreen.y - tangentScreen.y,
+    );
+    if (screenLength <= 0) continue;
+    const screenDirection = {
+      x: (terminalScreen.x - tangentScreen.x) / screenLength,
+      y: (terminalScreen.y - tangentScreen.y) / screenLength,
+    };
+    const identity = flowchartEdgeIdentity(path);
+    const targetId = path.dataset.terminalTarget ?? identity?.target;
+    const origin = {
+      x: terminalScreen.x - screenDirection.x * 256,
+      y: terminalScreen.y - screenDirection.y * 256,
+    };
+    const candidates = targets.flatMap(({ node, shape }) => {
+      if (targetId && node.id !== targetId && flowchartNodeId(node) !== targetId) return [];
+      const clientBounds = shape.getBoundingClientRect();
+      const bounds = {
+        x: clientBounds.left,
+        y: clientBounds.top,
+        width: clientBounds.width,
+        height: clientBounds.height,
+      };
+      const intersection = rayShapeEntry(origin, screenDirection, bounds, shape);
+      if (!intersection) return [];
+      const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      const pointsInward =
+        screenDirection.x * (center.x - intersection.x) +
+          screenDirection.y * (center.y - intersection.y) >
+        0;
+      const correction = Math.hypot(
+        intersection.x - terminalScreen.x,
+        intersection.y - terminalScreen.y,
+      );
+      return pointsInward && (targetId || correction <= 12)
+        ? [{ node, shape, bounds, intersection, correction }]
+        : [];
+    });
+    const target = candidates.sort((left, right) => left.correction - right.correction)[0];
+    if (!target) continue;
+    const markerPath = markerForPath(svg, path)?.querySelector<SVGPathElement>('path');
+    const markerStrokeWidth = Number.parseFloat(
+      markerPath ? getComputedStyle(markerPath).strokeWidth : '0',
+    );
+    const centerlineGap = cssGap + (Number.isFinite(markerStrokeWidth) ? markerStrokeWidth / 2 : 0);
+    let near = 0;
+    let far = centerlineGap;
+    const screenPoint = (distance: number) => ({
+      x: target.intersection.x - screenDirection.x * distance,
+      y: target.intersection.y - screenDirection.y * distance,
+    });
+    while (
+      distanceToShape(screenPoint(far), target.bounds, target.shape) < centerlineGap &&
+      far < 256
+    )
+      far *= 2;
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+      const middle = (near + far) / 2;
+      if (distanceToShape(screenPoint(middle), target.bounds, target.shape) < centerlineGap)
+        near = middle;
+      else far = middle;
+    }
+    const terminalScreenPoint = screenPoint(far);
+    const terminalPoint = new DOMPoint(
+      terminalScreenPoint.x,
+      terminalScreenPoint.y,
+    ).matrixTransform(matrix.inverse());
+    const repaired = replacePathTerminal(path.getAttribute('d') ?? '', terminalPoint);
+    if (!repaired) continue;
+    path.setAttribute('d', repaired);
+    path.dataset.terminalTarget = target.node.id;
+    path.dataset.terminalGapCss = String(cssGap);
   }
 }
 
@@ -377,6 +568,39 @@ function shapeForNode(node: SVGGElement) {
   return node.querySelector<SVGGraphicsElement>(
     ':scope > .label-container, :scope > rect, :scope > circle, :scope > ellipse, :scope > .outer-path, :scope > .basic.label-container, :scope > polygon',
   );
+}
+
+export function refineMermaidCylinderNodes(svg: SVGSVGElement) {
+  for (const node of svg.querySelectorAll<SVGGElement>('g.node')) {
+    const shape = node.querySelector<SVGPathElement>(
+      ':scope > path.basic.label-container.outer-path[label-offset-y]',
+    );
+    if (!shape || shape.dataset.diagramCylinder === 'true') continue;
+    const bounds = shape.getBBox();
+    const label = node.querySelector<SVGGElement>(':scope > .label')?.getBBox();
+    const height = Math.max(bounds.height, 68);
+    const width = Math.max(bounds.width, height * 1.45, (label?.width ?? 0) + 32);
+    const radiusX = width / 2;
+    const radiusY = Math.min(8, height * 0.14);
+    const top = -height / 2;
+    const bottom = height / 2;
+    shape.setAttribute(
+      'd',
+      `M ${-radiusX} ${top + radiusY} A ${radiusX} ${radiusY} 0 0 1 ${radiusX} ${top + radiusY} L ${radiusX} ${bottom - radiusY} A ${radiusX} ${radiusY} 0 0 1 ${-radiusX} ${bottom - radiusY} Z`,
+    );
+    shape.removeAttribute('transform');
+    shape.dataset.diagramCylinder = 'true';
+    shape.dataset.cylinderRimRatio = String(radiusY / height);
+    const rim = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    rim.setAttribute(
+      'd',
+      `M ${-radiusX} ${top + radiusY} A ${radiusX} ${radiusY} 0 0 1 ${radiusX} ${top + radiusY} A ${radiusX} ${radiusY} 0 0 1 ${-radiusX} ${top + radiusY} Z`,
+    );
+    rim.setAttribute('class', 'diagram-cylinder-rim');
+    rim.setAttribute('aria-hidden', 'true');
+    rim.setAttribute('focusable', 'false');
+    shape.after(rim);
+  }
 }
 
 export function repairFlowchartNodeOutlines(svg: SVGSVGElement) {
@@ -2005,8 +2229,8 @@ function stateRoutePoints(
       ];
     }
     const downward = target.y >= source.y;
-    const startSource = pointAt(source, 0.68, downward ? 1 : 0);
-    const startTarget = pointAt(target, 0.34, downward ? 0 : 1);
+    const startSource = pointAt(source, 0.64, downward ? 1 : 0);
+    const startTarget = pointAt(target, 0.5, downward ? 0 : 1);
     const laneY = (startSource.y + startTarget.y) / 2;
     return [
       startSource,
@@ -2146,12 +2370,15 @@ export function chooseLabelSegment(
   points: Point[],
   labelSize: { width: number; height: number },
   occupied: Segment[] = [],
+  path?: SVGGraphicsElement,
 ) {
   return segments(points)
     .flatMap((segment, index) => {
       const horizontal = Math.abs(segment.start.y - segment.end.y) < 0.001;
       const capacity = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
-      const required = (horizontal ? labelSize.width : labelSize.height) + 12;
+      const scale = path ? segmentCssScale(path, segment.start, segment.end) : 1;
+      const required =
+        (horizontal ? labelSize.width : labelSize.height) + (LABEL_TURN_CLEARANCE_CSS * 2) / scale;
       return capacity >= required && !occupied.some((other) => overlappingSegments(segment, other))
         ? [{ segment, index, horizontal, capacity, excess: capacity - required }]
         : [];
@@ -2243,7 +2470,7 @@ export function rewriteStateRoutes(svg: SVGSVGElement, compact = false) {
     const labelBounds = label.getBBox();
     const placementPoints = text === STATE_LABEL.agentFinishes ? points.slice(1, 3) : points;
     const placement =
-      chooseLabelSegment(placementPoints, labelBounds, occupied) ??
+      chooseLabelSegment(placementPoints, labelBounds, occupied, path) ??
       placementPoints
         .slice(0, -1)
         .map((start, pointIndex) => {
@@ -2400,56 +2627,70 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
             candidate.y2 === segment.y2,
         ) === index,
     );
-    const candidates = candidateSegments.flatMap((candidateSegment) =>
-      fractions.map((fraction) => {
-        const midpoint = {
-          x: candidateSegment.x1 + (candidateSegment.x2 - candidateSegment.x1) * fraction,
-          y: candidateSegment.y1 + (candidateSegment.y2 - candidateSegment.y1) * fraction,
-        };
-        const placesLabelInsideRightLane =
-          compact &&
-          Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
-          (path.dataset.routeLabel === STATE_LABEL.userReplies ||
-            path.dataset.routeLabel === STATE_LABEL.agentFinishes);
-        if (placesLabelInsideRightLane) midpoint.x -= local.width / 2 - 6;
-        const placesLabelInsideLeftLane =
-          compact &&
-          Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
-          (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
-            path.dataset.routeLabel === STATE_LABEL.requestFails ||
-            path.dataset.routeLabel === STATE_LABEL.streamFails);
-        if (placesLabelInsideLeftLane) {
-          midpoint.x +=
-            local.width / 2 + (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ? 0 : -6);
-        }
-        const placesToolCompletionBesideReturnLane =
-          !compact &&
-          Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
-          path.dataset.routeLabel === STATE_LABEL.toolCompletes;
-        if (placesToolCompletionBesideReturnLane) midpoint.x += local.width / 2 - 6;
-        const bounds = {
-          x: midpoint.x - local.width / 2,
-          y: midpoint.y - local.height / 2,
-          width: local.width,
-          height: local.height,
-        };
-        const labelCollisions = placed.filter((other) => overlaps(bounds, other)).length;
-        const nodeCollisions = nodeBounds.filter((node) => overlaps(bounds, node, 5)).length;
-        const routeCollisions = routeSegments
-          .filter((route) => route.path !== path)
-          .flatMap((route) => route.segments)
-          .filter((segment) => segmentHits(segment, bounds)).length;
-        return {
-          midpoint,
-          bounds,
-          score:
-            labelCollisions * 10_000 +
-            nodeCollisions * 10_000 +
-            routeCollisions * 1_000 +
-            Math.abs(fraction - 0.5),
-        };
-      }),
-    );
+    const candidates = candidateSegments.flatMap((candidateSegment) => {
+      const segment = {
+        start: { x: candidateSegment.x1, y: candidateSegment.y1 },
+        end: { x: candidateSegment.x2, y: candidateSegment.y2 },
+      };
+      const capacity = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
+      const horizontal = Math.abs(segment.start.y - segment.end.y) < 0.5;
+      const halfLabelExtent = (horizontal ? local.width : local.height) / 2;
+      const clearance =
+        LABEL_TURN_CLEARANCE_CSS / segmentCssScale(path, segment.start, segment.end);
+      return fractions
+        .filter(
+          (fraction) => capacity * Math.min(fraction, 1 - fraction) >= halfLabelExtent + clearance,
+        )
+        .map((fraction) => {
+          const midpoint = {
+            x: candidateSegment.x1 + (candidateSegment.x2 - candidateSegment.x1) * fraction,
+            y: candidateSegment.y1 + (candidateSegment.y2 - candidateSegment.y1) * fraction,
+          };
+          const placesLabelInsideRightLane =
+            compact &&
+            Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
+            (path.dataset.routeLabel === STATE_LABEL.userReplies ||
+              path.dataset.routeLabel === STATE_LABEL.agentFinishes);
+          if (placesLabelInsideRightLane) midpoint.x -= local.width / 2 - 6;
+          const placesLabelInsideLeftLane =
+            compact &&
+            Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
+            (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
+              path.dataset.routeLabel === STATE_LABEL.requestFails ||
+              path.dataset.routeLabel === STATE_LABEL.streamFails);
+          if (placesLabelInsideLeftLane) {
+            midpoint.x +=
+              local.width / 2 + (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ? 0 : -6);
+          }
+          const placesToolCompletionBesideReturnLane =
+            !compact &&
+            Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
+            path.dataset.routeLabel === STATE_LABEL.toolCompletes;
+          if (placesToolCompletionBesideReturnLane) midpoint.x += local.width / 2 - 6;
+          const bounds = {
+            x: midpoint.x - local.width / 2,
+            y: midpoint.y - local.height / 2,
+            width: local.width,
+            height: local.height,
+          };
+          const labelCollisions = placed.filter((other) => overlaps(bounds, other)).length;
+          const nodeCollisions = nodeBounds.filter((node) => overlaps(bounds, node, 5)).length;
+          const routeCollisions = routeSegments
+            .filter((route) => route.path !== path)
+            .flatMap((route) => route.segments)
+            .filter((segment) => segmentHits(segment, bounds)).length;
+          return {
+            midpoint,
+            bounds,
+            score:
+              labelCollisions * 10_000 +
+              nodeCollisions * 10_000 +
+              routeCollisions * 1_000 +
+              Math.abs(fraction - 0.5),
+          };
+        });
+    });
+    if (candidates.length === 0) continue;
     const eligibleCandidates = candidates;
     eligibleCandidates.sort((left, right) => {
       if (compact && path.dataset.routeLabel === STATE_LABEL.toolStarts) {

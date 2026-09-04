@@ -50,6 +50,7 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
   const canvas = readColor(styles, '--diagram-canvas', '--background');
   const nodeSurface = readColor(styles, '--diagram-node-surface', '--card');
   const connector = readColor(styles, '--diagram-connector', '--muted-foreground');
+  const metadata = readColor(styles, '--muted-foreground');
   const fontFamily = styles.getPropertyValue('--font-ui').trim() || MERMAID_FONT_FAMILY;
   const fontSize = readPixelSize(styles, '--text-caption-size');
   readToken(styles, '--radius-small');
@@ -89,7 +90,7 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
     themeVariables: {
       background: canvas,
       primaryColor: nodeSurface,
-      primaryTextColor: cardForeground,
+      primaryTextColor: foreground,
       primaryBorderColor: nodeSurface,
       secondaryColor: muted,
       secondaryTextColor: foreground,
@@ -125,7 +126,7 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       noteBorderColor: border,
       noteTextColor: accentForeground,
       transitionColor: connector,
-      transitionLabelColor: foreground,
+      transitionLabelColor: metadata,
       stateBkg: nodeSurface,
       stateLabelColor: cardForeground,
       labelBackgroundColor: canvas,

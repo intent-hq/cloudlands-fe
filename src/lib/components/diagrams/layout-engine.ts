@@ -125,7 +125,11 @@ export function measureEdgeLabel(
     }
     return total + count;
   }, 0);
-  return { width, height: lines * EDGE_LABEL_LINE_HEIGHT + EDGE_LABEL_PADDING_Y, lines };
+  return {
+    width,
+    height: Math.min(lines, 3) * EDGE_LABEL_LINE_HEIGHT + EDGE_LABEL_PADDING_Y,
+    lines,
+  };
 }
 
 type RoutePoint = { x: number; y: number };
@@ -274,7 +278,12 @@ function applyWrapping(
     const compactNodes = layout.nodes.map((node) => {
       const width = Math.min(node.width, compactNodeWidth);
       const extraLines = Math.max(0, Math.ceil(node.width / width) - 1);
-      return { ...node, width, height: node.height + 32 + extraLines * 17 };
+      const isStoreNode = ['db', 'store', 'data_store'].includes(node.kind ?? '');
+      return {
+        ...node,
+        width,
+        height: node.height + (isStoreNode ? 20 : 32) + extraLines * 17,
+      };
     });
     const columnWidth = Math.max(...compactNodes.map((node) => node.width));
     const outgoingRows = new Map<string, number>();
@@ -505,7 +514,8 @@ function computeNodeSize(
   style: NodeStyleConfig,
 ): { width: number; height: number } {
   const usesDefaultStyle = style === DEFAULT_NODE_STYLE;
-  const paddingX = usesDefaultStyle ? 10 : style.paddingX;
+  const isStoreNode = ['db', 'store', 'data_store'].includes(node.kind ?? '');
+  const paddingX = (usesDefaultStyle ? 10 : style.paddingX) + (isStoreNode ? 8 : 0);
   const paddingY = usesDefaultStyle ? 7 : style.paddingY;
   const contentGap = usesDefaultStyle ? 2 : style.gap;
   const kindFontSize = usesDefaultStyle ? 11 : style.kindFontSize;
@@ -600,7 +610,7 @@ function computeNodeSize(
   const contentHeight = labelHeight + (node.kind ? contentGap + kindHeight : 0);
 
   // Ensure minimum size but allow nodes to be smaller for short labels
-  const minWidth = isShortLabel ? 72 : defaults.width * 0.6;
+  const minWidth = Math.max(isShortLabel ? 72 : defaults.width * 0.6, isStoreNode ? 112 : 0);
   const chromeWidth = iconColumnWidth + paddingX * 2 + frameBorderWidth;
   const width = Math.max(
     Math.min(Math.max(contentWidth + paddingX * 2 + frameBorderWidth, minWidth), style.maxWidth),
@@ -609,6 +619,7 @@ function computeNodeSize(
   const height = Math.max(
     contentHeight + paddingY * 2 + frameBorderWidth + 2,
     defaults.height * 0.6,
+    isStoreNode ? 80 : 0,
   );
 
   return { width, height };
@@ -2227,7 +2238,7 @@ function computeStraightEdgePaths(edges: DiagramEdge[], nodes: ComputedNode[]): 
       toPoint = { x: toCenterX, y: toNode.y + toNode.height };
     }
 
-    // Add small gap from node edge
+    // Keep a small source gap. The renderer applies the exact scale-aware target gap.
     const gap = 2;
     const edgeDx = toPoint.x - fromPoint.x;
     const edgeDy = toPoint.y - fromPoint.y;
@@ -2237,7 +2248,6 @@ function computeStraightEdgePaths(edges: DiagramEdge[], nodes: ComputedNode[]): 
       const dirX = edgeDx / length;
       const dirY = edgeDy / length;
       fromPoint = { x: fromPoint.x + dirX * gap, y: fromPoint.y + dirY * gap };
-      toPoint = { x: toPoint.x - dirX * gap, y: toPoint.y - dirY * gap };
     }
 
     // Apply bidirectional offset if needed

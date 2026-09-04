@@ -14,6 +14,7 @@
   import DiagramGroup from './DiagramGroup.svelte';
   import DiagramControls from './DiagramControls.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faCompress, faExpand } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
@@ -38,6 +39,7 @@
     y: number;
     width: number;
     height: number;
+    truncated: boolean;
   }
 
   let {
@@ -52,6 +54,8 @@
   const PADDING = 32;
   const PRIMARY_TEXT_FLOOR = 12;
   const SECONDARY_TEXT_FLOOR = 10;
+  const ARROW_TERMINAL_GAP_CSS_PX = 5;
+  const ARROW_TIP_RADIUS_CSS_PX = 0.5;
   function motionDuration(duration: number): number {
     if (typeof document === 'undefined') return duration;
     return document.documentElement.classList.contains('catalog-reduced-motion') ||
@@ -97,6 +101,12 @@
       (diagram.states && diagram.states.length > 0 ? diagram.states[0].id : undefined),
   );
   let currentState = $derived(diagram.states?.find((s) => s.id === currentStateId) ?? null);
+  let cameraZoom = $derived(currentState?.camera?.zoom ?? 1);
+  let renderedScale = $derived(cameraZoom * (fitToWidth ? fitScale : 1));
+  let arrowTerminalGap = $derived(
+    (ARROW_TERMINAL_GAP_CSS_PX + ARROW_TIP_RADIUS_CSS_PX) / renderedScale,
+  );
+  let labelTurnClearance = $derived(8 / renderedScale);
 
   // Track state changes for animations
   let stateJustChanged = $state(false);
@@ -383,10 +393,15 @@
     for (const edge of visibleEdges) {
       if (!edge.label || !edge.points || edge.points.length < 2) continue;
 
-      const { width: labelWidth, height: labelHeight } = measureEdgeLabel(
+      const {
+        width: labelWidth,
+        height: labelHeight,
+        lines,
+      } = measureEdgeLabel(
         edge.label,
         layoutWidthLimit < 500 ? compactEdgeLabelMaxWidth(edge.label ?? '') : undefined,
       );
+      const truncated = lines > 3;
 
       const points = edge.points;
       const modelEdge = diagram.model.edges.find(({ id }) => id === edge.id);
@@ -407,12 +422,18 @@
           dx >= dy
             ? (labelWidth + reverseLabel.width) / 2
             : (labelHeight + reverseLabel.height) / 2;
-        const fraction = visibleEdgeIds.includes(reverseEdge.id)
+        const preferredFraction = visibleEdgeIds.includes(reverseEdge.id)
           ? Math.max(0.05, Math.min(0.35, (1 - (pairExtent + 6) / axisLength) / 2))
           : 0.35;
+        const labelExtent = dx >= dy ? labelWidth : labelHeight;
+        const minimumFraction = Math.min(0.5, (labelExtent / 2 + labelTurnClearance) / axisLength);
+        const fraction = Math.max(
+          minimumFraction,
+          Math.min(1 - minimumFraction, preferredFraction),
+        );
         const x = points[0].x + (points[1].x - points[0].x) * fraction - labelWidth / 2;
         const y = points[0].y + (points[1].y - points[0].y) * fraction - labelHeight / 2;
-        positions.set(edge.id, { x, y, width: labelWidth, height: labelHeight });
+        positions.set(edge.id, { x, y, width: labelWidth, height: labelHeight, truncated });
         placedLabels.push({ x, y, width: labelWidth, height: labelHeight });
         continue;
       }
@@ -445,7 +466,8 @@
         const segmentLength = Math.hypot(dx, dy);
         if (segmentLength < 8) continue;
         const isHorizontal = dx >= dy;
-        const requiredCapacity = (isHorizontal ? labelWidth : labelHeight) + 8;
+        const labelExtent = isHorizontal ? labelWidth : labelHeight;
+        const requiredCapacity = labelExtent + labelTurnClearance * 2;
         if (segmentLength < requiredCapacity) continue;
 
         const labelFractions = [
@@ -453,6 +475,12 @@
           0.95,
         ];
         for (const fraction of labelFractions) {
+          if (
+            segmentLength * Math.min(fraction, 1 - fraction) <
+            labelExtent / 2 + labelTurnClearance
+          ) {
+            continue;
+          }
           const anchorX = p1.x + (p2.x - p1.x) * fraction;
           const anchorY = p1.y + (p2.y - p1.y) * fraction;
           const horizontalBonus = isHorizontal ? 1000 : 0;
@@ -474,6 +502,7 @@
           y: best.y,
           width: labelWidth,
           height: labelHeight,
+          truncated,
         });
         placedLabels.push({ x: best.x, y: best.y, width: labelWidth, height: labelHeight });
       } else if (points.length >= 2) {
@@ -489,7 +518,13 @@
         const midY = (p1.y + p2.y) / 2;
         const labelX = midX - labelWidth / 2;
         const labelY = midY - labelHeight / 2;
-        positions.set(edge.id, { x: labelX, y: labelY, width: labelWidth, height: labelHeight });
+        positions.set(edge.id, {
+          x: labelX,
+          y: labelY,
+          width: labelWidth,
+          height: labelHeight,
+          truncated,
+        });
         placedLabels.push({ x: labelX, y: labelY, width: labelWidth, height: labelHeight });
       }
     }
@@ -578,7 +613,6 @@
   });
 
   // Camera state from current diagram state
-  let cameraZoom = $derived(currentState?.camera?.zoom ?? 1);
   let cameraPan = $derived(currentState?.camera?.pan ?? null);
   let cameraFocusNodeId = $derived(currentState?.camera?.focus ?? null);
 
@@ -1081,6 +1115,7 @@
                   dimmed={isEdgeDimmed}
                   highlighted={isEdgeHighlighted}
                   markerScope={diagram.id}
+                  terminalGap={arrowTerminalGap}
                   onmotionchange={handleEdgeMotion}
                 />
               </g>
@@ -1106,11 +1141,22 @@
                     : ''}"
                   data-edge-id={edge.id}
                   data-semantic-style={edge.semanticStyle ?? 'default'}
+                  data-truncated={labelPos.truncated}
                   transition:fade={{ duration: motionDuration(150) }}
                 >
-                  <div class="edge-label-html">
-                    {edge.label}
-                  </div>
+                  {#if labelPos.truncated}
+                    <Tooltip content={edge.label} side="top" class="edge-label-tooltip">
+                      {#snippet trigger()}
+                        <div class="edge-label-html" aria-label={edge.label}>
+                          <span class="edge-label-text">{edge.label}</span>
+                        </div>
+                      {/snippet}
+                    </Tooltip>
+                  {:else}
+                    <div class="edge-label-html">
+                      <span class="edge-label-text">{edge.label}</span>
+                    </div>
+                  {/if}
                 </foreignObject>
               {/if}
             {/each}
@@ -1288,6 +1334,12 @@
     display: block;
   }
 
+  :global(.edge-label-tooltip) {
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+  }
+
   :global(.diagram-geometry-motion) {
     transition:
       x 220ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -1333,12 +1385,19 @@
     color: hsl(var(--muted-foreground));
     background: var(--diagram-label-surface);
     padding: 4px 6px;
-    white-space: pre-line;
     overflow: hidden;
     overflow-wrap: normal;
     word-break: normal;
     text-align: center;
     box-sizing: border-box;
+  }
+
+  :global(.edge-label-text) {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: pre-line;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
   }
 
   :global(.edge-label-container[data-semantic-style='danger'] .edge-label-html) {
