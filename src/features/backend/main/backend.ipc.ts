@@ -170,6 +170,71 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
   });
 }
 
+/**
+ * How long a successful `system.requestUpdate` keeps marking a backend's
+ * `backend:status` payloads with `daemonUpdatePending` when no reconnect
+ * completes the restart (sitter never restarted, socket never dropped).
+ */
+export const DAEMON_UPDATE_PENDING_TTL_MS = 5 * 60_000;
+
+/** Additive `backend:status` marker: the drop is caused by a requested update. */
+interface DaemonUpdatePendingMarker {
+  daemonUpdatePending?: true;
+}
+
+// Backends with a user-requested daemon update in flight: `Date.now()` of the
+// successful `system.requestUpdate`, keyed by backend id. Main is the only
+// process that knows this for every window of a backend, so every
+// `backend:status` payload for the id carries `daemonUpdatePending: true`
+// while the entry is fresh — the renderer shows an "updating" dialog instead
+// of the connection-loss overlay when the sitter restarts the daemon.
+const pendingDaemonUpdates = new Map<string, number>();
+// Ids whose client reported a non-connected status since the request: the
+// next `connected` for such an id means the restart completed and the entry
+// is dropped. A `connected` without a prior drop is not a completed restart.
+const pendingDaemonUpdateDrops = new Set<string>();
+
+function clearPendingDaemonUpdate(id: string): void {
+  pendingDaemonUpdates.delete(id);
+  pendingDaemonUpdateDrops.delete(id);
+}
+
+function isDaemonUpdatePending(id: string): boolean {
+  const requestedAt = pendingDaemonUpdates.get(id);
+  if (requestedAt === undefined) return false;
+  if (Date.now() - requestedAt >= DAEMON_UPDATE_PENDING_TTL_MS) {
+    clearPendingDaemonUpdate(id);
+    return false;
+  }
+  return true;
+}
+
+/** Marker fields to spread into a `backend:status` payload for `id`. */
+function daemonUpdatePendingMarker(id: string): DaemonUpdatePendingMarker {
+  return isDaemonUpdatePending(id) ? { daemonUpdatePending: true } : {};
+}
+
+/**
+ * Track a status transition for a pending update: a non-connected status
+ * records the drop, and a `connected` after a recorded drop completes the
+ * restart and clears the entry (so that connected broadcast and everything
+ * after it no longer carry the marker).
+ */
+function notePendingDaemonUpdateStatus(id: string, status: ConnectionStatus): void {
+  if (!isDaemonUpdatePending(id)) return;
+  if (status !== 'connected') {
+    pendingDaemonUpdateDrops.add(id);
+    return;
+  }
+  if (pendingDaemonUpdateDrops.has(id)) clearPendingDaemonUpdate(id);
+}
+
+/** @internal Test seam: forget every pending daemon update. */
+export function __resetPendingDaemonUpdatesForTesting(): void {
+  pendingDaemonUpdates.clear();
+  pendingDaemonUpdateDrops.clear();
+}
+
 /** @internal Test seam: clear the per-connection daemon-build log dedupe. */
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
@@ -678,6 +743,8 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
   }
   try {
     await target.request('system.requestUpdate');
+    pendingDaemonUpdates.set(id, Date.now());
+    pendingDaemonUpdateDrops.delete(id);
     return { ok: true };
   } catch (error) {
     if (error instanceof JsonRpcError && error.rpcCode === -32601) {
@@ -827,6 +894,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
                 instance.getConnectedVia(),
               ),
               reconnectAttempts: instance.getReconnectAttempts(),
+              ...daemonUpdatePendingMarker(id),
             },
             id,
           );
@@ -845,6 +913,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   instance.on('status', (status: ConnectionStatus) => {
     if (status !== 'connected') connectedDaemonVersions.delete(id);
+    notePendingDaemonUpdateStatus(id, status);
     broadcast(
       BACKEND.STATUS,
       {
@@ -855,6 +924,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdatePendingMarker(id),
       },
       id,
     );
@@ -862,6 +932,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     refreshConnectionsForStatusChange();
   });
   instance.on('reconnected', () => {
+    notePendingDaemonUpdateStatus(id, 'connected');
     broadcast(
       BACKEND.STATUS,
       {
@@ -873,6 +944,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdatePendingMarker(id),
       },
       id,
     );
@@ -1405,6 +1477,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            ...daemonUpdatePendingMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
         );
@@ -1927,6 +2000,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          ...daemonUpdatePendingMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
       );
@@ -2009,6 +2083,7 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
           client.getConnectedVia(),
         ),
         reconnectAttempts: client.getReconnectAttempts(),
+        ...daemonUpdatePendingMarker(LOCAL_CONNECTION_ID),
       });
     }
     return result;
@@ -2211,12 +2286,14 @@ export function registerBackendHandlers(): void {
         reconnectAttempts: client.getReconnectAttempts(),
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
+        ...daemonUpdatePendingMarker(backendId),
       };
     }
     return {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      ...daemonUpdatePendingMarker(backendId),
     };
   });
 
@@ -2252,6 +2329,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdatePendingMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
     );
@@ -2279,6 +2357,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdatePendingMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
     );
@@ -2517,6 +2596,7 @@ function registerConnectionsHandlers(): void {
                   rebuilt.getConnectedVia(),
                 ),
                 reconnectAttempts: rebuilt.getReconnectAttempts(),
+                ...daemonUpdatePendingMarker(connection.id),
               },
               connection.id,
             );

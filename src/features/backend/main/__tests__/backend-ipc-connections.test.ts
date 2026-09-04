@@ -1063,6 +1063,161 @@ describe('connections:* IPC handlers', () => {
     });
   });
 
+  describe('daemonUpdatePending marker on backend:status', () => {
+    type FakeClient = { status: string; emit(event: string, arg?: unknown): void };
+
+    /** Remote-1 window + connected pooled client + handlers, ready to update. */
+    async function setupConnectedRemote() {
+      const { localSender, remoteSender, localSend, remoteSend } = installBackendWindows();
+      const { mod } = await loadModule();
+      mod.getBackendClient();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as FakeClient;
+      remote.status = 'connected';
+      mod.registerBackendHandlers();
+      const update = findHandler('connections:update-backend')!;
+      const getStatus = findHandler('backend:get-status')!;
+      const statusPayloads = () =>
+        remoteSend.mock.calls
+          .filter(([c]) => c === 'backend:status')
+          .map(([, payload]) => payload as Record<string, unknown>);
+      return {
+        mod,
+        remote,
+        update,
+        getStatus,
+        localSender,
+        remoteSender,
+        localSend,
+        statusPayloads,
+      };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('flags the status broadcasts and snapshot for the backend after a successful request', async () => {
+      const { remote, update, getStatus, remoteSender, localSender, localSend, statusPayloads } =
+        await setupConnectedRemote();
+
+      await expect(update({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
+
+      remote.emit('status', 'disconnected');
+      expect(statusPayloads().at(-1)).toMatchObject({
+        status: 'disconnected',
+        daemonUpdatePending: true,
+      });
+      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+        status: 'disconnected',
+        daemonUpdatePending: true,
+      });
+
+      // Other backends are untouched: the local snapshot carries no marker.
+      const localSnapshot = (await getStatus({ sender: localSender }, undefined)) as Record<
+        string,
+        unknown
+      >;
+      expect(localSnapshot).not.toHaveProperty('daemonUpdatePending');
+      expect(localSend).not.toHaveBeenCalledWith(
+        'backend:status',
+        expect.objectContaining({ daemonUpdatePending: true }),
+      );
+    });
+
+    it('does not flag a disconnect that was not preceded by an update request', async () => {
+      const { remote, statusPayloads } = await setupConnectedRemote();
+
+      remote.emit('status', 'disconnected');
+      expect(statusPayloads()).toHaveLength(1);
+      expect(statusPayloads()[0]).not.toHaveProperty('daemonUpdatePending');
+    });
+
+    it('records nothing when the request fails', async () => {
+      const { JsonRpcError } = await import('../json-rpc-errors');
+      rpc.handler = async (method) => {
+        if (method === 'system.requestUpdate') {
+          throw new JsonRpcError({ code: -32000, message: 'daemon is not sitter-supervised' });
+        }
+        return {};
+      };
+      const { remote, update, statusPayloads } = await setupConnectedRemote();
+
+      await expect(update({}, { id: 'remote-1' })).resolves.toMatchObject({ ok: false });
+
+      remote.emit('status', 'disconnected');
+      expect(statusPayloads().at(-1)).toMatchObject({ status: 'disconnected' });
+      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+    });
+
+    it('records nothing for a not-connected target', async () => {
+      const { remote, update, statusPayloads } = await setupConnectedRemote();
+      remote.status = 'disconnected';
+
+      await expect(update({}, { id: 'remote-1' })).resolves.toEqual({
+        ok: false,
+        reason: 'not-connected',
+      });
+
+      remote.emit('status', 'connecting');
+      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+    });
+
+    it('clears the marker once the backend reconnects after the drop', async () => {
+      const { remote, update, getStatus, remoteSender, statusPayloads } =
+        await setupConnectedRemote();
+      await update({}, { id: 'remote-1' });
+
+      // A connected status BEFORE any drop is not a completed restart.
+      remote.emit('status', 'connected');
+      expect(statusPayloads().at(-1)).toMatchObject({
+        status: 'connected',
+        daemonUpdatePending: true,
+      });
+
+      remote.emit('status', 'disconnected');
+      remote.emit('status', 'connecting');
+      expect(statusPayloads().at(-1)).toMatchObject({
+        status: 'connecting',
+        daemonUpdatePending: true,
+      });
+
+      remote.emit('status', 'connected');
+      remote.emit('reconnected');
+      const [connected, reconnected] = statusPayloads().slice(-2);
+      expect(connected).toMatchObject({ status: 'connected' });
+      expect(connected).not.toHaveProperty('daemonUpdatePending');
+      expect(reconnected).toMatchObject({ status: 'connected', reconnected: true });
+      expect(reconnected).not.toHaveProperty('daemonUpdatePending');
+
+      // A later unrelated drop is a plain disconnect again.
+      remote.emit('status', 'disconnected');
+      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.not.toHaveProperty(
+        'daemonUpdatePending',
+      );
+    });
+
+    it('omits the marker once the request is older than the TTL', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      const { mod, remote, update, getStatus, remoteSender, statusPayloads } =
+        await setupConnectedRemote();
+      await update({}, { id: 'remote-1' });
+
+      vi.setSystemTime(Date.now() + mod.DAEMON_UPDATE_PENDING_TTL_MS - 1);
+      remote.emit('status', 'disconnected');
+      expect(statusPayloads().at(-1)).toMatchObject({ daemonUpdatePending: true });
+
+      vi.setSystemTime(Date.now() + 1);
+      remote.emit('status', 'connecting');
+      expect(statusPayloads().at(-1)).toMatchObject({ status: 'connecting' });
+      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.not.toHaveProperty(
+        'daemonUpdatePending',
+      );
+    });
+  });
+
   it('connections:capture-fingerprint returns the presented fingerprint', async () => {
     mockCaptureFingerprint.mockResolvedValue({
       ok: true,
