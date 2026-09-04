@@ -157,7 +157,7 @@
           {m.settings_providerPath_header({ name: providerName })}
         </p>
         <p class="text-xs text-subtle">
-          {#if npxPackage}
+          {#if npxPackage && resolvedPath}
             {m.settings_providerPath_npxOverrideHint_before({ package: npxPackage })}
             <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>
             {m.settings_providerPath_npxOverrideHint_after()}

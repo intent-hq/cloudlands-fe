@@ -72,10 +72,11 @@ import {
   type ProviderAuthStatusResponse,
   type ProviderAuthVerdict,
 } from '$shared/provider-auth-status';
-import type {
-  NpxStatus,
-  ProviderAvailabilityResult,
-  ProviderStatus,
+import {
+  NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
 } from '$shared/types/provider-availability';
 
 /** Daemon `host.checkAuggie` / `host.findBinary` shape. */
@@ -421,7 +422,11 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
       if (provider.secondaryCommand !== undefined) {
         secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
       }
-      if (provider.npxOnly === true && provider.npxPackage) {
+      if (
+        provider.npxOnly === true &&
+        provider.npxPackage &&
+        NPX_ONLY_PATH_OVERRIDE_PROVIDERS.has(provider.id)
+      ) {
         npxPackages[provider.id] = provider.npxPackage;
       }
     }

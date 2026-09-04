@@ -1007,6 +1007,16 @@ describe('provider-status-bridge-seeder', () => {
               npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
             },
             {
+              id: 'pi',
+              displayName: 'Pi',
+              command: 'npx',
+              installed: true,
+              resolvedPath: '/usr/local/bin/npx',
+              hasNpxFallback: false,
+              npxOnly: true,
+              npxPackage: 'pi-acp@0.0.33',
+            },
+            {
               id: 'grok',
               displayName: 'Grok',
               command: 'grok',
@@ -1055,14 +1065,15 @@ describe('provider-status-bridge-seeder', () => {
           paths: {
             auggie: '/usr/local/bin/auggie',
             'claude-code': '/usr/local/bin/npx',
+            pi: '/usr/local/bin/npx',
             grok: '/home/user/.grok/bin/grok',
             unsloth: '/home/user/.opencode/bin/opencode',
             codex: null,
           },
           secondaryPaths: { unsloth: '/usr/local/bin/unsloth' },
-          // npx-only providers carry their pinned package spec so the path
-          // popup can describe the npx launch (its path is npx, not the
-          // adapter).
+          // Only npx-only providers whose path override the daemon honors
+          // carry their pinned package spec (their path is npx, not the
+          // adapter); pi stays pinned-npx-only and is excluded.
           npxPackages: { 'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3' },
           // npx rides the same discovery round-trip so the onboarding bulk
           // check can read it without the aggregated auth sweep.

@@ -895,6 +895,16 @@ describe('provider availability service', () => {
                 npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
               };
             }
+            if (p.id === 'pi') {
+              return {
+                ...p,
+                command: 'npx',
+                installed: true,
+                resolvedPath: '/usr/local/bin/npx',
+                npxOnly: true,
+                npxPackage: 'pi-acp@0.0.33',
+              };
+            }
             return p;
           }),
         },
@@ -914,14 +924,15 @@ describe('provider availability service', () => {
         codex: null,
         cortex: null,
         opencode: null,
-        pi: null,
+        pi: '/usr/local/bin/npx',
         droid: null,
         grok: '/home/user/.grok/bin/grok',
         unsloth: '/home/user/.opencode/bin/opencode',
       });
       expect(result.secondaryPaths).toEqual({ unsloth: '/usr/local/bin/unsloth' });
-      // npx-only providers surface their pinned package spec (their `paths`
-      // entry is npx, not the adapter the override targets).
+      // Only npx-only providers whose path override the daemon honors surface
+      // their pinned package spec (their `paths` entry is npx, not the adapter
+      // the override targets); pi stays pinned-npx-only and is excluded.
       expect(result.npxPackages).toEqual({
         'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3',
       });

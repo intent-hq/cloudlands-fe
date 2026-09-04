@@ -28,10 +28,11 @@ import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-re
 import { clearOpenCodeCache, isOpenCodeInstalled } from '../../opencode/main/opencode-resolver';
 import { clearPiCache, isPiInstalled } from '../../pi/main/pi-resolver';
 import { clearDroidCache, isDroidInstalled } from '../../droid/main/droid-resolver';
-import type {
-  NpxStatus,
-  ProviderAvailabilityResult,
-  ProviderStatus,
+import {
+  NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
 } from '$shared/types/provider-availability';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -463,8 +464,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
  * the binary did not resolve); `secondaryPaths` carries the secondary
  * binary's resolved path for dual-binary providers (today only unsloth's
  * `unsloth` CLI) when it resolved; `npxPackages` carries the pinned npx
- * package spec for npx-only providers (whose `paths` entry is the npx
- * binary, not the adapter).
+ * package spec for npx-only providers whose path override the daemon honors
+ * (their `paths` entry is the npx binary, not the adapter).
  */
 export interface ProviderPathsResult {
   paths: Record<string, string | null>;
@@ -501,7 +502,11 @@ export async function getProviderPaths(): Promise<ProviderPathsResult> {
     if (provider.secondaryCommand !== undefined) {
       secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
     }
-    if (provider.npxOnly === true && provider.npxPackage) {
+    if (
+      provider.npxOnly === true &&
+      provider.npxPackage &&
+      NPX_ONLY_PATH_OVERRIDE_PROVIDERS.has(provider.id)
+    ) {
       npxPackages[provider.id] = provider.npxPackage;
     }
   }

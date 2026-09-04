@@ -126,7 +126,24 @@ describe('ProviderPathConfig', () => {
     expect(screen.getAllByText(npxPackage, { exact: false }).length).toBeGreaterThan(0);
   });
 
-  it('marks the pinned npx launch as overridden once an npx-only provider has a configured path', () => {
+  it('does not describe a pinned npx launch when npx itself is unresolved', () => {
+    const npxPackage = '@agentclientprotocol/claude-agent-acp@1.2.3';
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        resolvedPath: '',
+        npxPackage,
+        isInstalled: false,
+      },
+    });
+    // Nothing can run via npx, so the popup must not claim an npx default.
+    expect(screen.queryByText(npxPackage, { exact: false })).toBeNull();
+    expect(screen.getByPlaceholderText('Path to claude-agent-acp')).toBeTruthy();
+  });
+
+  it('keeps the npx path row alongside the configured path once an npx-only provider is overridden', () => {
     const npxPath = '/usr/local/bin/npx';
     render(ProviderPathConfigHost, {
       props: {
@@ -142,7 +159,6 @@ describe('ProviderPathConfig', () => {
     const input = screen.getByPlaceholderText('Path to claude-agent-acp') as HTMLInputElement;
     expect(input.value).toBe('/opt/homebrew/bin/claude-agent-acp');
     expect(screen.getByText(npxPath)).toBeTruthy();
-    expect(screen.getByText(/overridden/i)).toBeTruthy();
   });
 
   it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', () => {
