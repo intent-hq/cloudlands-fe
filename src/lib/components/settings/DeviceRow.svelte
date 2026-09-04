@@ -69,6 +69,7 @@
   let port = $state('');
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let deviceIcon = $state<DeviceIconChoice>('auto');
+  let localDeviceIcon = $state<DeviceIconChoice>('auto');
   let secret = $state('');
   let detectHosts = $state(true);
   let pushToCloud = $state(true);
@@ -166,6 +167,10 @@
     feedback = null;
     pendingFingerprint = null;
   }
+
+  $effect(() => {
+    localDeviceIcon = savedDeviceIcon;
+  });
 
   $effect(() => {
     const panelKey = panelMode ? `${device.id}:${panelMode}` : null;
@@ -302,6 +307,7 @@
       appStore.dispatch(action);
       await action.promise;
     } catch {
+      localDeviceIcon = savedDeviceIcon;
       const { toast } = await import('$lib/components/ui/toast');
       toast.error(m.settings_devices_update_error());
     } finally {
@@ -498,7 +504,7 @@
     {#if device.isLocal}
       <DeviceIconPicker
         record={device}
-        value={savedDeviceIcon}
+        bind:value={localDeviceIcon}
         disabled={busy !== null}
         portal={true}
         class="w-48 shrink-0"

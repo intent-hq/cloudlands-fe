@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   forget: vi.fn(),
   updateBackend: vi.fn(),
   setSyncEnabled: vi.fn(),
+  toastError: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -75,6 +76,10 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   addConnectionRequested: vi.fn(),
   loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
   setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
+}));
+
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { error: mocks.toastError, success: vi.fn() },
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
@@ -571,6 +576,33 @@ describe('DevicesSettings', () => {
         accent: null,
         deviceIcon: 'pottedPlant',
       }),
+    );
+  });
+
+  it('restores the saved local icon when the update fails', async () => {
+    let rejectUpdate!: (reason?: unknown) => void;
+    mocks.connections = [{ ...local, deviceIcon: 'robot' }];
+    mocks.update.mockImplementation((params) => ({
+      type: 'connections/updateRequested',
+      payload: [params],
+      promise: new Promise((_, reject) => {
+        rejectUpdate = reject;
+      }),
+    }));
+    render(DevicesSettings);
+
+    const picker = screen.getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Robot');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+
+    await waitFor(() => expect(picker.getAttribute('aria-label')).toContain('Potted plant'));
+    rejectUpdate(new Error('update failed'));
+    await waitFor(() => expect(picker.getAttribute('aria-label')).toContain('Robot'));
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith(m.settings_devices_update_error()),
     );
   });
 
