@@ -183,6 +183,14 @@ export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolC
 // Re-export SuggestedPrompt types and helpers
 export type { SuggestedPrompt, SuggestedPromptsEvent } from './types/suggested-prompt';
 export { getPromptText } from './types/suggested-prompt';
+export type {
+  DraftDelivery,
+  DraftPhase,
+  DraftSource,
+  SetupResult,
+  WorkspaceDraft,
+  WorkspaceDraftConfig,
+} from './types/workspace-draft';
 
 // ============================================================================
 // Core ID Types
@@ -331,6 +339,8 @@ export interface Workspace {
   skipWorktree?: boolean; // If true, workspace was created without a git worktree
   /** Shell script that was run during workspace creation */
   setupScript?: string;
+  /** Persisted setup truth used to reconcile missed setup events after reconnect. */
+  setupResult?: import('./types/workspace-draft').SetupResult;
   isRemote?: boolean; // Added for remote workspace support
   diffs?: DiffChunk[];
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_DIFF_SUMMARY. Excluded from WorkspaceMetadata payloads. */
