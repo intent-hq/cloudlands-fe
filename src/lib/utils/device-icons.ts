@@ -28,8 +28,8 @@ import {
 import MacMiniIcon from '$lib/icons/MacMiniIcon.svelte';
 import MacStudioIcon from '$lib/icons/MacStudioIcon.svelte';
 
-export type DeviceIconGroup = 'devices' | 'wildCards';
-export type DeviceIconComponent = Component<Record<string, unknown>>;
+type DeviceIconGroup = 'devices' | 'wildCards';
+type DeviceIconComponent = Component<Record<string, unknown>>;
 
 export interface DeviceIconSource {
   deviceIcon?: DeviceIconChoice;
@@ -50,7 +50,7 @@ export interface DeviceIconOption {
   label: string;
 }
 
-export const DEVICE_ICON_KINDS = {
+const DEVICE_ICON_KINDS = {
   devices: DETECTED_DEVICE_KINDS,
   wildCards: WILD_CARD_DEVICE_KINDS,
 } as const satisfies Record<DeviceIconGroup, readonly DeviceKind[]>;
