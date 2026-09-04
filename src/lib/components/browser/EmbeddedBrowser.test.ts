@@ -427,6 +427,38 @@ describe('EmbeddedBrowser', () => {
       );
     });
 
+    it('exposes the page title and distinct hostname together', async () => {
+      const { container, getByRole } = renderPage({ url: 'https://app.example.com/dashboard' });
+      const titleEvent = new Event('page-title-updated');
+      Object.defineProperty(titleEvent, 'title', { value: 'Dashboard' });
+
+      container.querySelector('webview')!.dispatchEvent(titleEvent);
+
+      const identity = getByRole('button', { name: 'Edit browser address' });
+      await waitFor(() => expect(identity.textContent).toContain('Dashboard'));
+      expect(identity.textContent).toContain('app.example.com');
+    });
+
+    it('shows a hostname only once when the page has no title', () => {
+      const { getByRole, getAllByText } = renderPage({ url: 'http://127.0.0.1:5173' });
+
+      expect(getAllByText('127.0.0.1')).toHaveLength(1);
+      expect(getByRole('button', { name: 'Edit browser address' }).textContent?.trim()).toBe(
+        '127.0.0.1',
+      );
+    });
+
+    it('omits the hostname separator when the URL has no hostname', async () => {
+      const { container, getByRole } = renderPage({ url: 'file:///tmp/report.html' });
+      const titleEvent = new Event('page-title-updated');
+      Object.defineProperty(titleEvent, 'title', { value: 'Local report' });
+
+      container.querySelector('webview')!.dispatchEvent(titleEvent);
+
+      const identity = getByRole('button', { name: 'Edit browser address' });
+      await waitFor(() => expect(identity.textContent?.trim()).toBe('Local report'));
+    });
+
     it('keeps the webview source current across full and in-page navigation', async () => {
       const { container } = renderPage();
       const webview = container.querySelector('webview')!;
