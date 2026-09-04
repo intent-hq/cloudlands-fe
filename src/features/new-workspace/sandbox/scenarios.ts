@@ -1,4 +1,4 @@
-import type { WorkspaceDraft } from '$shared/types/workspace-draft';
+import type { SetupResult, WorkspaceDraft } from '$shared/types/workspace-draft';
 import {
   createInitialControllerState,
   reduce,
@@ -30,6 +30,7 @@ export interface ScenarioFixtures {
   provider: { state: 'ready' | 'missing' | 'login-required' | 'unknown'; provider?: string };
   workspace: Record<string, unknown>;
   initialAgent: Record<string, unknown>;
+  setupResult: SetupResult;
   attachmentPlacement: { placed: string[]; failed: string[] };
   sendResult: { messageId: string; queued: boolean };
 }
@@ -90,6 +91,12 @@ export const DEFAULT_SCENARIO_FIXTURES: ScenarioFixtures = {
     updatedAt: FIXED_TIMESTAMP,
   },
   initialAgent: { id: FIXED_IDS.agent, name: 'Coordinator', status: 'idle' },
+  setupResult: {
+    state: 'succeeded',
+    exitCode: 0,
+    startedAt: FIXED_TIMESTAMP,
+    finishedAt: FIXED_TIMESTAMP,
+  },
   attachmentPlacement: { placed: [], failed: [] },
   sendResult: { messageId: FIXED_IDS.message, queued: false },
 };
