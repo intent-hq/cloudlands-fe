@@ -85,6 +85,42 @@ describe('chat transcript structural projection', () => {
     ]);
   });
 
+  it('recomputes when an earlier row changes alongside a same-shape streaming tail', () => {
+    const project = createChatTranscriptStructureProjector();
+    const initial = project({
+      messages: protocolTranscript,
+      isStreaming: true,
+      isActive: true,
+      snapshotSequence: 1,
+    });
+    const replaced = protocolTranscript.map((message, index) => {
+      if (index === 1) return { ...message, id: 'assistant-replaced' } as AgentMessage;
+      if (index === protocolTranscript.length - 1) {
+        return {
+          ...message,
+          contentBlocks: [{ type: 'text' as const, text: 'Still working' }],
+        } as AgentMessage;
+      }
+      return message;
+    });
+
+    const structure = project({
+      messages: replaced,
+      isStreaming: true,
+      isActive: true,
+      snapshotSequence: 1,
+    });
+
+    expect(structure.recomputeCount).toBe(initial.recomputeCount + 1);
+    expect(Object.fromEntries(structure.messageIndexById)).toEqual({
+      'user-1': 0,
+      'assistant-replaced': 1,
+      'user-2': 2,
+      'assistant-2': 3,
+    });
+    expect([...structure.assistantMessageIds]).toEqual(['assistant-replaced', 'assistant-2']);
+  });
+
   it('recomputes for append, prepend, replacement, and reorder updates', () => {
     const project = createChatTranscriptStructureProjector();
     let structure = project({

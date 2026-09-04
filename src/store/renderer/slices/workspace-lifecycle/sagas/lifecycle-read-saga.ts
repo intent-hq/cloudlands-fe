@@ -763,8 +763,8 @@ function* contextWorker(
   initializedContexts: Set<string>,
   action: ReturnType<typeof initContextForWorkspace>,
 ) {
-  const [workspaceId] = action.payload;
-  if (!workspaceId || initializedContexts.has(workspaceId)) return;
+  const [workspaceId, force] = action.payload;
+  if (!workspaceId || (!force && initializedContexts.has(workspaceId))) return;
   try {
     yield* race({
       read: call(function* () {

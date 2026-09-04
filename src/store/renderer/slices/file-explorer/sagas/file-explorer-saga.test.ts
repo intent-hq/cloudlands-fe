@@ -9,6 +9,7 @@ import {
   addLoadingPath,
   expandToPathRequested,
   fileExplorerReducer,
+  hydrateFileExplorerRequested,
   initialState,
   initializeFileExplorer,
   refreshFileExplorer,
@@ -104,6 +105,35 @@ describe('fileExplorerSaga', () => {
       setFileExplorerWorkspacePath('ws-1', '/repo'),
       setFileExplorerLoading('ws-1', true),
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('forces hydration after the workspace was initialized', async () => {
+    const explorerTree = vi.spyOn(appClient.files, 'explorerTree').mockResolvedValue(root);
+    const gitStatusMap = vi.spyOn(appClient.files, 'gitStatusMap').mockResolvedValue({});
+    const channel = stdChannel();
+    const actions: Parameters<typeof fileExplorerReducer>[1][] = [];
+    let fileExplorer = fileExplorerReducer(initialState, setFileExplorerInitialized('ws-1', true));
+    const dispatch = (action: Parameters<typeof fileExplorerReducer>[1]) => {
+      actions.push(action);
+      fileExplorer = fileExplorerReducer(fileExplorer, action);
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ fileExplorer }) },
+      fileExplorerSaga,
+    );
+
+    channel.put(hydrateFileExplorerRequested('ws-1'));
+    await settle();
+    channel.put(hydrateFileExplorerRequested('ws-1', true));
+    await settle();
+
+    expect(explorerTree.mock.calls).toEqual([['ws-1']]);
+    expect(gitStatusMap.mock.calls).toEqual([['ws-1']]);
+    expect(fileExplorer.byWorkspaceId['ws-1'].rootPath).toBe('/repo');
+    expect(actions.at(0)).toEqual(setFileExplorerLoading('ws-1', true));
+    expect(actions.at(-1)).toEqual(setFileExplorerInitialized('ws-1', true));
     task.cancel();
     await task.toPromise();
   });
