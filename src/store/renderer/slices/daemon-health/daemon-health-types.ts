@@ -211,11 +211,11 @@ export interface DaemonHealthState {
   /** Error string when the last on-demand sidecar spawn failed. */
   sidecarSpawnError: string | null;
   /**
-   * Epoch ms of the first non-connected backend:status that carried the
-   * `daemonUpdatePending` marker (main flags disconnects caused by a
-   * user-requested `system.requestUpdate`), or null. Kept across repeated
-   * disconnected pushes so the "Updating intentd…" countdown measures from
-   * the original drop; cleared on the next successful connect.
+   * Epoch ms of the first drop main observed for this backend while a
+   * user-requested `system.requestUpdate` was outstanding (received via the
+   * `daemonUpdateDisconnectedAt` backend:status marker), or null. Main
+   * stamps it once per restart so every window shares one "Updating
+   * intentd…" countdown deadline; cleared on the next successful connect.
    */
   daemonUpdateDisconnectedAt: number | null;
   /**

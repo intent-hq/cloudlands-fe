@@ -2,7 +2,7 @@
  * DaemonUpdatingOverlay component tests.
  *
  * Drives the real daemon-health slice through connectionStatusChanged with
- * the main-side `daemonUpdatePending` marker and asserts the updating
+ * the main-side `daemonUpdateDisconnectedAt` marker and asserts the updating
  * overlay's countdown window, plus DaemonStoppedOverlay's deferral to it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -67,7 +67,9 @@ vi.mock('$app/stores', () => ({
 import { store as appStore } from '$store/renderer/store';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
-import DaemonUpdatingOverlay, { DAEMON_UPDATING_COUNTDOWN_MS } from '../DaemonUpdatingOverlay.svelte';
+import DaemonUpdatingOverlay, {
+  DAEMON_UPDATING_COUNTDOWN_MS,
+} from '../DaemonUpdatingOverlay.svelte';
 import DaemonStoppedOverlay, { DAEMON_STOPPED_GRACE_MS } from '../DaemonStoppedOverlay.svelte';
 
 const externalTransport: BackendTransportInfo = { mode: 'external-uds', target: '/tmp/i.sock' };
@@ -82,10 +84,9 @@ function stoppedOverlay(): HTMLElement | null {
 
 /** Seconds currently shown by the countdown line. */
 function countdownSeconds(): number {
-  const text = screen.getByTestId('daemon-updating-countdown').textContent ?? '';
-  const match = /(\d+)s/.exec(text);
-  if (!match) throw new Error(`no countdown in ${JSON.stringify(text)}`);
-  return Number(match[1]);
+  const raw = screen.getByTestId('daemon-updating-countdown').getAttribute('data-seconds');
+  if (raw === null) throw new Error('countdown element carries no data-seconds');
+  return Number(raw);
 }
 
 function dispatchAndFlush(action: Parameters<typeof appStore.dispatch>[0]) {
@@ -98,12 +99,19 @@ function renderBoth() {
   render(DaemonStoppedOverlay);
 }
 
-/** Connect, then drop the connection with the update-caused marker set. */
-function dropForUpdate() {
+/**
+ * Connect, then drop the connection with the update-caused marker set to the
+ * given first-drop time (main's stamp; defaults to "now"). Returns that time
+ * so later pushes for the same restart can repeat it the way main does.
+ */
+function dropForUpdate(disconnectedAt: number = Date.now()): number {
   dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
   dispatchAndFlush(
-    connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+    connectionStatusChanged('disconnected', undefined, {
+      daemonUpdateDisconnectedAt: disconnectedAt,
+    }),
   );
+  return disconnectedAt;
 }
 
 describe('DaemonUpdatingOverlay', () => {
@@ -147,7 +155,9 @@ describe('DaemonUpdatingOverlay', () => {
     expect(updatingOverlay()).toBeTruthy();
     expect(stoppedOverlay()).toBeNull();
 
-    await vi.advanceTimersByTimeAsync(DAEMON_UPDATING_COUNTDOWN_MS - DAEMON_STOPPED_GRACE_MS * 2 - 100);
+    await vi.advanceTimersByTimeAsync(
+      DAEMON_UPDATING_COUNTDOWN_MS - DAEMON_STOPPED_GRACE_MS * 2 - 100,
+    );
     expect(updatingOverlay()).toBeTruthy();
     expect(stoppedOverlay()).toBeNull();
   });
@@ -169,19 +179,51 @@ describe('DaemonUpdatingOverlay', () => {
 
   it('does not restart the countdown on later disconnected pushes for the same restart', async () => {
     renderBoth();
-    dropForUpdate();
+    const disconnectedAt = dropForUpdate();
     await vi.advanceTimersByTimeAsync(4000);
     expect(countdownSeconds()).toBe(6);
 
+    // Main repeats the ORIGINAL drop time on every push for the same restart.
     dispatchAndFlush(
-      connectionStatusChanged('connecting', undefined, { daemonUpdatePending: true }),
+      connectionStatusChanged('connecting', undefined, {
+        daemonUpdateDisconnectedAt: disconnectedAt,
+      }),
     );
     dispatchAndFlush(
-      connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+      connectionStatusChanged('disconnected', undefined, {
+        daemonUpdateDisconnectedAt: disconnectedAt,
+      }),
     );
     expect(countdownSeconds()).toBe(6);
     await vi.advanceTimersByTimeAsync(1000);
     expect(countdownSeconds()).toBe(5);
+  });
+
+  it('anchors the countdown to the drop time main stamped, not to when this window learned of it', async () => {
+    // A window opened 4 s into the outage receives the original stamp in its
+    // boot snapshot and must count down the REMAINING 6 s, not a fresh 10 s.
+    renderBoth();
+    dropForUpdate(Date.now() - 4000);
+    expect(countdownSeconds()).toBe(6);
+    expect(stoppedOverlay()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(6000 - 100);
+    expect(updatingOverlay()).toBeTruthy();
+    expect(stoppedOverlay()).toBeNull();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(updatingOverlay()).toBeNull();
+    expect(stoppedOverlay()).toBeTruthy();
+  });
+
+  it('skips straight to the stopped overlay when the stamped drop is already older than the countdown', async () => {
+    renderBoth();
+    dropForUpdate(Date.now() - DAEMON_UPDATING_COUNTDOWN_MS - 1000);
+    expect(updatingOverlay()).toBeNull();
+    // With no updating window left, the ordinary grace period applies.
+    await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS - 100);
+    expect(stoppedOverlay()).toBeNull();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(stoppedOverlay()).toBeTruthy();
   });
 
   it('hands over to the stopped overlay immediately when the countdown ends (no extra grace)', async () => {

@@ -57,8 +57,11 @@ interface BackendStatusPayload {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
-  /** True while main has a user-requested daemon update outstanding for this backend. */
-  daemonUpdatePending?: boolean;
+  /**
+   * Epoch ms of the first drop main observed while a user-requested daemon
+   * update is outstanding for this backend.
+   */
+  daemonUpdateDisconnectedAt?: number;
 }
 
 interface BackendStatusSnapshot extends BackendStatusPayload {
@@ -166,7 +169,7 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
       ? (payload as BackendStatusSnapshot).sidecarStartupFailedReason
       : payload.reason,
     reconnectAttempts: payload.reconnectAttempts,
-    daemonUpdatePending: payload.daemonUpdatePending,
+    daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
   });
 }
 

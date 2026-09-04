@@ -4,7 +4,7 @@
  * Tests for the daemon-health Redux reducer.
  */
 
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   daemonHealthReducer,
   initialState,
@@ -370,50 +370,39 @@ describe('daemonHealthReducer', () => {
     describe('daemonUpdateDisconnectedAt', () => {
       const t0 = new Date('2026-09-04T10:00:00.000Z').getTime();
 
-      beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(t0);
-      });
-
-      afterEach(() => {
-        vi.useRealTimers();
-      });
-
-      it('records the time of the first disconnect flagged as update-caused', () => {
+      it('stores the drop time main stamped on an update-caused disconnect', () => {
         const state = { ...initialState, health: 'healthy' as const };
         const next = daemonHealthReducer(
           state,
-          connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
         );
         expect(next.daemonUpdateDisconnectedAt).toBe(t0);
         expect(next.health).toBe('down');
       });
 
-      it('records the time on a flagged connecting status too', () => {
+      it('stores the time on a flagged connecting status too', () => {
         const next = daemonHealthReducer(
           initialState,
-          connectionStatusChanged('connecting', undefined, { daemonUpdatePending: true }),
+          connectionStatusChanged('connecting', undefined, { daemonUpdateDisconnectedAt: t0 }),
         );
         expect(next.daemonUpdateDisconnectedAt).toBe(t0);
       });
 
-      it('keeps the first disconnect time across later flagged pushes', () => {
+      it('mirrors the value main repeats across later pushes for the same restart', () => {
         const first = daemonHealthReducer(
           initialState,
-          connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
         );
-        vi.setSystemTime(t0 + 3_000);
         const second = daemonHealthReducer(
           first,
           connectionStatusChanged('connecting', undefined, {
-            daemonUpdatePending: true,
+            daemonUpdateDisconnectedAt: t0,
             reconnectAttempts: 2,
           }),
         );
-        vi.setSystemTime(t0 + 6_000);
         const third = daemonHealthReducer(
           second,
-          connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
         );
         expect(second.daemonUpdateDisconnectedAt).toBe(t0);
         expect(third.daemonUpdateDisconnectedAt).toBe(t0);
@@ -425,12 +414,14 @@ describe('daemonHealthReducer', () => {
         expect(next.daemonUpdateDisconnectedAt).toBeNull();
       });
 
-      it('leaves the time untouched on a disconnect without the flag', () => {
-        const unflagged = daemonHealthReducer(initialState, connectionStatusChanged('disconnected'));
+      it('leaves the time untouched on a disconnect without the marker', () => {
+        const unflagged = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected'),
+        );
         expect(unflagged.daemonUpdateDisconnectedAt).toBeNull();
 
         const state = { ...initialState, daemonUpdateDisconnectedAt: t0 };
-        vi.setSystemTime(t0 + 4_000);
         const next = daemonHealthReducer(
           state,
           connectionStatusChanged('disconnected', undefined, { reconnectAttempts: 1 }),
@@ -438,18 +429,19 @@ describe('daemonHealthReducer', () => {
         expect(next.daemonUpdateDisconnectedAt).toBe(t0);
       });
 
-      it('stamps a fresh time for a new update after a reconnect cleared the previous one', () => {
+      it('stores a fresh time for a new update after a reconnect cleared the previous one', () => {
         const first = daemonHealthReducer(
           initialState,
-          connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
         );
         const reconnected = daemonHealthReducer(first, connectionStatusChanged('connected'));
         expect(reconnected.daemonUpdateDisconnectedAt).toBeNull();
 
-        vi.setSystemTime(t0 + 60_000);
         const again = daemonHealthReducer(
           reconnected,
-          connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+          connectionStatusChanged('disconnected', undefined, {
+            daemonUpdateDisconnectedAt: t0 + 60_000,
+          }),
         );
         expect(again.daemonUpdateDisconnectedAt).toBe(t0 + 60_000);
       });

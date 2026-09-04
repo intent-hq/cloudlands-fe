@@ -62,10 +62,12 @@ export interface ConnectionStatusExtras {
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
   /**
-   * True while main has a user-requested `system.requestUpdate` outstanding
-   * for this window's backend — the disconnect is the daemon restarting.
+   * Epoch ms of the first drop main observed for this window's backend while
+   * a user-requested `system.requestUpdate` is outstanding — the disconnect
+   * is the daemon restarting. Main owns the value so every window of the
+   * backend shares one countdown deadline.
    */
-  daemonUpdatePending?: boolean;
+  daemonUpdateDisconnectedAt?: number;
 }
 
 /**
@@ -111,18 +113,14 @@ export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequ
  * Main spawns the sidecar (if needed) and opens/focuses the local backend's
  * windows; this window keeps its own backend and its overlay.
  */
-export const openLocalAndSpawnRequested = createAction(
-  'daemonHealth/openLocalAndSpawnRequested',
-);
+export const openLocalAndSpawnRequested = createAction('daemonHealth/openLocalAndSpawnRequested');
 
 /**
  * backend:open-local-and-spawn resolved ok. The initiating window stays bound
  * to its own (dead) backend, so no 'connected' backend:status event ever
  * reaches it to clear the pending flag — this action is that reset.
  */
-export const openLocalAndSpawnSucceeded = createAction(
-  'daemonHealth/openLocalAndSpawnSucceeded',
-);
+export const openLocalAndSpawnSucceeded = createAction('daemonHealth/openLocalAndSpawnSucceeded');
 
 /**
  * backend:spawn-sidecar failed (binary not found, spawn error). A successful
@@ -265,13 +263,11 @@ daemonHealthReducer.with(
         // "Starting sidecar…".
         sidecarSpawnPending:
           extras?.sidecarGaveUp || extras?.sidecarStartupFailed ? false : state.sidecarSpawnPending,
-        // Latch the FIRST update-caused drop: later disconnected/connecting
-        // pushes for the same restart keep the original time so the
-        // updating-overlay countdown does not restart on every push.
+        // Main stamps the FIRST update-caused drop and repeats it on every
+        // push for the same restart; store what was received so the
+        // updating-overlay countdown is anchored to main's time, not ours.
         daemonUpdateDisconnectedAt:
-          extras?.daemonUpdatePending === true && state.daemonUpdateDisconnectedAt === null
-            ? Date.now()
-            : state.daemonUpdateDisconnectedAt,
+          extras?.daemonUpdateDisconnectedAt ?? state.daemonUpdateDisconnectedAt,
       };
     }
     return state;

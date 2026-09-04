@@ -255,7 +255,9 @@ describe('DaemonStoppedOverlay', () => {
       dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
       await vi.advanceTimersByTimeAsync(10);
       dispatchAndFlush(
-        connectionStatusChanged('disconnected', undefined, { daemonUpdatePending: true }),
+        connectionStatusChanged('disconnected', undefined, {
+          daemonUpdateDisconnectedAt: Date.now(),
+        }),
       );
     }
 
@@ -265,7 +267,9 @@ describe('DaemonStoppedOverlay', () => {
 
       await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
       expect(overlay()).toBeNull();
-      await vi.advanceTimersByTimeAsync(DAEMON_UPDATING_COUNTDOWN_MS - DAEMON_STOPPED_GRACE_MS - 150);
+      await vi.advanceTimersByTimeAsync(
+        DAEMON_UPDATING_COUNTDOWN_MS - DAEMON_STOPPED_GRACE_MS - 150,
+      );
       expect(overlay()).toBeNull();
 
       await vi.advanceTimersByTimeAsync(100);

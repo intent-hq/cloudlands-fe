@@ -110,6 +110,14 @@ vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
 }));
 
+// The orphan kill-and-restart flow is covered by orphan-recovery.test.ts; here
+// it is stubbed so the IPC handler's post-restart broadcast can be asserted.
+const mockRestartOrphanedSidecar = vi.hoisted(() => vi.fn());
+vi.mock('../orphan-recovery', () => ({
+  defaultKill: vi.fn(),
+  restartOrphanedSidecar: mockRestartOrphanedSidecar,
+}));
+
 // Deterministic intentd version pin (the real reader would read the repo's
 // live intentd.version file, making list-shape assertions drift on every bump).
 vi.mock('../intentd-version-pin', () => ({
@@ -1063,8 +1071,10 @@ describe('connections:* IPC handlers', () => {
     });
   });
 
-  describe('daemonUpdatePending marker on backend:status', () => {
+  describe('daemonUpdateDisconnectedAt marker on backend:status', () => {
     type FakeClient = { status: string; emit(event: string, arg?: unknown): void };
+    const MARKER = 'daemonUpdateDisconnectedAt';
+    const T0 = new Date('2026-01-01T00:00:00Z').getTime();
 
     /** Remote-1 window + connected pooled client + handlers, ready to update. */
     async function setupConnectedRemote() {
@@ -1076,8 +1086,8 @@ describe('connections:* IPC handlers', () => {
       mod.registerBackendHandlers();
       const update = findHandler('connections:update-backend')!;
       const getStatus = findHandler('backend:get-status')!;
-      const statusPayloads = () =>
-        remoteSend.mock.calls
+      const payloadsOf = (send: ReturnType<typeof vi.fn>) => () =>
+        send.mock.calls
           .filter(([c]) => c === 'backend:status')
           .map(([, payload]) => payload as Record<string, unknown>);
       return {
@@ -1088,40 +1098,65 @@ describe('connections:* IPC handlers', () => {
         localSender,
         remoteSender,
         localSend,
-        statusPayloads,
+        statusPayloads: payloadsOf(remoteSend),
+        localStatusPayloads: payloadsOf(localSend),
       };
     }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(T0);
+    });
 
     afterEach(() => {
       vi.useRealTimers();
     });
 
-    it('flags the status broadcasts and snapshot for the backend after a successful request', async () => {
+    it('carries the first-drop time on the status broadcasts and snapshot after a successful request', async () => {
       const { remote, update, getStatus, remoteSender, localSender, localSend, statusPayloads } =
         await setupConnectedRemote();
 
       await expect(update({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
 
+      vi.setSystemTime(T0 + 1_500);
       remote.emit('status', 'disconnected');
-      expect(statusPayloads().at(-1)).toMatchObject({
-        status: 'disconnected',
-        daemonUpdatePending: true,
-      });
-      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.toMatchObject({
-        status: 'disconnected',
-        daemonUpdatePending: true,
-      });
+      expect(statusPayloads().at(-1)).toEqual(
+        expect.objectContaining({ status: 'disconnected', [MARKER]: T0 + 1_500 }),
+      );
+      // Later pushes for the same restart keep the ORIGINAL drop time so every
+      // window (including one opened mid-outage) shares one deadline.
+      vi.setSystemTime(T0 + 4_000);
+      remote.emit('status', 'connecting');
+      expect(statusPayloads().at(-1)).toEqual(
+        expect.objectContaining({ status: 'connecting', [MARKER]: T0 + 1_500 }),
+      );
+      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.toEqual(
+        expect.objectContaining({ status: 'connecting', [MARKER]: T0 + 1_500 }),
+      );
 
       // Other backends are untouched: the local snapshot carries no marker.
       const localSnapshot = (await getStatus({ sender: localSender }, undefined)) as Record<
         string,
         unknown
       >;
-      expect(localSnapshot).not.toHaveProperty('daemonUpdatePending');
+      expect(localSnapshot).not.toHaveProperty(MARKER);
       expect(localSend).not.toHaveBeenCalledWith(
         'backend:status',
-        expect.objectContaining({ daemonUpdatePending: true }),
+        expect.objectContaining({ [MARKER]: expect.anything() }),
       );
+    });
+
+    it('omits the marker until the client actually drops', async () => {
+      const { remote, update, getStatus, remoteSender, statusPayloads } =
+        await setupConnectedRemote();
+      await expect(update({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
+
+      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.not.toHaveProperty(
+        MARKER,
+      );
+      remote.emit('status', 'connected');
+      expect(statusPayloads().at(-1)).toMatchObject({ status: 'connected' });
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
     });
 
     it('does not flag a disconnect that was not preceded by an update request', async () => {
@@ -1129,7 +1164,56 @@ describe('connections:* IPC handlers', () => {
 
       remote.emit('status', 'disconnected');
       expect(statusPayloads()).toHaveLength(1);
-      expect(statusPayloads()[0]).not.toHaveProperty('daemonUpdatePending');
+      expect(statusPayloads()[0]).not.toHaveProperty(MARKER);
+    });
+
+    it('never sends the local marker to a remote window (unscoped orphan-restart broadcast)', async () => {
+      const { mod, update, statusPayloads, localStatusPayloads } = await setupConnectedRemote();
+      const connectionMode = await import('../connection-mode');
+      connectionMode.setConnectionMode('external');
+      try {
+        const local = mod.getBackendClient() as unknown as FakeClient;
+        local.status = 'connected';
+
+        await expect(update({}, { id: 'local' })).resolves.toEqual({ ok: true });
+        vi.setSystemTime(T0 + 1_000);
+        local.emit('status', 'disconnected');
+        expect(localStatusPayloads().at(-1)).toEqual(
+          expect.objectContaining({ status: 'disconnected', [MARKER]: T0 + 1_000 }),
+        );
+
+        mockRestartOrphanedSidecar.mockResolvedValueOnce({ ok: true, spawned: true });
+        await expect(
+          findHandler('backend:restart-orphaned-sidecar')!({}, undefined),
+        ).resolves.toMatchObject({ ok: true });
+        expect(mockRestartOrphanedSidecar).toHaveBeenCalledTimes(1);
+
+        // The unscoped restart broadcast reached the remote window without the
+        // local marker; nothing the remote window received carried it.
+        expect(statusPayloads().length).toBeGreaterThan(0);
+        for (const payload of statusPayloads()) expect(payload).not.toHaveProperty(MARKER);
+      } finally {
+        connectionMode.__resetConnectionModeForTesting();
+      }
+    });
+
+    it('forgets the pending update when the client is disposed and rebuilt', async () => {
+      const { mod, remote, update, getStatus, remoteSender, statusPayloads } =
+        await setupConnectedRemote();
+      await expect(update({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
+      remote.emit('status', 'disconnected');
+      expect(statusPayloads().at(-1)).toHaveProperty(MARKER);
+
+      mod.disconnectBackendClient('remote-1');
+      const rebuilt = (await mod.connectBackendClient('remote-1')) as unknown as FakeClient;
+      expect(rebuilt).not.toBe(remote);
+
+      rebuilt.emit('status', 'connecting');
+      expect(statusPayloads().at(-1)).toMatchObject({ status: 'connecting' });
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
+      await expect(getStatus({ sender: remoteSender }, undefined)).resolves.not.toHaveProperty(
+        MARKER,
+      );
     });
 
     it('records nothing when the request fails', async () => {
@@ -1146,7 +1230,7 @@ describe('connections:* IPC handlers', () => {
 
       remote.emit('status', 'disconnected');
       expect(statusPayloads().at(-1)).toMatchObject({ status: 'disconnected' });
-      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
     });
 
     it('records nothing for a not-connected target', async () => {
@@ -1159,7 +1243,7 @@ describe('connections:* IPC handlers', () => {
       });
 
       remote.emit('status', 'connecting');
-      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
     });
 
     it('clears the marker once the backend reconnects after the drop', async () => {
@@ -1167,53 +1251,51 @@ describe('connections:* IPC handlers', () => {
         await setupConnectedRemote();
       await update({}, { id: 'remote-1' });
 
-      // A connected status BEFORE any drop is not a completed restart.
+      // A connected status BEFORE any drop is not a completed restart: the
+      // entry survives (the later drop below still carries the marker).
       remote.emit('status', 'connected');
-      expect(statusPayloads().at(-1)).toMatchObject({
-        status: 'connected',
-        daemonUpdatePending: true,
-      });
+      expect(statusPayloads().at(-1)).toMatchObject({ status: 'connected' });
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
 
+      vi.setSystemTime(T0 + 2_000);
       remote.emit('status', 'disconnected');
       remote.emit('status', 'connecting');
-      expect(statusPayloads().at(-1)).toMatchObject({
-        status: 'connecting',
-        daemonUpdatePending: true,
-      });
+      expect(statusPayloads().at(-1)).toEqual(
+        expect.objectContaining({ status: 'connecting', [MARKER]: T0 + 2_000 }),
+      );
 
       remote.emit('status', 'connected');
       remote.emit('reconnected');
       const [connected, reconnected] = statusPayloads().slice(-2);
       expect(connected).toMatchObject({ status: 'connected' });
-      expect(connected).not.toHaveProperty('daemonUpdatePending');
+      expect(connected).not.toHaveProperty(MARKER);
       expect(reconnected).toMatchObject({ status: 'connected', reconnected: true });
-      expect(reconnected).not.toHaveProperty('daemonUpdatePending');
+      expect(reconnected).not.toHaveProperty(MARKER);
 
       // A later unrelated drop is a plain disconnect again.
       remote.emit('status', 'disconnected');
-      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
       await expect(getStatus({ sender: remoteSender }, undefined)).resolves.not.toHaveProperty(
-        'daemonUpdatePending',
+        MARKER,
       );
     });
 
     it('omits the marker once the request is older than the TTL', async () => {
-      vi.useFakeTimers({ toFake: ['Date'] });
-      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
       const { mod, remote, update, getStatus, remoteSender, statusPayloads } =
         await setupConnectedRemote();
       await update({}, { id: 'remote-1' });
 
-      vi.setSystemTime(Date.now() + mod.DAEMON_UPDATE_PENDING_TTL_MS - 1);
+      const dropAt = T0 + mod.DAEMON_UPDATE_PENDING_TTL_MS - 1;
+      vi.setSystemTime(dropAt);
       remote.emit('status', 'disconnected');
-      expect(statusPayloads().at(-1)).toMatchObject({ daemonUpdatePending: true });
+      expect(statusPayloads().at(-1)).toEqual(expect.objectContaining({ [MARKER]: dropAt }));
 
-      vi.setSystemTime(Date.now() + 1);
+      vi.setSystemTime(dropAt + 1);
       remote.emit('status', 'connecting');
       expect(statusPayloads().at(-1)).toMatchObject({ status: 'connecting' });
-      expect(statusPayloads().at(-1)).not.toHaveProperty('daemonUpdatePending');
+      expect(statusPayloads().at(-1)).not.toHaveProperty(MARKER);
       await expect(getStatus({ sender: remoteSender }, undefined)).resolves.not.toHaveProperty(
-        'daemonUpdatePending',
+        MARKER,
       );
     });
   });

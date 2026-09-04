@@ -452,22 +452,27 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('forwards daemonUpdatePending from the status payload into the action extras', async () => {
+  it('forwards daemonUpdateDisconnectedAt from the status payload into the action extras', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
+    const disconnectedAt = new Date('2026-09-04T10:00:00.000Z').getTime();
     const { dispatched, task } = startHealthSaga();
     await settle();
-    statusHandler!({ status: 'disconnected', transport, daemonUpdatePending: true });
+    statusHandler!({
+      status: 'disconnected',
+      transport,
+      daemonUpdateDisconnectedAt: disconnectedAt,
+    });
     await settle();
 
     const actions = statusActions(dispatched) as Array<{
-      payload: [string, unknown, { daemonUpdatePending?: boolean } | undefined];
+      payload: [string, unknown, { daemonUpdateDisconnectedAt?: number } | undefined];
     }>;
     const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
     expect(disconnected).toBeDefined();
-    expect(disconnected!.payload[2]?.daemonUpdatePending).toBe(true);
+    expect(disconnected!.payload[2]?.daemonUpdateDisconnectedAt).toBe(disconnectedAt);
     // The boot snapshot carried no marker: nothing is invented for it.
     const connected = actions.find(({ payload: [status] }) => status === 'connected');
-    expect(connected!.payload[2]?.daemonUpdatePending).toBeUndefined();
+    expect(connected!.payload[2]?.daemonUpdateDisconnectedAt).toBeUndefined();
     task.cancel();
     await task.toPromise();
   });

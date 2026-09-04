@@ -13,11 +13,13 @@
    * daemon connection dropped because the user requested an intentd update.
    *
    * Driven by the daemon-health slice: visible while health === 'down' and
-   * `daemonUpdateDisconnectedAt` (latched from the main-side
-   * `daemonUpdatePending` marker on backend:status) is younger than
-   * DAEMON_UPDATING_COUNTDOWN_MS. Offers no actions — the daemon is restarting
-   * and the client reconnects on its own; DaemonStoppedOverlay defers to this
-   * window and appears only if the countdown runs out.
+   * `daemonUpdateDisconnectedAt` (the main-side first-drop timestamp carried
+   * on backend:status) is younger than DAEMON_UPDATING_COUNTDOWN_MS. Because
+   * main stamps the time once per restart, every window of the backend —
+   * including one opened mid-outage — counts down to the same deadline.
+   * Offers no actions — the daemon is restarting and the client reconnects on
+   * its own; DaemonStoppedOverlay defers to this window and appears only if
+   * the countdown runs out.
    */
   import { page } from '$app/stores';
   import {
@@ -98,7 +100,11 @@
         <p class="mt-3 text-sm text-muted-foreground">
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500 align-middle"
           ></span>
-          <span class="ml-1.5 align-middle" data-testid="daemon-updating-countdown">
+          <span
+            class="ml-1.5 align-middle"
+            data-testid="daemon-updating-countdown"
+            data-seconds={seconds}
+          >
             {m.daemonStatus_updatingOverlay_countdown_label({ seconds })}
           </span>
         </p>
