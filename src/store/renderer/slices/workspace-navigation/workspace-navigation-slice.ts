@@ -442,9 +442,7 @@ export function chatChangesDedupId(options?: {
 
 export const openWorkspaceLocalChanges = createAction<
   [wsId: string, options?: { gitRootId?: string }]
->(
-  'workspaceNavigation/openWorkspaceLocalChanges',
-);
+>('workspaceNavigation/openWorkspaceLocalChanges');
 
 export const openWorkspaceCommitChangeset = createAction<
   [

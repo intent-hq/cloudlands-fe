@@ -833,7 +833,7 @@ Render a NavLink with a fenced \`nav-link\` block containing a JSON object:
 
 **The \`target\` must be the full canonical route, including any query string and hash fragment that points at a specific row, card, or control.** A bare path like \`/settings\` lands on the page top with no highlight — that is a bug, not a shortcut. Always include the hash when one exists for the row you are linking to.
 
-**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=providers#utility-default-model\`, \`/settings?tab=appearance#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
+**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=providers#utility-default-model\`, \`/settings?tab=agent-behavior#global-instructions\`, \`/settings?tab=appearance#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
 
 Worked example — user asks "where do I change the quick action model?":
 

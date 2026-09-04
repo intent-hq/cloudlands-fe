@@ -66,7 +66,9 @@ export const autoUpdateClient = {
    * Get the current update state
    */
   async getState(): Promise<UpdateState> {
-    const response = await invokeIpc<AutoUpdateResponse<UpdateState>>(AUTO_UPDATE_CHANNELS.GET_STATE);
+    const response = await invokeIpc<AutoUpdateResponse<UpdateState>>(
+      AUTO_UPDATE_CHANNELS.GET_STATE,
+    );
     if (!response.success || response.data === undefined) {
       throw new Error(response.error?.message || m.autoUpdate_client_getStateFailed_error());
     }

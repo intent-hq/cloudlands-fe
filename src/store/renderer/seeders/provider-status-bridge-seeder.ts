@@ -22,8 +22,10 @@
  *  - auggie:      availability via `host.checkAuggie` (settings precedence +
  *                 PATH scan on the daemon).
  *  - claude-code: `claude` CLI installed (prerequisite for claude-agent-acp).
- *                 When the CLI is present but npx (the adapter's only runner)
- *                 does not resolve, a warning is attached.
+ *                 When the CLI is present but npx (the adapter's runner)
+ *                 does not resolve — and the daemon reports no valid
+ *                 `providers.paths` override in use (intentd#1714) — a
+ *                 warning is attached.
  *  - codex:       `codex` CLI installed (prerequisite for the codex-acp
  *                 adapter). When the CLI is present but neither a local
  *                 `codex-acp` nor npx (the pinned adapter fallback runner)
@@ -72,10 +74,11 @@ import {
   type ProviderAuthStatusResponse,
   type ProviderAuthVerdict,
 } from '$shared/provider-auth-status';
-import type {
-  NpxStatus,
-  ProviderAvailabilityResult,
-  ProviderStatus,
+import {
+  NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
 } from '$shared/types/provider-availability';
 
 /** Daemon `host.checkAuggie` / `host.findBinary` shape. */
@@ -182,19 +185,21 @@ function withAuth(
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const hiddenProviders = computeHiddenProviders();
-  const [auggieCheck, toolsResult, authVerdicts, antigravity] = await Promise.all([
+  const [auggieCheck, toolsResult, authVerdicts, discovery] = await Promise.all([
     checkAuggie(),
     backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
       // `codex-acp` (the adapter) rides along for the codex warning —
       // availability itself keys off the real `codex` CLI. `npx` rides
-      // along for the claude-code adapter check (it always runs via npx)
-      // and as the codex adapter's pinned fallback runner.
+      // along for the claude-code adapter check (it runs via npx unless a
+      // path override is in use) and as the codex adapter's pinned fallback
+      // runner.
       tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, 'npx'],
     }),
     getAuthVerdicts(),
-    // A successful discovery can omit the provider; a failed discovery is
-    // unknown and must reach the existing failure envelope.
-    checkAntigravityAvailability(),
+    // Serves Antigravity availability and the claude-code override check. A
+    // successful discovery can omit a provider; a failed discovery is unknown
+    // and must reach the existing failure envelope.
+    fetchProviderDiscovery(),
   ]);
   const tools = toolsResult?.tools ?? {};
   const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
@@ -203,11 +208,17 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const claudeCode: ProviderStatus = {
     available: tool(PROVIDER_BINARIES['claude-code']).available === true,
   };
-  // claude-code's ACP adapter always runs via npx (pinned version) — mirror
-  // main's warning when the claude CLI is present but npx is not.
-  if (claudeCode.available && tool('npx').available !== true) {
+  // claude-code's ACP adapter runs via npx (pinned version) unless the daemon
+  // execs a valid `providers.paths` override — mirror main's warning when the
+  // claude CLI is present, npx is not, and no override is in use.
+  if (
+    claudeCode.available &&
+    tool('npx').available !== true &&
+    !claudeCodeRunsViaOverride(discovery)
+  ) {
     claudeCode.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
+  const antigravity = antigravityFromDiscovery(discovery);
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
@@ -275,21 +286,39 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   };
 }
 
-/** Single-provider recheck (AgentGrid card refresh) — same verdicts as
- * above, defaulting to `force: true` so a login that just completed bypasses
- * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
- * the daemon's cache instead. */
-async function checkAntigravityAvailability(): Promise<ProviderStatus> {
-  const discovery = await backendRequest<{ providers: { id: string; installed: boolean }[] }>(
-    'host.providerDiscovery',
-    {},
-  );
+type ProviderDiscoverySnapshot = { providers: ProviderDiscoveryEntry[] };
+
+function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
+  return backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+}
+
+function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
   return {
     available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
     hasNpxFallback: false,
   };
 }
 
+async function checkAntigravityAvailability(): Promise<ProviderStatus> {
+  return antigravityFromDiscovery(await fetchProviderDiscovery());
+}
+
+/**
+ * Whether the daemon will exec a `providers.paths["claude-code"]` override in
+ * place of the pinned npx adapter (intentd#1714). Discovery reports the
+ * npx-only provider `installed` from npx presence OR a valid override while
+ * `resolvedPath` stays the auto-detected npx — so `installed` with no
+ * resolved npx can only mean the override is in use (mirrors main).
+ */
+function claudeCodeRunsViaOverride(discovery: ProviderDiscoverySnapshot | undefined): boolean {
+  const row = discovery?.providers.find((provider) => provider.id === 'claude-code');
+  return row?.installed === true && (row.resolvedPath ?? null) === null;
+}
+
+/** Single-provider recheck (AgentGrid card refresh) — same verdicts as
+ * above, defaulting to `force: true` so a login that just completed bypasses
+ * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
+ * the daemon's cache instead. */
 async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
@@ -344,14 +373,19 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
     return status;
   }
   if (providerId === 'claude-code') {
-    // Adapter runs exclusively via npx — surface the same warning as main
-    // when the claude CLI is installed but npx is missing. A failed probe
-    // (RPC error) is an unknown, not a confirmed absence — no warning then.
+    // Adapter runs via npx unless a valid path override is in use — surface
+    // the same warning as main when the claude CLI is installed, npx is
+    // missing, and the daemon reports no override. A failed probe (RPC
+    // error on either the npx probe or the discovery read) is an unknown,
+    // not a confirmed absence — no warning then.
     const npx = await backendRequest<HostCheckResult>('host.findBinary', { name: 'npx' }).catch(
       () => undefined,
     );
     if (npx && npx.available !== true) {
-      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+      const discovery = await fetchProviderDiscovery().catch(() => undefined);
+      if (discovery && !claudeCodeRunsViaOverride(discovery)) {
+        status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+      }
     }
     return withAuth(status, await checkAuth());
   }
@@ -389,6 +423,8 @@ interface ProviderDiscoveryEntry {
   id: string;
   installed: boolean;
   resolvedPath?: string | null;
+  npxOnly?: boolean;
+  npxPackage?: string;
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
@@ -398,8 +434,9 @@ interface ProviderDiscoveryEntry {
  * providers:get-paths — daemon-resolved CLI paths for every provider's
  * settings path popup, sourced from the daemon's `host.providerDiscovery`
  * snapshot (PROTOCOL §5.14): `paths[id]` is the primary binary's
- * `resolvedPath` (null when unresolved) and `secondaryPaths[id]` carries the
- * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI).
+ * `resolvedPath` (null when unresolved), `secondaryPaths[id]` carries the
+ * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI),
+ * and `npxPackages[id]` the pinned package spec of npx-only providers.
  * `npx` rides along from the same round-trip so the onboarding bulk check can
  * fetch it without the aggregated auth sweep.
  * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
@@ -412,13 +449,21 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
     }>('host.providerDiscovery', {}).catch(() => undefined);
     const paths: Record<string, string | null> = {};
     const secondaryPaths: Record<string, string | null> = {};
+    const npxPackages: Record<string, string> = {};
     for (const provider of discovery?.providers ?? []) {
       paths[provider.id] = provider.resolvedPath ?? null;
       if (provider.secondaryCommand !== undefined) {
         secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
       }
+      if (
+        provider.npxOnly === true &&
+        provider.npxPackage &&
+        NPX_ONLY_PATH_OVERRIDE_PROVIDERS.has(provider.id)
+      ) {
+        npxPackages[provider.id] = provider.npxPackage;
+      }
     }
-    return { success: true, data: { paths, secondaryPaths, npx: discovery?.npx } };
+    return { success: true, data: { paths, secondaryPaths, npxPackages, npx: discovery?.npx } };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }

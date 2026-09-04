@@ -73,22 +73,19 @@ export const setGitStatus = createAction('git/setStatus', (wsId: string, status:
   status,
 }));
 
-export const loadSecondaryRootGit = createAction<
-  [wsId: string, gitRootId: string, registeredCommitSha?: string, limit?: number]
->('git/loadSecondaryRoot');
+export const loadSecondaryRootGit =
+  createAction<[wsId: string, gitRootId: string, registeredCommitSha?: string, limit?: number]>(
+    'git/loadSecondaryRoot',
+  );
 export const loadSecondaryRootCommitFiles = createAction<
   [wsId: string, gitRootId: string, commitHash: string]
 >('git/loadSecondaryRootCommitFiles');
-export const setSecondaryRootGitLoading = createAction<
-  [wsId: string, gitRootId: string]
->('git/setSecondaryRootLoading');
+export const setSecondaryRootGitLoading = createAction<[wsId: string, gitRootId: string]>(
+  'git/setSecondaryRootLoading',
+);
 export const setSecondaryRootGit = createAction(
   'git/setSecondaryRoot',
-  (
-    wsId: string,
-    gitRootId: string,
-    data: SecondaryRootGitData,
-  ) => ({ wsId, gitRootId, data }),
+  (wsId: string, gitRootId: string, data: SecondaryRootGitData) => ({ wsId, gitRootId, data }),
 );
 export const setSecondaryRootGitError = createAction<
   [wsId: string, gitRootId: string, error: string]

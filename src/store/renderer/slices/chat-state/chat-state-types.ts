@@ -81,7 +81,7 @@ interface SendMessageOptions {
   /**
    * Opaque per-message tag the original send carried (PROTOCOL §5.5), recorded
    * so "Try again" resends it: an untagged retry of a wizard answer would leave
-   * the daemon's question hold pending and re-surface the answered wizard.
+   * the daemon's pending question set unanswered and re-surface the sticky wizard.
    */
   messageMetadata?: Record<string, unknown>;
 }

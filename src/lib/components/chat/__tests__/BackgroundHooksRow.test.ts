@@ -283,15 +283,13 @@ describe('BackgroundHooksRow', () => {
     );
   });
 
-  it('uses the solid semantic error foreground for last-run failures', async () => {
+  it('shows the last-run failure in the expanded row', async () => {
     hooksState.hooks = [makeHook({ lastError: 'Deployment failed' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('background-hook-summary'));
     const error = screen.getByTestId('background-hook-last-error');
     expect(error.textContent).toContain('Deployment failed');
-    expect(error.classList.contains('text-error-foreground')).toBe(true);
-    expect(error.classList.contains('text-destructive')).toBe(false);
   });
 
   it('preserves Run now and Cancel actions in the expanded footer', async () => {

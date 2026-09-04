@@ -1,9 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   hydrateTaskAgentAssociations,
@@ -96,13 +91,15 @@ describe('task item association utilities', () => {
 
     restoreTaskAgentAssociations(
       editor,
-      [{
-        taskText: 'Duplicate',
-        taskKey: createTaskAgentAssociationKey('Duplicate', 1),
-        agentId: 'agent-2',
-        noteId: 'note-1',
-        createdAt: 1,
-      }],
+      [
+        {
+          taskText: 'Duplicate',
+          taskKey: createTaskAgentAssociationKey('Duplicate', 1),
+          agentId: 'agent-2',
+          noteId: 'note-1',
+          createdAt: 1,
+        },
+      ],
       { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     );
 
@@ -116,10 +113,7 @@ describe('task item association utilities', () => {
 
     const currentKeys = getTaskAssociationKeysInEditor(editor);
 
-    expect(currentKeys).toEqual([
-      createTaskAgentAssociationKeyForAgent('agent-2'),
-      'Duplicate',
-    ]);
+    expect(currentKeys).toEqual([createTaskAgentAssociationKeyForAgent('agent-2'), 'Duplicate']);
     expect(currentKeys).not.toContain(createTaskAgentAssociationKeyForAgent('agent-1'));
     expect(currentKeys).not.toContain(createTaskAgentAssociationKey('Duplicate', 0));
 
@@ -209,11 +203,12 @@ describe('task item association utilities', () => {
     const prunedAssociations = Object.values(
       pruned.byWorkspaceId['ws-1']?.byNoteId['note-1'] ?? {},
     );
-    restoreTaskAgentAssociations(
-      editor,
-      prunedAssociations,
-      { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    );
+    restoreTaskAgentAssociations(editor, prunedAssociations, {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    });
 
     expect(prunedAssociations).toEqual([]);
     expect(remaining.attrs.delegatedAgentId).toBeUndefined();

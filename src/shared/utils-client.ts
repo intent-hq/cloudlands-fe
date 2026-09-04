@@ -5,7 +5,6 @@
  * NO Node.js-specific imports allowed here!
  */
 
-
 /**
  * Strip markdown formatting from text to get plain text.
  * Removes bold (**text**), italic (*text* or _text_), and other common markdown.

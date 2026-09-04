@@ -1278,6 +1278,140 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
+    it('feeds the selector from availableIps so a loopback-only bind still offers every machine IP', async () => {
+      // Round 2 regression: server.pairingInfo.localIps is the BOUND set
+      // (loopback filtered), so after unchecking All interfaces the daemon
+      // advertises nothing — the selector must draw its candidates from the
+      // bind-independent availableIps instead.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: false, only: false } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue({
+        ...PAIRING,
+        availableIps: ['192.168.1.2', '10.0.0.5'],
+      });
+      render(WebSocketApiSettings);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+        ).toBeTruthy(),
+      );
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
+      );
+      // Loopback-only bind: nothing advertised, candidates still enumerated.
+      mocks.mockPairingInfo.mockResolvedValue({
+        ...PAIRING,
+        localIps: [],
+        availableIps: ['192.168.1.2', '10.0.0.5'],
+      });
+      await fireEvent.click(
+        screen.getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
+      );
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.bindAddress', value: ['127.0.0.1'] },
+          { path: 'server.tunnel.enabled', value: false },
+          { path: 'server.tunnel.only', value: false },
+        ]);
+      });
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).disabled,
+        ).toBe(false),
+      );
+      for (const ip of ['192.168.1.2', '10.0.0.5']) {
+        const box = screen.getByRole('checkbox', { name: ip }) as HTMLInputElement;
+        expect(box.checked).toBe(false);
+        expect(box.disabled).toBe(false);
+      }
+      const loopback = screen.getByRole('checkbox', {
+        name: m.settings_listenTargets_loopback_label(),
+      }) as HTMLInputElement;
+      expect(loopback.checked).toBe(true);
+      expect(loopback.disabled).toBe(true);
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('true');
+    });
+
+    it('lists unbound candidates from availableIps next to the bound subset', async () => {
+      // Subset bind: localIps carries only the bound address, availableIps
+      // the full enumeration — the unbound one must be offered unchecked.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          bindAddress: ['192.168.1.2', '127.0.0.1'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue({
+        ...PAIRING,
+        localIps: ['192.168.1.2'],
+        availableIps: ['192.168.1.2', '10.0.0.5'],
+      });
+      render(WebSocketApiSettings);
+
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
+      expect((screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).checked).toBe(
+        false,
+      );
+      expect(
+        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
+      ).toBe(true);
+    });
+
+    it('falls back to localIps as the candidate list on daemons without availableIps', async () => {
+      // Older daemon: no availableIps in pairing info — the selector keeps
+      // rendering the bind-filtered localIps (union with the bound set), so
+      // behavior is unchanged from before the field existed.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          bindAddress: ['192.168.1.2', '127.0.0.1'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, localIps: ['192.168.1.2'] });
+      render(WebSocketApiSettings);
+
+      await waitFor(() =>
+        expect(screen.getByRole('checkbox', { name: '192.168.1.2' })).toBeTruthy(),
+      );
+      expect(
+        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
+      ).toBe(true);
+      // Candidate list == localIps: only All interfaces, loopback and the
+      // single bound IP are rendered — no extra candidates from anywhere.
+      expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+    });
+
+    it('keeps the QR pairing URI hosts on the bound localIps, not availableIps', async () => {
+      // availableIps is a picker candidate list only; the pairing URI must
+      // still advertise the addresses the daemon actually listens on.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          bindAddress: ['192.168.1.2', '127.0.0.1'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue({
+        ...PAIRING,
+        localIps: ['192.168.1.2'],
+        availableIps: ['192.168.1.2', '10.0.0.5'],
+      });
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByText(m.settings_wsApi_showQrCode())).toBeTruthy());
+
+      await fireEvent.click(screen.getByText(m.settings_wsApi_showQrCode()));
+
+      await waitFor(() => expect(qrMocks.toDataURL).toHaveBeenCalled());
+      const uri = qrMocks.toDataURL.mock.calls[0][0] as string;
+      expect(uri).toContain('&host=192.168.1.2&');
+      expect(uri).not.toContain('10.0.0.5');
+    });
+
     it('deselecting the last specific IP keeps Listen targets open; an explicit OFF then collapses it', async () => {
       mocks.mockSettingsList.mockResolvedValue(
         settingsRows({

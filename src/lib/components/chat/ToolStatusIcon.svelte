@@ -24,7 +24,7 @@
       return {
         icon: faCircleXmark,
         label: m.chat_toolCall_failed_label(),
-        className: 'text-destructive',
+        className: 'text-danger',
       };
     }
     return {

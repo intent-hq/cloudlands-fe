@@ -15,17 +15,16 @@
  * - cleanupWorkspace: Remove workspace state entirely
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
-import type { WorkspaceEvent } from "../../../../features/events/types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../../utils/workspace-scoped';
+import type { WorkspaceEvent } from '../../../../features/events/types';
 import {
   type WorkspaceEventsState,
   type WorkspaceEventState,
   emptyWorkspaceEventState,
   MAX_RECENT_EVENTS,
-} from "./types";
-
+} from './types';
 
 // ============================================================================
 // Initial State
@@ -41,14 +40,13 @@ export const initialState: WorkspaceEventsState = {
 
 /** Emit a single workspace event into the buffer */
 export const emitWorkspaceEvent = createAction(
-  "workspaceEvents/emitWorkspaceEvent",
-  (event: WorkspaceEvent) =>
-    [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
+  'workspaceEvents/emitWorkspaceEvent',
+  (event: WorkspaceEvent) => [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
 );
 
 /** Remove workspace state entirely */
 export const cleanupWorkspace = createAction<[workspaceId: string]>(
-  "workspaceEvents/cleanupWorkspace",
+  'workspaceEvents/cleanupWorkspace',
 );
 
 /**
@@ -58,9 +56,8 @@ export const cleanupWorkspace = createAction<[workspaceId: string]>(
  * emitWorkspaceEvent, ensuring duplicates never reach them.
  */
 export const workspaceEventAccepted = createAction(
-  "workspaceEvents/workspaceEventAccepted",
-  (event: WorkspaceEvent) =>
-    [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
+  'workspaceEvents/workspaceEventAccepted',
+  (event: WorkspaceEvent) => [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
 );
 
 // ============================================================================
@@ -75,10 +72,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // ============================================================================
 
 /** Append events to a workspace state, capping the buffer at MAX_RECENT_EVENTS */
-function appendEvents(
-  ws: WorkspaceEventState,
-  events: WorkspaceEvent[],
-): WorkspaceEventState {
+function appendEvents(ws: WorkspaceEventState, events: WorkspaceEvent[]): WorkspaceEventState {
   if (events.length === 0) return ws;
 
   const combined = [...ws.recentEvents, ...events];

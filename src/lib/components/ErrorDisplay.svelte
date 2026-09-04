@@ -65,9 +65,9 @@
   const typeConfig = {
     error: {
       icon: faTimesCircle,
-      color: 'text-error-foreground',
-      bgColor: 'bg-destructive/10',
-      borderColor: 'border-destructive/30',
+      color: 'text-danger',
+      bgColor: 'bg-danger-background/10',
+      borderColor: 'border-danger/30',
       get defaultTitle() {
         return m.lib_errorDisplay_error_title();
       },

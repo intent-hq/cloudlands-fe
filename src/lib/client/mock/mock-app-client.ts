@@ -18,25 +18,25 @@ import type {
   MutationResult,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import * as fx from "./fixtures";
+} from '../app-client';
+import * as fx from './fixtures';
 
 const OK: MutationResult = { success: true };
 
 /** Domains migrated to the live daemon and therefore not implemented here. */
 type MigratedDomain =
-  | "workspaces"
-  | "agents"
-  | "notes"
-  | "tasks"
-  | "comments"
-  | "git"
-  | "files"
+  | 'workspaces'
+  | 'agents'
+  | 'notes'
+  | 'tasks'
+  | 'comments'
+  | 'git'
+  | 'files'
   // `providers` was born live (`providers.catalog`, PROTOCOL §5.38) — it never
   // had a mock fixture era, so it is likewise absent here.
-  | "providers"
+  | 'providers'
   // `voice` was born live too (`voice.transcribe`, PROTOCOL §5.41).
-  | "voice";
+  | 'voice';
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {
@@ -51,7 +51,7 @@ const mockDrafts = new Map<
 >();
 
 export class MockAppClient implements Omit<AppClient, MigratedDomain> {
-  readonly chat: AppClient["chat"] = {
+  readonly chat: AppClient['chat'] = {
     // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
     // safe default since fixtures don't model turn-granular AgentMessage lists.
     subscribe: (_agentId, handler) =>
@@ -64,27 +64,27 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       }),
   };
 
-  readonly terminals: AppClient["terminals"] = {
+  readonly terminals: AppClient['terminals'] = {
     list: async (workspaceId) => ({
       terminals: fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
-      daemonBootId: "mock-boot",
+      daemonBootId: 'mock-boot',
     }),
     create: async () => OK,
     write: async () => OK,
     resize: async () => OK,
     kill: async () => OK,
-    getBuffer: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? "",
-    output: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? "",
+    getBuffer: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? '',
+    output: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? '',
     subscribeEvents: () => () => {},
     subscribe: (handler) => emitOnce(handler, fx.mockTerminals),
   };
 
-  readonly settings: AppClient["settings"] = {
+  readonly settings: AppClient['settings'] = {
     list: async () => [],
     get: async () => null,
     update: async (changes) => changes.map(({ path, value }) => ({ path, value })),
     reset: async (path) => ({ path, value: null }),
-    getUserRule: async () => ({ enabled: true, content: "", updatedAt: 0 }),
+    getUserRule: async () => ({ enabled: true, content: '', updatedAt: 0 }),
     updateUserRule: async () => OK,
     getUserPreferences: async () => fx.mockUserPreferences,
     setUserPreferences: async () => OK,
@@ -102,7 +102,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     subscribe: (handler) => emitOnce(handler, fx.mockUserPreferences),
   };
 
-  readonly scripts: AppClient["scripts"] = {
+  readonly scripts: AppClient['scripts'] = {
     list: async (workspaceId) =>
       fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
     create: async () => OK,
@@ -110,26 +110,26 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     start: async () => OK,
     stop: async () => OK,
     restart: async () => OK,
-    output: async () => "",
+    output: async () => '',
     status: async () => null,
     run: async () => null,
     subscribe: (handler) => emitOnce(handler, fx.mockScripts),
   };
 
-  readonly setupScripts: AppClient["setupScripts"] = {
+  readonly setupScripts: AppClient['setupScripts'] = {
     get: async () => null,
     save: async () => null,
     detectProjectType: async () => null,
     generate: async () => null,
   };
 
-  readonly skills: AppClient["skills"] = {
+  readonly skills: AppClient['skills'] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockSkills : [],
     subscribe: (handler) => emitOnce(handler, fx.mockSkills),
   };
 
-  readonly specialists: AppClient["specialists"] = {
+  readonly specialists: AppClient['specialists'] = {
     list: async () => fx.mockSpecialists,
     subscribe: (handler) => emitOnce(handler, fx.mockSpecialists),
     create: async (id, spec) => spec,
@@ -137,12 +137,12 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     delete: async () => ({ success: true }),
   };
 
-  readonly models: AppClient["models"] = {
+  readonly models: AppClient['models'] = {
     list: async () => fx.mockModels,
     subscribe: (handler) => emitOnce(handler, fx.mockModels),
   };
 
-  readonly stats: AppClient["stats"] = {
+  readonly stats: AppClient['stats'] = {
     // Zeroed shapes mirror the daemon's empty-period contract: never an error.
     getUsage: async () => ({
       totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
@@ -159,14 +159,28 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     }),
   };
 
-  readonly browser: AppClient["browser"] = {
+  readonly browser: AppClient['browser'] = {
     recentUrls: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockRecentUrls : [],
     subscribe: (handler) => emitOnce(handler, fx.mockRecentUrls),
   };
 
-  readonly integrations: AppClient["integrations"] = {
+  readonly integrations: AppClient['integrations'] = {
     githubUser: async () => fx.mockGitHubUser,
+    githubPullRequest: async (owner, repo, number) => ({
+      ...fx.mockGitHubPullRequest,
+      owner,
+      repo,
+      number,
+      url: `https://github.com/${owner}/${repo}/pull/${number}`,
+    }),
+    githubIssue: async (owner, repo, number) => ({
+      ...fx.mockGitHubIssue,
+      owner,
+      repo,
+      number,
+      url: `https://github.com/${owner}/${repo}/issues/${number}`,
+    }),
     githubBranches: async () => ({ branches: [] }),
     githubBranchesCached: async () => ({ cached: false, branches: [] }),
     githubRepoConfig: async () => ({ config: null, exists: false }),
@@ -175,7 +189,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     subscribe: (handler) => emitOnce(handler, { githubUser: fx.mockGitHubUser }),
   };
 
-  readonly system: AppClient["system"] = {
+  readonly system: AppClient['system'] = {
     status: async () => fx.mockSystemStatus,
     capabilities: async () => ({ cowSupported: true }),
     releaseNotes: async () => fx.mockReleaseNotes,
@@ -183,21 +197,21 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     subscribe: (handler) => emitOnce(handler, fx.mockSystemStatus),
   };
 
-  readonly server: AppClient["server"] = {
+  readonly server: AppClient['server'] = {
     pairingInfo: async () => ({
-      token: "mock-token-1234567890abcdef",
-      certFingerprint: "SHA256:ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX",
+      token: 'mock-token-1234567890abcdef',
+      certFingerprint: 'SHA256:ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX',
       port: 5181,
-      path: "/ws",
-      localIps: ["127.0.0.1", "192.168.1.100"],
-      hostname: "localhost.local",
+      path: '/ws',
+      localIps: ['127.0.0.1', '192.168.1.100'],
+      hostname: 'localhost.local',
     }),
     rotateToken: async () => ({
-      token: "mock-new-token-fedcba0987654321",
+      token: 'mock-new-token-fedcba0987654321',
     }),
   };
 
-  readonly events: AppClient["events"] = {
+  readonly events: AppClient['events'] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : [],
     // Mirrors `event.query` (PROTOCOL §5.10): exact-match filters, wire order
@@ -217,7 +231,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),
   };
 
-  readonly drafts: AppClient["drafts"] = {
+  readonly drafts: AppClient['drafts'] = {
     async get(workspaceId, agentId) {
       return mockDrafts.get(`${workspaceId}:${agentId}`) ?? null;
     },

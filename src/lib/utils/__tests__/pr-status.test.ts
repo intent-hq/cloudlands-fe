@@ -1,12 +1,5 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import {
-  isPRMergeable,
-  getPRTooltipContent,
-} from '../pr-status';
+import { describe, expect, it } from 'vitest';
+import { isPRMergeable, getPRTooltipContent } from '../pr-status';
 
 describe('isPRMergeable', () => {
   it('returns true when no PR', () => {
@@ -195,4 +188,3 @@ describe('getPRTooltipContent', () => {
     expect(getPRTooltipContent({ status: 'Open' })).toBe('');
   });
 });
-

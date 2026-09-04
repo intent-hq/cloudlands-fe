@@ -46,18 +46,21 @@ describe('linearAuthSaga', () => {
     run.channel.put(connectLinear('  lin-test-token  '));
     await settle();
 
-    expect(mocks.update.mock.calls).toEqual([[[
-      { path: 'linear.token', value: 'lin-test-token' },
-    ]]]);
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'linear.token', value: 'lin-test-token' }]],
+    ]);
     expect(mocks.getAuthState.mock.calls).toEqual([[true]]);
     expect(run.dispatched).toEqual([
       { type: 'linearAuth/setError', payload: [null] },
       { type: 'linearAuth/setIsAuthenticating', payload: [true] },
-      { type: 'linearAuth/setAuthState', payload: {
-        isAuthenticated: true,
-        requiresDaemonAuth: false,
-        oauthUrl: null,
-      } },
+      {
+        type: 'linearAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          oauthUrl: null,
+        },
+      },
       { type: 'linearAuth/setIsAuthenticating', payload: [false] },
     ]);
     run.task.cancel();
@@ -73,11 +76,14 @@ describe('linearAuthSaga', () => {
 
     expect(mocks.reset.mock.calls).toEqual([['linear.token']]);
     expect(run.dispatched).toEqual([
-      { type: 'linearAuth/setAuthState', payload: {
-        isAuthenticated: true,
-        requiresDaemonAuth: false,
-        oauthUrl: null,
-      } },
+      {
+        type: 'linearAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          oauthUrl: null,
+        },
+      },
       { type: 'linearAuth/setError', payload: [m.linearAuth_service_envKeyStillActive_error()] },
     ]);
     run.task.cancel();
@@ -87,7 +93,11 @@ describe('linearAuthSaga', () => {
   it('runs overlapping connects independently and reports the rejected key exactly', async () => {
     let resolveFirst!: () => void;
     mocks.update
-      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
       .mockResolvedValueOnce(undefined);
     mocks.getAuthState
       .mockResolvedValueOnce({ isAuthenticated: true, requiresDaemonAuth: false })
@@ -109,13 +119,23 @@ describe('linearAuthSaga', () => {
       { type: 'linearAuth/setIsAuthenticating', payload: [true] },
       { type: 'linearAuth/setError', payload: [null] },
       { type: 'linearAuth/setIsAuthenticating', payload: [true] },
-      { type: 'linearAuth/setAuthState', payload: {
-        isAuthenticated: true, requiresDaemonAuth: false, oauthUrl: null,
-      } },
+      {
+        type: 'linearAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          oauthUrl: null,
+        },
+      },
       { type: 'linearAuth/setIsAuthenticating', payload: [false] },
-      { type: 'linearAuth/setAuthState', payload: {
-        isAuthenticated: false, requiresDaemonAuth: false, oauthUrl: null,
-      } },
+      {
+        type: 'linearAuth/setAuthState',
+        payload: {
+          isAuthenticated: false,
+          requiresDaemonAuth: false,
+          oauthUrl: null,
+        },
+      },
       { type: 'linearAuth/setError', payload: [m.linearAuth_service_keyRejected_error()] },
       { type: 'linearAuth/setIsAuthenticating', payload: [false] },
     ]);

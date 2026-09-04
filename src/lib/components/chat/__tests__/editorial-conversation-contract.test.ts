@@ -57,7 +57,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-3!'");
-    expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
       'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
@@ -244,7 +243,7 @@ describe('editorial conversation presentation contract', () => {
     );
   });
 
-  it('uses quieter Chief message surfaces and keeps proposals out of the transcript', () => {
+  it('uses quieter Chief message surfaces and renders proposals inline in the transcript', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const streaming = source('src/lib/components/chat/StreamingMessageContent.svelte');
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
@@ -252,9 +251,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
     expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
-    // Proposals are tray-only: neither transcript renderer mounts ProposalCard.
-    expect(streaming).not.toContain('ProposalCard');
-    expect(messageContent).not.toContain('ProposalCard');
+    // Both transcript renderers mount the shared inline proposal host.
+    expect(streaming).toContain('InlineProposal');
+    expect(messageContent).toContain('InlineProposal');
   });
 
   it('keeps user rows transparent with the opaque surface on the bubble itself', () => {

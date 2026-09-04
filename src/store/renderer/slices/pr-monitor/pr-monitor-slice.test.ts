@@ -119,9 +119,10 @@ describe('selectPrMonitors', () => {
   it('returns all monitors (active + completed) in seed order', () => {
     const active = makeMonitor();
     const completed = makeMonitor({ monitorId: 'mon-2', state: 'completed' });
-    expect(selectPrMonitors.select({ prMonitor: stateWith([active, completed]) }, 'ws-1')).toEqual(
-      [active, completed],
-    );
+    expect(selectPrMonitors.select({ prMonitor: stateWith([active, completed]) }, 'ws-1')).toEqual([
+      active,
+      completed,
+    ]);
   });
 
   it('selectPrMonitorsSnapshotDelivered flips once any list (even empty) is delivered', () => {

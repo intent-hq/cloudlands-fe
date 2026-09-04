@@ -373,6 +373,136 @@ describe('provider availability service', () => {
     expect(result.providers.claudeCode.warning).toBeUndefined();
   });
 
+  describe('claude-code providers.paths override (intent#4378)', () => {
+    // Since intentd#1714 a valid `providers.paths["claude-code"]` override is
+    // exec'd in place of the pinned npx adapter, and discovery reports the
+    // provider `installed` from the override while `resolvedPath` stays the
+    // auto-detected npx (the key is omitted on the wire when npx is absent).
+    // npx is not involved on that path, so the npx-missing warning must not
+    // fire.
+    const OVERRIDE_DISCOVERY = {
+      ...EMPTY_DISCOVERY,
+      providers: EMPTY_DISCOVERY.providers.map(({ resolvedPath, ...p }) =>
+        p.id === 'claude-code' ? { ...p, installed: true } : { ...p, resolvedPath },
+      ),
+      npx: { resolvedPath: null, version: null, versionOk: false },
+    };
+
+    it('discovery path: installed via override with npx missing stays available without the npx warning', async () => {
+      routeBackend({
+        'host.providerDiscovery': OVERRIDE_DISCOVERY,
+        'host.providerAuthStatus': authSweep({ 'claude-code': true }),
+      });
+      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+        name === 'claude' ? '/usr/local/bin/claude' : null,
+      );
+
+      const { getProviderAvailability } = await import('../provider-availability.service');
+      const result = await getProviderAvailability();
+
+      expect(result.providers.claudeCode).toEqual({
+        available: true,
+        hasNpxFallback: false,
+        authenticated: true,
+      });
+      expect(result.npx).toEqual({ resolvedPath: null, version: null, versionOk: false });
+    });
+
+    it('discovery path: an override still requires the claude CLI prerequisite', async () => {
+      // The daemon's auth probe gates claude-code on the real `claude` CLI
+      // regardless of the adapter override; the FE re-gate mirrors that.
+      routeBackend({
+        'host.providerDiscovery': OVERRIDE_DISCOVERY,
+        'host.providerAuthStatus': authSweep(),
+      });
+      mocks.findBinaryStrict.mockResolvedValue(null);
+
+      const { getProviderAvailability } = await import('../provider-availability.service');
+      const result = await getProviderAvailability();
+
+      expect(result.providers.claudeCode.available).toBe(false);
+      expect(result.providers.claudeCode.warning).toBeUndefined();
+    });
+
+    it('single recheck: warns when npx is missing and the daemon reports no override in use', async () => {
+      routeBackend({
+        'host.providerDiscovery': EMPTY_DISCOVERY,
+        'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
+      });
+      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+        name === 'claude' ? '/usr/local/bin/claude' : null,
+      );
+
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
+
+      expect(result).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true, warning: CLAUDE_CODE_NPX_MISSING_WARNING },
+      });
+    });
+
+    it('single recheck: suppresses the npx warning when the daemon reports the override in use', async () => {
+      routeBackend({
+        'host.providerDiscovery': OVERRIDE_DISCOVERY,
+        'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
+      });
+      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+        name === 'claude' ? '/usr/local/bin/claude' : null,
+      );
+
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
+
+      expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+      expect(result).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('single recheck: does not consult discovery when npx resolves', async () => {
+      routeBackend({
+        'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
+      });
+      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+        name === 'claude' || name === 'npx' ? `/usr/local/bin/${name}` : null,
+      );
+
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
+
+      expect(mocks.backendRequest).not.toHaveBeenCalledWith('host.providerDiscovery', {});
+      expect(result).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('single recheck: a failed discovery RPC while npx is missing fails the check instead of guessing', async () => {
+      routeBackend({});
+      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
+        name === 'claude' ? '/usr/local/bin/claude' : null,
+      );
+
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
+
+      expect(result).toEqual({
+        success: false,
+        providerId: 'claude-code',
+        error: 'unexpected daemon method: host.providerDiscovery',
+      });
+    });
+  });
+
   it('reports grok availability from the daemon discovery result', async () => {
     // Grok availability comes from the daemon's provider discovery; auth
     // comes from the daemon's providerAuthStatus sweep (wire null = unknown
@@ -885,6 +1015,26 @@ describe('provider availability service', () => {
             if (p.id === 'auggie') {
               return { ...p, installed: true, resolvedPath: '/usr/local/bin/auggie' };
             }
+            if (p.id === 'claude-code') {
+              return {
+                ...p,
+                command: 'npx',
+                installed: true,
+                resolvedPath: '/usr/local/bin/npx',
+                npxOnly: true,
+                npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
+              };
+            }
+            if (p.id === 'pi') {
+              return {
+                ...p,
+                command: 'npx',
+                installed: true,
+                resolvedPath: '/usr/local/bin/npx',
+                npxOnly: true,
+                npxPackage: 'pi-acp@0.0.33',
+              };
+            }
             return p;
           }),
         },
@@ -900,16 +1050,22 @@ describe('provider availability service', () => {
       expect(mocks.findAuggiePathStrict).not.toHaveBeenCalled();
       expect(result.paths).toEqual({
         auggie: '/usr/local/bin/auggie',
-        'claude-code': null,
+        'claude-code': '/usr/local/bin/npx',
         codex: null,
         cortex: null,
         opencode: null,
-        pi: null,
+        pi: '/usr/local/bin/npx',
         droid: null,
         grok: '/home/user/.grok/bin/grok',
         unsloth: '/home/user/.opencode/bin/opencode',
       });
       expect(result.secondaryPaths).toEqual({ unsloth: '/usr/local/bin/unsloth' });
+      // Only npx-only providers whose path override the daemon honors surface
+      // their pinned package spec (their `paths` entry is npx, not the adapter
+      // the override targets); pi stays pinned-npx-only and is excluded.
+      expect(result.npxPackages).toEqual({
+        'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3',
+      });
     });
 
     it('keys an unresolved secondary as null when secondaryResolvedPath is omitted', async () => {
@@ -937,7 +1093,7 @@ describe('provider availability service', () => {
       const { getProviderPaths } = await import('../provider-availability.service');
       const result = await getProviderPaths();
 
-      expect(result).toEqual({ paths: {}, secondaryPaths: {} });
+      expect(result).toEqual({ paths: {}, secondaryPaths: {}, npxPackages: {} });
     });
 
     it('serves the new shape through the GET_PATHS IPC handler envelope', async () => {

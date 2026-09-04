@@ -1135,20 +1135,20 @@
         {:else}
           <button
             type="button"
-            class="flex h-full min-w-0 flex-1 flex-col items-start justify-center rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
+            class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >
-            <span class="w-full truncate text-sm font-medium text-foreground">{identityTitle}</span>
-            {#if pageHostname}
-              <span
-                class="browser-toolbar-hostname flex w-full items-center gap-1 text-xs text-muted-foreground"
+            {#if isSecure}
+              <Fa icon={faLock} class="shrink-0 text-muted-foreground" size="sm" />
+            {/if}
+            <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+              >{identityTitle}</span
+            >
+            {#if pageTitle && pageHostname && pageHostname !== pageTitle}
+              <span class="browser-toolbar-hostname truncate text-xs text-muted-foreground"
+                >{pageHostname}</span
               >
-                {#if isSecure}
-                  <Fa icon={faLock} class="shrink-0 text-emerald-500" size="xs" />
-                {/if}
-                <span class="truncate">{pageHostname}</span>
-              </span>
             {/if}
           </button>
         {/if}
@@ -1217,7 +1217,7 @@
   <!-- Error banner -->
   {#if errorMessage}
     <div
-      class="flex items-center gap-2 px-3 py-2 bg-destructive/10 text-error-foreground text-sm border-b border-destructive/20"
+      class="flex items-center gap-2 px-3 py-2 bg-danger-background/10 text-danger text-sm border-b border-danger/20"
     >
       <Fa icon={faExclamationTriangle} />
       <span>{errorMessage}</span>
@@ -1266,10 +1266,8 @@
     container-type: inline-size;
   }
 
-  @container (max-width: 559px) {
-    .browser-toolbar-hostname {
-      display: none;
-    }
+  .browser-toolbar-hostname {
+    max-width: 40%;
   }
 
   @container (max-width: 399px) {

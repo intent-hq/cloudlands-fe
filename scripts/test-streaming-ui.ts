@@ -40,19 +40,29 @@ class StreamingUITester {
 
     try {
       // Check if StreamingMessageContent.svelte has the correct streaming prop
-      const componentPath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+      const componentPath = path.join(
+        __dirname,
+        '../src/lib/components/chat/StreamingMessageContent.svelte',
+      );
       const content = fs.readFileSync(componentPath, 'utf-8');
 
       // Check if isStreaming is properly passed to MarkdownViewer
-      const hasCorrectStreamingProp = content.includes('isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}');
+      const hasCorrectStreamingProp = content.includes(
+        'isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}',
+      );
 
       if (!hasCorrectStreamingProp) {
-        logger.error('StreamingMessageContent does not pass isStreaming correctly to MarkdownViewer');
+        logger.error(
+          'StreamingMessageContent does not pass isStreaming correctly to MarkdownViewer',
+        );
         return false;
       }
 
       // Check if MarkdownViewer handles streaming
-      const markdownPath = path.join(__dirname, '../src/lib/components/markdown/MarkdownViewer.svelte');
+      const markdownPath = path.join(
+        __dirname,
+        '../src/lib/components/markdown/MarkdownViewer.svelte',
+      );
       const markdownContent = fs.readFileSync(markdownPath, 'utf-8');
 
       const hasStreamingProp = markdownContent.includes('isStreaming = false');
@@ -78,7 +88,10 @@ class StreamingUITester {
     logger.info('Testing streaming with tool calls logic...');
 
     try {
-      const componentPath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+      const componentPath = path.join(
+        __dirname,
+        '../src/lib/components/chat/StreamingMessageContent.svelte',
+      );
       const content = fs.readFileSync(componentPath, 'utf-8');
 
       // Check if component handles tool_use blocks
@@ -114,11 +127,15 @@ class StreamingUITester {
 
     try {
       // Check Redux agent-session slice preserves messages
-      const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+      const storePath = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+      );
       const storeContent = fs.readFileSync(storePath, 'utf-8');
 
       // Check if messages are preserved when updating agent
-      const hasMessagePreservation = storeContent.includes('replaceMessages') &&
+      const hasMessagePreservation =
+        storeContent.includes('replaceMessages') &&
         storeContent.includes('deduplicateAgentMessages') &&
         storeContent.includes('normalizeSortPruneMessages');
 
@@ -128,11 +145,15 @@ class StreamingUITester {
       }
 
       // Check stream saga updateMessage triggers Redux state updates
-      const streamSagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
+      const streamSagaPath = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts',
+      );
       const streamSagaContent = fs.readFileSync(streamSagaPath, 'utf-8');
 
       const hasReactiveUpdate = streamSagaContent.includes('updateMessage(');
-      const hasStoreNotification = streamSagaContent.includes('replaceMessages(') &&
+      const hasStoreNotification =
+        streamSagaContent.includes('replaceMessages(') &&
         streamSagaContent.includes('deduplicateRecoverySession');
 
       if (!hasReactiveUpdate || !hasStoreNotification) {
@@ -156,12 +177,17 @@ class StreamingUITester {
 
     try {
       // Check if agent-stream-lifecycle accumulates text properly
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServicePath = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const agentServiceContent = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for text buffer accumulation
       const hasTextBuffer = agentServiceContent.includes('textBuffer += data.data');
-      const hasBuildOrderedContentBlocks = agentServiceContent.includes('buildOrderedContentBlocks');
+      const hasBuildOrderedContentBlocks = agentServiceContent.includes(
+        'buildOrderedContentBlocks',
+      );
 
       if (!hasTextBuffer) {
         logger.error('agent-stream-lifecycle does not accumulate text in buffer');
@@ -217,7 +243,7 @@ class StreamingUITester {
     ];
 
     console.log('\n🧪 Running Streaming UI Tests\n');
-    console.log('=' .repeat(50));
+    console.log('='.repeat(50));
 
     for (const scenario of scenarios) {
       console.log(`\n📋 ${scenario.name}`);
@@ -234,10 +260,10 @@ class StreamingUITester {
     }
 
     // Summary
-    console.log(`\n${  '='.repeat(50)}`);
+    console.log(`\n${'='.repeat(50)}`);
     console.log('\n📊 Test Summary\n');
 
-    const passed = Array.from(this.results.values()).filter(r => r).length;
+    const passed = Array.from(this.results.values()).filter((r) => r).length;
     const total = this.results.size;
 
     console.log(`Total: ${total}`);
@@ -256,7 +282,7 @@ class StreamingUITester {
 
 // Run tests if executed directly
 const tester = new StreamingUITester();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   console.error('Test runner failed:', error);
   process.exit(1);
 });

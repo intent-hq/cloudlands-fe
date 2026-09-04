@@ -38,11 +38,9 @@
     authDetails: string | undefined;
     docsUrl: string;
     installCommand: string;
-    loginCommand: string;
     /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
      *  rendered as copyable guidance when the provider needs login. */
     loginCommandHint?: string;
-    description: string;
     hasNpxFallback: boolean;
     /** Status warning from the availability check (e.g. npx missing for claude-code). */
     warning?: string;
@@ -227,18 +225,6 @@
           </button>
         {/if}
       </div>
-
-      {#if provider.description}
-        <p class="text-xs opacity-70 leading-snug pb-4">
-          {provider.description}
-        </p>
-      {/if}
-      {#if provider.id === 'antigravity' && (needsLogin || authUnknown)}
-        <p class="text-xs pb-3">
-          {m.providers_antigravity_loginHost()}
-          <code class="break-all">{provider.loginCommand}</code>
-        </p>
-      {/if}
 
       <div class="text-xs flex items-center gap-1.5">
         {#if checking}

@@ -236,7 +236,7 @@
     {:else if error}
       <!-- Error state -->
       <div class="flex flex-col items-center justify-center py-8 text-center">
-        <p class="text-sm text-error-foreground mb-4">{error}</p>
+        <p class="text-sm text-danger mb-4">{error}</p>
         <Button variant="outline" size="sm" onclick={handleTriggerReview}>
           <Fa icon={faRotateRight} class="h-4 w-4 mr-2" />
           {m.codeReview_tabContent_tryAgain_label()}

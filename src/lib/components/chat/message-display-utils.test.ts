@@ -168,9 +168,9 @@ describe('resolveStoppedIndicatorLabel', () => {
   });
 
   it('resolves system-suspend', () => {
-    expect(resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'system_suspend' }))).toEqual(
-      { kind: 'system-suspend' },
-    );
+    expect(
+      resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'system_suspend' })),
+    ).toEqual({ kind: 'system-suspend' });
   });
 
   it('resolves generic stopped for an unknown future reason', () => {
@@ -185,7 +185,9 @@ describe('resolveStoppedIndicatorLabel', () => {
 // absent metadata, and unknown future reasons resolve to no notice.
 describe('resolveFinishReasonNotice', () => {
   const finished = (finishReason?: unknown) =>
-    assistant({ metadata: finishReason === undefined ? {} : { finishReason: finishReason as string } });
+    assistant({
+      metadata: finishReason === undefined ? {} : { finishReason: finishReason as string },
+    });
 
   it('resolves refusal', () => {
     expect(resolveFinishReasonNotice(finished('refusal'))).toEqual({ kind: 'refusal' });

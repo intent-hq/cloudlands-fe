@@ -4,11 +4,7 @@
  * Validates that all editor definitions have required platform data.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { EDITOR_REGISTRY } from '../editor-registry';
 
 describe('Editor Registry', () => {

@@ -165,7 +165,7 @@
         bind:value={urlInput}
         onkeydown={handleKeydown}
         noFocusStyle
-        class={cn('h-8 pr-8 text-sm', inputError && 'border-destructive')}
+        class={cn('h-8 pr-8 text-sm', inputError && 'border-danger')}
       />
       <Button
         variant="ghost-light"
@@ -179,7 +179,7 @@
       </Button>
     </div>
     {#if inputError}
-      <p class="text-xs text-error-foreground mt-1">{inputError}</p>
+      <p class="text-xs text-danger mt-1">{inputError}</p>
     {/if}
   </div>
 
@@ -212,7 +212,7 @@
           />
           <button
             type="button"
-            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-error-foreground transition-all cursor-pointer"
+            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-danger transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
             title={m.browser_panel_remove_tooltip()}
           >

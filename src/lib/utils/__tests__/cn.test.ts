@@ -2,11 +2,7 @@
  * Tests for cn (class name) utility
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { cn } from '../cn';
 
 describe('cn', () => {

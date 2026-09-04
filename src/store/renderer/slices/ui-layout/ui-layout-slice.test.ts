@@ -1,7 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectPanelVisibilityFlag } from './ui-layout-selectors';
-import { DEFAULT_EXPANDED_WIDTH, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, defaultBottomDockState, defaultPanelVisibility, defaultWorkspaceSidebarPanelLayout, hydrateCollapsiblePanelCollapsed, hydrateResizablePanelGroupLayout, hydrateResizablePanelSize, setCollapsiblePanelCollapsed, setPanelVisibility, setCollapsed, setDiffIndicators, setDiffSideBySide, setFoldUnchanged, setLineWrapping, setResizablePanelGroupLayout, setResizablePanelSize, setSidebarExpandedWidth, setWidth, toggleDiffIndicators, toggleDiffSideBySide, toggleFoldUnchanged, toggleLineWrapping, toggleSidebar, setSpacesSidebarWidth, setSpacesSidebarCollapsed, toggleSpacesSidebarCollapsed, setTabbedSidebarPinned, toggleTabbedSidebarPinned, setSidebarSide, toggleSidebarSide, uiLayoutReducer, type UiLayoutState } from './ui-layout-slice';
+import {
+  DEFAULT_EXPANDED_WIDTH,
+  DEFAULT_WIDTH,
+  MAX_WIDTH,
+  MIN_WIDTH,
+  defaultBottomDockState,
+  defaultPanelVisibility,
+  defaultWorkspaceSidebarPanelLayout,
+  hydrateCollapsiblePanelCollapsed,
+  hydrateResizablePanelGroupLayout,
+  hydrateResizablePanelSize,
+  setCollapsiblePanelCollapsed,
+  setPanelVisibility,
+  setCollapsed,
+  setDiffIndicators,
+  setDiffSideBySide,
+  setFoldUnchanged,
+  setLineWrapping,
+  setResizablePanelGroupLayout,
+  setResizablePanelSize,
+  setSidebarExpandedWidth,
+  setWidth,
+  toggleDiffIndicators,
+  toggleDiffSideBySide,
+  toggleFoldUnchanged,
+  toggleLineWrapping,
+  toggleSidebar,
+  setSpacesSidebarWidth,
+  setSpacesSidebarCollapsed,
+  toggleSpacesSidebarCollapsed,
+  setTabbedSidebarPinned,
+  toggleTabbedSidebarPinned,
+  setSidebarSide,
+  toggleSidebarSide,
+  uiLayoutReducer,
+  type UiLayoutState,
+} from './ui-layout-slice';
 
 describe('uiLayoutReducer', () => {
   const initialState: UiLayoutState = {

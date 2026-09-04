@@ -172,9 +172,7 @@ describe('shell-reveal-bridge-seeder', () => {
       },
     });
 
-    await expect(mockInvoke(CHANNEL, { path: '/repo/file' })).rejects.toThrow(
-      'daemon unreachable',
-    );
+    await expect(mockInvoke(CHANNEL, { path: '/repo/file' })).rejects.toThrow('daemon unreachable');
   });
 
   it('rejects on a daemon-side exec timeout', async () => {

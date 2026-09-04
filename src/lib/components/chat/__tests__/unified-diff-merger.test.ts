@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   buildContentFromMergedHunks,
   buildSyntheticChunks,
@@ -70,7 +66,15 @@ describe('mergeChangeParts', () => {
     };
     const parts: ChangePart[] = [
       {
-        change: { filePath: 'test.ts', action: 'modify', additions: 1, deletions: 1, toolName: 't', toolCallId: 'id', chunks: [hunk] },
+        change: {
+          filePath: 'test.ts',
+          action: 'modify',
+          additions: 1,
+          deletions: 1,
+          toolName: 't',
+          toolCallId: 'id',
+          chunks: [hunk],
+        },
         category: 'staged',
       },
     ];
@@ -110,7 +114,10 @@ describe('mergeChangeParts', () => {
       oldLines: 1,
       newStart: 1,
       newLines: 1,
-      lines: [{ type: 'Deletion', content: 'x' }, { type: 'Addition', content: 'y' }],
+      lines: [
+        { type: 'Deletion', content: 'x' },
+        { type: 'Addition', content: 'y' },
+      ],
     };
     const parts: ChangePart[] = [
       {
@@ -289,6 +296,8 @@ describe('mergeChangeParts', () => {
       'import { SparklesIcon } from "./sparkles";',
       'export const icons = {',
     ]);
-    expect(mergedContent.newContent).not.toContain('import { SearchIcon } from "./search";\n/** Search icon');
+    expect(mergedContent.newContent).not.toContain(
+      'import { SearchIcon } from "./search";\n/** Search icon',
+    );
   });
 });

@@ -513,7 +513,7 @@
         {/if}
 
         {#if error}
-          <p class="text-xs text-error-foreground">{error}</p>
+          <p class="text-xs text-danger">{error}</p>
         {/if}
       </div>
 

@@ -26,6 +26,7 @@ export class LiveServerClient implements ServerClient {
       localIps?: string[];
       hostname?: string;
       tcAddress?: string;
+      availableIps?: string[];
     }>('server.pairingInfo');
 
     // Validate required fields
@@ -50,6 +51,8 @@ export class LiveServerClient implements ServerClient {
       ...(typeof result.tcAddress === 'string' && result.tcAddress.length > 0
         ? { tcAddress: result.tcAddress }
         : {}),
+      // Additive: bind candidates unfiltered by the bind set; absent on older daemons.
+      ...(Array.isArray(result.availableIps) ? { availableIps: result.availableIps } : {}),
     };
   }
 

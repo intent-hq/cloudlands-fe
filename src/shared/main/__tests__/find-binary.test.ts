@@ -172,9 +172,7 @@ describe('findBinaryStrict (strict probe semantics)', () => {
     // unavailable verdict — it must not fold to null.
     mockRequest.mockResolvedValue({ available: true });
 
-    await expect(findBinaryStrict('foo')).rejects.toThrow(
-      'available:true without a path',
-    );
+    await expect(findBinaryStrict('foo')).rejects.toThrow('available:true without a path');
   });
 
   it('still rejects unsafe binary names locally with null (deterministic, not a probe failure)', async () => {

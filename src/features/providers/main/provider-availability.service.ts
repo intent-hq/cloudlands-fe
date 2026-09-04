@@ -28,10 +28,11 @@ import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-re
 import { clearOpenCodeCache, isOpenCodeInstalled } from '../../opencode/main/opencode-resolver';
 import { clearPiCache, isPiInstalled } from '../../pi/main/pi-resolver';
 import { clearDroidCache, isDroidInstalled } from '../../droid/main/droid-resolver';
-import type {
-  NpxStatus,
-  ProviderAvailabilityResult,
-  ProviderStatus,
+import {
+  NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
 } from '$shared/types/provider-availability';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -73,22 +74,43 @@ async function isClaudeCliInstalled(): Promise<boolean> {
 }
 
 /**
+ * Whether the daemon will exec a `providers.paths["claude-code"]` override in
+ * place of the pinned npx adapter (intentd#1714). Discovery reports the
+ * npx-only provider `installed` from npx presence OR a valid override while
+ * `resolvedPath` stays the auto-detected npx — so `installed` with no
+ * resolved npx can only mean the override is in use. An invalid override
+ * contributes nothing on the daemon side, so it never suppresses the warning.
+ */
+function claudeCodeRunsViaOverride(
+  row: ProviderDiscoveryResponse['providers'][number] | undefined,
+): boolean {
+  return row?.installed === true && (row.resolvedPath ?? null) === null;
+}
+
+/**
  * Check if claude-code is available by checking if the claude CLI is installed.
- * The ACP adapter itself always runs via npx (intentd pins the package); when
- * the CLI is installed but npx is authoritatively missing, the status carries
- * an explicit warning so the UI can tell the user the adapter cannot run. A
- * FAILED npx probe rejects instead — it must not fabricate the warning.
+ * The ACP adapter runs via npx (intentd pins the package) unless a valid
+ * `providers.paths` override is configured; when the CLI is installed, npx is
+ * authoritatively missing, and the daemon reports no override in use, the
+ * status carries an explicit warning so the UI can tell the user the adapter
+ * cannot run. A FAILED npx probe or discovery RPC rejects instead — it must
+ * not fabricate (or guess away) the warning.
  */
 async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
   const installed = await isClaudeCliInstalled();
   const status: ProviderStatus = { available: installed };
-  const npxPath = installed
-    ? await findBinaryStrict('npx', {
-        commonPaths: getCommonNpmPaths('npx'),
-      })
-    : null;
-  if (installed && npxPath === null) {
-    status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+  if (!installed) {
+    return status;
+  }
+  const npxPath = await findBinaryStrict('npx', {
+    commonPaths: getCommonNpmPaths('npx'),
+  });
+  if (npxPath === null) {
+    const discovery = await callProviderDiscovery();
+    const row = discovery?.providers.find((provider) => provider.id === 'claude-code');
+    if (!claudeCodeRunsViaOverride(row)) {
+      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+    }
   }
   return status;
 }
@@ -203,6 +225,10 @@ interface ProviderDiscoveryResponse {
     resolvedPath?: string | null;
     gatedOff?: string | null;
     hasNpxFallback: boolean;
+    /** True for providers launched via `npx <package>` (claude-code, pi). */
+    npxOnly?: boolean;
+    /** npx-only providers only: the pinned package spec (e.g. `pkg@1.2.3`). */
+    npxPackage?: string;
     /** Dual-binary providers only (unsloth): the required secondary CLI name. */
     secondaryCommand?: string;
     /** Dual-binary providers only: whether the secondary CLI resolved. */
@@ -368,16 +394,23 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     getProviderAuthVerdicts(),
   ]);
 
-  // claude-code runs its ACP adapter exclusively via npx (intentd pins the
-  // package). On the discovery path the daemon reports "installed" from npx
-  // presence alone (npx-only provider), so re-gate availability on the claude
-  // CLI prerequisite: without the CLI the provider is unavailable regardless
-  // of npx, and with the CLI but no npx surface an explicit warning instead
-  // of a silently broken provider. The fallback path already handles both.
-  if (discoveryById.has('claude-code')) {
+  // claude-code runs its ACP adapter via npx (intentd pins the package) unless
+  // a valid `providers.paths` override is configured (intentd#1714). On the
+  // discovery path the daemon reports "installed" from npx presence or the
+  // override (npx-only provider), so re-gate availability on the claude CLI
+  // prerequisite: without the CLI the provider is unavailable regardless of
+  // npx, and with the CLI but no npx — and no override in use — surface an
+  // explicit warning instead of a silently broken provider. The fallback path
+  // already handles all of these.
+  const claudeCodeDisc = discoveryById.get('claude-code');
+  if (claudeCodeDisc) {
     if (!(await isClaudeCliInstalled())) {
       claudeCodeResult.available = false;
-    } else if (!claudeCodeResult.warning && npxStatus?.resolvedPath === null) {
+    } else if (
+      !claudeCodeResult.warning &&
+      npxStatus?.resolvedPath === null &&
+      !claudeCodeRunsViaOverride(claudeCodeDisc)
+    ) {
       claudeCodeResult.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
     }
   }
@@ -458,11 +491,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
  * `paths` covers every provider the daemon's discovery reported (null when
  * the binary did not resolve); `secondaryPaths` carries the secondary
  * binary's resolved path for dual-binary providers (today only unsloth's
- * `unsloth` CLI) when it resolved.
+ * `unsloth` CLI) when it resolved; `npxPackages` carries the pinned npx
+ * package spec for npx-only providers whose path override the daemon honors
+ * (their `paths` entry is the npx binary, not the adapter).
  */
 export interface ProviderPathsResult {
   paths: Record<string, string | null>;
   secondaryPaths: Record<string, string | null>;
+  npxPackages: Record<string, string>;
   /** npx status from the same discovery round-trip (PROTOCOL §5.14). */
   npx?: NpxStatus;
 }
@@ -488,13 +524,21 @@ export async function getProviderPaths(): Promise<ProviderPathsResult> {
   }
   const paths: Record<string, string | null> = {};
   const secondaryPaths: Record<string, string | null> = {};
+  const npxPackages: Record<string, string> = {};
   for (const provider of discovery?.providers ?? []) {
     paths[provider.id] = provider.resolvedPath ?? null;
     if (provider.secondaryCommand !== undefined) {
       secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
     }
+    if (
+      provider.npxOnly === true &&
+      provider.npxPackage &&
+      NPX_ONLY_PATH_OVERRIDE_PROVIDERS.has(provider.id)
+    ) {
+      npxPackages[provider.id] = provider.npxPackage;
+    }
   }
-  return { paths, secondaryPaths, npx: discovery?.npx };
+  return { paths, secondaryPaths, npxPackages, npx: discovery?.npx };
 }
 
 /**

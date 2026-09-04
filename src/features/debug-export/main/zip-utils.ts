@@ -2,10 +2,7 @@
  * Zip Utilities — uses yazl (pure JS, Electron-safe, no polyfill conflicts)
  */
 import yazl from 'yazl';
-import {
-  promises as fs,
-  createWriteStream,
-} from 'fs';
+import { promises as fs, createWriteStream } from 'fs';
 import path from 'path';
 import { Logger } from '../../../shared/logger';
 
@@ -63,4 +60,3 @@ export async function createZipFromPaths(
     throw new Error(`Failed to create zip file: ${errorMsg}`);
   }
 }
-

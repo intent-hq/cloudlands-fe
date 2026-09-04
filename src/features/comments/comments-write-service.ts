@@ -14,21 +14,21 @@
  * the notes-write-service queue entry point (`comment.add` rewrites note
  * content, so its rev bookkeeping lives with the note mutation queue).
  */
-import { appClient } from "$lib/client";
-import type { CommentAddParams, CommentRespondParams } from "$lib/client";
-import { toast } from "svelte-sonner";
-import { m } from "$shared/paraglide/messages.js";
-import type { CommentV2 } from "./comment-types-v2";
-import { store as appStore } from "$store/renderer/store";
+import { appClient } from '$lib/client';
+import type { CommentAddParams, CommentRespondParams } from '$lib/client';
+import { toast } from 'svelte-sonner';
+import { m } from '$shared/paraglide/messages.js';
+import type { CommentV2 } from './comment-types-v2';
+import { store as appStore } from '$store/renderer/store';
 import {
   addCommentAction,
   removeCommentAction,
-} from "$store/renderer/slices/comments/comments-slice";
-import { selectCommentById } from "$store/renderer/slices/comments/comments-selectors";
-import { enqueueRevBumpingNoteMutation } from "../notes/notes-write-service";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/comments/comments-slice';
+import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
+import { enqueueRevBumpingNoteMutation } from '../notes/notes-write-service';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("CommentsWriteService");
+const logger = createLogger('CommentsWriteService');
 
 /**
  * Add a comment optimistically, then persist via `comment.add`. The optimistic
@@ -64,13 +64,13 @@ export async function addComment(
     // will conflict (the Round 6b failure mode). Every production caller
     // passes workspaceId; warn so a future caller that doesn't is visible.
     logger.warn(
-      "addComment called without workspaceId; note rev bookkeeping skipped — the next save may conflict",
+      'addComment called without workspaceId; note rev bookkeeping skipped — the next save may conflict',
       { noteId },
     );
     result = await appClient.comments.add(noteId, params);
   }
   if (!result.success) {
-    logger.error("Failed to add comment", result.error);
+    logger.error('Failed to add comment', result.error);
     toast.error(m.comments_writeService_addFailed_error(), {
       description: result.error ?? m.comments_writeService_unknown_error(),
     });
@@ -95,7 +95,7 @@ export async function respondToComment(
 
   const result = await appClient.comments.respond(noteId, params);
   if (!result.success) {
-    logger.error("Failed to respond to comment", result.error);
+    logger.error('Failed to respond to comment', result.error);
     toast.error(m.comments_writeService_replyFailed_error(), {
       description: result.error ?? m.comments_writeService_unknown_error(),
     });
@@ -123,7 +123,7 @@ export async function deleteComment(
 
   const result = await appClient.comments.delete(noteId, commentId, workspaceId);
   if (!result.success) {
-    logger.error("Failed to delete comment", result.error);
+    logger.error('Failed to delete comment', result.error);
     toast.error(m.comments_writeService_deleteFailed_error(), {
       description: result.error ?? m.comments_writeService_unknown_error(),
     });

@@ -20,7 +20,12 @@ describe('design token audit', () => {
     const aliases = audit('aliases').split('\n');
     expect(new Set(approved).size).toBe(approved.length);
     expect(approved).toContain('--background');
+    expect(approved).toContain('--danger');
+    expect(approved).toContain('--danger-background');
     expect(approved).toContain('--warning-foreground');
+    expect(approved).not.toContain('--destructive');
+    expect(approved).not.toContain('--destructive-foreground');
+    expect(approved).not.toContain('--error-foreground');
     expect(aliases.every((line) => line.split('\t').length === 4)).toBe(true);
     expect(audit('approved')).toBe(audit('approved'));
     expect(audit('aliases')).toBe(audit('aliases'));
@@ -28,6 +33,25 @@ describe('design token audit', () => {
 
   it('reports no unowned undefined custom properties', () => {
     expect(audit('undefined')).toBe('');
+  });
+
+  it('recognizes the Bits UI Select height without exempting other custom properties', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'product.svelte'),
+        '<div style="max-height: var(--bits-select-content-available-height); width: var(--bits-select-content-available-width); height: var(--bits-select-content-available-heigth)" />',
+      );
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).not.toContain('--bits-select-content-available-height');
+      expect(output).toContain('--bits-select-content-available-width');
+      expect(output).toContain('--bits-select-content-available-heigth');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('rejects an allowlisted adapter token outside its owned files', () => {

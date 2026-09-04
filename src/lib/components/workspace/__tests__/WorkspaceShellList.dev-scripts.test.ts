@@ -247,7 +247,7 @@ describe('WorkspaceShellList development script controls', () => {
       expect(button.className).toContain('active:bg-accent/80');
     }
     expect(within(runningRow).getByRole('button', { name: 'Stop' }).className).toContain(
-      'text-destructive',
+      'text-danger',
     );
     expect(
       within(runningRow).getByRole('button', { name: 'Dev server Running' }).className,

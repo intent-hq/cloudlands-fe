@@ -2,25 +2,25 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
   getItem,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import type { CommentV2 } from "$features/comments/comment-types-v2";
-import type { CommentsV2State, CommentThread } from "./comments-types";
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { CommentV2 } from '$features/comments/comment-types-v2';
+import type { CommentsV2State, CommentThread } from './comments-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
 export const initialState: CommentsV2State = {
-  commentsById: createCollection<CommentV2, "id">("id"),
-  threadsById: createCollection<CommentThread, "id">("id"),
+  commentsById: createCollection<CommentV2, 'id'>('id'),
+  threadsById: createCollection<CommentThread, 'id'>('id'),
   commentIdsByThread: {},
   selectedCommentId: null,
   hoveredCommentId: null,
@@ -32,34 +32,34 @@ export const initialState: CommentsV2State = {
 // ---------------------------------------------------------------------------
 
 /** Add a single comment (already has id/createdAt/updatedAt set). */
-export const addCommentAction = createAction<[comment: CommentV2]>("comments/addComment");
+export const addCommentAction = createAction<[comment: CommentV2]>('comments/addComment');
 
 /** Update fields on a comment. */
 export const updateCommentAction = createAction(
-  "comments/updateComment",
+  'comments/updateComment',
   (id: string, updates: Partial<CommentV2>) => ({ id, updates }),
 );
 
 /** Remove a comment by id. */
-export const removeCommentAction = createAction<[id: string]>("comments/removeComment");
+export const removeCommentAction = createAction<[id: string]>('comments/removeComment');
 
 /** Bulk-load comments (replaces all existing data). */
-export const loadCommentsAction = createAction<[comments: CommentV2[]]>("comments/loadComments");
+export const loadCommentsAction = createAction<[comments: CommentV2[]]>('comments/loadComments');
 
 /** Clear all comment data. */
-export const clearCommentsAction = createAction("comments/clear");
+export const clearCommentsAction = createAction('comments/clear');
 
 /** Select a comment (or null to deselect). */
-export const selectCommentAction = createAction<[id: string | null]>("comments/selectComment");
+export const selectCommentAction = createAction<[id: string | null]>('comments/selectComment');
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function rebuildThreads(
-  commentsById: CommentsV2State["commentsById"],
+  commentsById: CommentsV2State['commentsById'],
   commentIdsByThread: Record<string, string[]>,
-): CommentsV2State["threadsById"] {
+): CommentsV2State['threadsById'] {
   const threads: CommentThread[] = [];
 
   for (const [threadId, ids] of Object.entries(commentIdsByThread)) {
@@ -74,22 +74,24 @@ function rebuildThreads(
       threadComments
         .map((c) => c.updatedAt)
         .sort()
-        .pop() || rootComment.updatedAt || rootComment.createdAt;
+        .pop() ||
+      rootComment.updatedAt ||
+      rootComment.createdAt;
 
     const allResolved = threadComments.every(
-      (c) => c.status === "resolved" || c.status === "accepted" || c.status === "rejected",
+      (c) => c.status === 'resolved' || c.status === 'accepted' || c.status === 'rejected',
     );
 
     threads.push({
       id: threadId,
       rootCommentId: rootComment.id,
       commentIds: ids,
-      status: allResolved ? "resolved" : "open",
+      status: allResolved ? 'resolved' : 'open',
       lastActivity,
     });
   }
 
-  return createCollection<CommentThread, "id">("id", threads);
+  return createCollection<CommentThread, 'id'>('id', threads);
 }
 
 // ---------------------------------------------------------------------------

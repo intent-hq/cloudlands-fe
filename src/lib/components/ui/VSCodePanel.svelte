@@ -5,12 +5,11 @@
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import {
-  requestCollapsiblePanelCollapsed,
-  setCollapsiblePanelCollapsed,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    requestCollapsiblePanelCollapsed,
+    setCollapsiblePanelCollapsed,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { selectCollapsiblePanelCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { m } from '$shared/paraglide/messages.js';
-
 
   import { slide } from 'svelte/transition';
   import { store as appStore } from '$store/renderer/store';
@@ -161,7 +160,9 @@
         size="xs"
         onclick={toggleCollapsed}
         type="button"
-        aria-label={collapsed ? m.ui_vscodePanel_expand_ariaLabel() : m.ui_vscodePanel_collapse_ariaLabel()}
+        aria-label={collapsed
+          ? m.ui_vscodePanel_expand_ariaLabel()
+          : m.ui_vscodePanel_collapse_ariaLabel()}
         class="h-full px-2 text-subtle"
       >
         <div

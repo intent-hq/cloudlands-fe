@@ -1041,9 +1041,9 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(run.actions.filter((action: any) => action.type === 'git/setStatus')).toHaveLength(1);
-    expect(run.actions.filter((action: any) => action.type === 'changes/setChangesData')).toHaveLength(
-      1,
-    );
+    expect(
+      run.actions.filter((action: any) => action.type === 'changes/setChangesData'),
+    ).toHaveLength(1);
     await stop(gitTask);
     await stop(run.task);
   });

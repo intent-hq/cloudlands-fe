@@ -7,10 +7,7 @@
  * content, i18n-exempt; the UI renders localized labels off `kind`.
  */
 import type { WorkspaceEvent } from '$features/events/types';
-import type {
-  HudFeedColorClass,
-  HudFeedEntry,
-} from '$store/renderer/slices/hud/hud-slice';
+import type { HudFeedColorClass, HudFeedEntry } from '$store/renderer/slices/hud/hud-slice';
 import {
   HUD_UNREAD_ATTENTION_VALUE,
   isHudAttentionValue,
