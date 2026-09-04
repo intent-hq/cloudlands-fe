@@ -289,6 +289,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
       return {
         foreground: tokenColor('--foreground'),
         mutedForeground: tokenColor('--muted-foreground'),
+        mutedText: paint([tokenColor('--muted-foreground')]),
         appRingColor: tokenColor('--ring'),
         neutralFocusColor,
         neutralFocus: paint([neutralFocusColor]),
@@ -305,6 +306,11 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         percentages: Array.from(
           element.querySelectorAll<HTMLElement>('.navigator-selection > :last-child'),
         ).map((percentage) => getComputedStyle(percentage).color),
+        messageLine: Array.from(
+          element.querySelectorAll<HTMLElement>(
+            '.message-composition-metric, .message-composition-label, .message-composition-label .animated-number-value, .message-composition-label .animated-number-target',
+          ),
+        ).map((part) => getComputedStyle(part).color),
       };
     });
     expect(navigatorColors.active).toHaveLength(2);
@@ -319,6 +325,9 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     ).toBe(true);
     expect(
       navigatorColors.percentages.every((color) => color === navigatorColors.mutedForeground),
+    ).toBe(true);
+    expect(
+      navigatorColors.messageLine.every((color) => color === navigatorColors.mutedForeground),
     ).toBe(true);
     const currentAgentAlpha = agentSection.locator('.breakdown-item-control').first();
     await currentAgentAlpha.focus();
@@ -352,6 +361,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
       contrastRatio(navigatorColors.neutralFocus, navigatorColors.surface),
       `${theme} focus`,
     ).toBeGreaterThanOrEqual(3);
+    expect(
+      contrastRatio(navigatorColors.mutedText, navigatorColors.surface),
+      `${theme} message summary`,
+    ).toBeGreaterThanOrEqual(4.5);
     expect(focus.outlineColor).toBe(navigatorColors.foreground);
     expect(focus.outlineColor).not.toBe(navigatorColors.appRingColor);
     await currentAgentAlpha.blur();
@@ -397,7 +410,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '30', share: '20%' },
   ]);
   await expect(messageRows.locator('.animated-number-value')).toHaveText(
-    '3 human messages and 6 agent messages',
+    '3 human and 6 agent messages',
   );
   const reducedNumberStyles = await details.locator('.animated-number').evaluateAll((numbers) =>
     numbers.map((number) => ({
@@ -488,7 +501,7 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
 for (const localeCase of [
   {
     locale: 'en',
-    plural: '4 human messages and 7 agent messages',
+    plural: '4 human and 7 agent messages',
     singular: '1 human message and 1 agent message',
     pluralHuman: '2 human messages and 1 agent message',
     pluralAgent: '1 human message and 3 agent messages',
@@ -839,7 +852,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
   await expect(compositionRows.nth(3)).toContainText('Input context');
   await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText(
-    '4 human messages and 7 agent messages',
+    '4 human and 7 agent messages',
   );
   await expect(messageCompositionRows.locator('.composition-value')).toHaveCount(0);
   await expect(messageCompositionRows.locator('.composition-context')).toHaveCount(0);
