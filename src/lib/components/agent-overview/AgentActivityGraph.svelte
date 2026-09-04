@@ -72,8 +72,6 @@
     moved: boolean;
   } | null>(null);
   const suppressedClicks = new Set<string>();
-  let messageArrivalNodeIds = $state<Set<string>>(new Set());
-  const messageArrivalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const visibleGraph = $derived.by(() => {
     const baseNodes = graph.nodes.filter(
@@ -283,17 +281,14 @@
   }
 
   function handleMessageArrival(targetId: string): void {
-    const previousTimer = messageArrivalTimers.get(targetId);
-    if (previousTimer) clearTimeout(previousTimer);
-    messageArrivalNodeIds = new Set(messageArrivalNodeIds).add(targetId);
-    messageArrivalTimers.set(
-      targetId,
-      setTimeout(() => {
-        const next = new Set(messageArrivalNodeIds);
-        next.delete(targetId);
-        messageArrivalNodeIds = next;
-        messageArrivalTimers.delete(targetId);
-      }, 180),
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const target = Array.from(container.querySelectorAll<HTMLElement>('[data-graph-node]')).find(
+      (element) => element.dataset.nodeId === targetId,
+    );
+    if (reduced || !target || target.dataset.motionEnabled === 'false') return;
+    target.animate(
+      [{ borderColor: 'var(--color-primary)' }, { borderColor: 'var(--color-primary)' }],
+      { duration: 180, easing: 'ease-out' },
     );
   }
 
@@ -387,7 +382,6 @@
     unsubscribeTick?.();
     layout?.stop();
     if (frame !== null) cancelAnimationFrame(frame);
-    for (const timer of messageArrivalTimers.values()) clearTimeout(timer);
   });
 </script>
 
@@ -427,7 +421,6 @@
         <div
           class="absolute transition-opacity duration-150"
           class:opacity-35={spotlightIds !== null && !spotlightIds.has(node.id)}
-          class:message-arrival={messageArrivalNodeIds.has(node.id)}
           style:transform={`translate(${position.x}px, ${position.y}px) translate(-50%, -50%)`}
           style:z-index={node.type === 'task' ? 2 : node.type === 'agent' ? 3 : 1}
         >
@@ -490,19 +483,3 @@
     {/if}
   {/if}
 </div>
-
-<style>
-  .message-arrival :global([data-graph-node]) {
-    animation: message-arrival-flash 180ms ease-out 1;
-  }
-  @keyframes message-arrival-flash {
-    50% {
-      border-color: var(--color-primary);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .message-arrival :global([data-graph-node]) {
-      animation: none;
-    }
-  }
-</style>

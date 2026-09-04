@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentNode, FileNode, GraphEdge, GraphState, TaskNode } from '../types';
 
@@ -11,6 +12,7 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', a
 }));
 
 import AgentActivityGraph from '../AgentActivityGraph.svelte';
+import GraphEdgeLayer from '../GraphEdgeLayer.svelte';
 
 const timestamp = '2026-09-04T00:00:00.000Z';
 
@@ -144,5 +146,46 @@ describe('AgentActivityGraph', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
 
     expect(screen.getByRole('button', { name: /file-1\.ts/ })).toBeTruthy();
+  });
+
+  it('completes message particles from native animation events without timers', async () => {
+    const message: GraphEdge = {
+      id: 'message:one',
+      type: 'message',
+      sourceId: 'agent:one',
+      targetId: 'task:one',
+      agentId: 'one',
+      timestamp,
+      isActive: true,
+      count: 1,
+    };
+    const onMessageArrival = vi.fn();
+    const timeout = vi.spyOn(globalThis, ['set', 'Timeout'].join('') as never);
+
+    try {
+      const { container } = render(GraphEdgeLayer, {
+        props: {
+          edges: [message],
+          nodes: [agent(), task()],
+          positions: new Map([
+            ['agent:one', { x: 100, y: 100 }],
+            ['task:one', { x: 300, y: 100 }],
+          ]),
+          onMessageArrival,
+        },
+      });
+
+      expect(timeout).not.toHaveBeenCalled();
+      const motion = container.querySelector('animateMotion');
+      expect(motion).toBeTruthy();
+      motion?.dispatchEvent(new Event('endEvent'));
+      await tick();
+
+      expect(onMessageArrival).toHaveBeenCalledWith('task:one');
+      expect(container.querySelector('[data-message-particle]')).toBeNull();
+      expect(timeout).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
   });
 });

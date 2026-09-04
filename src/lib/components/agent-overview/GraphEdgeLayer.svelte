@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import type { GraphEdge, GraphNode } from './types';
   import { EDGE_STYLES, GRAPH_ACTIVE_ACCENT, GRAPH_NODE_DIMENSIONS } from './constants';
   import {
@@ -38,7 +37,10 @@
 
   let travelingEdges = $state<GraphEdge[]>([]);
   const seenMessageEvents = new Set<string>();
-  const travelTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  function messageEventKey(edge: GraphEdge): string {
+    return `${edge.id}:${edge.timestamp}`;
+  }
 
   $effect(() => {
     const limit = messageParticleLimit(playbackSpeed);
@@ -46,28 +48,11 @@
       .filter(
         (edge) => edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp)),
       )
-      .filter((edge) => !seenMessageEvents.has(`${edge.id}:${edge.timestamp}`))
+      .filter((edge) => !seenMessageEvents.has(messageEventKey(edge)))
       .slice(-limit);
     if (arrivals.length === 0) return;
-    arrivals.forEach((edge) => seenMessageEvents.add(`${edge.id}:${edge.timestamp}`));
+    arrivals.forEach((edge) => seenMessageEvents.add(messageEventKey(edge)));
     travelingEdges = [...travelingEdges, ...arrivals].slice(-limit);
-    for (const edge of arrivals) {
-      const timer = setTimeout(
-        () => {
-          travelingEdges = travelingEdges.filter(
-            (candidate) =>
-              `${candidate.id}:${candidate.timestamp}` !== `${edge.id}:${edge.timestamp}`,
-          );
-          travelTimers.delete(timer);
-        },
-        playbackDuration(2_600, playbackSpeed),
-      );
-      travelTimers.add(timer);
-    }
-  });
-
-  onDestroy(() => {
-    for (const timer of travelTimers) clearTimeout(timer);
   });
 
   function opacityFor(edge: GraphEdge): number {
@@ -101,15 +86,22 @@
     return dy >= 0 ? 90 : -90;
   }
 
-  function notifyMessageArrival(element: SVGAnimateMotionElement, targetId: string) {
-    const notify = () => onMessageArrival(targetId);
-    element.addEventListener('endEvent', notify);
+  function completeMessageTravel(element: SVGAnimateMotionElement, initialEdge: GraphEdge) {
+    let edge = initialEdge;
+    const complete = () => {
+      onMessageArrival(edge.targetId);
+      const completedKey = messageEventKey(edge);
+      travelingEdges = travelingEdges.filter(
+        (candidate) => messageEventKey(candidate) !== completedKey,
+      );
+    };
+    element.addEventListener('endEvent', complete);
     return {
-      update(nextTargetId: string) {
-        targetId = nextTargetId;
+      update(nextEdge: GraphEdge) {
+        edge = nextEdge;
       },
       destroy() {
-        element.removeEventListener('endEvent', notify);
+        element.removeEventListener('endEvent', complete);
       },
     };
   }
@@ -273,7 +265,7 @@
           font-size="9"><!-- i18n-ignore (compact graph edge-kind token) -->msg</text
         >
         <animateMotion
-          use:notifyMessageArrival={edge.targetId}
+          use:completeMessageTravel={edge}
           path={pathFor(endpoints.source, endpoints.target)}
           dur={`${edgeAnimationDuration(endpoints.source, endpoints.target, playbackSpeed)}s`}
           calcMode="spline"
