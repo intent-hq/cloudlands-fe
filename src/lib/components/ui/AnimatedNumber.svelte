@@ -6,7 +6,8 @@
   interface Props {
     value: number;
     tier?: SpringTierName;
-    format?: (n: number) => string;
+    secondaryValue?: number;
+    format?: (value: number, secondaryValue?: number) => string;
     class?: string;
     accessible?: boolean;
     pulse?: boolean;
@@ -15,6 +16,7 @@
   let {
     value,
     tier = 'slow',
+    secondaryValue,
     format = (n: number) => formatInteger(n),
     class: className = '',
     accessible = true,
@@ -26,13 +28,17 @@
   // Non-reactive bookkeeping avoids restarting the effect when the target is recorded.
   // svelte-ignore state_referenced_locally
   let previousValue = value;
+  // svelte-ignore state_referenced_locally
+  let previousSecondaryValue = secondaryValue;
   let reducedMotion = $state(false);
   let animationRun = 0;
 
-  // Create tweened store for smooth interpolation. Initial value and duration
+  // Create tweened values for smooth interpolation. Initial value and tier
   // are intentionally captured at init; the $effect drives later updates.
   // svelte-ignore state_referenced_locally
   const displayValue = tweenedValue(value, tier);
+  // svelte-ignore state_referenced_locally
+  const displaySecondaryValue = tweenedValue(secondaryValue ?? 0, tier);
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') return;
@@ -51,15 +57,24 @@
       animationRun += 1;
       direction = null;
       previousValue = value;
+      previousSecondaryValue = secondaryValue;
       void displayValue.set(value);
+      void displaySecondaryValue.set(secondaryValue ?? 0);
       return;
     }
 
-    if (value !== previousValue) {
-      direction = value > previousValue ? 'up' : 'down';
+    if (value !== previousValue || secondaryValue !== previousSecondaryValue) {
+      const previousDirectionValue =
+        value !== previousValue ? previousValue : previousSecondaryValue;
+      const nextDirectionValue = value !== previousValue ? value : secondaryValue;
+      direction = (nextDirectionValue ?? 0) > (previousDirectionValue ?? 0) ? 'up' : 'down';
       previousValue = value;
+      previousSecondaryValue = secondaryValue;
       const run = ++animationRun;
-      void displayValue.set(value).then(() => {
+      void Promise.all([
+        displayValue.set(value),
+        displaySecondaryValue.set(secondaryValue ?? 0),
+      ]).then(() => {
         if (run === animationRun) direction = null;
       });
 
@@ -69,8 +84,10 @@
     }
   });
 
-  const formattedValue = $derived(format($displayValue));
-  const targetValue = $derived(format(value));
+  const formattedValue = $derived(
+    format($displayValue, secondaryValue === undefined ? undefined : $displaySecondaryValue),
+  );
+  const targetValue = $derived(format(value, secondaryValue));
 </script>
 
 <span
