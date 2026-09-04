@@ -628,16 +628,18 @@
 {#snippet agentCardContent()}
   <div
     style="padding-left: {depth * 10}px; container-type: inline-size;"
-    class="relative w-full min-w-0 max-w-full overflow-hidden agent-card-container"
+    class="relative w-full min-w-0 max-w-full {isEditing
+      ? 'overflow-visible'
+      : 'overflow-hidden'} agent-card-container"
     data-agent-id={agentId}
     data-testid="agent-list-item"
   >
     <svelte:element
       this={isEditing ? 'div' : 'button'}
       type={isEditing ? undefined : 'button'}
-      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 {isEditing
-        ? 'cursor-text'
-        : 'cursor-pointer'} group border {panelRow
+      class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-150 {isEditing
+        ? 'overflow-visible'
+        : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
         ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
@@ -673,13 +675,17 @@
       </div>
 
       <div
-        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {headerActions
-          ? 'mr-14'
-          : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
+        class="agent-card-content flex min-w-0 max-w-full flex-1 {isEditing
+          ? 'overflow-visible'
+          : 'overflow-hidden'} {headerActions ? 'mr-14' : ''} {inline || panelRow
+          ? 'flex-row items-center gap-2'
+          : 'flex-col'}"
       >
         <!-- Header row -->
         <div
-          class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden {inline
+          class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 {isEditing
+            ? 'overflow-visible'
+            : 'overflow-hidden'} {inline
             ? 'inline-agent-card-header'
             : panelRow
               ? 'agent-panel-row-header'
@@ -689,56 +695,68 @@
 
           <div
             class="flex-1 min-w-0 flex items-center {panelRow
-              ? 'gap-1.5 overflow-hidden'
+              ? `gap-1.5 ${isEditing ? 'overflow-visible' : 'overflow-hidden'}`
               : inline
                 ? 'gap-0'
                 : 'gap-1.5'} {typographyClass
               ? 'font-normal'
               : panelRow
                 ? 'font-normal'
-                : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
+                : 'font-medium'} {inline
+              ? isEditing
+                ? 'overflow-visible'
+                : 'overflow-hidden'
+              : ''}"
           >
-            {#if isEditing}
-              <!-- svelte-ignore a11y_autofocus -->
-              <input
-                bind:this={editInputRef}
-                type="text"
-                bind:value={editingValue}
-                aria-label={m.chat_agentCard_menu_rename_label()}
-                onblur={saveEdit}
-                onkeydowncapture={handleEditKeydown}
-                onkeyupcapture={isolateEditEvent}
-                onfocusincapture={isolateEditEvent}
-                onfocusoutcapture={isolateEditEvent}
-                onpointerdowncapture={isolateEditEvent}
-                onpointerupcapture={isolateEditEvent}
-                onmousedowncapture={isolateEditEvent}
-                onmouseupcapture={isolateEditEvent}
-                onclickcapture={isolateEditEvent}
-                ondblclickcapture={isolateEditEvent}
-                oncontextmenucapture={isolateEditEvent}
-                oncopycapture={isolateEditEvent}
-                oncutcapture={isolateEditEvent}
-                onpastecapture={isolateEditEvent}
-                class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground"
-              />
-            {:else}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <h3
-                class="whitespace-nowrap {panelRow
-                  ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
-                  : inline
-                    ? typographyClass
-                      ? 'shrink-0 type-body font-normal text-foreground!'
-                      : 'shrink-0 type-body font-normal text-foreground'
-                    : 'shrink-0 text-sm font-normal text-foreground'}"
-                data-testid="agent-card-name"
-                data-agent-row-name={panelRow ? '' : undefined}
-                ondblclick={handleNameDoubleClick}
-              >
-                {displayName}
-              </h3>
-            {/if}
+            <div class="relative flex min-w-0 flex-1 items-center">
+              {#if isEditing}
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  bind:this={editInputRef}
+                  type="text"
+                  bind:value={editingValue}
+                  aria-label={m.chat_agentCard_menu_rename_label()}
+                  onblur={saveEdit}
+                  onkeydowncapture={handleEditKeydown}
+                  onkeyupcapture={isolateEditEvent}
+                  onfocusincapture={isolateEditEvent}
+                  onfocusoutcapture={isolateEditEvent}
+                  onpointerdowncapture={isolateEditEvent}
+                  onpointerupcapture={isolateEditEvent}
+                  onmousedowncapture={isolateEditEvent}
+                  onmouseupcapture={isolateEditEvent}
+                  onclickcapture={isolateEditEvent}
+                  ondblclickcapture={isolateEditEvent}
+                  oncontextmenucapture={isolateEditEvent}
+                  oncopycapture={isolateEditEvent}
+                  oncutcapture={isolateEditEvent}
+                  onpastecapture={isolateEditEvent}
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent text-sm text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                />
+              {:else}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <h3
+                  class="relative z-10 cursor-text whitespace-nowrap {panelRow
+                    ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
+                    : inline
+                      ? typographyClass
+                        ? 'shrink-0 type-body font-normal text-foreground!'
+                        : 'shrink-0 type-body font-normal text-foreground'
+                      : 'shrink-0 text-sm font-normal text-foreground'}"
+                  data-testid="agent-card-name"
+                  data-agent-row-name={panelRow ? '' : undefined}
+                  ondblclick={handleNameDoubleClick}
+                >
+                  {displayName}
+                </h3>
+              {/if}
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditing
+                  ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                  : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+              ></span>
+            </div>
             {#if statusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
@@ -930,6 +948,10 @@
 {/if}
 
 <style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
   .agent-card-avatar-wrapper {
     display: inline-flex;
     box-sizing: border-box;
