@@ -65,7 +65,7 @@
     closeLabel={m.modals_bulkActionConfirm_close_ariaLabel()}
     onOpenAutoFocus={handleOpenAutoFocus}
   >
-    <div class="space-y-4 p-5 pr-12">
+    <div class="min-w-0 space-y-4 p-5 pr-12">
       <Dialog.Header class="gap-2 pr-0">
         <Dialog.Title>{title}</Dialog.Title>
         <Dialog.Description class="leading-5">{description}</Dialog.Description>
@@ -74,10 +74,10 @@
       {#if workspaces.length > 0}
         <div
           role="list"
-          class="max-h-56 overflow-y-auto rounded-md border border-border/60 bg-muted/30 divide-y divide-border/40"
+          class="max-h-56 w-full min-w-0 overflow-y-auto rounded-md border border-border/60 bg-muted/30 divide-y divide-border/40"
         >
           {#each workspaces as workspace (workspace.id)}
-            <div role="listitem" class="flex items-center gap-2 px-3 py-1.5 text-sm">
+            <div role="listitem" class="flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm">
               <span class="min-w-0 flex-1 truncate">{workspace.title}</span>
               {#if workspace.status === WorkspaceStatusEnum.Archived}
                 <span
@@ -86,7 +86,7 @@
                   {m.lib_commandPalette_archivedWorkspace_pill()}
                 </span>
               {:else if workspace.branch}
-                <span class="max-w-[40%] truncate font-mono text-xs text-muted-foreground">
+                <span class="max-w-[40%] shrink-0 truncate font-mono text-xs text-muted-foreground">
                   {workspace.branch}
                 </span>
               {/if}
