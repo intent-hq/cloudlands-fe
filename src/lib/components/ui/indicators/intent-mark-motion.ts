@@ -56,6 +56,7 @@ interface VariantGeometry {
   pathData: string;
   strokeWidth: number;
   transformOrigin: string;
+  armTransformOrigin: string;
 }
 
 function variantGeometry(variant: IntentMarkVariant, index: number): VariantGeometry {
@@ -64,6 +65,7 @@ function variantGeometry(variant: IntentMarkVariant, index: number): VariantGeom
     pathData: bloom ? bloomPathData[index] : legacyPathData[index],
     strokeWidth: bloom ? 18.45088 : 18,
     transformOrigin: bloom ? '128px 101px' : '128px 96px',
+    armTransformOrigin: bloom ? '50% 48.557692%' : '50% 46.153846%',
   };
 }
 
@@ -77,6 +79,7 @@ function variantFrame(variant: IntentMarkVariant, index: number): Keyframe {
 }
 
 function applyVariantGeometry(
+  arm: SVGSVGElement,
   path: SVGPathElement,
   variant: IntentMarkVariant,
   index: number,
@@ -85,6 +88,7 @@ function applyVariantGeometry(
   path.setAttribute('d', geometry.pathData);
   path.style.strokeWidth = String(geometry.strokeWidth);
   path.style.transformOrigin = geometry.transformOrigin;
+  arm.style.transformOrigin = geometry.armTransformOrigin;
 }
 
 interface LottieScalarKeyframe {
@@ -239,8 +243,8 @@ function bloomPose(index: number, frame: number): Keyframe {
       sampleLottieTrack(bloomArmRotations[sourceIndex], frame),
   );
   return {
-    opacity: frame < bloomLayerOutFrame && visibility > 0.01 ? 1 : 0,
-    transform: `translate(0px, 0px) rotate(${rotation}deg) scale(${rounded(0.18 + visibility * 0.82)})`,
+    opacity: frame < bloomLayerOutFrame ? visibility : 0,
+    transform: `translate(0px, 0px) rotate(${rotation}deg) scale(1)`,
   };
 }
 
@@ -335,20 +339,21 @@ function loopPoseAt(variant: IntentMarkVariant, index: number, phase: number): K
   };
 }
 
-function renderedPose(path: SVGPathElement): Keyframe {
-  const computed = getComputedStyle(path);
-  const renderedPath = computed.getPropertyValue('d');
+function renderedPose(path: SVGPathElement, motionTarget: Element): Keyframe {
+  const pathStyle = getComputedStyle(path);
+  const motionStyle = getComputedStyle(motionTarget);
+  const renderedPath = pathStyle.getPropertyValue('d');
   return {
     d:
       renderedPath && renderedPath !== 'none'
         ? renderedPath
         : cssPath(path.getAttribute('d') ?? ''),
-    opacity: computed.opacity || 1,
-    strokeDasharray: computed.strokeDasharray || neutralFrame.strokeDasharray,
-    strokeDashoffset: computed.strokeDashoffset || neutralFrame.strokeDashoffset,
-    strokeWidth: computed.strokeWidth || 18,
-    transform: computed.transform === 'none' ? neutralFrame.transform : computed.transform,
-    transformOrigin: computed.transformOrigin || '128px 96px',
+    opacity: motionStyle.opacity || 1,
+    strokeDasharray: pathStyle.strokeDasharray || neutralFrame.strokeDasharray,
+    strokeDashoffset: pathStyle.strokeDashoffset || neutralFrame.strokeDashoffset,
+    strokeWidth: pathStyle.strokeWidth || 18,
+    transform: motionStyle.transform === 'none' ? neutralFrame.transform : motionStyle.transform,
+    transformOrigin: pathStyle.transformOrigin || '128px 96px',
   };
 }
 
@@ -356,8 +361,10 @@ export function createIntentMarkMotion(
   root: SVGSVGElement,
   initial: IntentMarkMotionOptions,
 ): IntentMarkMotionController {
+  const arms = Array.from(root.querySelectorAll<SVGSVGElement>('[data-mark-arm-box]'));
   const paths = Array.from(root.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
-  if (paths.length !== legacyPathData.length) throw new Error('Intent mark paths are missing');
+  if (arms.length !== legacyPathData.length || paths.length !== legacyPathData.length)
+    throw new Error('Intent mark arms are missing');
   const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   let options = initial;
   let inViewport = true;
@@ -375,11 +382,12 @@ export function createIntentMarkMotion(
     transitionTimer = undefined;
     for (const animation of animations) animation.cancel();
     animations = [];
+    arms.forEach((arm) => (arm.style.willChange = ''));
   };
 
   const setNeutral = () => {
     cancelAnimations();
-    paths.forEach((path, index) => applyVariantGeometry(path, 'pulse', index));
+    paths.forEach((path, index) => applyVariantGeometry(arms[index], path, 'pulse', index));
     activeVariant = undefined;
     transition = undefined;
     needsHandoff = true;
@@ -392,7 +400,7 @@ export function createIntentMarkMotion(
 
   const hasRunningLoop = () =>
     activeVariant === options.variant &&
-    animations.length === paths.length &&
+    animations.length === arms.length &&
     animations.every(
       (animation) =>
         animation.playState === 'running' &&
@@ -402,12 +410,14 @@ export function createIntentMarkMotion(
   const startLoop = (variant: IntentMarkVariant, phase = canonicalLoopPhase[variant]) => {
     if (!canPlay()) return;
     cancelAnimations();
-    paths.forEach((path, index) => applyVariantGeometry(path, variant, index));
+    paths.forEach((path, index) => applyVariantGeometry(arms[index], path, variant, index));
     transition = undefined;
     needsHandoff = false;
     const duration = loopDuration(variant);
-    animations = paths.map((path, index) => {
-      const animation = path.animate(loopFrames(variant, index), {
+    root.dataset.motionState = 'playing';
+    animations = arms.map((arm, index) => {
+      arm.style.willChange = 'transform, opacity';
+      const animation = arm.animate(loopFrames(variant, index), {
         duration: loopDuration(variant),
         easing: 'linear',
         iterations: Infinity,
@@ -418,7 +428,6 @@ export function createIntentMarkMotion(
     activeVariant = variant;
     delete root.dataset.handoffVariant;
     root.dataset.loopPhase = String(phase);
-    root.dataset.motionState = 'playing';
   };
 
   const finishTransition = (run: number, complete: () => void) => {
@@ -433,7 +442,7 @@ export function createIntentMarkMotion(
   const morphTo = (variant: IntentMarkVariant) => {
     if (!canPlay()) return;
     const run = ++sequence;
-    const from = paths.map(renderedPose);
+    const from = paths.map((path, index) => renderedPose(path, transition ? path : arms[index]));
     const phase = canonicalLoopPhase[variant];
     const to = paths.map((_, index) => ({
       ...variantFrame(variant, index),
@@ -467,7 +476,7 @@ export function createIntentMarkMotion(
       setNeutral();
       return;
     }
-    const from = paths.map(renderedPose);
+    const from = paths.map((path, index) => renderedPose(path, transition ? path : arms[index]));
     const to = paths.map((_, index) => ({
       ...variantFrame('pulse', index),
       ...neutralFrame,
