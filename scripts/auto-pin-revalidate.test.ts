@@ -24,7 +24,9 @@ function git(cwd: string, ...args: string[]): string {
 /**
  * Model the race: `upstream` plays the GitHub repo (its `main` is live main),
  * `run` is the workflow's checkout — a clone taken at run start, so it only
- * ever sees the snapshot of main unless something re-fetches.
+ * ever sees the snapshot of main unless something re-fetches. Like
+ * actions/checkout, the clone is shallow (`--depth 1`; git honors it only
+ * for `file://` URLs, not plain local paths).
  */
 function setup(): { upstream: string; run: string } {
   const root = mkdtempSync(join(tmpdir(), 'auto-pin-revalidate-'));
@@ -39,7 +41,8 @@ function setup(): { upstream: string; run: string } {
   git(upstream, 'commit', '-qm', 'base');
 
   const run = join(root, 'run');
-  execFileSync('git', ['clone', '-q', upstream, run]);
+  execFileSync('git', ['clone', '-q', '--depth', '1', `file://${upstream}`, run]);
+  expect(git(run, 'rev-parse', '--is-shallow-repository')).toBe('true');
   return { upstream, run };
 }
 
@@ -90,14 +93,15 @@ describe('auto-pin-revalidate', () => {
     expect(result.mainPin).toBe(PIN_B);
     expect(result.mainSha).toBe(mergedSha);
     expect(result.reason).toMatch(/already landed/);
+    expect(git(run, 'rev-parse', '--is-shallow-repository')).toBe('true');
   });
 
   it('does not proceed when main moved to a different, still-older pin', () => {
     const { upstream, run } = setup();
-    mergePinOnMain(upstream, '0.9.14-beta.1');
-    const result = revalidate(run, '0.9.13', PIN_B);
+    mergePinOnMain(upstream, '0.9.15-alpha.1');
+    const result = revalidate(run, PIN_A, '0.9.16');
     expect(result.proceed).toBe(false);
-    expect(result.mainPin).toBe('0.9.14-beta.1');
+    expect(result.mainPin).toBe('0.9.15-alpha.1');
     expect(result.reason).toMatch(/moved/);
   });
 

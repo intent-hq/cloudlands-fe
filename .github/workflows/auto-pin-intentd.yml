@@ -231,7 +231,10 @@ jobs:
             echo "::warning::could not revalidate the pin against live main; not landing the pin this run."
             exit 0
           fi
-          echo "$out" >> "$GITHUB_OUTPUT"
+          # Only the script's key=value lines reach GITHUB_OUTPUT: a stray
+          # stdout line would otherwise fail the step with "Invalid format"
+          # instead of the intended warn-and-skip (proceed stays false).
+          grep -E '^(proceed|main_pin)=' <<<"$out" >> "$GITHUB_OUTPUT" || true
           if ! grep -qx 'proceed=true' <<<"$out"; then
             echo "::notice::Live main no longer carries pin $CURRENT (see auto-pin-revalidate output above); skipping this run without pushing $BRANCH."
           fi
