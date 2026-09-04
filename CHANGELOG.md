@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.135.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.134.0...v2.135.0) (2026-09-04)
+
+
+### 🚀 Features
+
+* persist connection device kinds ([#2128](https://github.com/intent-hq/cloudlands-fe/issues/2128)) ([03d7a69](https://github.com/intent-hq/cloudlands-fe/commit/03d7a695e11e61cccef17d8a50bc55354396bac6))
+* **settings:** add ACP Node heap limit control to Agent Backend ([#2118](https://github.com/intent-hq/cloudlands-fe/issues/2118)) ([c601e9d](https://github.com/intent-hq/cloudlands-fe/commit/c601e9da009895abffbd844e1723a17d9e3cec4c))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.19 ([#2170](https://github.com/intent-hq/cloudlands-fe/issues/2170)) ([b283a9f](https://github.com/intent-hq/cloudlands-fe/commit/b283a9f711143f67e2c5be1a603023ae27510615))
+* bump intentd sidecar to v0.9.20 ([#2174](https://github.com/intent-hq/cloudlands-fe/issues/2174)) ([2e9ed8e](https://github.com/intent-hq/cloudlands-fe/commit/2e9ed8e34810ed7a3d4c11dce113d8cf63ebd6f2))
+* live-update sidebar task status icons on task:status-changed ([#2173](https://github.com/intent-hq/cloudlands-fe/issues/2173)) ([c53c452](https://github.com/intent-hq/cloudlands-fe/commit/c53c45272fb92dc1998c80782cdcdb2986bef288))
+* **settings:** follow the daemon-acknowledged ACP heap value as the retry baseline ([#2172](https://github.com/intent-hq/cloudlands-fe/issues/2172)) ([29289d1](https://github.com/intent-hq/cloudlands-fe/commit/29289d1dbb7ea2244788846ba4df92ae3438bfd4))
+
 ## [2.134.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.133.0...v2.134.0) (2026-09-04)
 
 
