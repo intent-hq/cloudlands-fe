@@ -104,6 +104,47 @@ describe('ProviderPathConfig', () => {
     expect(input.value).toBe('/custom/bin/claude-agent-acp');
   });
 
+  it('describes the pinned npx launch for npx-only providers instead of an auto-detected adapter', () => {
+    const npxPath = '/usr/local/bin/npx';
+    const npxPackage = '@agentclientprotocol/claude-agent-acp@1.2.3';
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        resolvedPath: npxPath,
+        npxPackage,
+        isInstalled: true,
+      },
+    });
+    // The daemon's resolvedPath for an npx-only provider is npx itself, so it
+    // must not be offered as the adapter path placeholder.
+    expect(screen.queryByPlaceholderText(npxPath)).toBeNull();
+    expect(screen.getByPlaceholderText('Path to claude-agent-acp')).toBeTruthy();
+    expect(screen.getByText(npxPath)).toBeTruthy();
+    // The pinned package spec is named in both the hint and the status row.
+    expect(screen.getAllByText(npxPackage, { exact: false }).length).toBeGreaterThan(0);
+  });
+
+  it('marks the pinned npx launch as overridden once an npx-only provider has a configured path', () => {
+    const npxPath = '/usr/local/bin/npx';
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        configuredPath: '/opt/homebrew/bin/claude-agent-acp',
+        resolvedPath: npxPath,
+        npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
+        isInstalled: true,
+      },
+    });
+    const input = screen.getByPlaceholderText('Path to claude-agent-acp') as HTMLInputElement;
+    expect(input.value).toBe('/opt/homebrew/bin/claude-agent-acp');
+    expect(screen.getByText(npxPath)).toBeTruthy();
+    expect(screen.getByText(/overridden/i)).toBeTruthy();
+  });
+
   it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', () => {
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
     const unslothPath = '/Users/clement/.local/bin/unsloth';

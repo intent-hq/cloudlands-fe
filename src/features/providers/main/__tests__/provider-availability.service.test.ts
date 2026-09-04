@@ -885,6 +885,16 @@ describe('provider availability service', () => {
             if (p.id === 'auggie') {
               return { ...p, installed: true, resolvedPath: '/usr/local/bin/auggie' };
             }
+            if (p.id === 'claude-code') {
+              return {
+                ...p,
+                command: 'npx',
+                installed: true,
+                resolvedPath: '/usr/local/bin/npx',
+                npxOnly: true,
+                npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
+              };
+            }
             return p;
           }),
         },
@@ -900,7 +910,7 @@ describe('provider availability service', () => {
       expect(mocks.findAuggiePathStrict).not.toHaveBeenCalled();
       expect(result.paths).toEqual({
         auggie: '/usr/local/bin/auggie',
-        'claude-code': null,
+        'claude-code': '/usr/local/bin/npx',
         codex: null,
         cortex: null,
         opencode: null,
@@ -910,6 +920,11 @@ describe('provider availability service', () => {
         unsloth: '/home/user/.opencode/bin/opencode',
       });
       expect(result.secondaryPaths).toEqual({ unsloth: '/usr/local/bin/unsloth' });
+      // npx-only providers surface their pinned package spec (their `paths`
+      // entry is npx, not the adapter the override targets).
+      expect(result.npxPackages).toEqual({
+        'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3',
+      });
     });
 
     it('keys an unresolved secondary as null when secondaryResolvedPath is omitted', async () => {
@@ -937,7 +952,7 @@ describe('provider availability service', () => {
       const { getProviderPaths } = await import('../provider-availability.service');
       const result = await getProviderPaths();
 
-      expect(result).toEqual({ paths: {}, secondaryPaths: {} });
+      expect(result).toEqual({ paths: {}, secondaryPaths: {}, npxPackages: {} });
     });
 
     it('serves the new shape through the GET_PATHS IPC handler envelope', async () => {

@@ -1060,6 +1060,10 @@ describe('provider-status-bridge-seeder', () => {
             codex: null,
           },
           secondaryPaths: { unsloth: '/usr/local/bin/unsloth' },
+          // npx-only providers carry their pinned package spec so the path
+          // popup can describe the npx launch (its path is npx, not the
+          // adapter).
+          npxPackages: { 'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3' },
           // npx rides the same discovery round-trip so the onboarding bulk
           // check can read it without the aggregated auth sweep.
           npx: { resolvedPath: '/usr/local/bin/npx', version: '10.2.4', versionOk: true },
@@ -1100,6 +1104,7 @@ describe('provider-status-bridge-seeder', () => {
         data: {
           paths: { unsloth: '/home/user/.opencode/bin/opencode' },
           secondaryPaths: { unsloth: null },
+          npxPackages: {},
           npx: { resolvedPath: null, version: null, versionOk: false },
         },
       });
@@ -1112,7 +1117,7 @@ describe('provider-status-bridge-seeder', () => {
 
       expect(response).toEqual({
         success: true,
-        data: { paths: {}, secondaryPaths: {} },
+        data: { paths: {}, secondaryPaths: {}, npxPackages: {} },
       });
     });
   });

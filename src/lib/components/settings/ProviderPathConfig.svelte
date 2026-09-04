@@ -50,6 +50,15 @@
      * `runtimeCliCommand`, when it resolved.
      */
     runtimeResolvedPath?: string;
+    /**
+     * npx-only providers only (claude-code, pi): the pinned package spec the
+     * daemon launches via npx by default (e.g. `pkg@1.2.3`). For these
+     * providers `resolvedPath` is the npx binary, not `cliCommand`, so the
+     * status row describes the pinned npx launch instead of an auto-detected
+     * `cliCommand`, and the hint explains that a configured path runs in
+     * place of the pin (monorepo#4352).
+     */
+    npxPackage?: string;
     /** Whether the provider is currently installed */
     isInstalled?: boolean;
     /** Callback when path changes */
@@ -66,6 +75,7 @@
     resolvedPath = '',
     runtimeCliCommand,
     runtimeResolvedPath,
+    npxPackage,
     isInstalled = false,
     onPathChange,
     open = $bindable(),
@@ -95,9 +105,13 @@
     }
   }
 
-  // Determine the display path (configured > resolved > placeholder)
+  // Determine the display path (configured > resolved > placeholder). For
+  // npx-only providers `resolvedPath` is npx, not the adapter the override
+  // targets, so the placeholder names the adapter command instead.
   const placeholderText = $derived(
-    resolvedPath ? resolvedPath : m.settings_providerPath_placeholder({ command: cliCommand }),
+    resolvedPath && !npxPackage
+      ? resolvedPath
+      : m.settings_providerPath_placeholder({ command: cliCommand }),
   );
 
   // Remote daemons route browsing to the in-app DirectoryPickerModal, which
@@ -143,7 +157,11 @@
           {m.settings_providerPath_header({ name: providerName })}
         </p>
         <p class="text-xs text-subtle">
-          {#if isInstalled}
+          {#if npxPackage}
+            {m.settings_providerPath_npxOverrideHint_before({ package: npxPackage })}
+            <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>
+            {m.settings_providerPath_npxOverrideHint_after()}
+          {:else if isInstalled}
             {m.settings_providerPath_overrideHint()}
           {:else}
             {m.settings_providerPath_specifyHint_before()}
@@ -168,9 +186,10 @@
 
       <!-- Status indicator: full (wrapped) auto-detected paths; the primary
            row stays visible when an override is configured, marked as
-           overridden. Dual-binary providers additionally get a read-only
-           labeled runtime row that follows the runtime provider's own
-           configuration. -->
+           overridden. npx-only providers describe the pinned npx launch
+           (the path is npx) instead of an auto-detected adapter. Dual-binary
+           providers additionally get a read-only labeled runtime row that
+           follows the runtime provider's own configuration. -->
       {#snippet autoDetectedRow(command: string | undefined, path: string, overridden: boolean)}
         <div class="text-ui text-subtle min-w-0">
           <p class="flex items-center gap-1 flex-wrap">
@@ -180,7 +199,9 @@
               size="xs"
             />
             <span>
-              {#if command}
+              {#if npxPackage}
+                {m.settings_providerPath_npxPinnedAt({ package: npxPackage })}
+              {:else if command}
                 {m.settings_providerPath_autoDetectedCommandAt({ command })}
               {:else}
                 {m.settings_providerPath_autoDetectedAt()}

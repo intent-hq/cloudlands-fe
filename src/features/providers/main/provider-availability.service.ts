@@ -203,6 +203,10 @@ interface ProviderDiscoveryResponse {
     resolvedPath?: string | null;
     gatedOff?: string | null;
     hasNpxFallback: boolean;
+    /** True for providers launched via `npx <package>` (claude-code, pi). */
+    npxOnly?: boolean;
+    /** npx-only providers only: the pinned package spec (e.g. `pkg@1.2.3`). */
+    npxPackage?: string;
     /** Dual-binary providers only (unsloth): the required secondary CLI name. */
     secondaryCommand?: string;
     /** Dual-binary providers only: whether the secondary CLI resolved. */
@@ -458,11 +462,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
  * `paths` covers every provider the daemon's discovery reported (null when
  * the binary did not resolve); `secondaryPaths` carries the secondary
  * binary's resolved path for dual-binary providers (today only unsloth's
- * `unsloth` CLI) when it resolved.
+ * `unsloth` CLI) when it resolved; `npxPackages` carries the pinned npx
+ * package spec for npx-only providers (whose `paths` entry is the npx
+ * binary, not the adapter).
  */
 export interface ProviderPathsResult {
   paths: Record<string, string | null>;
   secondaryPaths: Record<string, string | null>;
+  npxPackages: Record<string, string>;
   /** npx status from the same discovery round-trip (PROTOCOL §5.14). */
   npx?: NpxStatus;
 }
@@ -488,13 +495,17 @@ export async function getProviderPaths(): Promise<ProviderPathsResult> {
   }
   const paths: Record<string, string | null> = {};
   const secondaryPaths: Record<string, string | null> = {};
+  const npxPackages: Record<string, string> = {};
   for (const provider of discovery?.providers ?? []) {
     paths[provider.id] = provider.resolvedPath ?? null;
     if (provider.secondaryCommand !== undefined) {
       secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
     }
+    if (provider.npxOnly === true && provider.npxPackage) {
+      npxPackages[provider.id] = provider.npxPackage;
+    }
   }
-  return { paths, secondaryPaths, npx: discovery?.npx };
+  return { paths, secondaryPaths, npxPackages, npx: discovery?.npx };
 }
 
 /**

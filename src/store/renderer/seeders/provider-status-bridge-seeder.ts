@@ -389,6 +389,8 @@ interface ProviderDiscoveryEntry {
   id: string;
   installed: boolean;
   resolvedPath?: string | null;
+  npxOnly?: boolean;
+  npxPackage?: string;
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
@@ -398,8 +400,9 @@ interface ProviderDiscoveryEntry {
  * providers:get-paths — daemon-resolved CLI paths for every provider's
  * settings path popup, sourced from the daemon's `host.providerDiscovery`
  * snapshot (PROTOCOL §5.14): `paths[id]` is the primary binary's
- * `resolvedPath` (null when unresolved) and `secondaryPaths[id]` carries the
- * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI).
+ * `resolvedPath` (null when unresolved), `secondaryPaths[id]` carries the
+ * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI),
+ * and `npxPackages[id]` the pinned package spec of npx-only providers.
  * `npx` rides along from the same round-trip so the onboarding bulk check can
  * fetch it without the aggregated auth sweep.
  * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
@@ -412,13 +415,17 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
     }>('host.providerDiscovery', {}).catch(() => undefined);
     const paths: Record<string, string | null> = {};
     const secondaryPaths: Record<string, string | null> = {};
+    const npxPackages: Record<string, string> = {};
     for (const provider of discovery?.providers ?? []) {
       paths[provider.id] = provider.resolvedPath ?? null;
       if (provider.secondaryCommand !== undefined) {
         secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
       }
+      if (provider.npxOnly === true && provider.npxPackage) {
+        npxPackages[provider.id] = provider.npxPackage;
+      }
     }
-    return { success: true, data: { paths, secondaryPaths, npx: discovery?.npx } };
+    return { success: true, data: { paths, secondaryPaths, npxPackages, npx: discovery?.npx } };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }

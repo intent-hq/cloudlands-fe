@@ -1169,11 +1169,16 @@ export function setupSystemIPC() {
       async (event, validated) => {
         const focusedWindow = BrowserWindow.getFocusedWindow();
         const targetWindow = focusedWindow || BrowserWindow.fromWebContents(event.sender);
+        // File mode passes `noResolveAliases` so a picked symlink (e.g.
+        // ~/.local/bin/claude) is stored as-is instead of its versioned
+        // target, which goes stale on the next update (monorepo#4352).
         const options: Electron.OpenDialogOptions = {
           title: validated.title,
           defaultPath: validated.defaultPath,
           properties:
-            validated.mode === 'file' ? ['openFile'] : ['openDirectory', 'createDirectory'],
+            validated.mode === 'file'
+              ? ['openFile', 'noResolveAliases']
+              : ['openDirectory', 'createDirectory'],
         };
         const result = targetWindow
           ? await dialog.showOpenDialog(targetWindow, options)
