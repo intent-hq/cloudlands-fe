@@ -12,6 +12,7 @@
 
   interface Props {
     pendingCapabilities?: boolean;
+    providerMissing?: boolean;
   }
 
   const draft: WorkspaceDraft = {
@@ -31,9 +32,10 @@
     updatedAt: '2026-01-15T12:00:00.000Z',
   };
 
-  let { pendingCapabilities = false }: Props = $props();
+  let { pendingCapabilities = false, providerMissing = false }: Props = $props();
   let controllerState = $state(buildState());
   let startCount = $state(0);
+  let providerSelectionCount = $state(0);
 
   function buildState(): ControllerState {
     let next: ControllerState = createInitialControllerState(0);
@@ -43,7 +45,14 @@
       next = reduce(next, {
         type: 'capability.result',
         capability,
-        status: capability === 'provider' || !pendingCapabilities ? 'ready' : 'pending',
+        status:
+          capability === 'provider'
+            ? providerMissing
+              ? 'missing'
+              : 'ready'
+            : pendingCapabilities
+              ? 'pending'
+              : 'ready',
         generation: 0,
       });
     }
@@ -56,6 +65,16 @@
 
   function chooseNewFolder(name: string): void {
     edit({ source: { kind: 'newFolder', parentPath: '/test/projects', name } });
+  }
+
+  function chooseProvider(): void {
+    providerSelectionCount += 1;
+    controllerState = reduce(controllerState, {
+      type: 'capability.result',
+      capability: 'provider',
+      status: 'ready',
+      generation: controllerState.generation,
+    });
   }
 
   function selectedSourceName(): string {
@@ -82,11 +101,35 @@
 
 <UntitledWorkspaceShell
   state={controllerState}
-  presentation={{ requiredCapabilities: ['provider'] }}
+  presentation={{
+    requiredCapabilities: ['provider'],
+    coordinator: providerMissing
+      ? {
+          provider: {
+            id: 'auggie',
+            name: 'Augment Auggie',
+            available: true,
+            authenticated: true,
+            statusLoading: false,
+            authDetails: undefined,
+            docsUrl: 'https://docs.augmentcode.com/',
+            installCommand: 'auggie',
+            loginCommandHint: 'auggie login',
+            hasNpxFallback: false,
+          },
+          deviceFlow: {
+            userCode: 'SANDBOX-CODE',
+            verificationUri: 'https://github.com/login/device',
+          },
+        }
+      : undefined,
+  }}
   onEdit={edit}
   onStart={() => (startCount += 1)}
   onChooseNewFolder={chooseNewFolder}
+  onProviderSelected={chooseProvider}
 />
 <output class="sr-only" data-testid="start-count">{startCount}</output>
 <output class="sr-only" data-testid="source-kind">{controllerState.input.source?.kind}</output>
 <output class="sr-only" data-testid="source-name">{selectedSourceName()}</output>
+<output class="sr-only" data-testid="provider-selection-count">{providerSelectionCount}</output>

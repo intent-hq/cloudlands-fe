@@ -27,6 +27,19 @@ test.describe('new-workspace shell', () => {
     await expect(component.getByTestId('start-count')).toHaveText('1');
   });
 
+  test('selects an inline provider when none is ready', async ({ mount }) => {
+    const component = await mount(UntitledWorkspaceShellHost, {
+      props: { providerMissing: true },
+    });
+
+    await expect(component.locator('[data-coordinator-state="connect-provider"]')).toBeVisible();
+    await expect(component.getByText('SANDBOX-CODE')).toBeVisible();
+    await component.getByRole('button', { name: 'Use Augment Auggie' }).click();
+
+    await expect(component.getByTestId('provider-selection-count')).toHaveText('1');
+    await expect(component.locator('[data-coordinator-state="ready-idle"]')).toBeVisible();
+  });
+
   test('selects a fresh local project with a validated folder name', async ({ mount }) => {
     const component = await mount(UntitledWorkspaceShellHost);
     const input = component.getByRole('textbox', { name: 'my-project' });

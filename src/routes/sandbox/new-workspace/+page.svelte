@@ -84,6 +84,16 @@
     editDraft({ source: { kind: 'newFolder', parentPath: '/sandbox/projects', name } });
   }
 
+  function chooseProvider(): void {
+    if (!controllerState) return;
+    controllerState = reduce(controllerState, {
+      type: 'capability.result',
+      capability: 'provider',
+      status: 'ready',
+      generation: controllerState.generation,
+    });
+  }
+
   function dispatchSimpleEvent(
     type: 'reconnect' | 'conflict.acceptRemote' | 'conflict.keepLocal' | 'retry',
   ): void {
@@ -175,6 +185,7 @@
           {#if controllerState}
             <UntitledWorkspaceShell
               state={controllerState}
+              presentation={selectedScenario.presentation}
               onEdit={editDraft}
               onStart={startDraft}
               onRetry={() => dispatchSimpleEvent('retry')}
@@ -182,6 +193,7 @@
               onAcceptRemote={() => dispatchSimpleEvent('conflict.acceptRemote')}
               onKeepLocal={() => dispatchSimpleEvent('conflict.keepLocal')}
               onChooseNewFolder={chooseNewFolder}
+              onProviderSelected={chooseProvider}
             />
           {/if}
         </div>

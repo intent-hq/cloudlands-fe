@@ -1,5 +1,11 @@
 import type { WorkspaceDraft } from '$shared/types/workspace-draft';
-import { createInitialControllerState, type ControllerState } from '../controller';
+import {
+  createInitialControllerState,
+  reduce,
+  type Capability,
+  type ControllerState,
+} from '../controller';
+import type { NewWorkspacePresentation } from '../ui/types';
 
 export const SCENARIO_FAMILIES = [
   'entry',
@@ -41,6 +47,7 @@ export interface Scenario {
   fixtures: ScenarioFixtures;
   allowedActions: readonly SandboxAction[];
   expectedPhase: string;
+  presentation?: NewWorkspacePresentation;
   script?: readonly ScenarioScriptStep[];
 }
 
@@ -106,9 +113,59 @@ function scenario(
   };
 }
 
+function capabilityNoProviderState(): ControllerState {
+  let state: ControllerState = createInitialControllerState(0);
+  state = reduce(state, {
+    type: 'backend.connected',
+    generation: 0,
+    draftId: DEFAULT_SCENARIO_FIXTURES.draft.id,
+  });
+  state = reduce(state, {
+    type: 'restore.succeeded',
+    generation: 0,
+    draft: DEFAULT_SCENARIO_FIXTURES.draft,
+  });
+  for (const capability of ['provider', 'git', 'node', 'github'] as Capability[]) {
+    state = reduce(state, {
+      type: 'capability.result',
+      capability,
+      status: capability === 'provider' ? 'missing' : 'ready',
+      generation: 0,
+    });
+  }
+  return state;
+}
+
 export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
   scenario('entry-pristine', 'entry', 'Pristine draft', 'editing'),
-  scenario('capability-no-provider', 'capability', 'Provider connection required', 'capability'),
+  scenario('capability-no-provider', 'capability', 'Provider connection required', 'pristine', {
+    initialControllerState: capabilityNoProviderState(),
+    fixtures: {
+      ...DEFAULT_SCENARIO_FIXTURES,
+      provider: { state: 'missing' },
+    },
+    presentation: {
+      requiredCapabilities: ['provider'],
+      coordinator: {
+        provider: {
+          id: 'auggie',
+          name: 'Augment Auggie',
+          available: true,
+          authenticated: true,
+          statusLoading: false,
+          authDetails: undefined,
+          docsUrl: 'https://docs.augmentcode.com/',
+          installCommand: 'auggie',
+          loginCommandHint: 'auggie login',
+          hasNpxFallback: false,
+        },
+        deviceFlow: {
+          userCode: 'SANDBOX-CODE',
+          verificationUri: 'https://github.com/login/device',
+        },
+      },
+    },
+  }),
   scenario('source-public-repo', 'source', 'Public repository selected', 'source'),
   scenario(
     'transaction-promoting',
