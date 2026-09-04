@@ -454,7 +454,7 @@
 
 {#snippet groupActions(workspaces: Workspace[], groupLabel: string)}
   <div
-    class="ml-auto mr-0.5 flex shrink-0 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
+    class="ml-auto flex shrink-0 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
   >
     {#if workspaces.some((workspace) => workspace.status !== WorkspaceStatusEnum.Archived)}
       <Tooltip.Tooltip content={m.layout_allCard_groupArchiveAll_tooltip()}>
