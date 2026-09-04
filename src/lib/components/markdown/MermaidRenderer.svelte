@@ -33,6 +33,7 @@
     reflowCompactFlowchart,
     repairFlowchartNodeOutlines,
     reserveFlowchartClusterHeaderBands,
+    routeFlowchartClientRequestLane,
     rewriteStateRoutes,
     roundOrthogonalBends,
     routeFlowchartAroundClusterHeaders,
@@ -902,6 +903,7 @@ ${verticalSource}`;
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       snapFlowchartPorts(svg);
       snapFlowchartFeedbackPorts(svg);
+      routeFlowchartClientRequestLane(svg);
       roundOrthogonalBends(svg);
       alignFlowchartMarkerTips(svg);
       const finalBounds = measureFinalFlowchartBounds(svg);
@@ -1353,7 +1355,9 @@ ${verticalSource}`;
   .mermaid-presentation :global(marker path) {
     fill: var(--diagram-connector) !important;
     stroke: var(--diagram-connector) !important;
-    stroke-width: var(--line-hairline) !important;
+    stroke-width: 0.75px !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
   }
 
   .mermaid-presentation :global(.state-start),

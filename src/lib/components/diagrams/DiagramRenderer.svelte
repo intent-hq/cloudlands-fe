@@ -881,18 +881,18 @@
             <!-- Default arrowhead matching default edge stroke color -->
             <marker
               id="arrowhead-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -901,18 +901,18 @@
             <!-- Semantic-colored arrowhead markers -->
             <marker
               id="arrowhead-danger-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -920,18 +920,18 @@
             </marker>
             <marker
               id="arrowhead-success-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -939,18 +939,18 @@
             </marker>
             <marker
               id="arrowhead-warning-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -958,18 +958,18 @@
             </marker>
             <marker
               id="arrowhead-muted-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -977,18 +977,18 @@
             </marker>
             <marker
               id="arrowhead-inactive-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -996,18 +996,18 @@
             </marker>
             <marker
               id="arrowhead-highlighted-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 1 1 L 7 4 L 1 7 z"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
                 fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
@@ -1015,18 +1015,18 @@
             </marker>
             <marker
               id="arrowhead-active-{diagram.id}"
-              markerWidth="8"
-              markerHeight="8"
-              refX="7"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6.5"
+              refY="3.5"
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
               <path
-                d="M 2 1 L 7 4 L 2 7"
-                fill="none"
+                d="M 0.75 1 L 6.5 3.5 L 0.75 6 z"
+                fill="context-stroke"
                 stroke="context-stroke"
-                stroke-width="1"
+                stroke-width="0.75"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"

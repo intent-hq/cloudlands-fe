@@ -115,7 +115,8 @@ describe('custom diagram visual contract', () => {
     expect(
       [...container.querySelectorAll('marker path')].every(
         (marker) =>
-          marker.getAttribute('stroke-width') === '1' &&
+          marker.getAttribute('stroke-width') === '0.75' &&
+          marker.getAttribute('fill') === 'context-stroke' &&
           marker.getAttribute('stroke') === 'context-stroke',
       ),
     ).toBe(true);

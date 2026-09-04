@@ -208,6 +208,8 @@
     fill: none;
     stroke: var(--diagram-connector);
     stroke-width: var(--diagram-connector-width);
+    stroke-linecap: round;
+    stroke-linejoin: round;
     transition:
       stroke var(--motion-standard) var(--ease-standard),
       opacity var(--motion-standard) var(--ease-standard);

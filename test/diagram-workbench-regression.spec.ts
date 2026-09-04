@@ -8,7 +8,12 @@ const widths = [240, 320, 420, 960, 1600] as const;
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running diagram preview server.');
 test.describe.configure({ mode: 'serial' });
 
-async function openState(page: Page, state: string, width: number, theme: 'light' | 'dark') {
+async function openState(
+  page: Page,
+  state: string,
+  width: number,
+  theme: 'light' | 'dark' | 'nord',
+) {
   const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=${theme}&width=${width}&motion=reduced`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const scene = page.getByTestId('catalog-scene');
@@ -26,6 +31,112 @@ async function openState(page: Page, state: string, width: number, theme: 'light
     width,
     status: 'ready',
   });
+}
+
+async function expectClientRequestLane(page: Page, identity: string) {
+  const result = await page
+    .locator('#mermaid-nested-groups svg[data-layout-settled="true"]')
+    .evaluate((svg) => {
+      const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')];
+      const node = (name: string) => nodes.find((item) => item.textContent?.trim() === name)!;
+      const path = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find((item) =>
+        item.id.includes('L_Client_Gateway'),
+      )!;
+      const returnPath = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find((item) =>
+        item.id.includes('L_Store_Client'),
+      )!;
+      const label = [...svg.querySelectorAll<SVGGElement>('g.edgeLabel')].find(
+        (item) => item.textContent?.trim() === 'request',
+      )!;
+      const surface = label.querySelector<SVGGraphicsElement>('.edge-label-surface')!;
+      const gateway = node('Gateway').getBoundingClientRect();
+      const client = node('Client').getBoundingClientRect();
+      const boundary = [...svg.querySelectorAll<SVGGElement>('g.cluster')]
+        .find((cluster) =>
+          cluster
+            .querySelector(':scope > .cluster-label')
+            ?.textContent?.includes('Runtime boundary'),
+        )!
+        .querySelector<SVGRectElement>(':scope > rect')!
+        .getBoundingClientRect();
+      const labelBounds = label.getBoundingClientRect();
+      const matrix = path.getScreenCTM()!;
+      const length = path.getTotalLength();
+      const start = path.getPointAtLength(0).matrixTransform(matrix);
+      const end = path.getPointAtLength(length).matrixTransform(matrix);
+      const returnMatrix = returnPath.getScreenCTM()!;
+      const returnEnd = returnPath
+        .getPointAtLength(returnPath.getTotalLength())
+        .matrixTransform(returnMatrix);
+      const points = (path.dataset.manhattanPoints ?? '').split(' ').map((value) => {
+        const [x, y] = value.split(',').map(Number);
+        return new DOMPoint(x, y).matrixTransform(matrix);
+      });
+      const distanceToLabel = (point: DOMPoint) =>
+        Math.hypot(
+          Math.max(labelBounds.left - point.x, 0, point.x - labelBounds.right),
+          Math.max(labelBounds.top - point.y, 0, point.y - labelBounds.bottom),
+        );
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--diagram-canvas)';
+      svg.parentElement!.append(probe);
+      const canvas = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const surfaceStyle = getComputedStyle(surface);
+      const routeSamples = Array.from({ length: 201 }, (_, index) =>
+        path.getPointAtLength((length * index) / 200).matrixTransform(matrix),
+      );
+      const otherLabels = [...svg.querySelectorAll<SVGGElement>('g.edgeLabel')].filter(
+        (item) => item !== label,
+      );
+      return {
+        clientGap: labelBounds.top - client.bottom,
+        boundaryGap: boundary.top - labelBounds.bottom,
+        bendGap: Math.min(...points.slice(1, -1).map(distanceToLabel)),
+        startDistance: Math.hypot(
+          start.x - (client.left + client.right) / 2,
+          start.y - client.bottom,
+        ),
+        endDistance: Math.hypot(end.x - gateway.left, end.y - (gateway.top + gateway.bottom) / 2),
+        returnDistance: Math.hypot(
+          returnEnd.x - client.right,
+          returnEnd.y - (client.top + client.bottom) / 2,
+        ),
+        routeOwnsLabel: routeSamples.some(
+          (point) =>
+            point.x >= labelBounds.left &&
+            point.x <= labelBounds.right &&
+            point.y >= labelBounds.top &&
+            point.y <= labelBounds.bottom,
+        ),
+        overlapsOtherText: otherLabels.some((other) => {
+          const bounds = other.getBoundingClientRect();
+          return (
+            labelBounds.left < bounds.right &&
+            labelBounds.right > bounds.left &&
+            labelBounds.top < bounds.bottom &&
+            labelBounds.bottom > bounds.top
+          );
+        }),
+        raised: Number(node('Client').dataset.requestLaneShift),
+        lane: path.dataset.clientRequestLane,
+        surfaceOpacity: surfaceStyle.opacity,
+        surfaceBackground: surfaceStyle.backgroundColor,
+        canvas,
+      };
+    });
+  expect(result.raised, `${identity} Client shift`).toBeGreaterThan(0);
+  expect(result.lane, `${identity} request lane`).toBe('downward');
+  expect(result.clientGap, `${identity} Client clearance`).toBeGreaterThanOrEqual(8);
+  expect(result.boundaryGap, `${identity} boundary clearance`).toBeGreaterThanOrEqual(8);
+  expect(result.bendGap, `${identity} bend clearance`).toBeGreaterThanOrEqual(6);
+  expect(result.startDistance, `${identity} request source port`).toBeLessThanOrEqual(1);
+  expect(result.endDistance, `${identity} request target port`).toBeLessThanOrEqual(1);
+  expect(result.returnDistance, `${identity} return target port`).toBeLessThanOrEqual(1);
+  expect(result.routeOwnsLabel, `${identity} request label ownership`).toBe(true);
+  expect(result.overlapsOtherText, `${identity} request text collision`).toBe(false);
+  expect(result.surfaceOpacity, `${identity} request surface opacity`).toBe('1');
+  expect(result.surfaceBackground, `${identity} request canvas surface`).toBe(result.canvas);
 }
 
 async function expectCustomGeometry(page: Page, state: string) {
@@ -239,6 +350,9 @@ async function expectTerminalArrowGeometry(
           bounds.bottom - point.y,
         );
       };
+      const frame = section
+        .querySelector<SVGSVGElement>(isMermaid ? '.mermaid-svg > svg' : '.diagram-svg-layer')!
+        .getBoundingClientRect();
 
       return paths.map((path, index) => {
         const key = isMermaid
@@ -305,6 +419,24 @@ async function expectTerminalArrowGeometry(
         const markerJoinDistance = Math.min(
           ...markerSamples.map((point) => Math.hypot(point.x - refX, point.y - refY)),
         );
+        const markerPoints = markerSamples.map((point) => {
+          const local = {
+            x:
+              terminal.x +
+              (point.x - refX) * scaleX * Math.cos(angle) -
+              (point.y - refY) * scaleY * Math.sin(angle),
+            y:
+              terminal.y +
+              (point.x - refX) * scaleX * Math.sin(angle) +
+              (point.y - refY) * scaleY * Math.cos(angle),
+          };
+          return pathMatrix
+            ? new DOMPoint(local.x, local.y).matrixTransform(pathMatrix)
+            : new DOMPoint();
+        });
+        const pathStyle = getComputedStyle(path);
+        const markerStyle = markerPath && getComputedStyle(markerPath);
+        const strokeWidth = Number.parseFloat(pathStyle.strokeWidth);
         return {
           key,
           expectedTarget,
@@ -316,6 +448,23 @@ async function expectTerminalArrowGeometry(
           markerUnits: marker?.getAttribute('markerUnits'),
           markerOrient: marker?.getAttribute('orient'),
           markerMid: path.getAttribute('marker-mid'),
+          markerRatio: Number(marker?.getAttribute('markerWidth')) / strokeWidth,
+          markerContained: markerPoints.every(
+            (point) =>
+              point.x >= frame.left - 1 &&
+              point.x <= frame.right + 1 &&
+              point.y >= frame.top - 1 &&
+              point.y <= frame.bottom + 1,
+          ),
+          pathStroke: pathStyle.stroke,
+          markerFill: markerStyle?.fill,
+          markerStroke: markerStyle?.stroke,
+          markerFillAttribute: markerPath?.getAttribute('fill'),
+          markerStrokeAttribute: markerPath?.getAttribute('stroke'),
+          pathLinecap: pathStyle.strokeLinecap,
+          pathLinejoin: pathStyle.strokeLinejoin,
+          markerLinecap: markerStyle?.strokeLinecap,
+          markerLinejoin: markerStyle?.strokeLinejoin,
         };
       });
     },
@@ -338,6 +487,25 @@ async function expectTerminalArrowGeometry(
     expect(edge.markerUnits).toBe('userSpaceOnUse');
     expect(edge.markerOrient).toBe('auto');
     expect(edge.markerMid).toBeNull();
+    expect(edge.markerRatio, `${state}/${edge.key} proportional marker`).toBeGreaterThanOrEqual(4);
+    expect(edge.markerRatio, `${state}/${edge.key} proportional marker`).toBeLessThanOrEqual(7);
+    expect(edge.markerContained, `${state}/${edge.key} marker containment`).toBe(true);
+    expect(edge.markerFillAttribute, `${state}/${edge.key} marker fill inheritance`).toBe(
+      'context-stroke',
+    );
+    expect(edge.markerStrokeAttribute, `${state}/${edge.key} marker stroke inheritance`).toBe(
+      'context-stroke',
+    );
+    expect([edge.pathStroke, 'context-stroke'], `${state}/${edge.key} marker fill`).toContain(
+      edge.markerFill,
+    );
+    expect([edge.pathStroke, 'context-stroke'], `${state}/${edge.key} marker stroke`).toContain(
+      edge.markerStroke,
+    );
+    expect(edge.pathLinecap, `${state}/${edge.key} shaft cap`).toBe('round');
+    expect(edge.pathLinejoin, `${state}/${edge.key} shaft join`).toBe('round');
+    expect(edge.markerLinecap, `${state}/${edge.key} marker cap`).toBe('round');
+    expect(edge.markerLinejoin, `${state}/${edge.key} marker join`).toBe('round');
   }
 }
 
@@ -779,6 +947,34 @@ test('keeps flowchart edge-label content inside Mermaid viewports in every theme
   }
 });
 
+for (const appearance of [
+  { name: 'light', mode: 'light' as const, colorTheme: 'Default' },
+  { name: 'dark', mode: 'dark' as const, colorTheme: 'Default' },
+  { name: 'nord', mode: 'light' as const, colorTheme: 'Nord' },
+]) {
+  for (const width of [320, 420, 640, 960] as const) {
+    test(`keeps the Client request lane clear in ${appearance.name} at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(120_000);
+      await openState(page, 'mermaid-nested-groups', width, appearance.mode);
+      const colorTheme = page.getByRole('button', { name: /Color theme/ });
+      const renderer = page.locator('#mermaid-nested-groups .mermaid-renderer');
+      if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
+        const previousGeneration = Number(await renderer.getAttribute('data-render-generation'));
+        await colorTheme.click();
+        await page.getByRole('option', { name: appearance.colorTheme, exact: true }).click();
+        await expect
+          .poll(async () => Number(await renderer.getAttribute('data-render-generation')))
+          .toBeGreaterThan(previousGeneration);
+      }
+      await expect(colorTheme).toContainText(appearance.colorTheme);
+      await expect(renderer).toHaveAttribute('data-render-settled', 'true');
+      await expectClientRequestLane(page, `${appearance.name}/${width}/mermaid-nested-groups`);
+    });
+  }
+}
+
 test('terminal arrow tips attach to the correct target boundary', async ({ page }) => {
   test.setTimeout(900_000);
   const mermaidTargets = {
@@ -802,7 +998,7 @@ test('terminal arrow tips attach to the correct target boundary', async ({ page 
   ];
 
   for (const appearance of appearances) {
-    for (const width of [960, 640, 420]) {
+    for (const width of [960, 640, 420, 320]) {
       await openState(page, 'mermaid-state', width, appearance.mode);
       const colorTheme = page.getByRole('button', { name: /Color theme/ });
       const mermaidRenderer = page.locator('#mermaid-state .mermaid-renderer');
