@@ -10,6 +10,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 import {
+  BackendError,
   installMockBackend,
   resetMockBackend,
   type MockBackendHandle,
@@ -305,13 +306,17 @@ describe('getLocalChanges', () => {
   const localChangesRequests = () =>
     backend.requests.filter((r) => r.method === 'workspace.localChanges');
 
-  it('sends the exact workspace.localChanges request and returns the wire result as-is', async () => {
+  it('sends the exact workspace.localChanges request with a 10s per-call timeout and returns the wire result as-is', async () => {
     backend.onRequest('workspace.localChanges', () => localChangesResult);
 
     const result = await getLocalChanges(WS);
 
     expect(localChangesRequests()).toEqual([
-      { method: 'workspace.localChanges', params: { workspaceId: WS } },
+      {
+        method: 'workspace.localChanges',
+        params: { workspaceId: WS },
+        options: { timeoutMs: 10000 },
+      },
     ]);
     expect(result).toEqual(localChangesResult);
   });
@@ -319,6 +324,21 @@ describe('getLocalChanges', () => {
   it('fails open (returns null) when the daemon rejects the call', async () => {
     backend.onRequest('workspace.localChanges', () => {
       throw new Error('daemon unavailable');
+    });
+
+    await expect(getLocalChanges(WS)).resolves.toBeNull();
+    expect(localChangesRequests()).toHaveLength(1);
+  });
+
+  it('fails open (returns null) when the transport times the request out', async () => {
+    // Mirrors the transport's per-call timeout rejection (a BackendError
+    // rather than a daemon result), which must not surface to the caller.
+    backend.onRequest('workspace.localChanges', () => {
+      throw new BackendError({
+        code: 'TIMEOUT',
+        message: 'JSON-RPC request timed out: workspace.localChanges',
+        data: { code: 'TIMEOUT' },
+      });
     });
 
     await expect(getLocalChanges(WS)).resolves.toBeNull();
@@ -363,7 +383,11 @@ describe('getActiveWorkNames', () => {
       localChanges: localChangesResult,
     });
     expect(localChangesRequests()).toEqual([
-      { method: 'workspace.localChanges', params: { workspaceId: WS } },
+      {
+        method: 'workspace.localChanges',
+        params: { workspaceId: WS },
+        options: { timeoutMs: 10000 },
+      },
     ]);
   });
 

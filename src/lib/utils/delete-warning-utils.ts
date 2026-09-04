@@ -115,15 +115,29 @@ export function getOpenPrItems(workspaceId: string): OpenPrWarningItem[] {
 }
 
 /**
+ * Per-call timeout for the `workspace.localChanges` preflight, shorter than
+ * the transport's 30s default so a slow daemon read (large worktree, cold
+ * disk) cannot hold the Archive/Delete click open. Fails open: a timeout
+ * rejects → `getLocalChanges` returns `null` → the local-changes warning is
+ * simply omitted; the other warnings (agents, hooks, open PRs) are unaffected.
+ */
+const LOCAL_CHANGES_TIMEOUT_MS = 10_000;
+
+/**
  * Fetch the workspace's local git work (unpushed commits / uncommitted
- * changes per root) via `workspace.localChanges`. Fails open: any error
- * (including an older daemon without the method) yields `null` so
- * archive/delete is never blocked by the read.
+ * changes per root) via `workspace.localChanges`, bounded by
+ * `LOCAL_CHANGES_TIMEOUT_MS`. Fails open: any error (including a timeout or
+ * an older daemon without the method) yields `null` so archive/delete is
+ * never blocked by the read.
  * @param workspaceId - The workspace ID to check
  */
 export async function getLocalChanges(workspaceId: string): Promise<LocalChangesWarning | null> {
   try {
-    return await backendRequest<LocalChangesWarning>('workspace.localChanges', { workspaceId });
+    return await backendRequest<LocalChangesWarning>(
+      'workspace.localChanges',
+      { workspaceId },
+      { timeoutMs: LOCAL_CHANGES_TIMEOUT_MS },
+    );
   } catch {
     return null;
   }
