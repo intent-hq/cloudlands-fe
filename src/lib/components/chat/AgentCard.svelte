@@ -708,7 +708,11 @@
                 : 'overflow-hidden'
               : ''}"
           >
-            <div class="relative flex min-w-0 flex-1 items-center">
+            <div
+              class="relative flex min-w-0 flex-1 items-center {isEditing
+                ? 'overflow-visible'
+                : 'overflow-hidden'}"
+            >
               {#if isEditing}
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
