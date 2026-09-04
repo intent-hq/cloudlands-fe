@@ -396,10 +396,9 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '0', share: '0%' },
     { value: '30', share: '20%' },
   ]);
-  await expect(messageRows.locator('.animated-number-value')).toHaveText([
-    '3 human messages',
-    '6 agent messages',
-  ]);
+  await expect(messageRows.locator('.animated-number-value')).toHaveText(
+    '3 human messages and 6 agent messages',
+  );
   const reducedNumberStyles = await details.locator('.animated-number').evaluateAll((numbers) =>
     numbers.map((number) => ({
       animationName: getComputedStyle(number).animationName,
@@ -489,50 +488,66 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
 for (const localeCase of [
   {
     locale: 'en',
-    plural: ['4 human messages', '7 agent messages'],
-    singular: ['1 human message', '1 agent message'],
+    plural: '4 human messages and 7 agent messages',
+    singular: '1 human message and 1 agent message',
+    pluralHuman: '2 human messages and 1 agent message',
+    pluralAgent: '1 human message and 3 agent messages',
     suffixes: ['tokens', 'of total'],
   },
   {
     locale: 'de',
-    plural: ['4 menschliche Nachrichten', '7 Agentennachrichten'],
-    singular: ['1 menschliche Nachricht', '1 Agentennachricht'],
+    plural: '4 menschliche Nachrichten und 7 Agentennachrichten',
+    singular: '1 menschliche Nachricht und 1 Agentennachricht',
+    pluralHuman: '2 menschliche Nachrichten und 1 Agentennachricht',
+    pluralAgent: '1 menschliche Nachricht und 3 Agentennachrichten',
     suffixes: ['Token', 'der Gesamtmenge'],
   },
   {
     locale: 'es',
-    plural: ['4 mensajes humanos', '7 mensajes del agente'],
-    singular: ['1 mensaje humano', '1 mensaje del agente'],
+    plural: '4 mensajes humanos y 7 mensajes del agente',
+    singular: '1 mensaje humano y 1 mensaje del agente',
+    pluralHuman: '2 mensajes humanos y 1 mensaje del agente',
+    pluralAgent: '1 mensaje humano y 3 mensajes del agente',
     suffixes: ['tókenes', 'del total'],
   },
   {
     locale: 'fr',
-    plural: ['4 messages humains', '7 messages de l’agent'],
-    singular: ['1 message humain', '1 message de l’agent'],
+    plural: '4 messages humains et 7 messages de l’agent',
+    singular: '1 message humain et 1 message de l’agent',
+    pluralHuman: '2 messages humains et 1 message de l’agent',
+    pluralAgent: '1 message humain et 3 messages de l’agent',
     suffixes: ['jetons', 'du total'],
   },
   {
     locale: 'ja',
-    plural: ['人間のメッセージ 4 件', 'エージェントメッセージ 7 件'],
-    singular: ['人間のメッセージ 1 件', 'エージェントメッセージ 1 件'],
+    plural: '人間のメッセージ 4 件、エージェントメッセージ 7 件',
+    singular: '人間のメッセージ 1 件、エージェントメッセージ 1 件',
+    pluralHuman: '人間のメッセージ 2 件、エージェントメッセージ 1 件',
+    pluralAgent: '人間のメッセージ 1 件、エージェントメッセージ 3 件',
     suffixes: ['トークン', '（合計比）'],
   },
   {
     locale: 'ko',
-    plural: ['사람 메시지 4개', '에이전트 메시지 7개'],
-    singular: ['사람 메시지 1개', '에이전트 메시지 1개'],
+    plural: '사람 메시지 4개 및 에이전트 메시지 7개',
+    singular: '사람 메시지 1개 및 에이전트 메시지 1개',
+    pluralHuman: '사람 메시지 2개 및 에이전트 메시지 1개',
+    pluralAgent: '사람 메시지 1개 및 에이전트 메시지 3개',
     suffixes: ['토큰', '전체 대비'],
   },
   {
     locale: 'zh-CN',
-    plural: ['4 条人工消息', '7 条智能体消息'],
-    singular: ['1 条人工消息', '1 条智能体消息'],
+    plural: '4 条人工消息，7 条智能体消息',
+    singular: '1 条人工消息，1 条智能体消息',
+    pluralHuman: '2 条人工消息，1 条智能体消息',
+    pluralAgent: '1 条人工消息，3 条智能体消息',
     suffixes: ['个令牌', '占总量'],
   },
   {
     locale: 'zh-TW',
-    plural: ['4 則人工訊息', '7 則智慧體訊息'],
-    singular: ['1 則人工訊息', '1 則智慧體訊息'],
+    plural: '4 則人工訊息，7 則智慧體訊息',
+    singular: '1 則人工訊息，1 則智慧體訊息',
+    pluralHuman: '2 則人工訊息，1 則智慧體訊息',
+    pluralAgent: '1 則人工訊息，3 則智慧體訊息',
     suffixes: ['個 Token', '佔總量'],
   },
 ] as const) {
@@ -561,6 +576,22 @@ for (const localeCase of [
       .focus();
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.singular);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.singular);
+
+    await page
+      .getByTestId('token-usage-by-model')
+      .locator('.breakdown-item-control')
+      .nth(2)
+      .focus();
+    await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.pluralHuman);
+    await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.pluralHuman);
+
+    await page
+      .getByTestId('token-usage-by-model')
+      .locator('.breakdown-item-control')
+      .last()
+      .focus();
+    await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.pluralAgent);
+    await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.pluralAgent);
   });
 }
 
@@ -613,7 +644,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
     ),
   });
   const initialGeometry = await geometry();
-  await expect(animatedNumbers).toHaveCount(13);
+  await expect(animatedNumbers).toHaveCount(12);
   expect(
     await animatedNumbers.evaluateAll((numbers) =>
       numbers.every(
@@ -648,7 +679,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
   await expect(finalTargets).toHaveText(['30', '15', '0', '5']);
-  await expect(messageTargets).toHaveText(['1 human message', '3 agent messages']);
+  await expect(messageTargets).toHaveText('1 human message and 3 agent messages');
   expect(
     await finalTargets.evaluateAll((targets) =>
       targets.every((target) => target.ariaAtomic === 'true'),
@@ -658,7 +689,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   expect(midpointGeometry).toEqual(initialGeometry);
 
   await page.clock.runFor(225);
-  await expect(messageValues).toHaveText(['1 human message', '3 agent messages']);
+  await expect(messageValues).toHaveText('1 human message and 3 agent messages');
   await page.clock.runFor(125);
   await expect(animatedValues).toHaveText(['30', '15', '0', '5']);
   expect(await geometry()).toEqual(initialGeometry);
@@ -807,10 +838,9 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.nth(1)).toContainText('Model output');
   await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
   await expect(compositionRows.nth(3)).toContainText('Input context');
-  await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText([
-    '4 human messages',
-    '7 agent messages',
-  ]);
+  await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText(
+    '4 human messages and 7 agent messages',
+  );
   await expect(messageCompositionRows.locator('.composition-value')).toHaveCount(0);
   await expect(messageCompositionRows.locator('.composition-context')).toHaveCount(0);
   await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
@@ -1342,14 +1372,10 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(desktopRows.slice(1).every(({ valueSuffix }) => valueSuffix === undefined)).toBe(true);
   expect(desktopRows.slice(1).every(({ contextSuffix }) => contextSuffix === undefined)).toBe(true);
   expect(messageAlignment.rows).toHaveLength(1);
-  expect(messageAlignment.rows[0].labels).toHaveLength(2);
+  expect(messageAlignment.rows[0].labels).toHaveLength(1);
   expect(messageAlignment.rows[0].labels[0].x).toBeCloseTo(compositionAlignment.labelLeft, 2);
-  expect(messageAlignment.rows[0].labels[1].x).toBeGreaterThan(
-    messageAlignment.rows[0].labels[0].x + messageAlignment.rows[0].labels[0].width,
-  );
-  expect(messageAlignment.rows[0].labels[1].y).toBeCloseTo(messageAlignment.rows[0].labels[0].y, 2);
   expect(messageAlignment.rows[0]).toMatchObject({
-    textAligns: ['left', 'left'],
+    textAligns: ['left'],
     valueCount: 0,
     contextCount: 0,
   });

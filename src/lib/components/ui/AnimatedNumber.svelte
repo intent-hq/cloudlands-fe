@@ -6,8 +6,9 @@
 
   interface Props {
     value: number;
+    secondaryValue?: number;
     duration?: number;
-    format?: (n: number) => string;
+    format?: (value: number, secondaryValue?: number) => string;
     class?: string;
     accessible?: boolean;
     pulse?: boolean;
@@ -15,6 +16,7 @@
 
   let {
     value,
+    secondaryValue,
     duration = 300,
     format = (n: number) => formatInteger(n),
     class: className = '',
@@ -27,6 +29,8 @@
   // Non-reactive bookkeeping avoids restarting the effect when the target is recorded.
   // svelte-ignore state_referenced_locally
   let previousValue = value;
+  // svelte-ignore state_referenced_locally
+  let previousSecondaryValue = secondaryValue;
   let reducedMotion = $state(false);
   let animationRun = 0;
 
@@ -34,6 +38,11 @@
   // are intentionally captured at init; the $effect drives later updates.
   // svelte-ignore state_referenced_locally
   const displayValue = tweened(value, {
+    duration,
+    easing: cubicOut,
+  });
+  // svelte-ignore state_referenced_locally
+  const displaySecondaryValue = tweened(secondaryValue ?? 0, {
     duration,
     easing: cubicOut,
   });
@@ -55,15 +64,24 @@
       animationRun += 1;
       direction = null;
       previousValue = value;
+      previousSecondaryValue = secondaryValue;
       void displayValue.set(value, { duration: 0 });
+      void displaySecondaryValue.set(secondaryValue ?? 0, { duration: 0 });
       return;
     }
 
-    if (value !== previousValue) {
-      direction = value > previousValue ? 'up' : 'down';
+    if (value !== previousValue || secondaryValue !== previousSecondaryValue) {
+      const previousDirectionValue =
+        value !== previousValue ? previousValue : previousSecondaryValue;
+      const nextDirectionValue = value !== previousValue ? value : secondaryValue;
+      direction = (nextDirectionValue ?? 0) > (previousDirectionValue ?? 0) ? 'up' : 'down';
       previousValue = value;
+      previousSecondaryValue = secondaryValue;
       const run = ++animationRun;
-      void displayValue.set(value, { duration, easing: cubicOut }).then(() => {
+      void Promise.all([
+        displayValue.set(value, { duration, easing: cubicOut }),
+        displaySecondaryValue.set(secondaryValue ?? 0, { duration, easing: cubicOut }),
+      ]).then(() => {
         if (run === animationRun) direction = null;
       });
 
@@ -73,8 +91,10 @@
     }
   });
 
-  const formattedValue = $derived(format($displayValue));
-  const targetValue = $derived(format(value));
+  const formattedValue = $derived(
+    format($displayValue, secondaryValue === undefined ? undefined : $displaySecondaryValue),
+  );
+  const targetValue = $derived(format(value, secondaryValue));
 </script>
 
 <span

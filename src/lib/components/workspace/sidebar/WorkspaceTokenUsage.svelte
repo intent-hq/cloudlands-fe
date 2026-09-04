@@ -133,6 +133,13 @@
       : m.workspace_tokenUsage_agentMessages_many({ count: formatInteger(roundedValue) });
   }
 
+  function messageCountsLabel(humanValue: number, agentValue = 0): string {
+    return m.workspace_tokenUsage_messageCounts_label({
+      humanMessages: humanMessageCountLabel(humanValue),
+      agentMessages: agentMessageCountLabel(agentValue),
+    });
+  }
+
   function compactWholeNumber(value: number): string {
     return formatCompactNumber(value, { maximumFractionDigits: 0 });
   }
@@ -660,19 +667,14 @@
             {#if crossFilterAvailable}
               <div class="composition-row message-composition-row min-w-0 py-1">
                 <dt
-                  class="composition-metric message-composition-metric flex min-w-0 flex-wrap gap-x-3 text-left text-sm font-normal tabular-nums text-foreground"
+                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-foreground"
                 >
                   <AnimatedNumber
                     value={previewHumanMessages ?? 0}
-                    format={humanMessageCountLabel}
+                    secondaryValue={previewAgentMessages ?? 0}
+                    format={messageCountsLabel}
                     pulse={false}
-                    class="message-composition-label min-w-0 text-left"
-                  />
-                  <AnimatedNumber
-                    value={previewAgentMessages ?? 0}
-                    format={agentMessageCountLabel}
-                    pulse={false}
-                    class="message-composition-label min-w-0 text-left"
+                    class="message-composition-label min-w-0 max-w-full text-left"
                   />
                 </dt>
               </div>

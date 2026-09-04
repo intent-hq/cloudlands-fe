@@ -1795,6 +1795,7 @@
   "workspace_tokenUsage_in_label": "Entrada",
   "workspace_tokenUsage_humanMessages_one": "1 mensaje humano",
   "workspace_tokenUsage_humanMessages_many": "{count} mensajes humanos",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages} y {agentMessages}",
   "workspace_tokenUsage_inputContext_label": "Contexto de entrada",
   "workspace_tokenUsage_in_description": "Contexto de entrada",
   "workspace_tokenUsage_metric_label": "Métrica",

@@ -1795,6 +1795,7 @@
   "workspace_tokenUsage_in_label": "入力",
   "workspace_tokenUsage_humanMessages_one": "人間のメッセージ 1 件",
   "workspace_tokenUsage_humanMessages_many": "人間のメッセージ {count} 件",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages}、{agentMessages}",
   "workspace_tokenUsage_inputContext_label": "入力コンテキスト",
   "workspace_tokenUsage_in_description": "入力コンテキスト",
   "workspace_tokenUsage_metric_label": "指標",

@@ -96,6 +96,35 @@ describe('AnimatedNumber', () => {
     ).toBe('true');
   });
 
+  it('interpolates two values inside one accessible formatted phrase', async () => {
+    vi.useFakeTimers();
+    mockMotionPreference(false);
+    const AnimatedNumber = (await import('./AnimatedNumber.svelte')).default;
+    const format = (value: number, secondaryValue = 0) =>
+      `${Math.round(value)} human and ${Math.round(secondaryValue)} agent messages`;
+    const view = render(AnimatedNumber, {
+      props: { value: 2, secondaryValue: 3, duration: 300, format, pulse: false },
+    });
+    const visible = view.container.querySelector('.animated-number-value')!;
+
+    await view.rerender({
+      value: 8,
+      secondaryValue: 15,
+      duration: 300,
+      format,
+      pulse: false,
+    });
+    await vi.advanceTimersByTimeAsync(150);
+    expect(visible.textContent).not.toBe('2 human and 3 agent messages');
+    expect(visible.textContent).not.toBe('8 human and 15 agent messages');
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(visible.textContent).toBe('8 human and 15 agent messages');
+    expect(view.container.querySelector('.animated-number-target')?.textContent).toBe(
+      '8 human and 15 agent messages',
+    );
+  });
+
   it('snaps to the accessible final target under reduced motion', async () => {
     mockMotionPreference(true);
     const AnimatedNumber = (await import('./AnimatedNumber.svelte')).default;

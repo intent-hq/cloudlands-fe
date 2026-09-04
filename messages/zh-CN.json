@@ -1794,6 +1794,7 @@
   "workspace_tokenUsage_expand_ariaLabel": "展开令牌用量详情",
   "workspace_tokenUsage_humanMessages_one": "1 条人工消息",
   "workspace_tokenUsage_humanMessages_many": "{count} 条人工消息",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages}，{agentMessages}",
   "workspace_tokenUsage_in_label": "输入",
   "workspace_tokenUsage_inputContext_label": "输入上下文",
   "workspace_tokenUsage_in_description": "输入上下文",

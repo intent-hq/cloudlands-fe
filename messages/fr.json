@@ -1794,6 +1794,7 @@
   "workspace_tokenUsage_expand_ariaLabel": "Développer les détails d'utilisation des jetons",
   "workspace_tokenUsage_humanMessages_one": "1 message humain",
   "workspace_tokenUsage_humanMessages_many": "{count} messages humains",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages} et {agentMessages}",
   "workspace_tokenUsage_in_label": "Entrée",
   "workspace_tokenUsage_inputContext_label": "Contexte d’entrée",
   "workspace_tokenUsage_in_description": "Contexte d’entrée",

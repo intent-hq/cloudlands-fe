@@ -1795,6 +1795,7 @@
   "workspace_tokenUsage_in_label": "輸入",
   "workspace_tokenUsage_humanMessages_one": "1 則人工訊息",
   "workspace_tokenUsage_humanMessages_many": "{count} 則人工訊息",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages}，{agentMessages}",
   "workspace_tokenUsage_inputContext_label": "輸入內容",
   "workspace_tokenUsage_in_description": "輸入內容",
   "workspace_tokenUsage_metric_label": "指標",

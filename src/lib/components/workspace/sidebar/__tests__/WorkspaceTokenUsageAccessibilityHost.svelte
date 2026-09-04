@@ -169,7 +169,7 @@
             cost: { amount: 0.1, currency: 'USD' },
           },
           humanMessages: 1,
-          agentMessages: 2,
+          agentMessages: 0,
         },
         {
           agentId: 'gamma-03',

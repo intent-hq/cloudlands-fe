@@ -1795,6 +1795,7 @@
   "workspace_tokenUsage_expand_ariaLabel": "Expand token usage details",
   "workspace_tokenUsage_humanMessages_one": "1 human message",
   "workspace_tokenUsage_humanMessages_many": "{count} human messages",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages} and {agentMessages}",
   "workspace_tokenUsage_inputContext_label": "Input context",
   "workspace_tokenUsage_in_label": "In",
   "workspace_tokenUsage_in_description": "Prompt context",

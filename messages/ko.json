@@ -1794,6 +1794,7 @@
   "workspace_tokenUsage_expand_ariaLabel": "토큰 사용량 세부 정보 펼치기",
   "workspace_tokenUsage_humanMessages_one": "사람 메시지 1개",
   "workspace_tokenUsage_humanMessages_many": "사람 메시지 {count}개",
+  "workspace_tokenUsage_messageCounts_label": "{humanMessages} 및 {agentMessages}",
   "workspace_tokenUsage_in_label": "입력",
   "workspace_tokenUsage_inputContext_label": "입력 컨텍스트",
   "workspace_tokenUsage_in_description": "입력 컨텍스트",
