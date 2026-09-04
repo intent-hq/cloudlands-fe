@@ -10,6 +10,13 @@
     type MockCallLogEntry,
     type MockTransactionHarness,
   } from '$features/new-workspace/sandbox/mock-transaction';
+  import {
+    reduce,
+    type Capability,
+    type ControllerState,
+    type DraftInput,
+  } from '$features/new-workspace/controller';
+  import { UntitledWorkspaceShell } from '$features/new-workspace/ui';
   import { m } from '$shared/paraglide/messages.js';
 
   let resetGeneration = $state(0);
@@ -17,6 +24,7 @@
   let callLog = $state<readonly MockCallLogEntry[]>([]);
   let pendingOperationIds = $state<readonly number[]>([]);
   let invariantFailures = $state<readonly string[]>([]);
+  let controllerState = $state<ControllerState>();
 
   const scenarioId = $derived(page.url.searchParams.get('scenario'));
   const selectedScenario = $derived(getScenario(scenarioId));
@@ -61,14 +69,32 @@
     refreshDeveloperFrame();
   }
 
+  function editDraft(patch: Partial<DraftInput>): void {
+    if (controllerState) controllerState = reduce(controllerState, { type: 'user.edited', patch });
+  }
+
+  function startDraft(requiredCapabilities: Capability[]): void {
+    if (controllerState) {
+      controllerState = reduce(controllerState, { type: 'start.requested', requiredCapabilities });
+    }
+  }
+
+  function dispatchSimpleEvent(
+    type: 'reconnect' | 'conflict.acceptRemote' | 'conflict.keepLocal' | 'retry',
+  ): void {
+    if (controllerState) controllerState = reduce(controllerState, { type });
+  }
+
   $effect(() => {
     resetGeneration;
     const scenario = selectedScenario;
     if (!scenario) {
       harness = undefined;
+      controllerState = undefined;
       refreshDeveloperFrame();
       return;
     }
+    controllerState = scenario.initialControllerState;
     const nextHarness = createMockTransactionHarness(scenario.fixtures);
     harness = nextHarness;
     void nextHarness.runScript(scenario.script).finally(refreshDeveloperFrame);
@@ -140,21 +166,18 @@
         data-sandbox-scenario={selectedScenario.id}
         data-expected-phase={selectedScenario.expectedPhase}
       >
-        <div
-          class="mx-auto grid min-h-80 place-items-center rounded-lg border border-dashed border-border bg-card p-8 text-center"
-          style:width={`${width}px`}
-          style:max-width="100%"
-        >
-          <div class="space-y-3">
-            <p class="text-sm font-medium text-muted-foreground">{selectedScenario.family}</p>
-            <h2 class="text-2xl font-semibold">{selectedScenario.title}</h2>
-            <p class="text-sm text-muted-foreground">
-              {m.sandbox_newWorkspace_expectedPhase_label()}
-            </p>
-            <code class="rounded-md bg-muted px-3 py-1.5 text-sm"
-              >{selectedScenario.expectedPhase}</code
-            >
-          </div>
+        <div class="mx-auto h-[45rem] max-w-full" style:width={`${width}px`}>
+          {#if controllerState}
+            <UntitledWorkspaceShell
+              state={controllerState}
+              onEdit={editDraft}
+              onStart={startDraft}
+              onRetry={() => dispatchSimpleEvent('retry')}
+              onReconnect={() => dispatchSimpleEvent('reconnect')}
+              onAcceptRemote={() => dispatchSimpleEvent('conflict.acceptRemote')}
+              onKeepLocal={() => dispatchSimpleEvent('conflict.keepLocal')}
+            />
+          {/if}
         </div>
       </article>
 
