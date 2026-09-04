@@ -1,8 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
 import DisclosureMotionPreparationHost from './DisclosureMotionPreparationHost.svelte';
 
-test.describe.configure({ mode: 'serial' });
-
 interface FrameSample {
   responseHeight: number;
   subscriptionHeight: number;
@@ -10,22 +8,70 @@ interface FrameSample {
   responseAnimations: number;
 }
 
+interface MotionStartArm {
+  started: Promise<void>;
+  disarm: () => void;
+}
+
+type MotionStartWindow = typeof window & {
+  __disclosureMotionStarts?: Record<string, MotionStartArm>;
+};
+
+function controlledContentSelector(id: string) {
+  return `[id=${JSON.stringify(id)}]`;
+}
+
 async function controlledContent(component: Locator, trigger: Locator) {
   const id = await trigger.getAttribute('aria-controls');
   if (!id) throw new Error('Expected disclosure trigger to control content');
-  return component.locator(`[id=${JSON.stringify(id)}]`);
+  return component.locator(controlledContentSelector(id));
 }
 
-async function expectAnimationRunning(locator: Locator) {
-  await expect
-    .poll(() =>
-      locator.evaluate((node) =>
-        node
-          .getAnimations({ subtree: true })
-          .some((animation) => animation.playState === 'running'),
-      ),
-    )
-    .toBe(true);
+// Arm BEFORE the click that starts the motion (monorepo#4319): polling
+// `playState === 'running'` after the fact races the motion itself. Svelte
+// reverses an interrupted bidirectional transition over `duration * |t2 - t1|`,
+// so the outro that follows a rapid click lasts only as long as the intro had
+// progressed (tens of ms) and can finish — and unmount its node — before the
+// first poll evaluates under host load. Svelte dispatches `introstart` /
+// `outrostart` on the transitioned node right before it creates the WAAPI
+// animation; recording that (non-bubbling, so capture phase on the host root)
+// is a start signal that cannot be missed.
+async function armMotionStart(component: Locator, selector: string) {
+  await component.evaluate((root, key) => {
+    const state = window as MotionStartWindow;
+    state.__disclosureMotionStarts ??= {};
+    state.__disclosureMotionStarts[key]?.disarm();
+    let disarm = () => {};
+    const started = new Promise<void>((resolve) => {
+      const onStart = (event: Event) => {
+        if (!(event.target instanceof Element) || !event.target.matches(key)) return;
+        disarm();
+        resolve();
+      };
+      disarm = () => {
+        root.removeEventListener('introstart', onStart, true);
+        root.removeEventListener('outrostart', onStart, true);
+      };
+      root.addEventListener('introstart', onStart, true);
+      root.addEventListener('outrostart', onStart, true);
+    });
+    state.__disclosureMotionStarts[key] = { started, disarm };
+  }, selector);
+}
+
+async function expectMotionStarted(component: Locator, selector: string) {
+  await component.evaluate((_root, key) => {
+    const arm = (window as MotionStartWindow).__disclosureMotionStarts?.[key];
+    if (!arm) throw new Error(`Motion start was not armed for ${key}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Timed out waiting for motion start on ${key}`)),
+        5000,
+      );
+    });
+    return Promise.race([arm.started, timeout]).finally(() => clearTimeout(timer));
+  }, selector);
 }
 
 async function expectAnimationsCleanedUp(locator: Locator) {
@@ -101,15 +147,18 @@ for (const config of [
     const trigger = component.getByTestId('response-group-disclosure');
     const responseContentId = await trigger.getAttribute('aria-controls');
     if (!responseContentId) throw new Error('Expected response disclosure content id');
+    const detailsSelector = controlledContentSelector(responseContentId);
     await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
     await startSampling(component, 48, responseContentId);
 
+    await armMotionStart(component, detailsSelector);
     await trigger.dispatchEvent('click');
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    await expectAnimationRunning(await controlledContent(component, trigger));
+    await expectMotionStarted(component, detailsSelector);
+    await armMotionStart(component, detailsSelector);
     await trigger.dispatchEvent('click');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await expectAnimationRunning(component);
+    await expectMotionStarted(component, detailsSelector);
     await trigger.dispatchEvent('click');
 
     const samples = await finishSampling(page);
@@ -184,17 +233,21 @@ test('reverses the outer subscription disclosure and keeps native keyboard contr
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const outer = component.getByTestId('event-subscriptions-summary');
+  const bodySelector = '[data-testid="event-subscriptions-body"]';
 
   await outer.focus();
+  await armMotionStart(component, bodySelector);
   await outer.dispatchEvent('click');
   await expect(outer).toHaveAttribute('aria-expanded', 'false');
-  await expectAnimationRunning(component);
+  await expectMotionStarted(component, bodySelector);
+  await armMotionStart(component, bodySelector);
   await outer.dispatchEvent('click');
   await expect(outer).toHaveAttribute('aria-expanded', 'true');
-  await expectAnimationRunning(component.getByTestId('event-subscriptions-body'));
+  await expectMotionStarted(component, bodySelector);
+  await armMotionStart(component, bodySelector);
   await outer.dispatchEvent('click');
   await expect(outer).toHaveAttribute('aria-expanded', 'false');
-  await expectAnimationRunning(component);
+  await expectMotionStarted(component, bodySelector);
   await outer.press('Enter');
 
   await expect(outer).toHaveAttribute('aria-expanded', 'true');
@@ -224,6 +277,13 @@ test('accepts live response updates during collapse without stale detached conte
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(component.getByTestId('prepared-response-body')).toBeVisible();
+  // Let the expand motion settle before the pointer click that starts the
+  // collapse (monorepo#4267): while the details grow, the followed-bottom
+  // transcript re-pins every frame and shifts the trigger row up. Playwright
+  // verifies the hit target only on pointerdown, so a row that moves before
+  // mouseup lands the synthesized `click` on the common ancestor instead of the
+  // button and the toggle is silently dropped.
+  await expectAnimationsCleanedUp(await controlledContent(component, toggle));
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.waitForTimeout(35);
@@ -238,7 +298,18 @@ test('accepts live response updates during collapse without stale detached conte
   expect(
     await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
   ).toBe(true);
-  await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
+  const body = component.getByTestId('prepared-response-body');
+  await expect(body).toHaveCount(1);
+  await expect(body).toBeVisible();
+  expect(
+    await body.evaluate((node) => {
+      const groupContent = node.closest('[data-response-group-content]');
+      return groupContent?.closest('[data-operational-preview-content]') !== null;
+    }),
+  ).toBe(true);
+  expect(
+    await body.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
+  ).toBe(true);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
   ).toBeLessThanOrEqual(8);

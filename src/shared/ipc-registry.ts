@@ -238,6 +238,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'unsloth:get-models',
   },
 
+  // Google Antigravity Integration
+  ANTIGRAVITY: {
+    GET_MODELS: 'antigravity:get-models',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
@@ -495,6 +500,10 @@ export const IPC_CHANNELS = {
     UNREGISTER_TAB: 'browser:unregister-tab',
     /** Report a visible webview element's bounds for viewport scale-to-fit */
     REPORT_TAB_BOUNDS: 'browser:report-tab-bounds',
+    /** Set a browser tab's persisted viewport mode */
+    SET_TAB_VIEWPORT: 'browser:set-tab-viewport',
+    /** Open DevTools for a browser tab and select a panel */
+    OPEN_DEVTOOLS_PANEL: 'browser:open-devtools-panel',
     /** Execute code with access to browser CDP API */
     EXEC: 'browser:exec',
     /** Resolve a URL through the loopback rewrite → probe → tunnel pipeline */

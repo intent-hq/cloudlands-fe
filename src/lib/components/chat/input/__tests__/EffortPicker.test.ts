@@ -154,7 +154,7 @@ describe('EffortPicker', () => {
     expect(screen.queryByTestId('effort-slider-tick')).toBeNull();
   });
 
-  it('uses the canonical select inline in embedded mode', async () => {
+  it('uses an owned portalled select in embedded mode', async () => {
     const onEffortChange = vi.fn(async () => true);
     render(EffortPicker, {
       props: {
@@ -177,6 +177,10 @@ describe('EffortPicker', () => {
     expect(gauge.className.baseVal).toContain('[&_line]:transition-none!');
 
     const listbox = await openSelect();
+    expect(content.contains(listbox)).toBe(false);
+    expect(
+      document.getElementById(trigger().getAttribute('aria-controls')!)?.contains(listbox),
+    ).toBe(true);
     expect(within(listbox).getAllByRole('option')).toHaveLength(3);
     await selectOption(listbox, 'High');
     expect(onEffortChange).toHaveBeenCalledWith('high');

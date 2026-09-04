@@ -136,7 +136,8 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
   // (browser:list-tabs-response / browser:register-tab /
-  // browser:report-tab-bounds / browser:clear-agent-tabs are forwarded to the
+  // browser:report-tab-bounds / browser:set-tab-viewport /
+  // browser:clear-agent-tabs are forwarded to the
   // real preload bridge in browser-ipc-bridge-seeder.ts — the packaged app's
   // main process DOES fire browser:list-tabs-request, and an allowlisted
   // absence here swallowed the saga's reply so agent listTabs/closeTab/dedupe

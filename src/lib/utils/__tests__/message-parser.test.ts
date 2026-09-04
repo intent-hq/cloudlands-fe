@@ -497,6 +497,35 @@ Check it out.`;
     expect(result[0].metadata?.referenceData?.snapshot?.languageId).toBe('typescript');
   });
 
+  it('promotes a standalone workspace video image to a video block', () => {
+    const result = parseAgentMessage(
+      'Before\n\n![demo](intent://local/file/.demo-artifacts/demo.webm)\n\nAfter',
+      'workspace-1',
+    );
+
+    expect(result.map((block) => block.type)).toEqual(['text', 'video', 'text']);
+    expect(result[1].metadata?.videoData).toEqual({
+      source: {
+        kind: 'workspace',
+        url: 'workspace-file://workspace-1/.demo-artifacts/demo.webm',
+        mimeType: 'video/webm',
+      },
+      name: 'demo',
+      poster: undefined,
+    });
+  });
+
+  it('parses a validated ws-block:video fence', () => {
+    const result = parseAgentMessage(
+      '```ws-block:video\n{"path":".demo-artifacts/demo.mp4"}\n```',
+      'workspace-1',
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('video');
+    expect(result[0].metadata?.videoData?.source.mimeType).toBe('video/mp4');
+  });
+
   it('should fallback to text for invalid ws-block:reference JSON', () => {
     const input = `\`\`\`ws-block:reference
 not valid json

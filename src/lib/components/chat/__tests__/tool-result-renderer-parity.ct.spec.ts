@@ -129,10 +129,7 @@ test('renders object-envelope orphan text at payload-scoped search paths', async
   }
 });
 
-test('keeps markdown workspace images in chat thumbnail mode on both surfaces', async ({
-  mount,
-  page,
-}) => {
+test('shows unavailable markdown image fallbacks on both browser surfaces', async ({ mount }) => {
   const message = reconcileToolResultMessage(markdownImageOrphanBlocks(), true);
   const component = await mount(ToolResultRendererParityHost, {
     props: { content: message.contentBlocks ?? [], isStreaming: true },
@@ -141,17 +138,9 @@ test('keeps markdown workspace images in chat thumbnail mode on both surfaces', 
     component.getByTestId('normal-workspace-surface'),
     component.getByTestId('dedicated-agent-surface'),
   ]) {
-    const workspaceImage = surface.locator('img[src^="workspace-file://"]');
-    const externalImage = surface.locator('img[src="https://example.com/unrelated.png"]');
-    await expect(workspaceImage).toHaveCount(1);
-    await expect(
-      workspaceImage.locator('xpath=ancestor::div[contains(@class, "markdown-viewer")]'),
-    ).toHaveClass(/chat-image-thumbnails/);
-    await workspaceImage.hover();
-    await expect(surface.getByTestId('markdown-image-actions-overlay')).toBeVisible();
-    await page.mouse.move(0, 0);
-    await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
-    await externalImage.hover();
+    await expect(surface.getByText('File is missing.', { exact: true })).toHaveCount(1);
+    await expect(surface.getByText('Media could not load.', { exact: true })).toHaveCount(1);
+    await expect(surface.getByRole('button', { name: 'Copy path' })).toHaveCount(1);
     await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
   }
 });

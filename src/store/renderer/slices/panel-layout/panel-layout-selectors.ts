@@ -174,6 +174,19 @@ export const selectActiveTab = store.createSelector<[wsId: string], PanelTab | u
   },
 );
 
+/** Most recently focused agent tab, ignoring later browser/tool focus and stale history entries. */
+export const selectMostRecentAgentTab = store.createSelector<[wsId: string], PanelTab | undefined>(
+  (state, wsId) => {
+    const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+    for (let index = ws.focusHistory.length - 1; index >= 0; index -= 1) {
+      const entry = ws.focusHistory[index];
+      const tab = ws.panels[entry.panelId]?.tabs.find((candidate) => candidate.id === entry.tabId);
+      if (tab?.type === 'agent') return tab;
+    }
+    return undefined;
+  },
+);
+
 /** Select the active tab in a specific panel */
 export const selectActiveTabInPanel = store.createSelector<
   [wsId: string, panelId: string],

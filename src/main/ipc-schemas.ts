@@ -700,6 +700,7 @@ export const WindowCreateSchema = z.object({
 
 export const WindowOpenNewSchema = z.object({
   route: z.string().optional(),
+  requestId: z.string().min(1).max(256).optional(),
 });
 
 export const WindowSetThemeSchema = z.object({
@@ -1021,6 +1022,10 @@ export const SpecialistWriteSchema = z
     modelOptions: z
       .array(
         z.object({
+          provider: z
+            .string()
+            .refine((value) => value.trim() !== '', 'Provider must be non-empty when present')
+            .optional(),
           model: z.string().min(1, 'Model is required'),
           hint: z.string(),
           reasoningEffort: z.string().optional(),
@@ -1106,6 +1111,8 @@ export const ConnectionsUpdateSchema = z
     host: z.string().trim().min(1, 'Host is required').optional(),
     port: z.number().int().min(1).max(65_535).optional(),
     confirmedFingerprint: z.string().trim().min(1).optional(),
+    detectHosts: z.boolean().optional(),
+    syncExcluded: z.boolean().optional(),
   })
   .refine((value) => (value.host === undefined) === (value.port === undefined), {
     message: 'Host and port must be supplied together',

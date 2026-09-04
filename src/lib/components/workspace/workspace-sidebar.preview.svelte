@@ -1,6 +1,6 @@
 <script lang="ts" module>
-  import type { Workspace } from '$shared/types';
-  import { WorkspaceStatus } from '$shared/types';
+  import type { PullRequestInfo, Workspace } from '$shared/types';
+  import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import {
@@ -33,6 +33,18 @@
     ...PREVIEW_FIXTURE_TIMESTAMPS,
   });
 
+  function pr(number: number, overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+    return {
+      id: `preview-pr-${number}`,
+      number,
+      url: `https://github.com/intent-hq/cloudlands-fe/pull/${number}`,
+      title: `Preview pull request ${number}`,
+      status: PullRequestStatus.Open,
+      ...PREVIEW_FIXTURE_TIMESTAMPS,
+      ...overrides,
+    };
+  }
+
   const busyWorkspace = workspaceFixture({
     displayStatus: 'in_progress',
     activity: 'agent_running',
@@ -45,6 +57,8 @@
     branch: 'review-preview-scenes',
     displayStatus: 'needs_attention',
     attention: 'review_required',
+    // Draft + merged: the compact row shows the earliest-in-flow PR (the draft).
+    pullRequests: [pr(45, { status: PullRequestStatus.Merged }), pr(46, { isDraft: true })],
   });
   const longWorkspace = workspaceFixture({
     id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-long`),
@@ -52,6 +66,8 @@
     branch: 'long-workspace-title-and-branch-for-overflow-validation',
     displayStatus: 'pr_open',
     statusMessage: 'Waiting for the last visual review before the preview work can ship.',
+    // Open + merged: the compact row shows the open PR.
+    pullRequests: [pr(47, { status: PullRequestStatus.Merged }), pr(48)],
   });
 
   export const preview = definePreview<WorkspaceSidebarPreviewProps>({

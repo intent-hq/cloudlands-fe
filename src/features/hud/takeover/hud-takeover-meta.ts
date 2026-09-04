@@ -34,6 +34,8 @@ export function takeoverKindLabel(kind: HudTakeoverKind): string {
       return m.hud_takeover_kindPrOpen_label();
     case 'pr_ready':
       return m.hud_takeover_kindPrReady_label();
+    case 'pr_queued':
+      return m.hud_takeover_kindPrQueued_label();
     case 'pr_merged':
       return m.hud_takeover_kindPrMerged_label();
     case 'workspace_complete':
@@ -65,6 +67,7 @@ export function takeoverKindColor(kind: HudTakeoverKind): string {
       return HUD_STATE_COLORS.idle;
     case 'pr_open':
     case 'pr_ready':
+    case 'pr_queued':
       return HUD_STATE_COLORS.pr;
     case 'pr_merged':
       return HUD_STATE_COLORS.prMerged;
@@ -203,6 +206,7 @@ const WORKSPACE_HEADLINE_KINDS: ReadonlySet<HudTakeoverKind> = new Set([
   'workspace_idle',
   'pr_open',
   'pr_ready',
+  'pr_queued',
   'pr_merged',
   'workspace_complete',
 ]);

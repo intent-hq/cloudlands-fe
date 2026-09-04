@@ -323,6 +323,20 @@ describe('setupPromptSaga', () => {
 });
 
 describe('hasReadyProvider', () => {
+  it.each([undefined, false, true])(
+    'requires confirmed Antigravity auth=%s without changing other providers',
+    (authenticated) => {
+      expect(hasReadyProvider({ antigravity: { available: true, authenticated } })).toBe(
+        authenticated === true,
+      );
+      expect(
+        hasReadyProvider({
+          antigravity: { available: true, authenticated },
+          codex: { available: true },
+        }),
+      ).toBe(true);
+    },
+  );
   it('counts available + not explicitly unauthenticated as ready', () => {
     expect(hasReadyProvider({ a: { available: true } })).toBe(true);
     expect(hasReadyProvider({ a: { available: true, authenticated: true } })).toBe(true);

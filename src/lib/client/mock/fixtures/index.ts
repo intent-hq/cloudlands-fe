@@ -218,10 +218,9 @@ export const mockSystemStatus: SystemStatusState = {
   binaryInstallAvailable: false,
 };
 
-export const mockProviderSettings: Pick<
-  ProviderSettingsState,
-  'activeProviderId' | 'enabledProviders'
-> = {
+export const mockProviderSettings: Pick<ProviderSettingsState, 'enabledProviders'> & {
+  activeProviderId: string;
+} = {
   activeProviderId: 'auggie',
   enabledProviders: { auggie: true, 'claude-code': false, codex: false },
 };
@@ -243,6 +242,8 @@ export const mockUserPreferences: UserPreferencesState = {
   groupByRepo: true,
   hasCompletedProviderSetup: true,
   showReasoningBlocks: false,
+  chatAuroraEnabled: true,
+  shellTransparencyEnabled: true,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
   codeFontFamily: 'JetBrains Mono',

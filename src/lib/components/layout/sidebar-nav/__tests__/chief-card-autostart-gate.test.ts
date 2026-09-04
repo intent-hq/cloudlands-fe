@@ -7,11 +7,13 @@
  * the auto-start effect retries and fires exactly one launch.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
 import ChiefCard from '../cards/ChiefCard.svelte';
@@ -66,5 +68,37 @@ describe('ChiefCard auto-start provider gate', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(launchActions).toHaveLength(1);
+  });
+
+  it('preserves the collapsed preference when auto-start creates the first thread', async () => {
+    appStore.dispatch(setChiefCollapsed(true));
+    appStore.dispatch(setActiveProvider('auggie'));
+    dispatchSpy.mockClear();
+
+    render(ChiefCard, {
+      props: { expanded: true, embedded: true, collapsed: true, ontoggle: vi.fn() },
+    });
+
+    await waitFor(() => expect(launchActions).toHaveLength(1));
+    expect(
+      dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
+    ).toBe(false);
+    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
+  });
+
+  it('expands the preference and creates a thread when the expanded + is clicked', async () => {
+    appStore.dispatch(setChiefCollapsed(true));
+    dispatchSpy.mockClear();
+    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
+    );
+
+    await waitFor(() => expect(launchActions).toHaveLength(1));
+    expect(
+      dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
+    ).toBe(true);
+    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(false);
   });
 });

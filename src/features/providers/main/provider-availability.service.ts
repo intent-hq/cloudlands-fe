@@ -17,6 +17,7 @@ import {
   getProviderAuthVerdict,
   getProviderAuthVerdicts,
 } from '../../../shared/main/provider-auth-status';
+import type { ProviderAuthVerdict } from '../../../shared/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
@@ -229,6 +230,18 @@ async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse> {
 }
 
 /**
+ * Copy a daemon auth verdict onto an available provider's status: the
+ * verdict flag plus the rendered identity line (`authDetails`) when the
+ * daemon sent one. A missing verdict reads as unknown.
+ */
+function applyAuthVerdict(status: ProviderStatus, verdict: ProviderAuthVerdict | undefined): void {
+  status.authenticated = verdict?.authenticated;
+  if (verdict?.authDetails !== undefined) {
+    status.authDetails = verdict.authDetails;
+  }
+}
+
+/**
  * Get aggregated availability status for all providers
  */
 export async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
@@ -326,6 +339,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     droidResult,
     grokResult,
     unslothResult,
+    antigravityResult,
     authVerdicts,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
@@ -344,6 +358,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     // Unsloth rides the opencode binary (discovery reports it installed from
     // opencode presence); same fallback pattern as grok.
     makeProviderStatus('unsloth', checkUnslothAvailability),
+    // No local probe or npm fallback. The daemon resolves the configured
+    // official ACP executable, which is separate from the agy CLI.
+    makeProviderStatus('antigravity', async () => ({ available: false })),
     // Auth verdicts from the daemon's `host.providerAuthStatus` sweep
     // (intent-hq/intentd#339): the daemon owns the CLI/ACP probes, marker
     // parsing, and caching. Independent of discovery, so it rides in the
@@ -367,13 +384,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 
   // The wire's `null` (unknown/uninstalled) folds to `undefined` so no
   // indicator renders; verdicts attach only to providers that are available.
-  if (auggieResult.available) auggieResult.authenticated = authVerdicts['auggie'];
-  if (claudeCodeResult.available) claudeCodeResult.authenticated = authVerdicts['claude-code'];
-  if (codexResult.available) codexResult.authenticated = authVerdicts['codex'];
-  if (opencodeResult.available) opencodeResult.authenticated = authVerdicts['opencode'];
-  if (piResult.available) piResult.authenticated = authVerdicts['pi'];
-  if (droidResult.available) droidResult.authenticated = authVerdicts['droid'];
-  if (grokResult.available) grokResult.authenticated = authVerdicts['grok'];
+  if (auggieResult.available) applyAuthVerdict(auggieResult, authVerdicts['auggie']);
+  if (claudeCodeResult.available) applyAuthVerdict(claudeCodeResult, authVerdicts['claude-code']);
+  if (codexResult.available) applyAuthVerdict(codexResult, authVerdicts['codex']);
+  if (opencodeResult.available) applyAuthVerdict(opencodeResult, authVerdicts['opencode']);
+  if (piResult.available) applyAuthVerdict(piResult, authVerdicts['pi']);
+  if (droidResult.available) applyAuthVerdict(droidResult, authVerdicts['droid']);
+  if (grokResult.available) applyAuthVerdict(grokResult, authVerdicts['grok']);
+  if (antigravityResult.available) applyAuthVerdict(antigravityResult, authVerdicts['antigravity']);
   // Unsloth is local-only: the daemon's managed server generates its own API
   // key, there is no login surface, so available ⇒ authenticated.
   if (unslothResult.available) unslothResult.authenticated = true;
@@ -389,7 +407,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       piResult.available ||
       droidResult.available ||
       grokResult.available ||
-      unslothResult.available,
+      unslothResult.available ||
+      antigravityResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
@@ -401,6 +420,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       droid: droidResult,
       grok: grokResult,
       unsloth: unslothResult,
+      antigravity: antigravityResult,
     },
     // Absent catalog = unknown gating verdict; only a consulted catalog
     // yields an authoritative hidden list (empty = nothing hidden).
@@ -511,13 +531,26 @@ export function setupProviderAvailabilityIPC(): void {
       try {
         let status: ProviderStatus;
         let authenticated: boolean | undefined;
+        let authDetails: string | undefined;
 
         // Auth verdicts come from the daemon (`host.providerAuthStatus`,
         // intent-hq/intentd#339). `force: true` bypasses the daemon's cache.
-        const checkAuth = (): Promise<boolean | undefined> =>
-          getProviderAuthVerdict(providerId, { force });
+        // The rendered identity line rides the same verdict (protocol 9.4).
+        const checkAuth = async (): Promise<boolean | undefined> => {
+          const verdict = await getProviderAuthVerdict(providerId, { force });
+          authDetails = verdict?.authDetails;
+          return verdict?.authenticated;
+        };
 
         switch (providerId) {
+          case 'antigravity': {
+            const discovery = await callProviderDiscovery();
+            const row = discovery?.providers.find((provider) => provider.id === providerId);
+            if (!discovery) throw new Error(m.providers_antigravity_discoveryUnavailable());
+            status = { available: row?.installed === true, hasNpxFallback: false };
+            if (status.available) authenticated = await checkAuth();
+            break;
+          }
           case 'auggie':
             status = await checkAuggieAvailability();
             if (status.available) {
@@ -594,6 +627,9 @@ export function setupProviderAvailabilityIPC(): void {
 
         if (status.available) {
           status.authenticated = status.authenticated ?? authenticated;
+          if (authDetails !== undefined) {
+            status.authDetails = authDetails;
+          }
         }
 
         return { success: true, providerId, data: status };

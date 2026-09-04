@@ -4,7 +4,7 @@
  */
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
-import type { PullRequestInfo } from '$shared/types';
+import type { PullRequestInfo, Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type {
@@ -361,6 +361,31 @@ export function mapWorkspacePRs(
   return [];
 }
 
+/**
+ * The still-supported legacy `Workspace.prNumber`/`prUrl` fields as a
+ * `PullRequestInfo`, or null when either is absent. Mirrors the fallback
+ * `selectWorkspaceActivePrSummary` applies, so a workspace hydrated with only
+ * the legacy fields keeps a route to its PR now that the Changes launcher
+ * dropdown is the sidebar's PR surface. Callers pass the result as the
+ * `activePR` fallback; `prStatus` is honored when the daemon sent it and the
+ * row otherwise reads as open, the only state the legacy link ever recorded.
+ */
+export function legacyWorkspacePullRequest(
+  workspace: Pick<Workspace, 'prNumber' | 'prUrl' | 'prStatus' | 'updatedAt'>,
+): PullRequestInfo | null {
+  const { prNumber, prUrl } = workspace;
+  if (prNumber === undefined || prNumber === null || !prUrl) return null;
+  return {
+    id: `legacy-pr-${prNumber}`, // i18n-ignore (synthetic identifier)
+    number: prNumber,
+    url: prUrl,
+    title: '',
+    status: workspace.prStatus ?? PullRequestStatus.Open,
+    createdAt: workspace.updatedAt,
+    updatedAt: workspace.updatedAt,
+  };
+}
+
 /** Display status for a monitored PR row (PROTOCOL §6.9): active monitors
  * read the live snapshot state; completed ones ended merged or closed. */
 export function monitorDisplayStatus(
@@ -424,8 +449,9 @@ export function mergeMonitoredPRs(
       htmlUrl: url,
       status: monitorDisplayStatus(monitor),
       // Monitor-row timestamps stand in for the PR's own (the snapshot does
-      // not carry them) so selectPrimaryPr's oldest-created / latest-updated
-      // ordering works when multiple monitored PRs compete.
+      // not carry them) so recency ordering (sortPRsByRecency, and the
+      // sidebar row's same-status tie-breaker in workspace-pr-presentation)
+      // works when multiple monitored PRs compete.
       createdAt: monitor.createdAt,
       updatedAt: monitor.updatedAt,
       monitorAgentId: monitor.agentId,
@@ -651,34 +677,6 @@ function compareMissingLast(
   if (a) return -1;
   if (b) return 1;
   return 0;
-}
-
-/**
- * Pick the primary PR for single-PR surfaces (workspace card/row pill, the
- * summarized Changes card) from the combined branch-linked + monitored pool
- * (see {@link mergeMonitoredPRs}): the oldest unmerged (open/draft) PR
- * (`createdAt` asc, PR number asc as tiebreak); otherwise the latest merged
- * PR (`updatedAt` desc, PR number desc); otherwise the first remaining
- * (closed) row. Missing timestamps sort last within their bucket.
- */
-export function selectPrimaryPr(prs: PRInfo[]): PRInfo | undefined {
-  const unmerged = prs.filter((pr) => pr.status === 'open' || pr.status === 'draft');
-  if (unmerged.length > 0) {
-    return [...unmerged].sort(
-      (a, b) =>
-        compareMissingLast(a.createdAt, b.createdAt, (x, y) => x.localeCompare(y)) ||
-        a.number - b.number,
-    )[0];
-  }
-  const merged = prs.filter((pr) => pr.status === 'merged');
-  if (merged.length > 0) {
-    return [...merged].sort(
-      (a, b) =>
-        compareMissingLast(a.updatedAt, b.updatedAt, (x, y) => y.localeCompare(x)) ||
-        b.number - a.number,
-    )[0];
-  }
-  return prs[0];
 }
 
 /**

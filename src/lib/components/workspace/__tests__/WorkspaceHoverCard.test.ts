@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const streamingAgentIds: string[] = [];
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
-  const tasksByWorkspace: Record<string, { id: string; title: string; status: string }[]> = {};
   const agentPreviewsById: Record<string, { kind: string; text?: string }> = {};
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
@@ -26,7 +25,6 @@ const mocks = vi.hoisted(() => {
     dispatch,
     streamingAgentIds,
     agentSessionsByWorkspace,
-    tasksByWorkspace,
     agentPreviewsById,
     createWorkspaceReadable,
   };
@@ -73,29 +71,6 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
     payload: [workspaceId, agentId],
   })),
 }));
-
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => {
-  const progress = (workspaceId: string) => {
-    const tasks = (mocks.tasksByWorkspace[workspaceId] ?? []).filter(
-      ({ status }) => status !== 'cancelled',
-    );
-    return {
-      total: tasks.length,
-      completed: tasks.filter(({ status }) => status === 'complete').length,
-      inProgress: tasks.filter(({ status }) => ['in_progress', 'review_required'].includes(status))
-        .length,
-    };
-  };
-  return {
-    selectWorkspaceTaskProgress: vi.fn(mocks.createWorkspaceReadable(progress)),
-    selectWorkspaceTaskDisplayList: vi.fn(
-      mocks.createWorkspaceReadable((workspaceId: string) =>
-        (mocks.tasksByWorkspace[workspaceId] ?? []).filter(({ status }) => status !== 'cancelled'),
-      ),
-    ),
-    selectWorkspaceTasksInitialized: vi.fn(mocks.createWorkspaceReadable(() => true)),
-  };
-});
 
 const baseWorkspace = {
   id: 'ws-1',
@@ -193,17 +168,13 @@ describe('WorkspaceHoverCard', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
-    for (const record of [
-      mocks.agentSessionsByWorkspace,
-      mocks.tasksByWorkspace,
-      mocks.agentPreviewsById,
-    ]) {
+    for (const record of [mocks.agentSessionsByWorkspace, mocks.agentPreviewsById]) {
       for (const key of Object.keys(record)) delete record[key];
     }
   });
 
-  it('keeps pull request numbers and details visible in the summary column', async () => {
-    await renderHoverCard({
+  it('keeps pull request numbers and status visible in the pull request column', async () => {
+    const { container } = await renderHoverCard({
       activePullRequest: {
         id: 'pr-42',
         number: 42,
@@ -218,7 +189,13 @@ describe('WorkspaceHoverCard', () => {
     const row = screen.getByRole('listitem', { name: /augment\/intent #42/i });
     expect(row.textContent).toContain('Refine hover card');
     expect(row.textContent).toContain('#42');
+    expect(row.textContent).toContain('Open');
     expect(row.getAttribute('data-pr-status')).toBe('open');
+    expect(Array.from(row.children).map(text)).toEqual(['', 'Refine hover card', 'Open', '#42']);
+    expect(container.querySelector('[data-workspace-hover-card-activity]')).toBeNull();
+    expect(
+      container.querySelector('[data-workspace-hover-card-pr-column]')?.getAttribute('aria-label'),
+    ).toBe('Pull requests');
   });
 
   it('preserves the public loading and data-loading behavior', async () => {
@@ -242,7 +219,7 @@ describe('WorkspaceHoverCard', () => {
     expect(sessionLoads()).toHaveLength(2);
 
     await rerender({ workspace: null, isLoading: true, loadWorkspaceData: false });
-    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(5);
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(6);
     expect(container.querySelector('[data-workspace-hover-card-title]')).toBeNull();
   });
 
@@ -265,21 +242,35 @@ describe('WorkspaceHoverCard', () => {
     );
   });
 
-  it('keeps a full-width header above a 42/58 identity and activity body', async () => {
-    const { container } = await renderHoverCard();
+  it('keeps identity in the header above two accessible non-empty activity sections', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+    const { container } = await renderHoverCard({
+      agentSummary: { agentIds: ['active'] },
+      activePullRequest: {
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/augment/intent/pull/42',
+        title: 'Refine hover card',
+        status: PullRequestStatus.Open,
+        createdAt: baseWorkspace.createdAt,
+        updatedAt: baseWorkspace.updatedAt,
+      },
+    });
     const root = container.querySelector('[data-workspace-hover-card]')!;
     const header = container.querySelector('[data-workspace-hover-card-header]')!;
     const columns = container.querySelector('[data-workspace-hover-card-columns]')!;
     const identity = container.querySelector('[data-workspace-hover-card-identity]')!;
     const activity = container.querySelector('[data-workspace-hover-card-activity]')!;
+    const pullRequests = container.querySelector('[data-workspace-hover-card-pr-column]')!;
+    const summary = container.querySelector('[data-workspace-hover-card-summary]')!;
 
     expect(root.getAttribute('data-workspace-hover-card-layout')).toBe('landscape');
-    expect(root.className).toContain('rounded-lg');
-    expect(root.className).toContain('overflow-hidden');
     expect(header.parentElement).toBe(root);
+    expect(identity.parentElement).toBe(header);
+    expect(summary.parentElement).toBe(identity);
     expect(columns.parentElement).toBe(root);
-    expect(columns.children[0]).toBe(identity);
-    expect(columns.children[1]).toBe(activity);
+    expect(columns.children[0]).toBe(activity);
+    expect(columns.children[1]).toBe(pullRequests);
     expect(header.querySelector('[data-workspace-hover-card-title]')).toBeTruthy();
     const status = header.querySelector('[data-workspace-hover-card-status]')!;
     expect(status).toBeTruthy();
@@ -287,40 +278,42 @@ describe('WorkspaceHoverCard', () => {
       'width: 16px',
     );
     expect(header.querySelector('[data-workspace-hover-card-timestamp]')).toBeNull();
-    expect(text(identity.querySelector('[data-workspace-hover-card-repo]')!)).toBe(
-      'augment/intent',
+    expect(text(header.querySelector('[data-workspace-hover-card-repo]')!)).toBe(
+      'augment / intent',
     );
     expect(identity.querySelector('[data-workspace-hover-card-branch]')).toBeNull();
-    expect(text(identity.querySelector('[data-workspace-hover-card-summary]')!)).toBe(
-      'Preparing the landscape hover card for review.',
-    );
+    expect(text(summary)).toBe('Preparing the landscape hover card for review.');
+    expect(activity.getAttribute('aria-label')).toBe('Agents');
+    expect(pullRequests.getAttribute('aria-label')).toBe('Pull requests');
+    expect(container.querySelector('h3')).toBeNull();
     expect(identity.querySelector('[data-workspace-hover-card-agent-stack]')).toBeNull();
     expect(identity.querySelector('[data-workspace-hover-card-agent-count]')).toBeNull();
     expect(container.querySelector('.font-mono')).toBeNull();
   });
 
-  it('shows real zero and partial task progress in the header', async () => {
-    const zero = await renderHoverCard();
-    expect(zero.container.querySelector('[data-workspace-hover-card-progress]')).toBeNull();
-    zero.unmount();
+  it('omits the description and bottom section when the workspace has no message or rows', async () => {
+    const { container } = await renderHoverCard({ statusMessage: '   ' });
 
-    mocks.tasksByWorkspace['ws-1'] = [
-      { id: 'done', title: 'Done', status: 'complete' },
-      { id: 'active', title: 'Active', status: 'in_progress' },
-      { id: 'todo', title: 'Todo', status: 'not_started' },
-    ];
-    const partial = await renderHoverCard();
-    const progress = screen.getByRole('progressbar', { name: 'Workspace task progress' });
-    const status = partial.container.querySelector('[data-workspace-hover-card-status]')!;
-    expect(progress.getAttribute('aria-valuenow')).toBe('33');
-    expect(progress.getAttribute('data-task-status-motion')).toBe('static');
-    expect(
-      progress.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    partial.unmount();
+    expect(container.querySelector('[data-workspace-hover-card-summary]')).toBeNull();
+    expect(container.querySelector('[data-workspace-hover-card-divider]')).toBeNull();
+    expect(container.querySelector('[data-workspace-hover-card-columns]')).toBeNull();
+    expect(text(container.querySelector('[data-workspace-hover-card-status]')!)).toBe('Idle');
   });
 
-  it('groups blocker, real question, active, and waiting rows with accessible labels', async () => {
+  it('renders an agents-only body without a pull request section', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+    const { container } = await renderHoverCard({ agentSummary: { agentIds: ['active'] } });
+
+    const columns = container.querySelector('[data-workspace-hover-card-columns]')!;
+    const activity = container.querySelector('[data-workspace-hover-card-activity]')!;
+    expect(container.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
+    expect(columns.children).toHaveLength(1);
+    expect(columns.children[0]).toBe(activity);
+    expect(activity.getAttribute('aria-label')).toBe('Agents');
+    expect(container.querySelector('[data-workspace-hover-card-pr-column]')).toBeNull();
+  });
+
+  it('orders blocker, real question, active, and waiting rows without group headings', async () => {
     const pending = questionMessage('pending', [
       'Which deployment region should receive the migration first?',
       'Should the old cache keys remain readable?',
@@ -356,10 +349,13 @@ describe('WorkspaceHoverCard', () => {
         parentAgentId: null,
       })),
     } as Workspace['agentSummary'];
-    await renderHoverCard({ agentSummary: summary });
+    const { container } = await renderHoverCard({ agentSummary: summary });
 
-    const attention = within(screen.getByRole('region', { name: 'Needs attention' }));
-    const attentionRows = attention.getAllByRole('listitem');
+    const attentionRows = Array.from(
+      container.querySelectorAll(
+        '[data-workspace-hover-card-agent-row][data-agent-group-row="attention"]',
+      ),
+    );
     expect(attentionRows).toHaveLength(2);
     expect(attentionRows[0].getAttribute('data-attention-kind')).toBe('blocker');
     expect(text(attentionRows[0])).toContain('The staging database rejects the migration user.');
@@ -376,14 +372,20 @@ describe('WorkspaceHoverCard', () => {
     const question = attentionRows[1].querySelector('[data-workspace-hover-card-agent-context]')!;
     expect(text(question)).toBe('Which deployment region should receive the migration first?');
     expect(attentionRows[1].querySelector('[data-workspace-hover-card-agent-preview]')).toBeNull();
-    const active = within(screen.getByRole('region', { name: 'Active' })).getByRole('listitem');
+    const active = container.querySelector(
+      '[data-workspace-hover-card-agent-row][data-agent-group-row="active"]',
+    )!;
     expect(within(active).getByText('Noah')).toBeTruthy();
     expect(text(active.querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
       'Implementing the approved migration plan.',
     );
     expect(active.querySelector('[data-workspace-hover-card-agent-preview]')).toBeTruthy();
-    expect(within(screen.getByRole('region', { name: 'Waiting' })).getByText('Ari')).toBeTruthy();
-    const rows = screen.getAllByRole('listitem');
+    const waiting = container.querySelector(
+      '[data-workspace-hover-card-agent-row][data-agent-group-row="waiting"]',
+    )!;
+    expect(within(waiting as HTMLElement).getByText('Ari')).toBeTruthy();
+    expect(container.querySelector('[data-agent-group]')).toBeNull();
+    const rows = Array.from(container.querySelectorAll('[data-workspace-hover-card-agent-row]'));
     const times = rows.map((row) => row.querySelector('[data-workspace-hover-card-agent-time]'));
     expect(times.every((time) => time instanceof HTMLTimeElement)).toBe(true);
     expect(times.every((time) => Boolean(time?.getAttribute('aria-label')))).toBe(true);

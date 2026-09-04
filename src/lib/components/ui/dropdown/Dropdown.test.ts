@@ -210,6 +210,41 @@ describe('Dropdown compatibility modes', () => {
   beforeEach(setupDropdownEnv);
   afterEach(cleanupDropdownEnv);
 
+  it.each([false, true])('keeps owned popup interactions inside (portal=%s)', async (portal) => {
+    render(Dropdown, { props: { portal, options: [{ value: 'a', label: 'Alpha' }] } });
+    const trigger = screen.getByRole('button');
+    await fireEvent.click(trigger);
+    const listbox = await screen.findByRole('listbox');
+    const nestedTrigger = document.createElement('button');
+    nestedTrigger.setAttribute('aria-controls', 'nested-popup');
+    listbox.appendChild(nestedTrigger);
+    const popup = document.createElement('div');
+    popup.id = 'nested-popup';
+    const option = document.createElement('button');
+    popup.appendChild(option);
+    document.body.appendChild(popup);
+
+    await fireEvent.mouseDown(option);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+    const unrelatedPopup = document.createElement('div');
+    unrelatedPopup.setAttribute('role', 'listbox');
+    document.body.appendChild(unrelatedPopup);
+    await fireEvent.mouseDown(unrelatedPopup);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('restores trigger focus when Escape dismisses the menu', async () => {
+    render(Dropdown, { props: { options: [{ value: 'a', label: 'Alpha' }] } });
+    const trigger = screen.getByRole('button');
+    await fireEvent.click(trigger);
+    const search = screen.getByRole('searchbox');
+    search.focus();
+    await fireEvent.keyDown(search, { key: 'Escape' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it('preserves searchable keyboard selection and open-state callbacks', async () => {
     const onchange = vi.fn();
     const onopenchange = vi.fn();
