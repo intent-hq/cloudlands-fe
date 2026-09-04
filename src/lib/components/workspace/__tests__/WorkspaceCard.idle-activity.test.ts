@@ -504,6 +504,138 @@ describe('WorkspaceCard hover-intent delay', () => {
     expect(hoverCard()).toBeNull();
   });
 
+  it('dismisses an open pointer hover card when the window scrolls', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      window.dispatchEvent(new Event('scroll'));
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('dismisses a keyboard-opened hover card when the window scrolls', async () => {
+    const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+    const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
+
+    await fireEvent.focusIn(trigger);
+    await tick();
+    expect(hoverCard()).toBeTruthy();
+
+    window.dispatchEvent(new Event('scroll'));
+    await tick();
+    expect(hoverCard()).toBeNull();
+  });
+
+  it('cancels a pending hover open when the window scrolls', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(100);
+      window.dispatchEvent(new Event('scroll'));
+      vi.advanceTimersByTime(1000);
+      await tick();
+
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('dismisses on captured pointer-down without blocking the target handler', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+      const target = document.createElement('button');
+      const targetHandler = vi.fn((event: PointerEvent) => event.stopPropagation());
+      target.addEventListener('pointerdown', targetHandler);
+      container.appendChild(target);
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.pointerDown(target);
+      await tick();
+      expect(targetHandler).toHaveBeenCalledOnce();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending hover open on captured pointer-down', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(100);
+      await fireEvent.pointerDown(document.body);
+      vi.advanceTimersByTime(1000);
+      await tick();
+
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('removes active dismissal listeners when the row is destroyed', async () => {
+    vi.useFakeTimers();
+    const addEventListener = vi.spyOn(window, 'addEventListener');
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+    try {
+      const view = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = view.container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      expect(
+        addEventListener.mock.calls.some(
+          ([type, , options]) => (type === 'pointerdown' || type === 'scroll') && options === true,
+        ),
+      ).toBe(false);
+
+      await fireEvent.mouseEnter(row);
+      await tick();
+      const pointerListener = addEventListener.mock.calls.find(
+        ([type, , options]) => type === 'pointerdown' && options === true,
+      );
+      const scrollListener = addEventListener.mock.calls.find(
+        ([type, , options]) => type === 'scroll' && options === true,
+      );
+      expect(pointerListener).toBeDefined();
+      expect(scrollListener).toBeDefined();
+
+      view.unmount();
+      expect(removeEventListener).toHaveBeenCalledWith('pointerdown', pointerListener?.[1], true);
+      expect(removeEventListener).toHaveBeenCalledWith('scroll', scrollListener?.[1], true);
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      addEventListener.mockRestore();
+      removeEventListener.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('clears a pending hover open when the row is destroyed', async () => {
     vi.useFakeTimers();
     try {
