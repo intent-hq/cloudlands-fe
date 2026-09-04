@@ -124,6 +124,80 @@ async function expectMermaidEdgeLabelGeometry(page: Page, state: string, expecte
   expect(result.unbalanced, `${state} balanced edge-label knockout padding`).toEqual([]);
 }
 
+async function expectOpaqueStateLabelPaint(page: Page) {
+  await page.setViewportSize({ width: 1400, height: 1400 });
+  const state = page.locator('#mermaid-state');
+  await state.scrollIntoViewIfNeeded();
+  const result = await state.evaluate((root) => {
+    const canvasColor = getComputedStyle(
+      root.closest('[data-testid="catalog-shell"]')!,
+    ).backgroundColor;
+    const failures: string[] = [];
+    let paintedOverlapCount = 0;
+    const labels = [...root.querySelectorAll<SVGGElement>('g.edgeLabel')].filter((label) =>
+      label.textContent?.trim(),
+    );
+
+    for (const label of labels) {
+      const name = label.textContent!.trim();
+      const background = label.querySelector<SVGRectElement>('rect.background');
+      const text = label.querySelector<SVGGraphicsElement>('text');
+      const path = label.dataset.routePathId
+        ? root.querySelector<SVGPathElement>(`#${CSS.escape(label.dataset.routePathId)}`)
+        : null;
+      if (!background || !text || !path) {
+        failures.push(`${name}: missing paint element`);
+        continue;
+      }
+
+      const style = getComputedStyle(background);
+      const backgroundBox = background.getBBox();
+      const textBox = text.getBBox();
+      const horizontalClearance = Math.min(
+        textBox.x - backgroundBox.x,
+        backgroundBox.x + backgroundBox.width - (textBox.x + textBox.width),
+      );
+      const verticalClearance = Math.min(
+        textBox.y - backgroundBox.y,
+        backgroundBox.y + backgroundBox.height - (textBox.y + textBox.height),
+      );
+      const screenBounds = background.getBoundingClientRect();
+      const matrix = path.getScreenCTM();
+      const length = path.getTotalLength();
+      const crossing = Array.from({ length: 1001 }, (_, index) => {
+        const point = path.getPointAtLength((length * index) / 1000);
+        return matrix ? point.matrixTransform(matrix) : point;
+      }).find(
+        (point) =>
+          point.x > screenBounds.left + 0.5 &&
+          point.x < screenBounds.right - 0.5 &&
+          point.y > screenBounds.top + 0.5 &&
+          point.y < screenBounds.bottom - 0.5,
+      );
+      const stack = crossing ? document.elementsFromPoint(crossing.x, crossing.y) : [];
+      const backgroundLayer = stack.indexOf(background);
+      const routeLayer = stack.indexOf(path);
+
+      if (style.opacity !== '1' || style.fillOpacity !== '1' || style.fill !== canvasColor) {
+        failures.push(`${name}: translucent or canvas-mismatched surface`);
+      }
+      if (horizontalClearance < 5.9 || verticalClearance < 3.9) {
+        failures.push(`${name}: incomplete text clearance`);
+      }
+      if (crossing) paintedOverlapCount += 1;
+      if (crossing && (backgroundLayer < 0 || routeLayer <= backgroundLayer)) {
+        failures.push(`${name}: route is not painted below the label surface`);
+      }
+    }
+
+    return { count: labels.length, paintedOverlapCount, failures };
+  });
+
+  expect(result.count).toBeGreaterThan(0);
+  expect(result.paintedOverlapCount).toBeGreaterThan(0);
+  expect(result.failures).toEqual([]);
+}
+
 async function expectTerminalArrowGeometry(
   page: Page,
   state: 'mermaid-state' | 'custom-state-machine',
@@ -842,6 +916,34 @@ test('keeps actions outside content and frames compact diagrams at every support
     'fullscreen Mermaid',
   );
 });
+
+for (const { name, theme, nord } of [
+  { name: 'Light', theme: 'light', nord: false },
+  { name: 'Dark', theme: 'dark', nord: false },
+  { name: 'Nord', theme: 'light', nord: true },
+] as const) {
+  for (const width of [320, 960] as const) {
+    test(`masks state routes with opaque ${name} label surfaces at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      await openState(page, 'mermaid-state', width, theme);
+      if (nord) {
+        await page.getByTestId('catalog-color-theme-control').click();
+        await page.getByRole('option', { name: 'Nord', exact: true }).click();
+        await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
+          'data-catalog-color-theme',
+          'nord',
+        );
+        await expect(page.locator('#mermaid-state .mermaid-renderer')).toHaveAttribute(
+          'data-render-settled',
+          'true',
+        );
+      }
+      await expectOpaqueStateLabelPaint(page);
+    });
+  }
+}
 
 test('keeps the reported state labels and group header bands clear', async ({ page }) => {
   test.setTimeout(300_000);

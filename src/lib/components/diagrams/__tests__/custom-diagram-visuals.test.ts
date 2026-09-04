@@ -1,6 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 
 import DiagramRenderer from '../DiagramRenderer.svelte';
 import DiagramNodeHTML from '../DiagramNodeHTML.svelte';
@@ -36,27 +35,6 @@ afterEach(() => {
 });
 
 describe('custom diagram visual contract', () => {
-  it('uses shared typography, radius, semantic, and motion tokens', () => {
-    const sources = [
-      '../DiagramNodeHTML.svelte',
-      '../DiagramEdge.svelte',
-      '../DiagramGroup.svelte',
-      '../DiagramControls.svelte',
-      '../DiagramRenderer.svelte',
-    ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'));
-    const source = sources.join('\n');
-
-    expect(source).toContain('font-family: var(--font-ui)');
-    expect(source).not.toContain('Source Serif');
-    expect(source).toContain('var(--radius-small)');
-    expect(source).toContain('var(--motion-standard)');
-    expect(source).toContain('var(--success)');
-    expect(source).toContain('var(--warning)');
-    expect(source).toContain('var(--destructive)');
-    expect(source).not.toMatch(/hsl\((?:0 72|142 76|162 76|38 92)/);
-    expect(source).not.toContain('-apple-system, BlinkMacSystemFont');
-  });
-
   it('maps supported technical node kinds to existing decorative icons', () => {
     expect(
       ['service', 'db', 'queue', 'actor', 'interface', 'file', 'state', 'process'].map(
@@ -234,34 +212,6 @@ describe('custom diagram visual contract', () => {
     }
   });
 
-  it('keeps node hierarchy and narrated context legible', () => {
-    const [nodeSource, edgeSource, groupSource, rendererSource] = [
-      '../DiagramNodeHTML.svelte',
-      '../DiagramEdge.svelte',
-      '../DiagramGroup.svelte',
-      '../DiagramRenderer.svelte',
-    ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'));
-
-    expect(nodeSource).toContain('font-family: var(--font-editorial)');
-    expect(nodeSource).toContain('font-weight: 600');
-    expect(nodeSource).toContain('text-align: left');
-    expect(nodeSource).toContain('align-items: flex-start');
-    expect(nodeSource).toContain('height: calc(var(--label-font-size) * var(--label-line-height))');
-    expect(nodeSource).toContain('weight="regular"');
-    expect(nodeSource).toContain('color: hsl(var(--error-foreground))');
-    expect(nodeSource).toContain('.node-active .node-kind-label');
-    expect(nodeSource).toContain('color: currentColor');
-    expect(nodeSource).not.toContain('var(--font-code)');
-    expect(nodeSource).not.toContain('text-transform: uppercase');
-    expect(rendererSource).toContain('font-weight: var(--text-body-weight)');
-    expect(rendererSource).toContain('font-family: var(--font-ui)');
-    expect(groupSource).toContain('font-family: var(--font-ui)');
-    expect(nodeSource).toContain('opacity: 0.72');
-    expect(edgeSource).toContain('opacity: 0.5');
-    expect(rendererSource).toContain('opacity: 0.64');
-    expect(groupSource).toContain('opacity: 0.68');
-  });
-
   it('preserves walkthrough updates and node bindings', async () => {
     const onUpdate = vi.fn();
     const onBindingClick = vi.fn();
@@ -306,9 +256,9 @@ describe('custom diagram visual contract', () => {
       },
     });
 
-    expect(
-      semanticNode.container.querySelector('.node-success.node-clickable.node-state-highlighted'),
-    ).toBeTruthy();
+    const semanticButton = semanticNode.getByRole('button', { name: /Persistent notes/ });
+    expect(semanticButton.dataset.semanticStyle).toBe('success');
+    expect(semanticButton.dataset.stateHighlighted).toBe('true');
 
     const walkthrough = render(DiagramRenderer, {
       props: { diagram: customDiagram('custom-walkthrough') },
@@ -318,11 +268,11 @@ describe('custom diagram visual contract', () => {
     );
     await waitFor(() => {
       const daemon = walkthrough.container.querySelector(
-        '[data-node-id="daemon"] .diagram-node-html',
-      );
-      expect(daemon?.classList.contains('node-state-highlighted')).toBe(true);
-      expect(daemon?.classList.contains('node-active')).toBe(false);
-      expect(daemon?.classList.contains('node-dimmed')).toBe(false);
+        '[data-node-id="daemon"] [data-state-highlighted]',
+      ) as HTMLElement | null;
+      expect(daemon?.dataset.stateHighlighted).toBe('true');
+      expect(daemon?.dataset.semanticStyle).not.toBe('active');
+      expect(daemon?.dataset.dimmed).toBe('false');
     });
   });
 

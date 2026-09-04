@@ -143,6 +143,8 @@
   class={nodeClass}
   data-semantic-style={node.semanticStyle ?? 'default'}
   data-default-style={usesDefaultStyle}
+  data-state-highlighted={highlighted}
+  data-dimmed={dimmed}
   aria-label={bindingLabel}
   style="
     --label-font-size: {styleConfig.labelFontSize}px;

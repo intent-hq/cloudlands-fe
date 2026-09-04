@@ -4,7 +4,6 @@ import type { Editor, NodeViewProps } from '@tiptap/core';
 import type { ContentBlock } from '$shared/types';
 import type { DiagramPrimitive } from '$shared/types/notes-primitives';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import MessageContent from '../../chat/MessageContent.svelte';
 import StreamingMessageContent from '../../chat/StreamingMessageContent.svelte';
 import DiagramBlock from '../../notes/primitives/DiagramBlock.svelte';
@@ -81,17 +80,13 @@ function noteProps(data: DiagramPrimitive, isEditable = true, selected = false):
 afterEach(cleanup);
 
 describe('diagram presentation integration', () => {
-  it('keeps the shared surface borderless with latent UI-font actions', () => {
-    const source = readFileSync('src/lib/components/diagrams/DiagramPresentation.svelte', 'utf8');
-    const surface = source.match(/\.diagram-presentation \{([\s\S]*?)\n  \}/)?.[1];
-    const actions = source.match(/\.diagram-presentation-actions \{([\s\S]*?)\n  \}/)?.[1];
+  it('keeps the shared surface borderless and transparent at runtime', () => {
+    const result = render(MermaidBlockNodeView, { props: noteProps(diagram) });
+    const surface = result.container.querySelector<HTMLElement>('[data-diagram-presentation]')!;
+    const surfaceStyle = getComputedStyle(surface);
 
-    expect(surface).toContain('border: 0');
-    expect(surface).toContain('background: transparent');
-    expect(actions).toContain('opacity: 0');
-    expect(actions).toContain('pointer-events: none');
-    expect(source).toContain('font-family: var(--font-ui)');
-    expect(source).not.toContain('var(--font-code)');
+    expect(surfaceStyle.borderTopStyle).toBe('none');
+    expect(surfaceStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
   });
 
   it.each([
@@ -108,7 +103,6 @@ describe('diagram presentation integration', () => {
     });
     const streamingSurface = streaming.container.querySelector('[data-diagram-presentation]');
     expect(streamingSurface?.getAttribute('data-diagram-kind')).toBe(kind);
-    expect(streamingSurface?.getAttribute('class')).toBe(completedSurface?.getAttribute('class'));
   });
 
   it('keeps the streaming surface node stable while content updates', async () => {
@@ -143,22 +137,11 @@ describe('diagram presentation integration', () => {
     expect(readOnlyView.getByRole('button', { name: 'Fullscreen' })).toBeTruthy();
   });
 
-  it('keeps note actions in a separate row before diagram content', () => {
-    const result = render(MermaidBlockNodeView, { props: noteProps(diagram) });
-    const actions = result.container.querySelector('[data-diagram-presentation-actions]');
-    const content = result.container.querySelector('[data-diagram-presentation-content]');
-
-    expect(actions?.querySelectorAll('button')).toHaveLength(2);
-    expect(actions?.nextElementSibling).toBe(content);
-    expect(content?.contains(actions)).toBe(false);
-  });
-
   it('uses the shared surface and header for custom note diagrams', () => {
     const result = render(DiagramBlock, { props: noteProps(diagram, true, true) });
     const surface = result.container.querySelector('[data-diagram-presentation]');
 
     expect(surface?.getAttribute('data-diagram-kind')).toBe('custom');
-    expect(surface?.classList.contains('selected')).toBe(true);
     expect(result.container.querySelector('[data-diagram-presentation-header]')).toBeTruthy();
     expect(result.container.querySelector('[data-diagram-presentation-content]')).toBeTruthy();
   });

@@ -1462,12 +1462,16 @@ ${verticalSource}`;
 
   .mermaid-presentation :global(.edgeLabel rect.background) {
     fill: var(--diagram-label-surface) !important;
+    fill-opacity: 1 !important;
+    opacity: 1 !important;
     stroke: none !important;
     filter: none !important;
   }
 
   .mermaid-presentation :global(.edge-label-knockout) {
     fill: var(--diagram-label-surface) !important;
+    fill-opacity: 1 !important;
+    opacity: 1 !important;
     stroke: none !important;
     filter: none !important;
     pointer-events: none;
