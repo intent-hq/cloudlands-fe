@@ -2,7 +2,6 @@ import type { TransitionConfig } from 'svelte/transition';
 import { safeDisclosureTransition } from './disclosure-motion';
 
 export const SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100';
-export const SUBSCRIPTION_ACTION_ICON_CLASS = 'text-ghost opacity-60';
 export const SUBSCRIPTION_CARD_CONTAINMENT_CLASS =
   'w-full min-w-0 max-w-full overflow-hidden font-family-child';
 export const SUBSCRIPTION_CARD_SURFACE_CLASS =

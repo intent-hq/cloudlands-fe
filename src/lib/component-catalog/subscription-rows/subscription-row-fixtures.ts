@@ -2,7 +2,7 @@ import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
 
-export type FixtureState = 'collapsed' | 'expanded';
+type FixtureState = 'collapsed' | 'expanded';
 
 export interface AgentCardFixture {
   id: string;
