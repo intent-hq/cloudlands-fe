@@ -1493,6 +1493,7 @@
   "workspace_prSection_statusChecks_tooltip": "检查：{passed} 通过，{failed} 失败，{pending} 待处理",
   "workspace_prSection_statusDraft_label": "草稿",
   "workspace_prSection_statusOpen_label": "开启",
+  "workspace_prSection_statusQueued_label": "已排队",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "未解决的讨论：{count}",
   "workspace_prSection_synced_label": "已同步",
   "workspace_prSection_targetBranch_label": "目标分支",
