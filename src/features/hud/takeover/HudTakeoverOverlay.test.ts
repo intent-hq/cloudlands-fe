@@ -26,6 +26,7 @@ import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-s
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import type { Note, Workspace, WorkspaceId, WorkspaceTask } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import HudTakeoverOverlay from './HudTakeoverOverlay.svelte';
 import { emitTakeoverTrigger, takeoverBlinkTarget } from './hud-takeover-bus';
@@ -343,7 +344,7 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--muted-foreground) / 0.65)'],
     ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
     ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
-    ['pr_queued', 'QUEUED TO MERGE', 'hsl(var(--ring))'],
+    ['pr_queued', m.hud_takeover_kindPrQueued_label(), 'hsl(var(--ring))'],
     ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
     ['workspace_complete', 'COMPLETE', 'hsl(var(--primary))'],
   ] as const)(
