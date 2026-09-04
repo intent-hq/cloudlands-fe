@@ -581,15 +581,40 @@ describe('WorkspaceCard hover-intent delay', () => {
     }
   });
 
+  it('does not reopen when a captured pointer-down focuses a control inside the row', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+      const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.pointerDown(trigger);
+      await fireEvent.focusIn(trigger);
+      await tick();
+      expect(hoverCard()).toBeNull();
+      vi.advanceTimersByTime(0);
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels a pending hover open on captured pointer-down', async () => {
     vi.useFakeTimers();
     try {
       const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
       const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+      const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
 
       await fireEvent.mouseEnter(row);
       vi.advanceTimersByTime(100);
-      await fireEvent.pointerDown(document.body);
+      await fireEvent.pointerDown(trigger);
+      await fireEvent.focusIn(trigger);
       vi.advanceTimersByTime(1000);
       await tick();
 

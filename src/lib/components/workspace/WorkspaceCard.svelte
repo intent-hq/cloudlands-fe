@@ -198,6 +198,8 @@
   let focusWithinRow = false;
   let hoverCardOpenedFromPointer = false;
   let hoverCardDismissalActive = $state(false);
+  let hoverCardFocusOpenSuppressed = false;
+  let hoverCardFocusSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -222,7 +224,19 @@
     workspaceHoverCardIntentSession.notifyClosed();
   }
 
-  function dismissHoverCardFromInteraction() {
+  function suppressHoverCardFocusOpenForPointerSequence() {
+    if (hoverCardFocusSuppressionTimer !== null) {
+      clearTimeout(hoverCardFocusSuppressionTimer);
+    }
+    hoverCardFocusOpenSuppressed = true;
+    hoverCardFocusSuppressionTimer = setTimeout(() => {
+      hoverCardFocusOpenSuppressed = false;
+      hoverCardFocusSuppressionTimer = null;
+    }, 0);
+  }
+
+  function dismissHoverCardFromInteraction(event: Event) {
+    if (event.type === 'pointerdown') suppressHoverCardFocusOpenForPointerSequence();
     clearHoverCardOpenTimer();
     closeHoverCard();
   }
@@ -307,6 +321,7 @@
   function handleFocusIn() {
     focusWithinRow = true;
     clearHoverCardOpenTimer();
+    if (hoverCardFocusOpenSuppressed) return;
     if (workspace && !suppressHover) {
       hoverCardDismissalActive = true;
       hoverCardVisible = true;
@@ -357,6 +372,10 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    if (hoverCardFocusSuppressionTimer !== null) {
+      clearTimeout(hoverCardFocusSuppressionTimer);
+      hoverCardFocusSuppressionTimer = null;
+    }
     closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
