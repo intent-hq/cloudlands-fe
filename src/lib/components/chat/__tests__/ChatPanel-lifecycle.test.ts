@@ -3027,14 +3027,13 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-testid="chat-older-history-loading"]')).toBeNull();
   });
 
-  it('does not commit the empty-chat entry while the transcript is hydrating and re-snaps to the bottom once rows lay out', async () => {
+  it('does not commit the empty-chat entry while the transcript is hydrating', async () => {
     // Regression (blank transcript on workspace switch-back): only the active
     // and the most-recently-inactive surfaces are retained, so switching back
     // to an older workspace remounts ChatPanel fresh. The mount-time entry
     // frame used to treat a still-empty store (hydration in flight) as an
-    // empty chat — scrollTop 0, follow off — and the first-hydration snap then
-    // ran once against a container whose rows were not laid out yet, where
-    // the write clamps to the top and nothing re-snaps.
+    // empty chat — scrollTop 0, follow off — ahead of the hydration that
+    // fills it. The first-hydration snap must be the only entry commit.
     mocks.draftGet.mockResolvedValue(null);
     mocks.transcriptHydration.set('loading');
     mocks.transcriptHydratedOnce.set(false);
@@ -3079,23 +3078,12 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(mocks.followBottomOptions?.follow).toBe(true);
     expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
-    vi.mocked(scrollToBottomUtil).mockClear();
-
-    // The rows lay out on the next frame: the entry re-snaps to the bottom
-    // instead of leaving the viewport at the clamped top.
-    Object.defineProperties(scrollContainer, {
-      scrollHeight: { configurable: true, value: 2000 },
-      clientHeight: { configurable: true, value: 500 },
-    });
-    flushFrame();
-    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
-    expect(mocks.followBottomOptions?.follow).toBe(true);
   });
 
-  it('still enters a settled-empty transcript at the top with follow disabled', async () => {
+  it('still enters a settled-empty transcript at the top', async () => {
     // Guard for the genuinely-empty chat: hydration settled with no messages
     // and no conversation evidence keeps the top entry (specialist switcher
-    // visible) and leaves auto-follow off until the first send.
+    // visible).
     mocks.draftGet.mockResolvedValue(null);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
@@ -3112,7 +3100,6 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
 
     expect(scrollContainer.scrollTop).toBe(0);
-    expect(mocks.followBottomOptions?.follow).toBe(false);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
   });
 });

@@ -506,7 +506,6 @@
   const transcriptSettledEmpty = $derived(
     $agentMessages$.length === 0 &&
       $transcriptHydration$ === 'settled' &&
-      !isFirstHydrationLoading &&
       !$awaitingSwitchBackSnapshot$ &&
       !authoritativeConversationEvidence,
   );
@@ -3299,16 +3298,8 @@
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
           const startedTransition = startPendingSendTransitions();
-          if (startedTransition || !scrollContainer || !shouldScroll) return;
-          followToBottom(scrollContainer);
-          // First-hydration entry: the rows may not be laid out yet at this
-          // tick (collapsed container, scroll range still empty), where the
-          // snap clamps to the top. Re-snap once more on the next frame.
-          if (isFirstMessage && scrollContainer.scrollHeight <= scrollContainer.clientHeight) {
-            scheduleActiveAnimationFrame(() => {
-              if (scrollContainer && shouldFollowBottom) followToBottom(scrollContainer);
-            });
-          }
+          if (!startedTransition && scrollContainer && shouldScroll)
+            followToBottom(scrollContainer);
         });
       }
     }
