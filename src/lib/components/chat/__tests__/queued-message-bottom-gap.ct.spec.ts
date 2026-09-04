@@ -79,7 +79,6 @@ test('keeps the edge gap at zero for empty, one, and many queues in every displa
               width,
               zoom,
               queueCount,
-              heldForQuestions: queueCount > 1,
             },
           });
           await settle(component, page);

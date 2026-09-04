@@ -710,8 +710,8 @@ export interface AgentsClient {
    * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
    * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
    * question-bearing assistant message) in session metadata — so the
-   * dismissal survives reload — emits `agent:updated`, and kicks the queue
-   * drain so messages held by the question hold resume. Idempotent:
+   * dismissal survives reload — and emits `agent:updated`, which clears the
+   * pending question set so the sticky wizard hides everywhere. Idempotent:
    * re-dismissing the same message succeeds. A nonexistent agent or a
    * workspace mismatch rejects (folded into `{ success: false, error }`).
    */

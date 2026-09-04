@@ -120,7 +120,7 @@ describe('showErrorToast', () => {
 
   // Content-only component — the severity tint rides the wrapper class.
   it.each([
-    ['error', '!border-destructive/50'],
+    ['error', '!border-danger/50'],
     ['warning', '!border-warning/50'],
     ['info', '!border-info/50'],
   ])('passes the %s severity wrapper border class', (type, expectedClass) => {

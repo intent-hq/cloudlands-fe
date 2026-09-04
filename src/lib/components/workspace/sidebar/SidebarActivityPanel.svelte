@@ -281,16 +281,16 @@
     if (type === 'test:completed') {
       const data = event.data as Record<string, unknown> | undefined;
       if (data?.status === 'passed') return 'text-emerald-500/70';
-      if (data?.status === 'failed') return 'text-error-foreground';
+      if (data?.status === 'failed') return 'text-danger';
     }
     if (type === 'build:completed') {
       const data = event.data as Record<string, unknown> | undefined;
       if (data?.status === 'success') return 'text-emerald-500/70';
-      if (data?.status === 'failed') return 'text-error-foreground';
+      if (data?.status === 'failed') return 'text-danger';
     }
 
     // Error states
-    if (type === 'agent:failed') return 'text-error-foreground';
+    if (type === 'agent:failed') return 'text-danger';
     if (type === 'agent:deleted') return 'text-subtle';
 
     // Active/running states

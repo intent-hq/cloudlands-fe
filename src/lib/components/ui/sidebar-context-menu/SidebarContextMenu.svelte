@@ -126,9 +126,7 @@
               {entry.disabled
               ? 'text-muted-foreground cursor-not-allowed'
               : 'text-foreground hover:bg-accent cursor-pointer'}
-              {entry.destructive && !entry.disabled
-              ? 'text-error-foreground hover:text-error-foreground'
-              : ''}"
+              {entry.destructive && !entry.disabled ? 'text-danger hover:text-danger' : ''}"
             onclick={() => handleItemClick(entry)}
             disabled={entry.disabled}
             role="menuitem"

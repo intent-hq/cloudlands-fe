@@ -431,7 +431,7 @@
 
   .mermaid-error {
     font-size: 0.75rem;
-    color: hsl(var(--destructive));
+    color: hsl(var(--danger));
   }
 
   /* Syntax highlighting for dark mode */

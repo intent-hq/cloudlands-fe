@@ -122,7 +122,7 @@
   <!-- Content - contained scroll that won't affect parent -->
   <div class="p-4 max-h-60 overflow-y-auto overscroll-contain">
     {#if error}
-      <div class="text-sm text-error-foreground bg-destructive/10 rounded-md p-3">
+      <div class="text-sm text-danger bg-danger-background/10 rounded-md p-3">
         {error}
       </div>
     {:else if isGenerating}

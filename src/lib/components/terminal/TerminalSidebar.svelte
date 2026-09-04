@@ -1197,7 +1197,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   <div class="border-t border-border my-1"></div>
                   <button
                     type="button"
-                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-error-foreground hover:bg-destructive/10"
+                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
                     onclick={() => handleContextMenuAction('delete')}
                   >
                     {selectedScriptIds.size > 1
