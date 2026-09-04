@@ -96,8 +96,7 @@ interface PreviewBrowserApi {
   probe: (options?: GeometryProbeOptions) => ActivePreviewGeometry | null;
 }
 
-export type ActivePreviewGeometry = GeometryProbeResult &
-  Pick<ActivePreview, 'slug' | 'state' | 'width'>;
+type ActivePreviewGeometry = GeometryProbeResult & Pick<ActivePreview, 'slug' | 'state' | 'width'>;
 
 let activePreview: ActivePreview | null = null;
 

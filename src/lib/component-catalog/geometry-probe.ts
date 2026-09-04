@@ -19,7 +19,7 @@ export interface GeometryProbeOptions {
   computed?: string[];
 }
 
-export type GeometryProbeMeasurement = {
+type GeometryProbeMeasurement = {
   x: number;
   y: number;
   width: number;

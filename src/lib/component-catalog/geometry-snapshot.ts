@@ -40,7 +40,7 @@ function display(value: number | undefined): string {
   return value === undefined ? '<missing>' : String(value);
 }
 
-export function geometrySnapshotDifferences(
+function geometrySnapshotDifferences(
   expected: GeometrySnapshot,
   actual: GeometrySnapshot,
 ): string[] {
@@ -70,20 +70,6 @@ export function geometrySnapshotDifferences(
     }
   }
   return differences;
-}
-
-async function measure(
-  page: import('@playwright/test').Page,
-  selector?: string,
-): Promise<GeometryProbeResult> {
-  return page.evaluate((requestedSelector) => {
-    const result = window.__INTENT_PREVIEW__?.probe({
-      ...(requestedSelector ? { selector: requestedSelector } : {}),
-    });
-    if (!result) throw new Error('The mounted preview has no active geometry probe.');
-    const { slug: _slug, state: _state, width: _width, ...geometry } = result;
-    return geometry;
-  }, selector);
 }
 
 export function defineGeometrySnapshotSuite(options: GeometrySnapshotSuiteOptions): void {
@@ -119,7 +105,14 @@ export function defineGeometrySnapshotSuite(options: GeometrySnapshotSuiteOption
         });
         try {
           await page.locator(`[data-preview-slug="${slug}"][data-preview-ready="true"]`).waitFor();
-          actual[stateName][String(width)] = await measure(page, options.selector);
+          actual[stateName][String(width)] = await page.evaluate((requestedSelector) => {
+            const result = window.__INTENT_PREVIEW__?.probe({
+              ...(requestedSelector ? { selector: requestedSelector } : {}),
+            });
+            if (!result) throw new Error('The mounted preview has no active geometry probe.');
+            const { slug: _slug, state: _state, width: _width, ...geometry } = result;
+            return geometry;
+          }, options.selector);
         } finally {
           await component.unmount();
         }

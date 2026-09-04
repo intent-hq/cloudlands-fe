@@ -1,5 +1,5 @@
-export const DEFAULT_SANDBOX_WIDTH = 720;
-export const DEFAULT_SANDBOX_TIMEOUT_MS = 30_000;
+const DEFAULT_SANDBOX_WIDTH = 720;
+const DEFAULT_SANDBOX_TIMEOUT_MS = 30_000;
 
 const THEMES = new Set(['light', 'dark', 'system']);
 const MOTIONS = new Set(['reduced', 'full']);

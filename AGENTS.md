@@ -120,21 +120,69 @@ On the sandbox page, use `window.__INTENT_PREVIEW__.list()` to find preview IDs,
 `window.__INTENT_PREVIEW__.current()` to inspect the active ready state. Wait for
 `[data-preview-ready=true]` before capture.
 
+### Visual verification
+
+For every component change that has a sandbox scene, capture geometry before and after
+the change and put both probe outputs (or their diff) in the task report. After the
+change, also capture and inspect a screenshot:
+
+```bash
+pnpm sandbox:probe workspace-hover-card --state landscape-wide
+pnpm sandbox:shot workspace-hover-card --state landscape-wide
+```
+
+Both commands require the scene as the first argument and `--state <name>`. They start
+an in-process Vite server with `INTENT_UI_PREVIEW=1` and `INTENT_BUILD_TARGET=web`, use
+`fit=component`, and wait for both the ready and stable markers. To reuse a running
+`dev:ui` server, pass its root URL with `--base-url http://127.0.0.1:<DEV_PORT>`.
+Shared options are `--theme light|dark|system` (default `light`), `--width 240..1600`
+(default `720`), `--motion reduced|full` (default `reduced`), `--scale 1|2` (default
+`1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and
+`--allow-console-errors`. Set `SANDBOX_DEBUG=1` for runner diagnostics.
+
+`sandbox:shot` captures the complete component frame without shell chrome or scrolling.
+By default it writes
+`.demo-artifacts/sandbox/<scene>--<state>--<theme>--<width>.png` and prints its path,
+pixel dimensions, and URL. `sandbox:probe` prints stable JSON to stdout; pass
+`--selector <css>` to measure custom descendants or `--out
+.demo-artifacts/sandbox/<name>.json` to save it. `.demo-artifacts/sandbox/` is
+git-ignored; never commit these visual-review artifacts.
+
+Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
+`__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
+field that moves by more than 1px fails with `state/width/key.field expected→actual`.
+Regenerate baselines only for an intentional geometry change:
+
+```bash
+SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
+pnpm sandbox:geometry:update
+```
+
+The two commands are equivalent; the package script sets
+`SANDBOX_GEOMETRY_UPDATE=1`. Inspect the JSON diff and justify every regenerated
+snapshot in the PR description. To register a scene, add a co-located
+`<scene>.geometry.ct.spec.ts` that calls `defineGeometrySnapshotSuite` with its preview,
+named states, contract widths, and `__geometry__/<scene>.geometry.json` path; then run
+the update command once to create the baseline. See
+`../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
+
 ### Put a preview screenshot in user chat
 
-Use an owned hidden embedded-browser tab with a fixed viewport. Call
-`ws.browser.listTabs` first and reuse a matching tab; otherwise call
+Prefer `sandbox:shot`, verify the resulting PNG, save it with `ws.note.saveAsset`, and
+embed the returned workspace asset URL in chat or a note. A local file path alone does
+not show the image in chat.
+
+If the command cannot reach the preview, use an owned hidden embedded-browser tab as
+the fallback. Call `ws.browser.listTabs` first and reuse a matching tab; otherwise call
 `ws.browser.openTab` with the preview URL under
 `http://daemon.localhost:<DEV_PORT>/`. Wait no more than 15 seconds for
 `[data-preview-ready=true]`. Confirm that
-`window.__INTENT_PREVIEW__.current()` has the expected state and `status: 'ready'`.
-Then call the browser `screenshot` action. A successful action returns image content;
-keep that image block in the user response. A local file path alone does not show the
-image in chat.
+`window.__INTENT_PREVIEW__.current()` has the expected state and `status: 'ready'`, then
+call the browser `screenshot` action and keep its image block in the user response.
 
-The embedded-browser path is the remote-host default. `playwright-cli` is typically
-absent on remote hosts; use it only as a local fallback if the browser screenshot call
-reaches its 30-second limit. Do not retry the same stalled browser call. In a new,
+`playwright-cli` is typically absent on remote hosts; use it only as a local fallback if
+the browser screenshot call reaches its 30-second limit. Do not retry the same stalled
+browser call. In a new,
 clean local session, set a fixed viewport, wait up to 15 seconds for the ready marker,
 and write one PNG under `.demo-artifacts/<timestamp>-<flow>/`. Check that the PNG is
 non-empty and has the expected dimensions, inspect it with an image-capable file
