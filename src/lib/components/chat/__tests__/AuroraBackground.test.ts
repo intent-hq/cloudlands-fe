@@ -85,6 +85,7 @@ describe('AuroraBackground cleanup', () => {
   let mockGL: ReturnType<typeof createMockGL>;
   let getContextSpy: ReturnType<typeof vi.spyOn>;
   let getComputedStyleSpy: ReturnType<typeof vi.spyOn>;
+  let hasFocusSpy: ReturnType<typeof vi.spyOn>;
   let rafCallbacks: FrameRequestCallback[];
   let computedAuroraColor: string;
   let originalRootClass: string;
@@ -105,6 +106,7 @@ describe('AuroraBackground cleanup', () => {
       }
       return getComputedStyle(element);
     });
+    hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     rafCallbacks = [];
     vi.stubGlobal(
       'requestAnimationFrame',
@@ -124,6 +126,7 @@ describe('AuroraBackground cleanup', () => {
     document.documentElement.style.cssText = originalRootStyle;
     getContextSpy.mockRestore();
     getComputedStyleSpy.mockRestore();
+    hasFocusSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 
@@ -297,6 +300,53 @@ describe('AuroraBackground cleanup', () => {
     expect(firstCenters).toHaveLength(10);
     expect(secondCenters).not.toEqual(firstCenters);
     expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it('stops drawing after window blur, including focus while the page is hidden', () => {
+    let hidden = false;
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('blur'));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(rafCallbacks).toHaveLength(0);
+
+    hidden = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(rafCallbacks).toHaveLength(0);
+
+    hiddenSpy.mockRestore();
+    now.mockRestore();
+  });
+
+  it('resumes drawing when the window regains focus', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('blur'));
+    flushRafCallbacks();
+    expect(rafCallbacks).toHaveLength(0);
+
+    now.mockReturnValue(68);
+    window.dispatchEvent(new Event('focus'));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(2);
+    expect(rafCallbacks).toHaveLength(1);
+
     now.mockRestore();
   });
 

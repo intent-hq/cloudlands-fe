@@ -33,6 +33,7 @@
   let initFailed = false;
   let startTime = $state<number>(0);
   let isPageVisible = $state<boolean>(true);
+  let isWindowFocused = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
   let lastFrameTime = $state<number>(0);
   let semanticColorReady = false;
@@ -419,7 +420,15 @@
   }
 
   function scheduleRender() {
-    if (animationFrame || !gl || !program || !isPageVisible || prefersReducedMotion) return;
+    if (
+      animationFrame ||
+      !gl ||
+      !program ||
+      !isPageVisible ||
+      !isWindowFocused ||
+      prefersReducedMotion
+    )
+      return;
     animationFrame = requestAnimationFrame(render);
   }
 
@@ -434,8 +443,8 @@
     animationFrame = 0;
     if (!gl || !program || !canvas) return;
 
-    // Skip rendering if page is hidden or user prefers reduced motion
-    if (!isPageVisible || prefersReducedMotion) {
+    // Skip rendering if the page or window is inactive, or the user prefers reduced motion
+    if (!isPageVisible || !isWindowFocused || prefersReducedMotion) {
       return;
     }
 
@@ -518,6 +527,16 @@
     else cancelScheduledRender();
   }
 
+  function handleWindowBlur() {
+    isWindowFocused = false;
+    cancelScheduledRender();
+  }
+
+  function handleWindowFocus() {
+    isWindowFocused = true;
+    scheduleRender();
+  }
+
   // Handle reduced motion preference changes
   function handleMotionPreference(e: MediaQueryListEvent) {
     prefersReducedMotion = e.matches;
@@ -548,11 +567,14 @@
   onMount(() => {
     // Check initial states
     isPageVisible = !document.hidden;
+    isWindowFocused = document.hasFocus();
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
 
     // Listen for motion preference changes
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -574,6 +596,8 @@
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
       motionQuery.removeEventListener('change', handleMotionPreference);
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
