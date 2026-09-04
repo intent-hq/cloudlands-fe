@@ -115,6 +115,7 @@ describe('ProviderSelector progressive rendering', () => {
       const result = render(ProviderSelector);
       const row = result.getByText('Google Antigravity').closest('.px-6')!;
       expect(row.textContent?.includes('Enable')).toBe(authenticated === true);
+      expect(row.querySelector('[role="status"]')).toBeNull();
       expect(mocks.state.current.providerSettings.enabledProviders.antigravity).toBeUndefined();
       expect(mocks.state.current.providerSettings.activeProviderId).toBe('auggie');
     },

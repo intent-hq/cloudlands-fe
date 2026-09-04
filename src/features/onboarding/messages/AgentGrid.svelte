@@ -105,47 +105,33 @@
    * Only the install command is surfaced — users uninstall via their package
    * manager directly when they want to remove a provider.
    */
-  const PROVIDER_METADATA: Record<
-    string,
-    { installCommand: string; loginCommand?: string; docsUrl: string }
-  > = {
+  const PROVIDER_METADATA: Record<string, { installCommand: string; docsUrl: string }> = {
     antigravity: {
       installCommand: '',
-      loginCommand: 'intentd provider login antigravity',
       docsUrl: 'https://antigravity.google/docs/ide/extensions/zed',
     },
     auggie: {
       installCommand: 'npm install -g @augmentcode/auggie',
-      loginCommand: 'auggie login',
       docsUrl: 'https://docs.augmentcode.com/cli/overview',
     },
     'claude-code': {
       installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-      // The Claude Code CLI has no top-level `login` subcommand — auth is under
-      // the `auth` group (`claude auth login/logout/status`).
-      loginCommand: 'claude auth login',
       docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
     },
     codex: {
       installCommand: 'npm i -g @openai/codex',
-      loginCommand: 'codex login',
       docsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
     },
     opencode: {
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
-      loginCommand: 'opencode auth login',
       docsUrl: 'https://opencode.ai/docs#install',
     },
     droid: {
       installCommand: 'curl -fsSL https://app.factory.ai/cli | sh',
-      // The droid CLI has no dedicated login subcommand — running `droid`
-      // starts an interactive session that prompts for login when needed.
-      loginCommand: 'droid',
       docsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
     },
     grok: {
       installCommand: 'npm i -g @xai-official/grok',
-      loginCommand: 'grok login',
       docsUrl: 'https://docs.x.ai/build/overview',
     },
     unsloth: {
@@ -156,7 +142,6 @@
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
-      loginCommand: 'cortex login',
       docsUrl: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
     },
   };
@@ -224,7 +209,6 @@
           authDetails: status?.authDetails,
           docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
           installCommand: meta?.installCommand ?? '',
-          loginCommand: meta?.loginCommand ?? '',
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,

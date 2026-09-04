@@ -57,7 +57,6 @@ const readyProvider = (): ProviderCardData => ({
   authDetails: 'user@example.com',
   docsUrl: 'https://code.claude.com/docs',
   installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-  loginCommand: 'claude auth login',
   description: '',
 });
 
@@ -95,13 +94,13 @@ describe('ProviderCard selected-state indicator', () => {
       id: 'antigravity',
       name: 'Antigravity',
       authenticated: undefined,
-      loginCommand: 'intentd provider login antigravity',
       docsUrl: '',
     };
     const result = render(ProviderCard, { props: { ...props, provider, selected: true } });
     expect(result.getByText('Sign-in status unknown. Refresh to check again.')).toBeTruthy();
     expect(banner(result.container)).toBeNull();
     expect(result.queryByText('Connected')).toBeNull();
+    expect(result.queryByText('intentd provider login antigravity')).toBeNull();
     await fireEvent.click(result.getByText('Antigravity'));
     expect(props.onSelect).not.toHaveBeenCalled();
   });
@@ -338,7 +337,6 @@ describe('ProviderCard auggie link-out click behavior', () => {
     name: 'Auggie',
     docsUrl: AUGGIE_DOCS_URL,
     installCommand: 'npm install -g @augmentcode/auggie',
-    loginCommand: 'auggie login',
     ...overrides,
   });
 

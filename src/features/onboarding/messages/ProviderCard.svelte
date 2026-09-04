@@ -38,7 +38,6 @@
     authDetails: string | undefined;
     docsUrl: string;
     installCommand: string;
-    loginCommand: string;
     /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
      *  rendered as copyable guidance when the provider needs login. */
     loginCommandHint?: string;
