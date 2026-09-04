@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.131.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.130.1...v2.131.0) (2026-09-04)
+
+
+### 🚀 Features
+
+* add opt-in Antigravity provider setup ([#2056](https://github.com/intent-hq/cloudlands-fe/issues/2056)) ([3c4fea8](https://github.com/intent-hq/cloudlands-fe/commit/3c4fea8a5c48a7294bc6e9a6b631fe39efe3224a))
+* **sidebar:** replace the single View PR link with a PR dropdown on the Changes launcher ([#2117](https://github.com/intent-hq/cloudlands-fe/issues/2117)) ([55bd899](https://github.com/intent-hq/cloudlands-fe/commit/55bd899bf4489067aaaccc1899c73bc1031c68a1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.14 ([#2133](https://github.com/intent-hq/cloudlands-fe/issues/2133)) ([8670cbb](https://github.com/intent-hq/cloudlands-fe/commit/8670cbb32f1bce94cb558e71a0ce2e663a7323c4))
+* bump intentd sidecar to v0.9.15 ([#2137](https://github.com/intent-hq/cloudlands-fe/issues/2137)) ([39accc2](https://github.com/intent-hq/cloudlands-fe/commit/39accc244b5c2fa41168d9b80ab815a30d5014f4))
+* bump intentd sidecar to v0.9.15 ([#2138](https://github.com/intent-hq/cloudlands-fe/issues/2138)) ([da69118](https://github.com/intent-hq/cloudlands-fe/commit/da69118e2f8ff6e8f469fbd0989bd44d5f4bd5d7))
+* constrain and dismiss panel actions menu ([#2121](https://github.com/intent-hq/cloudlands-fe/issues/2121)) ([0b0f5ef](https://github.com/intent-hq/cloudlands-fe/commit/0b0f5ef9788fe14d0410506f2df33a8c1d66baf0))
+* **settings:** feed Listen targets from pairingInfo.availableIps ([#2129](https://github.com/intent-hq/cloudlands-fe/issues/2129)) ([a87e2e6](https://github.com/intent-hq/cloudlands-fe/commit/a87e2e68acb101b7e5c18941cf41740b001da6c1))
+* **sidebar:** remove section counts ([#2122](https://github.com/intent-hq/cloudlands-fe/issues/2122)) ([2f123a1](https://github.com/intent-hq/cloudlands-fe/commit/2f123a1299e357f75f51697d9626e1c629856b0b))
+
 ## [2.130.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.130.0...v2.130.1) (2026-09-03)
 
 
