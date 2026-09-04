@@ -282,7 +282,7 @@
   <!-- Scroll to previous button (visible on hover) -->
   {#if onScrollToPrevious}
     <div
-      class="absolute top-1 right-1 flex items-center gap-0.5 bg-sidebar/95 backdrop-blur-sm rounded-md border border-border opacity-0 group-hover/sticky-header:opacity-100"
+      class="absolute top-1 right-1 flex items-center gap-0.5 bg-sidebar rounded-md border border-border opacity-0 group-hover/sticky-header:opacity-100"
     >
       <Button
         variant="ghost-light"
