@@ -588,8 +588,10 @@
               : 'text-muted-foreground'}"
           data-overflowing={titleOverflowPx > 0}
           data-marquee-enabled={titleOverflowPx > 0 && !highlighted && !suppressHover}
-          style:--wc-title-marquee-distance={`${titleOverflowPx}px`}
-          style:--wc-title-marquee-duration={`${Math.max(0.4, titleOverflowPx / 35).toFixed(2)}s`}
+          style="--wc-title-marquee-distance: {titleOverflowPx}px; --wc-title-marquee-duration: {Math.max(
+            0.4,
+            titleOverflowPx / 35,
+          ).toFixed(2)}s;"
           data-workspace-card-title
         >
           <span bind:this={titleTextElement} class="wc-title-text">
@@ -942,6 +944,9 @@
 
 <style>
   .wc-title {
+    --wc-title-marquee-distance: 0px;
+    --wc-title-marquee-duration: 0.4s;
+
     overflow: hidden;
     text-overflow: clip;
     white-space: nowrap;
