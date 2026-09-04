@@ -4,6 +4,7 @@
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => {
   const streamingAgentIds: string[] = [];
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
   const agentPreviewsById: Record<string, { kind: string; text?: string }> = {};
+  const prMonitors: PrMonitorRow[] = [];
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
     (workspaceIdStore: { subscribe: (run: (value: string) => void) => () => void }) => ({
@@ -26,6 +28,7 @@ const mocks = vi.hoisted(() => {
     streamingAgentIds,
     agentSessionsByWorkspace,
     agentPreviewsById,
+    prMonitors,
     createWorkspaceReadable,
   };
 });
@@ -44,7 +47,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectPrMonitors: vi.fn(mocks.createWorkspaceReadable(() => [])),
+  selectPrMonitors: vi.fn(mocks.createWorkspaceReadable(() => mocks.prMonitors)),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -168,6 +171,7 @@ describe('WorkspaceHoverCard', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
+    mocks.prMonitors.length = 0;
     for (const record of [mocks.agentSessionsByWorkspace, mocks.agentPreviewsById]) {
       for (const key of Object.keys(record)) delete record[key];
     }
@@ -196,6 +200,58 @@ describe('WorkspaceHoverCard', () => {
     expect(
       container.querySelector('[data-workspace-hover-card-pr-column]')?.getAttribute('aria-label'),
     ).toBe('Pull requests');
+  });
+
+  it('labels an open pull request Queued when its monitor reports it in the merge queue', async () => {
+    mocks.prMonitors.push({
+      monitorId: 'mon-42',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'augment/intent',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: baseWorkspace.createdAt,
+      updatedAt: baseWorkspace.updatedAt,
+      title: 'Refine hover card',
+      url: 'https://github.com/augment/intent/pull/42',
+      lastSnapshot: {
+        state: 'open',
+        isDraft: false,
+        hasConflicts: false,
+        isBehind: false,
+        checks: {
+          total: 0,
+          passed: 0,
+          failed: 0,
+          pending: 0,
+          failingRequired: 0,
+          pendingRequired: 0,
+          requiredKnown: false,
+        },
+        approvals: { decision: '', have: 0, changesRequested: 0 },
+        threads: { unresolved: 0 },
+        isInMergeQueue: true,
+        rulesKnown: false,
+      },
+    });
+    await renderHoverCard({
+      activePullRequest: {
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/augment/intent/pull/42',
+        title: 'Refine hover card',
+        status: PullRequestStatus.Open,
+        createdAt: baseWorkspace.createdAt,
+        updatedAt: baseWorkspace.updatedAt,
+      },
+    });
+
+    const row = screen.getByRole('listitem', { name: /augment\/intent #42/i });
+    expect(row.getAttribute('data-pr-status')).toBe('open');
+    expect(text(row.querySelector('[data-workspace-hover-card-pr-status]')!)).toBe('Queued');
+    expect(row.textContent).not.toContain('Open');
   });
 
   it('preserves the public loading and data-loading behavior', async () => {

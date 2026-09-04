@@ -1493,6 +1493,7 @@
   "workspace_prSection_statusChecks_tooltip": "Comprobaciones: {passed} superadas, {failed} fallidas, {pending} pendientes",
   "workspace_prSection_statusDraft_label": "Borrador",
   "workspace_prSection_statusOpen_label": "Abierto",
+  "workspace_prSection_statusQueued_label": "En cola",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "Hilos sin resolver: {count}",
   "workspace_prSection_synced_label": "Sincronizado",
   "workspace_prSection_targetBranch_label": "Rama de destino",

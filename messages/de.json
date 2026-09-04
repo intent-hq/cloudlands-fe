@@ -1493,6 +1493,7 @@
   "workspace_prSection_statusChecks_tooltip": "Prüfungen: {passed} bestanden, {failed} fehlgeschlagen, {pending} ausstehend",
   "workspace_prSection_statusDraft_label": "Entwurf",
   "workspace_prSection_statusOpen_label": "Offen",
+  "workspace_prSection_statusQueued_label": "Eingereiht",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "Ungelöste Threads: {count}",
   "workspace_prSection_synced_label": "Synchronisiert",
   "workspace_prSection_targetBranch_label": "Ziel-Branch",

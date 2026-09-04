@@ -1493,6 +1493,7 @@
   "workspace_prSection_statusChecks_tooltip": "검사: 통과 {passed}개, 실패 {failed}개, 대기 {pending}개",
   "workspace_prSection_statusDraft_label": "초안",
   "workspace_prSection_statusOpen_label": "열림",
+  "workspace_prSection_statusQueued_label": "대기열",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "미해결 스레드: {count}개",
   "workspace_prSection_synced_label": "동기화됨",
   "workspace_prSection_targetBranch_label": "대상 브랜치",

@@ -1493,6 +1493,7 @@
   "workspace_prSection_statusChecks_tooltip": "Vérifications : {passed} réussies, {failed} échouées, {pending} en attente",
   "workspace_prSection_statusDraft_label": "Brouillon",
   "workspace_prSection_statusOpen_label": "Ouverte",
+  "workspace_prSection_statusQueued_label": "En file",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "Fils non résolus : {count}",
   "workspace_prSection_synced_label": "Synchronisé",
   "workspace_prSection_targetBranch_label": "Branche cible",

@@ -1494,6 +1494,7 @@
   "workspace_prSection_statusChecks_tooltip": "Checks: {passed} passed, {failed} failed, {pending} pending",
   "workspace_prSection_statusDraft_label": "Draft",
   "workspace_prSection_statusOpen_label": "Open",
+  "workspace_prSection_statusQueued_label": "Queued",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "Unresolved threads: {count}",
   "workspace_prSection_synced_label": "Synced",
   "workspace_prSection_targetBranch_label": "Target Branch",

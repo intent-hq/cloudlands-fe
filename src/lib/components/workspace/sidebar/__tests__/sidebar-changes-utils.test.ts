@@ -1725,6 +1725,32 @@ describe('getPRStatusTooltip', () => {
     expect(getPRStatusTooltip(makePR({ status: 'closed' }))).toBe('Closed');
   });
 
+  it('says Queued instead of Open only for an open PR in the merge queue', () => {
+    const queued = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+    );
+    expect(queued.split('\n')[0]).toBe('Queued');
+
+    const notQueued = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot() }),
+    );
+    expect(notQueued.split('\n')[0]).toBe('Open');
+
+    expect(
+      getPRStatusTooltip(
+        makePR({ status: 'draft', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ).split('\n')[0],
+    ).toBe('Draft');
+    expect(
+      getPRStatusTooltip(
+        makePR({
+          status: 'merged',
+          monitorSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }),
+        }),
+      ),
+    ).toBe('Merged');
+  });
+
   it('adds a checks line only when the snapshot has checks', () => {
     const withChecks = getPRStatusTooltip(
       makePR({

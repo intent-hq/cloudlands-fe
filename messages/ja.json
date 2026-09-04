@@ -1493,6 +1493,7 @@
   "workspace_prSection_statusChecks_tooltip": "チェック: 成功 {passed} 件、失敗 {failed} 件、保留 {pending} 件",
   "workspace_prSection_statusDraft_label": "下書き",
   "workspace_prSection_statusOpen_label": "オープン",
+  "workspace_prSection_statusQueued_label": "マージ待機中",
   "workspace_prSection_statusUnresolvedThreads_tooltip": "未解決スレッド: {count} 件",
   "workspace_prSection_synced_label": "同期済み",
   "workspace_prSection_targetBranch_label": "ターゲットブランチ",
