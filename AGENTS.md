@@ -88,6 +88,7 @@ corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
 corepack pnpm run lint          # ESLint
 corepack pnpm run format        # Prettier write pass
+corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
 corepack pnpm run test:playwright
 ```

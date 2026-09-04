@@ -429,6 +429,8 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Generate i18n messages
         run: pnpm run generate:i18n
+      - name: Prettier check
+        run: pnpm run format:check
       - name: Svelte check
         run: pnpm run check
       - name: Type check (renderer)
