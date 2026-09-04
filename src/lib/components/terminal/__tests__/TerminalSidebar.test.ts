@@ -570,6 +570,10 @@ describe('TerminalSidebar script inline rename', () => {
         '-inset-y-1.5',
         'border-ring/60',
         'bg-sidebar',
+        'starting:-inset-x-1',
+        'starting:-inset-y-0.5',
+        'starting:border-transparent',
+        'starting:bg-transparent',
         'motion-reduce:transition-none',
       ]),
     );
