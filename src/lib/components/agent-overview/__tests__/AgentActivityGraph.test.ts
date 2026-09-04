@@ -116,11 +116,11 @@ function renderGraph(value: GraphState, overrides: Record<string, unknown> = {})
   });
 }
 
-function useReducedMotionViewport(): void {
+function useViewport(reducedMotion = true): void {
   vi.spyOn(window, 'matchMedia').mockImplementation(
     (query) =>
       ({
-        matches: query === '(prefers-reduced-motion: reduce)',
+        matches: reducedMotion && query === '(prefers-reduced-motion: reduce)',
         media: query,
         onchange: null,
         addListener: vi.fn(),
@@ -143,6 +143,15 @@ function graphElements(container: HTMLElement): { viewport: HTMLElement; scene: 
 
 async function waitForFit(scene: HTMLElement): Promise<void> {
   await waitFor(() => expect(scene.style.transform).not.toBe(''));
+}
+
+function graphFitTransitionIds(viewport: HTMLElement): string[] {
+  const transitions = (
+    viewport as HTMLElement & { __transition?: Record<string, { name?: string }> }
+  ).__transition;
+  return Object.entries(transitions ?? {})
+    .filter(([, transition]) => transition.name === 'graph-fit')
+    .map(([id]) => id);
 }
 
 afterEach(() => {
@@ -181,7 +190,7 @@ describe('AgentActivityGraph', () => {
   });
 
   it('fits again whenever the visible node set changes', async () => {
-    useReducedMotionViewport();
+    useViewport();
     const view = renderGraph(graph([agent()]));
     const { viewport, scene } = graphElements(view.container);
     await waitForFit(scene);
@@ -194,7 +203,7 @@ describe('AgentActivityGraph', () => {
   });
 
   it('does not fit again for a position-only update with the same node ids', async () => {
-    useReducedMotionViewport();
+    useViewport();
     const view = renderGraph(graph([agent()]));
     const { viewport, scene } = graphElements(view.container);
     await waitForFit(scene);
@@ -210,7 +219,7 @@ describe('AgentActivityGraph', () => {
   });
 
   it('keeps a manual zoom until an equal-sized node-id change requests a new fit', async () => {
-    useReducedMotionViewport();
+    useViewport();
     const view = renderGraph(graph([agent()]));
     const { viewport, scene } = graphElements(view.container);
     await waitForFit(scene);
@@ -221,6 +230,20 @@ describe('AgentActivityGraph', () => {
 
     await view.rerender({ graph: graph([agent('two', 650)]) });
     await waitFor(() => expect(scene.style.transform).not.toBe(manualTransform));
+  });
+
+  it('coalesces rapid node-set fits behind the active normal-motion transition', async () => {
+    useViewport(false);
+    const view = renderGraph(graph([agent()]));
+    const { viewport } = graphElements(view.container);
+    await waitFor(() => expect(graphFitTransitionIds(viewport)).toHaveLength(1));
+    const [initialTransitionId] = graphFitTransitionIds(viewport);
+
+    await view.rerender({ graph: graph([agent(), task()]) });
+    await view.rerender({ graph: graph([agent(), task(), agent('two')]) });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    expect(graphFitTransitionIds(viewport)).toEqual([initialTransitionId]);
   });
 
   it('completes message particles from native animation events without timers', async () => {

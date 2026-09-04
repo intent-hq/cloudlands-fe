@@ -58,6 +58,8 @@
   let spotlightNodeId = $state<string | null>(null);
   let previousNodeIds = '';
   let autoFitPending = false;
+  let autoFitTransitionActive = false;
+  let autoFitQueued = false;
   let pendingPositions = new Map<string, GraphPosition>();
   let frame: number | null = null;
   let unsubscribeTick: (() => void) | null = null;
@@ -150,7 +152,7 @@
       frame = null;
       if (autoFitPending && alpha < 0.01) {
         autoFitPending = false;
-        fitToView();
+        fitAutomatically();
       }
     });
   }
@@ -168,13 +170,28 @@
       autoFitPending = visibleGraph.nodes.length > 0;
       if (autoFitPending) {
         requestAnimationFrame(() => {
-          if (autoFitPending) fitToView();
+          if (autoFitPending) fitAutomatically();
         });
       }
     }
   }
 
+  function finishAutoFitTransition(): void {
+    autoFitTransitionActive = false;
+    if (!autoFitQueued) return;
+    autoFitQueued = false;
+    fitAutomatically();
+  }
+
+  function fitAutomatically(): void {
+    applyFit(true);
+  }
+
   function fitToView(): void {
+    applyFit(false);
+  }
+
+  function applyFit(coalesce: boolean): void {
     if (!layout || !zoomBehavior || !container || visibleGraph.nodes.length === 0) return;
     const bounds = layout.fitBounds();
     const width = container.clientWidth;
@@ -196,16 +213,27 @@
       .translate(width / 2 - centerX * scale, height / 2 - centerY * scale)
       .scale(scale);
     const selection = select(container);
-    selection.interrupt('graph-fit');
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (reduced) {
+      autoFitQueued = false;
+      selection.interrupt('graph-fit');
       selection.call(zoomBehavior.transform, transform);
-    } else {
-      selection
-        .transition('graph-fit')
-        .duration(500)
-        .ease(easeCubicOut)
-        .call(zoomBehavior.transform, transform);
+      return;
     }
+    if (coalesce && autoFitTransitionActive) {
+      autoFitQueued = true;
+      return;
+    }
+    autoFitQueued = false;
+    selection.interrupt('graph-fit');
+    autoFitTransitionActive = true;
+    selection
+      .transition('graph-fit')
+      .duration(500)
+      .ease(easeCubicOut)
+      .call(zoomBehavior.transform, transform)
+      .on('end.graph-fit', finishAutoFitTransition)
+      .on('interrupt.graph-fit', () => (autoFitTransitionActive = false));
   }
 
   function handleCanvasDoubleClick(event: MouseEvent): void {
@@ -379,6 +407,7 @@
       .on('zoom', (event) => {
         if (event.sourceEvent) {
           autoFitPending = false;
+          autoFitQueued = false;
           select(container).interrupt('graph-fit');
         }
         zoomScale = event.transform.k;
@@ -395,13 +424,14 @@
       .map((node) => node.id)
       .toSorted()
       .join('\0');
-    requestAnimationFrame(fitToView);
+    requestAnimationFrame(fitAutomatically);
   });
 
   onDestroy(() => {
     resizeObserver?.disconnect();
     unsubscribeTick?.();
     layout?.stop();
+    select(container).interrupt('graph-fit');
     if (frame !== null) cancelAnimationFrame(frame);
   });
 </script>
