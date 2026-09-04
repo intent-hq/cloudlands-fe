@@ -1,9 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-  faTerminal,
-  faWandMagicSparkles,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faTerminal, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
@@ -11,16 +8,16 @@
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
   import {
-  SETUP_SCRIPT_TEMPLATES,
-  SETUP_SCRIPT_VARIABLES,
-  getTemplateContent,
-  getLastUsedSetupScript,
-  REPO_CONFIG_SCRIPT_ID,
-  REPO_CONFIG_SCRIPT_NAME,
-  setupScriptDisplayName,
-  type ProjectType,
-  type SetupScriptNameSource,
-} from '$features/setup-scripts';
+    SETUP_SCRIPT_TEMPLATES,
+    SETUP_SCRIPT_VARIABLES,
+    getTemplateContent,
+    getLastUsedSetupScript,
+    REPO_CONFIG_SCRIPT_ID,
+    REPO_CONFIG_SCRIPT_NAME,
+    setupScriptDisplayName,
+    type ProjectType,
+    type SetupScriptNameSource,
+  } from '$features/setup-scripts';
 
   import { m } from '$shared/paraglide/messages.js';
 
@@ -73,7 +70,6 @@
   let hasUserEdited = $state(false);
   let customName = $state(scriptName);
   let customNameSource = $state<SetupScriptNameSource>(scriptNameSource);
-
 
   // Track programmatic value changes to avoid false "user edited" detection
   let isProgrammaticChange = $state(false);
@@ -133,8 +129,6 @@
       ? setupScriptDisplayName(script.label, script.source)
       : m.workspace_setupScriptEditor_custom_name();
   });
-
-
 
   function handleScriptSelect(scriptId: string) {
     selectedScriptId = scriptId;
@@ -310,8 +304,14 @@
     <div class="flex flex-col flex-[2] min-w-0 overflow-y-auto pl-10 pt-6 pb-6 pr-5">
       <!-- Auto-generate -->
       <div class="mb-4">
-        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_generate_label()}</h4>
-        <p class="text-xs text-subtle px-2 mb-2">{m.workspace_setupScriptEditor_generate_description()}</p>
+        <h4
+          class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
+        >
+          {m.workspace_setupScriptEditor_generate_label()}
+        </h4>
+        <p class="text-xs text-subtle px-2 mb-2">
+          {m.workspace_setupScriptEditor_generate_description()}
+        </p>
         {#if showAgentPanel && repoPath}
           <div transition:slide={{ duration: 200 }}>
             <SetupScriptAgent
@@ -346,13 +346,24 @@
       <!-- Repo-committed script from .intent/config.json -->
       {#if repoConfigScript}
         <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_repoConfig_label()}</h4>
+          <h4
+            class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
+          >
+            {m.workspace_setupScriptEditor_repoConfig_label()}
+          </h4>
           <button
-            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === REPO_CONFIG_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
+            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
+            REPO_CONFIG_SCRIPT_ID
+              ? 'bg-background text-foreground ring-1 ring-border'
+              : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
           >
-            <span class="text-sm">{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span>
-            <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_repoConfig_description()}</p>
+            <span class="text-sm"
+              >{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span
+            >
+            <p class="text-xs text-subtle mt-0.5 line-clamp-1">
+              {m.workspace_setupScriptEditor_repoConfig_description()}
+            </p>
           </button>
         </div>
       {/if}
@@ -360,36 +371,56 @@
       <!-- Last-used script for this repo (localStorage) -->
       {#if lastUsedScript}
         <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_lastUsed_label()}</h4>
+          <h4
+            class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
+          >
+            {m.workspace_setupScriptEditor_lastUsed_label()}
+          </h4>
           <button
-            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === LAST_USED_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
+            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
+            LAST_USED_SCRIPT_ID
+              ? 'bg-background text-foreground ring-1 ring-border'
+              : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
           >
-            <span class="text-sm">{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span>
-            <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_lastUsed_description()}</p>
+            <span class="text-sm"
+              >{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span
+            >
+            <p class="text-xs text-subtle mt-0.5 line-clamp-1">
+              {m.workspace_setupScriptEditor_lastUsed_description()}
+            </p>
           </button>
         </div>
       {/if}
 
       <!-- Templates -->
       <div class="mb-4">
-        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_templates_label()}</h4>
+        <h4
+          class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
+        >
+          {m.workspace_setupScriptEditor_templates_label()}
+        </h4>
         {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
           <button
-            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === `template-${template.id}` ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
+            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
+            `template-${template.id}`
+              ? 'bg-background text-foreground ring-1 ring-border'
+              : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(`template-${template.id}`)}
           >
             <div class="flex items-center gap-2">
               <span class="text-sm">{template.name}</span>
               {#if template.projectType === projectType}
-                <span class="text-ui px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0">{m.workspace_setupScriptEditor_recommended_label()}</span>
+                <span
+                  class="text-ui px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0"
+                  >{m.workspace_setupScriptEditor_recommended_label()}</span
+                >
               {/if}
             </div>
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">{template.description}</p>
           </button>
         {/each}
       </div>
-
     </div>
 
     <!-- Right column: editor + actions -->
@@ -404,30 +435,48 @@
           }
         }}
       >
-        <CodeEditor bind:this={codeEditorRef} bind:value language="shell" lineNumbers={true} lineWrapping={wordWrap} />
+        <CodeEditor
+          bind:this={codeEditorRef}
+          bind:value
+          language="shell"
+          lineNumbers={true}
+          lineWrapping={wordWrap}
+        />
       </div>
       <!-- Bottom bar -->
       <div class="flex items-center gap-3 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0">{m.workspace_setupScriptEditor_variables_label()}</span>
+        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0"
+          >{m.workspace_setupScriptEditor_variables_label()}</span
+        >
         <div class="flex flex-wrap gap-1.5">
           {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
             <Tooltip.Provider delayDuration={100}>
               <Tooltip.Root delayDuration={100}>
                 <Tooltip.Trigger>
-                  <code class="text-ui px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors">
+                  <code
+                    class="text-ui px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors"
+                  >
                     ${variable.name}
                   </code>
                 </Tooltip.Trigger>
                 <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
                   <p class="text-xs">{variable.description}</p>
-                  <p class="text-xs opacity-50 mt-1">{m.workspace_setupScriptEditor_example_before()} <code class="text-ui">{variable.example}</code></p>
+                  <p class="text-xs opacity-50 mt-1">
+                    {m.workspace_setupScriptEditor_example_before()}
+                    <code class="text-ui">{variable.example}</code>
+                  </p>
                 </Tooltip.Content>
               </Tooltip.Root>
             </Tooltip.Provider>
           {/each}
         </div>
         {#if value.trim()}
-          <Button variant="ghost" size="sm" onclick={handleClear} class="ml-auto text-muted-foreground hover:text-foreground text-xs">
+          <Button
+            variant="ghost"
+            size="sm"
+            onclick={handleClear}
+            class="ml-auto text-muted-foreground hover:text-foreground text-xs"
+          >
             {m.workspace_setupScriptEditor_clear_label()}
           </Button>
         {/if}
@@ -439,7 +488,10 @@
 {#if contentOnly}
   <!-- Content only mode: just render the expanded content -->
   {#if expanded}
-    <div class="{contentClass} flex flex-col gap-3 flex-1 min-h-0" transition:slide={{ duration: 200 }}>
+    <div
+      class="{contentClass} flex flex-col gap-3 flex-1 min-h-0"
+      transition:slide={{ duration: 200 }}
+    >
       {@render expandedContentSnippet()}
     </div>
   {/if}
@@ -453,7 +505,9 @@
       onclick={() => (expanded = !expanded)}
     >
       <Fa icon={faTerminal} size="xs" />
-      <span class="text-sm font-normal text-subtle">{m.workspace_setupScriptEditor_setupScript_label()}</span>
+      <span class="text-sm font-normal text-subtle"
+        >{m.workspace_setupScriptEditor_setupScript_label()}</span
+      >
       <span class="text-subtle font-normal">{displayLabel}</span>
     </Button>
 

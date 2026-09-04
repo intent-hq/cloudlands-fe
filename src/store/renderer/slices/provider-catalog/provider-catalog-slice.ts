@@ -28,11 +28,8 @@ export const providerCatalogLoaded = createAction<[catalog: ProviderCatalogResul
 );
 
 export const providerCatalogReducer = createReducer<ProviderCatalogState>(initialState);
-providerCatalogReducer.with(
-  providerCatalogLoaded,
-  (state, { payload: [catalog] }) => ({
-    ...state,
-    providers: createCollection<ProviderCatalogEntry, 'id'>('id', catalog.providers),
-    loaded: true,
-  }),
-);
+providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
+  ...state,
+  providers: createCollection<ProviderCatalogEntry, 'id'>('id', catalog.providers),
+  loaded: true,
+}));

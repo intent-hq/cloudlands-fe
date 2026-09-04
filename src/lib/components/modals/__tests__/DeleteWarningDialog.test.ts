@@ -125,9 +125,7 @@ describe('DeleteWarningDialog', () => {
       },
     });
 
-    expect(
-      screen.getByText(m.modals_deleteWarning_openPrs_many({ count: '2' })),
-    ).toBeTruthy();
+    expect(screen.getByText(m.modals_deleteWarning_openPrs_many({ count: '2' }))).toBeTruthy();
     expect(screen.getByRole('link', { name: '#12 Add feature' })).toBeTruthy();
     expect(screen.getByRole('link', { name: '#13 Draft feature' })).toBeTruthy();
     expect(screen.getAllByText(m.workspace_prSection_statusOpen_label())).toHaveLength(1);
@@ -202,9 +200,7 @@ describe('DeleteWarningDialog', () => {
       },
     });
 
-    expect(
-      screen.getByText(m.modals_deleteWarning_openPrs_one({ count: '1' })),
-    ).toBeTruthy();
+    expect(screen.getByText(m.modals_deleteWarning_openPrs_one({ count: '1' }))).toBeTruthy();
     expect(screen.getByRole('link', { name: '#42 Pending work' })).toBeTruthy();
     expect(screen.getByText(m.workspace_prSection_statusDraft_label())).toBeTruthy();
     expect(screen.queryByText(m.modals_deleteWarning_prMergeConflicts_label())).toBeNull();

@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   shouldSuppressMonacoConsoleError,
@@ -75,9 +71,9 @@ describe('monaco-error-suppression', () => {
     });
 
     it('suppresses "no diff result available" unhandled rejection', () => {
-      expect(
-        shouldSuppressMonacoUnhandledRejection({ message: 'no diff result available' }),
-      ).toBe(true);
+      expect(shouldSuppressMonacoUnhandledRejection({ message: 'no diff result available' })).toBe(
+        true,
+      );
     });
 
     it('suppresses "no diff result available" when wrapped in error object', () => {
@@ -89,9 +85,9 @@ describe('monaco-error-suppression', () => {
     });
 
     it('suppresses "no diff result available" Error instance rejection', () => {
-      expect(
-        shouldSuppressMonacoUnhandledRejection(new Error('no diff result available')),
-      ).toBe(true);
+      expect(shouldSuppressMonacoUnhandledRejection(new Error('no diff result available'))).toBe(
+        true,
+      );
     });
   });
 
@@ -105,9 +101,7 @@ describe('monaco-error-suppression', () => {
     });
 
     it('suppresses "isInHiddenArea" when message is in Error object', () => {
-      const error = new TypeError(
-        "Cannot read properties of undefined (reading 'isInHiddenArea')",
-      );
+      const error = new TypeError("Cannot read properties of undefined (reading 'isInHiddenArea')");
       expect(shouldSuppressMonacoConsoleError([error])).toBe(true);
     });
 

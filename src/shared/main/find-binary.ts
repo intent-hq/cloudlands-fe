@@ -219,19 +219,14 @@ export async function findBinaryStrict(
     params.commonPaths = commonPaths;
   }
 
-  const result = await getBackendClient().request<HostFindBinaryResult>(
-    'host.findBinary',
-    params,
-  );
+  const result = await getBackendClient().request<HostFindBinaryResult>('host.findBinary', params);
   if (result?.available) {
     if (typeof result.path === 'string' && result.path.length > 0) {
       return result.path;
     }
     // available:true without a usable path is a malformed response, not an
     // authoritative "not installed" verdict — surface it as a probe failure.
-    throw new Error(
-      `host.findBinary returned available:true without a path for "${name}"`,
-    );
+    throw new Error(`host.findBinary returned available:true without a path for "${name}"`);
   }
   return null;
 }

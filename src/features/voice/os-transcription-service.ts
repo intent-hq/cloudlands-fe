@@ -45,11 +45,7 @@ interface VoiceTranscribeLocalResponse {
 }
 
 /** SFSpeechRecognizer authorization statuses (mirrors voice-local.ipc.ts). */
-export type OsSpeechAuthorizationStatus =
-  | 'authorized'
-  | 'denied'
-  | 'restricted'
-  | 'notDetermined';
+export type OsSpeechAuthorizationStatus = 'authorized' | 'denied' | 'restricted' | 'notDetermined';
 
 interface VoiceRequestLocalAuthorizationResponse {
   success: boolean;
@@ -111,15 +107,12 @@ export async function transcribeWithOs(
       error instanceof Error ? error.message : 'failed to decode the recorded audio',
     );
   }
-  const response = await invoke<VoiceTranscribeLocalResponse>(
-    IPC_CHANNELS.VOICE.TRANSCRIBE_LOCAL,
-    {
-      audioBase64: arrayBufferToBase64(wav),
-      mimeType: 'audio/wav',
-      ...(contextualStrings && contextualStrings.length > 0 ? { contextualStrings } : {}),
-      ...(locale && locale.trim().length > 0 ? { locale: locale.trim() } : {}),
-    },
-  );
+  const response = await invoke<VoiceTranscribeLocalResponse>(IPC_CHANNELS.VOICE.TRANSCRIBE_LOCAL, {
+    audioBase64: arrayBufferToBase64(wav),
+    mimeType: 'audio/wav',
+    ...(contextualStrings && contextualStrings.length > 0 ? { contextualStrings } : {}),
+    ...(locale && locale.trim().length > 0 ? { locale: locale.trim() } : {}),
+  });
   if (!response || response.success !== true) {
     throw new OsTranscriptionError(
       response?.error?.code ?? 'recognition-failed',

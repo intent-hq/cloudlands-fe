@@ -12,8 +12,8 @@
  * In production (live electronAPI), these are handled by main-process code;
  * in tests (mock router), this seeder provides fallback responses.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -26,8 +26,8 @@ const BACKEND = IPC_CHANNELS.BACKEND;
  */
 registerMockIpcHandler(BACKEND.GET_STATUS, async () => {
   return {
-    status: "connected",
-    transport: { mode: "sidecar-uds" as const },
+    status: 'connected',
+    transport: { mode: 'sidecar-uds' as const },
   };
 });
 
@@ -42,7 +42,7 @@ registerMockIpcHandler(BACKEND.SPAWN_SIDECAR, async () => {
   return {
     ok: false,
     spawned: false,
-    reason: "Sidecar spawn is not available in this build",
+    reason: 'Sidecar spawn is not available in this build',
   };
 });
 
@@ -58,7 +58,7 @@ registerMockIpcHandler(BACKEND.OPEN_LOCAL_AND_SPAWN, async () => {
   return {
     ok: false,
     spawned: false,
-    reason: "Sidecar spawn is not available in this build",
+    reason: 'Sidecar spawn is not available in this build',
   };
 });
 
@@ -74,7 +74,7 @@ registerMockIpcHandler(BACKEND.RESTART_ORPHANED_SIDECAR, async () => {
   return {
     ok: false,
     spawned: false,
-    reason: "Orphaned-sidecar recovery is not available in this build",
+    reason: 'Orphaned-sidecar recovery is not available in this build',
   };
 });
 

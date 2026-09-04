@@ -84,9 +84,8 @@ describe('MentionSystem', () => {
     });
 
     it('should handle search errors gracefully', async () => {
-      const { DebouncedSearchService } = await import(
-        '../../src/lib/services/mentions/search-service'
-      );
+      const { DebouncedSearchService } =
+        await import('../../src/lib/services/mentions/search-service');
       const mockSearchService = new DebouncedSearchService() as any;
       mockSearchService.search = vi.fn().mockRejectedValue(new Error('Search error'));
 

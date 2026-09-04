@@ -1,58 +1,55 @@
+import { describe, it, expect } from 'vitest';
 import {
-  describe,
-  it,
-  expect,
-} from "vitest";
-import { prStatusReducer, initialState, prStatusRefreshStarted, prStatusRefreshCompleted } from "./pr-status-slice";
+  prStatusReducer,
+  initialState,
+  prStatusRefreshStarted,
+  prStatusRefreshCompleted,
+} from './pr-status-slice';
 
-describe("prStatusReducer", () => {
-  it("returns initial state", () => {
-    expect(prStatusReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
+describe('prStatusReducer', () => {
+  it('returns initial state', () => {
+    expect(prStatusReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it("sets isRefreshing on refreshStarted", () => {
-    const state = prStatusReducer(initialState, prStatusRefreshStarted("ws-1"));
-    const ws = state.byWorkspaceId["ws-1"];
+  it('sets isRefreshing on refreshStarted', () => {
+    const state = prStatusReducer(initialState, prStatusRefreshStarted('ws-1'));
+    const ws = state.byWorkspaceId['ws-1'];
     expect(ws.isRefreshing).toBe(true);
     expect(ws.lastError).toBeNull();
   });
 
-  it("clears isRefreshing and sets lastRefreshTime on successful completion", () => {
-    const startedState = prStatusReducer(initialState, prStatusRefreshStarted("ws-1"));
-    const state = prStatusReducer(startedState, prStatusRefreshCompleted("ws-1", true));
-    const ws = state.byWorkspaceId["ws-1"];
+  it('clears isRefreshing and sets lastRefreshTime on successful completion', () => {
+    const startedState = prStatusReducer(initialState, prStatusRefreshStarted('ws-1'));
+    const state = prStatusReducer(startedState, prStatusRefreshCompleted('ws-1', true));
+    const ws = state.byWorkspaceId['ws-1'];
     expect(ws.isRefreshing).toBe(false);
-    expect(ws.lastRefreshTime).toBeTypeOf("number");
+    expect(ws.lastRefreshTime).toBeTypeOf('number');
     expect(ws.lastError).toBeNull();
   });
 
-  it("sets lastError on failed completion", () => {
-    const startedState = prStatusReducer(initialState, prStatusRefreshStarted("ws-1"));
+  it('sets lastError on failed completion', () => {
+    const startedState = prStatusReducer(initialState, prStatusRefreshStarted('ws-1'));
     const state = prStatusReducer(
       startedState,
-      prStatusRefreshCompleted("ws-1", false, "Network error"),
+      prStatusRefreshCompleted('ws-1', false, 'Network error'),
     );
-    const ws = state.byWorkspaceId["ws-1"];
+    const ws = state.byWorkspaceId['ws-1'];
     expect(ws.isRefreshing).toBe(false);
-    expect(ws.lastError).toBe("Network error");
+    expect(ws.lastError).toBe('Network error');
   });
 
-  it("does not update lastRefreshTime on failure", () => {
-    const startedState = prStatusReducer(initialState, prStatusRefreshStarted("ws-1"));
-    const state = prStatusReducer(
-      startedState,
-      prStatusRefreshCompleted("ws-1", false, "err"),
-    );
-    expect(state.byWorkspaceId["ws-1"].lastRefreshTime).toBeNull();
+  it('does not update lastRefreshTime on failure', () => {
+    const startedState = prStatusReducer(initialState, prStatusRefreshStarted('ws-1'));
+    const state = prStatusReducer(startedState, prStatusRefreshCompleted('ws-1', false, 'err'));
+    expect(state.byWorkspaceId['ws-1'].lastRefreshTime).toBeNull();
   });
 
-  it("handles multiple workspaces independently", () => {
-    let state = prStatusReducer(initialState, prStatusRefreshStarted("ws-1"));
-    state = prStatusReducer(state, prStatusRefreshStarted("ws-2"));
-    state = prStatusReducer(state, prStatusRefreshCompleted("ws-1", true));
+  it('handles multiple workspaces independently', () => {
+    let state = prStatusReducer(initialState, prStatusRefreshStarted('ws-1'));
+    state = prStatusReducer(state, prStatusRefreshStarted('ws-2'));
+    state = prStatusReducer(state, prStatusRefreshCompleted('ws-1', true));
 
-    expect(state.byWorkspaceId["ws-1"].isRefreshing).toBe(false);
-    expect(state.byWorkspaceId["ws-2"].isRefreshing).toBe(true);
+    expect(state.byWorkspaceId['ws-1'].isRefreshing).toBe(false);
+    expect(state.byWorkspaceId['ws-2'].isRefreshing).toBe(true);
   });
 });
-

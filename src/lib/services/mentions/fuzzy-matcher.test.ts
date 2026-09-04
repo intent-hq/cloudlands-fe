@@ -1,13 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  fuzzyMatch,
-  fuzzyFilterAndScore,
-  pathFuzzyMatch,
-} from './fuzzy-matcher';
+import { describe, it, expect } from 'vitest';
+import { fuzzyMatch, fuzzyFilterAndScore, pathFuzzyMatch } from './fuzzy-matcher';
 
 describe('fuzzyMatch', () => {
   it('should match exact strings', () => {

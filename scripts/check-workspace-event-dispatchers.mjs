@@ -41,9 +41,7 @@ import { join, relative, resolve } from 'node:path';
 const ROOT = process.cwd();
 const SEARCH_DIR = resolve(ROOT, process.argv[2] ?? 'src');
 
-const PROTECTED_NAMES = [
-  'workspace:new-terminal',
-];
+const PROTECTED_NAMES = ['workspace:new-terminal'];
 const PROTECTED_SUFFIXES = PROTECTED_NAMES.map((n) => n.slice('workspace:'.length));
 const PROTECTED_RE = new RegExp(`^workspace:(?:${PROTECTED_SUFFIXES.join('|')})$`);
 
@@ -52,14 +50,17 @@ const PROTECTED_RE = new RegExp(`^workspace:(?:${PROTECTED_SUFFIXES.join('|')})$
 // Allowlist: window-events.ts itself implements the typed wrapper and is the
 // only legitimate site of raw CustomEvent for these prefixes.
 const PROTECTED_DYNAMIC_PREFIXES = ['agent:stream:'];
-const DYNAMIC_PREFIX_ALLOWLIST = new Set([
-  'src/lib/utils/window-events.ts',
-]);
+const DYNAMIC_PREFIX_ALLOWLIST = new Set(['src/lib/utils/window-events.ts']);
 
 const FILE_EXTS = new Set(['.ts', '.tsx', '.svelte', '.js', '.jsx', '.mjs']);
 const SKIP_DIRS = new Set([
-  'node_modules', 'dist', 'build', '.svelte-kit', '.git',
-  'cdp-mcp-server', 'playwright-report',
+  'node_modules',
+  'dist',
+  'build',
+  '.svelte-kit',
+  '.git',
+  'cdp-mcp-server',
+  'playwright-report',
 ]);
 
 async function* walk(dir) {
@@ -113,7 +114,10 @@ function findRawCustomEvent(src, relPath) {
     let matched = PROTECTED_RE.test(name);
     if (!matched && checkDynamicPrefixes) {
       for (const prefix of PROTECTED_DYNAMIC_PREFIXES) {
-        if (name.startsWith(prefix)) { matched = true; break; }
+        if (name.startsWith(prefix)) {
+          matched = true;
+          break;
+        }
       }
     }
     if (!matched) continue;
@@ -137,10 +141,7 @@ function findRawCustomEventViaVariable(src, relPath) {
   if (isTestFile(relPath)) return [];
   const out = [];
   const prefixesAlt = PROTECTED_DYNAMIC_PREFIXES.map(escapeRegex).join('|');
-  const assignRe = new RegExp(
-    `(?:const|let|var)\\s+(\\w+)\\s*=\\s*\`(?:${prefixesAlt})`,
-    'g',
-  );
+  const assignRe = new RegExp(`(?:const|let|var)\\s+(\\w+)\\s*=\\s*\`(?:${prefixesAlt})`, 'g');
   const taintedVars = new Set();
   let a;
   while ((a = assignRe.exec(src)) !== null) {
@@ -148,10 +149,7 @@ function findRawCustomEventViaVariable(src, relPath) {
   }
   if (taintedVars.size === 0) return [];
   for (const varName of taintedVars) {
-    const useRe = new RegExp(
-      `new\\s+CustomEvent\\s*\\(\\s*${escapeRegex(varName)}\\b`,
-      'g',
-    );
+    const useRe = new RegExp(`new\\s+CustomEvent\\s*\\(\\s*${escapeRegex(varName)}\\b`, 'g');
     let u;
     while ((u = useRe.exec(src)) !== null) {
       const line = src.slice(0, u.index).split('\n').length;
@@ -168,18 +166,25 @@ function extractBalancedObject(src, startIdx) {
   if (src[startIdx] !== '{') return null;
   let i = startIdx;
   let depth = 0;
-  let inStr = null;          // ' " or `
-  let templateDepth = 0;     // for ${...} inside template literals
+  let inStr = null; // ' " or `
+  let templateDepth = 0; // for ${...} inside template literals
   while (i < src.length) {
     const c = src[i];
     const next = src[i + 1];
     if (inStr) {
-      if (c === '\\') { i += 2; continue; }
+      if (c === '\\') {
+        i += 2;
+        continue;
+      }
       if (inStr === '`' && c === '$' && next === '{') {
-        templateDepth++; i += 2; depth++; continue;
+        templateDepth++;
+        i += 2;
+        depth++;
+        continue;
       }
       if (c === inStr) inStr = null;
-      i++; continue;
+      i++;
+      continue;
     }
     if (c === '/' && next === '/') {
       while (i < src.length && src[i] !== '\n') i++;
@@ -188,14 +193,24 @@ function extractBalancedObject(src, startIdx) {
     if (c === '/' && next === '*') {
       i += 2;
       while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
-      i += 2; continue;
+      i += 2;
+      continue;
     }
-    if (c === '"' || c === "'" || c === '`') { inStr = c; i++; continue; }
-    if (c === '{') { depth++; i++; continue; }
+    if (c === '"' || c === "'" || c === '`') {
+      inStr = c;
+      i++;
+      continue;
+    }
+    if (c === '{') {
+      depth++;
+      i++;
+      continue;
+    }
     if (c === '}') {
       depth--;
       if (depth === 0) return src.slice(startIdx, i + 1);
-      i++; continue;
+      i++;
+      continue;
     }
     i++;
   }
@@ -252,7 +267,11 @@ const NC = '\x1b[0m';
 
 async function main() {
   let isDir = false;
-  try { isDir = (await stat(SEARCH_DIR)).isDirectory(); } catch { /* ignore */ }
+  try {
+    isDir = (await stat(SEARCH_DIR)).isDirectory();
+  } catch {
+    /* ignore */
+  }
   if (!isDir) {
     console.error(`${RED}Search directory not found: ${SEARCH_DIR}${NC}`);
     process.exit(2);
@@ -270,7 +289,11 @@ async function main() {
 
   for await (const file of walk(SEARCH_DIR)) {
     let src;
-    try { src = readFileSync(file, 'utf8'); } catch { continue; }
+    try {
+      src = readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
     const rel = relative(ROOT, file);
     for (const v of findRawCustomEvent(src, rel)) {
       rawCount++;
@@ -282,29 +305,41 @@ async function main() {
     }
     for (const v of findInlineRawDispatch(src, rel)) {
       inlineCount++;
-      inlineLines.push(`  ${YELLOW}${rel}:${v.line}${NC}  window.dispatchEvent(new CustomEvent(...))`);
+      inlineLines.push(
+        `  ${YELLOW}${rel}:${v.line}${NC}  window.dispatchEvent(new CustomEvent(...))`,
+      );
     }
     for (const v of findDispatchMissingWorkspaceId(src)) {
       missingCount++;
-      missingLines.push(`  ${YELLOW}${rel}:${v.line}${NC}  dispatchWindowEvent('${v.name}', { ... }) — missing workspaceId`);
+      missingLines.push(
+        `  ${YELLOW}${rel}:${v.line}${NC}  dispatchWindowEvent('${v.name}', { ... }) — missing workspaceId`,
+      );
     }
   }
 
   if (rawCount > 0) {
     console.log(`\n${RED}[Raw CustomEvent for protected event]${NC} — ${rawCount} violation(s):`);
-    console.log('  Use dispatchWindowEvent(...) (workspace:*) or dispatchAgentStream(...) (agent:stream:*)');
+    console.log(
+      '  Use dispatchWindowEvent(...) (workspace:*) or dispatchAgentStream(...) (agent:stream:*)',
+    );
     console.log('  so the typed wrapper enforces the detail-object contract.');
     for (const line of rawLines) console.log(line);
   }
   if (inlineCount > 0) {
-    console.log(`\n${RED}[Inline raw window.dispatchEvent(new CustomEvent(...))]${NC} — ${inlineCount} violation(s):`);
+    console.log(
+      `\n${RED}[Inline raw window.dispatchEvent(new CustomEvent(...))]${NC} — ${inlineCount} violation(s):`,
+    );
     console.log('  Use dispatchWindowEvent(eventName, detail?) so the WindowEventName union and');
     console.log('  per-event typed overloads enforce the channel-name and detail-shape contracts.');
     for (const line of inlineLines) console.log(line);
   }
   if (missingCount > 0) {
-    console.log(`\n${RED}[dispatchWindowEvent missing workspaceId]${NC} — ${missingCount} violation(s):`);
-    console.log('  The detail object literal must include `workspaceId` (or a `...` spread that carries it).');
+    console.log(
+      `\n${RED}[dispatchWindowEvent missing workspaceId]${NC} — ${missingCount} violation(s):`,
+    );
+    console.log(
+      '  The detail object literal must include `workspaceId` (or a `...` spread that carries it).',
+    );
     for (const line of missingLines) console.log(line);
   }
 
@@ -321,4 +356,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(2);
 });
-

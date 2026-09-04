@@ -1,4 +1,4 @@
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 export type AgentFileRefreshEntry = {
   path: string;
@@ -6,7 +6,7 @@ export type AgentFileRefreshEntry = {
 };
 
 export type ChatChangesWorkspaceState = {
-  refreshes: Collection<AgentFileRefreshEntry, "path">;
+  refreshes: Collection<AgentFileRefreshEntry, 'path'>;
 };
 
 export type ChatChangesState = {

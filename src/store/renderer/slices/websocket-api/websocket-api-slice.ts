@@ -1,16 +1,14 @@
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type {
-  WebSocketApiState,
-} from "./websocket-api-types";
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { WebSocketApiState } from './websocket-api-types';
 
 export const initialState: WebSocketApiState = {
   enabled: false,
-  token: "",
+  token: '',
   port: 5179,
   discoveryEnabled: false,
   discoveryExpiresAt: null,
-  localIps: ["127.0.0.1"],
-  certFingerprint: "",
+  localIps: ['127.0.0.1'],
+  certFingerprint: '',
   loading: true,
   regenerating: false,
   error: null,

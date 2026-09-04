@@ -8,11 +8,7 @@
  * mirroring the exact behavior in WorkspaceProgressCard.svelte lines 76-106.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import {
   shouldClearGitStatusBeforeLoad,
@@ -129,11 +125,7 @@ describe('WorkspaceProgressCard git status refresh logic', () => {
 
       // Refresh for the same workspace with updated data
       const updatedStatus = makeGitStatusWithPR();
-      const result = simulateLoadGitStatus(
-        state,
-        'ws-1',
-        { ok: true, data: updatedStatus },
-      );
+      const result = simulateLoadGitStatus(state, 'ws-1', { ok: true, data: updatedStatus });
 
       // gitStatus should NEVER have been null during the process
       // (the function preserves existing data for same-workspace refresh)
@@ -153,11 +145,7 @@ describe('WorkspaceProgressCard git status refresh logic', () => {
 
       // Switch to ws-2 which has no PR
       const ws2Status = makeGitStatus({ existingPR: undefined });
-      const result = simulateLoadGitStatus(
-        state,
-        'ws-2',
-        { ok: true, data: ws2Status },
-      );
+      const result = simulateLoadGitStatus(state, 'ws-2', { ok: true, data: ws2Status });
 
       // Should have new data, no PR
       expect(result.gitStatus).toBe(ws2Status);
@@ -174,11 +162,10 @@ describe('WorkspaceProgressCard git status refresh logic', () => {
       });
 
       // Same-workspace refresh fails
-      const result = simulateLoadGitStatus(
-        state,
-        'ws-1',
-        { ok: false, error: new Error('Network error') },
-      );
+      const result = simulateLoadGitStatus(state, 'ws-1', {
+        ok: false,
+        error: new Error('Network error'),
+      });
 
       // Existing data should be PRESERVED (not nulled out)
       expect(result.gitStatus).toBe(prStatus);
@@ -197,11 +184,10 @@ describe('WorkspaceProgressCard git status refresh logic', () => {
       });
 
       // Switch to ws-2 but the fetch fails
-      const result = simulateLoadGitStatus(
-        state,
-        'ws-2',
-        { ok: false, error: new Error('Network error') },
-      );
+      const result = simulateLoadGitStatus(state, 'ws-2', {
+        ok: false,
+        error: new Error('Network error'),
+      });
 
       // Stale data from ws-1 should be cleared (null)
       expect(result.gitStatus).toBeNull();
@@ -260,11 +246,7 @@ describe('WorkspaceProgressCard git status refresh logic', () => {
       const state = makeState();
 
       const newStatus = makeGitStatusWithPR();
-      const result = simulateLoadGitStatus(
-        state,
-        'ws-1',
-        { ok: true, data: newStatus },
-      );
+      const result = simulateLoadGitStatus(state, 'ws-1', { ok: true, data: newStatus });
 
       expect(result.gitStatus).toBe(newStatus);
       expect(result.lastLoadedWorkspaceId).toBe('ws-1');
@@ -297,11 +279,10 @@ describe('WorkspaceProgressCard git status refresh logic', () => {
       expect(state.gitStatus?.existingPR?.title).toBe('Updated PR');
 
       // Second refresh fails - should keep status2
-      state = simulateLoadGitStatus(
-        state,
-        'ws-1',
-        { ok: false, error: new Error('Transient error') },
-      );
+      state = simulateLoadGitStatus(state, 'ws-1', {
+        ok: false,
+        error: new Error('Transient error'),
+      });
       expect(state.gitStatus?.existingPR?.title).toBe('Updated PR');
 
       // Third refresh succeeds with new data

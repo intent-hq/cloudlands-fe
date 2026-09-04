@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';
@@ -168,7 +164,9 @@ describe('no-component-async-data-fetch ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(2);
-    expect(messages.every((message) => message.ruleId === 'intent/no-component-async-data-fetch')).toBe(true);
+    expect(
+      messages.every((message) => message.ruleId === 'intent/no-component-async-data-fetch'),
+    ).toBe(true);
   });
 
   it('reports local command/helper wrapper bypasses around IPC work', async () => {
@@ -191,7 +189,9 @@ describe('no-component-async-data-fetch ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(4);
-    expect(messages.every((message) => message.ruleId === 'intent/no-component-async-data-fetch')).toBe(true);
+    expect(
+      messages.every((message) => message.ruleId === 'intent/no-component-async-data-fetch'),
+    ).toBe(true);
   });
 
   it('ignores module script setup code outside component instances', async () => {

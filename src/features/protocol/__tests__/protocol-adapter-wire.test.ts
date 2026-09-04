@@ -112,7 +112,10 @@ describe('ProtocolAdapter wire contracts (PROTOCOL.md §5.2/§5.3/§5.4)', () =>
     it('deleteNote → note.delete', async () => {
       mockRequest.mockResolvedValueOnce({ ok: true, noteId: 'n1', deleted: true });
       const out = await adapter.deleteNote('ws-1', 'n1');
-      expect(mockRequest).toHaveBeenCalledWith('note.delete', { workspaceId: 'ws-1', noteId: 'n1' });
+      expect(mockRequest).toHaveBeenCalledWith('note.delete', {
+        workspaceId: 'ws-1',
+        noteId: 'n1',
+      });
       expect(out).toBe(true);
     });
   });
@@ -235,7 +238,10 @@ describe('ProtocolAdapter wire contracts (PROTOCOL.md §5.2/§5.3/§5.4)', () =>
         title: 'Prep',
         content: 'body',
       });
-      expect(out).toEqual({ ok: true, data: { prerequisiteNote: { id: 'pre-1' }, agent: undefined } });
+      expect(out).toEqual({
+        ok: true,
+        data: { prerequisiteNote: { id: 'pre-1' }, agent: undefined },
+      });
     });
 
     it('assignAgentToTask → task.assignAgent', async () => {

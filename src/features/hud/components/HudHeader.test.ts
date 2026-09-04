@@ -342,10 +342,7 @@ describe('HudHeader sound-effects toggle', () => {
     flushSync();
     expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
-    expect(window.localStorage.setItem).toHaveBeenCalledWith(
-      HUD_SOUND_ENABLED_STORAGE_KEY,
-      'true',
-    );
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(HUD_SOUND_ENABLED_STORAGE_KEY, 'true');
 
     await fireEvent.click(soundBtn);
     flushSync();
@@ -448,9 +445,6 @@ describe('HudHeader master-volume slider', () => {
     await fireEvent.input(slider, { target: { value: '0.75' } });
     flushSync();
     expect(getHudSoundVolume()).toBe(0.75);
-    expect(window.localStorage.setItem).toHaveBeenCalledWith(
-      HUD_SOUND_VOLUME_STORAGE_KEY,
-      '0.75',
-    );
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(HUD_SOUND_VOLUME_STORAGE_KEY, '0.75');
   });
 });

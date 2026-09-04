@@ -261,11 +261,7 @@ describe('gracefulShutdown call ordering (AST)', () => {
     const sf = parseIndex();
     const cleanup = findShutdownCleanupBody(sf);
     const calls = callsitesIn(cleanup.body!);
-    const required = [
-      'cleanupTerminals',
-      'cleanupAutoUpdater',
-      'app.exit',
-    ];
+    const required = ['cleanupTerminals', 'cleanupAutoUpdater', 'app.exit'];
     for (const name of required) {
       expect(
         calls.some((c) => c.text === name),

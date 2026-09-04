@@ -147,4 +147,3 @@ describe('Cross-Client User Message Sync (iOS → Electron)', () => {
     expect(state.byAgentId[agentId].messages).toHaveLength(0);
   });
 });
-

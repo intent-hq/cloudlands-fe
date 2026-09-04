@@ -898,8 +898,12 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     const spec = edges.find((edge) => edge.getAttribute('data-kind') === 'spec')!;
     const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict')!;
     // Dep edges by source palette slot (input order: a=0, b=1).
-    const aToB = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c0)')!;
-    const bToC = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c1)')!;
+    const aToB = edges.find(
+      (edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c0)',
+    )!;
+    const bToC = edges.find(
+      (edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c1)',
+    )!;
     expect(edges).toHaveLength(4);
 
     // Hover B: incoming dep, outgoing dep, and the live conflict highlight;
@@ -1310,9 +1314,7 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
     // FIT makes the whole graph visible: the latched decision must not flip
     // (which would re-key syncAutoPan and snap the manual pan to {0,0}).
     click('hud-takeover-zoom-fit');
-    expect(panTransform()).toBe(
-      `translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`,
-    );
+    expect(panTransform()).toBe(`translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`);
     // Banner timing never flips mid-display either.
     expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
 

@@ -9,7 +9,6 @@ const logger = createLogger('BrowserEventEmitter');
  * without requiring Node.js 'events' module.
  */
 
- 
 type EventListener = (...args: any[]) => void;
 
 export class EventEmitter {
@@ -44,7 +43,6 @@ export class EventEmitter {
     return this;
   }
 
-   
   emit(event: string | symbol, ...args: any[]): boolean {
     const listeners = this.events.get(event);
     if (!listeners || listeners.size === 0) {

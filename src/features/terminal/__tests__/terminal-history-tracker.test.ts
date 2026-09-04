@@ -2,12 +2,7 @@
  * Tests for Terminal History Tracker
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { terminalHistoryTracker } from '../terminal-history-tracker';
 import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 

@@ -16,9 +16,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: mocks.dispatch,
@@ -61,9 +60,8 @@ describe('runShrinkWorkspaceAction', () => {
   });
 
   it('launches an idle implementor agent, sets the draft, and opens the tab', async () => {
-    const { runShrinkWorkspaceAction, SHRINK_WORKSPACE_PROMPT } = await import(
-      '../shrink-workspace-action'
-    );
+    const { runShrinkWorkspaceAction, SHRINK_WORKSPACE_PROMPT } =
+      await import('../shrink-workspace-action');
 
     await runShrinkWorkspaceAction(workspace);
 

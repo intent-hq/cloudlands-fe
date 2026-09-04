@@ -72,11 +72,7 @@ vi.mock('$store/renderer/store', async () => {
       providerModels: {
         byProviderId: {
           auggie: {
-            models: [
-              { value: 'fable-5' },
-              { value: 'opus4.6' },
-              { value: 'user-picked-model' },
-            ],
+            models: [{ value: 'fable-5' }, { value: 'opus4.6' }, { value: 'user-picked-model' }],
             fetchedAt: '2026-08-15T00:00:00.000Z',
           },
         },

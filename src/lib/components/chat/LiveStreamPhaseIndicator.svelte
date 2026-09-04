@@ -66,7 +66,9 @@
   onDestroy(clearGraceTimer);
 
   const visible = $derived(eligible && graceElapsed);
-  const message = $derived(phase !== null && isPreLivePhase(phase) ? liveStreamPhaseMessage(phase) : '');
+  const message = $derived(
+    phase !== null && isPreLivePhase(phase) ? liveStreamPhaseMessage(phase) : '',
+  );
 </script>
 
 {#if visible}
@@ -77,6 +79,7 @@
   >
     <Spinner {seed} size={4} />
     <span class="text-xs text-subtle font-medium" data-testid="live-stream-phase-message"
-      >{message}</span>
+      >{message}</span
+    >
   </div>
 {/if}

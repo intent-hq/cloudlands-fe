@@ -9,7 +9,7 @@ const source = readFileSync(
 describe('OpenComboButton trigger ownership', () => {
   it('forwards menu trigger props to every dropdown-capable trigger branch', () => {
     expect(source).toContain('{#snippet trigger({ props })}');
-    expect(source).toContain('{...(actions.length > 1 ? props : {})}');
+    expect(source).toContain('{...actions.length > 1 ? props : {}}');
     expect(source.match(/\{\.\.\.props\}/g)).toHaveLength(2);
     expect(source).not.toContain('onclick={toggle}');
   });

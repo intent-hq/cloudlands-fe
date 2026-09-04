@@ -8,4 +8,3 @@ export type SetupScriptsState = {
   isBannerDismissedGlobally: boolean;
   bannerDismissedByWorkspaceId: Record<string, true>;
 };
-
