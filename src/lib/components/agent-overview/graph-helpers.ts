@@ -10,6 +10,7 @@ import { AgentStatus } from '$shared/types';
 import type { AgentNode } from './types';
 import {
   FILE_EDIT_TOOLS,
+  FILE_READ_TOOLS,
   NOTE_TOOLS,
   NOTE_READ_TOOLS,
   TASK_TOOLS,
@@ -249,6 +250,10 @@ function isFileEditTool(toolName: string): boolean {
  */
 function isFileReadTool(toolName: string): boolean {
   const lowerName = toolName.toLowerCase();
+  if (FILE_READ_TOOLS.has(lowerName)) return true;
+  for (const tool of FILE_READ_TOOLS) {
+    if (lowerName.startsWith(`${tool}_`) || lowerName.startsWith(`${tool}-`)) return true;
+  }
   // Check for display name pattern "Read `path`" but not "Read `.`" (directory)
   if (lowerName.startsWith('read `') && !lowerName.includes('read `.`')) {
     return true;
@@ -824,17 +829,73 @@ export function extractDelegationBatchMap(
 // Event Conversion
 // ============================================================================
 
+type InteractionEvent = import('./types').InteractionEvent;
+
+interface WorkspaceOperation {
+  index: number;
+  type: InteractionEvent['type'];
+  targetId: string;
+}
+
+function collectWorkspaceApiOperations(code: string): WorkspaceOperation[] {
+  const operations: WorkspaceOperation[] = [];
+  const resourceCalls =
+    /\bws\.(note|file)\.(read|add|edit|editLines|setContent|write)\s*\(\s*(['"`])([^'"`]+)\3/g;
+  let match: RegExpExecArray | null;
+  while ((match = resourceCalls.exec(code))) {
+    const [, resource, method, quote, targetId] = match;
+    if (quote === '`' && targetId.includes('${')) continue;
+    const isRead = method === 'read';
+    operations.push({
+      index: match.index,
+      type: `${resource}-${isRead ? 'read' : 'write'}` as InteractionEvent['type'],
+      targetId,
+    });
+  }
+
+  const directAgentCalls = /\bws\.agent\.(send|sendToTask|watch)\s*\(\s*(['"`])([^'"`]+)\2/g;
+  while ((match = directAgentCalls.exec(code))) {
+    if (match[2] === '`' && match[3].includes('${')) continue;
+    operations.push({
+      index: match.index,
+      type: match[1] === 'watch' ? 'agent-waiting' : 'agent-message',
+      targetId: match[3],
+    });
+  }
+
+  for (const method of ['delegate', 'create']) {
+    const callPattern = new RegExp(`\\bws\\.agent\\.${method}\\s*\\(`, 'g');
+    while ((match = callPattern.exec(code))) {
+      const callEnd = code.indexOf(');', match.index);
+      const call = code.slice(match.index, callEnd === -1 ? code.length : callEnd + 2);
+      const targetMatch = call.match(/\btaskNoteId\s*:\s*(['"`])([^'"`]+)\1/);
+      if (targetMatch && !(targetMatch[1] === '`' && targetMatch[2].includes('${'))) {
+        operations.push({ index: match.index, type: 'delegation', targetId: targetMatch[2] });
+      }
+    }
+  }
+
+  return operations.sort((a, b) => a.index - b.index);
+}
+
+function interactionId(eventId: string, suffix: string): string {
+  return `${eventId}:${suffix}`;
+}
+
 /**
  * Convert a WorkspaceEvent to an InteractionEvent for the agent overview graph.
- * Returns null if the event is not relevant to the graph.
+ * Returns an empty array if the event is not relevant to the graph.
  */
-export function convertToInteractionEvent(event: {
-  id: string;
-  timestamp: string;
-  type: string;
-  actor?: { id?: string; name?: string; type?: string };
-  data?: any;
-}): import('./types').InteractionEvent | null {
+export function convertToInteractionEvent(
+  event: {
+    id: string;
+    timestamp: string;
+    type: string;
+    actor?: { id?: string; name?: string; type?: string };
+    data?: any;
+  },
+  seenQueueMessageIds: Set<string> = new Set(),
+): InteractionEvent[] {
   const base = {
     id: event.id,
     timestamp: event.timestamp,
@@ -844,69 +905,157 @@ export function convertToInteractionEvent(event: {
 
   if (event.type === 'agent:created') {
     const data = event.data as any;
-    return {
-      ...base,
-      type: 'agent-created',
-      agentId: data?.agentId || base.agentId,
-      agentName: data?.agentName || base.agentName,
-      parentAgentId: data?.createdByAgentId,
-    };
+    return [
+      {
+        ...base,
+        type: 'agent-created',
+        agentId: data?.agentId || base.agentId,
+        agentName: data?.agentName || base.agentName,
+        parentAgentId: data?.createdByAgentId,
+      },
+    ];
   }
 
   if (event.type === 'agent:idle') {
     const data = event.data as any;
-    return {
-      ...base,
-      type: 'agent-idle',
-      agentId: data?.agentId || base.agentId,
-      parentAgentId: data?.parentAgentId,
-    };
+    return [
+      {
+        ...base,
+        type: 'agent-idle',
+        agentId: data?.agentId || base.agentId,
+        parentAgentId: data?.parentAgentId,
+      },
+    ];
   }
 
   if (event.type === 'file:changed' && event.actor?.type === 'agent') {
     const data = event.data as Record<string, unknown>;
-    const action = data?.action;
-    const isWrite = action === 'create' || action === 'modify' || action === 'delete';
     const relativePath = data?.relativePath as string | undefined;
-    return {
-      ...base,
-      type: isWrite ? 'file-write' : 'file-read',
-      targetId: (data?.path || relativePath) as string | undefined,
-      targetName: relativePath?.split('/').pop(),
-    };
+    return [
+      {
+        ...base,
+        type: 'file-write',
+        targetId: (data?.path || relativePath) as string | undefined,
+        targetName: relativePath?.split('/').pop(),
+      },
+    ];
   }
 
   if (event.type?.startsWith('note:') && event.actor?.type === 'agent') {
     const data = event.data as Record<string, unknown>;
-    const isWrite = event.type === 'note:created' || event.type === 'note:updated';
-    return {
+    const isRead = event.type === 'note:read';
+    return [
+      {
+        ...base,
+        type: isRead ? 'note-read' : 'note-write',
+        targetId: data?.noteId as string | undefined,
+        targetName: data?.title as string | undefined,
+      },
+    ];
+  }
+
+  if (event.type === 'agent:queue:updated') {
+    const data = event.data as Record<string, unknown>;
+    const receiverId = typeof data?.agentId === 'string' ? data.agentId : '';
+    const queue = Array.isArray(data?.queue) ? data.queue : [];
+    const interactions: InteractionEvent[] = [];
+    for (const entry of queue) {
+      if (!entry || typeof entry !== 'object') continue;
+      const message = entry as Record<string, unknown>;
+      const messageId = typeof message.id === 'string' ? message.id : '';
+      const senderId = typeof message.fromAgentId === 'string' ? message.fromAgentId : '';
+      if (!messageId || !senderId || !receiverId || seenQueueMessageIds.has(messageId)) continue;
+      seenQueueMessageIds.add(messageId);
+      interactions.push({
+        ...base,
+        id: interactionId(event.id, `queue-${messageId}`),
+        type: 'agent-message',
+        agentId: senderId,
+        targetId: receiverId,
+      });
+    }
+    return interactions;
+  }
+
+  if (event.type === 'agent:subscriptions-changed') {
+    const data = event.data as Record<string, unknown>;
+    const agentId = typeof data?.agentId === 'string' ? data.agentId : base.agentId;
+    const waitingForAgentIds = Array.isArray(data?.waitingForAgentIds)
+      ? data.waitingForAgentIds.filter((id): id is string => typeof id === 'string')
+      : [];
+    return waitingForAgentIds.map((targetId, index) => ({
       ...base,
-      type: isWrite ? 'note-write' : 'note-read',
-      targetId: data?.noteId as string | undefined,
-      targetName: data?.title as string | undefined,
-    };
+      id: interactionId(event.id, `waiting-${index}`),
+      type: 'agent-waiting',
+      agentId,
+      targetId,
+    }));
+  }
+
+  if (event.type === 'task:agent-linked') {
+    const data = event.data as Record<string, unknown>;
+    const link = data?.link as Record<string, unknown> | undefined;
+    const agentId = typeof link?.agentId === 'string' ? link.agentId : '';
+    const noteId = typeof data?.noteId === 'string' ? data.noteId : '';
+    if (!agentId || !noteId) return [];
+    return [
+      {
+        ...base,
+        type: 'task-update',
+        agentId,
+        targetId: noteId,
+        targetName: typeof link?.taskText === 'string' ? link.taskText : undefined,
+      },
+    ];
   }
 
   if (event.type === 'agent:tool:call') {
-    const data = event.data as any;
-    const toolName = data?.toolName?.toLowerCase() || '';
-    if (toolName.includes('read') && data?.filesModified?.[0]) {
-      return {
+    const data = event.data as Record<string, unknown>;
+    const toolName = typeof data?.toolName === 'string' ? data.toolName.toLowerCase() : '';
+    const input =
+      data?.input && typeof data.input === 'object' ? (data.input as Record<string, unknown>) : {};
+    const interactions: InteractionEvent[] = [];
+    const seen = new Set<string>();
+    const pushInteraction = (
+      type: InteractionEvent['type'],
+      targetId: string,
+      deduplicate = true,
+    ) => {
+      const key = `${type}:${targetId}`;
+      if (!targetId || (deduplicate && seen.has(key))) return;
+      seen.add(key);
+      interactions.push({
         ...base,
-        type: 'file-read',
-        targetId: data.filesModified[0],
-        targetName: data.filesModified[0].split('/').pop(),
-      };
+        id: interactionId(event.id, `${interactions.length}`),
+        type,
+        targetId,
+        targetName: type.startsWith('file-') ? targetId.split('/').pop() : undefined,
+      });
+    };
+
+    if (toolName.includes('workspace_api') && typeof input.code === 'string') {
+      for (const operation of collectWorkspaceApiOperations(input.code)) {
+        pushInteraction(operation.type, operation.targetId, false);
+      }
     }
-    if ((toolName.includes('write') || toolName.includes('edit')) && data?.filesModified?.[0]) {
-      return {
-        ...base,
-        type: 'file-write',
-        targetId: data.filesModified[0],
-        targetName: data.filesModified[0].split('/').pop(),
-      };
+
+    if (data?.toolKind === 'file') {
+      const inputPath = input.path || input.file_path || input.filePath;
+      const path =
+        typeof inputPath === 'string'
+          ? inputPath
+          : extractFilePath(input, data.toolName as string | undefined);
+      if (path && isFileReadTool(toolName)) pushInteraction('file-read', path);
+      if (path && isFileEditTool(toolName)) pushInteraction('file-write', path);
     }
+
+    const filesModified = Array.isArray(data?.filesModified) ? data.filesModified : [];
+    for (const path of filesModified) {
+      if (typeof path === 'string') pushInteraction('file-write', path);
+    }
+
+    return interactions;
   }
 
-  return null;
+  return [];
 }

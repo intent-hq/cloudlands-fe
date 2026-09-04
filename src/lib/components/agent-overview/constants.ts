@@ -30,7 +30,13 @@ export const FILE_EDIT_TOOLS = new Set([
   'save-file',
   'remove-files',
   'str_replace_editor',
+  'apply_patch',
+  'edit',
+  'write',
 ]);
+
+/** Tool names that indicate file read operations */
+export const FILE_READ_TOOLS = new Set(['view', 'read', 'read-file', 'read_file']);
 
 /** Tool names that indicate note operations */
 export const NOTE_TOOLS = new Set([
@@ -96,6 +102,24 @@ export const EDGE_STYLES = {
     strokeWidth: 1.5,
     strokeDasharray: 'none',
     opacity: 0.85,
+  },
+  'task-assignment': {
+    stroke: 'rgb(139, 92, 246)',
+    strokeWidth: 2,
+    strokeDasharray: 'none',
+    opacity: 0.85,
+  },
+  message: {
+    stroke: 'rgb(59, 130, 246)',
+    strokeWidth: 2,
+    strokeDasharray: 'none',
+    opacity: 0.9,
+  },
+  'waiting-on': {
+    stroke: 'rgb(245, 158, 11)',
+    strokeWidth: 1.5,
+    strokeDasharray: '3,4',
+    opacity: 0.8,
   },
   'file-read': {
     stroke: 'var(--color-muted)',
