@@ -17,6 +17,9 @@ logs/
 *.min.css
 messages/en-XA.json
 CHANGELOG.md
+src/shared/paraglide/
+project.inlang/*
+!project.inlang/settings.json
 
 # Agent prompt assets (model-visible content, not code)
 resources/specialists/

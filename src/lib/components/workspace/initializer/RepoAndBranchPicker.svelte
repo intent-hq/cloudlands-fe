@@ -439,7 +439,7 @@
       >
     {/if}
     <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
-      >{remoteSetup.branch || 'main'}</span
+      >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
     >
     {#if workOnRemoteParts[3]}
       <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[3]}</span

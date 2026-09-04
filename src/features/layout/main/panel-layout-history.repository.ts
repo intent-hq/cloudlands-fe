@@ -103,6 +103,7 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
         return null;
       }
       logger.error(
+        // i18n-ignore (developer log message)
         `Failed to load panel layout history for workspace: ${workspaceId}`,
         error as Error,
       );
@@ -143,6 +144,7 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
       });
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         `Failed to save panel layout history for workspace: ${workspaceId}`,
         error as Error,
       );

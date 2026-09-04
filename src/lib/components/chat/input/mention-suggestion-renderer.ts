@@ -178,6 +178,7 @@ class MentionSuggestionRenderer {
     // due to async item resolution timing, e.g. when typing "@a" quickly)
     if (!this.popup && !this.component) {
       logger.info(
+        // i18n-ignore (developer log message)
         '[MentionSuggestionRenderer] Initializing popup and component in onUpdate (onStart was skipped)',
       );
       this.onStart(props);
