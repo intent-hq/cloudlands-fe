@@ -189,17 +189,30 @@
   let rowElement: HTMLDivElement | null = $state(null);
   let titleElement: HTMLSpanElement | null = $state(null);
   let titleTextElement: HTMLSpanElement | null = $state(null);
+  let actionsElement: HTMLDivElement | null = $state(null);
   let titleOverflowPx = $state(0);
+  let titleActionsCoveredPx = $state(0);
+  let titleMarqueeDistancePx = $derived(
+    titleOverflowPx + (titleActionsCoveredPx > 0 ? titleActionsCoveredPx + 4 : 0),
+  );
 
   function measureTitleOverflow() {
-    titleOverflowPx = titleElement
-      ? Math.max(0, titleElement.scrollWidth - titleElement.clientWidth)
-      : 0;
+    const title = titleElement;
+    const actionCluster = actionsElement;
+    titleOverflowPx = title ? Math.max(0, title.scrollWidth - title.clientWidth) : 0;
+    titleActionsCoveredPx =
+      title && actionCluster && actionCluster.getClientRects().length > 0
+        ? Math.max(
+            0,
+            title.getBoundingClientRect().right - actionCluster.getBoundingClientRect().left,
+          )
+        : 0;
   }
 
   $effect(() => {
     const clip = titleElement;
     const text = titleTextElement;
+    const actionCluster = actionsElement;
     if (!clip || !text) return;
 
     measureTitleOverflow();
@@ -208,6 +221,7 @@
     const observer = new ResizeObserver(measureTitleOverflow);
     observer.observe(clip);
     observer.observe(text);
+    if (actionCluster) observer.observe(actionCluster);
     return () => observer.disconnect();
   });
 
@@ -588,9 +602,9 @@
               : 'text-muted-foreground'}"
           data-overflowing={titleOverflowPx > 0}
           data-marquee-enabled={titleOverflowPx > 0 && !highlighted && !suppressHover}
-          style="--wc-title-marquee-distance: {titleOverflowPx}px; --wc-title-marquee-duration: {Math.max(
+          style="--wc-title-marquee-distance: {titleMarqueeDistancePx}px; --wc-title-marquee-duration: {Math.max(
             0.4,
-            titleOverflowPx / 35,
+            titleMarqueeDistancePx / 35,
           ).toFixed(2)}s;"
           data-workspace-card-title
         >
@@ -695,6 +709,7 @@
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
+        bind:this={actionsElement}
         class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
           {isolateHoverReveal
           ? 'group-focus-within/wc:opacity-100'
