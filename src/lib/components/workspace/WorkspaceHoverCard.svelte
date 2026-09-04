@@ -425,7 +425,7 @@
               {#each visibleRows as row (row.id)}<div role="listitem">
                   <Button
                     variant="plain"
-                    class="grid h-auto! min-h-8 w-full min-w-0 cursor-pointer grid-cols-[1.5rem_minmax(0,1fr)_auto] gap-x-2.5 rounded-sm border-0! px-2! py-0.5! text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="grid h-auto! min-h-8 w-full min-w-0 cursor-pointer grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start justify-normal gap-x-2.5 gap-y-0 whitespace-normal rounded-sm border-0! px-2! py-0.5! text-left font-normal transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     aria-label={rowAccessibleLabel(row)}
                     data-workspace-hover-card-agent-row
                     data-agent-group-row={row.group}
@@ -518,7 +518,7 @@
                   {#if pr.url}
                     <Button
                       variant="plain"
-                      class="grid h-auto! w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 rounded-sm border-0! px-2! py-1! text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      class="grid h-auto! w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center justify-normal gap-x-2.5 whitespace-normal rounded-sm border-0! px-2! py-1! text-left font-normal transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       aria-label={getWorkspacePrLabel(pr)}
                       data-workspace-hover-card-pr-row
                       data-pr-identity={pr.identity}
