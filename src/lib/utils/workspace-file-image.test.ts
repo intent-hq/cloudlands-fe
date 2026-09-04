@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createWorkspaceFileVersion,
   intentFileImageUrlToWorkspaceFileUrl,
   intentFileMediaUrlToWorkspaceFile,
   parseIntentFileTarget,
   rewriteIntentFileImageSrcs,
+  stampWorkspaceFileImageVersions,
+  workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 
@@ -162,6 +165,14 @@ describe('rewriteIntentFileImageSrcs', () => {
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
   });
 
+  it('marks short-form image sources for a placeholder when the workspace is unknown', () => {
+    const html = '<p><img src="intent://local/file/charts/bridge_tracking.png" alt="chart"></p>';
+
+    expect(rewriteIntentFileImageSrcs(html)).toBe(
+      '<p><img data-media-src="intent://local/file/charts/bridge_tracking.png" alt="chart" data-media-unavailable="workspace-unknown"></p>',
+    );
+  });
+
   it.each(['svg', 'mov'])('marks unsupported %s media for a viewer placeholder', (extension) => {
     const html = `<img src="intent://local/file/out/demo.${extension}" alt="demo">`;
 
@@ -174,5 +185,54 @@ describe('rewriteIntentFileImageSrcs', () => {
     const html = '<a href="intent://local/file/a.png">link</a>';
 
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
+  });
+});
+
+describe('createWorkspaceFileVersion', () => {
+  it('yields distinct URL-safe tokens on consecutive calls', () => {
+    const a = createWorkspaceFileVersion();
+    const b = createWorkspaceFileVersion();
+
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[A-Za-z0-9._-]+$/);
+    expect(b).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+});
+
+describe('stampWorkspaceFileImageVersions', () => {
+  it('appends the version token to rewritten workspace-file image sources', () => {
+    const html = `<p><img src="workspace-file://${WS}/docs/a%20b.png" alt="shot"></p>`;
+
+    expect(stampWorkspaceFileImageVersions(html, 'tok-1')).toBe(
+      `<p><img src="workspace-file://${WS}/docs/a%20b.png?v=tok-1" alt="shot"></p>`,
+    );
+  });
+
+  it('does not re-stamp an image that already carries a query string', () => {
+    const html = `<img src="workspace-file://${WS}/a.png?v=old" alt="">`;
+
+    expect(stampWorkspaceFileImageVersions(html, 'tok-2')).toBe(html);
+  });
+
+  it('leaves videos, other schemes, and non-src attributes untouched', () => {
+    const html = [
+      `<video src="workspace-file://${WS}/out/demo.mp4" controls></video>`,
+      '<img src="https://example.com/a.png" alt="">',
+      '<img src="workspace-asset://ws/asset-1" alt="">',
+      `<a href="workspace-file://${WS}/a.png">x</a>`,
+    ].join('');
+
+    expect(stampWorkspaceFileImageVersions(html, 'tok-3')).toBe(html);
+  });
+
+  it('round-trips a stamped image URL back to its portable intent form', () => {
+    const stamped = stampWorkspaceFileImageVersions(
+      `<img src="workspace-file://${WS}/docs/a%20b.png" alt="">`,
+      'tok-4',
+    );
+    const src = /src="([^"]*)"/.exec(stamped)![1];
+
+    expect(workspaceFileImageUrlToIntentFileUrl(src)).toBe('intent://local/file/docs/a%20b.png');
+    expect(workspaceFileMediaUrlToIntentFileUrl(src)).toBe('intent://local/file/docs/a%20b.png');
   });
 });

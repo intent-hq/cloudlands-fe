@@ -6,8 +6,10 @@
  * dialog is confirmed; cancelling keeps edit mode open with the draft intact.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 
 const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
 
@@ -52,6 +54,7 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
+import { resolveAttachmentImageUrl } from '../attachment-image-url';
 
 function userMessage(): AgentMessage {
   return {
@@ -210,6 +213,78 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     await waitFor(() =>
       expect(onEditSubmit).toHaveBeenCalledWith('original text', undefined, undefined),
     );
+  });
+});
+
+describe('ChatMessage attachment-reference thumbnails', () => {
+  const originalInvoke = window.electronAPI!.invoke;
+  const workspace = { id: 'ws-thumb' } as any;
+
+  // PROTOCOL §5.9 `file.getAttachmentInfo` result for the referenced row.
+  const attachmentInfo = {
+    attachmentId: 'att-thumb-1',
+    fileName: 'shot.png',
+    mimeType: 'image/png',
+    size: 1234,
+    uploadedAt: '2026-01-01T12:00:00Z',
+    path: '.intent/attachments/att-thumb-1/shot.png',
+    exists: true,
+  };
+
+  function referenceMessage(): AgentMessage {
+    return {
+      id: 'msg-thumb',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'see attached' },
+        { type: 'image', attachmentId: 'att-thumb-1', mimeType: 'image/png' },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+  }
+
+  beforeEach(() => {
+    resetMockIpcRouter();
+    window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
+      mockInvoke(channel, payload),
+    );
+  });
+  afterEach(() => {
+    window.electronAPI!.invoke = originalInvoke;
+    resetMockIpcRouter();
+  });
+
+  it('falls back to the placeholder tile and evicts the cached URL when the thumbnail fails to load', async () => {
+    const getAttachmentInfo = vi.fn(() => ({ ok: true, result: attachmentInfo }));
+    registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
+      expect(payload).toEqual({
+        method: 'file.getAttachmentInfo',
+        params: { attachmentId: 'att-thumb-1' },
+      });
+      return getAttachmentInfo();
+    });
+
+    render(ChatMessage, { props: { message: referenceMessage(), workspace } });
+
+    // The reference resolves to a workspace-file:// URL and renders as <img>.
+    const img = await screen.findByRole('img', { name: /attached image/i });
+    const url = 'workspace-file://ws-thumb/.intent/attachments/att-thumb-1/shot.png';
+    expect(img.getAttribute('src')).toBe(url);
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+    // The module cache serves the same URL without another wire round-trip.
+    await expect(resolveAttachmentImageUrl('ws-thumb', 'att-thumb-1')).resolves.toBe(url);
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+    // The protocol handler refused the bytes (e.g. 404): the <img> errors.
+    await fireEvent.error(img);
+
+    await waitFor(() => expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy());
+    expect(screen.queryByRole('img', { name: /attached image/i })).toBeNull();
+    // Evicted: the next resolve re-issues file.getAttachmentInfo instead of
+    // replaying the URL that just failed — and this instance does not loop.
+    await expect(resolveAttachmentImageUrl('ws-thumb', 'att-thumb-1')).resolves.toBe(url);
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
   });
 });
 

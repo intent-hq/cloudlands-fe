@@ -181,6 +181,20 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('[data-type="diff-block"]')).toBeNull();
   });
 
+  it('renders a placeholder instead of a raw intent:// image when the workspace is unknown', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: 'Latest chart: ![chart](intent://local/file/charts/bridge_tracking.png)',
+      },
+    });
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toContain('chart');
+    expect(status.textContent).toContain('Media could not load');
+    expect(container.querySelector('img[src^="intent://"]')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+  });
+
   it('renders unsupported workspace media as a link instead of an image', async () => {
     const { container } = render(MarkdownViewer, {
       props: {

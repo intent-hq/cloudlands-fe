@@ -14,25 +14,49 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * fallback when no hosting window is known (after a short retry for the
  * initial-navigation race) or when the stamped backend is the implicit local
  * one; a stamped named backend without a pooled client fails closed (404).
+ *
+ * A request whose URL carries the requesting window's backend (`?backend=`,
+ * stamped by the `webRequest` redirect in `setupWorkspaceMediaBackendHinting`)
+ * is served by that backend only — no window-map lookup, no ownership probe,
+ * fail closed when it is disconnected.
  */
 
-const { protocolHandle, mockRequest, pooledRequests, windowBackends, workspaceWindows } =
-  vi.hoisted(() => ({
-    protocolHandle: vi.fn(),
-    mockRequest: vi.fn(),
-    /** backendId → pooled client `request` mock. */
-    pooledRequests: new Map<string, ReturnType<typeof vi.fn>>(),
-    /** windowId → stamped backendId. */
-    windowBackends: new Map<number, string>(),
-    /** workspaceId → hosting windowIds. */
-    workspaceWindows: new Map<string, number[]>(),
-  }));
+const {
+  protocolHandle,
+  onBeforeRequest,
+  mockRequest,
+  pooledRequests,
+  windowBackends,
+  workspaceWindows,
+  webContentsWindows,
+} = vi.hoisted(() => ({
+  protocolHandle: vi.fn(),
+  onBeforeRequest: vi.fn(),
+  mockRequest: vi.fn(),
+  /** backendId → pooled client `request` mock. */
+  pooledRequests: new Map<string, ReturnType<typeof vi.fn>>(),
+  /** windowId → stamped backendId. */
+  windowBackends: new Map<number, string>(),
+  /** workspaceId → hosting windowIds. */
+  workspaceWindows: new Map<string, number[]>(),
+  /** webContentsId → owning windowId (absent = not a BrowserWindow). */
+  webContentsWindows: new Map<number, number>(),
+}));
 
 vi.mock('electron', () => ({
   app: { getAppPath: vi.fn(() => '/app') },
   protocol: { handle: protocolHandle },
+  session: { defaultSession: { webRequest: { onBeforeRequest } } },
+  webContents: {
+    fromId: (id: number) =>
+      webContentsWindows.has(id) ? { id, isDestroyed: () => false } : undefined,
+  },
   BrowserWindow: {
     fromId: (id: number) => (windowBackends.has(id) ? { id, isDestroyed: () => false } : null),
+    fromWebContents: (contents: { id: number }) => {
+      const windowId = webContentsWindows.get(contents.id);
+      return windowId === undefined ? null : { id: windowId, isDestroyed: () => false };
+    },
   },
 }));
 
@@ -49,13 +73,15 @@ vi.mock('../../features/system/main/system.ipc', () => ({
   getWindowIdsForWorkspace: (workspaceId: string) => workspaceWindows.get(workspaceId) ?? [],
 }));
 
-vi.mock('../window', () => ({
+vi.mock('../window-backend', () => ({
   getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
 }));
 
 import {
   imageMimeTypeForPath,
   parseWorkspaceFileRequest,
+  parseWorkspaceMediaBackendHint,
+  withWorkspaceMediaBackendHint,
   workspaceFileMimeTypeForPath,
 } from '../utils/workspace-file-url';
 import {
@@ -67,8 +93,10 @@ import { JsonRpcError } from '../../features/backend/main/json-rpc-errors';
 import {
   setupWorkspaceAssetProtocolHandler,
   setupWorkspaceFileProtocolHandler,
+  setupWorkspaceMediaBackendHinting,
   WORKSPACE_FILE_CHUNK_BYTES,
   WORKSPACE_FILE_MAX_BYTES,
+  workspaceMediaBackendRedirect,
 } from '../protocol-handlers';
 
 describe('imageMimeTypeForPath', () => {
@@ -108,7 +136,68 @@ describe('parseWorkspaceFileRequest', () => {
       workspaceId: 'ws-1',
       filePath: 'docs/my pic.png',
       mimeType: 'image/png',
+      backendId: null,
     });
+  });
+
+  it('accepts the backend hint without leaking it into the daemon path', () => {
+    expect(
+      parseWorkspaceFileRequest('workspace-file://ws-1/docs/my%20pic.png?backend=conn-b'),
+    ).toEqual({
+      ok: true,
+      workspaceId: 'ws-1',
+      filePath: 'docs/my pic.png',
+      mimeType: 'image/png',
+      backendId: 'conn-b',
+    });
+    // The hint must not defeat the raw-segment traversal check.
+    expect(
+      parseWorkspaceFileRequest('workspace-file://ws-1/docs%2F..%2Fsecret.png?backend=conn-b'),
+    ).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('accepts the cache-busting token alone or with the backend hint in either order', () => {
+    const expected = {
+      ok: true,
+      workspaceId: 'ws-1',
+      filePath: 'docs/my pic.png',
+      mimeType: 'image/png',
+    };
+    expect(parseWorkspaceFileRequest('workspace-file://ws-1/docs/my%20pic.png?v=abc-1')).toEqual({
+      ...expected,
+      backendId: null,
+    });
+    expect(
+      parseWorkspaceFileRequest('workspace-file://ws-1/docs/my%20pic.png?v=abc-1&backend=conn-b'),
+    ).toEqual({ ...expected, backendId: 'conn-b' });
+    expect(
+      parseWorkspaceFileRequest('workspace-file://ws-1/docs/my%20pic.png?backend=conn-b&v=abc-1'),
+    ).toEqual({ ...expected, backendId: 'conn-b' });
+    // The token must not defeat the raw-segment traversal check.
+    expect(
+      parseWorkspaceFileRequest('workspace-file://ws-1/docs%2F..%2Fsecret.png?v=abc-1'),
+    ).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('rejects any other query string, including a duplicated or malformed hint', () => {
+    for (const query of [
+      '?download=1',
+      '?backend=conn-b&download=1',
+      '?backend=conn-b&backend=conn-c',
+      '?backend=',
+      '?backend=conn%2Fb',
+      '?backend=conn-b#frag',
+      '?v=',
+      '?v=a&v=b',
+      '?v=a%2Fb',
+      '?v=abc-1&download=1',
+      '?v=abc-1#frag',
+    ]) {
+      expect(parseWorkspaceFileRequest(`workspace-file://ws-1/a.png${query}`)).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
   });
 
   it('accepts only allowlisted video paths with the correct MIME type', () => {
@@ -117,6 +206,7 @@ describe('parseWorkspaceFileRequest', () => {
       workspaceId: 'ws-2',
       filePath: 'artifacts/demo clip.mp4',
       mimeType: 'video/mp4',
+      backendId: null,
     });
     expect(parseWorkspaceFileRequest('workspace-file://ws-2/artifacts/demo.webm')).toMatchObject({
       ok: true,
@@ -177,6 +267,174 @@ describe('parseWorkspaceFileRequest', () => {
     expect(parseWorkspaceFileRequest('workspace-file://ws-1/a.png?download=1')).toMatchObject({
       status: 400,
     });
+  });
+});
+
+describe('parseWorkspaceMediaBackendHint', () => {
+  it('treats an empty query as unhinted and accepts one well-formed backend param', () => {
+    expect(parseWorkspaceMediaBackendHint('')).toEqual({ ok: true, backendId: null });
+    expect(parseWorkspaceMediaBackendHint('?backend=local')).toEqual({
+      ok: true,
+      backendId: 'local',
+    });
+    expect(parseWorkspaceMediaBackendHint('?backend=6f1c2d3e-0000-4000-8000-000000000000')).toEqual(
+      { ok: true, backendId: '6f1c2d3e-0000-4000-8000-000000000000' },
+    );
+  });
+
+  it('accepts one cache-busting token, alone or combined with the backend hint', () => {
+    expect(parseWorkspaceMediaBackendHint('?v=m1abc-2')).toEqual({ ok: true, backendId: null });
+    expect(parseWorkspaceMediaBackendHint('?v=m1abc-2&backend=local')).toEqual({
+      ok: true,
+      backendId: 'local',
+    });
+    expect(parseWorkspaceMediaBackendHint('?backend=local&v=m1abc-2')).toEqual({
+      ok: true,
+      backendId: 'local',
+    });
+  });
+
+  it('rejects arbitrary, duplicated, empty, or malformed parameters', () => {
+    for (const query of [
+      '?x=1',
+      '?backend=a&x=1',
+      '?backend=a&backend=b',
+      '?backend=',
+      '?backend=a b',
+      '?v=',
+      '?v=a&v=b',
+      '?v=a b',
+      '?v=a&x=1',
+      '?v=a&backend=a&backend=b',
+    ]) {
+      expect(parseWorkspaceMediaBackendHint(query)).toMatchObject({ ok: false });
+    }
+  });
+});
+
+describe('withWorkspaceMediaBackendHint', () => {
+  it('stamps unhinted workspace media URLs of both schemes', () => {
+    expect(withWorkspaceMediaBackendHint('workspace-file://ws-1/a%20b.png', 'conn-b')).toBe(
+      'workspace-file://ws-1/a%20b.png?backend=conn-b',
+    );
+    expect(withWorkspaceMediaBackendHint('workspace-asset://ws-1/asset-1', 'local')).toBe(
+      'workspace-asset://ws-1/asset-1?backend=local',
+    );
+  });
+
+  it('appends the hint after a renderer cache-busting token', () => {
+    expect(
+      withWorkspaceMediaBackendHint('workspace-file://ws-1/a%20b.png?v=m1abc-2', 'conn-b'),
+    ).toBe('workspace-file://ws-1/a%20b.png?v=m1abc-2&backend=conn-b');
+  });
+
+  it('overwrites a hint naming another backend, preserving the cache-busting token', () => {
+    expect(withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?backend=x', 'y')).toBe(
+      'workspace-file://ws-1/a.png?backend=y',
+    );
+    expect(
+      withWorkspaceMediaBackendHint('workspace-file://ws-1/a%20b.png?v=m1abc-2&backend=x', 'y'),
+    ).toBe('workspace-file://ws-1/a%20b.png?v=m1abc-2&backend=y');
+    expect(
+      withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?backend=x&v=m1abc-2', 'y'),
+    ).toBe('workspace-file://ws-1/a.png?v=m1abc-2&backend=y');
+    expect(withWorkspaceMediaBackendHint('workspace-asset://ws-1/asset-1?backend=x', 'local')).toBe(
+      'workspace-asset://ws-1/asset-1?backend=local',
+    );
+  });
+
+  it('leaves matching hints, fragments, other schemes, unknown queries, and bad backend ids alone', () => {
+    expect(withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?backend=y', 'y')).toBeNull();
+    expect(
+      withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?v=m1abc-2&backend=y', 'y'),
+    ).toBeNull();
+    expect(withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png#f', 'y')).toBeNull();
+    expect(withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png?x=1', 'y')).toBeNull();
+    expect(withWorkspaceMediaBackendHint('https://ws-1/a.png', 'y')).toBeNull();
+    expect(withWorkspaceMediaBackendHint('workspace-file://ws-1/a.png', 'a b')).toBeNull();
+  });
+});
+
+describe('workspaceMediaBackendRedirect', () => {
+  beforeEach(() => {
+    windowBackends.clear();
+    webContentsWindows.clear();
+    onBeforeRequest.mockReset();
+  });
+
+  it('registers a webRequest listener scoped to the two workspace media schemes', () => {
+    setupWorkspaceMediaBackendHinting();
+    expect(onBeforeRequest).toHaveBeenCalledTimes(1);
+    const [filter, listener] = onBeforeRequest.mock.calls[0];
+    expect(filter).toEqual({ urls: ['workspace-file://*/*', 'workspace-asset://*/*'] });
+
+    windowBackends.set(7, 'conn-b');
+    webContentsWindows.set(42, 7);
+    const callback = vi.fn();
+    listener({ url: 'workspace-file://ws-1/a.png', webContentsId: 42 }, callback);
+    expect(callback).toHaveBeenCalledWith({
+      redirectURL: 'workspace-file://ws-1/a.png?backend=conn-b',
+    });
+  });
+
+  it('redirects to the same URL stamped with the owning window backend', () => {
+    windowBackends.set(7, 'conn-b');
+    webContentsWindows.set(42, 7);
+    expect(workspaceMediaBackendRedirect('workspace-asset://ws-1/asset-1', 42)).toEqual({
+      redirectURL: 'workspace-asset://ws-1/asset-1?backend=conn-b',
+    });
+  });
+
+  it('passes through when there is no window to attribute the request to', () => {
+    expect(workspaceMediaBackendRedirect('workspace-file://ws-1/a.png', undefined)).toEqual({});
+    expect(workspaceMediaBackendRedirect('workspace-file://ws-1/a.png', 99)).toEqual({});
+  });
+
+  it('never re-stamps a URL already hinted with the requester backend (no redirect loop)', () => {
+    windowBackends.set(7, 'conn-b');
+    webContentsWindows.set(42, 7);
+    expect(workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?backend=conn-b', 42)).toEqual(
+      {},
+    );
+    expect(
+      workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?v=m1abc-2&backend=conn-b', 42),
+    ).toEqual({});
+  });
+
+  it('overwrites a hint naming another backend with the requester backend', () => {
+    windowBackends.set(7, 'conn-b');
+    webContentsWindows.set(42, 7);
+    expect(
+      workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?backend=conn-other', 42),
+    ).toEqual({ redirectURL: 'workspace-file://ws-1/a.png?backend=conn-b' });
+    expect(
+      workspaceMediaBackendRedirect('workspace-asset://ws-1/asset-1?backend=conn-other', 42),
+    ).toEqual({ redirectURL: 'workspace-asset://ws-1/asset-1?backend=conn-b' });
+  });
+
+  it('preserves the cache-busting token when overwriting a foreign hint, then settles', () => {
+    windowBackends.set(7, 'conn-b');
+    webContentsWindows.set(42, 7);
+    const first = workspaceMediaBackendRedirect(
+      'workspace-file://ws-1/a.png?v=m1abc-2&backend=conn-other',
+      42,
+    );
+    expect(first).toEqual({ redirectURL: 'workspace-file://ws-1/a.png?v=m1abc-2&backend=conn-b' });
+    expect(workspaceMediaBackendRedirect(first.redirectURL!, 42)).toEqual({});
+  });
+
+  it('passes a foreign hint through when there is no window to attribute the request to', () => {
+    expect(
+      workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?backend=conn-other', undefined),
+    ).toEqual({});
+  });
+
+  it('stamps a cache-busted URL exactly once, preserving the token', () => {
+    windowBackends.set(7, 'conn-b');
+    webContentsWindows.set(42, 7);
+    const first = workspaceMediaBackendRedirect('workspace-file://ws-1/a.png?v=m1abc-2', 42);
+    expect(first).toEqual({ redirectURL: 'workspace-file://ws-1/a.png?v=m1abc-2&backend=conn-b' });
+    expect(workspaceMediaBackendRedirect(first.redirectURL!, 42)).toEqual({});
   });
 });
 
@@ -278,6 +536,89 @@ describe('resolveWorkspaceBackendClient', () => {
       }),
     });
     expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+  });
+
+  describe('with a backend hint', () => {
+    /** ws-1 hosted by two windows bound to backends A and B, both live. */
+    const collision = () =>
+      lookup({
+        windows: [1, 2],
+        backendOf: (id) => (id === 1 ? 'conn-a' : 'conn-b'),
+        clients: { 'conn-a': 'pooled-a', 'conn-b': 'pooled-b' },
+      });
+
+    it('resolves to the hinted backend even when another hosting backend is live first', () => {
+      const onAmbiguousHosting = vi.fn();
+      expect(
+        resolveWorkspaceBackendClient(
+          'ws-1',
+          { ...collision(), onAmbiguousHosting },
+          { backendIdHint: 'conn-b' },
+        ),
+      ).toEqual({ client: 'pooled-b', backendId: 'conn-b', fallback: null });
+      expect(onAmbiguousHosting).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the hinted backend is disconnected instead of using backend A', () => {
+      expect(
+        resolveWorkspaceBackendClient(
+          'ws-1',
+          lookup({
+            windows: [1, 2],
+            backendOf: (id) => (id === 1 ? 'conn-a' : 'conn-b'),
+            clients: { 'conn-a': 'pooled-a' },
+          }),
+          { backendIdHint: 'conn-b' },
+        ),
+      ).toEqual({
+        client: null,
+        backendId: 'conn-b',
+        fallback: 'backend-disconnected',
+        attemptedBackendIds: ['conn-b'],
+      });
+    });
+
+    it('ignores the window map entirely: an unhosted workspace still resolves to the hint', () => {
+      const getWindowIdsForWorkspace = vi.fn(() => []);
+      expect(
+        resolveWorkspaceBackendClient(
+          'ws-1',
+          { ...lookup({ clients: { 'conn-b': 'pooled-b' } }), getWindowIdsForWorkspace },
+          { backendIdHint: 'conn-b' },
+        ),
+      ).toEqual({ client: 'pooled-b', backendId: 'conn-b', fallback: null });
+      expect(getWindowIdsForWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('allows the primary fallback only for a fallback-eligible (local) hint', () => {
+      expect(resolveWorkspaceBackendClient('ws-1', lookup({}), { backendIdHint: 'local' })).toEqual(
+        {
+          client: 'primary',
+          backendId: null,
+          fallback: 'unpooled-backend',
+          attemptedBackendIds: ['local'],
+        },
+      );
+    });
+
+    it('reports multi-backend hosting only for unhinted requests', () => {
+      const onAmbiguousHosting = vi.fn();
+      const resolved = resolveWorkspaceBackendClient('ws-1', {
+        ...collision(),
+        onAmbiguousHosting,
+      });
+      expect(resolved).toEqual({ client: 'pooled-a', backendId: 'conn-a', fallback: null });
+      expect(onAmbiguousHosting).toHaveBeenCalledWith('ws-1', ['conn-a', 'conn-b']);
+    });
+
+    it('does not report a single backend hosted by several windows as ambiguous', () => {
+      const onAmbiguousHosting = vi.fn();
+      resolveWorkspaceBackendClient('ws-1', {
+        ...lookup({ windows: [1, 2], backendOf: () => 'conn-a', clients: { 'conn-a': 'p' } }),
+        onAmbiguousHosting,
+      });
+      expect(onAmbiguousHosting).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -843,6 +1184,101 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     expect(res.status).toBe(404);
     expect(remoteRequest).not.toHaveBeenCalled();
   });
+
+  describe('with a backend hint', () => {
+    it('serves from the hinted backend when the same workspace id is hosted on two backends', async () => {
+      // Windows 1 and 2 both host ws-dup, bound to backends A and B (both
+      // live); the request from window 2 carries B and must not read from A.
+      const requestA = vi.fn();
+      const bytes = Buffer.from('backend-b-bytes');
+      const requestB = vi.fn().mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+      pooledRequests.set('conn-a', requestA);
+      pooledRequests.set('conn-b', requestB);
+      windowBackends.set(1, 'conn-a');
+      windowBackends.set(2, 'conn-b');
+      workspaceWindows.set('ws-dup', [1, 2]);
+
+      const res = await getHandler()(appRequest('workspace-file://ws-dup/pic.png?backend=conn-b'));
+
+      expect(requestB).toHaveBeenCalledWith('file.readChunk', {
+        workspaceId: 'ws-dup',
+        path: 'pic.png',
+        offset: 0,
+        length: WORKSPACE_FILE_CHUNK_BYTES,
+      });
+      expect(requestA).not.toHaveBeenCalled();
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+    });
+
+    it('serves a cache-busted, hinted URL with the token stripped from the daemon path', async () => {
+      const bytes = Buffer.from('fresh-bytes');
+      const requestB = vi.fn().mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+      pooledRequests.set('conn-b', requestB);
+      windowBackends.set(2, 'conn-b');
+      workspaceWindows.set('ws-dup', [2]);
+
+      const res = await getHandler()(
+        appRequest('workspace-file://ws-dup/pic.png?v=m1abc-2&backend=conn-b'),
+      );
+
+      expect(requestB).toHaveBeenCalledWith('file.readChunk', {
+        workspaceId: 'ws-dup',
+        path: 'pic.png',
+        offset: 0,
+        length: WORKSPACE_FILE_CHUNK_BYTES,
+      });
+      expect(res.status).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+    });
+
+    it('fails closed with 404 when the hinted backend is disconnected — no probe, no other backend', async () => {
+      const requestA = vi.fn(async () => ({ workspace: { id: 'ws-hint-down' } }));
+      pooledRequests.set('conn-a', requestA);
+      windowBackends.set(1, 'conn-a');
+      workspaceWindows.set('ws-hint-down', [1]);
+
+      const res = await getHandler()(
+        appRequest('workspace-file://ws-hint-down/pic.png?backend=conn-b'),
+      );
+
+      expect(res.status).toBe(404);
+      expect(requestA).not.toHaveBeenCalled();
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('never runs the ownership probe when the hinted backend refuses the read', async () => {
+      // Unhinted, a -32602 refusal triggers workspace.get on every live
+      // backend; a hinted request names its backend and simply 404s.
+      const requestB = vi
+        .fn()
+        .mockRejectedValueOnce(new JsonRpcError({ code: -32602, message: 'workspace not found' }));
+      const requestA = vi.fn(async () => ({ workspace: { id: 'ws-hint-refused' } }));
+      pooledRequests.set('conn-a', requestA);
+      pooledRequests.set('conn-b', requestB);
+
+      const res = await getHandler()(
+        appRequest('workspace-file://ws-hint-refused/pic.png?backend=conn-b'),
+      );
+
+      expect(res.status).toBe(404);
+      expect(requestB).toHaveBeenCalledTimes(1);
+      expect(requestA).not.toHaveBeenCalled();
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('serves a hinted local request from the primary client when the local pool is empty', async () => {
+      const bytes = Buffer.from('local-bytes');
+      mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+      workspaceWindows.clear();
+
+      const res = await getHandler()(appRequest('workspace-file://ws-1/pic.png?backend=local'));
+
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(200);
+    });
+  });
 });
 
 describe('setupWorkspaceAssetProtocolHandler', () => {
@@ -999,5 +1435,71 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
 
     expect(res.status).toBe(400);
     expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  describe('with a backend hint', () => {
+    it('serves from the hinted backend, never probing the other live backend', async () => {
+      const bytes = Buffer.from('asset-b');
+      const requestA = vi.fn(async () => ({ workspace: { id: 'ws-dup-asset' } }));
+      const requestB = vi.fn().mockResolvedValueOnce(asset(bytes));
+      pooledRequests.set('conn-a', requestA);
+      pooledRequests.set('conn-b', requestB);
+      windowBackends.set(1, 'conn-a');
+      windowBackends.set(2, 'conn-b');
+      workspaceWindows.set('ws-dup-asset', [1, 2]);
+
+      const res = await getAssetHandler()(
+        new Request('workspace-asset://ws-dup-asset/asset-1?backend=conn-b'),
+      );
+
+      expect(requestB).toHaveBeenCalledWith('note.readAsset', {
+        workspaceId: 'ws-dup-asset',
+        asset: 'asset-1',
+      });
+      expect(requestA).not.toHaveBeenCalled();
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+    });
+
+    it('fails closed with 404 when the hinted backend is disconnected, without probing', async () => {
+      const requestA = vi.fn(async () => ({ workspace: { id: 'ws-1' } }));
+      pooledRequests.set('conn-a', requestA);
+
+      const res = await getAssetHandler()(
+        new Request('workspace-asset://ws-1/asset-1?backend=conn-b'),
+      );
+
+      expect(res.status).toBe(404);
+      expect(requestA).not.toHaveBeenCalled();
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not probe when the hinted backend refuses the read', async () => {
+      const requestB = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new JsonRpcError({ code: -32603, message: 'Internal error', data: 'not found' }),
+        );
+      const requestA = vi.fn(async () => ({ workspace: { id: 'ws-hint-asset-refused' } }));
+      pooledRequests.set('conn-a', requestA);
+      pooledRequests.set('conn-b', requestB);
+
+      const res = await getAssetHandler()(
+        new Request('workspace-asset://ws-hint-asset-refused/asset-1?backend=conn-b'),
+      );
+
+      expect(res.status).toBe(404);
+      expect(requestB).toHaveBeenCalledTimes(1);
+      expect(requestA).not.toHaveBeenCalled();
+    });
+
+    it('rejects any query string other than the backend hint', async () => {
+      for (const query of ['?x=1', '?backend=conn-b&x=1', '?backend=']) {
+        const res = await getAssetHandler()(new Request(`workspace-asset://ws-1/asset-1${query}`));
+        expect(res.status).toBe(400);
+      }
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
   });
 });

@@ -49,7 +49,7 @@
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
-  import { resolveAttachmentImageUrl } from './attachment-image-url';
+  import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
@@ -821,12 +821,22 @@
   // once (module-level cache dedupes across messages); a failed resolve
   // leaves the key unset and the thumbnail renders a placeholder.
   let referenceImageUrls = $state<Record<string, string>>({});
+  // Attachment ids whose resolved <img> failed to load in this instance: they
+  // keep the placeholder here (no resolve/fail loop), while the evicted
+  // module cache lets the next render elsewhere retry.
+  let failedReferenceImages = $state<Record<string, true>>({});
   $effect(() => {
     const wsId = getOwningWorkspaceId();
     if (!wsId) return;
     for (const block of imageBlocks) {
       const attachmentId = (block as ContentBlock).attachmentId;
-      if (!attachmentId || referenceImageUrls[attachmentId] !== undefined) continue;
+      if (
+        !attachmentId ||
+        referenceImageUrls[attachmentId] !== undefined ||
+        failedReferenceImages[attachmentId]
+      ) {
+        continue;
+      }
       void resolveAttachmentImageUrl(wsId, attachmentId).then((url) => {
         if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
       });
@@ -835,9 +845,26 @@
 
   /** Renderable src for an image block: inline data URL or resolved reference URL. */
   function imageBlockSrc(block: ContentBlock): string | null {
-    if (block.attachmentId) return referenceImageUrls[block.attachmentId] ?? null;
+    if (block.attachmentId) {
+      if (failedReferenceImages[block.attachmentId]) return null;
+      return referenceImageUrls[block.attachmentId] ?? null;
+    }
     if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
     return null;
+  }
+
+  // A resolved reference thumbnail failed to load (the protocol handler
+  // refused the read, e.g. its backend is disconnected): fall back to the
+  // placeholder tile and evict the URL so the next render re-resolves.
+  function handleReferenceImageError(block: ContentBlock, src: string) {
+    const attachmentId = block.attachmentId;
+    if (!attachmentId) return;
+    logger.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
+    const wsId = getOwningWorkspaceId();
+    if (wsId) evictAttachmentImageUrl(wsId, attachmentId);
+    const { [attachmentId]: _dropped, ...rest } = referenceImageUrls;
+    referenceImageUrls = rest;
+    failedReferenceImages = { ...failedReferenceImages, [attachmentId]: true };
   }
 
   // Truncated attachment awaiting hydration before its lightbox opens.
@@ -1634,11 +1661,16 @@
                             number: formatInteger(i + 1),
                           })}
                           class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                          onerror={() => handleReferenceImageError(imageBlock, src)}
                         />
                       {:else}
-                        <!-- Reference still resolving (or its file is gone):
-                         neutral placeholder tile instead of a broken img. -->
-                        <div class="w-full h-full rounded border border-border bg-muted/50"></div>
+                        <!-- Reference still resolving, failed to load, or its
+                         file is gone: neutral placeholder tile instead of a
+                         broken img. -->
+                        <div
+                          class="w-full h-full rounded border border-border bg-muted/50"
+                          data-testid="chat-message-image-placeholder"
+                        ></div>
                       {/if}
                     </button>
                   {/each}
@@ -1698,7 +1730,7 @@
           content={combinedContent}
           {isStreaming}
           {hideToolCalls}
-          workspaceId={workspace?.id ? String(workspace.id) : undefined}
+          workspaceId={getOwningWorkspaceId()}
           {agentId}
           messageId={message?.id ?? messageId}
           {isLastConversationMessage}

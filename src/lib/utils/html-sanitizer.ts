@@ -283,6 +283,8 @@ export function sanitizeMarkdownHTML(html: string, workspaceId?: string): string
         'poster',
         'data-name', // Video attributes
         'data-media-unsupported', // Unsupported workspace media placeholder marker
+        'data-media-unavailable',
+        'data-media-src', // Unresolvable workspace media placeholder marker + original source
         'data-primitive',
         'data-primitive-type',
         'data-primitive-id',

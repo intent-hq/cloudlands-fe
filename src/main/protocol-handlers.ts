@@ -1,16 +1,21 @@
-import { app, BrowserWindow, protocol } from 'electron';
+import { app, BrowserWindow, protocol, session, webContents } from 'electron';
 import { decodeUrlPath } from './utils/decode-url-path';
 import { logger } from '../shared/logger';
 import path from 'path';
 import * as fs from 'fs';
 import { safeResolvePath } from './utils/safe-resolve-path';
-import { parseWorkspaceFileRequest } from './utils/workspace-file-url';
+import {
+  parseWorkspaceFileRequest,
+  parseWorkspaceMediaBackendHint,
+  withWorkspaceMediaBackendHint,
+} from './utils/workspace-file-url';
 import { isTrustedRendererUrl } from './ipc-authorization';
 import {
   createWorkspaceOwnershipProber,
   resolveWorkspaceBackendClientWithRetry,
   type WorkspaceOwnershipProber,
 } from './utils/workspace-backend-client';
+import { getBackendIdForWindow } from './window-backend';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
 import type { JsonRpcClient } from '../features/backend/main/json-rpc-client';
@@ -26,23 +31,23 @@ const WORKSPACE_BACKEND_RESOLUTION_RETRY_MS = 200;
 
 /**
  * Resolve the backend client that owns `workspaceId` (monorepo#3501).
- * `protocol.handle` does not expose the initiating webContents, so the owning
- * backend is resolved from the windows hosting the workspace. Fallback to the
- * app-primary compatibility client applies when no hosting window is found
+ * `protocol.handle` does not expose the initiating webContents, so the
+ * requesting window's backend arrives as a URL hint stamped by
+ * `setupWorkspaceMediaBackendHinting`. A hinted request is served by that
+ * backend only: live pooled client, or the primary compatibility client for
+ * the implicit local backend, else fail closed — never another backend and
+ * never an ownership probe. An unhinted (legacy) request keeps the
+ * window-map resolution: primary fallback when no hosting window is found
  * (after a short retry) or when the stamped backend is the implicit local
  * one; a stamped named backend without a live pooled client fails closed.
  * See `./utils/workspace-backend-client`.
  */
-async function backendClientForWorkspace(workspaceId: string) {
-  const [
-    { getBackendClient, getBackendClientForConnection },
-    { getWindowIdsForWorkspace },
-    { getBackendIdForWindow },
-  ] = await Promise.all([
-    import('../features/backend/main/backend.ipc'),
-    import('../features/system/main/system.ipc'),
-    import('./window'),
-  ]);
+async function backendClientForWorkspace(workspaceId: string, backendIdHint: string | null) {
+  const [{ getBackendClient, getBackendClientForConnection }, { getWindowIdsForWorkspace }] =
+    await Promise.all([
+      import('../features/backend/main/backend.ipc'),
+      import('../features/system/main/system.ipc'),
+    ]);
   const resolution = await resolveWorkspaceBackendClientWithRetry(
     workspaceId,
     {
@@ -57,15 +62,22 @@ async function backendClientForWorkspace(workspaceId: string) {
       // startup, so the primary fallback cannot retarget another daemon here;
       // named/remote backends fail closed instead (wrong-backend bytes risk).
       isPrimaryFallbackAllowed: (backendId) => backendId === LOCAL_CONNECTION_ID,
+      onAmbiguousHosting: (ambiguousWorkspaceId, hostingBackendIds) => {
+        logger.warn('workspace hosted by windows on multiple backends — unhinted request', {
+          workspaceId: ambiguousWorkspaceId,
+          hostingBackendIds,
+        });
+      },
     },
     {
       attempts: WORKSPACE_BACKEND_RESOLUTION_ATTEMPTS,
       delayMs: WORKSPACE_BACKEND_RESOLUTION_RETRY_MS,
     },
+    { backendIdHint },
   );
   if (
-    resolution.fallback !== 'no-hosting-window' &&
-    resolution.fallback !== 'backend-disconnected'
+    backendIdHint !== null ||
+    (resolution.fallback !== 'no-hosting-window' && resolution.fallback !== 'backend-disconnected')
   ) {
     return resolution;
   }
@@ -146,6 +158,14 @@ async function rescueBackendAfterWorkspaceUnknown(
     failedBackendId,
   });
   return owner;
+}
+
+/** Diagnostic fields for a failed daemon read: JSON-RPC code + data when available. */
+function describeReadError(error: unknown) {
+  if (error instanceof JsonRpcError) {
+    return { error: error.message, rpcCode: error.rpcCode, data: error.data };
+  }
+  return { error: error instanceof Error ? error.message : String(error) };
 }
 
 // ---- Shared Helpers ----
@@ -310,11 +330,53 @@ export function setupAppProtocolHandler() {
   });
 }
 
+/**
+ * Stamp the requesting window's backend id onto `workspace-file://` and
+ * `workspace-asset://` requests. `protocol.handle` cannot see the initiating
+ * webContents, but `webRequest.onBeforeRequest` can: an unhinted request from
+ * a BrowserWindow is redirected to the same URL with `?backend={id}`, which
+ * the handlers then honor (hinted backend only, fail closed if it is down).
+ * A URL already hinted with another backend (e.g. authored in markdown) is
+ * redirected with the hint overwritten to the requester's backend. Requests
+ * without a window (no webContentsId, or a webContents that is not a
+ * BrowserWindow) and URLs hinted with the requester's own backend pass
+ * through untouched.
+ */
+export function setupWorkspaceMediaBackendHinting() {
+  session.defaultSession.webRequest.onBeforeRequest(
+    { urls: ['workspace-file://*/*', 'workspace-asset://*/*'] },
+    (details, callback) => {
+      callback(workspaceMediaBackendRedirect(details.url, details.webContentsId));
+    },
+  );
+}
+
+/** The `onBeforeRequest` decision for one workspace media request. */
+export function workspaceMediaBackendRedirect(
+  url: string,
+  webContentsId: number | undefined,
+): { redirectURL?: string } {
+  if (webContentsId === undefined) return {};
+  const contents = webContents.fromId(webContentsId);
+  const window =
+    contents && !contents.isDestroyed() ? BrowserWindow.fromWebContents(contents) : null;
+  if (!window) return {};
+  const redirectURL = withWorkspaceMediaBackendHint(url, getBackendIdForWindow(window));
+  return redirectURL ? { redirectURL } : {};
+}
+
 // Serves images from workspace note assets via workspace-asset://{workspaceId}/{assetId}
 export function setupWorkspaceAssetProtocolHandler() {
   protocol.handle('workspace-asset', async (request) => {
     const url = new URL(request.url);
     const workspaceId = url.hostname;
+    const hint = parseWorkspaceMediaBackendHint(url.search);
+    if (!hint.ok) {
+      logger.warn('Rejected workspace-asset request', { url: request.url, reason: hint.reason });
+      // i18n-ignore (internal protocol response body)
+      return new Response('Invalid asset URL', { status: 400 });
+    }
+    const backendIdHint = hint.backendId;
     const decodedPath = decodeUrlPath(url.pathname);
     if (decodedPath === null) {
       logger.warn('Rejected workspace-asset request with invalid path encoding', {
@@ -347,7 +409,7 @@ export function setupWorkspaceAssetProtocolHandler() {
     let backendId: string | null = null;
     let fallback: string | null = null;
     try {
-      const resolved = await backendClientForWorkspace(workspaceId);
+      const resolved = await backendClientForWorkspace(workspaceId, backendIdHint);
       backendId = resolved.backendId;
       fallback = resolved.fallback;
       if (resolved.client === null) {
@@ -357,6 +419,7 @@ export function setupWorkspaceAssetProtocolHandler() {
           workspaceId,
           assetId,
           backendId,
+          backendIdHint,
           attemptedBackendIds: resolved.attemptedBackendIds,
         });
         // i18n-ignore (internal protocol response body)
@@ -372,6 +435,8 @@ export function setupWorkspaceAssetProtocolHandler() {
       } catch (error) {
         // Wrong-stamp heal: the resolved backend does not know the workspace —
         // retry once from the positively confirmed owner (or rethrow → 404).
+        // A hinted request names its backend authoritatively: no probe.
+        if (backendIdHint !== null) throw error;
         const rescued = await rescueBackendAfterWorkspaceUnknown(workspaceId, backendId, error);
         if (!rescued) throw error;
         backendId = rescued.backendId;
@@ -394,8 +459,9 @@ export function setupWorkspaceAssetProtocolHandler() {
         workspaceId,
         assetId,
         backendId,
+        backendIdHint,
         fallback,
-        error: error instanceof Error ? error.message : String(error),
+        ...describeReadError(error),
       });
       // i18n-ignore (internal protocol response body)
       return new Response('Asset not found', { status: 404 });
@@ -502,7 +568,7 @@ export function setupWorkspaceFileProtocolHandler() {
       });
     }
 
-    const { workspaceId, filePath, mimeType } = parsed;
+    const { workspaceId, filePath, mimeType, backendId: backendIdHint } = parsed;
     // Bytes come from the backend that owns the workspace (monorepo#3501).
     let backendId: string | null = null;
     let fallback: string | null = null;
@@ -520,7 +586,7 @@ export function setupWorkspaceFileProtocolHandler() {
         });
       }
 
-      const resolved = await backendClientForWorkspace(workspaceId);
+      const resolved = await backendClientForWorkspace(workspaceId, backendIdHint);
       backendId = resolved.backendId;
       fallback = resolved.fallback;
       if (resolved.client === null) {
@@ -530,6 +596,7 @@ export function setupWorkspaceFileProtocolHandler() {
           workspaceId,
           filePath,
           backendId,
+          backendIdHint,
           attemptedBackendIds: resolved.attemptedBackendIds,
         });
         // i18n-ignore (internal protocol response body)
@@ -554,8 +621,9 @@ export function setupWorkspaceFileProtocolHandler() {
           // Only before any bytes are assembled: a mid-file rescue would splice
           // chunks from two daemons into one body, and in a workspace-id
           // collision a same-size file on the other daemon would pass the
-          // size check silently.
-          if (rescueAttempted || chunks.length > 0) throw error;
+          // size check silently. A hinted request names its backend
+          // authoritatively: no probe.
+          if (backendIdHint !== null || rescueAttempted || chunks.length > 0) throw error;
           rescueAttempted = true;
           const rescued = await rescueBackendAfterWorkspaceUnknown(workspaceId, backendId, error);
           if (!rescued) throw error;
@@ -674,8 +742,9 @@ export function setupWorkspaceFileProtocolHandler() {
         workspaceId,
         filePath,
         backendId,
+        backendIdHint,
         fallback,
-        error: error instanceof Error ? error.message : String(error),
+        ...describeReadError(error),
       });
       // i18n-ignore (internal protocol response body)
       if (error instanceof WorkspaceFileReadError && error.status === 413) {
