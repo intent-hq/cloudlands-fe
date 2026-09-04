@@ -67,10 +67,10 @@ export const MAX_VISIBLE_RESOURCES_PER_AGENT = 6;
 
 /** Maximum rendered node dimensions used by layout collision and fit-to-view. */
 export const GRAPH_NODE_DIMENSIONS = {
-  agent: { width: 150, height: 130 },
-  task: { width: 136, height: 136 },
-  file: { width: 190, height: 53 },
-  note: { width: 190, height: 53 },
+  agent: { width: 176, height: 68 },
+  task: { width: 168, height: 84 },
+  file: { width: 180, height: 32 },
+  note: { width: 180, height: 32 },
 } as const;
 
 /** Clear space beyond node bounds for related-node orbits. */
@@ -83,18 +83,6 @@ export const GRAPH_NODE_GAPS = {
 /** Shared zoom limits and per-side fit padding. */
 export const GRAPH_ZOOM_EXTENT: [number, number] = [0.25, 2.5];
 export const GRAPH_FIT_PADDING = 48;
-
-/** Task anchor ring colors, expressed only through theme tokens. */
-export const TASK_STATUS_RING_CLASSES = {
-  not_started: 'border-border text-subtle',
-  waiting: 'border-muted-foreground/50 text-muted-foreground',
-  discussion_needed: 'border-warning text-warning',
-  blocked: 'border-destructive text-destructive',
-  in_progress: 'border-info text-info',
-  review_required: 'border-primary text-primary',
-  complete: 'border-success text-success',
-  cancelled: 'border-muted-foreground/40 text-muted-foreground',
-} as const;
 
 // ============================================================================
 // Edge Animation Configuration
@@ -114,72 +102,75 @@ export const EDGE_ANIMATION = {
 // Edge Styling
 // ============================================================================
 
+/** The graph's sole chromatic accent. Use only for activity happening now. */
+export const GRAPH_ACTIVE_ACCENT = 'var(--color-primary)';
+
 /** Edge visual styles by type */
 export const EDGE_STYLES = {
   delegation: {
-    stroke: 'var(--color-muted)',
-    strokeWidth: 1.5,
+    stroke: 'var(--color-muted-foreground)',
+    strokeWidth: 1,
     strokeDasharray: 'none',
-    opacity: 0.85,
+    opacity: 0.66,
   },
   'task-assignment': {
-    stroke: 'rgb(139, 92, 246)',
-    strokeWidth: 2,
+    stroke: 'var(--color-border)',
+    strokeWidth: 1,
     strokeDasharray: 'none',
-    opacity: 0.85,
+    opacity: 0.72,
   },
   message: {
-    stroke: 'rgb(59, 130, 246)',
-    strokeWidth: 2,
-    strokeDasharray: '6,4',
-    opacity: 0.9,
+    stroke: 'var(--color-muted-foreground)',
+    strokeWidth: 1,
+    strokeDasharray: 'none',
+    opacity: 0.58,
   },
   'waiting-on': {
-    stroke: 'rgb(245, 158, 11)',
-    strokeWidth: 1.5,
-    strokeDasharray: '3,4',
-    opacity: 0.8,
+    stroke: 'var(--color-muted-foreground)',
+    strokeWidth: 1,
+    strokeDasharray: '4,4',
+    opacity: 0.64,
   },
   'file-read': {
-    stroke: 'var(--color-muted)',
-    strokeWidth: 1.5,
-    strokeDasharray: '6,4',
-    opacity: 0.6,
+    stroke: 'var(--color-border)',
+    strokeWidth: 1,
+    strokeDasharray: '1,5',
+    opacity: 0.38,
   },
   'note-read': {
-    stroke: 'var(--color-muted)',
-    strokeWidth: 1.5,
-    strokeDasharray: '6,4',
-    opacity: 0.6,
+    stroke: 'var(--color-border)',
+    strokeWidth: 1,
+    strokeDasharray: '1,5',
+    opacity: 0.38,
   },
   'file-write': {
-    stroke: 'rgb(59, 130, 246)',
-    strokeWidth: 1.5,
+    stroke: 'var(--color-muted-foreground)',
+    strokeWidth: 1,
     strokeDasharray: 'none',
-    opacity: 0.9,
+    opacity: 0.54,
   },
   'note-write': {
-    stroke: 'rgb(59, 130, 246)',
-    strokeWidth: 1.5,
+    stroke: 'var(--color-muted-foreground)',
+    strokeWidth: 1,
     strokeDasharray: 'none',
-    opacity: 0.9,
+    opacity: 0.54,
   },
   'task-create': {
-    stroke: 'rgb(139, 92, 246)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.9,
+    stroke: 'var(--color-border)',
+    strokeWidth: 1,
+    strokeDasharray: '2,4',
+    opacity: 0.5,
   },
   'task-update': {
-    stroke: 'rgb(139, 92, 246)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.9,
+    stroke: 'var(--color-border)',
+    strokeWidth: 1,
+    strokeDasharray: '2,4',
+    opacity: 0.5,
   },
   default: {
     stroke: 'var(--color-border)',
-    strokeWidth: 1.5,
+    strokeWidth: 1,
     strokeDasharray: 'none',
-    opacity: 0.5,
+    opacity: 0.4,
   },
 } as const;

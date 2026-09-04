@@ -3,6 +3,7 @@
   import { select, zoom, zoomIdentity, type ZoomBehavior } from 'd3';
   import Fa from 'svelte-fa';
   import { faExpand } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { createConstellationLayout, type ConstellationLayout } from './constellation-layout';
   import GraphEdgeLayer, { type GraphPosition } from './GraphEdgeLayer.svelte';
@@ -14,7 +15,7 @@
     GRAPH_ZOOM_EXTENT,
     MAX_VISIBLE_RESOURCES_PER_AGENT,
   } from './constants';
-  import type { AgentNode, FileNode, GraphNode, GraphState, NoteNode, TaskNode } from './types';
+  import type { AgentNode, FileNode, GraphNode, GraphState, NoteNode } from './types';
 
   export interface GraphLayers {
     files: boolean;
@@ -246,12 +247,6 @@
     layout?.unpin(node.id);
   }
 
-  function assignedAgentCount(task: TaskNode): number {
-    return visibleGraph.edges.filter(
-      (edge) => edge.type === 'task-assignment' && edge.targetId === task.id,
-    ).length;
-  }
-
   function resourceAccess(node: FileNode | NoteNode): {
     access: 'read' | 'write';
     additions: number;
@@ -278,11 +273,19 @@
     const latest = incident.toSorted(
       (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
     )[0];
+    const assignedAgentIsActive =
+      node.type === 'task' &&
+      incident
+        .filter((edge) => edge.type === 'task-assignment' && edge.targetId === node.id)
+        .some((edge) => {
+          const agent = visibleGraph.nodes.find((candidate) => candidate.id === edge.sourceId);
+          return agent?.type === 'agent' && agent.status === 'responding';
+        });
     return {
       isActive:
         node.type === 'agent'
           ? node.status === 'responding'
-          : incident.some((edge) => edge.isActive),
+          : assignedAgentIsActive || incident.some((edge) => edge.isActive),
       lastActivityAt: latest?.timestamp,
     };
   }
@@ -378,7 +381,12 @@
       bind:this={scene}
       class="graph-scene absolute inset-0 origin-top-left will-change-transform"
     >
-      <GraphEdgeLayer edges={visibleGraph.edges} {positions} {spotlightNodeId} />
+      <GraphEdgeLayer
+        edges={visibleGraph.edges}
+        nodes={visibleGraph.nodes}
+        {positions}
+        {spotlightNodeId}
+      />
       {#each visibleGraph.nodes as node (node.id)}
         {@const position = positions.get(node.id) ?? node}
         {@const activity = nodeActivity(node)}
@@ -389,24 +397,21 @@
           style:z-index={node.type === 'task' ? 2 : node.type === 'agent' ? 3 : 1}
         >
           {#if node.type === 'task'}
-            <TaskAnchorNode
-              {node}
-              assignedAgentCount={assignedAgentCount(node)}
-              {...activity}
-              {...nodeEvents(node)}
-            />
+            <TaskAnchorNode {node} {...activity} {...nodeEvents(node)} />
           {:else if node.type === 'agent'}
             <AgentOrbNode {node} {...activity} {...nodeEvents(node)} />
             {#if visibleGraph.collapsedByAgent.has(node.id)}
-              <button
+              <Button
                 type="button"
-                class="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded-full border border-border bg-card px-2 py-0.5 text-xs font-medium text-subtle shadow-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                variant="default"
+                size="xs"
+                class="absolute left-1/2 top-full mt-1 h-6 -translate-x-1/2 rounded-full font-mono text-[10px] text-muted-foreground"
                 aria-label={m.ui_groupedCombobox_expandGroup_label()}
                 onclick={(event) => expandResources(node.id, event)}
                 data-graph-controls
               >
                 +{visibleGraph.collapsedByAgent.get(node.id)}
-              </button>
+              </Button>
             {/if}
           {:else}
             {@const access = resourceAccess(node)}
@@ -417,16 +422,18 @@
     </div>
 
     {#if showFitControl}
-      <button
-        type="button"
-        class="absolute bottom-4 right-4 flex size-9 items-center justify-center rounded-lg border border-border bg-card text-subtle shadow-sm hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        title={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
+      <Button
+        variant="default"
+        size="icon-lg"
+        iconOnly
+        class="absolute bottom-4 right-4 text-muted-foreground"
+        tooltip={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
         aria-label={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
         onclick={fitToView}
         data-graph-controls
       >
         <Fa icon={faExpand} size="sm" />
-      </button>
+      </Button>
     {/if}
   {/if}
 </div>

@@ -1,13 +1,13 @@
 <script lang="ts">
+  import Fa from 'svelte-fa';
+  import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import type { TaskStatus } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import type { TaskNode } from '../types';
-  import { TASK_STATUS_RING_CLASSES } from '../constants';
   import { activityMotion, activityNodeTransition } from '../activity-motion';
 
   interface Props {
     node: TaskNode;
-    assignedAgentCount: number;
     isActive?: boolean;
     lastActivityAt?: string;
     onclick?: (event: MouseEvent) => void;
@@ -22,7 +22,7 @@
     onblur?: () => void;
   }
 
-  let { node, assignedAgentCount, isActive = false, lastActivityAt, ...events }: Props = $props();
+  let { node, isActive = false, lastActivityAt, ...events }: Props = $props();
 
   const labels: Record<TaskStatus, () => string> = {
     not_started: m.workspace_taskStatus_notStarted_label,
@@ -34,30 +34,43 @@
     complete: m.workspace_taskStatus_complete_label,
     cancelled: m.workspace_taskStatus_cancelled_label,
   };
-
-  const agentCountLabel = $derived(
-    assignedAgentCount === 1
-      ? m.chat_toolDetails_agentCount_one({ count: assignedAgentCount })
-      : m.chat_toolDetails_agentCount_many({ count: assignedAgentCount }),
-  );
 </script>
 
 <button
   use:activityMotion
   transition:activityNodeTransition
   type="button"
-  class="task-anchor flex size-32 touch-none flex-col items-center justify-center gap-1 rounded-full border-[3px] bg-card/95 px-4 text-center shadow-sm backdrop-blur-sm transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 {isActive
-    ? 'ring-2 ring-primary/30'
-    : ''} {TASK_STATUS_RING_CLASSES[node.state]}"
+  class="task-anchor relative flex h-[84px] w-[168px] touch-none flex-col justify-center gap-1 overflow-hidden rounded-xl border bg-card/95 px-3.5 py-3 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 {isActive
+    ? 'border-primary'
+    : 'border-border'}"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
+  data-task-state={node.state}
   data-last-activity-at={lastActivityAt}
   {...events}
 >
-  <span class="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{node.title}</span>
-  <span class="text-xs font-medium">{labels[node.state]()}</span>
-  <span class="text-xs text-subtle">{agentCountLabel}</span>
+  <span
+    class="flex items-center gap-1 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
+  >
+    <span>{m.workspace_noteCodeChanges_task_label()}</span>
+    <span aria-hidden="true">·</span>
+    <span>{labels[node.state]()}</span>
+    {#if node.state === 'complete'}
+      <span class="ml-auto text-foreground" aria-hidden="true">
+        <Fa icon={faCheck} size="xs" />
+      </span>
+    {/if}
+  </span>
+  <span class="line-clamp-2 text-sm font-medium leading-tight text-foreground">{node.title}</span>
+  {#if node.state === 'in_progress' || node.state === 'complete'}
+    <span
+      class="absolute inset-x-0 bottom-0 h-px {node.state === 'complete'
+        ? 'bg-foreground'
+        : 'bg-primary'}"
+      aria-hidden="true"
+    ></span>
+  {/if}
 </button>
 
 <style>
@@ -67,17 +80,9 @@
       border-color 180ms ease,
       box-shadow 180ms ease;
   }
-  .task-anchor[data-active='true'] {
-    animation: task-pulse 1.8s ease-in-out infinite;
-  }
   .task-anchor[data-motion-enabled='false'] {
     animation: none;
     transition: none;
-  }
-  @keyframes task-pulse {
-    50% {
-      box-shadow: 0 0 18px color-mix(in srgb, currentColor 28%, transparent);
-    }
   }
   @media (prefers-reduced-motion: reduce) {
     .task-anchor {

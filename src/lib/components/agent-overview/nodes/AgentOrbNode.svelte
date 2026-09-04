@@ -1,7 +1,6 @@
 <script lang="ts">
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
-  import { classifyTool } from '$lib/utils/tool-classifier';
   import { m } from '$shared/paraglide/messages.js';
   import type { AgentNode } from '../types';
   import { activityMotion, activityNodeTransition } from '../activity-motion';
@@ -43,24 +42,17 @@
     if (node.status === 'failed') return m.agentOverview_hierarchyGraph_statusFailed_label();
     return m.agentOverview_hierarchyGraph_statusIdle_label();
   });
-
-  const activityLabel = $derived.by(() => {
-    if (node.activeToolName) {
-      const activity = classifyTool(node.activeToolName, node.activeToolInput ?? {});
-      if (!activity.hidden)
-        return activity.subject ? `${activity.verb} ${activity.subject}` : activity.verb;
-    }
-    return node.lastResponse ?? statusLabel;
-  });
 </script>
 
 <button
   use:activityMotion
   transition:activityNodeTransition
   type="button"
-  class="agent-orb flex w-36 touch-none flex-col items-center gap-1.5 rounded-xl border border-border bg-card/95 px-3 py-2.5 text-center shadow-sm backdrop-blur-sm transition-opacity hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 {isActive
-    ? 'ring-2 ring-primary/30'
-    : ''}"
+  class="agent-orb relative flex h-[68px] w-44 touch-none items-center gap-3 rounded-xl border bg-card/95 px-3 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 {isActive
+    ? 'border-primary'
+    : node.status === 'waiting'
+      ? 'border-dashed border-muted-foreground'
+      : 'border-border'}"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
@@ -68,57 +60,50 @@
   data-agent-status={node.status}
   {...events}
 >
+  {#if isActive}
+    <span class="absolute right-2 top-2 size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
+  {/if}
   <AgentAvatarWithState
     agentId={node.agentId}
     specialist={node.specialist}
     variant="emphasized"
     state={avatarState}
   />
-  <span class="w-full truncate text-sm font-semibold text-foreground">{node.name}</span>
-  {#if node.specialist}
-    <span class="max-w-full truncate rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
-      {node.specialist.replaceAll('-', ' ')}
+  <span class="min-w-0 flex-1">
+    <span class="block w-full truncate text-sm font-medium text-foreground">{node.name}</span>
+    <span
+      class="mt-1 block w-full truncate font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
+    >
+      {#if node.specialist}
+        <span>{node.specialist.replaceAll('-', ' ')}</span><span aria-hidden="true"> · </span>
+      {/if}
+      <span>{statusLabel}</span>
     </span>
-  {/if}
-  <span class="line-clamp-2 w-full text-xs leading-tight text-subtle">{activityLabel}</span>
+  </span>
 </button>
 
 <style>
   .agent-orb {
+    --agent-avatar-surface-neutral: var(--muted);
+    --agent-avatar-surface-completed: var(--muted);
+    --agent-avatar-foreground-completed: var(--foreground);
+    --agent-avatar-surface-waiting: var(--muted);
+    --agent-avatar-surface-failed: var(--muted);
+    --agent-avatar-surface-active: var(--primary);
+
     position: relative;
     transition:
       opacity 180ms ease,
       filter 180ms ease,
       scale 180ms ease;
   }
-  .agent-orb::before {
-    content: '';
-    position: absolute;
-    inset: -5px;
-    border-radius: 1rem;
-    pointer-events: none;
-  }
-  .agent-orb[data-agent-status='responding']::before {
-    box-shadow: 0 0 18px color-mix(in srgb, var(--color-primary) 45%, transparent);
-    animation: responding-glow 1.4s ease-in-out infinite;
-  }
   .agent-orb[data-agent-status='waiting'] {
     animation: waiting-pulse 2.8s ease-in-out infinite;
-  }
-  .agent-orb:is([data-agent-status='completed'], [data-agent-status='failed']) {
-    filter: saturate(0.35);
-    scale: 0.94;
   }
   .agent-orb[data-motion-enabled='false'],
   .agent-orb[data-motion-enabled='false']::before {
     animation: none;
     transition: none;
-  }
-  @keyframes responding-glow {
-    50% {
-      opacity: 0.45;
-      scale: 1.04;
-    }
   }
   @keyframes waiting-pulse {
     50% {

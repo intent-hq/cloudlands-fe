@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GRAPH_NODE_DIMENSIONS, GRAPH_NODE_GAPS } from '../constants';
 import { createConstellationLayout } from '../constellation-layout';
-import { buildConstellationGraph } from '../__fixtures__/agent-activity-graph.fixtures';
+import {
+  buildBusyGraph,
+  buildConstellationGraph,
+} from '../__fixtures__/agent-activity-graph.fixtures';
 import type { AgentNode, GraphEdge, GraphNode, TaskNode } from '../types';
 
 function task(id: string, state: TaskNode['state'] = 'not_started'): TaskNode {
@@ -143,42 +146,49 @@ describe('constellation layout', () => {
     expect(radius('second')).toBeCloseTo(radius('first'), 5);
   });
 
-  it('settles the constellation fixture without overlaps and keeps related nodes apart', () => {
-    const graph = buildConstellationGraph(Date.parse('2026-09-04T00:00:00.000Z'));
-    const layout = createConstellationLayout({ width: 1162, height: 766, seed: 7 });
-    layout.update(graph.nodes, graph.edges);
-    const { nodes, alpha } = settledSnapshot(layout);
-    const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const [name, buildGraph] of [
+    ['constellation', buildConstellationGraph],
+    ['busy', buildBusyGraph],
+  ] as const) {
+    it(`settles the ${name} fixture without overlaps and keeps related nodes apart`, () => {
+      const graph = buildGraph(Date.parse('2026-09-04T00:00:00.000Z'));
+      const layout = createConstellationLayout({ width: 1162, height: 766, seed: 7 });
+      layout.update(graph.nodes, graph.edges);
+      const { nodes, alpha } = settledSnapshot(layout);
+      const byId = new Map(nodes.map((node) => [node.id, node]));
 
-    expect(alpha).toBeLessThan(0.01);
-    for (let left = 0; left < nodes.length; left += 1) {
-      for (let right = left + 1; right < nodes.length; right += 1) {
-        expect(
-          overlaps(nodes[left], nodes[right]),
-          `${nodes[left].id} overlaps ${nodes[right].id}`,
-        ).toBe(false);
+      expect(alpha).toBeLessThan(0.01);
+      for (let left = 0; left < nodes.length; left += 1) {
+        for (let right = left + 1; right < nodes.length; right += 1) {
+          expect(
+            overlaps(nodes[left], nodes[right]),
+            `${nodes[left].id} overlaps ${nodes[right].id}`,
+          ).toBe(false);
+        }
       }
-    }
 
-    for (const edge of graph.edges.filter(({ type }) => type === 'task-assignment')) {
-      const agentNode = byId.get(edge.sourceId)!;
-      const taskNode = byId.get(edge.targetId)!;
-      expect(Math.hypot(agentNode.x - taskNode.x, agentNode.y - taskNode.y)).toBeGreaterThanOrEqual(
-        nodeRadius('task') + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent,
-      );
-    }
-    for (const edge of graph.edges.filter(
-      ({ type }) => type.startsWith('file-') || type.startsWith('note-'),
-    )) {
-      const agentNode = byId.get(edge.sourceId)!;
-      const resourceNode = byId.get(edge.targetId)!;
-      expect(
-        Math.hypot(agentNode.x - resourceNode.x, agentNode.y - resourceNode.y),
-      ).toBeGreaterThanOrEqual(
-        nodeRadius('agent') + nodeRadius(resourceNode.type) + GRAPH_NODE_GAPS.agentResource,
-      );
-    }
-  });
+      for (const edge of graph.edges.filter(({ type }) => type === 'task-assignment')) {
+        const agentNode = byId.get(edge.sourceId)!;
+        const taskNode = byId.get(edge.targetId)!;
+        expect(
+          Math.hypot(agentNode.x - taskNode.x, agentNode.y - taskNode.y),
+        ).toBeGreaterThanOrEqual(
+          nodeRadius('task') + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent,
+        );
+      }
+      for (const edge of graph.edges.filter(
+        ({ type }) => type.startsWith('file-') || type.startsWith('note-'),
+      )) {
+        const agentNode = byId.get(edge.sourceId)!;
+        const resourceNode = byId.get(edge.targetId)!;
+        expect(
+          Math.hypot(agentNode.x - resourceNode.x, agentNode.y - resourceNode.y),
+        ).toBeGreaterThanOrEqual(
+          nodeRadius('agent') + nodeRadius(resourceNode.type) + GRAPH_NODE_GAPS.agentResource,
+        );
+      }
+    });
+  }
 
   it('includes full node rectangles in fit bounds', () => {
     const layout = createConstellationLayout({ width: 800, height: 600 });
