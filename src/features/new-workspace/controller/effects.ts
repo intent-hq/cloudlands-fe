@@ -22,6 +22,7 @@ export function effectsFor(state: ControllerState): ControllerEffect[] {
               {
                 type: 'createDraft',
                 generation: state.generation,
+                ownerClientId: state.ownerClientId,
                 inputVersion: state.inputVersion,
                 input: state.input,
               },

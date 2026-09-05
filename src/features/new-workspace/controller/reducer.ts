@@ -201,6 +201,7 @@ function withData<State extends ControllerState>(state: State, data: ControllerD
   return {
     ...state,
     generation: data.generation,
+    ownerClientId: data.ownerClientId,
     draftId: data.draftId,
     draft: data.draft,
     input: data.input,
@@ -212,43 +213,35 @@ function withData<State extends ControllerState>(state: State, data: ControllerD
     capabilities: data.capabilities,
     workspaceId: data.workspaceId,
     initialAgentId: data.initialAgentId,
+    setupResult: data.setupResult,
   };
 }
 
 function restoreDraft(state: ControllerState, draft: WorkspaceDraft): ControllerState {
   const preserveInput = hasUnsavedInput(state);
   const data = acknowledge(state, draft, preserveInput);
-  if (draft.promotedWorkspaceId) {
-    return adopting(
-      data as ControllerState,
-      draft.promotedWorkspaceId,
-      draft.initialAgentId,
-      draft,
-    );
-  }
   if (draft.phase === 'promoted') {
+    if (draft.promotedWorkspaceId) {
+      return adopting(
+        data as ControllerState,
+        draft.promotedWorkspaceId,
+        draft.initialAgentId,
+        draft,
+      );
+    }
     return failed(
       data as ControllerState,
       'draft',
       draft.lastError ?? 'Promoted draft has no workspace',
     );
   }
-  if (draft.phase === 'promoting') {
+  if (draft.phase === 'promoting' || draft.phase === 'failed') {
     return {
       ...data,
       phase: 'promoting',
       operationKey: draft.operationKey,
       promoteAttempt: 'ack-lost',
     };
-  }
-  if (draft.phase === 'failed') {
-    const retryState = editable({ ...data, input: preserveInput ? state.input : data.input });
-    return failed(
-      data as ControllerState,
-      'draft',
-      draft.lastError ?? 'Draft operation failed',
-      retryState,
-    );
   }
   return editable(data);
 }
@@ -285,8 +278,17 @@ export function reduceDetailed(
       if (state.phase !== 'boot') return ignored(state);
       return handled(
         event.draftId
-          ? { ...state, phase: 'restoring', draftId: event.draftId }
-          : { ...state, phase: isPristine(state.input) ? 'pristine' : 'editing' },
+          ? {
+              ...state,
+              phase: 'restoring',
+              ownerClientId: event.ownerClientId ?? state.ownerClientId,
+              draftId: event.draftId,
+            }
+          : {
+              ...state,
+              phase: isPristine(state.input) ? 'pristine' : 'editing',
+              ownerClientId: event.ownerClientId ?? state.ownerClientId,
+            },
       );
     case 'restore.succeeded':
       return state.phase === 'restoring'
@@ -422,10 +424,13 @@ export function reduceDetailed(
       return event.pendingAttachmentIds.length
         ? handled({
             ...state,
+            setupResult: event.setupResult ?? state.setupResult,
             phase: 'placingAttachments',
             pendingAttachmentIds: [...new Set(event.pendingAttachmentIds)],
           })
-        : handled(afterAttachments(state));
+        : handled(
+            afterAttachments({ ...state, setupResult: event.setupResult ?? state.setupResult }),
+          );
     case 'attachments.placed': {
       if (state.phase !== 'placingAttachments') return ignored(state);
       const settled = new Set([...event.placedIds, ...event.failures.map(({ id }) => id)]);

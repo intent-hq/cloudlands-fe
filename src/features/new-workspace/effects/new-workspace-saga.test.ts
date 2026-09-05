@@ -119,6 +119,7 @@ async function execute(
       dispatch: reduxDispatch,
       navigate: vi.fn(),
     }),
+    identifyClient: async () => ({ clientId: 'client-1' }),
     saveDebounceMs: 0,
   };
   await runSaga(
@@ -135,20 +136,76 @@ describe('newWorkspaceEffectSaga', () => {
     vi.clearAllMocks();
   });
 
-  it('restores the oldest daemon draft when a fresh renderer has no local draft id', async () => {
-    const durable = draft({ intentText: 'survived restart' });
-    const list = vi.fn().mockResolvedValue([durable]);
+  it('restores the current client newest daemon draft when a fresh renderer has no local id', async () => {
+    const older = draft({ id: 'draft-older', updatedAt: '2026-09-04T19:00:00.000Z' });
+    const anotherClient = draft({
+      id: 'draft-other-client',
+      ownerClientId: 'client-2',
+      updatedAt: '2026-09-04T22:00:00.000Z',
+    });
+    const durable = draft({
+      intentText: 'survived restart',
+      updatedAt: '2026-09-04T21:00:00.000Z',
+    });
+    const list = vi.fn().mockResolvedValue([older, durable, anotherClient]);
     const get = vi.fn().mockResolvedValue(durable);
     const appClient = client({ workspaceDrafts: { list, get } });
 
     const identified = await execute(createInitialControllerState(3), appClient);
     expect(identified.state).toMatchObject({ phase: 'restoring', draftId: durable.id });
+    expect(identified.state.ownerClientId).toBe('client-1');
 
     const restored = await execute(identified.state, appClient);
     expect(get).toHaveBeenCalledWith(durable.id);
     expect(restored.state).toMatchObject({
       phase: 'editing',
       input: { intentText: 'survived restart' },
+    });
+  });
+
+  it('keeps fresh renderer input offline and never promotes when draft listing is unreachable', async () => {
+    const promote = vi.fn();
+    const state = createInitialControllerState(3, {
+      intentText: 'keep this text',
+      source: null,
+      contextLinks: [],
+      attachments: [],
+      config: {},
+    });
+
+    const result = await execute(
+      state,
+      client({
+        workspaceDrafts: {
+          list: vi.fn().mockRejectedValue(new Error('daemon unreachable')),
+          promote,
+        },
+      }),
+    );
+
+    expect(result.state).toMatchObject({
+      phase: 'offline',
+      unsavedInput: { intentText: 'keep this text' },
+    });
+    expect(promote).not.toHaveBeenCalled();
+  });
+
+  it('assigns newly created drafts to the current daemon client', async () => {
+    const create = vi.fn().mockResolvedValue(draft());
+    const appClient = client({
+      workspaceDrafts: { list: vi.fn().mockResolvedValue([]), create },
+    });
+    const identified = await execute(createInitialControllerState(3), appClient);
+
+    await execute(identified.state, appClient);
+
+    expect(create).toHaveBeenCalledWith({
+      ownerClientId: 'client-1',
+      intentText: '',
+      source: null,
+      contextLinks: [],
+      attachments: [],
+      config: {},
     });
   });
 
@@ -180,7 +237,7 @@ describe('newWorkspaceEffectSaga', () => {
     expect(result.state).toMatchObject({ phase: 'conflict', remote });
   });
 
-  it('reconciles a lost promotion acknowledgement before making another promote call', async () => {
+  it('adopts a fully promoted draft without making another promote call', async () => {
     const promoted = draft({
       revision: 2,
       phase: 'promoted',
@@ -210,45 +267,50 @@ describe('newWorkspaceEffectSaga', () => {
     });
   });
 
-  it('finalizes an incomplete durable reservation without creating another workspace', async () => {
-    const reserved = draft({
-      revision: 2,
-      phase: 'failed',
-      promotedWorkspaceId: FIXED_IDS.workspace,
-    });
-    const finalized = draft({
-      revision: 3,
-      phase: 'promoted',
-      promotedWorkspaceId: FIXED_IDS.workspace,
-      initialAgentId: FIXED_IDS.agent,
-    });
-    const promote = vi.fn().mockResolvedValue({
-      draft: finalized,
-      workspace: { id: FIXED_IDS.workspace },
-      initialAgent: { id: FIXED_IDS.agent },
-    });
-    const appClient = client({
-      workspaceDrafts: { get: vi.fn().mockResolvedValue(reserved), promote },
-    });
-    const state = {
-      ...baseState(),
-      phase: 'promoting',
-      operationKey: FIXED_IDS.operation,
-      promoteAttempt: 'ack-lost',
-    } as ControllerState;
+  it.each([
+    ['promoting', FIXED_IDS.workspace],
+    ['failed', FIXED_IDS.workspace],
+    ['failed', undefined],
+  ] as const)(
+    'completes a %s draft with workspace %s by reissuing promote exactly once',
+    async (phase, promotedWorkspaceId) => {
+      const reserved = draft({ revision: 2, phase, promotedWorkspaceId });
+      const promoted = draft({
+        revision: 3,
+        phase: 'promoted',
+        promotedWorkspaceId: FIXED_IDS.workspace,
+        initialAgentId: FIXED_IDS.agent,
+      });
+      const promote = vi.fn().mockResolvedValue({
+        draft: promoted,
+        workspace: { id: FIXED_IDS.workspace },
+        initialAgent: { id: FIXED_IDS.agent },
+      });
+      const appClient = client({
+        workspaceDrafts: { get: vi.fn().mockResolvedValue(reserved), promote },
+      });
+      const state = {
+        ...baseState(),
+        phase: 'promoting',
+        operationKey: FIXED_IDS.operation,
+        promoteAttempt: 'ack-lost',
+      } as ControllerState;
 
-    const result = await execute(state, appClient);
+      const result = await execute(state, appClient);
 
-    expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 2, {
-      prompt: '',
-      specialist: 'spec-writer',
-    });
-    expect(result.state).toMatchObject({
-      phase: 'adopting',
-      workspaceId: FIXED_IDS.workspace,
-      initialAgentId: FIXED_IDS.agent,
-    });
-  });
+      expect(promote).toHaveBeenCalledOnce();
+      expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 2, {
+        prompt: '',
+        specialist: 'spec-writer',
+      });
+      expect(result.state).toMatchObject({
+        phase: 'adopting',
+        operationKey: FIXED_IDS.operation,
+        workspaceId: FIXED_IDS.workspace,
+        initialAgentId: FIXED_IDS.agent,
+      });
+    },
+  );
 
   it('never reissues promotion for a promoted draft whose workspace id is missing', async () => {
     const promote = vi.fn();
@@ -317,7 +379,11 @@ describe('newWorkspaceEffectSaga', () => {
       'workspaceCreateProgress/clear',
     ]);
     expect(transaction.payload[0].payload[0]).toEqual(workspace);
-    expect(result.state).toMatchObject({ phase: 'sending', workspaceId: FIXED_IDS.workspace });
+    expect(result.state).toMatchObject({
+      phase: 'sending',
+      workspaceId: FIXED_IDS.workspace,
+      setupResult: { state: 'succeeded', exitCode: 0 },
+    });
   });
 
   it('marks an uncertain send unknown, then reconciles the stable id without resending', async () => {

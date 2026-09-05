@@ -387,6 +387,12 @@ describe('new-workspace controller', () => {
       'reconcilePromotion',
     ],
     [
+      'failed',
+      draft({ phase: 'failed', intentText: 'task', promotedWorkspaceId: 'workspace-1' }),
+      'promoting',
+      'reconcilePromotion',
+    ],
+    [
       'adopting',
       draft({ phase: 'promoted', intentText: 'task', promotedWorkspaceId: 'workspace-1' }),
       'adopting',

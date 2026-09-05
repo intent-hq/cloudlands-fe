@@ -1,4 +1,10 @@
-import type { ContextLink, DraftSource, WorkspaceDraft, WorkspaceDraftConfig } from '$shared/types';
+import type {
+  ContextLink,
+  DraftSource,
+  SetupResult,
+  WorkspaceDraft,
+  WorkspaceDraftConfig,
+} from '$shared/types';
 
 export const CONTROLLER_PHASES = [
   'boot',
@@ -31,6 +37,7 @@ export interface DraftInput {
 
 export interface ControllerData {
   generation: number;
+  ownerClientId: string | null;
   draftId: string | null;
   draft: WorkspaceDraft | null;
   input: DraftInput;
@@ -42,6 +49,7 @@ export interface ControllerData {
   capabilities: Record<Capability, CapabilityStatus>;
   workspaceId: string | null;
   initialAgentId: string | null;
+  setupResult: SetupResult | null;
 }
 
 export interface BootState extends ControllerData {
@@ -165,7 +173,7 @@ export type ControllerEventType = (typeof CONTROLLER_EVENT_TYPES)[number];
 type Generated = { generation: number };
 
 export type ControllerEvent =
-  | ({ type: 'backend.connected'; draftId?: string } & Generated)
+  | ({ type: 'backend.connected'; ownerClientId?: string; draftId?: string } & Generated)
   | { type: 'backend.switched'; generation: number }
   | ({ type: 'restore.succeeded'; draft: WorkspaceDraft } & Generated)
   | ({ type: 'restore.missing' } & Generated)
@@ -193,7 +201,11 @@ export type ControllerEvent =
       initialAgentId?: string;
     } & Generated)
   | ({ type: 'promote.ackLost'; operationKey: string } & Generated)
-  | ({ type: 'adoption.completed'; pendingAttachmentIds: string[] } & Generated)
+  | ({
+      type: 'adoption.completed';
+      pendingAttachmentIds: string[];
+      setupResult?: SetupResult | null;
+    } & Generated)
   | ({
       type: 'attachments.placed';
       placedIds: string[];
@@ -220,7 +232,13 @@ export interface ControllerTransition {
 export type ControllerEffect =
   | { type: 'identifyBackend'; generation: number }
   | { type: 'restoreDraft'; generation: number; draftId: string }
-  | { type: 'createDraft'; generation: number; inputVersion: number; input: DraftInput }
+  | {
+      type: 'createDraft';
+      generation: number;
+      ownerClientId: string | null;
+      inputVersion: number;
+      input: DraftInput;
+    }
   | {
       type: 'updateDraft';
       generation: number;
@@ -277,6 +295,7 @@ export function createInitialControllerState(
   return {
     phase: 'boot',
     generation,
+    ownerClientId: null,
     draftId: null,
     draft: null,
     input,
@@ -288,5 +307,6 @@ export function createInitialControllerState(
     capabilities: { ...UNKNOWN_CAPABILITIES },
     workspaceId: null,
     initialAgentId: null,
+    setupResult: null,
   };
 }

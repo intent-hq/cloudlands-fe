@@ -49,6 +49,20 @@ export interface NewWorkspaceSagaDependencies {
   getState: () => ControllerState;
   adopt?: WorkspaceAdoption;
   saveDebounceMs?: number;
+  identifyClient?: () => Promise<{ clientId?: string }>;
+}
+
+function identifyClient(): Promise<{ clientId?: string }> {
+  return backendRequest<{ clientId?: string }>('client.hello', {});
+}
+
+function newestOwnedDraft(
+  drafts: WorkspaceDraft[],
+  ownerClientId: string,
+): WorkspaceDraft | undefined {
+  return drafts
+    .filter((draft) => draft.ownerClientId === ownerClientId)
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
 }
 
 function runtimeFor(dependencies: NewWorkspaceSagaDependencies): RuntimeState {
@@ -244,8 +258,7 @@ function* reconcilePromotion(
   const client = dependencies.client ?? appClient;
   try {
     const draft = yield* call([client.workspaceDrafts, client.workspaceDrafts.get], effect.draftId);
-    const promotionExists = draft.phase === 'promoted' || !!draft.promotedWorkspaceId;
-    if (promotionExists && !draft.promotedWorkspaceId) {
+    if (draft.phase === 'promoted' && !draft.promotedWorkspaceId) {
       yield* emit(dependencies, {
         type: 'operation.failed',
         generation: effect.generation,
@@ -254,33 +267,14 @@ function* reconcilePromotion(
       });
       return;
     }
-    if (promotionExists && draft.promotedWorkspaceId && draft.initialAgentId) {
+    if (draft.phase === 'promoted' && draft.promotedWorkspaceId) {
       runtime.operationByWorkspace.set(draft.promotedWorkspaceId, effect.operationKey);
       yield* emit(dependencies, {
         type: 'draft.promoted',
         generation: effect.generation,
         draftId: draft.id,
         workspaceId: draft.promotedWorkspaceId,
-        initialAgentId: draft.initialAgentId,
-      });
-      return;
-    }
-    if (promotionExists && draft.promotedWorkspaceId && !draft.initialAgentId) {
-      const result = yield* call(
-        [client.workspaceDrafts, client.workspaceDrafts.promote],
-        draft.id,
-        draft.revision,
-        { prompt: '', specialist: 'spec-writer' },
-      );
-      rememberPromotion(runtime, result);
-      runtime.operationByWorkspace.set(result.workspace.id, effect.operationKey);
-      yield* emit(dependencies, {
-        type: 'promote.ack',
-        generation: effect.generation,
-        operationKey: effect.operationKey,
-        draft: result.draft,
-        workspaceId: result.workspace.id,
-        initialAgentId: result.initialAgent?.id,
+        ...(draft.initialAgentId ? { initialAgentId: draft.initialAgentId } : {}),
       });
       return;
     }
@@ -307,17 +301,8 @@ function* adopt(
 ): SagaGenerator<void> {
   const client = dependencies.client ?? appClient;
   try {
-    let cached = runtime.promotionByWorkspace.get(effect.workspaceId);
+    const cached = runtime.promotionByWorkspace.get(effect.workspaceId);
     const state = dependencies.getState();
-    if (!cached?.initialAgent && !state.initialAgentId && state.draft) {
-      cached = yield* call(
-        [client.workspaceDrafts, client.workspaceDrafts.promote],
-        state.draft.id,
-        state.draft.revision,
-        { prompt: '', specialist: 'spec-writer' },
-      );
-      rememberPromotion(runtime, cached);
-    }
     const workspace =
       cached?.workspace ??
       (yield* call([client.workspaces, client.workspaces.get], effect.workspaceId));
@@ -342,6 +327,7 @@ function* adopt(
       type: 'adoption.completed',
       generation: effect.generation,
       pendingAttachmentIds: pending,
+      setupResult: workspace.setupResult ?? null,
     });
     if (pending.length === 0 && state.input.intentText.trim().length === 0) {
       const draftId = state.draftId;
@@ -538,11 +524,15 @@ function* execute(
   switch (effect.type) {
     case 'identifyBackend':
       try {
+        const identity = yield* call(dependencies.identifyClient ?? identifyClient);
         const drafts = yield* call([client.workspaceDrafts, client.workspaceDrafts.list]);
-        const draftId = dependencies.getState().draftId ?? drafts[0]?.id;
+        if (!identity.clientId) throw new Error('Daemon did not return a client identity');
+        const draftId =
+          dependencies.getState().draftId ?? newestOwnedDraft(drafts, identity.clientId)?.id;
         yield* emit(dependencies, {
           type: 'backend.connected',
           generation: effect.generation,
+          ownerClientId: identity.clientId,
           draftId,
         });
       } catch (error) {
@@ -571,10 +561,10 @@ function* execute(
     case 'createDraft':
       yield* emit(dependencies, { type: 'draft.createIssued', inputVersion: effect.inputVersion });
       try {
-        const draft = yield* call(
-          [client.workspaceDrafts, client.workspaceDrafts.create],
-          inputPatch(effect.input),
-        );
+        const draft = yield* call([client.workspaceDrafts, client.workspaceDrafts.create], {
+          ...inputPatch(effect.input),
+          ...(effect.ownerClientId ? { ownerClientId: effect.ownerClientId } : {}),
+        });
         yield* emit(dependencies, {
           type: 'draft.acknowledged',
           generation: effect.generation,
