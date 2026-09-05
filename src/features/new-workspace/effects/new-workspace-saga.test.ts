@@ -7,6 +7,7 @@ import type { WorkspaceDraft } from '$shared/types';
 
 import {
   createInitialControllerState,
+  effectsFor,
   reduce,
   type ControllerEvent,
   type ControllerState,
@@ -483,5 +484,73 @@ describe('newWorkspaceEffectSaga', () => {
       'file-2',
     ]);
     expect(second.state.phase).toBe('sending');
+  });
+
+  it.each([
+    ['missing staged file', 'staged file no longer exists'],
+    ['renamed staged file', 'staged file path changed'],
+    ['oversize staged payload', 'attachment exceeds the payload limit'],
+  ])('%s remains staged for a targeted retry', async (_caseName, error) => {
+    const attachment = { id: 'file-1', type: 'file', label: 'plan.txt', sourcePath: '/plan' };
+    const current = draft({ intentText: 'Keep this message', attachments: [attachment] });
+    attachmentMocks.redeem.mockRejectedValueOnce(new Error(error));
+    const appClient = client({
+      workspaceDrafts: { get: vi.fn().mockResolvedValue(current) },
+    });
+    const state = {
+      ...baseState(current),
+      phase: 'placingAttachments',
+      workspaceId: FIXED_IDS.workspace,
+      pendingAttachmentIds: [attachment.id],
+    } as ControllerState;
+
+    const result = await execute(state, appClient);
+
+    expect(result.state).toMatchObject({
+      phase: 'failed',
+      kind: 'attachments',
+      input: { intentText: 'Keep this message', attachments: [attachment] },
+      retryState: { pendingAttachmentIds: [attachment.id] },
+    });
+    expect(appClient.workspaceDrafts.delete).not.toHaveBeenCalled();
+    expect(attachmentMocks.send).not.toHaveBeenCalled();
+  });
+
+  it('first-message rejection retains the draft and reconciles before retrying', async () => {
+    const current = draft({ intentText: 'Keep this message' });
+    const markDelivery = vi.fn().mockResolvedValue(current);
+    const remove = vi.fn();
+    attachmentMocks.send.mockResolvedValueOnce({
+      sent: false,
+      deliveryUnknown: false,
+      errorDetail: 'provider unavailable',
+    });
+    const state = {
+      ...baseState(current),
+      phase: 'sending',
+      workspaceId: FIXED_IDS.workspace,
+      initialAgentId: FIXED_IDS.agent,
+      deliveryStage: 'ready',
+    } as ControllerState;
+
+    const result = await execute(
+      state,
+      client({ workspaceDrafts: { markDelivery, delete: remove } }),
+    );
+
+    expect(result.state).toMatchObject({
+      phase: 'failed',
+      kind: 'send',
+      input: { intentText: 'Keep this message' },
+      retryState: { phase: 'sending', deliveryStage: 'unknown' },
+    });
+    expect(markDelivery).toHaveBeenCalledWith(FIXED_IDS.draft, {
+      state: 'pending',
+      messageId: FIXED_IDS.message,
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(effectsFor(reduce(result.state, { type: 'retry' }))).toEqual([
+      expect.objectContaining({ type: 'reconcileDelivery' }),
+    ]);
   });
 });

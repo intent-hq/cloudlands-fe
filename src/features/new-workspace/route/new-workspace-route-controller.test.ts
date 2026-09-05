@@ -132,4 +132,44 @@ describe('new workspace route controller', () => {
       expect.objectContaining({ requestedDraftId: 'migrated-draft' }),
     );
   });
+
+  it('keeps two new drafts in one client independently addressed without identity swap', async () => {
+    const first = createNewWorkspaceRouteController({
+      startInput: { text: 'First' },
+      requestedDraftId: null,
+    });
+    const second = createNewWorkspaceRouteController({
+      startInput: { text: 'Second' },
+      requestedDraftId: null,
+    });
+    let firstState: ControllerState | undefined;
+    let secondState: ControllerState | undefined;
+    await first.start((state) => (firstState = state));
+    await second.start((state) => (secondState = state));
+    first.dispatch({ type: 'backend.connected', generation: 1, ownerClientId: 'client-1' });
+    second.dispatch({ type: 'backend.connected', generation: 1, ownerClientId: 'client-1' });
+    first.dispatch({
+      type: 'draft.acknowledged',
+      generation: 1,
+      inputVersion: 0,
+      draft: draft({ id: 'draft-first', operationKey: 'operation-first', intentText: 'First' }),
+    });
+    second.dispatch({
+      type: 'draft.acknowledged',
+      generation: 1,
+      inputVersion: 0,
+      draft: draft({ id: 'draft-second', operationKey: 'operation-second', intentText: 'Second' }),
+    });
+
+    expect(firstState).toMatchObject({ draftId: 'draft-first', input: { intentText: 'First' } });
+    expect(secondState).toMatchObject({ draftId: 'draft-second', input: { intentText: 'Second' } });
+    expect(mocks.runnerOptions).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ requestedDraftId: null }),
+    );
+    expect(mocks.runnerOptions).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ requestedDraftId: null }),
+    );
+  });
 });
