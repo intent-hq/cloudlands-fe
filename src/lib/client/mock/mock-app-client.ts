@@ -279,13 +279,16 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
         delivery: { state: 'none' },
         createdAt: now,
         updatedAt: now,
+        ...(request.ownerClientId === undefined ? {} : { ownerClientId: request.ownerClientId }),
         ...(request.title === undefined ? {} : { title: request.title }),
       };
       mockWorkspaceDrafts.set(id, draft);
       return draft;
     },
     async get(id) {
-      return mockWorkspaceDrafts.get(id) ?? null;
+      const draft = mockWorkspaceDrafts.get(id);
+      if (!draft) throw Object.assign(new Error('Draft not found'), { rpcCode: -32602 });
+      return draft;
     },
     async list() {
       return [...mockWorkspaceDrafts.values()].filter((draft) => draft.phase !== 'promoted');
@@ -293,7 +296,14 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     async update(id, expectedRevision, patch) {
       const current = mockWorkspaceDrafts.get(id);
       if (!current || current.revision !== expectedRevision) throw new Error('Draft conflict');
-      const updated = { ...current, ...patch, revision: current.revision + 1 };
+      const { title, ...remainingPatch } = patch;
+      const updated: WorkspaceDraft = {
+        ...current,
+        ...remainingPatch,
+        revision: current.revision + 1,
+      };
+      if (title === null) delete updated.title;
+      else if (title !== undefined) updated.title = title;
       mockWorkspaceDrafts.set(id, updated);
       return updated;
     },

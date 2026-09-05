@@ -11,11 +11,10 @@ import {
   hydrateWorkspaceNavigation,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { batchRendererActions, type ReduxAction } from '$store/renderer/batch-actions';
 
 type Workspace = NonNullable<Awaited<ReturnType<AppClient['workspaces']['get']>>>;
 type Agent = NonNullable<Awaited<ReturnType<AppClient['agents']['get']>>>;
-type ReduxAction = { type: string; payload?: unknown };
-
 export interface WorkspaceAdoptionInput {
   workspace: Workspace;
   initialAgent: Agent | null;
@@ -25,8 +24,7 @@ export interface WorkspaceAdoptionInput {
 export type WorkspaceAdoption = (input: WorkspaceAdoptionInput) => void | Promise<void>;
 
 export interface WorkspaceAdoptionDependencies {
-  /** Receives the complete synchronous Redux adoption batch in one call. */
-  dispatchBatch?: (actions: ReduxAction[]) => void;
+  dispatch?: (action: ReduxAction) => void;
   navigate?: typeof navigateToRoute;
 }
 
@@ -34,11 +32,7 @@ export interface WorkspaceAdoptionDependencies {
 export function createWorkspaceAdoption(
   dependencies: WorkspaceAdoptionDependencies = {},
 ): WorkspaceAdoption {
-  const dispatchBatch =
-    dependencies.dispatchBatch ??
-    ((actions: ReduxAction[]) => {
-      for (const action of actions) appStore.dispatch(action);
-    });
+  const dispatch = dependencies.dispatch ?? ((action: ReduxAction) => appStore.dispatch(action));
   const navigate = dependencies.navigate ?? navigateToRoute;
 
   return async ({ workspace, initialAgent, operationKey }) => {
@@ -65,7 +59,7 @@ export function createWorkspaceAdoption(
       openWorkspaceTab(workspace.id),
       ...(operationKey ? [clearWorkspaceCreateProgress(operationKey)] : []),
     ];
-    dispatchBatch(actions);
+    dispatch(batchRendererActions(actions));
     await navigate(`/workspace/${workspace.id}`);
   };
 }

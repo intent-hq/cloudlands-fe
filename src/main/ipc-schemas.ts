@@ -160,32 +160,51 @@ const WorkspaceDraftSourceSchema = z.discriminatedUnion('kind', [
     name: z.string().min(1),
   }),
 ]);
-const WorkspaceDraftFieldsSchema = z.object({
-  title: z.string().optional(),
-  intentText: z.string().optional(),
-  source: WorkspaceDraftSourceSchema.nullable().optional(),
-  contextLinks: z.array(z.unknown()).optional(),
-  attachments: z.array(z.unknown()).optional(),
-  config: z.record(z.unknown()).optional(),
-});
+const WorkspaceDraftMutableFieldsSchema = z
+  .object({
+    title: z.string().nullable().optional(),
+    intentText: z.string().optional(),
+    source: WorkspaceDraftSourceSchema.nullable().optional(),
+    contextLinks: z.array(z.unknown()).optional(),
+    attachments: z.array(z.unknown()).optional(),
+    config: z.record(z.unknown()).optional(),
+  })
+  .strict();
+const WorkspaceDraftInitialAgentSchema = z
+  .object({
+    name: z.string().optional(),
+    model: z.string().optional(),
+    prompt: z.string().optional(),
+    rules: z.string().optional(),
+    agentType: z.string().optional(),
+    specialist: z.string().optional(),
+    behaviorPrompt: z.string().optional(),
+    provider: z.string().optional(),
+    contextReferences: z.array(z.unknown()).optional(),
+    imageBlocks: z.array(z.unknown()).optional(),
+    metadata: z.record(z.unknown()).optional(),
+  })
+  .strict();
 const WorkspaceDraftDeliverySchema = z.object({
   state: z.enum(['none', 'pending', 'sent', 'unknown']),
   messageId: z.string().optional(),
   error: z.string().optional(),
 });
 
-export const WorkspaceDraftCreateSchema = WorkspaceDraftFieldsSchema;
+export const WorkspaceDraftCreateSchema = WorkspaceDraftMutableFieldsSchema.omit({
+  title: true,
+}).extend({ ownerClientId: z.string().min(1).optional(), title: z.string().optional() });
 export const WorkspaceDraftGetSchema = z.object({ id: WorkspaceDraftIdSchema });
 export const WorkspaceDraftListSchema = z.object({}).strict();
 export const WorkspaceDraftUpdateSchema = z.object({
   id: WorkspaceDraftIdSchema,
   expectedRevision: z.number().int().nonnegative(),
-  patch: WorkspaceDraftFieldsSchema,
+  patch: WorkspaceDraftMutableFieldsSchema,
 });
 export const WorkspaceDraftPromoteSchema = z.object({
   id: WorkspaceDraftIdSchema,
   expectedRevision: z.number().int().nonnegative(),
-  initialAgent: z.record(z.unknown()).optional(),
+  initialAgent: WorkspaceDraftInitialAgentSchema.optional(),
 });
 export const WorkspaceDraftMarkDeliverySchema = z.object({
   id: WorkspaceDraftIdSchema,

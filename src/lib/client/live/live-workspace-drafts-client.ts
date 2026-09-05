@@ -1,8 +1,6 @@
 import type { WorkspaceDraft } from '$shared/types';
 import type { WorkspaceDraftPromotionResult, WorkspaceDraftsClient } from '../app-client';
 import { backendRequest } from './backend-transport';
-import { normalizeAgent } from './live-agents-client';
-import { normalizeWorkspace } from './live-workspaces-client';
 
 const PROMOTE_TIMEOUT_MS = 120_000;
 
@@ -12,7 +10,7 @@ export class LiveWorkspaceDraftsClient implements WorkspaceDraftsClient {
   }
 
   get(id: string) {
-    return backendRequest<WorkspaceDraft | null>('workspaceDraft.get', { id });
+    return backendRequest<WorkspaceDraft>('workspaceDraft.get', { id });
   }
 
   list() {
@@ -37,16 +35,9 @@ export class LiveWorkspaceDraftsClient implements WorkspaceDraftsClient {
     initialAgent?: Parameters<WorkspaceDraftsClient['promote']>[2],
   ): Promise<WorkspaceDraftPromotionResult> {
     const params = { id, expectedRevision, ...(initialAgent ? { initialAgent } : {}) };
-    const result = await backendRequest<{
-      draft: WorkspaceDraft;
-      workspace: Record<string, unknown>;
-      initialAgent?: Record<string, unknown>;
-    }>('workspaceDraft.promote', params, { timeoutMs: PROMOTE_TIMEOUT_MS });
-    return {
-      draft: result.draft,
-      workspace: normalizeWorkspace(result.workspace),
-      ...(result.initialAgent ? { initialAgent: normalizeAgent(result.initialAgent) } : {}),
-    };
+    return backendRequest<WorkspaceDraftPromotionResult>('workspaceDraft.promote', params, {
+      timeoutMs: PROMOTE_TIMEOUT_MS,
+    });
   }
 
   markDelivery(id: string, delivery: Parameters<WorkspaceDraftsClient['markDelivery']>[1]) {

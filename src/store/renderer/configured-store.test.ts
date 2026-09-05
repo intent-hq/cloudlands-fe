@@ -45,8 +45,10 @@ describe('configured renderer Store action logging', () => {
     await import('./configured-store');
 
     expect(mocks.safeLocalStorageGetItemWithStatus).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY);
-    expect(mocks.storeConstructor).toHaveBeenCalledWith(mocks.reducers, mocks.middleware, {
-      logReduxActions: expected,
-    });
+    expect(mocks.storeConstructor).toHaveBeenCalledWith(
+      { example: expect.any(Function) },
+      mocks.middleware,
+      { logReduxActions: expected },
+    );
   });
 });

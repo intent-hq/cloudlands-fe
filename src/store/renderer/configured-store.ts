@@ -4,6 +4,7 @@ import { readable, type Readable } from 'svelte/store';
 
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { REDUX_DEBUG_LS_KEY } from './constants';
+import { enableRendererActionBatching } from './batch-actions';
 import { middleware } from './middleware';
 import { reducers } from './reducer';
 
@@ -69,6 +70,10 @@ class RendererStore extends Store<RendererStateMap, typeof reducers> {
   }
 }
 
-export const store = new RendererStore(reducers, middleware as unknown as StoreMiddleware[], {
-  logReduxActions: isReduxActionLoggingEnabled(),
-});
+export const store = new RendererStore(
+  enableRendererActionBatching(reducers),
+  middleware as unknown as StoreMiddleware[],
+  {
+    logReduxActions: isReduxActionLoggingEnabled(),
+  },
+);

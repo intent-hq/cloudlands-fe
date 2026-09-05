@@ -101,8 +101,12 @@ export class MockTransactionHarness {
     this.workspaceDrafts = {
       create: (request = {}) =>
         this.immediate(MOCK_TRANSACTION_CHANNELS.draftCreate, [request], fixtures.draft),
-      get: (id) =>
-        this.immediate(MOCK_TRANSACTION_CHANNELS.draftGet, [{ id }], this.drafts.get(id) ?? null),
+      get: (id) => {
+        const found = this.drafts.get(id);
+        return found
+          ? this.immediate(MOCK_TRANSACTION_CHANNELS.draftGet, [{ id }], found)
+          : Promise.reject(Object.assign(new Error('Draft not found'), { rpcCode: -32602 }));
+      },
       list: () =>
         this.immediate(MOCK_TRANSACTION_CHANNELS.draftList, [{}], [...this.drafts.values()]),
       update: (id, expectedRevision, patch) => this.updateDraft(id, expectedRevision, patch),
@@ -287,12 +291,15 @@ export class MockTransactionHarness {
       this.record(MOCK_TRANSACTION_CHANNELS.draftUpdate, args, 'rejected');
       return Promise.reject(new MockDraftConflictError(current));
     }
+    const { title, ...remainingPatch } = patch;
     const updated: WorkspaceDraft = {
       ...current,
-      ...patch,
+      ...remainingPatch,
       revision: current.revision + 1,
       updatedAt: FIXED_TIMESTAMP,
     };
+    if (title === null) delete updated.title;
+    else if (title !== undefined) updated.title = title;
     return this.immediate(MOCK_TRANSACTION_CHANNELS.draftUpdate, args, updated).then((result) => {
       this.drafts.set(id, result);
       return result;

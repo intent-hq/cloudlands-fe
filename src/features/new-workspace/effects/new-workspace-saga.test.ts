@@ -116,7 +116,7 @@ async function execute(
       current = reduce(current, event);
     },
     adopt: createWorkspaceAdoption({
-      dispatchBatch: (actions) => actions.forEach((action) => reduxDispatch(action)),
+      dispatch: reduxDispatch,
       navigate: vi.fn(),
     }),
     saveDebounceMs: 0,
@@ -133,6 +133,23 @@ async function execute(
 describe('newWorkspaceEffectSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('restores the oldest daemon draft when a fresh renderer has no local draft id', async () => {
+    const durable = draft({ intentText: 'survived restart' });
+    const list = vi.fn().mockResolvedValue([durable]);
+    const get = vi.fn().mockResolvedValue(durable);
+    const appClient = client({ workspaceDrafts: { list, get } });
+
+    const identified = await execute(createInitialControllerState(3), appClient);
+    expect(identified.state).toMatchObject({ phase: 'restoring', draftId: durable.id });
+
+    const restored = await execute(identified.state, appClient);
+    expect(get).toHaveBeenCalledWith(durable.id);
+    expect(restored.state).toMatchObject({
+      phase: 'editing',
+      input: { intentText: 'survived restart' },
+    });
   });
 
   it('sends the acknowledged revision and adopts the daemon draft on conflict', async () => {
@@ -233,12 +250,33 @@ describe('newWorkspaceEffectSaga', () => {
     });
   });
 
+  it('never reissues promotion for a promoted draft whose workspace id is missing', async () => {
+    const promote = vi.fn();
+    const get = vi.fn().mockResolvedValue(draft({ revision: 2, phase: 'promoted' }));
+    const state = {
+      ...baseState(),
+      phase: 'promoting',
+      operationKey: FIXED_IDS.operation,
+      promoteAttempt: 'ack-lost',
+    } as ControllerState;
+
+    const result = await execute(state, client({ workspaceDrafts: { get, promote } }));
+
+    expect(promote).not.toHaveBeenCalled();
+    expect(result.state).toMatchObject({
+      phase: 'failed',
+      kind: 'promote',
+      error: 'Promoted draft has no workspace',
+    });
+  });
+
   it('atomically seeds workspace, agent, layout, navigation, tab, and route before delivery', async () => {
     const workspace = {
       id: FIXED_IDS.workspace,
       title: 'Untitled',
       status: 'active',
       contextLinks: [],
+      setupResult: { state: 'succeeded', exitCode: 0 },
       createdAt: FIXED_TIMESTAMP,
       updatedAt: FIXED_TIMESTAMP,
     } as Awaited<ReturnType<AppClient['workspaces']['get']>>;
@@ -266,14 +304,19 @@ describe('newWorkspaceEffectSaga', () => {
       reduxDispatch,
     );
 
-    expect(reduxDispatch.mock.calls.map(([action]) => action.type)).toEqual([
+    expect(reduxDispatch).toHaveBeenCalledOnce();
+    const transaction = reduxDispatch.mock.calls[0][0];
+    expect(transaction.type).toBe('renderer/batchActions');
+    expect(transaction.payload.map((action: { type: string }) => action.type)).toEqual([
       'workspace/setWorkspaceEntity',
       'workspaceAgents/setInitialAgentId',
       'agentSessions/bulkUpsertSessions',
       'panelLayout/bootstrapNewWorkspaceLayout',
       'workspaceNavigation/hydrateWorkspaceNavigation',
       'tabState/openWorkspaceTab',
+      'workspaceCreateProgress/clear',
     ]);
+    expect(transaction.payload[0].payload[0]).toEqual(workspace);
     expect(result.state).toMatchObject({ phase: 'sending', workspaceId: FIXED_IDS.workspace });
   });
 

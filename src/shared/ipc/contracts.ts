@@ -138,7 +138,7 @@ export namespace WorkspaceDraftIpc {
   export interface GetRequest {
     id: string;
   }
-  export type GetResponse = WorkspaceDraft | null;
+  export type GetResponse = WorkspaceDraft;
   export type ListRequest = Record<string, never>;
   export type ListResponse = WorkspaceDraft[];
   export interface UpdateRequest {
@@ -150,7 +150,7 @@ export namespace WorkspaceDraftIpc {
   export interface PromoteRequest {
     id: string;
     expectedRevision: number;
-    initialAgent?: CreateWorkspaceRequest['initialAgent'];
+    initialAgent?: Omit<NonNullable<CreateWorkspaceRequest['initialAgent']>, 'agentId'>;
   }
   export interface PromoteResponse {
     draft: WorkspaceDraft;

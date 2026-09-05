@@ -36,6 +36,7 @@ export interface WorkspaceDraftConfig {
 }
 
 export interface WorkspaceDraftCreateInput {
+  ownerClientId?: string;
   title?: string;
   intentText?: string;
   source?: DraftSource | null;
@@ -44,7 +45,14 @@ export interface WorkspaceDraftCreateInput {
   config?: WorkspaceDraftConfig;
 }
 
-export type WorkspaceDraftUpdatePatch = WorkspaceDraftCreateInput;
+export interface WorkspaceDraftUpdatePatch {
+  title?: string | null;
+  intentText?: string;
+  source?: DraftSource | null;
+  contextLinks?: ContextLink[];
+  attachments?: unknown[];
+  config?: WorkspaceDraftConfig;
+}
 
 /** Daemon-owned `workspaceDraft.*` resource, reproduced without renderer defaults. */
 export interface WorkspaceDraft {

@@ -2239,6 +2239,10 @@ export interface DraftsClient {
 
 export type WorkspaceDraftCreateRequest = import('$shared/types').WorkspaceDraftCreateInput;
 export type WorkspaceDraftUpdatePatch = import('$shared/types').WorkspaceDraftUpdatePatch;
+export type WorkspaceDraftInitialAgentRequest = Omit<
+  NonNullable<CreateWorkspaceRequest['initialAgent']>,
+  'agentId'
+>;
 
 export interface WorkspaceDraftPromotionResult {
   draft: import('$shared/types').WorkspaceDraft;
@@ -2249,7 +2253,7 @@ export interface WorkspaceDraftPromotionResult {
 /** Durable pre-workspace drafts (`workspaceDraft.*`, PROTOCOL §5.1.1). */
 export interface WorkspaceDraftsClient {
   create(request?: WorkspaceDraftCreateRequest): Promise<import('$shared/types').WorkspaceDraft>;
-  get(id: string): Promise<import('$shared/types').WorkspaceDraft | null>;
+  get(id: string): Promise<import('$shared/types').WorkspaceDraft>;
   list(): Promise<import('$shared/types').WorkspaceDraft[]>;
   update(
     id: string,
@@ -2259,7 +2263,7 @@ export interface WorkspaceDraftsClient {
   promote(
     id: string,
     expectedRevision: number,
-    initialAgent?: CreateWorkspaceRequest['initialAgent'],
+    initialAgent?: WorkspaceDraftInitialAgentRequest,
   ): Promise<WorkspaceDraftPromotionResult>;
   markDelivery(
     id: string,

@@ -4,7 +4,7 @@
  * Tests for IPC type contracts and validation
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import type {
   AgentIpc,
   WorkspaceIpc,
@@ -37,18 +37,22 @@ import {
   tryValidateIpcRequest,
 } from '../request-validation';
 import { AgentId, WorkspaceId } from '../../types/branded-ids';
+import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '../../ipc-mock-router';
+
+afterEach(() => resetMockIpcRouter());
 
 describe('IPC Contracts', () => {
   describe('Workspace draft IPC contracts', () => {
     it('validates all seven protocol request shapes', () => {
       const create: WorkspaceDraftIpc.CreateRequest = {
+        ownerClientId: 'renderer-1',
         intentText: 'Build it',
         source: { kind: 'newFolder', parentPath: '/tmp', name: 'demo' },
       };
       const update: WorkspaceDraftIpc.UpdateRequest = {
         id: 'draft-1',
         expectedRevision: 2,
-        patch: { title: 'Demo' },
+        patch: { title: null, source: null },
       };
       const promote: WorkspaceDraftIpc.PromoteRequest = {
         id: 'draft-1',
@@ -75,6 +79,94 @@ describe('IPC Contracts', () => {
       });
     });
 
+    it('round-trips protocol-shaped responses through the IPC mock router', async () => {
+      const draft: WorkspaceDraftIpc.GetResponse = {
+        id: 'draft-1',
+        ownerClientId: 'renderer-1',
+        revision: 0,
+        phase: 'editing',
+        intentText: 'Build it',
+        source: null,
+        contextLinks: [],
+        attachments: [],
+        config: {},
+        operationKey: 'operation-1',
+        delivery: { state: 'none' },
+        createdAt: '2026-09-04T20:00:00.000Z',
+        updatedAt: '2026-09-04T20:00:00.000Z',
+      };
+      const requests = {
+        create: { ownerClientId: 'renderer-1', intentText: 'Build it' },
+        get: { id: 'draft-1' },
+        list: {},
+        update: {
+          id: 'draft-1',
+          expectedRevision: 0,
+          patch: { title: null, source: null },
+        },
+        promote: {
+          id: 'draft-1',
+          expectedRevision: 1,
+          initialAgent: { name: 'Coordinator', provider: 'codex' },
+        },
+        markDelivery: {
+          id: 'draft-1',
+          delivery: { state: 'sent' as const, messageId: 'message-1' },
+        },
+        delete: { id: 'draft-1' },
+      };
+      const promotion: WorkspaceDraftIpc.PromoteResponse = {
+        draft: { ...draft, revision: 2, phase: 'promoted' },
+        workspace: {
+          id: 'workspace-1',
+          title: 'Untitled',
+          status: 'active',
+          createdAt: draft.createdAt,
+          updatedAt: draft.updatedAt,
+        },
+      };
+      const responses = {
+        create: draft,
+        get: draft,
+        list: [draft],
+        update: { ...draft, revision: 1 },
+        promote: promotion,
+        markDelivery: {
+          ...draft,
+          delivery: { state: 'sent' as const, messageId: 'message-1' },
+        },
+        delete: { deleted: true },
+      };
+      const register = (method: keyof typeof requests) => {
+        const channel = `workspaceDraft.${method}` as Parameters<typeof validateIpcRequest>[0];
+        registerMockIpcHandler(channel, (request) => {
+          expect(validateIpcRequest(channel, request)).toEqual(requests[method]);
+          return responses[method];
+        });
+      };
+      (Object.keys(requests) as Array<keyof typeof requests>).forEach(register);
+
+      await expect(mockInvoke('workspaceDraft.create', requests.create)).resolves.toEqual(
+        responses.create,
+      );
+      await expect(mockInvoke('workspaceDraft.get', requests.get)).resolves.toEqual(responses.get);
+      await expect(mockInvoke('workspaceDraft.list', requests.list)).resolves.toEqual(
+        responses.list,
+      );
+      await expect(mockInvoke('workspaceDraft.update', requests.update)).resolves.toEqual(
+        responses.update,
+      );
+      await expect(mockInvoke('workspaceDraft.promote', requests.promote)).resolves.toEqual(
+        responses.promote,
+      );
+      await expect(
+        mockInvoke('workspaceDraft.markDelivery', requests.markDelivery),
+      ).resolves.toEqual(responses.markDelivery);
+      await expect(mockInvoke('workspaceDraft.delete', requests.delete)).resolves.toEqual(
+        responses.delete,
+      );
+    });
+
     it('rejects stale or malformed request fields at the IPC boundary', () => {
       expect(() =>
         validateIpcRequest('workspaceDraft.update', {
@@ -83,7 +175,26 @@ describe('IPC Contracts', () => {
           patch: {},
         }),
       ).toThrow();
+      expect(() => validateIpcRequest('workspaceDraft.create', { title: null })).toThrow();
+      expect(
+        validateIpcRequest('workspaceDraft.update', {
+          id: 'draft-1',
+          expectedRevision: 1,
+          patch: { title: null, source: null },
+        }),
+      ).toEqual({
+        id: 'draft-1',
+        expectedRevision: 1,
+        patch: { title: null, source: null },
+      });
       expect(() => validateIpcRequest('workspaceDraft.list', { extra: true })).toThrow();
+      expect(() =>
+        validateIpcRequest('workspaceDraft.promote', {
+          id: 'draft-1',
+          expectedRevision: 1,
+          initialAgent: { agentId: 'client-minted' },
+        }),
+      ).toThrow();
       expect(() =>
         validateIpcRequest('workspaceDraft.markDelivery', {
           id: 'draft-1',

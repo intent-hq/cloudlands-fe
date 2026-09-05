@@ -27,9 +27,9 @@ describe('draft transaction integration seams', () => {
   });
 
   it('hands the complete adoption action set to one synchronous batch', async () => {
-    const dispatchBatch = vi.fn();
+    const dispatch = vi.fn();
     const navigate = vi.fn();
-    const adopt = createWorkspaceAdoption({ dispatchBatch, navigate });
+    const adopt = createWorkspaceAdoption({ dispatch, navigate });
 
     await adopt({
       workspace: {
@@ -49,18 +49,19 @@ describe('draft transaction integration seams', () => {
       operationKey: 'operation-1',
     });
 
-    expect(dispatchBatch).toHaveBeenCalledOnce();
-    expect(dispatchBatch.mock.calls[0]?.[0].map((action: { type: string }) => action.type)).toEqual(
-      [
-        'workspace/setWorkspaceEntity',
-        'workspaceAgents/setInitialAgentId',
-        'agentSessions/bulkUpsertSessions',
-        'panelLayout/bootstrapNewWorkspaceLayout',
-        'workspaceNavigation/hydrateWorkspaceNavigation',
-        'tabState/openWorkspaceTab',
-        'workspaceCreateProgress/clear',
-      ],
-    );
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({ type: 'renderer/batchActions' });
+    expect(
+      (dispatch.mock.calls[0]?.[0].payload as Array<{ type: string }>).map((action) => action.type),
+    ).toEqual([
+      'workspace/setWorkspaceEntity',
+      'workspaceAgents/setInitialAgentId',
+      'agentSessions/bulkUpsertSessions',
+      'panelLayout/bootstrapNewWorkspaceLayout',
+      'workspaceNavigation/hydrateWorkspaceNavigation',
+      'tabState/openWorkspaceTab',
+      'workspaceCreateProgress/clear',
+    ]);
     expect(navigate).toHaveBeenCalledWith('/workspace/amber-forest');
   });
 });

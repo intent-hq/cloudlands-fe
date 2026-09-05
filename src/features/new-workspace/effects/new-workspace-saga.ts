@@ -244,16 +244,17 @@ function* reconcilePromotion(
   const client = dependencies.client ?? appClient;
   try {
     const draft = yield* call([client.workspaceDrafts, client.workspaceDrafts.get], effect.draftId);
-    if (!draft) {
+    const promotionExists = draft.phase === 'promoted' || !!draft.promotedWorkspaceId;
+    if (promotionExists && !draft.promotedWorkspaceId) {
       yield* emit(dependencies, {
         type: 'operation.failed',
         generation: effect.generation,
         kind: 'promote',
-        error: 'The draft no longer exists',
+        error: 'Promoted draft has no workspace',
       });
       return;
     }
-    if (draft.promotedWorkspaceId && draft.initialAgentId) {
+    if (promotionExists && draft.promotedWorkspaceId && draft.initialAgentId) {
       runtime.operationByWorkspace.set(draft.promotedWorkspaceId, effect.operationKey);
       yield* emit(dependencies, {
         type: 'draft.promoted',
@@ -264,7 +265,7 @@ function* reconcilePromotion(
       });
       return;
     }
-    if (draft.promotedWorkspaceId && !draft.initialAgentId) {
+    if (promotionExists && draft.promotedWorkspaceId && !draft.initialAgentId) {
       const result = yield* call(
         [client.workspaceDrafts, client.workspaceDrafts.promote],
         draft.id,
@@ -327,7 +328,8 @@ function* adopt(
       cached?.initialAgent ??
       (initialAgentId ? yield* call([client.agents, client.agents.get], initialAgentId) : null);
 
-    const operationKey = runtime.operationByWorkspace.get(workspace.id);
+    const operationKey =
+      runtime.operationByWorkspace.get(workspace.id) ?? state.draft?.operationKey;
     yield* call(dependencies.adopt ?? adoptPromotedWorkspace, {
       workspace,
       initialAgent,
@@ -369,9 +371,8 @@ function* placeAttachments(
         [client.workspaceDrafts, client.workspaceDrafts.get],
         dependencies.getState().draftId ?? '',
       );
-      const item = draft?.attachments.find((value) => contextItem(value) && value.id === id);
-      if (!draft || !contextItem(item))
-        throw new Error(`Attachment ${id} is missing from the draft`);
+      const item = draft.attachments.find((value) => contextItem(value) && value.id === id);
+      if (!contextItem(item)) throw new Error(`Attachment ${id} is missing from the draft`);
       const result = yield* call(redeemStagedAttachments, effect.workspaceId, [item]);
       const replacement = result.items[0];
       if (!replacement) throw new Error(`Attachment ${id} produced no placement result`);
@@ -482,7 +483,6 @@ function* reconcileDelivery(
   yield* emit(dependencies, { type: 'delivery.reconcileIssued' });
   try {
     const draft = yield* call([client.workspaceDrafts, client.workspaceDrafts.get], effect.draftId);
-    if (!draft) return;
     if (draft.delivery.state === 'sent') {
       yield* emit(dependencies, {
         type: 'delivery.reconciled',
@@ -538,8 +538,8 @@ function* execute(
   switch (effect.type) {
     case 'identifyBackend':
       try {
-        yield* call([client.workspaceDrafts, client.workspaceDrafts.list]);
-        const draftId = dependencies.getState().draftId ?? undefined;
+        const drafts = yield* call([client.workspaceDrafts, client.workspaceDrafts.list]);
+        const draftId = dependencies.getState().draftId ?? drafts[0]?.id;
         yield* emit(dependencies, {
           type: 'backend.connected',
           generation: effect.generation,
@@ -555,12 +555,11 @@ function* execute(
           [client.workspaceDrafts, client.workspaceDrafts.get],
           effect.draftId,
         );
-        yield* emit(
-          dependencies,
-          draft
-            ? { type: 'restore.succeeded', generation: effect.generation, draft }
-            : { type: 'restore.missing', generation: effect.generation },
-        );
+        yield* emit(dependencies, {
+          type: 'restore.succeeded',
+          generation: effect.generation,
+          draft,
+        });
       } catch (error) {
         if (isMissing(error)) {
           yield* emit(dependencies, { type: 'restore.missing', generation: effect.generation });
