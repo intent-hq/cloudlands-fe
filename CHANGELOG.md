@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.138.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.137.2...v2.138.0) (2026-09-05)
+
+
+### 🚀 Features
+
+* **terminal:** reopen terminals in their last placement ([#2204](https://github.com/intent-hq/cloudlands-fe/issues/2204)) ([eb222d5](https://github.com/intent-hq/cloudlands-fe/commit/eb222d5d23d0ba7a69a985bdaefeb620aef4dbcf))
+
 ## [2.137.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.137.1...v2.137.2) (2026-09-05)
 
 
