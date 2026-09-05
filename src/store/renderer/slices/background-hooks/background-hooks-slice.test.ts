@@ -9,10 +9,11 @@ import {
   backgroundHooksMarkedStale,
   backgroundHooksReducer,
   backgroundHooksRefetchRequested,
+  backgroundHooksSnapshotFailed,
   backgroundHooksUpdated,
   initialState,
 } from './background-hooks-slice';
-import { selectBackgroundHooksSnapshotDelivered } from './background-hooks-selectors';
+import { selectBackgroundHooksSnapshotStatus } from './background-hooks-selectors';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
@@ -167,21 +168,17 @@ describe('backgroundHooksReducer', () => {
     expect(state.byWorkspaceId['ws-1']).toBeUndefined();
   });
 
-  it('selectBackgroundHooksSnapshotDelivered flips once any list (even empty) is delivered', () => {
+  it('tracks loading, failed, and ready snapshot states', () => {
     expect(
-      selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: initialState }, 'ws-1'),
-    ).toBe(false);
-    const state = backgroundHooksReducer(initialState, backgroundHooksUpdated('ws-1', []));
-    expect(selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: state }, 'ws-1')).toBe(
-      true,
+      selectBackgroundHooksSnapshotStatus.select({ backgroundHooks: initialState }, 'ws-1'),
+    ).toBe('loading');
+    const failed = backgroundHooksReducer(initialState, backgroundHooksSnapshotFailed('ws-1'));
+    expect(selectBackgroundHooksSnapshotStatus.select({ backgroundHooks: failed }, 'ws-1')).toBe(
+      'failed',
     );
-  });
-
-  it('selectBackgroundHooksSnapshotDelivered stays latched after the entry is marked stale', () => {
-    let state = backgroundHooksReducer(initialState, backgroundHooksUpdated('ws-1', [makeHook()]));
-    state = backgroundHooksReducer(state, backgroundHooksMarkedStale('ws-1'));
-    expect(selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: state }, 'ws-1')).toBe(
-      true,
+    const ready = backgroundHooksReducer(failed, backgroundHooksUpdated('ws-1', []));
+    expect(selectBackgroundHooksSnapshotStatus.select({ backgroundHooks: ready }, 'ws-1')).toBe(
+      'ready',
     );
   });
 });

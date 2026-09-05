@@ -11,7 +11,7 @@ import { promises as fs } from 'fs';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 
 import type {
   DiffChunk,
@@ -69,6 +69,7 @@ export class WorkspaceService {
   private summaryInvalidationTimer: NodeJS.Timeout | null = null;
   private readonly SUMMARY_INVALIDATION_DEBOUNCE_MS = 100;
   private disposed = false;
+  private readonly disposeBackendReconnect: () => void;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
   // are now handled by sagas in domain-event-listener-sagas.ts.
@@ -84,6 +85,9 @@ export class WorkspaceService {
   constructor(private readonly repository: WorkspaceRepository = new DaemonWorkspaceRepository()) {
     // Domain event listeners (including task:status-changed) are now handled
     // by sagas in domain-event-listener-sagas.ts.
+    this.disposeBackendReconnect = onBackendReconnected(() => {
+      this.workspaceListCache.clear();
+    });
   }
 
   /**
@@ -1374,6 +1378,7 @@ export class WorkspaceService {
    */
   public cleanup(): void {
     this.disposed = true;
+    this.disposeBackendReconnect();
 
     // Remove event listeners
     // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)

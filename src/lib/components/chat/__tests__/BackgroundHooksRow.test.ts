@@ -15,9 +15,10 @@ import {
   runBackgroundHookRequested,
 } from '$store/renderer/slices/background-hooks/background-hooks-slice';
 
-const { dispatchMock, hooksState, openHookTabMock } = vi.hoisted(() => ({
+const { dispatchMock, hooksState, snapshotState, openHookTabMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   hooksState: { hooks: [] as unknown[] },
+  snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
   openHookTabMock: vi.fn(),
 }));
 
@@ -49,6 +50,12 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
       return () => {};
     },
   }),
+  selectBackgroundHooksSnapshotStatus: () => ({
+    subscribe: (run: (value: 'loading' | 'ready' | 'failed') => void) => {
+      run(snapshotState.status);
+      return () => {};
+    },
+  }),
 }));
 
 import BackgroundHooksRow from '../BackgroundHooksRow.svelte';
@@ -75,6 +82,8 @@ describe('BackgroundHooksRow', () => {
     // timers keep waitFor/bits-ui polling functional.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-07-31T10:03:00Z'));
+    snapshotState.status = 'ready';
+    hooksState.hooks = [];
   });
 
   afterEach(() => {
@@ -169,6 +178,19 @@ describe('BackgroundHooksRow', () => {
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     expect(screen.queryByTestId('background-hooks-row')).toBeNull();
+  });
+
+  it.each([
+    ['loading', 'status'],
+    ['failed', 'alert'],
+  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
+    snapshotState.status = status;
+    hooksState.hooks = [];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole(role);
+    expect(row.getAttribute('data-testid')).toBe('background-hooks-snapshot-status');
+    expect(row.getAttribute('data-snapshot-status')).toBe(status);
   });
 
   it('inline details show a "View script" link instead of a raw code preview', async () => {
