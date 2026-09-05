@@ -2967,8 +2967,6 @@ function computeOrthogonalEdgePaths(
         }
       }
     } else if (!isFromVertical && !isToVertical && biOffset) {
-      const sourceLeadX = fromSide === 'right' ? fromPos.x + NODE_GAP : fromPos.x - NODE_GAP;
-      const targetLeadX = toSide === 'left' ? toPos.x - NODE_GAP : toPos.x + NODE_GAP;
       const routeBelow = fromPos.x < toPos.x;
       const laneY = routeBelow
         ? Math.max(fromNode.y + fromNode.height, toNode.y + toNode.height) +
@@ -2979,12 +2977,17 @@ function computeOrthogonalEdgePaths(
           NODE_CLEARANCE -
           Math.abs(biOffset) / 2 -
           (edge.dashed ? 28 : 0);
-      points.push(
-        { x: sourceLeadX, y: fromPos.y },
-        { x: sourceLeadX, y: laneY },
-        { x: targetLeadX, y: laneY },
-        { x: targetLeadX, y: toPos.y },
-      );
+      const source = {
+        x: fromNode.x + fromNode.width * (routeBelow ? 0.65 : 0.35),
+        y: routeBelow ? fromNode.y + fromNode.height : fromNode.y,
+      };
+      const target = {
+        x: toNode.x + toNode.width * (routeBelow ? 0.35 : 0.65),
+        y: routeBelow ? toNode.y + toNode.height : toNode.y,
+      };
+      points[0] = source;
+      points.push({ x: source.x, y: laneY }, { x: target.x, y: laneY });
+      toPos = target;
     } else if (!isFromVertical && !isToVertical) {
       // Horizontal to horizontal - use allocated vertical channel
       const channelX = verticalChannelX.get(edge.id) ?? (fromPos.x + toPos.x) / 2;

@@ -58,6 +58,9 @@ async function expectClientRequestLane(page: Page, identity: string) {
       const returnPath = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find((item) =>
         item.id.includes('L_Store_Client'),
       )!;
+      const enqueuePath = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find(
+        (item) => item.id.includes('L_Gateway_Queue'),
+      )!;
       const label = [...svg.querySelectorAll<SVGGElement>('g.edgeLabel')].find(
         (item) => item.textContent?.trim() === 'request',
       )!;
@@ -85,6 +88,35 @@ async function expectClientRequestLane(page: Page, identity: string) {
         const [x, y] = value.split(',').map(Number);
         return new DOMPoint(x, y).matrixTransform(matrix);
       });
+      const enqueueMatrix = enqueuePath.getScreenCTM()!;
+      const enqueuePoints = (enqueuePath.dataset.manhattanPoints ?? '').split(' ').map((value) => {
+        const [x, y] = value.split(',').map(Number);
+        return new DOMPoint(x, y).matrixTransform(enqueueMatrix);
+      });
+      const overlap = (left: DOMPoint[], right: DOMPoint[]) =>
+        left.slice(1).some((end, index) => {
+          const start = left[index];
+          return right.slice(1).some((otherEnd, otherIndex) => {
+            const otherStart = right[otherIndex];
+            const vertical =
+              Math.abs(start.x - end.x) <= 1 && Math.abs(otherStart.x - otherEnd.x) <= 1;
+            const horizontal =
+              Math.abs(start.y - end.y) <= 1 && Math.abs(otherStart.y - otherEnd.y) <= 1;
+            if (vertical && Math.abs(start.x - otherStart.x) <= 1)
+              return (
+                Math.min(Math.max(start.y, end.y), Math.max(otherStart.y, otherEnd.y)) -
+                  Math.max(Math.min(start.y, end.y), Math.min(otherStart.y, otherEnd.y)) >
+                1
+              );
+            if (horizontal && Math.abs(start.y - otherStart.y) <= 1)
+              return (
+                Math.min(Math.max(start.x, end.x), Math.max(otherStart.x, otherEnd.x)) -
+                  Math.max(Math.min(start.x, end.x), Math.min(otherStart.x, otherEnd.x)) >
+                1
+              );
+            return false;
+          });
+        });
       const distanceToLabel = (point: DOMPoint) =>
         Math.hypot(
           Math.max(labelBounds.left - point.x, 0, point.x - labelBounds.right),
@@ -110,7 +142,9 @@ async function expectClientRequestLane(page: Page, identity: string) {
           start.x - (client.left + client.right) / 2,
           start.y - client.bottom,
         ),
-        endDistance: Math.hypot(end.x - gateway.left, end.y - (gateway.top + gateway.bottom) / 2),
+        endDistance: Math.abs(end.x - gateway.left),
+        requestGatewayFraction: (end.y - gateway.top) / gateway.height,
+        enqueueGatewayFraction: (enqueuePoints[0].y - gateway.top) / gateway.height,
         returnDistance: Math.hypot(
           returnEnd.x - client.right,
           returnEnd.y - (client.top + client.bottom) / 2,
@@ -133,6 +167,15 @@ async function expectClientRequestLane(page: Page, identity: string) {
         }),
         raised: Number(node('Client').dataset.requestLaneShift),
         lane: path.dataset.clientRequestLane,
+        enqueueLane: enqueuePath.dataset.clientRequestLane,
+        laneGap: Math.abs(points[2].x - enqueuePoints[1].x),
+        gatewayPortGap: Math.hypot(
+          points.at(-1)!.x - enqueuePoints[0].x,
+          points.at(-1)!.y - enqueuePoints[0].y,
+        ),
+        requestFrameGap: Math.abs(points[2].x - boundary.left),
+        enqueueFrameGap: Math.abs(enqueuePoints[1].x - boundary.left),
+        sharedSegment: overlap(points, enqueuePoints),
         surfaceOpacity: surfaceStyle.opacity,
         surfaceBackground: surfaceStyle.backgroundColor,
         canvas,
@@ -140,6 +183,12 @@ async function expectClientRequestLane(page: Page, identity: string) {
     });
   expect(result.raised, `${identity} Client shift`).toBeGreaterThan(0);
   expect(result.lane, `${identity} request lane`).toBe('downward');
+  expect(result.enqueueLane, `${identity} enqueue lane`).toBe('enqueue');
+  expect(result.laneGap, `${identity} request/enqueue lane gap`).toBeGreaterThanOrEqual(12);
+  expect(result.gatewayPortGap, `${identity} Gateway port gap`).toBeGreaterThanOrEqual(8);
+  expect(result.requestFrameGap, `${identity} request/frame gap`).toBeGreaterThanOrEqual(6);
+  expect(result.enqueueFrameGap, `${identity} enqueue/frame gap`).toBeGreaterThanOrEqual(8);
+  expect(result.sharedSegment, `${identity} shared request/enqueue segment`).toBe(false);
   expect(result.clientGap, `${identity} Client clearance`).toBeGreaterThanOrEqual(8);
   expect(result.boundaryGap, `${identity} boundary clearance`).toBeGreaterThanOrEqual(8);
   expect(result.bendGap, `${identity} bend clearance`).toBeGreaterThanOrEqual(6);
@@ -148,6 +197,8 @@ async function expectClientRequestLane(page: Page, identity: string) {
     Math.abs(result.endDistance - 0.5 - 5),
     `${identity} request target gap`,
   ).toBeLessThanOrEqual(0.35);
+  expect(result.requestGatewayFraction, `${identity} request Gateway port`).toBeCloseTo(0.35, 1);
+  expect(result.enqueueGatewayFraction, `${identity} enqueue Gateway port`).toBeCloseTo(0.65, 1);
   expect(
     Math.abs(result.returnDistance - 0.5 - 5),
     `${identity} return target gap`,
@@ -1132,6 +1183,7 @@ for (const appearance of [
     test(`separates Source feedback and forward ports in ${appearance.name} at ${width}px`, async ({
       page,
     }) => {
+      test.setTimeout(120_000);
       await openState(page, 'mermaid-dense-graph', width, appearance.mode);
       const colorTheme = page.getByTestId('catalog-color-theme-control');
       if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
@@ -1175,6 +1227,7 @@ for (const appearance of [
             parseStub: Math.hypot(parse[1].x - parse[0].x, parse[1].y - parse[0].y),
             sharedParseFeedbackColumn: Math.abs(feedback.at(-1)!.x - parse[0].x) <= 1,
             outgoingGaps: outgoing.slice(1).map((point, i) => point.x - outgoing[i].x),
+            distinctFirstStems: new Set([parse[0].x, lint[0].x, index[0].x]).size,
             framePortGap: Math.abs(capture[0].x - inspect[0].x),
             marker: feedbackPath.getAttribute('marker-end'),
           };
@@ -1186,9 +1239,80 @@ for (const appearance of [
       expect(geometry.feedbackStub).toBeGreaterThanOrEqual(6);
       expect(geometry.parseStub).toBeGreaterThanOrEqual(8);
       expect(geometry.sharedParseFeedbackColumn).toBe(false);
-      expect(Math.min(...geometry.outgoingGaps)).toBeGreaterThanOrEqual(8);
+      expect(Math.min(...geometry.outgoingGaps)).toBeGreaterThanOrEqual(10);
+      expect(geometry.distinctFirstStems).toBe(3);
       expect(geometry.framePortGap).toBeGreaterThanOrEqual(8);
       expect(geometry.marker).toContain('pointEnd');
+    });
+
+    test(`separates reciprocal and self-loop routes in ${appearance.name} at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(120_000);
+      await openState(page, 'custom-walkthrough', width, appearance.mode);
+      const colorTheme = page.getByTestId('catalog-color-theme-control');
+      if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
+        await colorTheme.click();
+        await page.getByRole('option', { name: appearance.colorTheme, exact: true }).click();
+      }
+      const reciprocal = await page.locator('#custom-walkthrough').evaluate((root) => {
+        const route = (id: string) =>
+          root.querySelector<SVGPathElement>(`.diagram-edge[data-edge-id="${id}"] .edge-path`)!;
+        const bounds = (id: string) =>
+          root.querySelector<SVGGraphicsElement>(`[data-node-id="${id}"]`)!.getBoundingClientRect();
+        const samples = (path: SVGPathElement) => {
+          const matrix = path.getScreenCTM()!;
+          const length = path.getTotalLength();
+          return Array.from({ length: 101 }, (_, index) =>
+            path.getPointAtLength((length * index) / 100).matrixTransform(matrix),
+          );
+        };
+        const render = samples(route('w2'));
+        const dispatch = samples(route('w3'));
+        const redux = bounds('redux');
+        const chat = bounds('chat');
+        return {
+          renderAbove: Math.min(...render.map(({ y }) => y)) < Math.min(redux.top, chat.top) - 20,
+          dispatchBelow:
+            Math.max(...dispatch.map(({ y }) => y)) > Math.max(redux.bottom, chat.bottom) + 20,
+          laneGap: Math.max(...dispatch.map(({ y }) => y)) - Math.min(...render.map(({ y }) => y)),
+          renderMarker: route('w2').getAttribute('marker-end'),
+          dispatchMarker: route('w3').getAttribute('marker-end'),
+        };
+      });
+      expect(reciprocal.renderAbove).toBe(true);
+      expect(reciprocal.dispatchBelow).toBe(true);
+      expect(reciprocal.laneGap).toBeGreaterThanOrEqual(40);
+      expect(reciprocal.renderMarker).toContain('arrowhead');
+      expect(reciprocal.dispatchMarker).toContain('arrowhead');
+
+      await openState(page, 'mermaid-topology-stress', width, appearance.mode);
+      const loop = await page
+        .locator('#mermaid-topology-stress svg.flowchart[data-layout-settled="true"]')
+        .evaluate((svg) => {
+          const path = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find((item) =>
+            /-L_B_B_[0-9]+$/.test(item.id),
+          )!;
+          const router = [...svg.querySelectorAll<SVGGElement>('g.node')]
+            .find((node) => node.textContent?.trim() === 'Router')!
+            .querySelector<SVGGraphicsElement>(':scope > .label-container')!
+            .getBoundingClientRect();
+          const matrix = path.getScreenCTM()!;
+          const points = path.dataset.manhattanPoints!.split(' ').map((value) => {
+            const [x, y] = value.split(',').map(Number);
+            return new DOMPoint(x, y).matrixTransform(matrix);
+          });
+          return {
+            portGap: Math.abs(points[0].y - points.at(-1)!.y),
+            outwardExtent: Math.max(...points.map(({ x }) => x)) - router.right,
+            returnsLeft: points.at(-2)!.x > points.at(-1)!.x,
+            marker: path.getAttribute('marker-end'),
+          };
+        });
+      expect(loop.portGap).toBeGreaterThanOrEqual(12);
+      expect(loop.outwardExtent).toBeGreaterThanOrEqual(24);
+      expect(loop.returnsLeft).toBe(true);
+      expect(loop.marker).toContain('pointEnd');
     });
 
     test(`preserves the manual column center in ${appearance.name} at ${width}px`, async ({

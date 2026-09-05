@@ -1,5 +1,6 @@
 const ORTHOGONAL_CORNER_RADIUS = 6;
 const FLOWCHART_PORT_SLOT_GAP = 16;
+const FLOWCHART_FANOUT_PORT_GAP = 18;
 const MAX_TERMINAL_CORRECTION = 4;
 const COMPACT_ARROW_SIZE = 7;
 const LABEL_TURN_CLEARANCE_CSS = 8;
@@ -704,9 +705,17 @@ export function routeFlowchartClientRequestLane(svg: SVGSVGElement) {
   });
   const clientNode = flowchartNode(svg, 'Client');
   const gatewayNode = flowchartNode(svg, 'Gateway');
+  const queueNode = flowchartNode(svg, 'Queue');
+  const enqueuePath = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find(
+    (candidate) => {
+      const identity = flowchartEdgeIdentity(candidate);
+      return identity?.source === 'Gateway' && identity.target === 'Queue';
+    },
+  );
   const label = path && flowchartLabelForPath(svg, path);
   let client = clientNode && flowchartNodeBounds(clientNode);
   const gateway = gatewayNode && flowchartNodeBounds(gatewayNode);
+  const queue = queueNode && flowchartNodeBounds(queueNode);
   const labelBounds = path && label && clientBoundsInPathSpace(label, path);
   if (!path || !clientNode || !client || !gateway || !label || !labelBounds) return false;
 
@@ -740,7 +749,7 @@ export function routeFlowchartClientRequestLane(svg: SVGSVGElement) {
   }
 
   const sourcePort = pointAt(client, 0.5, 1);
-  const targetPort = pointAt(gateway, 0, 0.5);
+  const targetPort = pointAt(gateway, 0, 0.35);
   const laneY = (sourcePort.y + boundary.y) / 2;
   const laneX = boundary.x - 8;
   const points = [
@@ -757,6 +766,27 @@ export function routeFlowchartClientRequestLane(svg: SVGSVGElement) {
   path.dataset.clientRequestLane = 'downward';
   path.dataset.manhattanPoints = points.map((point) => `${point.x},${point.y}`).join(' ');
   placeFlowchartLabelOnRoute(label, path, points, 1);
+  const enqueueLabel = enqueuePath && flowchartLabelForPath(svg, enqueuePath);
+  if (enqueuePath && enqueueLabel && queue) {
+    const enqueueSource = pointAt(gateway, 0, 0.65);
+    const enqueueTarget = pointAt(queue, 0, 0.5);
+    const enqueueLaneX = boundary.x + 12;
+    const enqueuePoints = [
+      enqueueSource,
+      { x: enqueueLaneX, y: enqueueSource.y },
+      { x: enqueueLaneX, y: enqueueTarget.y },
+      enqueueTarget,
+    ];
+    enqueuePath.setAttribute(
+      'd',
+      enqueuePoints.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(''),
+    );
+    enqueuePath.dataset.clientRequestLane = 'enqueue';
+    enqueuePath.dataset.manhattanPoints = enqueuePoints
+      .map((point) => `${point.x},${point.y}`)
+      .join(' ');
+    placeFlowchartLabelOnRoute(enqueueLabel, enqueuePath, enqueuePoints, 1);
+  }
   routeGroupedReturnEdgesWithTarget(svg, 'Client', client);
   return true;
 }
@@ -1085,8 +1115,9 @@ export function snapFlowchartFanoutPorts(svg: SVGSVGElement) {
         left.path.id.localeCompare(right.path.id)
       );
     });
-    const gap = Math.min(FLOWCHART_PORT_SLOT_GAP, (source.width * 0.6) / (ordered.length - 1));
-    const firstX = source.x + source.width / 2 - (gap * (ordered.length - 1)) / 2;
+    const gap = Math.min(FLOWCHART_FANOUT_PORT_GAP, (source.width * 0.4) / (ordered.length - 1));
+    const centerX = source.x + source.width / 2;
+    const firstX = centerX - (gap * (ordered.length - 1)) / 2;
     ordered.forEach(({ path, points }, index) => {
       const start = { x: firstX + gap * index, y: points[0].y };
       const end = points.at(-1)!;
@@ -1305,13 +1336,13 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
     let start = localPoint(sourcePort.x, sourcePort.y);
     let end = localPoint(targetPort.x, targetPort.y);
     let specialPoints: Point[] | null = null;
-    if (!path.dataset.compactFlowchart && identity?.source === identity?.target) {
-      const laneX = source.right + 32;
+    if (identity?.source === identity?.target) {
+      const laneX = source.right + 48;
       specialPoints = [
-        localPoint(source.right, source.top + source.height * 0.3),
-        localPoint(laneX, source.top + source.height * 0.3),
-        localPoint(laneX, source.top + source.height * 0.7),
-        localPoint(source.right, source.top + source.height * 0.7),
+        localPoint(source.right, source.top + source.height * 0.2),
+        localPoint(laneX, source.top + source.height * 0.2),
+        localPoint(laneX, source.top + source.height * 0.8),
+        localPoint(source.right, source.top + source.height * 0.8),
       ];
       path.dataset.selfLoop = 'right';
     } else if (!path.dataset.compactFlowchart && identity) {
