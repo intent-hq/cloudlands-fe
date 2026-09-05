@@ -32,7 +32,6 @@ const mockState: {
   sidebarNav: {
     multiSelectTabOrder: [],
     multiSelectSelectedTabIdsByWorkspaceId: {},
-    showCreateModal: false,
   },
   voiceSettings: {
     isLoading: false,
@@ -96,6 +95,7 @@ vi.mock('../../voice/ptt-controller', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { navigateToRoute } from '$lib/utils/navigation.client';
 import { store as appStore } from '$store/renderer/store';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
@@ -195,9 +195,7 @@ describe('handleActionKeyPress', () => {
     // Slot 0 (ACT06) = new-workspace, always available.
     const result = handleActionKeyPress('ACT06');
     expect(result).toBe('new-workspace');
-    expect(dispatched).toContainEqual(
-      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
-    );
+    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/new');
   });
 
   it('no-ops with the no-attention-agents hint when no agents need attention', () => {
@@ -623,9 +621,7 @@ describe('installHardwareConsoleActionKeys', () => {
     expect(manager.rawListenerCount()).toBe(1);
 
     manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 1 } });
-    expect(dispatched).toContainEqual(
-      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
-    );
+    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/new');
 
     teardown();
     expect(manager.rawListenerCount()).toBe(0);

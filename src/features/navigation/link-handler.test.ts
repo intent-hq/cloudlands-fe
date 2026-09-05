@@ -3,8 +3,6 @@ import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
-import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 const TEST_WORKTREE_ROOT = '/repo/root';
@@ -47,6 +45,10 @@ vi.mock('$lib/utils/clipboard', () => ({
 
 const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+const navigateToNewWorkspaceMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('$features/new-workspace/route/new-workspace-navigation', () => ({
+  navigateToNewWorkspace: navigateToNewWorkspaceMock,
+}));
 
 // Workspace entity lookup used to relativize absolute paths
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -866,10 +868,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     });
 
     expect(result).toBe(true);
-    expect(reduxDispatchMock).toHaveBeenCalledWith(
-      setWorkspaceInitializerPendingGitHubPrefill({ ...ref, url }),
-    );
-    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
+    expect(navigateToNewWorkspaceMock).toHaveBeenCalledWith({ prefill: { ...ref, url } });
     expect(gotoMock).not.toHaveBeenCalled();
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
   });

@@ -1,5 +1,4 @@
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { OnboardingStep } from '../onboarding/onboarding-types';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -79,20 +78,7 @@ export interface WorkspaceInitializerOnboardingFormState {
   modelWasOverridden?: boolean;
   /** Provider the picked `selectedModel` belongs to. */
   selectedProvider?: string;
-  step?: OnboardingStep;
-}
-
-/**
- * GitHub issue/PR selected from a chat link action, pending insertion into the
- * new-workspace initializer prompt as a context mention. Transient (not persisted);
- * cleared as soon as the initializer consumes it.
- */
-export interface WorkspaceInitializerPendingGitHubPrefill {
-  owner: string;
-  repo: string;
-  number: number;
-  kind: 'issue' | 'pr';
-  url: string;
+  step?: 'requirements' | 'welcome' | 'github' | 'project' | 'configuring' | 'ready';
 }
 
 export interface WorkspaceInitializerHydrationState {
@@ -116,6 +102,4 @@ export interface WorkspaceInitializerState {
   recentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'>;
   remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
-  /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
-  pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
 }

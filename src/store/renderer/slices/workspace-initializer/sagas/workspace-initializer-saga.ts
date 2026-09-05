@@ -8,13 +8,11 @@ import {
   put,
   race,
   take,
-  takeEvery,
   takeLatest,
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
 import {
   getLocalStorageItem,
   getLocalStorageJSON,
@@ -64,7 +62,6 @@ const DEFAULT_PARENT_PATH_KEY = 'workspace-initializer-default-parent';
 const RECENT_REPOS_KEY = 'workspace-initializer-recent-repos';
 const REMOTE_SETUPS_KEY = 'remote-setups';
 const LAST_SUBMITTED_AGENT_KEY = 'workspace-initializer-last-agent';
-const ONBOARDING_PROMPT_SESSION_KEY = 'onboarding-prompt';
 const ONBOARDING_FORM_STATE_DEBOUNCE_MS = 300;
 
 type HydrationGate = { settled: boolean; queued: boolean };
@@ -262,31 +259,15 @@ export function* hydrateWorkspaceInitializerWorker() {
   }
 }
 
-function removeOnboardingPrompt(): void {
-  try {
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(ONBOARDING_PROMPT_SESSION_KEY);
-    }
-  } catch {
-    // Reset remains non-fatal when session storage is unavailable.
-  }
-}
-
 function* applyDebouncedOnboardingFormWorker(
   action: ReturnType<typeof debounceWorkspaceInitializerOnboardingFormState>,
 ) {
   const result = yield* race({
     elapsed: delay(ONBOARDING_FORM_STATE_DEBOUNCE_MS),
     cancelled: take(cancelWorkspaceInitializerOnboardingFormStateDebounce),
-    reset: take(resetOnboarding),
   });
-  if (result.cancelled || result.reset) return;
+  if (result.cancelled) return;
   yield* put(setWorkspaceInitializerOnboardingFormState(action.payload[0]));
-}
-
-function* resetWorkspaceInitializerWorker() {
-  yield* put(setWorkspaceInitializerOnboardingFormState(null));
-  yield* call(removeOnboardingPrompt);
 }
 
 function* watchDebouncedOnboardingForm() {
@@ -294,10 +275,6 @@ function* watchDebouncedOnboardingForm() {
     debounceWorkspaceInitializerOnboardingFormState,
     applyDebouncedOnboardingFormWorker,
   );
-}
-
-function* watchOnboardingReset() {
-  yield* takeEvery(resetOnboarding, resetWorkspaceInitializerWorker);
 }
 
 function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
@@ -335,7 +312,6 @@ export function* workspaceInitializerSaga() {
   const gate: HydrationGate = { settled: false, queued: false };
   const persistenceTask = yield* fork(watchWorkspaceInitializerPersistence, gate);
   yield* fork(watchDebouncedOnboardingForm);
-  yield* fork(watchOnboardingReset);
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
   gate.settled = true;

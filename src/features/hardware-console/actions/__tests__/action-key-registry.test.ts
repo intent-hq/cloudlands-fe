@@ -85,7 +85,6 @@ interface StateOptions {
   sessionOverrides?: Record<string, Record<string, unknown>>;
   unreadWorkspaceIds?: string[];
   selectedTabs?: Record<string, string[]>;
-  showCreateModal?: boolean;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
   voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
   panelLayout?: ActionKeyState['panelLayout']['byWorkspaceId'];
@@ -131,7 +130,6 @@ function makeState(options: StateOptions = {}): TestActionKeyState {
     sidebarNav: {
       multiSelectTabOrder: [],
       multiSelectSelectedTabIdsByWorkspaceId: options.selectedTabs ?? {},
-      showCreateModal: options.showCreateModal ?? false,
     },
     voiceSettings: {
       isLoading: false,
@@ -1609,24 +1607,12 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('new-workspace opens the create-workspace modal when it is closed', () => {
+  it('new-workspace navigates to the Untitled workspace route', () => {
     const state = makeState({ currentWorkspaceId: null });
-    const { context, dispatch } = makeContext(state);
+    const { context, navigate } = makeContext(state);
     expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
     getActionKeyDefinition('new-workspace').execute(context);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
-    );
-  });
-
-  it('new-workspace closes the create-workspace modal when it is already open', () => {
-    const state = makeState({ currentWorkspaceId: null, showCreateModal: true });
-    const { context, dispatch } = makeContext(state);
-    expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
-    getActionKeyDefinition('new-workspace').execute(context);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [false] }),
-    );
+    expect(navigate).toHaveBeenCalledWith('/workspace/new');
   });
 
   it('switch-window-layouts cycles through the content presets per workspace', async () => {

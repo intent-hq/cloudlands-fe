@@ -7,6 +7,7 @@ import {
 } from '$lib/components/workspace/initializer/context-links';
 
 export interface StartPrefill {
+  title?: string;
   prompt?: string;
   repoPath?: string;
   githubUrl?: string;
@@ -40,6 +41,7 @@ export interface UnresolvedRef {
 }
 
 export interface ResolvedStart {
+  title?: string;
   intentText: string;
   source?: DraftSource;
   contextLinks: ContextLink[];
@@ -297,6 +299,7 @@ export function resolveStart(input: ResolveStartInput): ResolvedStart {
   }
 
   return {
+    ...(prefill.title ? { title: prefill.title } : {}),
     intentText: textIsSourceOnly ? '' : text,
     ...(source ? { source } : {}),
     contextLinks: [...contextByKey.values()],

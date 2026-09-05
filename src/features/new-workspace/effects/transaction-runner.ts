@@ -22,6 +22,8 @@ type EffectExecutor = (
 
 export interface DraftTransactionRunnerOptions {
   client?: AppClient;
+  /** Draft to restore. Pass `null` to force a distinct new draft. */
+  requestedDraftId?: string | null;
   adopt?: WorkspaceAdoption;
   clock?: DraftTransactionClock;
   log?: DraftTransactionLog;
@@ -79,6 +81,7 @@ export function createDraftTransactionRunner(
     rerun = false;
     const dependencies: NewWorkspaceSagaDependencies = {
       client: options.client,
+      requestedDraftId: options.requestedDraftId,
       adopt: options.adopt ?? adoptPromotedWorkspace,
       dispatch,
       getState: () => {

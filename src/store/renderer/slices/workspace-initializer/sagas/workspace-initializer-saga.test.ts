@@ -28,7 +28,6 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: mocks.error, warn: mocks.warn }),
 }));
 
-import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
@@ -460,67 +459,5 @@ describe('workspaceInitializerSaga', () => {
     expect(mocks.update.mock.calls).toEqual([]);
     task.cancel();
     await task.toPromise();
-  });
-
-  it('reset cancels drafts, clears the session key, persists null, and root cancellation cleans up', async () => {
-    mocks.get.mockResolvedValue({ value: { lastSelectedRepo: { path: '/repo', type: 'local' } } });
-    sessionStorage.setItem('onboarding-prompt', 'prompt');
-    const channel = stdChannel();
-    let slice: WorkspaceInitializerState = {
-      ...initialState,
-      onboardingFormState: { projectSelection: null, step: 'project' },
-    };
-    const dispatch = vi.fn((action) => {
-      slice = workspaceInitializerReducer(slice, action);
-      channel.put(action);
-      return action;
-    });
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
-      workspaceInitializerSaga,
-    );
-    await settle();
-    mocks.update.mockClear();
-    channel.put(
-      debounceWorkspaceInitializerOnboardingFormState({
-        projectSelection: { type: 'local', repoPath: '/cancelled' },
-        step: 'project',
-      }),
-    );
-    channel.put(resetOnboarding());
-    await settle();
-
-    expect(sessionStorage.getItem('onboarding-prompt')).toBe(null);
-    expect(slice.onboardingFormState).toBe(null);
-    expect(mocks.update.mock.calls).toEqual([
-      [
-        [
-          {
-            path: 'workspaceInitializer.state',
-            value: {
-              compactFormState: null,
-              onboardingFormState: null,
-              lastSelectedRepo: { path: '/repo', type: 'local' },
-              branchByRepo: {},
-              defaultParentPath: '~/Developer',
-              recentRepos: [],
-              remoteSetups: [],
-              lastSubmittedAgent: null,
-            },
-          },
-        ],
-      ],
-    ]);
-    mocks.update.mockClear();
-    channel.put(
-      debounceWorkspaceInitializerOnboardingFormState({
-        projectSelection: { type: 'local', repoPath: '/late' },
-        step: 'project',
-      }),
-    );
-    task.cancel();
-    await task.toPromise();
-    await vi.advanceTimersByTimeAsync(300);
-    expect(mocks.update.mock.calls).toEqual([]);
   });
 });

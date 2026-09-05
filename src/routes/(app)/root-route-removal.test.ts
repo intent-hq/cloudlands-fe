@@ -8,20 +8,19 @@ const uiTargetsSource = readFileSync(
   resolve(process.cwd(), 'src/shared/app-ui-targets.ts'),
   'utf8',
 );
-const initializerSource = readFileSync(
-  resolve(process.cwd(), 'src/lib/components/workspace/CompactWorkspaceInitializer.svelte'),
-  'utf8',
-);
 const windowSource = readFileSync(resolve(process.cwd(), 'src/main/window.ts'), 'utf8');
 
 describe('root route removal', () => {
   it('ships only the minimal home empty state, not the legacy home page', () => {
     const pageSource = readFileSync(resolve(appRoute, '+page.svelte'), 'utf8');
-    expect(pageSource).toContain('setShowCreateModal(true)');
+    expect(pageSource).toContain('navigateToNewWorkspace()');
     expect(pageSource).not.toContain('workspace_home_');
     expect(uiTargetsSource).not.toContain("id: 'home'");
-    expect(initializerSource).not.toContain('stayOnHomePage');
-    expect(initializerSource).not.toContain('rapidFire');
+    expect(
+      existsSync(
+        resolve(process.cwd(), 'src/lib/components/workspace/CompactWorkspaceInitializer.svelte'),
+      ),
+    ).toBe(false);
     expect(layoutSource).not.toContain('workspace_home_');
     expect(
       existsSync(resolve(process.cwd(), 'src/lib/components/workspace/WorkspaceTableView.svelte')),

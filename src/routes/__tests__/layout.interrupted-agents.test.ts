@@ -121,9 +121,6 @@ vi.mock('$lib/components/terminal/RootQuakeTerminalOverlay.svelte', async () => 
 vi.mock('$lib/components/modals/FeatureCodeDialog.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
-vi.mock('$lib/components/modals/NewSpaceModal.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$features/navigation/LinkActionMenu.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));

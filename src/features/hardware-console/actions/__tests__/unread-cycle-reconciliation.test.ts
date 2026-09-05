@@ -163,7 +163,6 @@ function makeCycleState(
     sidebarNav: {
       multiSelectTabOrder: [],
       multiSelectSelectedTabIdsByWorkspaceId: {},
-      showCreateModal: false,
     },
     voiceSettings: {
       isLoading: false,

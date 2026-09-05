@@ -25,7 +25,7 @@ describe('All Workspaces panel presentation', () => {
 
   it('offers a create-space action while the Spaces section is visible', () => {
     expect(panelSource).toContain('data-spaces-create');
-    expect(panelSource).toContain('appStore.dispatch(setShowCreateModal(true))');
+    expect(panelSource).toContain('navigateToNewWorkspace()');
   });
 
   it('omits close controls from the combined Spaces and Chief panel', () => {

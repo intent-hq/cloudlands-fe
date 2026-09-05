@@ -4,9 +4,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
   import { m } from '$shared/paraglide/messages.js';
-  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import { store as appStore } from '$store/renderer/store';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
   import { openInBrowserPanel, openInExternalBrowser } from './link-handler';
 
@@ -136,16 +134,7 @@
     const { url } = linkActionMenuState;
     hideLinkActionMenu();
     if (!ref) return;
-    appStore.dispatch(
-      setWorkspaceInitializerPendingGitHubPrefill({
-        owner: ref.owner,
-        repo: ref.repo,
-        number: ref.number,
-        kind: ref.kind,
-        url,
-      }),
-    );
-    appStore.dispatch(setShowCreateModal(true));
+    void navigateToNewWorkspace({ prefill: { ...ref, url } });
   }
 
   async function handleOpenInBrowser() {

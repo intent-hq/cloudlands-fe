@@ -45,6 +45,8 @@ const runtimeByDependencies = new WeakMap<object, RuntimeState>();
 
 export interface NewWorkspaceSagaDependencies {
   client?: AppClient;
+  /** `undefined` restores the newest owned draft; `null` always creates a fresh draft. */
+  requestedDraftId?: string | null;
   dispatch: (event: ControllerEvent) => void;
   getState: () => ControllerState;
   adopt?: WorkspaceAdoption;
@@ -527,8 +529,12 @@ function* execute(
         const identity = yield* call(dependencies.identifyClient ?? identifyClient);
         const drafts = yield* call([client.workspaceDrafts, client.workspaceDrafts.list]);
         if (!identity.clientId) throw new Error('Daemon did not return a client identity');
+        const requestedDraftId = dependencies.requestedDraftId;
         const draftId =
-          dependencies.getState().draftId ?? newestOwnedDraft(drafts, identity.clientId)?.id;
+          dependencies.getState().draftId ??
+          (requestedDraftId === undefined
+            ? newestOwnedDraft(drafts, identity.clientId)?.id
+            : (requestedDraftId ?? undefined));
         yield* emit(dependencies, {
           type: 'backend.connected',
           generation: effect.generation,

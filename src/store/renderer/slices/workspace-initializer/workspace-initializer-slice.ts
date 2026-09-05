@@ -11,7 +11,6 @@ import type {
   WorkspaceInitializerHydrationState,
   WorkspaceInitializerRecentRepo,
   WorkspaceInitializerRemoteSetup,
-  WorkspaceInitializerPendingGitHubPrefill,
   WorkspaceInitializerRepoSelection,
   WorkspaceInitializerState,
   WorkspaceInitializerOnboardingFormState,
@@ -30,7 +29,6 @@ export const initialState: WorkspaceInitializerState = {
   recentRepos: createCollection<WorkspaceInitializerRecentRepo, 'path'>('path'),
   remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id'),
   lastSubmittedAgent: null,
-  pendingGitHubPrefill: null,
 };
 
 export const hydrateWorkspaceInitializer = createAction<
@@ -84,14 +82,6 @@ export const removeWorkspaceInitializerRemoteSetup = createAction<[id: string]>(
 export const setWorkspaceInitializerLastSubmittedAgent = createAction<
   [settings: WorkspaceInitializerAgentSettings | null]
 >('workspaceInitializer/setLastSubmittedAgent');
-
-export const setWorkspaceInitializerPendingGitHubPrefill = createAction<
-  [prefill: WorkspaceInitializerPendingGitHubPrefill]
->('workspaceInitializer/setPendingGitHubPrefill');
-
-export const clearWorkspaceInitializerPendingGitHubPrefill = createAction(
-  'workspaceInitializer/clearPendingGitHubPrefill',
-);
 
 function recentReposCollection(repos: WorkspaceInitializerRecentRepo[]) {
   return createCollection<WorkspaceInitializerRecentRepo, 'path'>(
@@ -196,14 +186,3 @@ workspaceInitializerReducer.with(
     lastSubmittedAgent,
   }),
 );
-workspaceInitializerReducer.with(
-  setWorkspaceInitializerPendingGitHubPrefill,
-  (state, { payload: [pendingGitHubPrefill] }) => ({
-    ...state,
-    pendingGitHubPrefill,
-  }),
-);
-workspaceInitializerReducer.with(clearWorkspaceInitializerPendingGitHubPrefill, (state) => ({
-  ...state,
-  pendingGitHubPrefill: null,
-}));

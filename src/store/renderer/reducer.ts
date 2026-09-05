@@ -72,7 +72,6 @@ import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
 import { agentSubscriptionUIReducer } from './slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { onboardingReducer } from './slices/onboarding/onboarding-slice';
 import { agentAvailabilityReducer } from './slices/agent-availability/agent-availability-slice';
 import { appLayoutReducer } from './slices/app-layout/app-layout-slice';
 import { tokenUsageReducer } from './slices/token-usage/token-usage-slice';
@@ -168,7 +167,6 @@ export const reducers = {
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
-  onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,
   workspaceCreateProgress: workspaceCreateProgressReducer,
   agentAvailability: agentAvailabilityReducer,

@@ -22,7 +22,6 @@ const rotatedDisclosureFiles = [
 
 const swappedDisclosureFiles = [
   'src/features/file-tracking/components/diff/DiffHeader.svelte',
-  'src/features/onboarding/steps/WorkspaceCreationError.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',
   'src/lib/components/ErrorDisplay.svelte',
   'src/lib/components/chat/ChatChangesPanel.svelte',

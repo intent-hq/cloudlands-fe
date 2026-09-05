@@ -11,6 +11,7 @@
   import { goto } from '$app/navigation';
   import { fly } from 'svelte/transition';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import Fa from 'svelte-fa';
   import {
     faSearch,
@@ -48,14 +49,7 @@
     openAgentTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import {
-    resetOnboarding,
-    setOnboardingFullFlowRequested,
-  } from '$store/renderer/slices/onboarding/onboarding-slice';
-  import {
-    setShowCreateModal,
-    setStatsOverlayOpen,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     type PaletteFilter,
     type WorkspaceObject,
@@ -755,7 +749,7 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        appStore.dispatch(setShowCreateModal(true));
+        void navigateToNewWorkspace();
         return true;
       case 'settings':
         navigateToSettings();
@@ -787,11 +781,7 @@
         }
         return true;
       case 'show-onboarding':
-        // Explicit restart: request the full flow so OnboardingPage's
-        // initial-step decision never skips ahead on setup state.
-        appStore.dispatch(setOnboardingFullFlowRequested(true));
-        appStore.dispatch(resetOnboarding());
-        goto('/workspace/new');
+        void navigateToNewWorkspace();
         return true;
       case 'enhance-prompt':
         dispatchWindowEvent('chat:enhance-prompt');

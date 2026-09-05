@@ -27,8 +27,8 @@
     toggleChiefCollapsed,
     setAllSpacesViewMode,
     setShowArchivedWorkspaces,
-    setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import {
     isCombinedWorkspacePanelItem,
     type AllSpacesViewMode,
@@ -311,7 +311,7 @@
                   <button
                     type="button"
                     class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
-                    onclick={() => appStore.dispatch(setShowCreateModal(true))}
+                    onclick={() => void navigateToNewWorkspace()}
                     aria-label={m.layout_sidebarNav_newWorkspace_title()}
                     data-spaces-create
                   >

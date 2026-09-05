@@ -18,7 +18,6 @@
     dispatchCreateFileRequest,
     handleCommandPaletteCreateFile,
   } from './composables/create-file-command';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { commandPaletteActionConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$store/renderer/slices/app-layout/app-layout-selectors';
 
@@ -26,8 +25,6 @@
   import { CleanupManager } from '$features/optimization/memory-manager';
 
   import { selectMainPanelView } from '$store/renderer/slices/changes/changes-selectors';
-  import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
-  import { isBootRouteLoad } from '$lib/utils/boot-route-gate';
   import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
     selectWorkspaceIsEmpty,
@@ -49,8 +46,6 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
-  import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
   import WorkspaceModals from '$lib/components/workspace/WorkspaceModals.svelte';
@@ -65,9 +60,6 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   import { selectPanelLayoutRoot } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-
-  // Onboarding
-  import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
@@ -109,14 +101,6 @@
   let workspaceState = $state<ReturnType<typeof createWorkspacePageState> | null>(null);
   let stateDisposing = $state(false);
   let previousWorkspaceId = $state<string | null>(null);
-  // Fade-in transition for fresh workspace creation (crossfade with onboarding page)
-  let isFreshCreation = $state(false);
-
-  // Crossfade transition state: onboardingHoldActive keeps onboarding visible
-  // during the fade-out after workspaceId changes from 'new' to a real ID.
-  // showOnboarding is derived after workspaceId is defined (see below).
-  let onboardingHoldActive = $state(false);
-  let onboardingFadingOut = $state(false);
   // Create file dialog state
   let createFileDialogOpen = $state(false);
   let createFileFolderPath = '';
@@ -151,20 +135,6 @@
     return newState;
   }
 
-  // Boot-route anti-flash: when this page load booted on a gated route, the
-  // (app) layout may still be deciding whether to redirect to an existing
-  // workspace instead of onboarding. Hold the onboarding render until that
-  // decision resolves so the wizard never flashes before a redirect.
-  const bootGateResolved = selectBootRouteGateResolved();
-  const bootGateHolding = $derived(isBootRouteLoad() && !$bootGateResolved);
-
-  // Show the full-page workspace onboarding whenever the route is /workspace/new
-  // (and the boot-route gate is not holding) or while the crossfade hold is
-  // active after workspace creation.
-  const showOnboarding = $derived(
-    (workspaceId === 'new' && !bootGateHolding) || onboardingHoldActive,
-  );
-
   // Reactive writable store that carries the route-provided workspaceId so the
   // Redux selector re-evaluates whenever the route param changes.
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
@@ -198,63 +168,9 @@
   // File tracking state from Redux
   const ftMainPanelView$ = selectMainPanelView();
 
-  // Track if we're in the process of creating a workspace (including optimistic phase)
-  let isCreatingWorkspace = $derived(
-    workspaceId === 'new' || workspaceId?.startsWith('optimistic-'),
-  );
-
-  // ============================================================================
-  // Onboarding Derived State (needs workspaceId to be defined)
-  // ============================================================================
-  const isOnboarding = $derived(workspaceId === 'new');
-
-  // When workspaceId changes from 'new' to a real ID, start crossfade transition
-  $effect(() => {
-    if (!active) return;
-    if (workspaceId !== 'new' && onboardingHoldActive) {
-      // Start fade-out animation on the onboarding content
-      onboardingFadingOut = true;
-      // After the collapse/fade animation completes, remove onboarding from DOM
-      setTimeout(() => {
-        onboardingHoldActive = false;
-        onboardingFadingOut = false;
-      }, 500);
-    }
-  });
-
-  // NOTE: No auto-advance past welcome step. Users should always see step 1
-  // and explicitly click to proceed, so they can review agent setup.
-
-  // Track previous showOnboarding state to detect onboarding→workspace transition
-  let prevShowOnboarding = $state(true);
-
-  // Expand the sidebar when transitioning from onboarding to workspace.
-  // The sidebar starts collapsed (width 0) during onboarding via initiallyCollapsed.
-  // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
-  // the toggle event to animate it open after workspace creation.
-  $effect(() => {
-    if (!active) return;
-    // While the boot-route gate is holding, showOnboarding is suppressed but
-    // onboarding has not "ended" — skip so the hold is not misread as an
-    // onboarding→workspace transition (which would expand an empty sidebar
-    // next to the wizard when the gate resolves to stay on onboarding).
-    if (bootGateHolding) return;
-    if (prevShowOnboarding && !showOnboarding) {
-      // Onboarding just ended — expand sidebar with animation
-      dispatchWindowEvent('workspace:toggle-left-sidebar', {
-        collapsed: false,
-        restoreWidth: 350,
-      });
-    }
-    prevShowOnboarding = showOnboarding;
-  });
-
-  // Hide the left nav bar and top bar workspace controls during onboarding
-  $effect(() => {
-    if (!active) return;
-    appStore.dispatch(setOnboardingActive(showOnboarding));
-    return () => appStore.dispatch(setOnboardingActive(false));
-  });
+  // Optimistic workspace IDs use the loading presentation until the daemon
+  // publishes the durable workspace identity.
+  let isCreatingWorkspace = $derived(workspaceId?.startsWith('optimistic-'));
 
   // Viewing a workspace does NOT clear its unread attention: the flag is
   // daemon-derived from per-agent seen markers (PROTOCOL §5.1) and clears only
@@ -743,9 +659,6 @@
 {#snippet sidebarContent()}
   {#if !active}
     <div class="h-full w-full"></div>
-  {:else if showOnboarding || isCreatingWorkspace}
-    <!-- Empty sidebar during onboarding and workspace creation -->
-    <div class="flex items-center flex-none w-full"></div>
   {:else if !$workspace || isCreatingWorkspace}
     {#if isCreatingWorkspace || isInTransition}
       <!-- Blank panel while creating new workspace or during transition -->
@@ -758,12 +671,7 @@
       <SidebarSkeleton />
     {/if}
   {:else}
-    <div
-      class="h-full"
-      style={isFreshCreation
-        ? 'animation: slideInFromLeft 500ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards; opacity: 0;'
-        : ''}
-    >
+    <div class="h-full">
       <MultiSelectTabbedSidebar
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
@@ -781,47 +689,32 @@
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
   <div class="h-full w-full relative">
-    {#if showOnboarding}
-      <OnboardingPage
-        {isOnboarding}
-        fadingOut={onboardingFadingOut}
-        onHoldActiveChange={(active) => (onboardingHoldActive = active)}
-        onFadingOutChange={(fading) => (onboardingFadingOut = fading)}
-      />
-    {/if}
-    {#if !showOnboarding || onboardingFadingOut}
-      {#if !$workspace || isCreatingWorkspace}
-        {#if $workspaceLoadState.error && !isCreatingWorkspace}
-          <ResourceNotFound
-            kind={$workspaceLoadState.error.kind}
-            resourceLabel={m.workspace_page_workspaceResource_label()}
-            resourceId={workspaceId}
-            detail={$workspaceLoadState.error.kind === 'error'
-              ? $workspaceLoadState.error.message
-              : undefined}
-            onNavigateAway={() => void navigateToFirstWorkspace()}
-          />
-        {:else}
-          <ContentSkeleton panelCount={1} layoutRoot={$panelLayoutRoot$} />
-        {/if}
+    {#if !$workspace || isCreatingWorkspace}
+      {#if $workspaceLoadState.error && !isCreatingWorkspace}
+        <ResourceNotFound
+          kind={$workspaceLoadState.error.kind}
+          resourceLabel={m.workspace_page_workspaceResource_label()}
+          resourceId={workspaceId}
+          detail={$workspaceLoadState.error.kind === 'error'
+            ? $workspaceLoadState.error.message
+            : undefined}
+          onNavigateAway={() => void navigateToFirstWorkspace()}
+        />
       {:else}
-        <div
-          class="h-full w-full absolute inset-0"
-          style={isFreshCreation
-            ? 'animation: fadeInContent 600ms cubic-bezier(0.16, 1, 0.3, 1) 250ms forwards; opacity: 0;'
-            : ''}
-        >
-          <!-- Panel-based layout when using TabbedSidebar -->
-          <PanelLayout
-            workspaceId={$workspace?.id || workspaceId}
-            layoutId={panelLayoutId}
-            {active}
-            onCreateAgent={(panelId) => handleCreateAgent(undefined, panelId)}
-            onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
-            onCreateNote={handleCreateNote}
-          />
-        </div>
+        <ContentSkeleton panelCount={1} layoutRoot={$panelLayoutRoot$} />
       {/if}
+    {:else}
+      <div class="h-full w-full absolute inset-0">
+        <!-- Panel-based layout when using TabbedSidebar -->
+        <PanelLayout
+          workspaceId={$workspace?.id || workspaceId}
+          layoutId={panelLayoutId}
+          {active}
+          onCreateAgent={(panelId) => handleCreateAgent(undefined, panelId)}
+          onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
+          onCreateNote={handleCreateNote}
+        />
+      </div>
     {/if}
   </div>
 {/snippet}
@@ -851,7 +744,7 @@
   {/if}
 {/snippet}
 
-<!-- Always render WorkspaceLayout — sidebar starts collapsed during onboarding -->
+<!-- Always render WorkspaceLayout for concrete workspace routes. -->
 {#key surfaceWorkspaceId}
   <WorkspaceRouteContextProvider workspaceId={surfaceWorkspaceId}>
     <div
@@ -876,77 +769,9 @@
             sidebarSide={$sidebarSide$}
             sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
             sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
-            startCollapsed={isOnboarding}
           />
         {/snippet}
       </WorkspaceSurfaceLoadBoundary>
     </div>
   </WorkspaceRouteContextProvider>
 {/key}
-
-<style>
-  :global {
-    @keyframes slideInFromLeft {
-      from {
-        opacity: 0;
-        transform: translateX(-30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    @keyframes fadeInContent {
-      from {
-        opacity: 0;
-        transform: translateY(8px) scale(0.995);
-        filter: blur(2px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-        filter: blur(0);
-      }
-    }
-
-    @keyframes slideDownTabBar {
-      from {
-        opacity: 0;
-        transform: translateY(-100%);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes collapseOut {
-      0% {
-        opacity: 1;
-        max-height: 100vh;
-        transform: translateY(0) scale(1);
-        filter: blur(0);
-      }
-      40% {
-        opacity: 0.5;
-        max-height: 60vh;
-        transform: translateY(-16px) scale(0.99);
-        filter: blur(0);
-      }
-      100% {
-        opacity: 0;
-        max-height: 0;
-        transform: translateY(-40px) scale(0.97);
-        filter: blur(4px);
-      }
-    }
-
-    .onboarding-collapse-out {
-      animation: collapseOut 500ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-      overflow: hidden;
-      pointer-events: none;
-      transform-origin: top center;
-    }
-  }
-</style>

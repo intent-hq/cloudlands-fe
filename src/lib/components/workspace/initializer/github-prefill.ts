@@ -12,9 +12,16 @@
 import { invoke } from '$shared/generated/ipc-client';
 import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
-import type { WorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
 const logger = createLogger('GitHubPrefill');
+
+interface WorkspaceInitializerPendingGitHubPrefill {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: 'issue' | 'pr';
+  url: string;
+}
 
 /**
  * Structurally compatible with IssueSuggestions' `IssueSelectionData`

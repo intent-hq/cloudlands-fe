@@ -33,7 +33,6 @@
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
-  import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
@@ -86,19 +85,12 @@
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-    selectBootRouteGateResolved,
-    selectBackendSetupGate,
-  } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
+  import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
   import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
-  import {
-    BOOT_ROUTE_HOLD_TIMEOUT_MS,
-    decideBootRoute,
-    getBootRoutePathname,
-  } from '$lib/utils/boot-route-gate';
+  import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
   import {
     loadWorkspacesRequested,
     recordWorkspaceView,
@@ -116,12 +108,8 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import {
-    togglePanel,
-    setShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
+  import { togglePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import type { ShortcutId } from '$lib/utils/shortcut-bindings';
@@ -153,14 +141,12 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
-  const showCreateModal$ = selectShowCreateModal();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const applicationShellTint = $derived(
@@ -219,39 +205,18 @@
   let showQuitConfirmationModal = $state(false);
   let quitConfirmationPayload = $state<QuitConfirmationShowPayload | null>(null);
 
-  // The root route is a minimal empty state and fresh windows boot at
-  // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
-  // loads on the backend-derived setup evaluation: land on an existing
-  // workspace when the backend has one, and only fall through to onboarding
-  // when the active backend (local or remote) genuinely needs first-run setup
-  // (no workspaces and no ready providers). The decision logic lives in
-  // decideBootRoute (boot-route-gate); it fires at most once per full page
-  // load, so deliberate in-app navigation to `/` or /workspace/new is
-  // unaffected. While it holds, WorkspaceSurface suppresses onboarding so the
-  // wizard never flashes before a redirect. The hold is bounded: if nothing
-  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS (e.g. provider probes failing
-  // forever, so neither a check settlement nor an evaluation ever arrives),
-  // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
-  // of holding a blank surface indefinitely.
-  let bootHoldTimedOut = $state(false);
-  $effect(() => {
-    if ($bootGateResolved) return;
-    const timer = setTimeout(() => {
-      bootHoldTimedOut = true;
-    }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  });
+  // Fresh windows boot at /workspace/new. Only the backend workspace list and
+  // persisted tab identity may redirect that boot to an existing workspace;
+  // provider/setup probes never change the page.
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
       gateResolved: $bootGateResolved,
-      setupGate: $backendSetupGate,
       workspaceHasLoaded: $workspaceHasLoaded,
       workspaces: $workspaceItems,
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
-      holdTimedOut: bootHoldTimedOut,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
@@ -503,7 +468,7 @@
       store: appStore,
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
-      openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      openNewWorkspace: () => void navigateToNewWorkspace(),
       onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
       resolveBinding: getEffectiveShortcut,
     });
@@ -998,8 +963,6 @@
 
   <KeyboardShortcutsCheatSheet />
 
-  <AuggieSetupGate />
-
   <Toast />
 
   <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
@@ -1047,12 +1010,6 @@
       onRetryInTerminal={handleCredentialsRetryInTerminal}
     />
   {/if}
-
-  <!-- Create Workspace Modal (opened from sidebar nav + button) -->
-  <NewSpaceModal
-    open={$showCreateModal$}
-    onClose={() => appStore.dispatch(setShowCreateModal(false))}
-  />
 
   <!-- Redux-owned delete/archive warning hosts (global for all workspace entrypoints) -->
   <WorkspaceWarningDialogs />

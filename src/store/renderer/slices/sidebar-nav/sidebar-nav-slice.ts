@@ -38,7 +38,6 @@ export const initialState: SidebarNavState = {
   panelWidth: 288,
   combinedPanelSplit: 0.45,
   onboardingActive: false,
-  showCreateModal: false,
   draftPrompt: '',
   allSpacesViewMode: 'recent',
   showArchivedWorkspaces: false,
@@ -87,9 +86,6 @@ export const setCombinedPanelSplit = createAction<[split: number]>(
 export const setOnboardingActive = createAction<[active: boolean]>(
   'sidebarNav/setOnboardingActive',
 );
-
-// Create modal
-export const setShowCreateModal = createAction<[show: boolean]>('sidebarNav/setShowCreateModal');
 
 // View mode
 export const setAllSpacesViewMode = createAction<[mode: AllSpacesViewMode]>(
@@ -214,10 +210,6 @@ sidebarNavReducer.with(setCombinedPanelSplit, (state, { payload: [split] }) => {
 sidebarNavReducer.with(setOnboardingActive, (state, { payload: [active] }) => ({
   ...state,
   onboardingActive: active,
-}));
-sidebarNavReducer.with(setShowCreateModal, (state, { payload: [show] }) => ({
-  ...state,
-  showCreateModal: show,
 }));
 sidebarNavReducer.with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
   ...state,

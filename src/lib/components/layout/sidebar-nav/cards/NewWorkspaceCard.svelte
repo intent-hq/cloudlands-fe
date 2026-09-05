@@ -13,10 +13,11 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
 
   import { selectDraftPrompt } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { closeAll } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    closeAll,
-    setShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+    buildNewWorkspaceRoute,
+    navigateToNewWorkspace,
+  } from '$features/new-workspace/route/new-workspace-navigation';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import type { Workspace } from '$shared/types';
@@ -56,32 +57,24 @@
     event?: MouseEvent,
   ) {
     appStore.dispatch(closeAll(false));
-    if (initialRepo?.repoPath) {
-      sessionStorage.setItem(
-        'workspace-prefill',
-        JSON.stringify({ repoPath: initialRepo.repoPath }),
-      );
-    }
+    const input = initialRepo?.repoPath
+      ? { prefill: { repoPath: initialRepo.repoPath } }
+      : undefined;
 
     // Command-click (or Ctrl-click on non-Mac) opens in new window
     if (event?.metaKey || event?.ctrlKey) {
-      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/workspace/new' }).catch(() => {
-        // Fallback to navigation in current window if IPC fails
-        goto('/workspace/new');
-      });
+      const route = buildNewWorkspaceRoute(input);
+      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route }).catch(() => goto(route));
       return;
     }
 
-    appStore.dispatch(setShowCreateModal(true));
+    void navigateToNewWorkspace(input);
   }
 
   function openWithDraft() {
     const currentDraft = selectDraftPrompt.select(appStore.state);
-    if (currentDraft.trim()) {
-      sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: currentDraft }));
-    }
     appStore.dispatch(closeAll(false));
-    appStore.dispatch(setShowCreateModal(true));
+    void navigateToNewWorkspace(currentDraft.trim() ? { text: currentDraft } : undefined);
   }
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
