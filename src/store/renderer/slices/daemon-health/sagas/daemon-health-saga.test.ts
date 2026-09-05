@@ -14,6 +14,7 @@ vi.mock('$lib/components/ui/toast', () => ({
   toast: { warning: mocks.toastWarning, error: mocks.toastError },
 }));
 
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   connectionStatusChanged,
@@ -736,16 +737,76 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('dispatches failure then degradation when a poll fails while healthy', async () => {
-    mocks.backendRequest.mockRejectedValue(new Error('timeout'));
-    const dispatched: unknown[] = [];
-    await runSaga(
-      {
-        dispatch: (action) => dispatched.push(action),
-        getState: () => ({ daemonHealth: { health: 'healthy' } }),
-      },
-      pollSystemStatusSaga,
-    ).toPromise();
-    expect(dispatched).toEqual([systemStatusFailure(), heartbeatFailed()]);
+  describe('pollSystemStatusSaga failure context (#4439)', () => {
+    async function runPoll() {
+      const dispatched: unknown[] = [];
+      await runSaga(
+        {
+          dispatch: (action) => dispatched.push(action),
+          getState: () => ({ daemonHealth: { health: 'healthy' } }),
+        },
+        pollSystemStatusSaga,
+      ).toPromise();
+      return dispatched;
+    }
+
+    beforeEach(() => {
+      vi.setSystemTime(new Date('2026-09-05T10:00:00.000Z'));
+    });
+
+    it('sends the unchanged system.status request', async () => {
+      mocks.backendRequest.mockResolvedValue(statusPayload);
+      await runPoll();
+      expect(mocks.backendRequest).toHaveBeenCalledWith('system.status');
+    });
+
+    it('reports a generic status-check failure with the failure time', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        new BackendError({ code: 'TRANSPORT_ERROR', message: 'socket closed at /tmp/x.sock' }),
+      );
+      expect(await runPoll()).toEqual([
+        systemStatusFailure({ kind: 'status-check-failed', failedAt: '2026-09-05T10:00:00.000Z' }),
+      ]);
+    });
+
+    it('classifies a transport-tagged timeout as a timeout', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        new BackendError({ code: 'TIMEOUT', message: 'JSON-RPC request timed out: system.status' }),
+      );
+      expect(await runPoll()).toEqual([
+        systemStatusFailure({ kind: 'timeout', failedAt: '2026-09-05T10:00:00.000Z' }),
+      ]);
+    });
+
+    it('never guesses a timeout from an untagged error message', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        new Error('JSON-RPC request timed out: system.status'),
+      );
+      expect(await runPoll()).toEqual([
+        systemStatusFailure({ kind: 'status-check-failed', failedAt: '2026-09-05T10:00:00.000Z' }),
+      ]);
+    });
+
+    it('never puts the raw error or its message into the dispatched action', async () => {
+      mocks.backendRequest.mockRejectedValue(new Error('token=super-secret'));
+      const [action] = await runPoll();
+      expect(JSON.stringify(action)).not.toContain('super-secret');
+      expect(dispatchedFailurePayload(action)).toEqual({
+        kind: 'status-check-failed',
+        failedAt: '2026-09-05T10:00:00.000Z',
+      });
+    });
+
+    it('does not dispatch a separate heartbeat degradation — the failure action carries it', async () => {
+      mocks.backendRequest.mockRejectedValue(new Error('boom'));
+      const dispatched = await runPoll();
+      expect(
+        dispatched.some((action) => (action as { type?: string }).type === heartbeatFailed.type),
+      ).toBe(false);
+    });
   });
 });
+
+function dispatchedFailurePayload(action: unknown) {
+  return (action as { payload: unknown[] }).payload[0];
+}

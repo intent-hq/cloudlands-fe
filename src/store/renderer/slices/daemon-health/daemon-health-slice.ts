@@ -11,6 +11,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   DaemonHealthState,
   DaemonHealthStats,
+  DaemonStatusCheckFailureKind,
   SidecarRunLog,
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
@@ -40,6 +41,7 @@ export const initialState: DaemonHealthState = {
   sidecarRunLog: null,
   sidecarRunLogPending: false,
   sidecarRunLogError: null,
+  statusCheckFailure: null,
   unslothStatus: null,
   unslothPolling: false,
   unslothStopping: false,
@@ -98,9 +100,14 @@ export const systemStatusSuccess = createAction<
 >('daemonHealth/systemStatusSuccess');
 
 /**
- * system.status poll failed.
+ * system.status poll failed. Carries only the safe failure category and the
+ * time the check settled (#4439) — the saga classifies the error at the
+ * effect boundary and never forwards the raw error. While connected this
+ * degrades health; a poll that fails after a disconnect leaves 'down' as-is.
  */
-export const systemStatusFailure = createAction('daemonHealth/systemStatusFailure');
+export const systemStatusFailure = createAction<
+  [failure: { kind: DaemonStatusCheckFailureKind; failedAt: string }]
+>('daemonHealth/systemStatusFailure');
 
 /**
  * User asked for the app-managed sidecar fallback from the daemon-loss UI
@@ -238,6 +245,9 @@ daemonHealthReducer.with(
         sidecarRunLog: null,
         sidecarRunLogPending: false,
         sidecarRunLogError: null,
+        // Failure context belongs to the previous connection — never leak it
+        // into this one.
+        statusCheckFailure: null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
@@ -304,6 +314,10 @@ daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, r
   return {
     ...state,
     polling: false,
+    // A valid check recovers a degraded connection; a newer disconnect
+    // ('down') wins over a late poll result.
+    health: state.health === 'degraded' ? 'healthy' : state.health,
+    statusCheckFailure: null,
     stats,
     // Daemon-reported locality (§5.14) — authoritative for host-shell
     // gating; falls back to the transport heuristic before the first poll.
@@ -311,9 +325,20 @@ daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, r
     lastUpdated: receivedAt,
   };
 });
-daemonHealthReducer.with(systemStatusFailure, (state) => {
-  // Health may already be 'down' from connection loss; leave it as-is.
-  return { ...state, polling: false };
+daemonHealthReducer.with(systemStatusFailure, (state, { payload: [failure] }) => {
+  // Health may already be 'down' from connection loss; leave it as-is and
+  // record nothing — the disconnect is the explanation.
+  if (state.health === 'down') return { ...state, polling: false };
+  return {
+    ...state,
+    polling: false,
+    health: 'degraded',
+    statusCheckFailure: {
+      kind: failure.kind,
+      failedAt: failure.failedAt,
+      consecutiveFailures: (state.statusCheckFailure?.consecutiveFailures ?? 0) + 1,
+    },
+  };
 });
 daemonHealthReducer.with(spawnSidecarRequested, (state) => {
   return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };

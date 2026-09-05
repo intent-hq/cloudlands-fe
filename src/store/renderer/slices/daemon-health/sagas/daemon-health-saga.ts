@@ -21,7 +21,6 @@ import {
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
-  heartbeatFailed,
   pollSystemStatus,
   pollUnslothStatus,
   openLocalAndSpawnRequested,
@@ -36,9 +35,9 @@ import {
   unslothStatusFailure,
   unslothStatusSuccess,
 } from '../daemon-health-slice';
-import { selectDaemonHealth } from '../daemon-health-selectors';
 import type {
   BackendTransportInfo,
+  DaemonStatusCheckFailureKind,
   SidecarRunLog,
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
@@ -263,14 +262,29 @@ function* daemonStatusSaga() {
   }
 }
 
+/**
+ * Reduce a failed poll to a safe category at the effect boundary. Only a
+ * transport-tagged `TIMEOUT` (browser WebSocket transport) is a known
+ * timeout; the Electron IPC path reports timeouts as a generic
+ * `TRANSPORT_ERROR`, so those stay generic rather than being guessed from
+ * the message. Raw errors never reach the store.
+ */
+function classifyStatusCheckFailure(error: unknown): DaemonStatusCheckFailureKind {
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  return code === 'TIMEOUT' ? 'timeout' : 'status-check-failed';
+}
+
 export function* pollSystemStatusSaga() {
   try {
     const status = yield* call(backendRequest<SystemStatusWirePayload>, 'system.status');
     yield* put(systemStatusSuccess(status, new Date().toISOString()));
-  } catch {
-    yield* put(systemStatusFailure());
-    const health = yield* selectDaemonHealth.effect();
-    if (health === 'healthy') yield* put(heartbeatFailed());
+  } catch (error) {
+    yield* put(
+      systemStatusFailure({
+        kind: classifyStatusCheckFailure(error),
+        failedAt: new Date().toISOString(),
+      }),
+    );
   }
 }
 

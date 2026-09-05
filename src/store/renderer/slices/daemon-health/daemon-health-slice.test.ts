@@ -55,6 +55,7 @@ describe('daemonHealthReducer', () => {
       sidecarRunLog: null,
       sidecarRunLogPending: false,
       sidecarRunLogError: null,
+      statusCheckFailure: null,
       unslothStatus: null,
       unslothPolling: false,
       unslothStopping: false,
@@ -724,16 +725,147 @@ describe('daemonHealthReducer', () => {
   });
 
   describe('systemStatusFailure', () => {
+    const failure = { kind: 'status-check-failed' as const, failedAt: '2026-09-05T10:00:00.000Z' };
+    const laterFailure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:10.000Z' };
+
     it('clears polling flag', () => {
       const state = { ...initialState, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure());
+      const next = daemonHealthReducer(state, systemStatusFailure(failure));
       expect(next.polling).toBe(false);
     });
 
-    it('leaves health unchanged', () => {
+    it('degrades a healthy connection and records the failure context (#4439)', () => {
       const state = { ...initialState, health: 'healthy' as const, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure());
+      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      expect(next.health).toBe('degraded');
+      expect(next.statusCheckFailure).toEqual({
+        kind: 'status-check-failed',
+        failedAt: '2026-09-05T10:00:00.000Z',
+        consecutiveFailures: 1,
+      });
+    });
+
+    it('keeps the last-success freshness while degraded', () => {
+      const state = {
+        ...initialState,
+        health: 'healthy' as const,
+        lastUpdated: '2026-09-05T09:59:50.000Z',
+      };
+      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      expect(next.lastUpdated).toBe('2026-09-05T09:59:50.000Z');
+    });
+
+    it('refreshes the context and counts consecutive failures while already degraded', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure),
+      );
+      const next = daemonHealthReducer(degraded, systemStatusFailure(laterFailure));
+      expect(next.health).toBe('degraded');
+      expect(next.statusCheckFailure).toEqual({
+        kind: 'timeout',
+        failedAt: '2026-09-05T10:00:10.000Z',
+        consecutiveFailures: 2,
+      });
+    });
+
+    it('does not let a late failure override a newer disconnected state', () => {
+      const state = { ...initialState, health: 'down' as const, polling: true };
+      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      expect(next.health).toBe('down');
+      expect(next.statusCheckFailure).toBeNull();
+      expect(next.polling).toBe(false);
+    });
+
+    it('stores only the serializable category and timing, never the raw error', () => {
+      const next = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure),
+      );
+      expect(Object.keys(next.statusCheckFailure ?? {}).sort()).toEqual([
+        'consecutiveFailures',
+        'failedAt',
+        'kind',
+      ]);
+    });
+  });
+
+  describe('degraded → recovery (#4439)', () => {
+    const failure = { kind: 'status-check-failed' as const, failedAt: '2026-09-05T10:00:00.000Z' };
+    const payload: SystemStatusWirePayload = {
+      running: true,
+      listenMode: 'uds',
+      transports: ['uds'],
+      port: null,
+      clients: 1,
+      agents: 0,
+      protocolVersion: '2.0',
+      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+    };
+
+    it('restores healthy and clears the failure context on the next successful check', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure),
+      );
+      expect(degraded.health).toBe('degraded');
+
+      const next = daemonHealthReducer(
+        degraded,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+      );
       expect(next.health).toBe('healthy');
+      expect(next.statusCheckFailure).toBeNull();
+      expect(next.lastUpdated).toBe('2026-09-05T10:00:10.000Z');
+    });
+
+    it('recovers from a heartbeat-triggered degradation too', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        heartbeatFailed(),
+      );
+      const next = daemonHealthReducer(
+        degraded,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+      );
+      expect(next.health).toBe('healthy');
+    });
+
+    it('does not let a late success override a newer disconnected state', () => {
+      const down = daemonHealthReducer(
+        { ...initialState, health: 'degraded' as const },
+        connectionStatusChanged('disconnected'),
+      );
+      const next = daemonHealthReducer(
+        down,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+      );
+      expect(next.health).toBe('down');
+    });
+
+    it('does not let a late success override a newer connecting state', () => {
+      const connecting = daemonHealthReducer(
+        { ...initialState, health: 'degraded' as const },
+        connectionStatusChanged('connecting'),
+      );
+      const next = daemonHealthReducer(
+        connecting,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+      );
+      expect(next.health).toBe('down');
+    });
+
+    it('keeps the failure context across a disconnect and clears it on reconnect', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure),
+      );
+      const down = daemonHealthReducer(degraded, connectionStatusChanged('disconnected'));
+      expect(down.statusCheckFailure).not.toBeNull();
+
+      const reconnected = daemonHealthReducer(down, connectionStatusChanged('connected'));
+      expect(reconnected.health).toBe('healthy');
+      expect(reconnected.statusCheckFailure).toBeNull();
     });
   });
 
