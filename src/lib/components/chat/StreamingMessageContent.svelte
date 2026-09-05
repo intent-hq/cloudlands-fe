@@ -54,8 +54,8 @@
   import {
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
+    isFollowedByOperationalClusterRow,
     isOperationalClusterBlock,
-    NESTED_REASONING_SECTION_SEAM_CLASS,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
@@ -63,8 +63,10 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
+    getResponseGroupCurrentChildIndex,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
+    isTerminalResponseGroup,
     normalizeResponseGroups,
     shouldRenderResponseGroupInline,
   } from './response-group-blocks';
@@ -72,6 +74,7 @@
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { prefersReducedMotion } from '$lib/utils/animations';
   import { onDestroy } from 'svelte';
   import flatstr from 'flatstr';
 
@@ -160,7 +163,7 @@
    * Svelte recreates the DOM element the animation won't replay.
    */
   function animateIn(node: HTMLElement, params: { animate: boolean; key: string }) {
-    if (!params.animate || animatedKeys.has(params.key)) return {};
+    if (!params.animate || prefersReducedMotion() || animatedKeys.has(params.key)) return {};
 
     // Mark as animated immediately
     animatedKeys.add(params.key);
@@ -864,6 +867,7 @@
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         {adjacentOperationalRow}
+        {searchPath}
       />
     {:else}
       <ThinkingBlock
@@ -871,6 +875,7 @@
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         {adjacentOperationalRow}
+        {searchPath}
       />
     {/if}
   {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
@@ -897,6 +902,7 @@
   childBlock: ContentBlock,
   childIndex: number,
   nested: boolean = true,
+  suppressSpacing: boolean = false,
 )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
   {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
@@ -905,14 +911,9 @@
     isVisibleGroupChild,
   )}
   <div
-    class="content-block content-block--{childBlock.type} {reasoningSectionBoundary
-      ? NESTED_REASONING_SECTION_SEAM_CLASS
-      : getOperationalClusterSpacingClass(
-          group.children,
-          childIndex,
-          isVisibleGroupChild,
-          group.isReasoningPhase,
-        )} {nested
+    class="content-block content-block--{childBlock.type} {suppressSpacing
+      ? ''
+      : getOperationalClusterSpacingClass(group.children, childIndex, isVisibleGroupChild)} {nested
       ? isOperationalClusterBlock(childBlock)
         ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
         : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
@@ -960,6 +961,22 @@
           {/if}
         {/each}
       {:else}
+        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {@const previewChildIndex =
+          group.isReasoningPhase && group.children[currentChildIndex]?.type !== 'tool_use'
+            ? -1
+            : currentChildIndex}
+        {@const currentChildKey = previewChildIndex >= 0 ? childKeys[previewChildIndex] : undefined}
+        {#snippet currentChild()}
+          {@render renderResponseGroupChild(
+            group,
+            blockIndex,
+            group.children[previewChildIndex],
+            previewChildIndex,
+            true,
+            true,
+          )}
+        {/snippet}
         <div
           class="content-block content-block--group {getOperationalClusterSpacingClass(
             groupedBlocks,
@@ -972,12 +989,21 @@
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
-            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            isTerminal={group.children.some((child) => child.type === 'thinking')
+              ? blockIndex === lastVisibleTopLevelBlockIndex
+              : isTerminalResponseGroup(groupedBlocks, blockIndex)}
             {isLastConversationMessage}
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
+            currentChild={previewChildIndex >= 0 ? currentChild : undefined}
+            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
+              groupedBlocks,
+              blockIndex,
+              isVisibleTopLevelBlock,
+            )}
+            followedByOperationalRow={isFollowedByOperationalClusterRow(
               groupedBlocks,
               blockIndex,
               isVisibleTopLevelBlock,
@@ -1044,16 +1070,24 @@
     contain: layout style paint;
   }
 
-  @keyframes slideUpIn {
+  @keyframes content-block-reveal {
     from {
-      transform: translateY(24px);
+      opacity: 0;
+      transform: translateY(4px);
     }
     to {
+      opacity: 1;
       transform: translateY(0);
     }
   }
 
   .content-block--animate-in {
-    animation: slideUpIn 250ms ease-out both;
+    animation: content-block-reveal var(--motion-standard) var(--ease-emphasized-out) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .content-block--animate-in {
+      animation: none;
+    }
   }
 </style>

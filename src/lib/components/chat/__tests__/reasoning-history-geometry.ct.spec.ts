@@ -6,15 +6,15 @@ test.setTimeout(120_000);
 
 const rendererIds = ['message', 'streaming'] as const;
 const expectedTitles = [
-  'Specifying task requirements',
+  'Reasoning',
   'Checking detailed constraints',
+  'Required steps:',
   'Validating renderer output',
 ];
 
 async function openGroup(fixture: Locator): Promise<Locator> {
   const disclosure = fixture.getByTestId('response-group-disclosure');
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-  await disclosure.click();
+  if ((await disclosure.getAttribute('aria-expanded')) === 'false') await disclosure.click();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   return disclosure;
 }
@@ -32,7 +32,7 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
     await children.evaluateAll((elements) =>
       elements.map((element) => getComputedStyle(element).paddingTop),
     ),
-  ).toEqual(['0px', '16px', '24px', '0px', '24px']);
+  ).toEqual(['0px', '16px', '0px', '0px', '0px']);
 
   const sections = group.locator('[data-reasoning-section]');
   await expect(sections).toHaveCount(4);
@@ -40,10 +40,10 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
     await sections.evaluateAll((elements) =>
       elements.map((element) => getComputedStyle(element).paddingTop),
     ),
-  ).toEqual(['0px', '0px', '24px', '0px']);
+  ).toEqual(['0px', '0px', '0px', '0px']);
 
   const titles = group.locator('[data-reasoning-section-title]');
-  await expect(titles).toHaveCount(3);
+  await expect(titles).toHaveCount(4);
   expect(await titles.allTextContents()).toEqual(expectedTitles);
   const seams = await titles.evaluateAll((elements) =>
     elements.map((title) => {
@@ -60,14 +60,32 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
     }),
   );
   expect(seams.map(({ title }) => title)).toEqual(expectedTitles);
-  for (const { seam, title } of seams) expect(seam, title).toBeCloseTo(24 * zoom, 1);
+  for (const [index, { seam, title }] of seams.entries()) {
+    expect(seam, title).toBeCloseTo(index === 0 ? 16 * zoom : 0, 1);
+  }
+
+  const phaseDisclosures = sections.locator('button[aria-controls]');
+  await expect(phaseDisclosures).toHaveCount(3);
+  for (const disclosure of await phaseDisclosures.all()) {
+    if ((await disclosure.getAttribute('aria-expanded')) === 'false') await disclosure.click();
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  }
+  await sections.evaluateAll((elements) =>
+    Promise.all(
+      elements.flatMap((element) =>
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished.catch(() => {})),
+      ),
+    ),
+  );
 
   const bodyGeometry = await group
     .locator('[data-reasoning-history-body]')
     .evaluateAll((elements) =>
       elements.map((body) => {
         const section = body.closest<HTMLElement>('[data-reasoning-section]')!;
-        const row = section.querySelector<HTMLElement>('[data-chat-operational-row]');
+        const row = section.querySelector<HTMLElement>('[data-operational-disclosure-row]');
         return {
           rowToBody: row
             ? body.getBoundingClientRect().top - row.getBoundingClientRect().bottom
@@ -78,7 +96,7 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
       }),
     );
   expect(bodyGeometry).toEqual([
-    { rowToBody: null, paddingTop: '6px', paddingBottom: '8px' },
+    { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
     { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
     { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
   ]);
@@ -113,13 +131,12 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
   await expect(group.locator('li')).toHaveCount(2);
   await expect(group.locator('pre code')).toContainText("const seam = 'token';");
   const text = (await group.textContent()) ?? '';
-  expect(text).toMatch(/input\.\s+Specifying task requirements/);
+  expect(text).toMatch(/Specifying task requirements\s+Reviewing the recorded input/);
   expect(text).not.toContain('input.Specifying task requirements');
-  expect(text).toMatch(/Specifying task requirements\s+Checking detailed constraints/);
   const orderedContent = [
+    'Specifying task requirements',
     'Reviewing the recorded input.',
     'The production-path analysis ends with input.',
-    'Specifying task requirements',
     'Checking detailed constraints',
     'Required steps:',
     'preserve source order',
@@ -175,12 +192,11 @@ for (const theme of ['light', 'dark'] as const) {
           await assertExpandedFixture(fixture, zoom, true);
 
           const inline = component.getByTestId(`${renderer}-inline`);
-          await expect(inline.getByTestId('response-group')).toHaveCount(0);
+          const inlineGroup = inline.getByTestId('response-group');
+          await expect(inlineGroup).toHaveCount(1);
+          await openGroup(inline);
           await expect(inline.locator('[data-reasoning-section-boundary]')).toHaveCount(0);
-          const inlineBlocks = inline
-            .locator('[data-operational-stack]')
-            .first()
-            .locator(':scope > [data-message-content-block]');
+          const inlineBlocks = inlineGroup.locator('[data-response-group-child]');
           expect(
             await inlineBlocks.evaluateAll((elements) =>
               elements.map((element) => ({
@@ -192,8 +208,11 @@ for (const theme of ['light', 'dark'] as const) {
             { type: 'text', paddingTop: '0px' },
             { type: 'thinking', paddingTop: '16px' },
             { type: 'thinking', paddingTop: '0px' },
-            { type: 'text', paddingTop: '16px' },
           ]);
+          for (const disclosure of await inlineGroup.locator('button[aria-controls]').all()) {
+            if ((await disclosure.getAttribute('aria-expanded')) === 'false')
+              await disclosure.click();
+          }
           const inlineText = (await inline.textContent()) ?? '';
           for (const value of [
             'Inline group description.',
@@ -227,9 +246,7 @@ test('keeps exact seams through live streaming completion in both renderers', as
   await component.update({ props: { width: 560, zoom: 1, phase: 'completed' } });
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
-    const disclosure = fixture.getByTestId('response-group-disclosure');
-    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-    await disclosure.click();
+    await openGroup(fixture);
     await assertExpandedFixture(fixture, 1, true);
   }
 

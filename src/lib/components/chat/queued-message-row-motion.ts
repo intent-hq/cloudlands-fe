@@ -1,6 +1,7 @@
 import { cubicOut } from 'svelte/easing';
 import type { TransitionConfig } from 'svelte/transition';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
+import { prefersReducedMotion } from '$lib/utils/animations';
 
 const DURATION_MS = 180;
 // Svelte's runtime completes an absent transition config without creating a
@@ -31,13 +32,6 @@ function cancelActiveMotion(node: HTMLElement): void {
   motion.bottomMutation.settle();
 }
 
-function reducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true
-  );
-}
-
 function numericStyle(style: CSSStyleDeclaration, property: keyof CSSStyleDeclaration): number {
   const value = Number.parseFloat(String(style[property]));
   return Number.isFinite(value) ? value : 0;
@@ -64,7 +58,7 @@ export function captureQueuedMessageRowMotion(node: HTMLElement): () => void {
     const targetHeight = layoutHeight(node);
     const targetOpacity = numericStyle(getComputedStyle(node), 'opacity') || 1;
 
-    if (reducedMotion() || currentHeight <= 0 || targetHeight <= 0 || !node.animate) {
+    if (prefersReducedMotion() || currentHeight <= 0 || targetHeight <= 0 || !node.animate) {
       node.style.height = '';
       node.style.overflow = '';
       bottomMutation.settle();
@@ -109,7 +103,7 @@ export function queuedMessageRowTransition(
     bottomMutation?.settle();
     bottomMutation = null;
   };
-  if (reducedMotion()) {
+  if (prefersReducedMotion()) {
     settleBottomMutation();
     return NO_TRANSITION;
   }

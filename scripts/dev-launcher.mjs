@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readdirSync, statSync, rmSync } from 'fs';
+import { executeGit, resolveDevLabel, resolveDevName } from './dev-launcher-name.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -135,7 +136,7 @@ function runDev(ports, cdpMode = false, devName = '') {
   process.env.DEV_NAME = devName || '';
   process.env.VITE_DEV_NAME = process.env.DEV_NAME;
 
-  const label = devName || (ports.instanceNum ? `Dev ${ports.instanceNum}` : 'Dev');
+  const label = resolveDevLabel(devName, ports.instanceNum);
 
   const script = cdpMode ? 'dev:cdp:base' : 'dev:base';
 
@@ -186,40 +187,6 @@ function runDev(ports, cdpMode = false, devName = '') {
       child.kill(signal);
     });
   });
-}
-
-/**
- * Parse --name "value" or --name=value from args
- */
-function parseNameArg(args) {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--name' || args[i] === '-n') {
-      return args[i + 1] || '';
-    }
-    if (args[i].startsWith('--name=')) {
-      return args[i].slice('--name='.length);
-    }
-  }
-  return '';
-}
-
-/**
- * Get the current git branch name to use as the default dev instance name.
- */
-function getCurrentGitBranch() {
-  try {
-    const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: dirname(__dirname),
-      encoding: 'utf-8',
-      timeout: 3000,
-    });
-    if (result.status === 0 && result.stdout) {
-      return result.stdout.trim();
-    }
-  } catch {
-    // Not in a git repo or git not available
-  }
-  return '';
 }
 
 /**
@@ -291,7 +258,7 @@ function pruneStaleDevInstances(currentDevPort, maxAgeDays = 7) {
 // Main
 const args = process.argv.slice(2);
 const cdpMode = args.includes('--cdp') || args.includes('-c');
-const devName = parseNameArg(args) || getCurrentGitBranch();
+const devName = resolveDevName(args, dirname(__dirname), executeGit);
 
 findAvailablePorts(cdpMode)
   .then((ports) => {

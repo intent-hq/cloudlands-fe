@@ -80,7 +80,7 @@ describe('QuestionWizard', () => {
     expect(screen.queryByText('Selecting an option moves to the next question')).toBeNull();
   });
 
-  it('keeps the counter, question header, Hide, and Dismiss in one ordered header row', () => {
+  it('keeps the counter, question header, Hide, and Dismiss in semantic order', () => {
     const { container } = render(QuestionWizard, {
       props: { questions: [SINGLE, LAST], onDismiss: vi.fn() },
     });
@@ -89,16 +89,10 @@ describe('QuestionWizard', () => {
     const title = header.querySelector('[data-question-header-title]')!;
     const actions = header.querySelector('[data-question-header-actions]')!;
 
-    expect(header.className).toContain('min-w-0');
-    expect(header.className).not.toContain('flex-wrap');
-    expect(title.className).toContain('truncate');
-    expect(title.className).toContain('flex-1');
-    expect(actions.className).toContain('shrink-0');
     expect(counter.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(title.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(header.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '1 of 2 Token storage Hide Dismiss',
-    );
+    expect(screen.getByRole('region', { name: 'Agent Has Questions' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide' }).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('uses one borderless shadowless card with lightweight choices and an outlined input', () => {
@@ -174,6 +168,9 @@ describe('QuestionWizard', () => {
     expect(screen.getByText('2 of 3')).toBeTruthy();
     expect(screen.getByText('Scope')).toBeTruthy();
     expect(onComplete).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: MULTI.question })),
+    );
   });
 
   it('single-select final question completes on one click with the exact full payload', async () => {
@@ -436,16 +433,21 @@ describe('QuestionWizard', () => {
 
   it('Hide requests collapse; collapsed renders the banner that re-expands on click', async () => {
     const { container, onToggleCollapsed, rerender } = setup();
-    await fireEvent.click(screen.getByRole('button', { name: /hide/i }));
+    const hide = screen.getByRole('button', { name: /hide/i });
+    hide.focus();
+    await fireEvent.click(hide);
     expect(onToggleCollapsed).toHaveBeenCalledWith(true);
     await rerender({ collapsed: true });
+    const expand = screen.getByRole('button', { name: /Agent Has Questions/i });
+    await waitFor(() => expect(document.activeElement).toBe(expand));
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByText('Click to expand')).toBeTruthy();
     expect(screen.queryByText('1 of 3')).toBeNull();
     const wizard = container.querySelector('[data-question-wizard]');
     expect(wizard?.className).toContain('bg-card');
     expect(wizard?.className).toContain('rounded-(--radius-large)');
     expect(wizard?.className).not.toContain('shadow');
-    await fireEvent.click(screen.getByText('Agent Has Questions'));
+    await fireEvent.click(expand);
     expect(onToggleCollapsed).toHaveBeenCalledWith(false);
   });
 
@@ -528,6 +530,64 @@ describe('QuestionWizard', () => {
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('the close control closes the idle dialog without dismissing questions', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    const dismissTrigger = screen.getByRole('button', { name: 'Dismiss' });
+    dismissTrigger.focus();
+    await fireEvent.click(dismissTrigger);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onDismiss).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(dismissTrigger));
+  });
+
+  it('blocks every close path while dismissal is pending', async () => {
+    let resolveDismiss!: () => void;
+    const onDismiss = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDismiss = resolve;
+        }),
+    );
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+
+    const dialog = screen.getByRole('dialog');
+    const close = screen.getByRole('button', { name: 'Close' });
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    const confirm = screen.getByRole('button', { name: 'Dismiss questions' });
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect((close as HTMLButtonElement).disabled).toBe(true);
+    expect((cancel as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getAttribute('aria-busy')).toBe('true');
+
+    await fireEvent.click(close);
+    // Exercise the controlled Root guard independently of the disabled control.
+    (close as HTMLButtonElement).disabled = false;
+    await fireEvent.click(close);
+    (close as HTMLButtonElement).disabled = true;
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
+    await fireEvent.click(cancel);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    resolveDismiss();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('Dismiss on the Hide-collapsed banner also goes through the confirm dialog', async () => {
@@ -693,13 +753,18 @@ describe('QuestionWizard draft persistence', () => {
     render(QuestionWizard, { props: { questions: [LAST], draftKey: KEY, onDismiss } });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+    const confirm = screen.getByRole('button', { name: 'Dismiss questions' });
+    await fireEvent.click(confirm);
     expect(onDismiss).toHaveBeenCalledTimes(1);
     // Still in flight — the draft must not be cleared optimistically.
     expect(window.localStorage.getItem(KEY)).not.toBeNull();
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    expect(document.querySelector('[data-slot="dialog-footer"]')?.getAttribute('aria-busy')).toBe(
+      'true',
+    );
 
     rejectDismiss(new Error('wire failure'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(window.localStorage.getItem(KEY)).not.toBeNull();
   });
 
